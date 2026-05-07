@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
     branches: [main]
   workflow_dispatch:
 
@@ -23,6 +24,12 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'coverage') ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+      contains(github.event.pull_request.labels.*.name, 'ci:full')
 
     steps:
       - uses: actions/checkout@v4
