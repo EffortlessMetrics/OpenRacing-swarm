@@ -156,6 +156,33 @@ classification = "config"
 reason = "Code ownership routing for GitHub reviews."
 covered_by = []
 
+[[allow]]
+path = "codecov.yml"
+kind = "ci_coverage_policy"
+owner = "release/ci"
+surface = "ci"
+classification = "config"
+reason = "Codecov status and reporting configuration for cargo-llvm-cov coverage uploads."
+covered_by = ["cargo xtask check-file-policy", ".github/workflows/coverage.yml"]
+
+[[allow]]
+path = ".github/workflows/coverage.yml"
+kind = "ci_declarative"
+owner = "release/ci"
+surface = "ci"
+classification = "config"
+reason = "GitHub Actions coverage workflow for cargo-llvm-cov and Codecov uploads."
+covered_by = ["cargo xtask check-file-policy", "docs/ci/coverage.md"]
+
+[[allow]]
+path = "docs/ci/coverage.md"
+kind = "ci_docs"
+owner = "release/ci"
+surface = "docs"
+classification = "docs"
+reason = "Documents Codecov claim boundaries and verification expectations."
+covered_by = ["git diff --check"]
+
 # --- Policy / docs ----------------------------------------------------------
 
 [[allow]]
