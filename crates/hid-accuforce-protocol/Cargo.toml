@@ -11,14 +11,6 @@ documentation = "https://docs.rs/racing-wheel-hid-accuforce-protocol"
 readme = "README.md"
 keywords = ["accuforce", "hid", "usb", "racing", "protocol"]
 categories = ["hardware-support", "no-std"]
-[lints.rust]
-warnings = "deny"
-unused_must_use = "deny"
-
-[lints.clippy]
-unwrap_used = "deny"
-
-
 [package.metadata.cargo-udeps.ignore]
 normal = ["workspace-hack"]
 
@@ -29,3 +21,6 @@ workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 [dev-dependencies]
 insta = "1.46.3"
 proptest = { workspace = true }
+
+[lints]
+workspace = true

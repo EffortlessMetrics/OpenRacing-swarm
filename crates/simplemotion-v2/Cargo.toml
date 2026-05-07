@@ -13,14 +13,6 @@ readme = "README.md"
 description = "SimpleMotion V2 serial protocol for Granite Devices servo controllers"
 keywords = ["simplemotion", "servo", "serial", "granite", "motor"]
 categories = ["hardware-support", "embedded"]
-[lints.rust]
-warnings = "deny"
-unused_must_use = "deny"
-
-[lints.clippy]
-unwrap_used = "deny"
-
-
 [package.metadata.cargo-udeps.ignore]
 normal = ["workspace-hack", "tracing"]
 
@@ -32,3 +24,6 @@ workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 [dev-dependencies]
 proptest = { workspace = true }
 insta = { version = "1.46.3", features = ["yaml"] }
+
+[lints]
+workspace = true

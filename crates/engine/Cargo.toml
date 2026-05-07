@@ -137,3 +137,6 @@ required-features = ["harness"]
 name = "rt_timing"
 harness = false
 path = "../../benches/rt_timing.rs"
+
+[lints]
+workspace = true

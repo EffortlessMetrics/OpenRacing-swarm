@@ -13,14 +13,6 @@ description = "Keep a Changelog parsing and formatting helpers for OpenRacing"
 readme = "README.md"
 keywords = ["changelog", "parsing", "semver", "release", "openracing"]
 categories = ["development-tools", "parsing"]
-[lints.rust]
-warnings = "deny"
-unused_must_use = "deny"
-
-[lints.clippy]
-unwrap_used = "deny"
-
-
 [package.metadata.cargo-udeps.ignore]
 normal = ["workspace-hack"]
 
@@ -29,3 +21,6 @@ chrono = { workspace = true }
 semver = { workspace = true }
 thiserror = { workspace = true }
 workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[lints]
+workspace = true

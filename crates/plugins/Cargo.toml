@@ -93,3 +93,6 @@ path = "src/bin/helper.rs"
 default = []
 wasm-component-model = ["wasmtime/component-model"]
 sample-plugins = []
+
+[lints]
+workspace = true

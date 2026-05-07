@@ -13,14 +13,6 @@ readme = "README.md"
 description = "Moza wheelbase HID report definitions and parsing"
 keywords = ["moza", "wheelbase", "hid", "racing", "report"]
 categories = ["hardware-support", "no-std"]
-[lints.rust]
-warnings = "deny"
-unused_must_use = "deny"
-
-[lints.clippy]
-unwrap_used = "deny"
-
-
 [package.metadata.cargo-udeps.ignore]
 normal = ["workspace-hack"]
 
@@ -30,3 +22,5 @@ proptest = { workspace = true }
 [dependencies]
 workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 
+[lints]
+workspace = true

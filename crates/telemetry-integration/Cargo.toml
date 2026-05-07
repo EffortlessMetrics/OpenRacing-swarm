@@ -28,3 +28,6 @@ racing-wheel-telemetry-recorder = { path = "../telemetry-recorder", version = "0
 racing-wheel-telemetry-support = { path = "../telemetry-support", version = "0.1.0" }
 tempfile = "3.25.0"
 tokio = { workspace = true }
+
+[lints]
+workspace = true

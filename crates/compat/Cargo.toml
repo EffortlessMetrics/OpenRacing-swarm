@@ -21,3 +21,6 @@ racing-wheel-schemas = { path = "../schemas" }
 serde_json = { workspace = true }
 insta = { workspace = true, features = ["json"] }
 proptest = { workspace = true }
+
+[lints]
+workspace = true

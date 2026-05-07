@@ -13,14 +13,6 @@ readme = "README.md"
 description = "VRS DirectForce Pro USB HID protocol constants and encoders (I/O-free, allocation-free)"
 keywords = ["vrs", "hid", "usb", "racing", "protocol"]
 categories = ["hardware-support", "no-std"]
-[lints.rust]
-warnings = "deny"
-unused_must_use = "deny"
-
-[lints.clippy]
-unwrap_used = "deny"
-
-
 [package.metadata.cargo-udeps.ignore]
 normal = ["workspace-hack", "tracing"]
 
@@ -33,3 +25,6 @@ workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 [dev-dependencies]
 proptest = { workspace = true }
 insta = { version = "1.46.3", features = ["yaml"] }
+
+[lints]
+workspace = true

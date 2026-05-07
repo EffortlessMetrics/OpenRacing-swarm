@@ -41,3 +41,6 @@ proptest = { workspace = true }
 [build-dependencies]
 # Required for Tauri 2.x build process
 tauri-build = { version = "2.5", features = [] }
+
+[lints]
+workspace = true

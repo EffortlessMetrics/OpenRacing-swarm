@@ -37,3 +37,6 @@ insta = { workspace = true, features = ["json"] }
 [[bench]]
 name = "hid_benches"
 harness = false
+
+[lints]
+workspace = true

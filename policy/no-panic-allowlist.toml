@@ -1,0 +1,79 @@
+# OpenRacing semantic no-panic allowlist.
+#
+# This is the AUTHORITATIVE exception ledger for panic-family findings.
+# Clippy lints in `[workspace.lints]` are the immediate code-shape detector
+# at the warn level today; this file is what makes intentional exceptions
+# legible and expirable.
+#
+# Identity for matching is `path + family + selector`. `last_seen` line/column
+# values are advisory hints only and never used to match an entry.
+#
+# Schema and discipline are documented in docs/NO_PANIC_POLICY.md.
+#
+# To regenerate proposed entries from current findings:
+#   python scripts/policy_no_panic.py --propose
+#
+# The script writes target/no-panic-proposed-allowlist.toml; review it,
+# add owner/reason/expiry, then move entries here. The script never
+# mutates this file automatically.
+
+schema_version = "0.3"
+
+# Default expiry for entries that omit `expires`. Stage A rollout uses a
+# generous 12-month window so we can baseline existing debt without
+# blocking unrelated work; subsequent burndown PRs should shorten this.
+default_expires = "2027-05-06"
+
+# Recognized panic families. Entries with any other family are rejected.
+families = [
+  "unwrap",
+  "expect",
+  "panic_macro",
+  "todo",
+  "unimplemented",
+  "unreachable",
+  "indexing",
+  "string_slice",
+  "get_unwrap",
+  "unchecked_time_subtraction",
+]
+
+# Recognized classifications for triage / reporting.
+classifications = [
+  "test_helper",         # only reachable from tests / fixtures / dev-tools
+  "static_invariant",    # provably unreachable given enclosing types
+  "boundary",            # pre-checked at a boundary above this call
+  "rt_fast_path",        # RT path; receipted by code review
+  "legacy_debt",         # debt to migrate to fallible flow
+  "external_api",        # forced by an upstream API surface
+  "build_or_proc_macro", # codegen / build.rs path
+]
+
+# Stage A baseline. Entries are intentionally seeded empty: existing debt
+# in the OpenRacing tree is reported (warn) by Clippy until the first
+# burndown PR generates a baseline via `--propose`. The semantic checker
+# treats an absent allowlist entry as a warning during Stage A, and as a
+# blocking error during Stage B (after the strict-clippy-flip PR).
+#
+# Example shape (kept commented; do not copy without owner/reason/expiry):
+#
+# [[allow]]
+# id = "panic-0001"
+# path = "crates/openracing-curves/src/lut.rs"
+# family = "indexing"
+# classification = "static_invariant"
+# owner = "ffb"
+# explanation = "LUT index is masked to LUT_SIZE-1 above; receipt for review."
+# expires = "2026-12-01"
+#
+# [allow.selector]
+# kind = "index_expr"
+# container = "fn lookup"
+# callee = "[]"
+# receiver_fingerprint = "self.table"
+#
+# [allow.last_seen]
+# line = 78
+# column = 19
+
+allow = []

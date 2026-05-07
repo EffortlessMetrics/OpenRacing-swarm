@@ -1,0 +1,556 @@
+# OpenRacing non-Rust file policy.
+#
+# Every non-Rust file (other than Cargo.toml/Cargo.lock and similar Rust-
+# native config) must match an allowlist entry below, or be excluded.
+# This makes the supported non-Rust surface area explicit and reviewable
+# instead of an ever-growing junk drawer.
+#
+# Schema is documented in docs/FILE_POLICY.md.
+# Validate with: python scripts/policy_file.py
+#
+# Recognized fields (all required unless marked optional):
+#   glob          glob relative to repo root, OR
+#   path          exact path relative to repo root
+#   kind          short stable identifier (no spaces)
+#   owner         team or area owner (matches CODEOWNERS-style label)
+#   surface       ci | docs | fixtures | tooling | packaging | proto |
+#                 schema | shader | editor | website | badge | scripts |
+#                 hardware | telemetry | thirdparty
+#   classification    config | test | production | tooling | generated | thirdparty
+#   reason        human reason this surface exists
+#   covered_by    list of commands or workflows that exercise it
+#   expires       optional ISO date for time-boxed exceptions
+#   retired       optional bool; entry exists but is no longer active
+
+schema_version = "1.0"
+
+# --- Repository-level meta files --------------------------------------------
+
+[[allow]]
+glob = "*.md"
+kind = "doc_root"
+owner = "core"
+surface = "docs"
+classification = "production"
+reason = "Top-level project docs (README, CHANGELOG, RELEASING, ROADMAP, AGENTS, CLAUDE)."
+covered_by = ["python scripts/validate_changelog.py"]
+
+[[allow]]
+glob = "LICENSE-*"
+kind = "license"
+owner = "core"
+surface = "docs"
+classification = "production"
+reason = "Dual-license text required for crates.io publish."
+covered_by = ["cargo deny check"]
+
+[[allow]]
+path = ".gitignore"
+kind = "vcs_config"
+owner = "core"
+surface = "tooling"
+classification = "config"
+reason = "Standard git ignore rules."
+covered_by = []
+
+[[allow]]
+path = ".gitattributes"
+kind = "vcs_config"
+owner = "core"
+surface = "tooling"
+classification = "config"
+reason = "Standard git attributes."
+covered_by = []
+
+# --- Rust-adjacent config ---------------------------------------------------
+
+[[allow]]
+glob = "Cargo.lock"
+kind = "cargo_lockfile"
+owner = "core"
+surface = "tooling"
+classification = "config"
+reason = "Cargo lockfile pinning workspace dependency graph."
+covered_by = ["cargo build --workspace"]
+
+[[allow]]
+glob = "rust-toolchain.toml"
+kind = "toolchain_pin"
+owner = "core"
+surface = "tooling"
+classification = "config"
+reason = "Pin nightly toolchain across the workspace."
+covered_by = ["cargo build --workspace"]
+
+[[allow]]
+glob = "rustfmt.toml"
+kind = "rustfmt_config"
+owner = "core"
+surface = "tooling"
+classification = "config"
+reason = "Workspace formatting rules."
+covered_by = ["cargo fmt --all -- --check"]
+
+[[allow]]
+glob = "clippy.toml"
+kind = "clippy_config"
+owner = "core"
+surface = "tooling"
+classification = "config"
+reason = "Clippy thresholds. Test carveouts are forbidden by policy_lint.py."
+covered_by = ["python scripts/policy_lint.py"]
+
+[[allow]]
+glob = "deny.toml"
+kind = "cargo_deny_config"
+owner = "core"
+surface = "tooling"
+classification = "config"
+reason = "Supply-chain policy for cargo-deny."
+covered_by = ["cargo deny check"]
+
+[[allow]]
+glob = "mutants.toml"
+kind = "mutants_config"
+owner = "core"
+surface = "tooling"
+classification = "config"
+reason = "cargo-mutants configuration for mutation testing."
+covered_by = ["bash scripts/run_mutation_tests.sh"]
+
+[[allow]]
+glob = "flake.nix"
+kind = "nix_flake"
+owner = "core"
+surface = "tooling"
+classification = "config"
+reason = "Reproducible dev shell via Nix flakes."
+covered_by = ["bash scripts/ci_nix.sh"]
+
+# --- CI / release workflows --------------------------------------------------
+
+[[allow]]
+glob = ".github/workflows/*.yml"
+kind = "ci_workflow"
+owner = "release/ci"
+surface = "ci"
+classification = "config"
+reason = "GitHub Actions workflow definitions."
+covered_by = ["python scripts/check_yaml_sync.py"]
+
+[[allow]]
+glob = ".github/**/*.md"
+kind = "ci_doc"
+owner = "release/ci"
+surface = "ci"
+classification = "production"
+reason = "Issue/PR templates and contributing notes rendered by GitHub."
+covered_by = []
+
+[[allow]]
+glob = ".github/**/CODEOWNERS"
+kind = "codeowners"
+owner = "release/ci"
+surface = "ci"
+classification = "config"
+reason = "Code ownership routing for GitHub reviews."
+covered_by = []
+
+# --- Policy / docs ----------------------------------------------------------
+
+[[allow]]
+glob = "policy/*.toml"
+kind = "policy_doc"
+owner = "core"
+surface = "tooling"
+classification = "config"
+reason = "Declarative repo policy validated by xtask checks / scripts."
+covered_by = [
+  "python scripts/policy_lint.py",
+  "python scripts/policy_no_panic.py",
+  "python scripts/policy_file.py",
+]
+
+[[allow]]
+glob = "docs/**/*.md"
+kind = "design_doc"
+owner = "core"
+surface = "docs"
+classification = "production"
+reason = "Architecture/design/ADR/policy documentation."
+covered_by = ["python scripts/validate_adr.py"]
+
+[[allow]]
+glob = "docs/adr/*.md"
+kind = "adr"
+owner = "core"
+surface = "docs"
+classification = "production"
+reason = "Architecture Decision Records."
+covered_by = ["python scripts/validate_adr.py"]
+
+[[allow]]
+glob = "docs/**/*.json"
+kind = "doc_data"
+owner = "core"
+surface = "docs"
+classification = "production"
+reason = "Inline doc data tables / examples."
+covered_by = []
+
+# Speculative future doc surfaces (svg/png/yaml/yml/toml/txt/html/csv/proto)
+# are not currently present under docs/. They will be added as needed; the
+# policy intentionally does not pre-allowlist filetypes that have no
+# matching files today, to keep the unused-entries report meaningful.
+
+# --- Schemas / protocols / fixtures ----------------------------------------
+
+[[allow]]
+glob = "**/schemas/**/*.json"
+kind = "json_schema"
+owner = "schemas"
+surface = "schema"
+classification = "production"
+reason = "JSON Schemas validated by jsonschema."
+covered_by = ["cargo test --workspace"]
+
+[[allow]]
+glob = "**/fixtures/**"
+kind = "fixture_input"
+owner = "core"
+surface = "fixtures"
+classification = "test"
+reason = "Test fixtures intentionally contain analyzed inputs (binary, JSON, YAML, CSV, captures, etc.)."
+covered_by = ["cargo test --workspace"]
+
+[[allow]]
+glob = "**/*.snap"
+kind = "insta_snapshot"
+owner = "core"
+surface = "fixtures"
+classification = "test"
+reason = "insta snapshot fixtures committed alongside tests."
+covered_by = ["cargo test --workspace"]
+
+# `**/*.snap.new` (pending insta snapshots) and `**/testdata/**` are
+# intentionally NOT pre-allowlisted: they are expected to be empty in a
+# clean tree, and adding them would suppress drift signal if they appear.
+
+# --- Build / packaging ------------------------------------------------------
+
+[[allow]]
+glob = "build/**"
+kind = "build_artifact"
+owner = "release/ci"
+surface = "tooling"
+classification = "tooling"
+reason = "Build helper scripts and shared build configuration."
+covered_by = ["cargo build --workspace"]
+
+[[allow]]
+glob = "packaging/**"
+kind = "packaging"
+owner = "release/ci"
+surface = "packaging"
+classification = "production"
+reason = "Platform packaging (udev rules, systemd units, installers, etc.)."
+covered_by = ["python scripts/validate_udev_rules.py"]
+
+[[allow]]
+glob = "third_party/**"
+kind = "vendored_dependency"
+owner = "release/ci"
+surface = "thirdparty"
+classification = "thirdparty"
+reason = "Vendored third-party crates (e.g. shared_memory)."
+covered_by = ["cargo deny check"]
+
+# --- Scripts ----------------------------------------------------------------
+
+[[allow]]
+glob = "scripts/*.py"
+kind = "tooling_script"
+owner = "release/ci"
+surface = "scripts"
+classification = "tooling"
+reason = "Repository tooling, lint gates, validators, governance automation."
+covered_by = ["python scripts/lint_gates.py"]
+
+[[allow]]
+glob = "scripts/*.sh"
+kind = "tooling_script"
+owner = "release/ci"
+surface = "scripts"
+classification = "tooling"
+reason = "POSIX shell tooling and CI helpers."
+covered_by = []
+
+[[allow]]
+glob = "scripts/*.ps1"
+kind = "tooling_script"
+owner = "release/ci"
+surface = "scripts"
+classification = "tooling"
+reason = "Windows PowerShell tooling and CI helpers."
+covered_by = []
+
+# --- Crate-level metadata ---------------------------------------------------
+# (build.rs is excluded from this allowlist because it is a Rust file and
+# is governed by the workspace lint policy, not file policy.)
+
+[[allow]]
+glob = "crates/*/README.md"
+kind = "crate_readme"
+owner = "core"
+surface = "docs"
+classification = "production"
+reason = "Per-crate README rendered on crates.io / docs.rs."
+covered_by = ["cargo doc --workspace"]
+
+[[allow]]
+glob = "crates/**/proto/*.proto"
+kind = "protobuf_schema"
+owner = "schemas"
+surface = "proto"
+classification = "production"
+reason = "Crate-local protobuf schemas."
+covered_by = ["cargo build --workspace"]
+
+# --- Workspace-hack ---------------------------------------------------------
+
+[[allow]]
+glob = "workspace-hack/**"
+kind = "hakari_hack"
+owner = "release/ci"
+surface = "tooling"
+classification = "tooling"
+reason = "cargo-hakari workspace-hack feature unification crate."
+covered_by = ["cargo build --workspace"]
+
+# --- Fuzz harnesses ---------------------------------------------------------
+
+[[allow]]
+glob = "fuzz/**"
+kind = "fuzz_harness"
+owner = "core"
+surface = "tooling"
+classification = "tooling"
+reason = "cargo-fuzz harnesses (excluded from main workspace)."
+covered_by = []
+
+# `benches/**` is intentionally not allowlisted: workspace-level benches
+# live as Rust files (governed by workspace lints), and any non-Rust
+# bench fixtures should appear under benches/fixtures/ which is matched
+# by the broader **/fixtures/** entry above.
+
+# --- Editor / hakari / repo-local config -----------------------------------
+
+[[allow]]
+path = ".config/hakari.toml"
+kind = "hakari_config"
+owner = "release/ci"
+surface = "tooling"
+classification = "config"
+reason = "cargo-hakari configuration."
+covered_by = ["cargo hakari verify"]
+
+[[allow]]
+path = ".vscode/settings.json"
+kind = "editor_settings"
+owner = "core"
+surface = "editor"
+classification = "config"
+reason = "Recommended VS Code settings for the workspace."
+covered_by = []
+
+[[allow]]
+glob = ".githooks/*"
+kind = "git_hook"
+owner = "release/ci"
+surface = "tooling"
+classification = "tooling"
+reason = "Optional repo-local git hooks."
+covered_by = []
+
+[[allow]]
+glob = "scripts/pre-commit/*"
+kind = "git_hook_helper"
+owner = "release/ci"
+surface = "scripts"
+classification = "tooling"
+reason = "Pre-commit hook helper scripts."
+covered_by = []
+
+# --- Trybuild / compile-fail snapshots -------------------------------------
+
+[[allow]]
+glob = "crates/**/tests/compile_fail/*.stderr"
+kind = "trybuild_snapshot"
+owner = "core"
+surface = "fixtures"
+classification = "test"
+reason = "trybuild compile-fail snapshots committed alongside tests."
+covered_by = ["cargo test --workspace"]
+
+[[allow]]
+glob = "crates/**/tests/compile-fail/*.stderr"
+kind = "trybuild_snapshot"
+owner = "core"
+surface = "fixtures"
+classification = "test"
+reason = "trybuild compile-fail snapshots (alternate dash-form directory)."
+covered_by = ["cargo test --workspace"]
+
+[[allow]]
+glob = "crates/**/proptest-regressions/**/*.txt"
+kind = "proptest_regression"
+owner = "core"
+surface = "fixtures"
+classification = "test"
+reason = "proptest persisted regression seeds."
+covered_by = ["cargo test --workspace"]
+
+# --- BDD / Cucumber feature files ------------------------------------------
+
+[[allow]]
+glob = "crates/**/features/*.feature"
+kind = "cucumber_feature"
+owner = "core"
+surface = "fixtures"
+classification = "test"
+reason = "Cucumber/Gherkin BDD feature files driving integration tests."
+covered_by = ["cargo test --workspace"]
+
+[[allow]]
+glob = "crates/**/tests/features/*.feature"
+kind = "cucumber_feature"
+owner = "core"
+surface = "fixtures"
+classification = "test"
+reason = "Cucumber/Gherkin BDD feature files under tests/."
+covered_by = ["cargo test --workspace"]
+
+[[allow]]
+glob = "crates/**/tests/bdd/*.feature"
+kind = "cucumber_feature"
+owner = "core"
+surface = "fixtures"
+classification = "test"
+reason = "Cucumber/Gherkin BDD feature files under tests/bdd/."
+covered_by = ["cargo test --workspace"]
+
+# --- Plugin examples (C ABI showcase) --------------------------------------
+
+[[allow]]
+glob = "crates/plugins/examples/*.c"
+kind = "plugin_example_c"
+owner = "plugins"
+surface = "fixtures"
+classification = "test"
+reason = "Native plugin ABI examples in C; exercised by plugin smoke tests."
+covered_by = ["cargo test --package racing-wheel-plugins"]
+
+# Native plugin ABI example headers (`*.h`) will be allowlisted when
+# they are introduced; see crates/plugins/examples/sample_dsp_plugin.c
+# for the current C example.
+
+# --- Schema / protobuf tooling ---------------------------------------------
+
+[[allow]]
+glob = "crates/schemas/buf.*.yaml"
+kind = "buf_config"
+owner = "schemas"
+surface = "proto"
+classification = "config"
+reason = "buf.build configuration for protobuf schema linting/breakage detection."
+covered_by = []
+
+[[allow]]
+path = "crates/schemas/buf.yaml"
+kind = "buf_config"
+owner = "schemas"
+surface = "proto"
+classification = "config"
+reason = "buf.build root config."
+covered_by = []
+
+[[allow]]
+glob = "crates/schemas/scripts/*.sh"
+kind = "schema_script"
+owner = "schemas"
+surface = "scripts"
+classification = "tooling"
+reason = "Schema compatibility / generation scripts (POSIX)."
+covered_by = []
+
+[[allow]]
+glob = "crates/schemas/scripts/*.ps1"
+kind = "schema_script"
+owner = "schemas"
+surface = "scripts"
+classification = "tooling"
+reason = "Schema compatibility / generation scripts (PowerShell)."
+covered_by = []
+
+[[allow]]
+path = "crates/schemas/src/generated/.gitkeep"
+kind = "gitkeep"
+owner = "schemas"
+surface = "proto"
+classification = "generated"
+reason = "Placeholder so the generated/ directory exists pre-build."
+covered_by = ["cargo build --workspace"]
+
+# --- Service profile fixtures ----------------------------------------------
+
+[[allow]]
+glob = "crates/service/profiles/*.json"
+kind = "profile_fixture"
+owner = "service"
+surface = "fixtures"
+classification = "test"
+reason = "Service test profiles consumed by integration tests."
+covered_by = ["cargo test --package racing-wheel-service"]
+
+# --- Telemetry config (committed YAML) -------------------------------------
+
+[[allow]]
+glob = "crates/telemetry-*/src/game_support_matrix.yaml"
+kind = "telemetry_matrix"
+owner = "telemetry"
+surface = "telemetry"
+classification = "production"
+reason = "Game support matrix consumed at runtime by the telemetry layer."
+covered_by = [
+  "python scripts/validate_game_matrix.py",
+  "python scripts/check_yaml_sync.py",
+]
+
+# --- UI (Tauri + dist bundle) ----------------------------------------------
+
+[[allow]]
+glob = "crates/ui/dist/*"
+kind = "ui_bundle"
+owner = "ui"
+surface = "website"
+classification = "generated"
+reason = "Built UI bundle assets (HTML/JS/CSS) shipped in source tree."
+covered_by = []
+
+[[allow]]
+glob = "crates/ui/icons/*"
+kind = "ui_icon"
+owner = "ui"
+surface = "website"
+classification = "production"
+reason = "UI application icons."
+covered_by = []
+
+[[allow]]
+path = "crates/ui/tauri.conf.json"
+kind = "tauri_config"
+owner = "ui"
+surface = "website"
+classification = "config"
+reason = "Tauri application bundle configuration."
+covered_by = []

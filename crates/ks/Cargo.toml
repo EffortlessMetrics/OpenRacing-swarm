@@ -13,14 +13,6 @@ readme = "README.md"
 description = "Moza KS steering wheel USB HID protocol parsing and support"
 keywords = ["moza", "steering-wheel", "hid", "racing", "usb"]
 categories = ["hardware-support", "no-std"]
-[lints.rust]
-warnings = "deny"
-unused_must_use = "deny"
-
-[lints.clippy]
-unwrap_used = "deny"
-
-
 [package.metadata.cargo-udeps.ignore]
 normal = ["workspace-hack"]
 dev = ["serde_json"]
@@ -35,3 +27,6 @@ workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 [dev-dependencies]
 proptest = { workspace = true }
 serde_json = { workspace = true }
+
+[lints]
+workspace = true

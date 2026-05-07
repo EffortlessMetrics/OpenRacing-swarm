@@ -1,0 +1,421 @@
+# OpenRacing Clippy debt ledger.
+#
+# This file tracks lints that are intentionally `allow` (or `absent`)
+# instead of their `target_level`, with an owner and a target promotion
+# PR. It is the source of truth for "what is still warn-stage on
+# purpose".
+#
+# A separate file from policy/clippy-lints.toml so the planned MSRV
+# flips (which are time-based) don't get mixed up with the burndown
+# ledger (which is debt-based).
+#
+# Validate with: python scripts/policy_lint.py
+#
+# Possible `level` values:
+#
+#   "allow"  -> lint is in [workspace.lints] at level = "allow".
+#   "warn"   -> lint is in [workspace.lints] at level = "warn".
+#   "absent" -> lint is intentionally NOT yet present in
+#               [workspace.lints]; it will be introduced by `target_pr`.
+#               policy_lint.py flags drift if it appears anyway.
+#
+# Stage A: every entry below is at `absent` because Stage A introduces
+# NO new clippy enforcement at the workspace level (existing CI already
+# runs `cargo clippy ... -D warnings -D clippy::unwrap_used ...` for
+# non-test crates; introducing new workspace warns/denies would
+# regress unrelated jobs). Each entry is promoted by its named
+# `target_pr` after the corresponding burndown lands.
+
+schema_version = "1.0"
+
+# --- Panic family (target: deny) --------------------------------------------
+
+[[debt]]
+lint = "clippy::unwrap_used"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "policy/strict-clippy-flip"
+target_date = "2026-09-01"
+reason = "Existing CI already enforces this for non-test crates via explicit -D flag; the workspace promotion is gated on the strict-clippy-flip PR which removes the explicit flag and lets the workspace lint drive enforcement."
+
+[[debt]]
+lint = "clippy::expect_used"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "policy/strict-clippy-flip"
+target_date = "2026-09-01"
+reason = "Same as unwrap_used."
+
+[[debt]]
+lint = "clippy::panic"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "policy/strict-clippy-flip"
+target_date = "2026-09-01"
+reason = "Same as unwrap_used."
+
+[[debt]]
+lint = "clippy::todo"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "policy/strict-clippy-flip"
+target_date = "2026-09-01"
+reason = "Introduced by strict-clippy-flip; in-progress markers should burn down."
+
+[[debt]]
+lint = "clippy::unimplemented"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "policy/strict-clippy-flip"
+target_date = "2026-09-01"
+reason = "Same as todo."
+
+[[debt]]
+lint = "clippy::unreachable"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "policy/strict-clippy-flip"
+target_date = "2026-09-01"
+reason = "Receipt or migrate to fallible flow before introduction."
+
+[[debt]]
+lint = "clippy::indexing_slicing"
+level = "absent"
+target_level = "deny"
+owner = "ffb,protocols"
+target_pr = "panic-debt/parsers"
+target_date = "2026-10-01"
+reason = "HID/protocol parsers and curve LUTs need targeted burndown first."
+
+[[debt]]
+lint = "clippy::string_slice"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "panic-debt/parsers"
+target_date = "2026-10-01"
+reason = "UTF-8 boundary safety burndown."
+
+[[debt]]
+lint = "clippy::get_unwrap"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "policy/strict-clippy-flip"
+target_date = "2026-09-01"
+reason = "Promoted alongside unwrap_used."
+
+[[debt]]
+lint = "clippy::unwrap_in_result"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "policy/strict-clippy-flip"
+target_date = "2026-09-01"
+reason = "Fallible flows should propagate Err."
+
+[[debt]]
+lint = "clippy::panic_in_result_fn"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "testing/fallible-helpers"
+target_date = "2026-11-01"
+reason = "Promoted after fallible test helper migration."
+
+[[debt]]
+lint = "clippy::dbg_macro"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "policy/expect-with-reason-sweep"
+target_date = "2026-09-15"
+reason = "Catches stray `dbg!()` left in source; promoted after sweep."
+
+# --- Silent failure (target: deny) -----------------------------------------
+
+[[debt]]
+lint = "clippy::let_underscore_future"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "panic-debt/silent-failure"
+target_date = "2026-10-15"
+reason = "Burndown of `let _ = future_returning_call()` patterns first."
+
+[[debt]]
+lint = "clippy::let_underscore_must_use"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "panic-debt/silent-failure"
+target_date = "2026-10-15"
+reason = "Burndown of 1300+ `let _ = must_use_call()` patterns across the workspace."
+
+[[debt]]
+lint = "clippy::map_err_ignore"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "panic-debt/silent-failure"
+target_date = "2026-10-15"
+reason = "Burndown of `.map_err(|_| ...)` discards."
+
+[[debt]]
+lint = "clippy::lines_filter_map_ok"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "panic-debt/silent-failure"
+target_date = "2026-10-15"
+reason = "Burndown of `lines.filter_map(Result::ok)` patterns."
+
+[[debt]]
+lint = "clippy::match_result_ok"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "panic-debt/silent-failure"
+target_date = "2026-10-15"
+reason = "Burndown of `match foo.ok() { ... }` patterns."
+
+# --- Async / concurrency (target: deny) ------------------------------------
+
+[[debt]]
+lint = "clippy::await_holding_lock"
+level = "absent"
+target_level = "deny"
+owner = "service,ipc"
+target_pr = "panic-debt/async-locks"
+target_date = "2026-10-15"
+reason = "Audit and receipt async fns that hold sync locks across awaits."
+
+[[debt]]
+lint = "clippy::await_holding_refcell_ref"
+level = "absent"
+target_level = "deny"
+owner = "service,ipc"
+target_pr = "panic-debt/async-locks"
+target_date = "2026-10-15"
+reason = "Same as await_holding_lock."
+
+[[debt]]
+lint = "clippy::await_holding_invalid_type"
+level = "absent"
+target_level = "deny"
+owner = "service,ipc"
+target_pr = "panic-debt/async-locks"
+target_date = "2026-10-15"
+reason = "Same as await_holding_lock."
+
+[[debt]]
+lint = "clippy::arc_with_non_send_sync"
+level = "absent"
+target_level = "deny"
+owner = "service,ipc"
+target_pr = "panic-debt/async-locks"
+target_date = "2026-10-15"
+reason = "Audit Arc<T> usage where T isn't Send+Sync."
+
+[[debt]]
+lint = "clippy::rc_mutex"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "panic-debt/async-locks"
+target_date = "2026-10-15"
+reason = "Audit Rc<Mutex<T>> patterns."
+
+[[debt]]
+lint = "clippy::mut_mutex_lock"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "panic-debt/async-locks"
+target_date = "2026-10-15"
+reason = "Audit `&mut Mutex::lock()` patterns."
+
+[[debt]]
+lint = "clippy::readonly_write_lock"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "panic-debt/async-locks"
+target_date = "2026-10-15"
+reason = "Audit `RwLock::write` used for read-only access."
+
+# --- Unsafe / memory (target: deny) ----------------------------------------
+
+[[debt]]
+lint = "clippy::mem_forget"
+level = "absent"
+target_level = "deny"
+owner = "rt,hid"
+target_pr = "panic-debt/unsafe-receipts"
+target_date = "2026-12-01"
+reason = "Audit RT/HID mem::forget calls; receipt or eliminate."
+
+[[debt]]
+lint = "clippy::forget_non_drop"
+level = "absent"
+target_level = "deny"
+owner = "rt,hid"
+target_pr = "panic-debt/unsafe-receipts"
+target_date = "2026-12-01"
+reason = "Same as mem_forget."
+
+[[debt]]
+lint = "clippy::drop_non_drop"
+level = "absent"
+target_level = "deny"
+owner = "rt,hid"
+target_pr = "panic-debt/unsafe-receipts"
+target_date = "2026-12-01"
+reason = "Same as mem_forget."
+
+[[debt]]
+lint = "clippy::undocumented_unsafe_blocks"
+level = "absent"
+target_level = "deny"
+owner = "rt,hid"
+target_pr = "panic-debt/unsafe-receipts"
+target_date = "2026-12-01"
+reason = "RT/HID/FFI islands receipted with SAFETY comments first."
+
+[[debt]]
+lint = "clippy::multiple_unsafe_ops_per_block"
+level = "absent"
+target_level = "deny"
+owner = "rt,hid"
+target_pr = "panic-debt/unsafe-receipts"
+target_date = "2026-12-01"
+reason = "Split RT/HID unsafe blocks alongside SAFETY comments."
+
+# --- Numeric correctness (target: deny) ------------------------------------
+
+[[debt]]
+lint = "clippy::invalid_upcast_comparisons"
+level = "absent"
+target_level = "deny"
+owner = "ffb,calibration"
+target_pr = "panic-debt/numeric"
+target_date = "2026-12-01"
+reason = "Audit numeric upcasts in FFB/calibration first."
+
+[[debt]]
+lint = "clippy::cast_nan_to_int"
+level = "absent"
+target_level = "deny"
+owner = "ffb,calibration"
+target_pr = "panic-debt/numeric"
+target_date = "2026-12-01"
+reason = "Audit float-to-int casts."
+
+[[debt]]
+lint = "clippy::cast_enum_truncation"
+level = "absent"
+target_level = "deny"
+owner = "ffb,calibration"
+target_pr = "panic-debt/numeric"
+target_date = "2026-12-01"
+reason = "Audit enum-to-int casts."
+
+[[debt]]
+lint = "clippy::float_cmp"
+level = "absent"
+target_level = "deny"
+owner = "ffb,calibration"
+target_pr = "panic-debt/numeric"
+target_date = "2026-12-01"
+reason = "Calibration / FFB curve code needs explicit epsilon helpers."
+
+[[debt]]
+lint = "clippy::float_cmp_const"
+level = "absent"
+target_level = "deny"
+owner = "ffb,calibration"
+target_pr = "panic-debt/numeric"
+target_date = "2026-12-01"
+reason = "Same as float_cmp."
+
+[[debt]]
+lint = "clippy::float_equality_without_abs"
+level = "absent"
+target_level = "deny"
+owner = "ffb,calibration"
+target_pr = "panic-debt/numeric"
+target_date = "2026-12-01"
+reason = "Same as float_cmp."
+
+[[debt]]
+lint = "clippy::lossy_float_literal"
+level = "absent"
+target_level = "deny"
+owner = "ffb,calibration"
+target_pr = "panic-debt/numeric"
+target_date = "2026-12-01"
+reason = "Curve coefficient literals reviewed for precision."
+
+# --- File / process / path footguns (target: deny) -------------------------
+
+[[debt]]
+lint = "clippy::suspicious_open_options"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "panic-debt/file-process"
+target_date = "2026-11-15"
+reason = "Audit open option combinations."
+
+[[debt]]
+lint = "clippy::path_buf_push_overwrite"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "panic-debt/file-process"
+target_date = "2026-11-15"
+reason = "Audit PathBuf::push of absolute paths."
+
+[[debt]]
+lint = "clippy::join_absolute_paths"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "panic-debt/file-process"
+target_date = "2026-11-15"
+reason = "Audit Path::join of absolute paths."
+
+[[debt]]
+lint = "clippy::exit"
+level = "absent"
+target_level = "deny"
+owner = "cli"
+target_pr = "policy/strict-clippy-flip"
+target_date = "2026-09-01"
+reason = "Introduced after disallowed-methods carveout for CLI binary entry points lands."
+
+# --- Governance (target: deny) ---------------------------------------------
+
+[[debt]]
+lint = "clippy::allow_attributes"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "policy/expect-with-reason-sweep"
+target_date = "2026-09-15"
+reason = "Introduced after #[allow(...)] -> #[expect(..., reason = ...)] sweep."
+
+[[debt]]
+lint = "clippy::allow_attributes_without_reason"
+level = "absent"
+target_level = "deny"
+owner = "core"
+target_pr = "policy/expect-with-reason-sweep"
+target_date = "2026-09-15"
+reason = "Introduced after #[allow(...)] -> #[expect(..., reason = ...)] sweep."

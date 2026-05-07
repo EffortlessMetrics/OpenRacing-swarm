@@ -29,3 +29,6 @@ racing-wheel-hid-fanatec-protocol = { path = "../hid-fanatec-protocol", version 
 racing-wheel-hid-simagic-protocol = { path = "../hid-simagic-protocol", version = "0.1.0" }
 racing-wheel-hid-thrustmaster-protocol = { path = "../hid-thrustmaster-protocol", version = "0.1.0" }
 racing-wheel-hid-vrs-protocol = { path = "../hid-vrs-protocol", version = "0.1.0" }
+
+[lints]
+workspace = true

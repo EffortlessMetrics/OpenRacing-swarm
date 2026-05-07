@@ -1,0 +1,145 @@
+# OpenRacing Clippy / lint policy (declarative, single source of truth).
+#
+# This file is the policy that `scripts/policy_lint.py` validates.
+# The actual lint levels live in the workspace `Cargo.toml` `[workspace.lints]`
+# block. This file documents what should be there, the planned 1.94/1.95
+# flips, and the staging discipline.
+#
+# Design (see docs/CLIPPY_POLICY.md):
+#   * Deny by default, allow by receipt, expire exceptions, measure drift.
+#   * Clippy is the immediate code-shape detector.
+#   * The semantic no-panic checker is the authoritative exception ledger.
+#   * No bare `#[allow(...)]`; use `#[expect(..., reason = "...")]`.
+#   * No test carveouts in `clippy.toml`.
+#   * No global `-D warnings` until warn-stage debt is intentionally zero.
+
+schema_version = "1.0"
+msrv = "1.85.0"
+target_msrv = "1.93"  # MSRV bump is tracked separately; not yet active.
+
+[policy]
+panic_free_tests = true
+allow_test_carveouts = false
+suppression_style = "expect-with-reason"
+blanket_categories = false
+
+# OpenRacing is a GPU/FFI/numeric/RT racing wheel system, so we use the
+# `numeric_ffi_rt` repo class rather than `pure_safe`. This means:
+#   * unsafe_code = "deny" (NOT forbid; we have HID/USB/RT FFI islands).
+#   * arithmetic_side_effects starts at "warn".
+#   * panic-family stages from "warn" to "deny" after debt is receipted.
+repo_class = "numeric_ffi_rt"
+
+# --- Stage A: allow-stage panic-family lints (current rollout) --------------
+#
+# These are intentionally `allow` in [workspace.lints], not `warn`. The
+# existing CI runs `cargo clippy ... -- -D warnings` for non-test crates,
+# which would promote any new `warn` to a hard error and break smoke /
+# acceptance / soak / cross-platform builds before any burndown PR has
+# landed. The semantic no-panic checker (scripts/policy_no_panic.py)
+# is the authoritative drift reporter for these families during Stage A.
+#
+# Each lint listed here has a corresponding entry in
+# `policy/clippy-debt.toml`, with `level = "allow"` and a `target_pr`
+# that promotes it to `warn` (and then to `deny`) once the relevant
+# burndown lands.
+[stage.a.panic_family]
+unwrap_used = "allow"
+expect_used = "allow"
+panic = "allow"
+todo = "allow"
+unimplemented = "allow"
+unreachable = "allow"
+get_unwrap = "allow"
+unwrap_in_result = "allow"
+panic_in_result_fn = "allow"
+indexing_slicing = "allow"
+string_slice = "allow"
+
+# --- Stage A: hard denies that are safe to ship now -------------------------
+#
+# Stage A introduces NO new managed enforcement at the workspace level.
+# Existing CI already runs `cargo clippy ... -- -D warnings -D clippy::unwrap_used
+# -D clippy::panic -D clippy::expect_used` for non-test crates, so adding
+# new workspace warns/denies risks regressing unrelated jobs. Every
+# panic-family / silent-failure / async / unsafe-memory / numeric /
+# file-process / governance lint is tracked in
+# `policy/clippy-debt.toml` with `level = "absent"` and a `target_pr`
+# that introduces it.
+#
+# The only lints actively enforced at the workspace level today are
+# the two below, both of which are zero-debt and have no expected
+# false positives.
+[stage.a.governance]
+blanket_clippy_restriction_lints = "deny"
+should_panic_without_expect = "deny"
+
+# --- Future stages (allow -> warn -> deny) ----------------------------------
+#
+# `policy/clippy-debt.toml` is the source of truth for the per-lint
+# burndown and promotion schedule. The Stage B / C ratchets happen
+# one PR at a time, each one promoting a single debt entry.
+
+# --- Planned flips for future MSRV bumps ------------------------------------
+
+[[planned]]
+name = "clippy::same_length_and_capacity"
+level = "deny"
+activate_when_msrv = "1.94"
+reason = "Catch raw-parts reconstruction mistakes in HID/protocol parsers."
+
+[[planned]]
+name = "clippy::manual_ilog2"
+level = "warn"
+activate_when_msrv = "1.94"
+reason = "Prefer std integer log helper."
+
+[[planned]]
+name = "clippy::decimal_bitwise_operands"
+level = "warn"
+activate_when_msrv = "1.94"
+reason = "Make bit masks visually inspectable in HID protocol code."
+
+[[planned]]
+name = "clippy::needless_type_cast"
+level = "warn"
+activate_when_msrv = "1.94"
+reason = "Avoid stale numeric type drift after refactors."
+
+[[planned]]
+name = "clippy::disallowed_fields"
+level = "deny"
+activate_when_msrv = "1.95"
+reason = "Ban direct field access across protected RT/safety seams."
+
+[[planned]]
+name = "clippy::manual_checked_ops"
+level = "warn"
+activate_when_msrv = "1.95"
+reason = "Prefer checked arithmetic over manual divide-by-zero guards."
+
+[[planned]]
+name = "clippy::manual_take"
+level = "warn"
+activate_when_msrv = "1.95"
+reason = "Use std ownership helper instead of local reimplementation."
+
+[[planned]]
+name = "clippy::duration_suboptimal_units"
+level = "warn"
+activate_when_msrv = "1.95"
+reason = "Make RT durations legible without mental unit conversion."
+
+# --- Forbidden patterns that must NEVER appear in clippy.toml ---------------
+[forbidden_clippy_toml_keys]
+keys = [
+  "allow-unwrap-in-tests",
+  "allow-expect-in-tests",
+  "allow-panic-in-tests",
+  "allow-indexing-slicing-in-tests",
+  "allow-dbg-in-tests",
+]
+reason = """
+Test carveouts hide debt instead of receipting it. Use
+policy/no-panic-allowlist.toml with owner/reason/expiry instead.
+"""

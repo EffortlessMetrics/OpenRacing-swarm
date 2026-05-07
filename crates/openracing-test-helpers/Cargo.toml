@@ -18,7 +18,6 @@ mock = ["dep:tokio", "dep:async-trait", "dep:parking_lot"]
 tracking = []
 fixtures = ["dep:serde", "dep:serde_json"]
 
-
 [package.metadata.cargo-udeps.ignore]
 normal = ["workspace-hack", "thiserror", "async-trait"]
 
@@ -34,8 +33,5 @@ workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 
-[lints.rust]
-unsafe_op_in_unsafe_fn = "deny"
-
-[lints.clippy]
-unwrap_used = "allow"
+[lints]
+workspace = true

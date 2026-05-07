@@ -47,3 +47,6 @@ rt-validation = []
 [[bench]]
 name = "tracing_overhead"
 harness = false
+
+[lints]
+workspace = true

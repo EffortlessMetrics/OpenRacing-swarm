@@ -30,3 +30,6 @@ workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 insta = { version = "1.46.3", features = ["yaml"] }
 proptest = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros"] }
+
+[lints]
+workspace = true

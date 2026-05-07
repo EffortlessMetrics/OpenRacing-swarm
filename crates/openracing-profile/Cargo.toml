@@ -29,3 +29,6 @@ insta = { workspace = true, features = ["json", "redactions"] }
 proptest = { workspace = true }
 quickcheck = { workspace = true }
 serde_json = { workspace = true }
+
+[lints]
+workspace = true

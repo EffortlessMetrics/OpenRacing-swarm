@@ -9,16 +9,6 @@ repository.workspace = true
 # Lint gates for integration tests
 publish = false
 description = "Integration and acceptance tests for OpenRacing"
-[lints.rust]
-warnings = "deny"
-unused_must_use = "deny"
-rust_2018_idioms = "deny"
-
-[lints.clippy]
-unwrap_used = "deny"
-print_stdout = "deny"
-
-
 [package.metadata.cargo-udeps.ignore]
 normal = ["workspace-hack", "criterion", "mockall", "proptest", "quickcheck", "quickcheck_macros", "statistical", "tokio-test", "tracing-test", "wiremock"]
 
@@ -143,3 +133,6 @@ default = []
 ci-gates = []
 soak-tests = []
 stress-tests = []
+
+[lints]
+workspace = true

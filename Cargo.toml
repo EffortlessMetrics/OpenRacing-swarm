@@ -274,3 +274,55 @@ plugins-native = { owner = "@owner-plug", features = [
 
 [patch.crates-io]
 shared_memory = { path = "third_party/shared_memory" }
+
+# ---------------------------------------------------------------------------
+# Workspace lint policy (Stage A).
+#
+# This block is the single source of truth for active lint levels. The
+# declarative policy lives in `policy/clippy-lints.toml`; the burndown
+# ledger in `policy/clippy-debt.toml`; the panic-family exception ledger
+# in `policy/no-panic-allowlist.toml`; the non-Rust file surface in
+# `policy/non-rust-allowlist.toml`.
+#
+# See docs/CLIPPY_POLICY.md for the staging discipline. In short:
+#
+#   * Existing CI runs `cargo clippy ... -- -D warnings`. Adding a `warn`
+#     for a lint with existing debt would therefore promote it to an
+#     error and break unrelated jobs (smoke / acceptance / soak / ...).
+#     Stage A keeps panic-family and other noisy lints at `allow` here;
+#     the semantic checker (scripts/policy_no_panic.py) is the
+#     authoritative reporter while debt is being burned down. Each lint
+#     gets promoted to `warn` (and then `deny`) only when its
+#     corresponding entry in policy/clippy-debt.toml has burndown ready.
+#   * Hard denies are limited to lints that are zero-debt today or are
+#     obvious correctness bugs (silent failure, async footguns, etc.)
+#     where no existing finding has been observed in any crate.
+#   * `unsafe_code = "deny"` (NOT forbid): OpenRacing has legitimate RT,
+#     HID, and FFI islands receipted with `// SAFETY:` comments.
+#   * No global `-D warnings` change in this PR. The next promotion PR
+#     ratchets debt items one lint at a time.
+#   * No test carveouts in `clippy.toml`. Use the semantic checker.
+# ---------------------------------------------------------------------------
+
+[workspace.lints.rust]
+# Stage A introduces NO new rust-lint enforcement. The existing tree
+# enforces `unsafe_op_in_unsafe_fn` / `unused_must_use` / `static_mut_refs`
+# via per-file `#![deny(...)]` attributes in production crates and
+# `RUSTFLAGS="-D warnings -D unused_must_use"` in CI. Adding workspace-
+# level denies here would either be redundant or risk new regressions in
+# crates that currently pass under those rules.
+
+[workspace.lints.clippy]
+# Stage A is intentionally empty at the workspace level for managed
+# lints. Every panic-family / silent-failure / async / unsafe-memory /
+# numeric / file-process / governance lint listed in
+# `policy/clippy-debt.toml` is promoted from `allow` -> `warn` (and then
+# `deny`) one PR at a time, so each burndown can be reviewed in
+# isolation. The semantic no-panic checker
+# (`scripts/policy_no_panic.py`) is the authoritative drift
+# reporter while debt is being burned down.
+#
+# The two hard denies below are zero-debt today and have no expected
+# false positives:
+blanket_clippy_restriction_lints = "deny"
+should_panic_without_expect = "deny"

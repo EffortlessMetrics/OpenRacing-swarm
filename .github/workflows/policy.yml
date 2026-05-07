@@ -1,0 +1,45 @@
+name: policy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    name: Lint / file / no-panic policy
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Stage A: these run and report drift but are non-blocking unless
+      # `--strict` is passed or a hard rule (test carveout, missing
+      # workspace-lint inheritance, expired allowlist entry) is violated.
+      # See docs/CLIPPY_POLICY.md, docs/NO_PANIC_POLICY.md, docs/FILE_POLICY.md.
+      - name: Lint policy (workspace lint inheritance, no test carveouts)
+        run: python scripts/policy_lint.py
+
+      - name: File policy (non-Rust surface)
+        run: python scripts/policy_file.py
+
+      - name: No-panic family checker (Stage A: report-only)
+        run: python scripts/policy_no_panic.py
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: policy-reports
+          path: |
+            target/file-policy.json
+            target/file-policy.md
+            target/no-panic-report.json
+            target/no-panic-report.md
+          if-no-files-found: ignore

@@ -26,3 +26,6 @@ workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 [dev-dependencies]
 proptest = { workspace = true }
 insta = { version = "1.46.3", features = ["yaml"] }
+
+[lints]
+workspace = true
