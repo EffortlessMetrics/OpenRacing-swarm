@@ -10,6 +10,9 @@
 [![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://www.apple.com/macos)
 [![Rust](https://img.shields.io/badge/rust-nightly-orange.svg)](https://www.rust-lang.org)
 
+> [!NOTE]
+> **Coverage**: Codecov is execution-surface evidence only. See [Coverage](docs/ci/coverage.md) for what the badge does and does not claim.
+
 > [!IMPORTANT]
 > **Project status: pre-validation**
 >
