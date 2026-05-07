@@ -119,6 +119,58 @@ jobs:
           name: openracing-rust-core
           fail_ci_if_error: false
 
+      - name: Write coverage receipt
+        if: always()
+        run: |
+          mkdir -p target/coverage
+          python3 - <<'PY'
+          import json
+          import pathlib
+          receipt = {
+              "schema_version": 1,
+              "repo": "OpenRacing",
+              "lane": "coverage",
+              "tool": "cargo-llvm-cov",
+              "flag": "rust-core",
+              "workflow": "Code Coverage",
+              "artifacts": {
+                  "codecov_json": pathlib.Path("codecov.json").exists(),
+                  "coverage_summary": pathlib.Path("coverage-summary.txt").exists(),
+              },
+              "claim_boundary": [
+                  "execution_surface_only",
+                  "not_realtime_deadline_proof",
+                  "not_hardware_correctness",
+                  "not_simulator_adapter_correctness",
+                  "not_force_feedback_safety",
+                  "not_hil_readiness",
+                  "not_bdd_completeness",
+                  "not_fuzz_robustness",
+                  "not_release_readiness"
+              ],
+          }
+          pathlib.Path("target/coverage/coverage-receipt.json").write_text(
+              json.dumps(receipt, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Summarize coverage artifacts
+        if: always()
+        run: |
+          {
+            echo "## Coverage"
+            echo ""
+            echo "| Artifact | Present |"
+            echo "| --- | ---: |"
+            echo "| codecov.json | $([ -s codecov.json ] && echo yes || echo no) |"
+            echo "| coverage-summary.txt | $([ -s coverage-summary.txt ] && echo yes || echo no) |"
+            echo "| coverage-receipt.json | $([ -s target/coverage/coverage-receipt.json ] && echo yes || echo no) |"
+            echo ""
+            echo "Codecov flag: \`rust-core\`"
+            echo "Claim boundary: execution-surface evidence only."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -126,4 +178,5 @@ jobs:
           path: |
             codecov.json
             coverage-summary.txt
+            target/coverage/coverage-receipt.json
           retention-days: 30
