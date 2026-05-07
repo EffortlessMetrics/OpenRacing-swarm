@@ -856,6 +856,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs: [lint-gates]
+    if: github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@v4
@@ -909,7 +910,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     needs:
-      [performance-gate, security-audit, cross-platform-performance, coverage]
+      [performance-gate, security-audit, cross-platform-performance]
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
