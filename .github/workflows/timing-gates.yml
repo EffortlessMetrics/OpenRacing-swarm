@@ -1,0 +1,56 @@
+name: Timing Gates
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * *"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  OPENRACING_SKIP_TIMING_GUARANTEES: "0"
+
+jobs:
+  linux-timing:
+    name: Linux Timing Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev pkg-config python3
+
+      - name: Request performance governor
+        run: |
+          sudo systemctl disable ondemand 2>/dev/null || true
+          sudo cpufreq-set -g performance 2>/dev/null || true
+
+      - name: Build RT profile
+        run: cargo build --profile rt --bin wheeld --locked
+
+      - name: Run strict RT timing benchmark
+        env:
+          BENCHMARK_JSON_OUTPUT: "1"
+          BENCHMARK_JSON_PATH: bench_results.json
+        run: cargo bench --bench rt_timing --locked
+
+      - name: Validate strict timing gates
+        run: python3 scripts/validate_performance.py bench_results.json --strict --verbose
+
+      - name: Upload timing artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: timing-gate-results-${{ github.sha }}
+          path: bench_results.json

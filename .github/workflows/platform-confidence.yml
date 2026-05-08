@@ -1,0 +1,81 @@
+name: Platform Confidence
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 8 * * 1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  windows-smoke:
+    name: Windows Platform Smoke
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check Windows service and CLI
+        run: |
+          cargo check -p wheelctl --locked
+          cargo check -p racing-wheel-service --locked
+
+      - name: Check plugin host on Windows
+        run: cargo check -p racing-wheel-plugins --locked
+
+      - name: Run Windows-specific service smoke
+        run: cargo test -p racing-wheel-service game_integration_e2e_tests::tests::test_error_handling --locked
+
+  macos-smoke:
+    name: macOS Platform Smoke
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check macOS service and CLI
+        run: |
+          cargo check -p wheelctl --locked
+          cargo check -p racing-wheel-service --locked
+
+      - name: Check plugin host on macOS
+        run: cargo check -p racing-wheel-plugins --locked
+
+  linux-ui-packaging-smoke:
+    name: Linux UI Packaging Smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install UI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libudev-dev \
+            pkg-config \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Check UI package build
+        run: cargo build -p racing-wheel-ui --release --locked

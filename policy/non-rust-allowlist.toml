@@ -179,7 +179,7 @@ path = "docs/ci/coverage.md"
 kind = "ci_docs"
 owner = "release/ci"
 surface = "docs"
-classification = "docs"
+classification = "production"
 reason = "Documents Codecov claim boundaries and verification expectations."
 covered_by = ["git diff --check"]
 

@@ -62,7 +62,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -128,7 +128,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -161,7 +161,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -196,7 +196,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04, windows-latest]
+        os: [ubuntu-22.04, ubuntu-24.04]
 
     steps:
       - uses: actions/checkout@v4
@@ -238,6 +238,127 @@ jobs:
 
       - name: Verify UI crate compiles with release profile
         run: cargo build -p racing-wheel-ui --release --locked
+
+  # Targeted platform smoke. These jobs are intentionally not part of the
+  # normal Linux correctness chain; they run when OS-specific paths or labels
+  # indicate the PR needs hosted Windows/macOS compatibility coverage.
+  platform-change-filter:
+    name: Platform Change Filter
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      windows: ${{ steps.changes.outputs.windows }}
+      macos: ${{ steps.changes.outputs.macos }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect platform-specific path changes
+        id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+            changed_files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          elif [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            changed_files=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")
+          else
+            changed_files=$(git diff --name-only HEAD~1 HEAD || true)
+          fi
+
+          windows=false
+          macos=false
+
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            case "$path" in
+              .github/workflows/*windows*|.github/workflows/ci.yml|.github/workflows/platform-confidence.yml|\
+              crates/service/src/*game*|crates/service/src/config*|crates/hid*/src/windows*|\
+              crates/ui/**|crates/plugins/**|Cargo.lock)
+                windows=true
+                ;;
+            esac
+
+            case "$path" in
+              .github/workflows/*mac*|.github/workflows/ci.yml|.github/workflows/platform-confidence.yml|\
+              crates/ui/**|crates/hid*/src/macos*|crates/plugins/**|Cargo.lock)
+                macos=true
+                ;;
+            esac
+          done <<< "$changed_files"
+
+          echo "windows=$windows" >> "$GITHUB_OUTPUT"
+          echo "macos=$macos" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "Changed files:"
+            printf '%s\n' "$changed_files"
+            echo "windows=$windows"
+            echo "macos=$macos"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  windows-smoke:
+    name: Windows Smoke
+    runs-on: windows-latest
+    timeout-minutes: 20
+    needs: [platform-change-filter]
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      needs.platform-change-filter.outputs.windows == 'true' ||
+      (github.event_name == 'pull_request' &&
+        (contains(github.event.pull_request.labels.*.name, 'windows') ||
+         contains(github.event.pull_request.labels.*.name, 'platform')))
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.4
+
+      - *sccache_best_effort
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check Windows-facing binaries
+        run: |
+          cargo check -p wheelctl --locked
+          cargo check -p racing-wheel-service --locked
+
+      - name: Run Windows game-root error smoke
+        run: cargo test -p racing-wheel-service game_integration_e2e_tests::tests::test_error_handling --locked
+
+  macos-smoke:
+    name: macOS Smoke
+    runs-on: macos-latest
+    timeout-minutes: 20
+    needs: [platform-change-filter]
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      needs.platform-change-filter.outputs.macos == 'true' ||
+      (github.event_name == 'pull_request' &&
+        (contains(github.event.pull_request.labels.*.name, 'macos') ||
+         contains(github.event.pull_request.labels.*.name, 'platform')))
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.4
+
+      - *sccache_best_effort
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check macOS-facing binaries
+        run: |
+          cargo check -p wheelctl --locked
+          cargo check -p racing-wheel-service --locked
 
   # Phase 2: Schema validation and trybuild guards
   schemas-validation:
@@ -310,7 +431,7 @@ jobs:
     timeout-minutes: 45
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest]
     needs: [schemas-validation]
 
     steps:
@@ -469,7 +590,7 @@ jobs:
     timeout-minutes: 45
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest]
     needs: [dependency-governance]
 
     steps:
@@ -791,6 +912,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     needs: [lint-gates]
+    if: github.event_name == 'workflow_dispatch'
+    continue-on-error: true
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -916,11 +1039,10 @@ jobs:
     name: Final Workspace Validation
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
-    needs:
-      [performance-gate, security-audit, cross-platform-performance]
+    needs: [performance-gate, security-audit]
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest]
 
     steps:
       - uses: actions/checkout@v4

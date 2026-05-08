@@ -1,0 +1,119 @@
+name: Hardware Receipt Verification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ci/hardware/**"
+      - "crates/hid-moza-protocol/fixtures/**"
+      - "docs/hardware/**"
+      - ".github/workflows/hardware-receipts.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ci/hardware/**"
+      - "crates/hid-moza-protocol/fixtures/**"
+      - "docs/hardware/**"
+      - ".github/workflows/hardware-receipts.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  moza-receipts:
+    name: Moza Receipt Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev pkg-config python3
+
+      - name: Detect changed dated hardware lanes
+        id: lanes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+            changed_files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            changed_files=$(find ci/hardware -mindepth 3 -maxdepth 3 -name manifest.json -print 2>/dev/null || true)
+          elif [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            changed_files=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")
+          else
+            changed_files=$(git diff --name-only HEAD~1 HEAD || true)
+          fi
+
+          lanes=$(
+            printf '%s\n' "$changed_files" |
+              awk -F/ '/^ci\/hardware\/[^/]+\/[0-9]{4}-[0-9]{2}-[0-9]{2}\// { print $1 "/" $2 "/" $3 }' |
+              sort -u
+          )
+
+          {
+            echo "lanes<<EOF"
+            printf '%s\n' "$lanes"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ -z "$lanes" ]; then
+            echo "No changed dated hardware lanes detected." >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "Changed dated hardware lanes:"
+              printf '%s\n' "$lanes"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Build receipt verifier
+        run: cargo build -p wheelctl --locked
+
+      - name: Replay Moza parser fixtures
+        run: cargo test -p racing-wheel-hid-moza-protocol --all-features --locked
+
+      - name: Verify changed Moza receipt lanes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          lanes="${{ steps.lanes.outputs.lanes }}"
+          if [ -z "$lanes" ]; then
+            echo "No dated hardware receipt lanes changed; parser fixture replay is the only required check."
+            exit 0
+          fi
+
+          while IFS= read -r lane; do
+            [ -n "$lane" ] || continue
+
+            if [ ! -f "$lane/manifest.json" ]; then
+              echo "::error file=$lane/manifest.json::Changed dated hardware lane is missing manifest.json"
+              exit 1
+            fi
+
+            stage=$(
+              python3 -c 'import json, sys; state = json.load(open(sys.argv[1], encoding="utf-8")).get("completion_state"); mapping = {"passive_capture_ready": "passive", "zero_torque_ready": "zero", "real_hardware_smoke_ready": "smoke-ready"}; stage = mapping.get(state); print(stage) if stage else (_ for _ in ()).throw(SystemExit(f"unsupported or unpromoted completion_state: {state!r}"))' "$lane/manifest.json"
+            )
+
+            echo "Verifying $lane at stage $stage"
+            cargo run -p wheelctl --bin wheelctl --locked -- \
+              moza verify-bundle --lane "$lane" --stage "$stage" --json
+            cargo run -p wheelctl --bin wheelctl --locked -- \
+              moza audit-lane --lane "$lane" --stage "$stage" --json
+          done <<< "$lanes"

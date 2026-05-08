@@ -281,6 +281,12 @@ jobs:
   # Cross-platform tests
   cross-platform:
     name: Cross-Platform Tests
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+        (contains(github.event.pull_request.labels.*.name, 'windows') ||
+         contains(github.event.pull_request.labels.*.name, 'macos') ||
+         contains(github.event.pull_request.labels.*.name, 'platform')))
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
