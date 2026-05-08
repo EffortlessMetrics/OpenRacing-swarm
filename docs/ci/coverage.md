@@ -44,6 +44,18 @@ Durable receipts are:
 
 See `codecov.yml` at the repository root for status checks, ignored paths, and Codecov settings.
 
+## Codecov token setup
+
+To enable Codecov uploads to the Codecov dashboard:
+
+1. Go to [codecov.io](https://codecov.io) and sign in with GitHub
+2. Navigate to the OpenRacing repository
+3. Copy the repository upload token
+4. Go to the repository settings → Secrets and variables → Actions
+5. Create a new secret: `CODECOV_TOKEN` = `<token>`
+
+Without this token, coverage artifacts are still generated and uploaded to GitHub Actions, but the Codecov dashboard will not receive updates.
+
 ## Codecov comments
 
 Codecov comments are **disabled**. Coverage status is advisory only and does not block merges.
