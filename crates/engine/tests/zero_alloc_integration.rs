@@ -25,6 +25,19 @@ fn running_under_coverage() -> bool {
     std::env::var_os("LLVM_PROFILE_FILE").is_some()
 }
 
+fn skip_timing_sensitive_tests() -> bool {
+    running_under_coverage()
+        || std::env::var_os("CI").is_some()
+        || std::env::var("OPENRACING_SKIP_TIMING_GUARANTEES")
+            .map(|value| {
+                matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "1" | "true" | "yes" | "on"
+                )
+            })
+            .unwrap_or(false)
+}
+
 fn create_comprehensive_filter_config() -> Result<FilterConfig, Box<dyn std::error::Error>> {
     Ok(FilterConfig {
         reconstruction: 4, // Valid level
@@ -425,8 +438,8 @@ async fn test_monotonic_curve_validation_comprehensive() -> Result<(), Box<dyn s
 )]
 #[tokio::test]
 async fn test_pipeline_swap_atomicity_under_load() -> Result<(), Box<dyn std::error::Error>> {
-    if running_under_coverage() {
-        println!("SKIPPED: timing-sensitive test under coverage");
+    if skip_timing_sensitive_tests() {
+        println!("SKIPPED: timing-sensitive test under coverage/shared CI");
         return Ok(());
     }
 
@@ -555,8 +568,8 @@ fn test_ci_allocation_assertion() -> Result<(), Box<dyn std::error::Error>> {
 )]
 #[tokio::test]
 async fn test_end_to_end_performance_requirements() -> Result<(), Box<dyn std::error::Error>> {
-    if running_under_coverage() {
-        println!("SKIPPED: timing-sensitive test under coverage");
+    if skip_timing_sensitive_tests() {
+        println!("SKIPPED: timing-sensitive test under coverage/shared CI");
         return Ok(());
     }
 

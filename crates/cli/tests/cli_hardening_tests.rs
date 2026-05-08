@@ -376,6 +376,74 @@ mod output_formatting {
     }
 
     #[test]
+    fn moza_verify_bundle_json_failure_stdout_is_single_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().to_str().ok_or("invalid lane path")?;
+        let output = wheelctl()?
+            .args(["--json", "moza", "verify-bundle", "--lane", lane])
+            .output()?;
+
+        assert!(!output.status.success());
+        let json = parse_json(&output.stdout)?;
+        assert_eq!(
+            json.get("success").and_then(serde_json::Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            json.get("command").and_then(serde_json::Value::as_str),
+            Some("wheelctl moza verify-bundle")
+        );
+        assert!(
+            json.get("next_commands")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|commands| !commands.is_empty()),
+            "failed verifier receipt should include next_commands"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains("\"error\""),
+            "receipt failure should not append a second JSON error object: {stderr}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn moza_validate_capture_json_failure_stdout_is_single_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let capture = dir.path().join("bad-capture.jsonl");
+        std::fs::write(
+            &capture,
+            r#"{"command":"wheelctl moza capture-input","no_ffb_writes":true,"no_output_reports":true,"no_feature_reports":true,"no_serial_config_commands":true,"no_firmware_or_dfu_commands":true,"vendor_id":"0x346E","product_id":"0x0014","report_len":1,"data_hex":"01"}"#,
+        )?;
+        let capture = capture.to_str().ok_or("invalid capture path")?;
+        let output = wheelctl()?
+            .args(["--json", "moza", "validate-capture", "--capture", capture])
+            .output()?;
+
+        assert!(!output.status.success());
+        let json = parse_json(&output.stdout)?;
+        assert_eq!(
+            json.get("success").and_then(serde_json::Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            json.get("command").and_then(serde_json::Value::as_str),
+            Some("wheelctl moza validate-capture")
+        );
+        assert_eq!(
+            json.get("rejected_reports")
+                .and_then(serde_json::Value::as_u64),
+            Some(1)
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains("\"error\""),
+            "receipt failure should not append a second JSON error object: {stderr}"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn game_list_human_output_not_json() -> TestResult {
         let output = wheelctl()?.args(["game", "list"]).output()?;
         if output.status.success() {

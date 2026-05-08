@@ -976,6 +976,44 @@ mod help_snapshots {
         insta::assert_snapshot!("game_configure_help", stdout);
         Ok(())
     }
+
+    #[test]
+    fn snapshot_moza_help() -> TestResult {
+        let output = wheelctl()?.args(["moza", "--help"]).output()?;
+        let stdout = normalize_output(&String::from_utf8_lossy(&output.stdout));
+        insta::assert_snapshot!("moza_help", stdout);
+        Ok(())
+    }
+
+    #[test]
+    fn snapshot_moza_pit_house_proof_help() -> TestResult {
+        let output = wheelctl()?
+            .args(["moza", "pit-house-proof", "--help"])
+            .output()?;
+        let stdout = normalize_output(&String::from_utf8_lossy(&output.stdout));
+        insta::assert_snapshot!("moza_pit_house_proof_help", stdout);
+        Ok(())
+    }
+
+    #[test]
+    fn snapshot_moza_simulator_telemetry_proof_help() -> TestResult {
+        let output = wheelctl()?
+            .args(["moza", "simulator-telemetry-proof", "--help"])
+            .output()?;
+        let stdout = normalize_output(&String::from_utf8_lossy(&output.stdout));
+        insta::assert_snapshot!("moza_simulator_telemetry_proof_help", stdout);
+        Ok(())
+    }
+
+    #[test]
+    fn snapshot_moza_simulator_ffb_smoke_help() -> TestResult {
+        let output = wheelctl()?
+            .args(["moza", "simulator-ffb-smoke", "--help"])
+            .output()?;
+        let stdout = normalize_output(&String::from_utf8_lossy(&output.stdout));
+        insta::assert_snapshot!("moza_simulator_ffb_smoke_help", stdout);
+        Ok(())
+    }
 }
 
 // ===========================================================================

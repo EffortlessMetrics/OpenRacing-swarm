@@ -772,6 +772,8 @@ fn proto_conversion_rejects_invalid_device_type() {
             min_report_period_us: 1000,
         }),
         state: 1,
+        vendor_id: 0,
+        product_id: 0,
     };
     let result: Result<Device, ConversionError> = wire.try_into();
     assert!(result.is_err());
@@ -787,6 +789,8 @@ fn proto_conversion_rejects_missing_capabilities() {
         r#type: 1,
         capabilities: None, // missing required field
         state: 1,
+        vendor_id: 0,
+        product_id: 0,
     };
     let result: Result<Device, ConversionError> = wire.try_into();
     assert!(result.is_err());

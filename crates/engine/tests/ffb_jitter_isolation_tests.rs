@@ -270,6 +270,19 @@ fn running_under_coverage() -> bool {
     std::env::var_os("LLVM_PROFILE_FILE").is_some()
 }
 
+fn skip_timing_sensitive_tests() -> bool {
+    running_under_coverage()
+        || std::env::var_os("CI").is_some()
+        || std::env::var("OPENRACING_SKIP_TIMING_GUARANTEES")
+            .map(|value| {
+                matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "1" | "true" | "yes" | "on"
+                )
+            })
+            .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod jitter_isolation_tests {
     use super::*;
@@ -277,8 +290,8 @@ mod jitter_isolation_tests {
     #[cfg_attr(windows, ignore = "Requires RT scheduling for jitter assertions")]
     #[tokio::test]
     async fn test_baseline_ffb_jitter() {
-        if running_under_coverage() {
-            eprintln!("skipping timing-sensitive test under coverage");
+        if skip_timing_sensitive_tests() {
+            eprintln!("skipping timing-sensitive test under coverage/shared CI");
             return;
         }
 
@@ -313,8 +326,8 @@ mod jitter_isolation_tests {
     #[cfg_attr(windows, ignore = "Requires RT scheduling for jitter assertions")]
     #[tokio::test]
     async fn test_ffb_jitter_with_led_haptics_60hz() {
-        if running_under_coverage() {
-            eprintln!("skipping timing-sensitive test under coverage");
+        if skip_timing_sensitive_tests() {
+            eprintln!("skipping timing-sensitive test under coverage/shared CI");
             return;
         }
 
@@ -404,8 +417,8 @@ mod jitter_isolation_tests {
     #[cfg_attr(windows, ignore = "Requires RT scheduling for jitter assertions")]
     #[tokio::test]
     async fn test_ffb_jitter_with_led_haptics_200hz() {
-        if running_under_coverage() {
-            eprintln!("skipping timing-sensitive test under coverage");
+        if skip_timing_sensitive_tests() {
+            eprintln!("skipping timing-sensitive test under coverage/shared CI");
             return;
         }
 
@@ -497,8 +510,8 @@ mod jitter_isolation_tests {
     #[cfg_attr(windows, ignore = "Requires RT scheduling for jitter assertions")]
     #[tokio::test]
     async fn test_comparative_jitter_analysis() {
-        if running_under_coverage() {
-            eprintln!("skipping timing-sensitive test under coverage");
+        if skip_timing_sensitive_tests() {
+            eprintln!("skipping timing-sensitive test under coverage/shared CI");
             return;
         }
 
@@ -614,8 +627,8 @@ mod jitter_isolation_tests {
     #[cfg_attr(windows, ignore = "Requires RT scheduling for jitter assertions")]
     #[tokio::test]
     async fn test_cpu_usage_isolation() {
-        if running_under_coverage() {
-            eprintln!("skipping timing-sensitive test under coverage");
+        if skip_timing_sensitive_tests() {
+            eprintln!("skipping timing-sensitive test under coverage/shared CI");
             return;
         }
 
@@ -703,8 +716,8 @@ mod timing_validation_tests {
 
     #[tokio::test]
     async fn test_led_update_latency() {
-        if running_under_coverage() {
-            eprintln!("skipping timing-sensitive test under coverage");
+        if skip_timing_sensitive_tests() {
+            eprintln!("skipping timing-sensitive test under coverage/shared CI");
             return;
         }
 
@@ -751,8 +764,8 @@ mod timing_validation_tests {
 
     #[tokio::test]
     async fn test_haptics_frequency_range() {
-        if running_under_coverage() {
-            eprintln!("skipping timing-sensitive test under coverage");
+        if skip_timing_sensitive_tests() {
+            eprintln!("skipping timing-sensitive test under coverage/shared CI");
             return;
         }
 

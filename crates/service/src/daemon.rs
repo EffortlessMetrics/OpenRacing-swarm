@@ -121,6 +121,7 @@ impl ServiceConfig {
 pub struct ServiceDaemon {
     config: ServiceConfig,
     flags: crate::FeatureFlags,
+    hardware_lane: Option<String>,
     shutdown_tx: broadcast::Sender<()>,
     is_running: Arc<AtomicBool>,
     restart_count: Arc<std::sync::atomic::AtomicU32>,
@@ -135,6 +136,7 @@ impl ServiceDaemon {
         Ok(Self {
             config,
             flags: crate::FeatureFlags::default(),
+            hardware_lane: None,
             shutdown_tx,
             is_running: Arc::new(AtomicBool::new(false)),
             restart_count: Arc::new(std::sync::atomic::AtomicU32::new(0)),
@@ -146,6 +148,17 @@ impl ServiceDaemon {
     pub async fn new_with_flags(config: ServiceConfig, flags: crate::FeatureFlags) -> Result<Self> {
         let mut daemon = Self::new(config).await?;
         daemon.flags = flags;
+        Ok(daemon)
+    }
+
+    /// Create new service daemon with feature flags and a hardware validation lane.
+    pub async fn new_with_flags_and_hardware_lane(
+        config: ServiceConfig,
+        flags: crate::FeatureFlags,
+        hardware_lane: Option<String>,
+    ) -> Result<Self> {
+        let mut daemon = Self::new_with_flags(config, flags).await?;
+        daemon.hardware_lane = hardware_lane;
         Ok(daemon)
     }
 
@@ -253,7 +266,8 @@ impl ServiceDaemon {
             wheel_service.safety_service().clone(),
             game_service,
             health_tx,
-        );
+        )
+        .with_hardware_lane(self.hardware_lane.clone());
 
         // Start gRPC IPC server
         let grpc_addr = "127.0.0.1:50051";
@@ -490,6 +504,29 @@ mod tests {
         .await?;
         assert!(daemon2.flags.enable_virtual_devices);
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_daemon_new_with_flags_and_hardware_lane() -> anyhow::Result<()> {
+        let config = ServiceConfig::default();
+        let flags = crate::FeatureFlags {
+            enable_virtual_devices: true,
+            ..Default::default()
+        };
+
+        let daemon = ServiceDaemon::new_with_flags_and_hardware_lane(
+            config,
+            flags,
+            Some("ci/hardware/moza-r5/2026-05-06".to_string()),
+        )
+        .await?;
+
+        assert!(daemon.flags.enable_virtual_devices);
+        assert_eq!(
+            daemon.hardware_lane.as_deref(),
+            Some("ci/hardware/moza-r5/2026-05-06")
+        );
         Ok(())
     }
 }

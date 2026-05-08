@@ -1,0 +1,33 @@
+---
+source: crates/cli/tests/cli_comprehensive_e2e_tests.rs
+expression: stdout
+---
+Build a Pit House coexistence receipt from observed case artifact files
+
+Usage: wheelctl moza pit-house-proof [OPTIONS] --lane <LANE> --closed-artifact <CLOSED_ARTIFACT> --open-standard-artifact <OPEN_STANDARD_ARTIFACT> --direct-artifact <DIRECT_ARTIFACT> --mode-change-artifact <MODE_CHANGE_ARTIFACT> --firmware-page-artifact <FIRMWARE_PAGE_ARTIFACT>
+
+Options:
+      --json
+          Output in JSON format for machine parsing
+      --lane <LANE>
+          Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06
+      --closed-artifact <CLOSED_ARTIFACT>
+          Artifact for Pit House closed case
+  -v, --verbose...
+          Verbose logging
+      --open-standard-artifact <OPEN_STANDARD_ARTIFACT>
+          Artifact for Pit House open, idle, standard-mode case
+      --direct-artifact <DIRECT_ARTIFACT>
+          Artifact for Pit House open, direct-mode case
+      --mode-change-artifact <MODE_CHANGE_ARTIFACT>
+          Artifact for Pit House mode-change-during-run case
+      --firmware-page-artifact <FIRMWARE_PAGE_ARTIFACT>
+          Artifact for Pit House firmware/update page case
+      --shared-control-risk <SHARED_CONTROL_RISK>
+          Shared-control risk outcome: detected, warned, or documented_limit [default: warned]
+      --json-out <JSON_OUT>
+          Write the Pit House proof receipt to this JSON file
+      --overwrite
+          Replace an existing proof receipt
+  -h, --help
+          Print help

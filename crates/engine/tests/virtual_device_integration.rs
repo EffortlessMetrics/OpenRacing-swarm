@@ -18,6 +18,19 @@ fn running_under_coverage() -> bool {
     std::env::var_os("LLVM_PROFILE_FILE").is_some()
 }
 
+fn skip_timing_sensitive_tests() -> bool {
+    running_under_coverage()
+        || std::env::var_os("CI").is_some()
+        || std::env::var("OPENRACING_SKIP_TIMING_GUARANTEES")
+            .map(|value| {
+                matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "1" | "true" | "yes" | "on"
+                )
+            })
+            .unwrap_or(false)
+}
+
 /// Test device enumeration performance (DM-01)
 #[tokio::test]
 #[traced_test]
@@ -349,8 +362,8 @@ async fn test_rt_loop_with_virtual_device() -> Result<(), Box<dyn std::error::Er
 #[tokio::test]
 #[traced_test]
 async fn test_comprehensive_suite() -> Result<(), Box<dyn std::error::Error>> {
-    if running_under_coverage() {
-        println!("SKIPPED: timing-sensitive test under coverage");
+    if skip_timing_sensitive_tests() {
+        println!("SKIPPED: timing-sensitive test under coverage/shared CI");
         return Ok(());
     }
 

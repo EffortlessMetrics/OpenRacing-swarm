@@ -6,6 +6,7 @@
 #![deny(static_mut_refs)]
 
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
 
 pub fn parse_hex_u16(s: &str) -> Result<u16, String> {
     let s = s.trim_start_matches("0x").trim_start_matches("0X");
@@ -24,6 +25,163 @@ pub struct CaptureFile {
     pub vendor_id: String,
     pub product_id: String,
     pub captures: Vec<CaptureReport>,
+}
+
+/// Report metadata derived directly from a HID report descriptor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HidReportDescriptorMetadata {
+    pub input_report_lengths: Vec<usize>,
+    pub output_report_ids: Vec<u8>,
+    pub output_reports: Vec<HidReportDescriptorReport>,
+    pub feature_report_ids: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HidReportDescriptorReport {
+    pub report_id: u8,
+    pub report_len: usize,
+}
+
+impl HidReportDescriptorMetadata {
+    pub fn is_empty(&self) -> bool {
+        self.input_report_lengths.is_empty()
+            && self.output_report_ids.is_empty()
+            && self.output_reports.is_empty()
+            && self.feature_report_ids.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct ReportDescriptorGlobalState {
+    report_size_bits: usize,
+    report_count: usize,
+    report_id: u8,
+}
+
+/// Parse a HID report descriptor enough to derive report IDs and byte lengths.
+///
+/// This intentionally extracts only the bounded metadata needed for validation
+/// receipts: report size, report count, report ID, and Input/Output/Feature
+/// main items. Malformed or truncated descriptors return `None`.
+pub fn parse_hid_report_descriptor_metadata(bytes: &[u8]) -> Option<HidReportDescriptorMetadata> {
+    let mut state = ReportDescriptorGlobalState::default();
+    let mut stack = Vec::new();
+    let mut input_bits = BTreeMap::new();
+    let mut output_bits = BTreeMap::new();
+    let mut feature_bits = BTreeMap::new();
+    let mut index = 0usize;
+
+    while index < bytes.len() {
+        let prefix = bytes[index];
+        index += 1;
+
+        if prefix == 0xFE {
+            let size = usize::from(*bytes.get(index)?);
+            index = index.checked_add(2)?;
+            index = index.checked_add(size)?;
+            if index > bytes.len() {
+                return None;
+            }
+            continue;
+        }
+
+        let data_len = match prefix & 0x03 {
+            0 => 0,
+            1 => 1,
+            2 => 2,
+            3 => 4,
+            _ => return None,
+        };
+        let end = index.checked_add(data_len)?;
+        let data = bytes.get(index..end)?;
+        index = end;
+
+        let item_type = (prefix >> 2) & 0x03;
+        let tag = (prefix >> 4) & 0x0F;
+        let value = little_endian_u32(data)?;
+
+        match item_type {
+            0 => match tag {
+                0x08 => record_descriptor_main_item(&mut input_bits, state)?,
+                0x09 => record_descriptor_main_item(&mut output_bits, state)?,
+                0x0B => record_descriptor_main_item(&mut feature_bits, state)?,
+                _ => {}
+            },
+            1 => match tag {
+                0x07 => state.report_size_bits = usize::try_from(value).ok()?,
+                0x08 => state.report_id = u8::try_from(value).ok().filter(|id| *id != 0)?,
+                0x09 => state.report_count = usize::try_from(value).ok()?,
+                0x0A => stack.push(state),
+                0x0B => state = stack.pop()?,
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+
+    let metadata = HidReportDescriptorMetadata {
+        input_report_lengths: report_lengths_from_bits(&input_bits),
+        output_report_ids: report_ids_from_bits(&output_bits),
+        output_reports: report_metadata_from_bits(&output_bits),
+        feature_report_ids: report_ids_from_bits(&feature_bits),
+    };
+    (!metadata.is_empty()).then_some(metadata)
+}
+
+fn little_endian_u32(bytes: &[u8]) -> Option<u32> {
+    let mut buffer = [0u8; 4];
+    let len = bytes.len();
+    if len > buffer.len() {
+        return None;
+    }
+    buffer[..len].copy_from_slice(bytes);
+    Some(u32::from_le_bytes(buffer))
+}
+
+fn record_descriptor_main_item(
+    reports: &mut BTreeMap<u8, usize>,
+    state: ReportDescriptorGlobalState,
+) -> Option<()> {
+    let bits = state.report_size_bits.checked_mul(state.report_count)?;
+    if bits == 0 {
+        return Some(());
+    }
+    let entry = reports.entry(state.report_id).or_insert(0);
+    *entry = entry.checked_add(bits)?;
+    Some(())
+}
+
+fn report_lengths_from_bits(reports: &BTreeMap<u8, usize>) -> Vec<usize> {
+    reports
+        .iter()
+        .filter_map(|(report_id, bits)| {
+            let data_bytes = bits.div_ceil(8);
+            data_bytes.checked_add(usize::from(*report_id != 0))
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn report_metadata_from_bits(reports: &BTreeMap<u8, usize>) -> Vec<HidReportDescriptorReport> {
+    reports
+        .iter()
+        .map(|(report_id, bits)| {
+            let data_bytes = bits.div_ceil(8);
+            HidReportDescriptorReport {
+                report_id: *report_id,
+                report_len: data_bytes + usize::from(*report_id != 0),
+            }
+        })
+        .collect()
+}
+
+fn report_ids_from_bits(reports: &BTreeMap<u8, usize>) -> Vec<u8> {
+    reports
+        .keys()
+        .copied()
+        .filter(|report_id| *report_id != 0)
+        .collect()
 }
 
 // ── Capture metadata for community sharing format ────────────────────────────
@@ -298,5 +456,128 @@ pub fn to_shared_format(
                 data: c.data.clone(),
             })
             .collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    #[test]
+    fn parse_hid_report_descriptor_metadata_extracts_reports() -> TestResult {
+        let descriptor = [
+            0x85, 0x01, 0x75, 0x08, 0x95, 0x06, 0x81, 0x02, 0x85, 0x02, 0x75, 0x08, 0x95, 0x1E,
+            0x81, 0x02, 0x85, 0x20, 0x75, 0x08, 0x95, 0x07, 0x91, 0x02, 0x85, 0x03, 0x75, 0x08,
+            0x95, 0x03, 0xB1, 0x02, 0x85, 0x11, 0x75, 0x08, 0x95, 0x03, 0xB1, 0x02,
+        ];
+
+        let metadata = parse_hid_report_descriptor_metadata(&descriptor)
+            .ok_or("expected descriptor metadata")?;
+
+        assert_eq!(metadata.input_report_lengths, vec![7, 31]);
+        assert_eq!(metadata.output_report_ids, vec![0x20]);
+        assert_eq!(
+            metadata.output_reports,
+            vec![HidReportDescriptorReport {
+                report_id: 0x20,
+                report_len: 8,
+            }]
+        );
+        assert_eq!(metadata.feature_report_ids, vec![0x03, 0x11]);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_hid_report_descriptor_metadata_rejects_truncated_items() {
+        let descriptor = [0x85, 0x01, 0x75];
+
+        assert!(parse_hid_report_descriptor_metadata(&descriptor).is_none());
+    }
+
+    #[test]
+    fn parse_hid_report_descriptor_metadata_skips_long_items_and_restores_globals() -> TestResult {
+        let descriptor = [
+            0xFE, 0x02, 0x00, 0xAA, 0xBB, // long item ignored
+            0x85, 0x01, // report ID 1
+            0x75, 0x08, // report size 8 bits
+            0x95, 0x01, // report count 1
+            0x81, 0x02, // input: report 1 length 2 including report ID
+            0xA4, // push globals
+            0x85, 0x20, // report ID 0x20
+            0x95, 0x07, // report count 7
+            0x91, 0x02, // output: report 0x20 length 8 including report ID
+            0xB4, // pop globals, restoring report ID 1/count 1
+            0xB1, 0x02, // feature: report 1
+        ];
+
+        let metadata = parse_hid_report_descriptor_metadata(&descriptor)
+            .ok_or("expected descriptor metadata")?;
+
+        assert_eq!(metadata.input_report_lengths, vec![2]);
+        assert_eq!(metadata.output_report_ids, vec![0x20]);
+        assert_eq!(
+            metadata.output_reports,
+            vec![HidReportDescriptorReport {
+                report_id: 0x20,
+                report_len: 8,
+            }]
+        );
+        assert_eq!(metadata.feature_report_ids, vec![0x01]);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_hid_report_descriptor_metadata_rejects_truncated_long_item() {
+        let descriptor = [0xFE, 0x04, 0x00, 0xAA];
+
+        assert!(parse_hid_report_descriptor_metadata(&descriptor).is_none());
+    }
+
+    #[test]
+    fn parse_hid_report_descriptor_metadata_rejects_zero_report_id() {
+        let descriptor = [0x85, 0x00];
+
+        assert!(parse_hid_report_descriptor_metadata(&descriptor).is_none());
+    }
+
+    #[test]
+    fn parse_hid_report_descriptor_metadata_rejects_unmatched_pop() {
+        let descriptor = [0xB4];
+
+        assert!(parse_hid_report_descriptor_metadata(&descriptor).is_none());
+    }
+
+    #[test]
+    fn parse_hid_report_descriptor_metadata_ignores_zero_bit_main_item() {
+        let descriptor = [0x85, 0x01, 0x75, 0x00, 0x95, 0x04, 0x81, 0x02];
+
+        assert!(parse_hid_report_descriptor_metadata(&descriptor).is_none());
+    }
+
+    #[test]
+    fn parse_hid_report_descriptor_metadata_accepts_wide_items_and_unknown_main_tags() -> TestResult
+    {
+        let descriptor = [
+            0x86, 0x01, 0x00, // report ID 1, encoded as a 2-byte value
+            0x76, 0x08, 0x00, // report size 8 bits, encoded as a 2-byte value
+            0x97, 0x01, 0x00, 0x00, 0x00, // report count 1, encoded as a 4-byte value
+            0xA0, // unknown main item tag, ignored
+            0x81, 0x02, // input report
+        ];
+
+        let metadata = parse_hid_report_descriptor_metadata(&descriptor)
+            .ok_or("expected descriptor metadata")?;
+
+        assert_eq!(metadata.input_report_lengths, vec![2]);
+        assert!(metadata.output_report_ids.is_empty());
+        assert!(metadata.feature_report_ids.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn little_endian_u32_rejects_more_than_four_bytes() {
+        assert!(little_endian_u32(&[1, 2, 3, 4, 5]).is_none());
     }
 }

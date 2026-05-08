@@ -19,8 +19,8 @@ keywords = ["wasm", "runtime", "sandbox", "plugin", "openracing"]
 categories = ["wasm"]
 [dependencies]
 openracing-plugin-abi = { workspace = true }
-wasmtime = "41.0.4"
-wasmtime-wasi = "41.0.4"
+wasmtime = "43.0.2"
+wasmtime-wasi = "43.0.2"
 tokio = { workspace = true, features = ["sync", "time", "fs"] }
 tracing = { workspace = true }
 thiserror = { workspace = true }

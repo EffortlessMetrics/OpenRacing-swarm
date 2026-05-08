@@ -12,6 +12,9 @@ pub enum CliError {
     #[error("Validation error: {0}")]
     ValidationError(String),
 
+    #[error("{0}")]
+    ReceiptFailure(String),
+
     #[error("Service unavailable: {0}")]
     ServiceUnavailable(String),
 
@@ -54,6 +57,12 @@ mod tests {
     fn display_validation_error() {
         let err = CliError::ValidationError("invalid gain".to_string());
         assert_eq!(err.to_string(), "Validation error: invalid gain");
+    }
+
+    #[test]
+    fn display_receipt_failure() {
+        let err = CliError::ReceiptFailure("receipt failed".to_string());
+        assert_eq!(err.to_string(), "receipt failed");
     }
 
     #[test]

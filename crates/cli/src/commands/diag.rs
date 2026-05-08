@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::time::interval;
 
@@ -53,8 +53,21 @@ pub async fn execute(cmd: &DiagCommands, json: bool, endpoint: Option<&str>) -> 
             output,
         } => record_blackbox(&client, device, *duration, output.as_deref(), json).await,
         DiagCommands::Replay { file, detailed } => replay_blackbox(file, json, *detailed).await,
-        DiagCommands::Support { blackbox, output } => {
-            generate_support_bundle(&client, *blackbox, output.as_deref(), json).await
+        DiagCommands::Support {
+            blackbox,
+            moza_lane,
+            output,
+        } => {
+            generate_support_bundle(
+                &client,
+                "wheelctl diag support",
+                *blackbox,
+                None,
+                moza_lane.as_deref(),
+                output.as_deref(),
+                json,
+            )
+            .await
         }
         DiagCommands::Metrics { device, watch } => {
             show_metrics(&client, device.as_deref(), json, *watch).await
@@ -354,9 +367,12 @@ fn recording_duration_ms(recording: &BlackboxRecording) -> u64 {
 }
 
 /// Generate support bundle
-async fn generate_support_bundle(
+pub(crate) async fn generate_support_bundle(
     client: &WheelClient,
+    command: &str,
     include_blackbox: bool,
+    device_filter: Option<&str>,
+    moza_lane: Option<&str>,
     output: Option<&str>,
     json: bool,
 ) -> Result<()> {
@@ -388,16 +404,29 @@ async fn generate_support_bundle(
         pb.finish_with_message("Support bundle created");
     }
 
-    // Mock support bundle creation
+    let devices = filter_support_bundle_devices(client.list_devices().await?, device_filter)?;
+    let moza_lane_path = moza_lane.map(Path::new);
+    let device_statuses = collect_device_statuses(client, &devices, moza_lane_path).await;
+    let moza_status = moza_lane_path.map(crate::commands::moza::support_bundle_status);
+
     let bundle_info = serde_json::json!({
+        "success": true,
+        "command": command,
         "timestamp": chrono::Utc::now(),
+        "no_hid_device_opened": true,
+        "no_ffb_writes": true,
+        "no_serial_config_commands": true,
+        "no_firmware_or_dfu_commands": true,
         "system_info": {
             "os": std::env::consts::OS,
             "arch": std::env::consts::ARCH,
             "version": env!("CARGO_PKG_VERSION")
         },
-        "devices": client.list_devices().await?,
-        "blackbox_included": include_blackbox
+        "devices": devices,
+        "device_statuses": device_statuses,
+        "device_filter": device_filter,
+        "blackbox_included": include_blackbox,
+        "moza_lane": moza_status
     });
 
     fs::write(&output_path, serde_json::to_string_pretty(&bundle_info)?)?;
@@ -408,6 +437,70 @@ async fn generate_support_bundle(
     );
 
     Ok(())
+}
+
+fn filter_support_bundle_devices(
+    devices: Vec<crate::client::DeviceInfo>,
+    device_filter: Option<&str>,
+) -> Result<Vec<crate::client::DeviceInfo>> {
+    let Some(filter) = device_filter else {
+        return Ok(devices);
+    };
+    let normalized_filter = filter.to_ascii_lowercase();
+    let filtered: Vec<_> = devices
+        .into_iter()
+        .filter(|device| {
+            device.id.eq_ignore_ascii_case(filter)
+                || device
+                    .name
+                    .to_ascii_lowercase()
+                    .contains(&normalized_filter)
+        })
+        .collect();
+    if filtered.is_empty() {
+        return Err(CliError::DeviceNotFound(filter.to_string()).into());
+    }
+    Ok(filtered)
+}
+
+async fn collect_device_statuses(
+    client: &WheelClient,
+    devices: &[crate::client::DeviceInfo],
+    moza_lane: Option<&Path>,
+) -> Vec<serde_json::Value> {
+    let mut statuses = Vec::with_capacity(devices.len());
+    for device in devices {
+        statuses.push(support_bundle_device_status_entry(
+            &device.id,
+            client.get_device_status(&device.id).await,
+            moza_lane,
+        ));
+    }
+    statuses
+}
+
+fn support_bundle_device_status_entry(
+    device_id: &str,
+    status: Result<DeviceStatus>,
+    moza_lane: Option<&Path>,
+) -> serde_json::Value {
+    match status {
+        Ok(mut status) => {
+            if let Some(lane) = moza_lane {
+                crate::commands::moza::apply_lane_readiness_to_device_status(&mut status, lane);
+            }
+            serde_json::json!({
+                "device_id": device_id,
+                "status": "ok",
+                "device_status": status
+            })
+        }
+        Err(error) => serde_json::json!({
+            "device_id": device_id,
+            "status": "error",
+            "error": error.to_string()
+        }),
+    }
 }
 
 /// Show performance metrics
@@ -579,6 +672,8 @@ mod tests {
             device: DeviceInfo {
                 id: "wheel-001".to_string(),
                 name: "Test Wheel".to_string(),
+                vendor_id: None,
+                product_id: None,
                 device_type: DeviceType::WheelBase,
                 state: DeviceState::Connected,
                 capabilities: DeviceCapabilities::default(),
@@ -592,6 +687,7 @@ mod tests {
                 fault_flags: 0,
                 hands_on: true,
             },
+            moza: None,
         };
 
         let diagnostics = DiagnosticInfo {
@@ -620,6 +716,34 @@ mod tests {
         }
     }
 
+    fn sample_moza_r5_status() -> DeviceStatus {
+        let device = DeviceInfo {
+            id: "r5-001".to_string(),
+            name: "Moza R5".to_string(),
+            vendor_id: Some("0x346E".to_string()),
+            product_id: Some("0x0014".to_string()),
+            device_type: DeviceType::WheelBase,
+            state: DeviceState::Connected,
+            capabilities: DeviceCapabilities {
+                supports_pid: false,
+                supports_raw_torque_1khz: true,
+                supports_health_stream: true,
+                supports_led_bus: false,
+                max_torque_nm: 5.5,
+                encoder_cpr: 32768,
+                min_report_period_us: 1000,
+            },
+        };
+        let moza = crate::client::MozaReadinessStatus::from_device(&device);
+        DeviceStatus {
+            device,
+            last_seen: Utc::now(),
+            active_faults: Vec::new(),
+            telemetry: TelemetryData::default(),
+            moza,
+        }
+    }
+
     #[test]
     fn test_blackbox_round_trip() -> TestResult {
         let recording = sample_recording();
@@ -643,6 +767,267 @@ mod tests {
         let bytes = b"WBB1\x00\x00\x00\x00legacy";
         let parsed = parse_blackbox_file(bytes)?;
         assert!(matches!(parsed, ParsedBlackbox::Legacy));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn support_bundle_includes_moza_lane_status() -> TestResult {
+        let client = WheelClient::connect_or_mock(None).await?;
+        let temp_dir = tempfile::tempdir()?;
+        let lane = temp_dir.path().join("moza-lane");
+        fs::create_dir_all(&lane)?;
+        let output = temp_dir.path().join("support.json");
+        let lane_text = lane.to_str().ok_or("expected UTF-8 lane path")?;
+        let output_text = output.to_str().ok_or("expected UTF-8 output path")?;
+
+        generate_support_bundle(
+            &client,
+            "wheelctl diag support",
+            false,
+            None,
+            Some(lane_text),
+            Some(output_text),
+            true,
+        )
+        .await?;
+
+        let value: serde_json::Value = serde_json::from_str(&fs::read_to_string(&output)?)?;
+        assert_eq!(
+            value.get("success").and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            value.get("command").and_then(serde_json::Value::as_str),
+            Some("wheelctl diag support")
+        );
+        assert_eq!(
+            value
+                .get("no_ffb_writes")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            value
+                .get("no_serial_config_commands")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            value
+                .get("no_firmware_or_dfu_commands")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+        let device_statuses = value
+            .get("device_statuses")
+            .and_then(serde_json::Value::as_array)
+            .ok_or("expected device status snapshots")?;
+        assert_eq!(device_statuses.len(), 2);
+        assert!(
+            device_statuses
+                .iter()
+                .all(
+                    |status| status.get("status").and_then(serde_json::Value::as_str) == Some("ok")
+                )
+        );
+        let moza_lane = value
+            .get("moza_lane")
+            .and_then(serde_json::Value::as_object)
+            .ok_or("expected Moza lane section")?;
+        assert_eq!(
+            moza_lane
+                .get("lane_directory_present")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+        let artifact_index = moza_lane
+            .get("artifact_index")
+            .and_then(serde_json::Value::as_array)
+            .ok_or("expected Moza artifact index")?;
+        assert!(artifact_index.iter().any(|artifact| {
+            artifact.get("path").and_then(serde_json::Value::as_str) == Some("manifest.json")
+        }));
+        let readiness = moza_lane
+            .get("readiness")
+            .and_then(serde_json::Value::as_object)
+            .ok_or("expected Moza readiness section")?;
+        assert_eq!(
+            readiness
+                .get("highest_passing_stage")
+                .and_then(serde_json::Value::as_str),
+            Some("none")
+        );
+        assert_eq!(
+            readiness
+                .get("next_required_stage")
+                .and_then(serde_json::Value::as_str),
+            Some("passive")
+        );
+        assert_eq!(
+            readiness
+                .get("release_ready")
+                .and_then(serde_json::Value::as_bool),
+            Some(false)
+        );
+        let passive_success = moza_lane
+            .get("verifications")
+            .and_then(|verifications| verifications.get("passive"))
+            .and_then(|passive| passive.get("success"))
+            .and_then(serde_json::Value::as_bool);
+        assert_eq!(passive_success, Some(false));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn top_level_support_bundle_records_device_filter_and_moza_lane() -> TestResult {
+        let client = WheelClient::connect_or_mock(None).await?;
+        let temp_dir = tempfile::tempdir()?;
+        let lane = temp_dir.path().join("moza-lane");
+        fs::create_dir_all(&lane)?;
+        let output = temp_dir.path().join("support.json");
+        let lane_text = lane.to_str().ok_or("expected UTF-8 lane path")?;
+        let output_text = output.to_str().ok_or("expected UTF-8 output path")?;
+
+        generate_support_bundle(
+            &client,
+            "wheelctl support-bundle",
+            false,
+            Some("wheel-001"),
+            Some(lane_text),
+            Some(output_text),
+            true,
+        )
+        .await?;
+
+        let value: serde_json::Value = serde_json::from_str(&fs::read_to_string(&output)?)?;
+        assert_eq!(
+            value.get("command").and_then(serde_json::Value::as_str),
+            Some("wheelctl support-bundle")
+        );
+        assert_eq!(
+            value
+                .get("device_filter")
+                .and_then(serde_json::Value::as_str),
+            Some("wheel-001")
+        );
+        assert!(
+            value
+                .get("moza_lane")
+                .and_then(serde_json::Value::as_object)
+                .is_some()
+        );
+        let device_statuses = value
+            .get("device_statuses")
+            .and_then(serde_json::Value::as_array)
+            .ok_or("expected device status snapshots")?;
+        assert_eq!(device_statuses.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn support_bundle_device_status_entry_applies_moza_lane_overlay() -> TestResult {
+        let temp_dir = tempfile::tempdir()?;
+        let lane = temp_dir.path().join("moza-lane");
+        fs::create_dir_all(&lane)?;
+        let descriptor = serde_json::json!({
+            "success": true,
+            "devices": [{
+                "vendor_id": "0x346E",
+                "product_id": "0x0014",
+                "product_name": "Moza R5",
+                "report_descriptor_crc32": "0xA1B2C3D4",
+                "descriptor_source": "hidapi"
+            }]
+        });
+        fs::write(
+            lane.join("descriptor.json"),
+            serde_json::to_string_pretty(&descriptor)?,
+        )?;
+
+        let entry =
+            support_bundle_device_status_entry("r5-001", Ok(sample_moza_r5_status()), Some(&lane));
+        assert_eq!(
+            entry.get("device_id").and_then(serde_json::Value::as_str),
+            Some("r5-001")
+        );
+        assert_eq!(
+            entry.get("status").and_then(serde_json::Value::as_str),
+            Some("ok")
+        );
+        let status = entry
+            .get("device_status")
+            .ok_or("expected device status snapshot")?;
+        let moza = status.get("moza").ok_or("expected Moza status")?;
+        assert_eq!(
+            moza.get("descriptor_crc32")
+                .and_then(serde_json::Value::as_str),
+            Some("0xA1B2C3D4")
+        );
+        assert_eq!(
+            moza.get("descriptor_source")
+                .and_then(serde_json::Value::as_str),
+            Some("hidapi")
+        );
+        let lane_value = moza
+            .get("lane")
+            .and_then(serde_json::Value::as_str)
+            .ok_or("expected Moza lane path")?;
+        assert!(lane_value.contains("moza-lane"));
+        assert_eq!(
+            moza.get("safe_to_send_torque")
+                .and_then(serde_json::Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            moza.get("direct_mode_allowed")
+                .and_then(serde_json::Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            moza.get("high_torque_allowed")
+                .and_then(serde_json::Value::as_bool),
+            Some(false)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn support_bundle_device_filter_limits_status_snapshots() -> TestResult {
+        let client = WheelClient::connect_or_mock(None).await?;
+        let temp_dir = tempfile::tempdir()?;
+        let output = temp_dir.path().join("support.json");
+        let output_text = output.to_str().ok_or("expected UTF-8 output path")?;
+
+        generate_support_bundle(
+            &client,
+            "wheelctl diag support",
+            false,
+            Some("pedals-001"),
+            None,
+            Some(output_text),
+            true,
+        )
+        .await?;
+
+        let value: serde_json::Value = serde_json::from_str(&fs::read_to_string(&output)?)?;
+        let devices = value
+            .get("devices")
+            .and_then(serde_json::Value::as_array)
+            .ok_or("expected devices")?;
+        assert_eq!(devices.len(), 1);
+        assert_eq!(
+            devices
+                .first()
+                .and_then(|device| device.get("id"))
+                .and_then(serde_json::Value::as_str),
+            Some("pedals-001")
+        );
+        assert_eq!(
+            value
+                .get("device_filter")
+                .and_then(serde_json::Value::as_str),
+            Some("pedals-001")
+        );
         Ok(())
     }
 }

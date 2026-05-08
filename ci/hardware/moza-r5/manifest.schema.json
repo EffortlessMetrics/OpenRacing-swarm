@@ -1,0 +1,382 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openracing.local/schemas/hardware/moza-r5/manifest.schema.json",
+  "title": "OpenRacing Moza R5 Hardware Lane Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "lane",
+    "completion_state",
+    "generated_at_utc",
+    "operator",
+    "platform",
+    "hardware",
+    "claims",
+    "hardware_validated",
+    "simulator_validated",
+    "high_torque_validated",
+    "release_ready",
+    "artifacts"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "lane": {
+      "type": "string",
+      "const": "moza-r5-windows-usb"
+    },
+    "completion_state": {
+      "type": "string",
+      "enum": [
+        "not_started",
+        "passive_capture_ready",
+        "zero_torque_ready",
+        "real_hardware_smoke_ready"
+      ]
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "operator": {
+      "type": "string",
+      "minLength": 1
+    },
+    "platform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "transport"],
+      "properties": {
+        "os": {
+          "type": "string",
+          "const": "Windows"
+        },
+        "transport": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["hid", "serial_config"],
+          "properties": {
+            "hid": {
+              "type": "boolean",
+              "const": true
+            },
+            "serial_config": {
+              "type": "boolean",
+              "const": false
+            }
+          }
+        }
+      }
+    },
+    "hardware": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wheelbase", "wheelbase_pid", "rims", "pedals", "handbrake"],
+      "properties": {
+        "wheelbase": {
+          "type": "string",
+          "const": "Moza R5"
+        },
+        "wheelbase_pid": {
+          "type": "string",
+          "enum": ["0x0004", "0x0014"]
+        },
+        "rims": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["KS", "ES"]
+          },
+          "contains": {
+            "const": "KS"
+          },
+          "minItems": 2,
+          "uniqueItems": true
+        },
+        "pedals": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "const": "SR-P"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "handbrake": {
+          "type": "string",
+          "const": "HBP"
+        }
+      }
+    },
+    "claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ffb", "high_torque", "pit_house_coexistence"],
+      "properties": {
+        "ffb": {
+          "type": "string",
+          "enum": ["staged"]
+        },
+        "high_torque": {
+          "type": "boolean",
+          "const": false
+        },
+        "pit_house_coexistence": {
+          "type": "string",
+          "const": "tested_separately"
+        }
+      }
+    },
+    "hardware_validated": {
+      "type": "boolean"
+    },
+    "simulator_validated": {
+      "type": "boolean"
+    },
+    "high_torque_validated": {
+      "type": "boolean",
+      "const": false
+    },
+    "release_ready": {
+      "type": "boolean",
+      "const": false
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifest",
+        "device_list",
+        "hid_list",
+        "moza_probe",
+        "descriptor",
+        "captures_dir",
+        "capture_r5_idle",
+        "capture_r5_steering_sweep",
+        "capture_srp_wheelbase_aggregated_sweep",
+        "capture_srp_standalone_sweep",
+        "capture_hbp_standalone_sweep",
+        "capture_ks_controls",
+        "capture_es_controls",
+        "parser_fixture_validation",
+        "fixture_promotion",
+        "passive_verification",
+        "passive_manifest_promotion",
+        "passive_lane_audit",
+        "init_off",
+        "init_standard",
+        "moza_status",
+        "device_status",
+        "support_bundle",
+        "zero_torque_proof",
+        "watchdog_proof",
+        "disconnect_proof",
+        "zero_verification",
+        "zero_manifest_promotion",
+        "zero_lane_audit",
+        "low_torque_proof",
+        "pit_house_coexistence",
+        "simulator_telemetry_proof",
+        "simulator_ffb_smoke",
+        "smoke_ready_verification",
+        "smoke_ready_manifest_promotion",
+        "smoke_ready_lane_audit"
+      ],
+      "properties": {
+        "manifest": {
+          "type": "string",
+          "const": "manifest.json"
+        },
+        "device_list": {
+          "type": "string",
+          "const": "device-list.json"
+        },
+        "hid_list": {
+          "type": "string",
+          "const": "hid-list.json"
+        },
+        "moza_probe": {
+          "type": "string",
+          "const": "moza-probe.json"
+        },
+        "descriptor": {
+          "type": "string",
+          "const": "descriptor.json"
+        },
+        "captures_dir": {
+          "type": "string",
+          "const": "captures"
+        },
+        "capture_r5_idle": {
+          "type": "string",
+          "const": "captures/r5-idle.jsonl"
+        },
+        "capture_r5_steering_sweep": {
+          "type": "string",
+          "const": "captures/r5-steering-sweep.jsonl"
+        },
+        "capture_srp_wheelbase_aggregated_sweep": {
+          "type": "string",
+          "const": "captures/srp-wheelbase-aggregated-sweep.jsonl"
+        },
+        "capture_srp_standalone_sweep": {
+          "type": "string",
+          "const": "captures/srp-standalone-sweep.jsonl"
+        },
+        "capture_hbp_standalone_sweep": {
+          "type": "string",
+          "const": "captures/hbp-standalone-sweep.jsonl"
+        },
+        "capture_ks_controls": {
+          "type": "string",
+          "const": "captures/ks-controls.jsonl"
+        },
+        "capture_es_controls": {
+          "type": "string",
+          "const": "captures/es-controls.jsonl"
+        },
+        "parser_fixture_validation": {
+          "type": "string",
+          "const": "parser-fixture-validation.json"
+        },
+        "fixture_promotion": {
+          "type": "string",
+          "const": "fixture-promotion.json"
+        },
+        "passive_verification": {
+          "type": "string",
+          "const": "passive-verification.json"
+        },
+        "passive_manifest_promotion": {
+          "type": "string",
+          "const": "manifest-promotion-passive.json"
+        },
+        "passive_lane_audit": {
+          "type": "string",
+          "const": "lane-audit-passive.json"
+        },
+        "init_off": {
+          "type": "string",
+          "const": "init-off.json"
+        },
+        "init_standard": {
+          "type": "string",
+          "const": "init-standard.json"
+        },
+        "moza_status": {
+          "type": "string",
+          "const": "moza-status.json"
+        },
+        "device_status": {
+          "type": "string",
+          "const": "device-status.json"
+        },
+        "support_bundle": {
+          "type": "string",
+          "const": "support-bundle.json"
+        },
+        "zero_torque_proof": {
+          "type": "string",
+          "const": "zero-torque-proof.json"
+        },
+        "watchdog_proof": {
+          "type": "string",
+          "const": "watchdog-proof.json"
+        },
+        "disconnect_proof": {
+          "type": "string",
+          "const": "disconnect-proof.json"
+        },
+        "zero_verification": {
+          "type": "string",
+          "const": "zero-verification.json"
+        },
+        "zero_manifest_promotion": {
+          "type": "string",
+          "const": "manifest-promotion-zero.json"
+        },
+        "zero_lane_audit": {
+          "type": "string",
+          "const": "lane-audit-zero.json"
+        },
+        "low_torque_proof": {
+          "type": "string",
+          "const": "low-torque-proof.json"
+        },
+        "pit_house_coexistence": {
+          "type": "string",
+          "const": "pit-house-coexistence.json"
+        },
+        "simulator_telemetry_proof": {
+          "type": "string",
+          "const": "simulator-telemetry-proof.json"
+        },
+        "simulator_ffb_smoke": {
+          "type": "string",
+          "const": "simulator-ffb-smoke.json"
+        },
+        "smoke_ready_verification": {
+          "type": "string",
+          "const": "smoke-ready-verification.json"
+        },
+        "smoke_ready_manifest_promotion": {
+          "type": "string",
+          "const": "manifest-promotion-smoke-ready.json"
+        },
+        "smoke_ready_lane_audit": {
+          "type": "string",
+          "const": "lane-audit-smoke-ready.json"
+        }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "completion_state": {
+            "const": "real_hardware_smoke_ready"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "hardware_validated": {
+            "const": true
+          },
+          "simulator_validated": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "completion_state": {
+            "enum": ["not_started", "passive_capture_ready", "zero_torque_ready"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "hardware_validated": {
+            "const": false
+          },
+          "simulator_validated": {
+            "const": false
+          }
+        }
+      }
+    }
+  ]
+}

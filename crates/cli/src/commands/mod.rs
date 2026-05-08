@@ -4,12 +4,13 @@ pub mod device;
 pub mod diag;
 pub mod game;
 pub mod health;
+pub mod moza;
 pub mod plugin;
 pub mod profile;
 pub mod safety;
 pub mod telemetry;
 
-use clap::Subcommand;
+use clap::{Subcommand, ValueEnum};
 
 #[derive(Subcommand)]
 pub enum DeviceCommands {
@@ -18,12 +19,21 @@ pub enum DeviceCommands {
         /// Show detailed device information
         #[arg(short, long)]
         detailed: bool,
+        /// Write the device list receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
     },
 
     /// Show device status and telemetry
     Status {
         /// Device ID or name
         device: String,
+        /// Optional Moza lane artifact directory used to report descriptor trust
+        #[arg(long)]
+        moza_lane: Option<std::path::PathBuf>,
+        /// Write the device status receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
         /// Watch status in real-time
         #[arg(short, long)]
         watch: bool,
@@ -179,6 +189,9 @@ pub enum DiagCommands {
         /// Include blackbox recording
         #[arg(short, long)]
         blackbox: bool,
+        /// Include Moza lane receipt verification summaries from this directory
+        #[arg(long)]
+        moza_lane: Option<String>,
         /// Output file path
         #[arg(short, long)]
         output: Option<String>,
@@ -268,6 +281,555 @@ pub enum TelemetryCommands {
         #[arg(long, default_value = "2048")]
         max_payload: usize,
     },
+
+    /// Record normalized telemetry snapshots to JSONL with safety provenance
+    Record {
+        /// Game or bridge ID that produced the normalized telemetry
+        #[arg(long)]
+        game: String,
+        /// Telemetry source classification: real_game or simhub_bridge
+        #[arg(long, default_value = "real_game")]
+        telemetry_source: String,
+        /// JSON/JSONL file containing normalized telemetry snapshots
+        #[arg(long)]
+        input: String,
+        /// Output JSONL recording path
+        #[arg(long)]
+        out: String,
+        /// Stable session ID to stamp on every output record
+        #[arg(long)]
+        session_id: Option<String>,
+        /// Recording duration in milliseconds
+        #[arg(long, default_value = "0")]
+        duration_ms: u64,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum MozaCommands {
+    /// Create a Moza R5 validation lane manifest and capture directory
+    InitLane {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// R5 wheelbase PID for this lane (hex, 0x0004 or 0x0014)
+        #[arg(long, default_value = "0x0014")]
+        wheelbase_pid: String,
+        /// Operator name recorded in manifest.json
+        #[arg(long, default_value = "Steven")]
+        operator: String,
+        /// Replace an existing manifest.json
+        #[arg(long)]
+        overwrite: bool,
+    },
+
+    /// Probe connected Moza HID devices without sending FFB writes
+    Probe {
+        /// Write the probe receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
+    /// Summarize Moza device and lane readiness without opening HID devices
+    Status {
+        /// Device selector: HID path, PID, or VID:PID
+        #[arg(long)]
+        device: Option<String>,
+        /// Optional lane artifact directory to include verifier summaries
+        #[arg(long)]
+        lane: Option<std::path::PathBuf>,
+        /// Write the status receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
+    /// Capture descriptor metadata for connected Moza HID devices
+    Descriptor {
+        /// Device selector: HID path, PID, or VID:PID
+        #[arg(long)]
+        device: Option<String>,
+        /// Include full descriptor hex when available
+        #[arg(long)]
+        descriptor_hex: bool,
+        /// Operator-supplied HID report descriptor hex, used when the OS cannot expose raw bytes
+        #[arg(long)]
+        report_descriptor_hex: Option<String>,
+        /// Write the descriptor receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
+    /// Capture input reports from one Moza HID device without FFB writes
+    CaptureInput {
+        /// Device selector: HID path, PID, or VID:PID
+        #[arg(long)]
+        device: Option<String>,
+        /// Capture duration in milliseconds
+        #[arg(long, default_value = "1000")]
+        duration_ms: u64,
+        /// HID read timeout in milliseconds
+        #[arg(long, default_value = "100")]
+        read_timeout_ms: i32,
+        /// Write captured reports as JSON Lines to this file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+    },
+
+    /// Validate captured Moza input JSONL through the parser without hardware writes
+    ValidateCapture {
+        /// JSON Lines file produced by `wheelctl moza capture-input`
+        #[arg(long)]
+        capture: std::path::PathBuf,
+        /// Optional PID override (hex, e.g. 0x0014). Defaults to per-line product_id
+        #[arg(long)]
+        pid: Option<String>,
+        /// Write the validation receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
+    /// Validate every required Moza lane capture through the parser without hardware writes
+    ValidateCaptures {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Write the aggregate validation receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
+    /// Promote a validated Moza capture JSONL into a parser fixture file
+    PromoteFixture {
+        /// JSON Lines file produced by `wheelctl moza capture-input`
+        #[arg(long)]
+        capture: std::path::PathBuf,
+        /// Fixture identifier recorded in the output JSON
+        #[arg(long)]
+        fixture_id: String,
+        /// Parser fixture JSON file to write
+        #[arg(long)]
+        fixture_out: std::path::PathBuf,
+        /// Optional PID override (hex, e.g. 0x0014). Defaults to per-line product_id
+        #[arg(long)]
+        pid: Option<String>,
+        /// Maximum reports to include in the fixture
+        #[arg(long, default_value = "256")]
+        max_reports: usize,
+        /// Allow replacing an existing fixture file
+        #[arg(long)]
+        overwrite: bool,
+        /// Write the promotion receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
+    /// Promote every required Moza lane capture into parser fixture files
+    PromoteFixtures {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Directory that will receive sanitized parser fixture JSON files
+        #[arg(long)]
+        fixture_dir: std::path::PathBuf,
+        /// Maximum reports to include per fixture
+        #[arg(long, default_value = "256")]
+        max_reports: usize,
+        /// Allow replacing existing fixture files
+        #[arg(long)]
+        overwrite: bool,
+        /// Write the aggregate promotion receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
+    /// Send bounded zero-torque output reports to a Moza wheelbase
+    Zero {
+        /// Device selector: HID path, PID, or VID:PID
+        #[arg(long)]
+        device: Option<String>,
+        /// Moza wheelbase PID for --dry-run (hex, e.g. 0x0014)
+        #[arg(long)]
+        pid: Option<String>,
+        /// Build the zero-torque receipt without opening or writing a HID device
+        #[arg(long)]
+        dry_run: bool,
+        /// Number of zero reports to send before the final-zero attempt
+        #[arg(long, default_value = "100")]
+        repeat: u32,
+        /// Output rate in Hz, bounded to 1..=1000
+        #[arg(long, default_value = "1000")]
+        hz: u32,
+        /// Watchdog timeout in milliseconds before forcing final zero
+        #[arg(long, default_value = "100")]
+        watchdog_timeout_ms: u64,
+        /// Write the zero-torque proof receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
+    /// Inject a watchdog timeout and prove the response is final zero
+    WatchdogProof {
+        /// Device selector: HID path, PID, or VID:PID
+        #[arg(long)]
+        device: Option<String>,
+        /// Moza wheelbase PID for --dry-run (hex, e.g. 0x0014)
+        #[arg(long)]
+        pid: Option<String>,
+        /// Build the watchdog proof receipt without opening or writing a HID device
+        #[arg(long)]
+        dry_run: bool,
+        /// Number of zero reports to send before the injected watchdog timeout
+        #[arg(long, default_value = "3")]
+        pre_zero_count: u32,
+        /// Output rate in Hz, bounded to 1..=1000
+        #[arg(long, default_value = "1000")]
+        hz: u32,
+        /// Watchdog timeout in milliseconds to inject
+        #[arg(long, default_value = "100")]
+        watchdog_timeout_ms: u64,
+        /// Write the watchdog proof receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
+    /// Write zero torque until a disconnect is observed, then attempt final zero
+    DisconnectProof {
+        /// Device selector: HID path, PID, or VID:PID
+        #[arg(long)]
+        device: Option<String>,
+        /// Moza wheelbase PID for --dry-run (hex, e.g. 0x0014)
+        #[arg(long)]
+        pid: Option<String>,
+        /// Build the disconnect proof receipt without opening or writing a HID device
+        #[arg(long)]
+        dry_run: bool,
+        /// Explicit acknowledgement required before the operator disconnect test
+        #[arg(long)]
+        confirm_disconnect_test: bool,
+        /// Maximum time to wait for disconnect before failing the receipt
+        #[arg(long, default_value = "10000")]
+        max_duration_ms: u64,
+        /// Output rate in Hz, bounded to 1..=1000
+        #[arg(long, default_value = "1000")]
+        hz: u32,
+        /// Write the disconnect proof receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
+    /// Run the staged Moza wheelbase handshake in off or standard mode
+    Init {
+        /// Device selector: HID path, PID, or VID:PID
+        #[arg(long)]
+        device: Option<String>,
+        /// Moza wheelbase PID for --dry-run (hex, e.g. 0x0014)
+        #[arg(long)]
+        pid: Option<String>,
+        /// Handshake FFB mode. Direct mode is intentionally not available here.
+        #[arg(long, value_enum, default_value_t = MozaInitMode::Off)]
+        mode: MozaInitMode,
+        /// Build the init receipt without opening or writing a HID device
+        #[arg(long)]
+        dry_run: bool,
+        /// Write the init receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
+    /// Send a gated low-torque ladder after a passing real zero-torque proof
+    TorqueTest {
+        /// Device selector: HID path, PID, or VID:PID
+        #[arg(long)]
+        device: Option<String>,
+        /// Moza wheelbase PID for --dry-run (hex, e.g. 0x0014)
+        #[arg(long)]
+        pid: Option<String>,
+        /// Passing real zero-torque proof receipt from `wheelctl moza zero`
+        #[arg(long)]
+        zero_proof: Option<std::path::PathBuf>,
+        /// Descriptor receipt proving a trusted R5 descriptor for direct report writes
+        #[arg(long)]
+        descriptor: Option<std::path::PathBuf>,
+        /// Lane artifact directory containing init-off.json and init-standard.json
+        #[arg(long)]
+        lane: Option<std::path::PathBuf>,
+        /// Passing off-mode init receipt from `wheelctl moza init --mode off`
+        #[arg(long)]
+        init_off: Option<std::path::PathBuf>,
+        /// Passing standard-mode init receipt from `wheelctl moza init --mode standard`
+        #[arg(long)]
+        init_standard: Option<std::path::PathBuf>,
+        /// Build the low-torque receipt without opening or writing a HID device
+        #[arg(long)]
+        dry_run: bool,
+        /// Explicit acknowledgement required before actual low-torque writes
+        #[arg(long)]
+        confirm_low_torque: bool,
+        /// Explicitly allow direct report writes when descriptor trust is unavailable
+        #[arg(long)]
+        explicit_operator_override: bool,
+        /// Maximum torque percent for the ladder, bounded to 0.1..=2.0
+        #[arg(long, default_value = "2")]
+        max_percent: f32,
+        /// Duration of each ladder stage in milliseconds
+        #[arg(long, default_value = "250")]
+        duration_ms: u64,
+        /// Output rate in Hz, bounded to 1..=1000
+        #[arg(long, default_value = "1000")]
+        hz: u32,
+        /// Write the low-torque proof receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
+    /// Write a non-claiming starter receipt for manual Pit House or simulator evidence
+    ReceiptTemplate {
+        /// Receipt template kind to write
+        #[arg(long, value_enum)]
+        kind: MozaReceiptTemplateKind,
+        /// JSON file to write
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing template file
+        #[arg(long)]
+        overwrite: bool,
+    },
+
+    /// Write an observed Pit House UI/process state receipt
+    PitHouseObservation {
+        /// Pit House coexistence case being observed
+        #[arg(long, value_enum)]
+        case: MozaPitHouseObservationCase,
+        /// Evidence source used for this operator observation
+        #[arg(long, value_enum, default_value_t = MozaPitHouseEvidenceKind::ProcessWindowSnapshot)]
+        evidence_kind: MozaPitHouseEvidenceKind,
+        /// Lane-relative screenshot, video, or process/window snapshot artifact for this observation
+        #[arg(long)]
+        evidence_artifact: Option<std::path::PathBuf>,
+        /// Operator or host label recorded in the receipt
+        #[arg(long, default_value = "Steven")]
+        operator: String,
+        /// Short operator evidence note; use artifact paths for screenshots/videos if needed
+        #[arg(long)]
+        evidence: String,
+        /// Write the Pit House observation receipt to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing observation receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
+    /// Build one Pit House coexistence case artifact from source receipts
+    PitHouseCase {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Pit House coexistence case to build
+        #[arg(long, value_enum)]
+        case: MozaPitHouseObservationCase,
+        /// Lane-relative observation receipt from `pit-house-observation`
+        #[arg(long)]
+        observation_artifact: std::path::PathBuf,
+        /// Short operator evidence note for this case artifact
+        #[arg(long)]
+        evidence: String,
+        /// Write the case artifact to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing case artifact
+        #[arg(long)]
+        overwrite: bool,
+    },
+
+    /// Build a Pit House coexistence receipt from observed case artifact files
+    PitHouseProof {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Artifact for Pit House closed case
+        #[arg(long)]
+        closed_artifact: std::path::PathBuf,
+        /// Artifact for Pit House open, idle, standard-mode case
+        #[arg(long)]
+        open_standard_artifact: std::path::PathBuf,
+        /// Artifact for Pit House open, direct-mode case
+        #[arg(long)]
+        direct_artifact: std::path::PathBuf,
+        /// Artifact for Pit House mode-change-during-run case
+        #[arg(long)]
+        mode_change_artifact: std::path::PathBuf,
+        /// Artifact for Pit House firmware/update page case
+        #[arg(long)]
+        firmware_page_artifact: std::path::PathBuf,
+        /// Shared-control risk outcome: detected, warned, or documented_limit
+        #[arg(long, default_value = "warned")]
+        shared_control_risk: String,
+        /// Write the Pit House proof receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+        /// Replace an existing proof receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
+    /// Build a telemetry-only simulator proof receipt from normalized snapshots
+    SimulatorTelemetryProof {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Simulator or bridge name
+        #[arg(long)]
+        game: String,
+        /// Telemetry source: real_game or simhub_bridge
+        #[arg(long, default_value = "simhub_bridge")]
+        telemetry_source: String,
+        /// Lane-relative normalized telemetry recording artifact
+        #[arg(long)]
+        recorder_artifact: std::path::PathBuf,
+        /// Recording duration in milliseconds
+        #[arg(long)]
+        duration_ms: u64,
+        /// Write the simulator telemetry proof receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+        /// Replace an existing proof receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
+    /// Build a bounded simulator-to-Moza FFB smoke proof from output logs
+    SimulatorFfbSmoke {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Simulator or bridge name
+        #[arg(long)]
+        game: String,
+        /// Telemetry source: real_game or simhub_bridge
+        #[arg(long, default_value = "simhub_bridge")]
+        telemetry_source: String,
+        /// Lane-relative output log artifact
+        #[arg(long)]
+        output_log_artifact: std::path::PathBuf,
+        /// Descriptor trust was established before direct-mode FFB
+        #[arg(long)]
+        descriptor_trusted: bool,
+        /// Explicit operator override allowed direct-mode FFB without descriptor trust
+        #[arg(long)]
+        explicit_operator_override: bool,
+        /// Watchdog timeout used during the smoke run
+        #[arg(long)]
+        watchdog_timeout_ms: u64,
+        /// Stop event cleared output
+        #[arg(long)]
+        stop_cleared_output: bool,
+        /// Pause event cleared output
+        #[arg(long)]
+        pause_cleared_output: bool,
+        /// Game exit cleared output
+        #[arg(long)]
+        game_exit_cleared_output: bool,
+        /// Write the simulator FFB smoke proof receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+        /// Replace an existing proof receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
+    /// Promote manifest completion state only after a live bundle verification passes
+    PromoteManifest {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Evidence stage to promote the manifest to
+        #[arg(long, value_enum)]
+        stage: MozaBundleStage,
+        /// Write the promotion receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
+    /// Verify a Moza hardware lane receipt bundle before claiming readiness
+    VerifyBundle {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Evidence stage to require
+        #[arg(long, value_enum, default_value_t = MozaBundleStage::Passive)]
+        stage: MozaBundleStage,
+        /// Write the verification receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
+    /// Audit stored verification and manifest-promotion receipts after promotion
+    AuditLane {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Promotion stage whose stored receipts must be present and consistent
+        #[arg(long, value_enum, default_value_t = MozaBundleStage::Passive)]
+        stage: MozaBundleStage,
+        /// Write the audit receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MozaInitMode {
+    /// Start reports but leave force feedback disabled
+    Off,
+    /// Start reports and select vendor standard/PIDFF mode
+    Standard,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MozaBundleStage {
+    /// Enumeration, descriptor, input captures, and parser validation only
+    Passive,
+    /// Passive evidence plus real zero-torque, watchdog, and disconnect proof
+    Zero,
+    /// Complete real hardware plus simulator smoke evidence
+    SmokeReady,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MozaReceiptTemplateKind {
+    /// Pit House coexistence matrix receipt
+    PitHouse,
+    /// Telemetry-only real simulator receipt
+    SimulatorTelemetry,
+    /// Bounded simulator-to-Moza FFB smoke receipt
+    SimulatorFfb,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MozaPitHouseObservationCase {
+    /// Pit House closed before OpenRacing staged handshake
+    Closed,
+    /// Pit House open and idle while OpenRacing uses standard mode
+    OpenStandard,
+    /// Pit House open while OpenRacing direct mode is requested
+    OpenDirect,
+    /// Pit House changes mode during a bounded run
+    ModeChange,
+    /// Pit House firmware/update page is open
+    FirmwarePage,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MozaPitHouseEvidenceKind {
+    /// Operator-written notes
+    OperatorNotes,
+    /// Screenshot or saved image from the operator
+    OperatorScreenshot,
+    /// Video or screen recording from the operator
+    OperatorVideo,
+    /// Process/window snapshot captured by tooling
+    ProcessWindowSnapshot,
 }
 
 #[derive(Subcommand)]

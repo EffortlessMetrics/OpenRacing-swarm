@@ -152,6 +152,22 @@ pub fn print_device_status(status: &DeviceStatus, json: bool) {
             println!("  {}", "No Active Faults".green());
         }
 
+        if let Some(moza) = &status.moza {
+            println!("  {}:", "Moza Readiness".bold());
+            println!("    Model: {}", moza.model);
+            println!("    Product ID: {}", moza.product_id);
+            println!("    Category: {}", moza.category);
+            println!("    Output Capable: {}", moza.output_capable);
+            println!("    FFB Ready: {}", moza.ffb_ready);
+            println!("    Init State: {}", moza.init_state);
+            println!("    Descriptor Trusted: {}", moza.descriptor_trusted);
+            if let Some(crc) = &moza.descriptor_crc32 {
+                println!("    Descriptor CRC32: {}", crc);
+            }
+            println!("    Safety State: {}", moza.safety_state);
+            println!("    Safety Reason: {}", moza.safety_reason);
+        }
+
         println!("  {}:", "Telemetry".bold());
         let tel = &status.telemetry;
         println!("    Wheel Angle: {:.1}°", tel.wheel_angle_deg);
@@ -448,7 +464,7 @@ mod tests {
     use super::*;
     use crate::client::{
         DeviceCapabilities, DeviceInfo, DeviceState, DeviceType, GameStatus, HealthEvent,
-        HealthEventType, TelemetryData,
+        HealthEventType, MozaReadinessStatus, TelemetryData,
     };
     use crate::error::CliError;
 
@@ -499,6 +515,48 @@ mod tests {
         // Single capability should not contain commas
         let result = format_capabilities(&caps);
         assert_eq!(result, "Health");
+    }
+
+    #[test]
+    fn print_device_status_human_includes_moza_readiness_block() {
+        let status = DeviceStatus {
+            device: DeviceInfo {
+                id: "moza-r5".to_string(),
+                name: "Moza R5".to_string(),
+                vendor_id: Some("0x346E".to_string()),
+                product_id: Some("0x0014".to_string()),
+                device_type: DeviceType::WheelBase,
+                state: DeviceState::Connected,
+                capabilities: DeviceCapabilities {
+                    supports_pid: true,
+                    supports_raw_torque_1khz: true,
+                    max_torque_nm: 5.5,
+                    ..DeviceCapabilities::default()
+                },
+            },
+            last_seen: chrono::Utc::now(),
+            active_faults: Vec::new(),
+            telemetry: TelemetryData::default(),
+            moza: Some(MozaReadinessStatus {
+                model: "Moza R5".to_string(),
+                product_id: "0x0014".to_string(),
+                category: "wheelbase".to_string(),
+                output_capable: true,
+                ffb_ready: false,
+                init_state: "uninitialized".to_string(),
+                descriptor_trusted: true,
+                descriptor_crc32: Some("0x12345678".to_string()),
+                descriptor_source: Some("operator_supplied_hex".to_string()),
+                lane: Some("ci/hardware/moza-r5/2026-05-06".to_string()),
+                direct_mode_allowed: false,
+                high_torque_allowed: false,
+                safe_to_send_torque: false,
+                safety_state: "descriptor_observed_pre_validation".to_string(),
+                safety_reason: "torque output remains gated".to_string(),
+            }),
+        };
+
+        print_device_status(&status, false);
     }
 
     // --- error_type_name ---
@@ -582,6 +640,8 @@ mod tests {
         let devices = vec![DeviceInfo {
             id: "wheel-001".to_string(),
             name: "Test Wheel".to_string(),
+            vendor_id: None,
+            product_id: None,
             device_type: DeviceType::WheelBase,
             state: DeviceState::Connected,
             capabilities: DeviceCapabilities::default(),

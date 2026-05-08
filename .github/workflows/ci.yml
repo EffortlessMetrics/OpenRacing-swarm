@@ -738,6 +738,11 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev pkg-config
+
       - name: Install cargo-audit
         run: cargo install cargo-audit
 
@@ -826,6 +831,7 @@ jobs:
 
       - name: Validate performance (Linux)
         if: runner.os == 'Linux'
+        shell: bash
         run: |
           # Use --warn-only on PRs; CI runners lack RT scheduling.
           if [ "${{ github.event_name }}" = "pull_request" ]; then
@@ -836,6 +842,7 @@ jobs:
 
       - name: Validate performance (Windows)
         if: runner.os == 'Windows'
+        shell: bash
         run: |
           # Use --warn-only on PRs; CI runners lack RT scheduling.
           if [ "${{ github.event_name }}" = "pull_request" ]; then

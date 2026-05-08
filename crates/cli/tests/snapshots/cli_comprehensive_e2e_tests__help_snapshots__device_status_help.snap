@@ -10,7 +10,9 @@ Arguments:
   <DEVICE>  Device ID or name
 
 Options:
-      --json        Output in JSON format for machine parsing
-  -w, --watch       Watch status in real-time
-  -v, --verbose...  Verbose logging
-  -h, --help        Print help
+      --json                   Output in JSON format for machine parsing
+      --moza-lane <MOZA_LANE>  Optional Moza lane artifact directory used to report descriptor trust
+      --json-out <JSON_OUT>    Write the device status receipt to this JSON file
+  -v, --verbose...             Verbose logging
+  -w, --watch                  Watch status in real-time
+  -h, --help                   Print help

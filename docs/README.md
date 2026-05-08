@@ -47,6 +47,14 @@ Detailed documentation for supported racing wheel protocols:
 - **[Moza Protocol](protocols/MOZA_PROTOCOL.md)** - Moza Racing wheels
 - **[Simagic Protocol](protocols/SIMAGIC_PROTOCOL.md)** - Simagic wheels
 
+### Hardware Validation
+
+Receipt-backed hardware validation lanes:
+
+- **[Moza R5 Validation Lane](hardware/moza-r5-validation.md)** - Steven's R5 + KS/ES + SR-P + HBP bring-up lane
+- **[Moza Validation Matrix](hardware/moza-validation-matrix.md)** - separates source research from real hardware receipts
+- **[Moza R5 Artifact Checklist](hardware/moza-r5-artifact-checklist.md)** - maps every Moza bring-up claim to receipts and verifier gates
+
 ### Architecture Decision Records (ADRs)
 
 ADRs document significant architectural decisions:

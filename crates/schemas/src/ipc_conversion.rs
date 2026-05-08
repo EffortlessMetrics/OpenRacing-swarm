@@ -103,6 +103,8 @@ impl From<Device> for proto::DeviceInfo {
                 DeviceState::Faulted => 3,
                 DeviceState::SafeMode => 4,
             },
+            vendor_id: 0,
+            product_id: 0,
         }
     }
 }

@@ -709,6 +709,8 @@ mod backward_compat {
                 min_report_period_us: 1000,
             }),
             state: 1, // Connected
+            vendor_id: 0,
+            product_id: 0,
         };
         let bytes = wire.encode_to_vec();
         let decoded = proto::DeviceInfo::decode(bytes.as_slice())?;
@@ -726,6 +728,8 @@ mod backward_compat {
             r#type: 0,
             capabilities: None,
             state: 0,
+            vendor_id: 0,
+            product_id: 0,
         };
         let bytes = wire.encode_to_vec();
         let decoded = proto::DeviceInfo::decode(bytes.as_slice())?;
@@ -806,6 +810,8 @@ mod forward_compat {
             r#type: 1,
             capabilities: None,
             state: 1,
+            vendor_id: 0,
+            product_id: 0,
         };
         let bytes = wire.encode_to_vec();
 

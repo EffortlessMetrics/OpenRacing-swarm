@@ -8,6 +8,7 @@ repository.workspace = true
 description = "Firmware update management for OpenRacing with A/B partition support"
 keywords = ["firmware", "update", "ota", "rollback", "embedded"]
 categories = ["embedded", "filesystem", "hardware-support"]
+build = "build.rs"
 
 
 [package.metadata.cargo-udeps.ignore]

@@ -9,6 +9,7 @@ Usage: wheelctl telemetry [OPTIONS] <COMMAND>
 Commands:
   probe    Probe telemetry transport for a game
   capture  Capture raw UDP telemetry packets to a binary file
+  record   Record normalized telemetry snapshots to JSONL with safety provenance
   help     Print this message or the help of the given subcommand(s)
 
 Options:

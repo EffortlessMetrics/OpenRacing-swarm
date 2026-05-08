@@ -786,6 +786,8 @@ mod proto_roundtrips {
                 min_report_period_us: 1000,
             }),
             state: proto::DeviceState::Connected as i32,
+            vendor_id: 0x346E,
+            product_id: 0x0014,
         };
         let bytes = orig.encode_to_vec();
         let decoded = proto::DeviceInfo::decode(bytes.as_slice())?;

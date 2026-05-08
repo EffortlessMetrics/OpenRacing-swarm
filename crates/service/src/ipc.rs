@@ -70,6 +70,8 @@ impl DeviceService {
         Ok(vec![TestDevice {
             id: "test-device-1".to_string(),
             name: "Test Wheel Base".to_string(),
+            vendor_id: 0x1234,
+            product_id: 0x5678,
             device_type: 1,
             capabilities: TestDeviceCapabilities {
                 supports_pid: true,
@@ -92,6 +94,8 @@ impl DeviceService {
             device: TestDevice {
                 id: "test-device-1".to_string(),
                 name: "Test Wheel Base".to_string(),
+                vendor_id: 0x1234,
+                product_id: 0x5678,
                 device_type: 1,
                 capabilities: TestDeviceCapabilities {
                     supports_pid: true,
@@ -274,6 +278,8 @@ impl SafetyService {
 pub struct TestDevice {
     pub id: String,
     pub name: String,
+    pub vendor_id: u16,
+    pub product_id: u16,
     pub device_type: i32,
     pub capabilities: TestDeviceCapabilities,
     pub state: i32,
@@ -636,6 +642,8 @@ impl WheelService for WheelServiceImpl {
                             id: device.id.to_string(),
                             name: device.name.clone(),
                             r#type: device.device_type as i32,
+                            vendor_id: u32::from(device.vendor_id),
+                            product_id: u32::from(device.product_id),
                             capabilities: Some(DeviceCapabilities {
                                 supports_pid: device.capabilities.supports_pid,
                                 supports_raw_torque_1khz: device.capabilities.supports_raw_torque_1khz,
@@ -674,6 +682,8 @@ impl WheelService for WheelServiceImpl {
                         id: status.device.id.to_string(),
                         name: status.device.name.clone(),
                         r#type: status.device.device_type as i32,
+                        vendor_id: u32::from(status.device.vendor_id),
+                        product_id: u32::from(status.device.product_id),
                         capabilities: Some(DeviceCapabilities {
                             supports_pid: status.device.capabilities.supports_pid,
                             supports_raw_torque_1khz: status
@@ -712,6 +722,7 @@ impl WheelService for WheelServiceImpl {
                         hands_on: t.hands_on,
                         sequence: 0, // Field removed, use 0 as default
                     }),
+                    moza: None,
                 };
                 Ok(Response::new(device_status))
             }
@@ -1206,7 +1217,32 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_get_device_status_telemetry_conversion() {
+    async fn test_list_devices_preserves_usb_identity() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let (tx, _) = broadcast::channel(10);
+        let service = WheelServiceImpl {
+            device_service: Arc::new(DeviceService),
+            profile_service: Arc::new(ProfileService),
+            game_service: Arc::new(GameService),
+            safety_service: Arc::new(SafetyService),
+            health_broadcaster: tx,
+            connected_clients: Arc::new(RwLock::new(HashMap::new())),
+        };
+
+        let response = service.list_devices(Request::new(())).await?;
+        let mut stream = response.into_inner();
+        let first = stream
+            .next()
+            .await
+            .ok_or("expected one device")??;
+
+        assert_eq!(first.vendor_id, 0x1234);
+        assert_eq!(first.product_id, 0x5678);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_device_status_telemetry_conversion(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let (tx, _) = broadcast::channel(10);
         let service = WheelServiceImpl {
             device_service: Arc::new(DeviceService),
@@ -1221,14 +1257,12 @@ mod tests {
             id: "test-device-1".to_string(),
         });
 
-        let response = service
-            .get_device_status(request)
-            .await
-            .expect("Failed to get device status");
-        
+        let response = service.get_device_status(request).await?;
+
         let status = response.into_inner();
-        
+
         // Ensure the response contains telemetry and conversions didn't panic.
         assert!(status.telemetry.is_some(), "Expected telemetry data in response");
+        Ok(())
     }
 }

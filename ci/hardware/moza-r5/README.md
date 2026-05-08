@@ -1,0 +1,263 @@
+# Moza R5 Hardware Lane Artifacts
+
+This directory holds receipt bundles for the first OpenRacing Moza validation lane:
+
+```text
+moza-r5-windows-usb
+```
+
+The lane targets Steven's Moza R5 wheelbase with KS/ES wheels, SR-P pedals, and HBP handbrake on Windows over USB HID. It is a validation lane, not a release claim.
+
+## Directory Shape
+
+Create one dated directory per real hardware run:
+
+```text
+ci/hardware/moza-r5/YYYY-MM-DD/
+  manifest.json
+  device-list.json
+  hid-list.json
+  descriptor.json
+  moza-probe.json
+  captures/
+    r5-idle.jsonl
+    r5-steering-sweep.jsonl
+    srp-wheelbase-aggregated-sweep.jsonl
+    srp-standalone-sweep.jsonl
+    hbp-standalone-sweep.jsonl
+    ks-controls.jsonl
+    es-controls.jsonl
+  parser-fixture-validation.json
+  fixture-promotion.json
+  passive-verification.json
+  manifest-promotion-passive.json
+  lane-audit-passive.json
+  init-off.json
+  init-standard.json
+  moza-status.json
+  device-status.json
+  support-bundle.json
+  zero-torque-proof.json
+  watchdog-proof.json
+  disconnect-proof.json
+  zero-verification.json
+  manifest-promotion-zero.json
+  lane-audit-zero.json
+  low-torque-proof.json
+  pit-house-coexistence.json
+  simulator-telemetry-proof.json
+  simulator-ffb-smoke.json
+  smoke-ready-verification.json
+  manifest-promotion-smoke-ready.json
+  lane-audit-smoke-ready.json
+```
+
+The manifest must validate against `manifest.schema.json`.
+
+The operator-facing prompt-to-artifact checklist lives at `docs/hardware/moza-r5-artifact-checklist.md`. Use it before updating any validation row or manifest state; it maps each bring-up claim to the required receipt and verifier gate.
+
+## Manifest Starter
+
+Use this state before any hardware evidence exists:
+
+```json
+{
+  "schema_version": 1,
+  "lane": "moza-r5-windows-usb",
+  "completion_state": "not_started",
+  "generated_at_utc": "2026-05-06T00:00:00Z",
+  "operator": "Steven",
+  "platform": {
+    "os": "Windows",
+    "transport": {
+      "hid": true,
+      "serial_config": false
+    }
+  },
+  "hardware": {
+    "wheelbase": "Moza R5",
+    "wheelbase_pid": "0x0014",
+    "rims": ["KS", "ES"],
+    "pedals": ["SR-P"],
+    "handbrake": "HBP"
+  },
+  "claims": {
+    "ffb": "staged",
+    "high_torque": false,
+    "pit_house_coexistence": "tested_separately"
+  },
+  "hardware_validated": false,
+  "simulator_validated": false,
+  "high_torque_validated": false,
+  "release_ready": false,
+  "artifacts": {
+    "manifest": "manifest.json",
+    "device_list": "device-list.json",
+    "hid_list": "hid-list.json",
+    "moza_probe": "moza-probe.json",
+    "descriptor": "descriptor.json",
+    "captures_dir": "captures",
+    "capture_r5_idle": "captures/r5-idle.jsonl",
+    "capture_r5_steering_sweep": "captures/r5-steering-sweep.jsonl",
+    "capture_srp_wheelbase_aggregated_sweep": "captures/srp-wheelbase-aggregated-sweep.jsonl",
+    "capture_srp_standalone_sweep": "captures/srp-standalone-sweep.jsonl",
+    "capture_hbp_standalone_sweep": "captures/hbp-standalone-sweep.jsonl",
+    "capture_ks_controls": "captures/ks-controls.jsonl",
+    "capture_es_controls": "captures/es-controls.jsonl",
+    "parser_fixture_validation": "parser-fixture-validation.json",
+    "fixture_promotion": "fixture-promotion.json",
+    "passive_verification": "passive-verification.json",
+    "passive_manifest_promotion": "manifest-promotion-passive.json",
+    "passive_lane_audit": "lane-audit-passive.json",
+    "init_off": "init-off.json",
+    "init_standard": "init-standard.json",
+    "moza_status": "moza-status.json",
+    "device_status": "device-status.json",
+    "support_bundle": "support-bundle.json",
+    "zero_torque_proof": "zero-torque-proof.json",
+    "watchdog_proof": "watchdog-proof.json",
+    "disconnect_proof": "disconnect-proof.json",
+    "zero_verification": "zero-verification.json",
+    "zero_manifest_promotion": "manifest-promotion-zero.json",
+    "zero_lane_audit": "lane-audit-zero.json",
+    "low_torque_proof": "low-torque-proof.json",
+    "pit_house_coexistence": "pit-house-coexistence.json",
+    "simulator_telemetry_proof": "simulator-telemetry-proof.json",
+    "simulator_ffb_smoke": "simulator-ffb-smoke.json",
+    "smoke_ready_verification": "smoke-ready-verification.json",
+    "smoke_ready_manifest_promotion": "manifest-promotion-smoke-ready.json",
+    "smoke_ready_lane_audit": "lane-audit-smoke-ready.json"
+  },
+  "notes": [
+    "No compatibility claim is made until receipts exist and the verifier passes.",
+    "No serial configuration, firmware update, or DFU command is in scope."
+  ]
+}
+```
+
+## Verification Commands
+
+Initialize a dated lane directory:
+
+```powershell
+wheelctl moza init-lane --lane ci/hardware/moza-r5/YYYY-MM-DD --wheelbase-pid 0x0014 --operator Steven
+```
+
+Passive evidence:
+
+```powershell
+wheelctl device list --json-out ci/hardware/moza-r5/YYYY-MM-DD/device-list.json
+wheelctl moza probe --json-out ci/hardware/moza-r5/YYYY-MM-DD/moza-probe.json
+hid-capture list --vendor 0x346E --json-out ci/hardware/moza-r5/YYYY-MM-DD/hid-list.json
+wheelctl moza descriptor --json-out ci/hardware/moza-r5/YYYY-MM-DD/descriptor.json
+wheelctl moza capture-input --device <r5> --duration-ms 5000 --json-out ci/hardware/moza-r5/YYYY-MM-DD/captures/r5-idle.jsonl
+wheelctl moza capture-input --device <r5> --duration-ms 10000 --json-out ci/hardware/moza-r5/YYYY-MM-DD/captures/r5-steering-sweep.jsonl
+wheelctl moza capture-input --device <r5> --duration-ms 10000 --json-out ci/hardware/moza-r5/YYYY-MM-DD/captures/srp-wheelbase-aggregated-sweep.jsonl
+wheelctl moza capture-input --device <srp> --duration-ms 10000 --json-out ci/hardware/moza-r5/YYYY-MM-DD/captures/srp-standalone-sweep.jsonl
+wheelctl moza capture-input --device <hbp> --duration-ms 10000 --json-out ci/hardware/moza-r5/YYYY-MM-DD/captures/hbp-standalone-sweep.jsonl
+wheelctl moza capture-input --device <r5> --duration-ms 10000 --json-out ci/hardware/moza-r5/YYYY-MM-DD/captures/ks-controls.jsonl
+wheelctl moza capture-input --device <r5> --duration-ms 10000 --json-out ci/hardware/moza-r5/YYYY-MM-DD/captures/es-controls.jsonl
+wheelctl moza validate-captures --lane ci/hardware/moza-r5/YYYY-MM-DD --json-out ci/hardware/moza-r5/YYYY-MM-DD/parser-fixture-validation.json
+wheelctl moza promote-fixtures --lane ci/hardware/moza-r5/YYYY-MM-DD --fixture-dir crates/hid-moza-protocol/fixtures/moza-r5-YYYY-MM-DD --json-out ci/hardware/moza-r5/YYYY-MM-DD/fixture-promotion.json
+wheelctl moza verify-bundle --lane ci/hardware/moza-r5/YYYY-MM-DD --stage passive --json-out ci/hardware/moza-r5/YYYY-MM-DD/passive-verification.json
+wheelctl moza promote-manifest --lane ci/hardware/moza-r5/YYYY-MM-DD --stage passive --json-out ci/hardware/moza-r5/YYYY-MM-DD/manifest-promotion-passive.json
+wheelctl moza audit-lane --lane ci/hardware/moza-r5/YYYY-MM-DD --stage passive --json-out ci/hardware/moza-r5/YYYY-MM-DD/lane-audit-passive.json
+```
+
+If a `verify-bundle` receipt fails, inspect `next_commands`. The verifier fills that field with the staged command sequence needed for the requested gate; at `--stage passive` it contains only no-FFB observation and offline parser commands.
+
+The passive verifier requires the R5 VID/PID in `device-list.json`, `moza-probe.json`, `hid-list.json`, and `descriptor.json`, and it also requires standalone SR-P (`0x0003`) and HBP (`0x0022`) VID/PID records in those enumeration/descriptor receipts. The manifest's `hardware.wheelbase_pid` pins the exact R5 row being validated, so every R5 enumeration record, wheelbase capture, promoted wheelbase parser fixture, output-capable receipt, service receipt, and simulator writer receipt must use that same PID (`0x0004` or `0x0014`). Run `wheelctl moza descriptor` vendor-wide for the lane receipt so `descriptor.json` contains the R5, standalone SR-P, and standalone HBP records. The R5 descriptor record must include a descriptor source (`linux_sysfs` or `operator_supplied_hex`), CRC, manufacturer, interface/usage metadata, R5 input lengths, output report `0x20` with 8-byte report length, and staged feature reports `0x03`/`0x11`. If Windows cannot expose raw R5 descriptor bytes, rerun `wheelctl moza descriptor --device <r5> --report-descriptor-hex "<hex bytes>" ...` with bytes from USBTreeView or an equivalent descriptor tool; that command preserves the vendor-wide Moza records and applies the supplied descriptor bytes only to the one selected R5 record. `hid-capture descriptor --vendor 0x346E` is still an accepted lower-level producer for the same receipt shape, but the runbook uses the wheelctl command so all Moza receipts share one command surface. Descriptor commands parse supplied or sysfs descriptor bytes into report lengths and IDs; they set `report_metadata_source="report_descriptor_parsed"` only when that metadata came from descriptor bytes. Protocol-expected report metadata is passive evidence only; direct-mode descriptor trust requires descriptor-derived report metadata plus stored `report_descriptor_hex` whose CRC, parsed report IDs, and parsed `0x20` output report length match lane `descriptor.json`, or an explicit operator override. Passive receipts must come from the expected observation commands, have `success=true`, and declare `no_ffb_writes=true`, `no_serial_config_commands=true`, and `no_firmware_or_dfu_commands=true`; pure observation receipts must also declare `no_hid_device_opened=true`. The verifier requires `parser-fixture-validation.json` from `wheelctl moza validate-captures` and `fixture-promotion.json` from `wheelctl moza promote-fixtures`, both covering every required capture; promoted fixtures may be lane-relative or repo-relative under `crates/hid-moza-protocol/fixtures/...`. Raw capture JSONL must come from `wheelctl moza capture-input` with per-line `command`, no-output assertions, timestamp, path, interface, usage, report ID, product, and VID/PID metadata on every line. R5 capture files must use the manifest-selected R5 PID, `srp-standalone-sweep.jsonl` must use SR-P PID `0x0003`, and `hbp-standalone-sweep.jsonl` must use HBP PID `0x0022`. Steering, SR-P, and HBP sweep captures must show axis movement. The wheelbase-aggregated SR-P capture must also show clutch variation; standalone SR-P requires throttle/brake variation only. KS control captures must show KS discriminator plus button, clutch-like, and rotary movement. ES control captures must show ES discriminator plus button and hat movement.
+
+`parser-fixture-validation.json` includes per-capture `missing_requirements` plus the expected product IDs, category, axes, exact discriminator values, any-of control groups, and minimum report length. Treat those fields as the recapture checklist when passive validation fails.
+
+Optional observe-only status preflight:
+
+```powershell
+wheeld --hardware-lane moza-r5
+wheeld --hardware-lane ci/hardware/moza-r5/YYYY-MM-DD
+wheelctl moza status --device <r5> --lane ci/hardware/moza-r5/YYYY-MM-DD --json-out ci/hardware/moza-r5/YYYY-MM-DD/moza-status.json
+wheelctl device status <r5> --moza-lane ci/hardware/moza-r5/YYYY-MM-DD --json-out ci/hardware/moza-r5/YYYY-MM-DD/device-status.json --json
+```
+
+`wheeld --hardware-lane moza-r5` labels service-side readiness; when the value is a lane directory or `descriptor.json`, the service also reports descriptor CRC/source/trust from the receipt. When a lane directory contains stored verifier receipts, the service reports the highest stored lane stage in `safety_state`/`safety_reason` as diagnostic context only; when `zero-verification.json`, `init-off.json`, and `init-standard.json` all pass, status may say the low-torque gate receipts are observed while torque readiness stays disabled. `wheelctl device status --moza-lane --json-out` writes the service status receipt with the same descriptor and stored-stage overlay for a Moza VID/PID. These commands must not initialize Moza protocol or send HID output. Service and CLI status remain observe-only until the lane contains passing init, zero, and torque receipts.
+
+Zero-torque evidence:
+
+```powershell
+wheelctl moza zero --device <r5> --repeat 100 --hz 1000 --json-out ci/hardware/moza-r5/YYYY-MM-DD/zero-torque-proof.json
+wheelctl moza watchdog-proof --device <r5> --pre-zero-count 3 --watchdog-timeout-ms 100 --json-out ci/hardware/moza-r5/YYYY-MM-DD/watchdog-proof.json
+wheelctl moza disconnect-proof --device <r5> --confirm-disconnect-test --max-duration-ms 10000 --json-out ci/hardware/moza-r5/YYYY-MM-DD/disconnect-proof.json
+wheelctl moza verify-bundle --lane ci/hardware/moza-r5/YYYY-MM-DD --stage zero --json-out ci/hardware/moza-r5/YYYY-MM-DD/zero-verification.json
+wheelctl moza promote-manifest --lane ci/hardware/moza-r5/YYYY-MM-DD --stage zero --json-out ci/hardware/moza-r5/YYYY-MM-DD/manifest-promotion-zero.json
+wheelctl moza audit-lane --lane ci/hardware/moza-r5/YYYY-MM-DD --stage zero --json-out ci/hardware/moza-r5/YYYY-MM-DD/lane-audit-zero.json
+```
+
+Zero proof uses only direct torque report `0x20` with the zero payload. Watchdog and disconnect proofs intentionally exercise fault paths but still require no non-zero payloads and final-zero evidence.
+
+Full real-hardware smoke evidence:
+
+```powershell
+wheelctl moza init --device <r5> --mode off --json-out ci/hardware/moza-r5/YYYY-MM-DD/init-off.json
+wheelctl moza init --device <r5> --mode standard --json-out ci/hardware/moza-r5/YYYY-MM-DD/init-standard.json
+wheelctl moza torque-test --device <r5> --lane ci/hardware/moza-r5/YYYY-MM-DD --zero-proof ci/hardware/moza-r5/YYYY-MM-DD/zero-torque-proof.json --descriptor ci/hardware/moza-r5/YYYY-MM-DD/descriptor.json --confirm-low-torque --max-percent 2 --duration-ms 250 --json-out ci/hardware/moza-r5/YYYY-MM-DD/low-torque-proof.json
+wheelctl telemetry record --game simhub-bridge --telemetry-source simhub_bridge --input ci/hardware/moza-r5/YYYY-MM-DD/normalized-snapshots.jsonl --out ci/hardware/moza-r5/YYYY-MM-DD/simulator-telemetry-recording.jsonl --session-id simhub-bridge-YYYY-MM-DD --duration-ms 5000
+wheelctl moza simulator-telemetry-proof --lane ci/hardware/moza-r5/YYYY-MM-DD --game simhub-bridge --telemetry-source simhub_bridge --recorder-artifact simulator-telemetry-recording.jsonl --duration-ms 5000 --json-out ci/hardware/moza-r5/YYYY-MM-DD/simulator-telemetry-proof.json
+wheeld --hardware-lane ci/hardware/moza-r5/YYYY-MM-DD
+wheelctl moza simulator-ffb-smoke --lane ci/hardware/moza-r5/YYYY-MM-DD --game simhub-bridge --telemetry-source simhub_bridge --output-log-artifact simulator-ffb-output.jsonl --descriptor-trusted --watchdog-timeout-ms 100 --stop-cleared-output --pause-cleared-output --game-exit-cleared-output --json-out ci/hardware/moza-r5/YYYY-MM-DD/simulator-ffb-smoke.json
+wheelctl moza pit-house-observation --case closed --evidence-kind process-window-snapshot --evidence-artifact pit-house-evidence-closed.json --evidence "Pit House closed before staged handshake." --json-out ci/hardware/moza-r5/YYYY-MM-DD/pit-house-observation-closed.json
+wheelctl moza pit-house-observation --case open-standard --evidence-kind process-window-snapshot --evidence-artifact pit-house-evidence-open-standard.json --evidence "Pit House open and idle while standard mode completed." --json-out ci/hardware/moza-r5/YYYY-MM-DD/pit-house-observation-open-standard.json
+wheelctl moza pit-house-observation --case open-direct --evidence-kind process-window-snapshot --evidence-artifact pit-house-evidence-open-direct.json --evidence "Pit House open while direct mode was blocked or required acknowledgement." --json-out ci/hardware/moza-r5/YYYY-MM-DD/pit-house-observation-open-direct.json
+wheelctl moza pit-house-observation --case mode-change --evidence-kind process-window-snapshot --evidence-artifact pit-house-evidence-mode-change.json --evidence "Pit House mode change observed during bounded run; output cleared." --json-out ci/hardware/moza-r5/YYYY-MM-DD/pit-house-observation-mode-change.json
+wheelctl moza pit-house-observation --case firmware-page --evidence-kind process-window-snapshot --evidence-artifact pit-house-evidence-firmware-page.json --evidence "Pit House firmware/update page open; high-risk tests refused." --json-out ci/hardware/moza-r5/YYYY-MM-DD/pit-house-observation-firmware-page.json
+wheelctl moza pit-house-case --lane ci/hardware/moza-r5/YYYY-MM-DD --case closed --observation-artifact pit-house-observation-closed.json --evidence "Pit House closed; staged init remained ready." --json-out ci/hardware/moza-r5/YYYY-MM-DD/pit-house-closed.json
+wheelctl moza pit-house-case --lane ci/hardware/moza-r5/YYYY-MM-DD --case open-standard --observation-artifact pit-house-observation-open-standard.json --evidence "Pit House open and idle; standard mode completed without conflict." --json-out ci/hardware/moza-r5/YYYY-MM-DD/pit-house-open-standard.json
+wheelctl moza pit-house-case --lane ci/hardware/moza-r5/YYYY-MM-DD --case open-direct --observation-artifact pit-house-observation-open-direct.json --evidence "Direct mode was blocked until explicit operator acknowledgement." --json-out ci/hardware/moza-r5/YYYY-MM-DD/pit-house-direct-blocked.json
+wheelctl moza pit-house-case --lane ci/hardware/moza-r5/YYYY-MM-DD --case mode-change --observation-artifact pit-house-observation-mode-change.json --evidence "Mode mismatch was detected and output failed safe." --json-out ci/hardware/moza-r5/YYYY-MM-DD/pit-house-mode-change.json
+wheelctl moza pit-house-case --lane ci/hardware/moza-r5/YYYY-MM-DD --case firmware-page --observation-artifact pit-house-observation-firmware-page.json --evidence "Firmware/update page open; high-risk tests refused." --json-out ci/hardware/moza-r5/YYYY-MM-DD/pit-house-firmware-page.json
+wheelctl moza pit-house-proof --lane ci/hardware/moza-r5/YYYY-MM-DD --closed-artifact pit-house-closed.json --open-standard-artifact pit-house-open-standard.json --direct-artifact pit-house-direct-blocked.json --mode-change-artifact pit-house-mode-change.json --firmware-page-artifact pit-house-firmware-page.json --shared-control-risk warned --json-out ci/hardware/moza-r5/YYYY-MM-DD/pit-house-coexistence.json
+wheelctl moza verify-bundle --lane ci/hardware/moza-r5/YYYY-MM-DD --stage smoke-ready --json-out ci/hardware/moza-r5/YYYY-MM-DD/smoke-ready-verification.json
+wheelctl moza promote-manifest --lane ci/hardware/moza-r5/YYYY-MM-DD --stage smoke-ready --json-out ci/hardware/moza-r5/YYYY-MM-DD/manifest-promotion-smoke-ready.json
+wheelctl moza audit-lane --lane ci/hardware/moza-r5/YYYY-MM-DD --stage smoke-ready --json-out ci/hardware/moza-r5/YYYY-MM-DD/lane-audit-smoke-ready.json
+```
+
+The init verifier requires exactly two successful 4-byte feature writes in order: `0x03` (`03000000`) to start input reports, then `0x11` (`11FF0000` for off or `11000000` for standard). Any high-torque feature report or direct torque output report fails the stage.
+
+The Pit House and simulator proof commands are the verifier-accepted producers. Their artifact arguments are simple lane-relative paths and must already exist under the lane. For Pit House, create one case artifact for each matrix row before running `pit-house-proof`; the mode-change case must be generated after `simulator-ffb-smoke`, because its source link is the simulator output log record tagged `mode_mismatch`. For simulator telemetry, use `wheelctl telemetry record` to stamp normalized snapshots with recorder provenance before `simulator-telemetry-proof`. For simulator FFB, run it only after telemetry proof and the earlier zero/watchdog/disconnect/init/low-torque receipts exist; the output log must be derived from that telemetry and end with final zero.
+
+For offline preparation, generate non-claiming starter files first if needed:
+
+```powershell
+wheelctl moza receipt-template --kind pit-house --json-out ci/hardware/moza-r5/YYYY-MM-DD/pit-house-coexistence.json
+wheelctl moza receipt-template --kind simulator-telemetry --json-out ci/hardware/moza-r5/YYYY-MM-DD/simulator-telemetry-proof.json
+wheelctl moza receipt-template --kind simulator-ffb --json-out ci/hardware/moza-r5/YYYY-MM-DD/simulator-ffb-smoke.json
+```
+
+These templates have `success=false` and are intentionally rejected by `verify-bundle` until real observations replace the pending fields.
+The simulator FFB template exposes the pending prerequisite gate summaries, same-lane prerequisite artifact CRC/timestamp summaries, telemetry session link, and writer timing fields that the smoke verifier later requires. Pit House observation receipts require the named screenshot, video, or process/window snapshot to already exist next to the observation receipt output.
+
+The smoke-ready verifier does not accept placeholder success receipts for Pit House or simulator proof. `pit-house-coexistence.json` must include all five coexistence matrix cases, `template=false`, `evidence_status="observed_on_real_hardware"`, and non-empty evidence plus artifact fields on every case; each referenced case artifact must be JSON, use a simple lane-relative path, match the parent case/result, declare high torque false plus no serial/firmware commands, and include the case-specific safety evidence (`staged_handshake_ready`, standard-mode idle state, direct-mode block/ack requirement, mode-change fail-safe/final-zero evidence, or firmware-page high-risk refusal). Each case artifact must also include `pit_house_observation_artifact`, a separate lane-relative JSON observation file produced by `wheelctl moza pit-house-observation`; that observation must record the case, observed Pit House state, timestamp, operator, a non-notes evidence kind, no HID/FFB writes, and an existing lane-relative `evidence_artifact` such as a screenshot, video, or process/window snapshot. Each case artifact must also link to verifier-checked source evidence with `source_receipt`, `source_gate`, and `source_log`: closed Pit House links to `init-off.json` / `init_off_handshake`, open idle links to `init-standard.json` / `init_standard_handshake`, direct mode links to `low-torque-proof.json` / `low_torque_bounded`, mode-change links to `simulator-ffb-smoke.json` / `simulator_ffb_bounded` plus a `clear_zero` output record tagged `mode_mismatch` and final zero, and firmware/update page links to `support-bundle.json` / `service_status_receipts`. `simulator-telemetry-proof.json` must show telemetry-only operation with `hardware_output_enabled=false`, `no_ffb_writes=true`, normalized snapshots, a recorder artifact, recorder provenance, and no faults; the recorder JSON/JSONL artifact must use a lane-relative path, exist under the lane, contain exactly the claimed snapshot count, include normalized fields (`speed_ms`, `steering_angle`, `throttle`, `brake`, `rpm`, `gear`, `ffb_scalar`) with sequence or timestamp ordering evidence, bind the parent receipt's `duration_ms` through per-record duration fields or timestamp span, and include per-record provenance matching the parent receipt (`recorder_command="wheelctl telemetry record"`, stable recorder session, matching game/source, hardware output disabled, no FFB writes, no serial config, and no firmware/DFU commands). `simulator-ffb-smoke.json` must show an R5 output-capable device record, `hardware_output_enabled=true`, `no_hid_device_opened=false`, `no_ffb_writes=false`, `ffb_mode="direct"`, descriptor trust cross-checked against lane `descriptor.json` for the same R5 PID or `explicit_operator_override=true`, `hardware_prerequisites_validated=true` with passing prerequisite gates for zero/watchdog/disconnect/init/low-torque, bounded non-zero output plus zero output counts, an input telemetry artifact/count/session link matching a passing `simulator-telemetry-proof.json`, an output log artifact, high torque false, watchdog active, final zero attempted and sent with the zero payload, `mode_mismatch_cleared_output=true`, stop/pause/game-exit/mode-mismatch output clearing, and `max_output_percent <= 5`; the output JSON/JSONL artifact must use a lane-relative path, exist under the lane, contain exactly the claimed output report count, and contain successful direct torque `0x20` records with `payload_hex`, `torque_raw`, `flags`, `motor_enabled`, signed percent, `bytes_written`, contiguous sequence, monotonic advancing `elapsed_us`, `telemetry_sequence`, `input_ffb_scalar` matching the referenced telemetry snapshot's `ffb_scalar`, HID write metadata (`transport="hid"`, `hid_write_target="output_report"`, `hid_write_attempted=true`), input telemetry link fields matching the telemetry proof, writer provenance matching the parent receipt (`writer_command` beginning with `wheeld --hardware-lane`, `writer_hardware_lane` or `moza_lane` matching the dated lane, stable writer session, ordered UTC writer start/completion timestamps, R5 device path/product ID, hardware output enabled, HID opened, and FFB writes present), ordered zero-payload `clear_zero` records tagged with `clear_event: "stop"`, `"pause"`, `"game_exit"`, and `"mode_mismatch"`, and final zero as the last record. Pit House and simulator receipts must also declare `no_serial_config_commands=true` and `no_firmware_or_dfu_commands=true`.
+
+`wheelctl moza audit-lane` should run after every `promote-manifest` step and its `lane-audit-*.json` receipts are part of the lane manifest contract. It reruns the requested live bundle verification and checks that the stored verification and manifest-promotion receipts through that stage are present, successful, non-claiming, and backed by matching embedded before/after verification summaries with zero missing artifacts, invalid artifacts, and failed gates. It opens no HID device and sends no reports.
+
+Support bundles can include Moza lane verifier context without touching hardware:
+
+```powershell
+wheelctl support-bundle --device <r5> --moza-lane ci/hardware/moza-r5/YYYY-MM-DD --output ci/hardware/moza-r5/YYYY-MM-DD/support-bundle.json
+```
+
+Use the top-level `support-bundle --device <r5>` command for the lane artifact so the receipt records the device filter and the Phase 9 checklist command shape. `wheelctl diag support --moza-lane ...` is still useful for ad hoc triage, but it is not sufficient for the smoke-ready service-status gate. The smoke-ready verifier requires `moza-status.json`, `device-status.json`, and `support-bundle.json`; all three must identify the same R5 PID, including the support bundle's top-level `devices[]` entry and service-facing `device_statuses[]` snapshot, keep torque readiness disabled, and declare no FFB, serial configuration, firmware, or DFU commands. The verifier rereads the lane and rejects support-bundle Moza sections that overclaim readiness or artifacts: a bundle may conservatively show an earlier stage or a missing artifact from when it was generated, but it cannot claim a passing readiness flag, lane-audit flag, highest stage, or artifact `pass` state that the current lane cannot prove. The support bundle includes service-facing device status snapshots plus a Moza section with an `artifact_index` for every required lane receipt/capture, including stored verification, manifest-promotion, and lane-audit receipts even when they are still missing, and a diagnostic `readiness` summary with the highest passing stage, the next required stage, the first blocking verifier summary, lane-audit booleans, and `release_ready=false`. Each artifact-index entry must record a consistent path, kind, required stage, existence/validity booleans, and `pass`, `missing`, or `invalid` status. `ready_for_zero_torque` requires the passive verifier plus `lane-audit-passive.json`; `ready_for_low_torque` requires the zero verifier, `lane-audit-zero.json`, and the off/standard init gates; `ready_for_real_hardware_smoke` requires the smoke-ready verifier plus `lane-audit-smoke-ready.json`. Treat it as troubleshooting context only; readiness claims still require the corresponding `verify-bundle`, `promote-manifest`, and `audit-lane` receipts in the lane.
+
+The Moza section summarizes missing artifacts and failed gates across passive, zero, and smoke-ready stages. It is diagnostic context only, not a readiness promotion.
+
+## Hard Rules
+
+- Passive commands do not send FFB output, feature reports, or serial config.
+- Verifier-accepted receipts declare no serial config, firmware, or DFU commands.
+- Zero proof must pass before any non-zero torque test.
+- Zero, watchdog, disconnect, off/standard init, and low-torque receipts must carry `receipt_path` values resolving to the exact dated-lane artifact being verified, plus valid UTC `generated_at_utc` values.
+- Low torque requires `--confirm-low-torque`, `--lane`, same-lane real zero/off/standard init receipts before HID initialization, and either a same-lane descriptor-derived trusted descriptor receipt or `--explicit-operator-override`. Explicit `--zero-proof`, `--init-off`, `--init-standard`, and `--descriptor` paths are accepted only when they resolve to the expected dated-lane artifacts. The verifier re-reads the same dated lane's zero/off/standard prerequisite receipts, checks their embedded timestamp/CRC summaries, and recomputes raw direct-torque payloads from the R5 PID and claimed percent before accepting the command log.
+- Simulator FFB smoke must carry `prerequisite_artifacts` for zero, watchdog, disconnect, off/standard init, and low torque. Each summary must match the current dated-lane artifact by path, CRC, and timestamp, and every prerequisite timestamp must predate `writer_started_at_utc`.
+- If Windows cannot provide raw descriptor CRC material, use the explicit override only for bounded low-torque bring-up; high torque remains disabled.
+- High torque stays false for this lane.
+- Pit House coexistence is tested separately.
+- Release readiness stays false.

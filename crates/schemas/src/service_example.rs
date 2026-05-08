@@ -135,6 +135,7 @@ mod example {
                 }),
                 active_faults: vec![],
                 telemetry: Some(wire_telemetry),
+                moza: None,
             })
         }
 

@@ -182,6 +182,8 @@ fn proto_device_info_with_future_field_bytes_decoded() -> TestResult {
         r#type: 1, // WHEEL_BASE
         capabilities: None,
         state: 1, // CONNECTED
+        vendor_id: 0,
+        product_id: 0,
     };
     let mut bytes = msg.encode_to_vec();
 
@@ -295,6 +297,8 @@ fn proto_device_type_unknown_variant_decoded_as_zero() -> TestResult {
         r#type: 99, // Unknown variant
         capabilities: None,
         state: 0,
+        vendor_id: 0,
+        product_id: 0,
     };
     let bytes = msg.encode_to_vec();
     let decoded = proto::DeviceInfo::decode(bytes.as_slice())?;
@@ -312,6 +316,8 @@ fn proto_device_state_unknown_variant_preserved() -> TestResult {
         r#type: 0,
         capabilities: None,
         state: 255, // Unknown DeviceState variant
+        vendor_id: 0,
+        product_id: 0,
     };
     let bytes = msg.encode_to_vec();
     let decoded = proto::DeviceInfo::decode(bytes.as_slice())?;
@@ -348,10 +354,13 @@ fn proto_device_status_without_telemetry_decodes() -> TestResult {
             r#type: 1,
             capabilities: None,
             state: 1,
+            vendor_id: 0,
+            product_id: 0,
         }),
         last_seen: None,
         active_faults: vec![],
         telemetry: None,
+        moza: None,
     };
     let bytes = msg.encode_to_vec();
     let decoded = proto::DeviceStatus::decode(bytes.as_slice())?;
@@ -379,6 +388,8 @@ fn proto_device_status_with_all_nested_messages() -> TestResult {
                 min_report_period_us: 1000,
             }),
             state: 1,
+            vendor_id: 0,
+            product_id: 0,
         }),
         last_seen: Some(prost_types::Timestamp {
             seconds: 1700000000,
@@ -392,6 +403,23 @@ fn proto_device_status_with_all_nested_messages() -> TestResult {
             faults: 0,
             hands_on: true,
             sequence: 42,
+        }),
+        moza: Some(proto::MozaReadinessStatus {
+            model: "Moza R5".into(),
+            product_id: "0x0014".into(),
+            category: "wheelbase".into(),
+            output_capable: true,
+            ffb_ready: false,
+            init_state: "uninitialized".into(),
+            descriptor_trusted: false,
+            descriptor_crc32: String::new(),
+            descriptor_source: String::new(),
+            lane: "moza-r5".into(),
+            direct_mode_allowed: false,
+            high_torque_allowed: false,
+            safe_to_send_torque: false,
+            safety_state: "pre_validation".into(),
+            safety_reason: "test".into(),
         }),
     };
     let bytes = msg.encode_to_vec();
@@ -407,6 +435,10 @@ fn proto_device_status_with_all_nested_messages() -> TestResult {
     let telemetry = decoded.telemetry.as_ref().ok_or("missing telemetry")?;
     assert_eq!(telemetry.wheel_angle_mdeg, 45000);
     assert!(telemetry.hands_on);
+
+    let moza = decoded.moza.as_ref().ok_or("missing Moza readiness")?;
+    assert_eq!(moza.product_id, "0x0014");
+    assert!(!moza.safe_to_send_torque);
 
     assert_eq!(decoded.active_faults.len(), 1);
     Ok(())

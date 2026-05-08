@@ -1,0 +1,29 @@
+---
+source: crates/cli/tests/cli_comprehensive_e2e_tests.rs
+expression: stdout
+---
+Build a telemetry-only simulator proof receipt from normalized snapshots
+
+Usage: wheelctl moza simulator-telemetry-proof [OPTIONS] --lane <LANE> --game <GAME> --recorder-artifact <RECORDER_ARTIFACT> --duration-ms <DURATION_MS>
+
+Options:
+      --json
+          Output in JSON format for machine parsing
+      --lane <LANE>
+          Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06
+      --game <GAME>
+          Simulator or bridge name
+  -v, --verbose...
+          Verbose logging
+      --telemetry-source <TELEMETRY_SOURCE>
+          Telemetry source: real_game or simhub_bridge [default: simhub_bridge]
+      --recorder-artifact <RECORDER_ARTIFACT>
+          Lane-relative normalized telemetry recording artifact
+      --duration-ms <DURATION_MS>
+          Recording duration in milliseconds
+      --json-out <JSON_OUT>
+          Write the simulator telemetry proof receipt to this JSON file
+      --overwrite
+          Replace an existing proof receipt
+  -h, --help
+          Print help

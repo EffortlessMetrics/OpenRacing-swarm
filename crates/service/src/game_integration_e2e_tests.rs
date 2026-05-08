@@ -543,10 +543,13 @@ impl GameIntegrationE2ETestSuite {
             Err(_) => true, // Error is also acceptable
         };
 
-        // Test 2: Invalid path
+        // Test 2: Invalid path. A missing directory is not invalid because
+        // config writers may create game config directories on demand.
+        let invalid_game_root = self.temp_dir.path().join("not_a_directory");
+        std::fs::write(&invalid_game_root, b"not a directory")?;
         let invalid_path_request = OneClickConfigRequest {
             game_id: "iracing".to_string(),
-            game_path: "/nonexistent/path".to_string(),
+            game_path: invalid_game_root.to_string_lossy().to_string(),
             enable_auto_switching: false,
             enable_high_rate_iracing_360hz: false,
             profile_id: None,

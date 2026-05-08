@@ -251,6 +251,15 @@ reason = "Test fixtures intentionally contain analyzed inputs (binary, JSON, YAM
 covered_by = ["cargo test --workspace"]
 
 [[allow]]
+glob = "ci/hardware/**"
+kind = "hardware_lane_contract"
+owner = "hardware"
+surface = "hardware"
+classification = "production"
+reason = "Receipt lane schemas and runbooks for hardware validation evidence."
+covered_by = ["python scripts/policy_file.py"]
+
+[[allow]]
 glob = "**/*.snap"
 kind = "insta_snapshot"
 owner = "core"
@@ -282,6 +291,15 @@ surface = "packaging"
 classification = "production"
 reason = "Platform packaging (udev rules, systemd units, installers, etc.)."
 covered_by = ["python scripts/validate_udev_rules.py"]
+
+[[allow]]
+glob = "crates/**/windows-*.manifest"
+kind = "windows_app_manifest"
+owner = "release/ci"
+surface = "packaging"
+classification = "production"
+reason = "Windows application manifests linked by crate build scripts."
+covered_by = ["cargo build --workspace"]
 
 [[allow]]
 glob = "third_party/**"

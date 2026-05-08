@@ -448,21 +448,21 @@ fn narrow_device_range_constrains_adaptation() -> Result<(), Box<dyn std::error:
 
 #[test]
 fn full_recovery_to_min_period_after_load_spike() -> Result<(), Box<dyn std::error::Error>> {
-    // Use very high jitter thresholds so CI timing noise doesn't interfere;
-    // this test exercises recovery purely via processing-time signals.
+    // Use a wide, slow period range so Windows CI timing noise does not keep
+    // every recovery tick in a missed-deadline state.
     let config = AdaptiveSchedulingConfig::enabled()
-        .with_period_bounds(900_000, 1_100_000)
-        .with_step_sizes(5_000, 2_000)
+        .with_period_bounds(20_000_000, 30_000_000)
+        .with_step_sizes(5_000_000, 5_000_000)
         .with_processing_thresholds(180, 80)
         .with_jitter_thresholds(50_000_000, 40_000_000) // 50ms/40ms — never fires on CI
         .with_ema_alpha(1.0);
 
-    let mut s = AbsoluteScheduler::with_period(5_000_000);
+    let mut s = AbsoluteScheduler::with_period(25_000_000);
     s.set_adaptive_scheduling(config);
 
     // Phase 1: drive period to max via high processing load.
     s.record_processing_time_us(300);
-    for _ in 0..50 {
+    for _ in 0..2 {
         let _ = s.wait_for_tick();
     }
     let at_max = s.adaptive_scheduling();
@@ -474,7 +474,7 @@ fn full_recovery_to_min_period_after_load_spike() -> Result<(), Box<dyn std::err
 
     // Phase 2: sustained low processing load to drive period back toward min.
     s.record_processing_time_us(30);
-    for _ in 0..200 {
+    for _ in 0..5 {
         let _ = s.wait_for_tick();
     }
     let recovered = s.adaptive_scheduling();

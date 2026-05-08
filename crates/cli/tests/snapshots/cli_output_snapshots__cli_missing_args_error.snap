@@ -7,16 +7,18 @@ Racing Wheel Control CLI - Manage racing wheel hardware, profiles, and diagnosti
 Usage: wheelctl [OPTIONS] <COMMAND>
 
 Commands:
-  device      Device management commands
-  profile     Profile management commands
-  plugin      Plugin management commands
-  diag        Diagnostic and monitoring commands
-  game        Game integration commands
-  telemetry   Telemetry probe and capture commands
-  safety      Safety and control commands
-  completion  Generate shell completion scripts
-  health      Service health and status
-  help        Print this message or the help of the given subcommand(s)
+  device          Device management commands
+  profile         Profile management commands
+  plugin          Plugin management commands
+  diag            Diagnostic and monitoring commands
+  game            Game integration commands
+  telemetry       Telemetry probe and capture commands
+  moza            Safe Moza HID probe and capture commands
+  safety          Safety and control commands
+  support-bundle  Generate diagnostic support bundle
+  completion      Generate shell completion scripts
+  health          Service health and status
+  help            Print this message or the help of the given subcommand(s)
 
 Options:
       --json        Output in JSON format for machine parsing

@@ -7,6 +7,9 @@
 
 use crate::error::CliError;
 use anyhow::Result;
+use racing_wheel_hid_moza_protocol::{
+    MOZA_VENDOR_ID, MozaDeviceCategory, identify_device, is_wheelbase_product,
+};
 use racing_wheel_schemas::generated::wheel::v1 as wire;
 use racing_wheel_schemas::telemetry::TelemetryData as SchemasTelemetryData;
 use serde::{Deserialize, Serialize};
@@ -447,6 +450,8 @@ mod mock {
             DeviceInfo {
                 id: "wheel-001".to_string(),
                 name: "Fanatec DD Pro".to_string(),
+                vendor_id: None,
+                product_id: None,
                 device_type: DeviceType::WheelBase,
                 state: DeviceState::Connected,
                 capabilities: DeviceCapabilities {
@@ -462,6 +467,8 @@ mod mock {
             DeviceInfo {
                 id: "pedals-001".to_string(),
                 name: "Fanatec V3 Pedals".to_string(),
+                vendor_id: None,
+                product_id: None,
                 device_type: DeviceType::Pedals,
                 state: DeviceState::Connected,
                 capabilities: DeviceCapabilities {
@@ -487,6 +494,8 @@ mod mock {
             device: DeviceInfo {
                 id: device_id.to_string(),
                 name: "Mock Device".to_string(),
+                vendor_id: None,
+                product_id: None,
                 device_type: DeviceType::WheelBase,
                 state: DeviceState::Connected,
                 capabilities: DeviceCapabilities {
@@ -508,6 +517,7 @@ mod mock {
                 fault_flags: 0,
                 hands_on: true,
             },
+            moza: None,
         })
     }
 
@@ -567,6 +577,10 @@ mod mock {
 pub struct DeviceInfo {
     pub id: String,
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vendor_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub product_id: Option<String>,
     pub device_type: DeviceType,
     pub state: DeviceState,
     pub capabilities: DeviceCapabilities,
@@ -577,6 +591,8 @@ impl DeviceInfo {
         Self {
             id: w.id,
             name: w.name,
+            vendor_id: wire_u32_to_hex_u16(w.vendor_id),
+            product_id: wire_u32_to_hex_u16(w.product_id),
             device_type: DeviceType::from_wire(w.r#type),
             state: DeviceState::from_wire(w.state),
             capabilities: w
@@ -587,22 +603,34 @@ impl DeviceInfo {
     }
 }
 
+fn wire_u32_to_hex_u16(value: u32) -> Option<String> {
+    u16::try_from(value)
+        .ok()
+        .filter(|value| *value != 0)
+        .map(|value| format!("0x{value:04X}"))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DeviceType {
+    Unknown,
     WheelBase,
+    SteeringWheel,
     Pedals,
     Shifter,
     Handbrake,
+    ButtonBox,
 }
 
 impl DeviceType {
     fn from_wire(v: i32) -> Self {
         match v {
             1 => DeviceType::WheelBase,
-            2 => DeviceType::Pedals,
-            3 => DeviceType::Shifter,
-            4 => DeviceType::Handbrake,
-            _ => DeviceType::WheelBase, // default for unknown
+            2 => DeviceType::SteeringWheel,
+            3 => DeviceType::Pedals,
+            4 => DeviceType::Shifter,
+            5 => DeviceType::Handbrake,
+            6 => DeviceType::ButtonBox,
+            _ => DeviceType::Unknown,
         }
     }
 }
@@ -673,6 +701,8 @@ pub struct DeviceStatus {
     pub last_seen: chrono::DateTime<chrono::Utc>,
     pub active_faults: Vec<String>,
     pub telemetry: TelemetryData,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub moza: Option<MozaReadinessStatus>,
 }
 
 impl DeviceStatus {
@@ -683,10 +713,16 @@ impl DeviceStatus {
             .unwrap_or_else(|| DeviceInfo {
                 id: fallback_id.to_string(),
                 name: "Unknown".to_string(),
+                vendor_id: None,
+                product_id: None,
                 device_type: DeviceType::WheelBase,
                 state: DeviceState::Connected,
                 capabilities: DeviceCapabilities::default(),
             });
+        let moza = w
+            .moza
+            .map(MozaReadinessStatus::from_wire)
+            .or_else(|| MozaReadinessStatus::from_device(&device));
 
         let last_seen = w
             .last_seen
@@ -703,7 +739,125 @@ impl DeviceStatus {
             last_seen,
             active_faults: w.active_faults,
             telemetry,
+            moza,
         }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MozaReadinessStatus {
+    pub model: String,
+    pub product_id: String,
+    pub category: String,
+    pub output_capable: bool,
+    pub ffb_ready: bool,
+    pub init_state: String,
+    pub descriptor_trusted: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub descriptor_crc32: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub descriptor_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lane: Option<String>,
+    pub direct_mode_allowed: bool,
+    pub high_torque_allowed: bool,
+    pub safe_to_send_torque: bool,
+    pub safety_state: String,
+    pub safety_reason: String,
+}
+
+impl MozaReadinessStatus {
+    fn from_wire(w: wire::MozaReadinessStatus) -> Self {
+        Self {
+            model: w.model,
+            product_id: w.product_id,
+            category: w.category,
+            output_capable: w.output_capable,
+            ffb_ready: w.ffb_ready,
+            init_state: w.init_state,
+            descriptor_trusted: w.descriptor_trusted,
+            descriptor_crc32: non_empty_string(w.descriptor_crc32),
+            descriptor_source: non_empty_string(w.descriptor_source),
+            lane: non_empty_string(w.lane),
+            direct_mode_allowed: w.direct_mode_allowed,
+            high_torque_allowed: w.high_torque_allowed,
+            safe_to_send_torque: w.safe_to_send_torque,
+            safety_state: w.safety_state,
+            safety_reason: w.safety_reason,
+        }
+    }
+
+    pub fn from_device(device: &DeviceInfo) -> Option<Self> {
+        let vendor_id = parse_hex_u16(device.vendor_id.as_deref()?)?;
+        if vendor_id != MOZA_VENDOR_ID {
+            return None;
+        }
+
+        let product_id = parse_hex_u16(device.product_id.as_deref()?)?;
+        let identity = identify_device(product_id);
+        let output_capable = is_wheelbase_product(product_id);
+        let init_state = if output_capable {
+            "uninitialized"
+        } else {
+            "not_applicable"
+        };
+
+        Some(Self {
+            model: identity.name.to_string(),
+            product_id: format!("0x{product_id:04X}"),
+            category: moza_category_label(identity.category).to_string(),
+            output_capable,
+            ffb_ready: false,
+            init_state: init_state.to_string(),
+            descriptor_trusted: false,
+            descriptor_crc32: None,
+            descriptor_source: None,
+            lane: None,
+            direct_mode_allowed: false,
+            high_torque_allowed: false,
+            safe_to_send_torque: false,
+            safety_state: "pre_validation".to_string(),
+            safety_reason: "device status is observe-only; run explicit Moza init, zero, and torque-test gates before any output".to_string(),
+        })
+    }
+
+    pub fn apply_descriptor_receipt(
+        &mut self,
+        lane: String,
+        descriptor_trusted: bool,
+        descriptor_crc32: Option<String>,
+        descriptor_source: Option<String>,
+    ) {
+        self.lane = Some(lane);
+        self.descriptor_trusted = descriptor_trusted;
+        self.descriptor_crc32 = descriptor_crc32;
+        self.descriptor_source = descriptor_source;
+        self.direct_mode_allowed = false;
+        self.high_torque_allowed = false;
+        self.safe_to_send_torque = false;
+    }
+}
+
+fn non_empty_string(value: String) -> Option<String> {
+    (!value.trim().is_empty()).then_some(value)
+}
+
+fn parse_hex_u16(value: &str) -> Option<u16> {
+    let trimmed = value.trim();
+    let hex = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+        .unwrap_or(trimmed);
+    u16::from_str_radix(hex, 16).ok()
+}
+
+fn moza_category_label(category: MozaDeviceCategory) -> &'static str {
+    match category {
+        MozaDeviceCategory::Wheelbase => "wheelbase",
+        MozaDeviceCategory::Pedals => "pedals",
+        MozaDeviceCategory::Shifter => "shifter",
+        MozaDeviceCategory::Handbrake => "handbrake",
+        MozaDeviceCategory::Unknown => "unknown",
     }
 }
 
@@ -1096,6 +1250,8 @@ mod tests {
             name: "Test Wheel".to_string(),
             r#type: 1, // WheelBase
             state: 1,  // Connected
+            vendor_id: 0x346E,
+            product_id: 0x0014,
             capabilities: Some(wire::DeviceCapabilities {
                 supports_pid: true,
                 supports_raw_torque_1khz: true,
@@ -1110,10 +1266,33 @@ mod tests {
         let device = DeviceInfo::from_wire(wire_device);
         assert_eq!(device.id, "wheel-001");
         assert_eq!(device.name, "Test Wheel");
+        assert_eq!(device.vendor_id.as_deref(), Some("0x346E"));
+        assert_eq!(device.product_id.as_deref(), Some("0x0014"));
         assert!(matches!(device.device_type, DeviceType::WheelBase));
         assert!(matches!(device.state, DeviceState::Connected));
         assert!(device.capabilities.supports_pid);
         assert!((device.capabilities.max_torque_nm - 8.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn device_info_from_wire_omits_zero_usb_identity() {
+        let wire_device = wire::DeviceInfo {
+            id: "wheel-001".to_string(),
+            name: "Test Wheel".to_string(),
+            r#type: 1,
+            state: 1,
+            vendor_id: 0,
+            product_id: 0,
+            capabilities: None,
+        };
+
+        let device = DeviceInfo::from_wire(wire_device);
+        let json = serde_json::to_value(&device).unwrap_or_default();
+
+        assert!(device.vendor_id.is_none());
+        assert!(device.product_id.is_none());
+        assert!(json.get("vendor_id").is_none());
+        assert!(json.get("product_id").is_none());
     }
 
     #[test]
@@ -1137,12 +1316,145 @@ mod tests {
 
     #[test]
     fn device_type_from_wire_covers_all_variants() {
+        assert!(matches!(DeviceType::from_wire(0), DeviceType::Unknown));
         assert!(matches!(DeviceType::from_wire(1), DeviceType::WheelBase));
-        assert!(matches!(DeviceType::from_wire(2), DeviceType::Pedals));
-        assert!(matches!(DeviceType::from_wire(3), DeviceType::Shifter));
-        assert!(matches!(DeviceType::from_wire(4), DeviceType::Handbrake));
-        // Unknown defaults to WheelBase
-        assert!(matches!(DeviceType::from_wire(99), DeviceType::WheelBase));
+        assert!(matches!(
+            DeviceType::from_wire(2),
+            DeviceType::SteeringWheel
+        ));
+        assert!(matches!(DeviceType::from_wire(3), DeviceType::Pedals));
+        assert!(matches!(DeviceType::from_wire(4), DeviceType::Shifter));
+        assert!(matches!(DeviceType::from_wire(5), DeviceType::Handbrake));
+        assert!(matches!(DeviceType::from_wire(6), DeviceType::ButtonBox));
+        assert!(matches!(DeviceType::from_wire(99), DeviceType::Unknown));
+    }
+
+    #[test]
+    fn device_status_from_wire_adds_conservative_moza_readiness()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let status = DeviceStatus::from_wire(
+            wire::DeviceStatus {
+                device: Some(wire::DeviceInfo {
+                    id: "moza-r5".to_string(),
+                    name: "Moza R5".to_string(),
+                    r#type: 1,
+                    state: 1,
+                    vendor_id: 0x346E,
+                    product_id: 0x0014,
+                    capabilities: Some(wire::DeviceCapabilities {
+                        supports_pid: false,
+                        supports_raw_torque_1khz: true,
+                        supports_health_stream: true,
+                        supports_led_bus: false,
+                        max_torque_cnm: 550,
+                        encoder_cpr: 2048,
+                        min_report_period_us: 1000,
+                    }),
+                }),
+                last_seen: None,
+                active_faults: Vec::new(),
+                telemetry: None,
+                moza: None,
+            },
+            "moza-r5",
+        );
+
+        let moza = status.moza.as_ref().ok_or("missing Moza readiness")?;
+        assert_eq!(moza.model, "Moza R5");
+        assert_eq!(moza.product_id, "0x0014");
+        assert_eq!(moza.category, "wheelbase");
+        assert!(moza.output_capable);
+        assert!(!moza.ffb_ready);
+        assert_eq!(moza.init_state, "uninitialized");
+        assert!(!moza.descriptor_trusted);
+        assert!(!moza.direct_mode_allowed);
+        assert!(!moza.high_torque_allowed);
+        assert!(!moza.safe_to_send_torque);
+        Ok(())
+    }
+
+    #[test]
+    fn device_status_from_wire_marks_moza_peripheral_not_output_capable()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let status = DeviceStatus::from_wire(
+            wire::DeviceStatus {
+                device: Some(wire::DeviceInfo {
+                    id: "moza-hbp".to_string(),
+                    name: "Moza HBP".to_string(),
+                    r#type: 5,
+                    state: 1,
+                    vendor_id: 0x346E,
+                    product_id: 0x0022,
+                    capabilities: Some(wire::DeviceCapabilities {
+                        supports_pid: false,
+                        supports_raw_torque_1khz: false,
+                        supports_health_stream: true,
+                        supports_led_bus: false,
+                        max_torque_cnm: 0,
+                        encoder_cpr: 2048,
+                        min_report_period_us: 1000,
+                    }),
+                }),
+                last_seen: None,
+                active_faults: Vec::new(),
+                telemetry: None,
+                moza: None,
+            },
+            "moza-hbp",
+        );
+
+        let moza = status.moza.as_ref().ok_or("missing Moza readiness")?;
+        assert_eq!(moza.model, "Moza HBP Handbrake");
+        assert_eq!(moza.category, "handbrake");
+        assert!(!moza.output_capable);
+        assert_eq!(moza.init_state, "not_applicable");
+        assert!(!moza.safe_to_send_torque);
+        Ok(())
+    }
+
+    #[test]
+    fn device_status_from_wire_prefers_service_moza_readiness()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let status = DeviceStatus::from_wire(
+            wire::DeviceStatus {
+                device: Some(wire::DeviceInfo {
+                    id: "moza-r5".to_string(),
+                    name: "Moza R5".to_string(),
+                    r#type: 1,
+                    state: 1,
+                    vendor_id: 0x346E,
+                    product_id: 0x0014,
+                    capabilities: None,
+                }),
+                last_seen: None,
+                active_faults: Vec::new(),
+                telemetry: None,
+                moza: Some(wire::MozaReadinessStatus {
+                    model: "Moza R5".to_string(),
+                    product_id: "0x0014".to_string(),
+                    category: "wheelbase".to_string(),
+                    output_capable: true,
+                    ffb_ready: false,
+                    init_state: "service_uninitialized".to_string(),
+                    descriptor_trusted: false,
+                    descriptor_crc32: String::new(),
+                    descriptor_source: String::new(),
+                    lane: "moza-r5".to_string(),
+                    direct_mode_allowed: false,
+                    high_torque_allowed: false,
+                    safe_to_send_torque: false,
+                    safety_state: "pre_validation".to_string(),
+                    safety_reason: "service provided".to_string(),
+                }),
+            },
+            "moza-r5",
+        );
+
+        let moza = status.moza.as_ref().ok_or("missing Moza readiness")?;
+        assert_eq!(moza.init_state, "service_uninitialized");
+        assert_eq!(moza.lane.as_deref(), Some("moza-r5"));
+        assert_eq!(moza.safety_reason, "service provided");
+        Ok(())
     }
 
     #[test]

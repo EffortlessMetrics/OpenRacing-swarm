@@ -1,0 +1,39 @@
+---
+source: crates/cli/tests/cli_comprehensive_e2e_tests.rs
+expression: stdout
+---
+Build a bounded simulator-to-Moza FFB smoke proof from output logs
+
+Usage: wheelctl moza simulator-ffb-smoke [OPTIONS] --lane <LANE> --game <GAME> --output-log-artifact <OUTPUT_LOG_ARTIFACT> --watchdog-timeout-ms <WATCHDOG_TIMEOUT_MS>
+
+Options:
+      --json
+          Output in JSON format for machine parsing
+      --lane <LANE>
+          Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06
+      --game <GAME>
+          Simulator or bridge name
+  -v, --verbose...
+          Verbose logging
+      --telemetry-source <TELEMETRY_SOURCE>
+          Telemetry source: real_game or simhub_bridge [default: simhub_bridge]
+      --output-log-artifact <OUTPUT_LOG_ARTIFACT>
+          Lane-relative output log artifact
+      --descriptor-trusted
+          Descriptor trust was established before direct-mode FFB
+      --explicit-operator-override
+          Explicit operator override allowed direct-mode FFB without descriptor trust
+      --watchdog-timeout-ms <WATCHDOG_TIMEOUT_MS>
+          Watchdog timeout used during the smoke run
+      --stop-cleared-output
+          Stop event cleared output
+      --pause-cleared-output
+          Pause event cleared output
+      --game-exit-cleared-output
+          Game exit cleared output
+      --json-out <JSON_OUT>
+          Write the simulator FFB smoke proof receipt to this JSON file
+      --overwrite
+          Replace an existing proof receipt
+  -h, --help
+          Print help

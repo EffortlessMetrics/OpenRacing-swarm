@@ -34,6 +34,7 @@ racing-wheel-telemetry-adapters = { path = "../telemetry-adapters", version = "0
 racing-wheel-telemetry-recorder = { path = "../telemetry-recorder", version = "0.1.0" }
 racing-wheel-telemetry-config = { path = "../telemetry-config", version = "0.1.0" }
 racing-wheel-changelog = { workspace = true }
+racing-wheel-hid-moza-protocol = { path = "../hid-moza-protocol", version = "0.1.0" }
 openracing-errors = { workspace = true }
 openracing-hid-common = { workspace = true }
 openracing-profile-repository = { workspace = true }

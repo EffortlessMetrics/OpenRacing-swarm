@@ -209,6 +209,7 @@ mod help_completeness {
         let out = wheelctl()?.args(["diag", "support", "--help"]).output()?;
         let s = String::from_utf8_lossy(&out.stdout);
         assert!(s.contains("--blackbox"), "should list --blackbox: {s}");
+        assert!(s.contains("--moza-lane"), "should list --moza-lane: {s}");
         assert!(s.contains("--output"), "should list --output: {s}");
         Ok(())
     }

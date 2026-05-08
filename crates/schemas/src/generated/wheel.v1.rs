@@ -12,6 +12,10 @@ pub struct DeviceInfo {
     pub capabilities: ::core::option::Option<DeviceCapabilities>,
     #[prost(enumeration = "DeviceState", tag = "5")]
     pub state: i32,
+    #[prost(uint32, tag = "6")]
+    pub vendor_id: u32,
+    #[prost(uint32, tag = "7")]
+    pub product_id: u32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeviceId {
@@ -45,6 +49,41 @@ pub struct DeviceStatus {
     pub active_faults: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(message, optional, tag = "4")]
     pub telemetry: ::core::option::Option<TelemetryData>,
+    #[prost(message, optional, tag = "5")]
+    pub moza: ::core::option::Option<MozaReadinessStatus>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MozaReadinessStatus {
+    #[prost(string, tag = "1")]
+    pub model: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub product_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub category: ::prost::alloc::string::String,
+    #[prost(bool, tag = "4")]
+    pub output_capable: bool,
+    #[prost(bool, tag = "5")]
+    pub ffb_ready: bool,
+    #[prost(string, tag = "6")]
+    pub init_state: ::prost::alloc::string::String,
+    #[prost(bool, tag = "7")]
+    pub descriptor_trusted: bool,
+    #[prost(string, tag = "8")]
+    pub descriptor_crc32: ::prost::alloc::string::String,
+    #[prost(string, tag = "9")]
+    pub descriptor_source: ::prost::alloc::string::String,
+    #[prost(string, tag = "10")]
+    pub lane: ::prost::alloc::string::String,
+    #[prost(bool, tag = "11")]
+    pub direct_mode_allowed: bool,
+    #[prost(bool, tag = "12")]
+    pub high_torque_allowed: bool,
+    #[prost(bool, tag = "13")]
+    pub safe_to_send_torque: bool,
+    #[prost(string, tag = "14")]
+    pub safety_state: ::prost::alloc::string::String,
+    #[prost(string, tag = "15")]
+    pub safety_reason: ::prost::alloc::string::String,
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct TelemetryData {

@@ -4,13 +4,15 @@ Full device support matrix for OpenRacing. 28 vendors with 150+ unique VID/PID p
 
 For detailed capabilities (torque, encoder CPR, rotation, FFB effects), see [`DEVICE_CAPABILITIES.md`](DEVICE_CAPABILITIES.md).
 
+> **Pre-validation note:** Status values in this document describe source-level VID/PID confidence only. They do not mean OpenRacing has been validated on real hardware. Real-hardware claims require receipt bundles under `ci/hardware/` and validation docs under `docs/hardware/`.
+
 ---
 
 ## Status Definitions
 
 | Status | Meaning |
 |--------|---------|
-| **Verified** | VID/PID confirmed from official USB descriptor dump, SDK, or Linux kernel `hid-ids.h` |
+| **Verified** | VID/PID source confirmed from official USB descriptor dump, SDK, or Linux kernel `hid-ids.h`; not a hardware compatibility claim |
 | **Community** | VID/PID confirmed from community-maintained tables (linux-steering-wheels, iRacing forums, SimHub) |
 | **Estimated** | PID extrapolated from sibling models or vendor discussion; needs hardware confirmation |
 

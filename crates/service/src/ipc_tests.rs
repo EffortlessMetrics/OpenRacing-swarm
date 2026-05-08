@@ -23,6 +23,8 @@ use crate::safety_service::SafetyService;
 pub struct TestDevice {
     pub id: String,
     pub name: String,
+    pub vendor_id: u16,
+    pub product_id: u16,
     pub device_type: i32,
     pub capabilities: TestDeviceCapabilities,
     pub state: i32,
@@ -68,6 +70,8 @@ impl MockDeviceService {
                 TestDevice {
                     id: "test-device-1".to_string(),
                     name: "Test Wheel Base".to_string(),
+                    vendor_id: 0x1234,
+                    product_id: 0x5678,
                     device_type: 1, // WheelBase
                     capabilities: TestDeviceCapabilities {
                         supports_pid: true,
@@ -347,6 +351,8 @@ mod tests {
 
         assert_eq!(devices.len(), 1);
         assert_eq!(devices[0].name, "Test Wheel Base");
+        assert_eq!(devices[0].vendor_id, 0x1234);
+        assert_eq!(devices[0].product_id, 0x5678);
         assert_eq!(devices[0].device_type, 1); // WheelBase
         Ok(())
     }

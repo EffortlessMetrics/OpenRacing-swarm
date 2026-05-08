@@ -39,6 +39,8 @@ message DeviceInfo {
   DeviceType type = 3;
   DeviceCapabilities capabilities = 4;
   DeviceState state = 5;
+  uint32 vendor_id = 6;
+  uint32 product_id = 7;
 }
 
 message DeviceId {
@@ -78,6 +80,25 @@ message DeviceStatus {
   google.protobuf.Timestamp last_seen = 2;
   repeated string active_faults = 3;
   TelemetryData telemetry = 4;
+  MozaReadinessStatus moza = 5;
+}
+
+message MozaReadinessStatus {
+  string model = 1;
+  string product_id = 2;
+  string category = 3;
+  bool output_capable = 4;
+  bool ffb_ready = 5;
+  string init_state = 6;
+  bool descriptor_trusted = 7;
+  string descriptor_crc32 = 8;
+  string descriptor_source = 9;
+  string lane = 10;
+  bool direct_mode_allowed = 11;
+  bool high_torque_allowed = 12;
+  bool safe_to_send_torque = 13;
+  string safety_state = 14;
+  string safety_reason = 15;
 }
 
 message TelemetryData {

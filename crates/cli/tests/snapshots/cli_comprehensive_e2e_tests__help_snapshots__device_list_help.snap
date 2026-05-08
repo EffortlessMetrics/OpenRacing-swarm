@@ -7,7 +7,8 @@ List all connected devices
 Usage: wheelctl device list [OPTIONS]
 
 Options:
-  -d, --detailed    Show detailed device information
-      --json        Output in JSON format for machine parsing
-  -v, --verbose...  Verbose logging
-  -h, --help        Print help
+  -d, --detailed             Show detailed device information
+      --json                 Output in JSON format for machine parsing
+      --json-out <JSON_OUT>  Write the device list receipt to this JSON file
+  -v, --verbose...           Verbose logging
+  -h, --help                 Print help

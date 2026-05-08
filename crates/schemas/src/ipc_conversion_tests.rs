@@ -590,6 +590,8 @@ mod tests {
                     min_report_period_us: 1000,
                 }),
                 state: 1,
+                vendor_id: 0,
+                product_id: 0,
             };
 
             let domain_device: Device = must(wire_device_back.try_into());

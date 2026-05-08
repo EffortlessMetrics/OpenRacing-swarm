@@ -46,6 +46,10 @@ struct Cli {
     /// This flag is automatically passed when the service is started by Windows.
     #[arg(long)]
     service: bool,
+
+    /// Hardware validation lane identifier or path (for receipt-backed readiness)
+    #[arg(long)]
+    hardware_lane: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -141,7 +145,7 @@ async fn main() -> Result<()> {
     }
 
     // Create and run service daemon
-    run_service_daemon(system_config, feature_flags)
+    run_service_daemon(system_config, feature_flags, cli.hardware_lane.clone())
         .await
         .context("Service daemon failed")
 }
@@ -270,15 +274,27 @@ async fn log_system_info(config: &SystemConfig, flags: &FeatureFlags) {
     debug!("Configuration: {:#?}", config);
 }
 
-async fn run_service_daemon(config: SystemConfig, flags: FeatureFlags) -> Result<()> {
+async fn run_service_daemon(
+    config: SystemConfig,
+    flags: FeatureFlags,
+    hardware_lane: Option<String>,
+) -> Result<()> {
     // Create service configuration from system config
     let service_config =
         racing_wheel_service::system_config::ServiceConfig::from_system_config(&config);
 
+    if let Some(lane) = &hardware_lane {
+        info!(
+            "Hardware validation lane enabled: {} (readiness is observe-only until receipts pass)",
+            lane
+        );
+    }
+
     // Create service daemon with feature flags
-    let daemon = ServiceDaemon::new_with_flags(service_config, flags)
-        .await
-        .context("Failed to create service daemon")?;
+    let daemon =
+        ServiceDaemon::new_with_flags_and_hardware_lane(service_config, flags, hardware_lane)
+            .await
+            .context("Failed to create service daemon")?;
 
     // Run the daemon with graceful degradation
     daemon
@@ -390,4 +406,64 @@ async fn generate_anticheat_report() -> Result<()> {
     info!("  Signed binaries: ✓");
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::Parser as _;
+    use std::path::Path;
+
+    #[test]
+    fn hardware_lane_cli_flag_is_parsed_for_moza_receipt_lane() -> Result<(), clap::Error> {
+        let cli = Cli::try_parse_from([
+            "wheeld",
+            "--hardware-lane",
+            "ci/hardware/moza-r5/2026-05-06",
+        ])?;
+
+        assert_eq!(
+            cli.hardware_lane.as_deref(),
+            Some("ci/hardware/moza-r5/2026-05-06")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn moza_operator_docs_wheeld_commands_parse() -> Result<(), Box<dyn std::error::Error>> {
+        let docs = [
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ci/hardware/moza-r5/README.md"),
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/hardware/moza-r5-validation.md"),
+        ];
+        let mut checked = 0usize;
+
+        for path in docs {
+            let text = std::fs::read_to_string(&path)?;
+            for (line_index, line) in text.lines().enumerate() {
+                let command = line
+                    .trim()
+                    .replace("YYYY-MM-DD", "2026-05-06")
+                    .replace("<date>", "2026-05-06");
+                if !command.starts_with("wheeld ") {
+                    continue;
+                }
+
+                let args = command.split_whitespace().collect::<Vec<_>>();
+                Cli::try_parse_from(args).map_err(|error| {
+                    format!(
+                        "{}:{} documented wheeld command failed to parse: {command}\n{error}",
+                        path.display(),
+                        line_index + 1
+                    )
+                })?;
+                checked += 1;
+            }
+        }
+
+        assert!(
+            checked >= 4,
+            "expected to parse documented Moza wheeld commands, checked {checked}"
+        );
+        Ok(())
+    }
 }

@@ -55,6 +55,8 @@ fn proto_device_info_minimal_fields_decode() -> TestResult {
         r#type: 0,
         capabilities: None,
         state: 0,
+        vendor_id: 0,
+        product_id: 0,
     };
     let bytes = old_msg.encode_to_vec();
     let decoded = proto::DeviceInfo::decode(bytes.as_slice())?;
@@ -282,6 +284,8 @@ fn proto_device_type_unknown_variant_decodes_as_i32() -> TestResult {
         r#type: 99, // Unknown enum variant
         capabilities: None,
         state: 0,
+        vendor_id: 0,
+        product_id: 0,
     };
     let bytes = msg.encode_to_vec();
     let decoded = proto::DeviceInfo::decode(bytes.as_slice())?;
@@ -298,6 +302,8 @@ fn proto_device_state_unknown_variant_preserved() -> TestResult {
         r#type: 1,
         capabilities: None,
         state: 50, // hypothetical future state
+        vendor_id: 0,
+        product_id: 0,
     };
     let bytes = msg.encode_to_vec();
     let decoded = proto::DeviceInfo::decode(bytes.as_slice())?;
