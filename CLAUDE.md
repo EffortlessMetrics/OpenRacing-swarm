@@ -30,8 +30,8 @@ python scripts/validate_performance.py bench_results.json --strict  # Performanc
 
 # Documentation
 cargo doc --all-features --workspace       # Build docs
-python scripts/validate_adr.py --verbose   # Validate ADRs
-python scripts/generate_docs_index.py      # Generate docs index
+cargo run -p openracing-tools --bin validate-adr -- --verbose   # Validate ADRs
+cargo run -p openracing-tools --bin generate-docs-index --      # Generate docs index
 
 # Dependency checks
 cargo deny check                           # Security and license compliance
@@ -125,8 +125,8 @@ Current ADRs:
 ## Key Scripts
 
 - `scripts/validate_performance.py` - Performance gate validation
-- `scripts/validate_adr.py` - ADR format and reference validation
-- `scripts/generate_docs_index.py` - Documentation index generation
+- `cargo run -p openracing-tools --bin validate-adr --` - ADR format and reference validation
+- `cargo run -p openracing-tools --bin generate-docs-index --` - Documentation index generation
 - `scripts/analyze_compat_trend.py` - Track compatibility debt
 
 ## Dependency Management

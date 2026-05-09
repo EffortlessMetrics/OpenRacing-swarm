@@ -4740,6 +4740,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "openracing-tools"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+]
+
+[[package]]
 name = "openracing-tracing"
 version = "0.1.0"
 dependencies = [

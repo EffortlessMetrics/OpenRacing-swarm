@@ -35,8 +35,8 @@ This file guides automated agents working in this repository. Follow it alongsid
 - RT performance profile: `cargo build --profile rt --bin wheeld`
 - Benchmarks: `BENCHMARK_JSON_OUTPUT=1 BENCHMARK_JSON_PATH=bench_results.json cargo bench --bench rt_timing`
 - Performance gates: `python scripts/validate_performance.py bench_results.json --strict`
-- ADR validation: `python scripts/validate_adr.py --verbose`
-- Docs index: `python scripts/generate_docs_index.py`
+- ADR validation: `cargo run -p openracing-tools --bin validate-adr -- --verbose`
+- Docs index: `cargo run -p openracing-tools --bin generate-docs-index --`
 - Docs build: `cargo doc --all-features --workspace`
  - **No `unwrap()`/`expect()` in tests**: avoid panics in test code; prefer `Result`-returning tests (e.g. `#[test] fn foo() -> Result<(), Error>`), explicit assertions, or test helper macros.
 

@@ -1,0 +1,23 @@
+[package]
+name = "openracing-tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+description = "Repository maintenance tools for OpenRacing"
+
+[[bin]]
+name = "validate-adr"
+path = "src/bin/validate_adr.rs"
+
+[[bin]]
+name = "generate-docs-index"
+path = "src/bin/generate_docs_index.rs"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tempfile = "3.25.0"

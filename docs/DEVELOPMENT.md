@@ -82,10 +82,10 @@ python scripts/validate_performance.py bench_results.json --strict
 ### 3. Documentation
 ```bash
 # Validate ADRs
-python scripts/validate_adr.py --verbose
+cargo run -p openracing-tools --bin validate-adr -- --verbose
 
 # Generate documentation index
-python scripts/generate_docs_index.py
+cargo run -p openracing-tools --bin generate-docs-index --
 
 # Build docs
 cargo doc --all-features --workspace
@@ -345,8 +345,8 @@ Mitigation:
 ## Tools and Scripts
 
 - `scripts/validate_performance.py`: Performance gate validation
-- `scripts/validate_adr.py`: ADR format and reference validation
-- `scripts/generate_docs_index.py`: Documentation index generation
+- `cargo run -p openracing-tools --bin validate-adr --`: ADR format and reference validation
+- `cargo run -p openracing-tools --bin generate-docs-index --`: Documentation index generation
 - `scripts/sync_yaml.py`: Game support matrix YAML sync tool (see below)
 - `scripts/run_mutation_tests.sh`: Mutation testing runner (Linux/macOS)
 - `scripts/run_mutation_tests.ps1`: Mutation testing runner (Windows)

@@ -311,8 +311,8 @@ run_security_audit() {
     phase "Security and license audit"
     run cargo +stable audit --deny warnings
     run cargo +stable deny check
-    run python3 scripts/validate_adr.py --verbose
-    run python3 scripts/generate_docs_index.py
+    run cargo +stable run -p openracing-tools --bin validate-adr -- --verbose
+    run cargo +stable run -p openracing-tools --bin generate-docs-index --
 }
 
 run_coverage() {

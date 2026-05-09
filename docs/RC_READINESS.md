@@ -12,7 +12,7 @@
 | `cargo fmt --all -- --check` | ✅ Verified (wave 55) |
 | `cargo test --all-features --workspace` | ✅ All passing |
 | `cargo deny check` | ✅ Verified (wave 43) |
-| ADR validation (`validate_adr.py`) | ✅ Verified (wave 43) |
+| ADR validation (`cargo run -p openracing-tools --bin validate-adr --`) | ✅ Verified (wave 43) |
 | CI governance workflow | ✅ Fixed |
 | Workspace-hack sync | ✅ Verified (wave 43) |
 | Platform-independent snapshots | ✅ Fixed |

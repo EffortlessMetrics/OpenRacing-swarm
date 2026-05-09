@@ -22,15 +22,6 @@ path = "src/main.rs"
 name = "yaml-sync-check"
 path = "src/bin/yaml_sync_check.rs"
 
-[[bin]]
-name = "validate-adr"
-path = "src/bin/validate_adr.rs"
-
-[[bin]]
-name = "generate-docs-index"
-path = "src/bin/generate_docs_index.rs"
-
-
 [package.metadata.cargo-udeps.ignore]
 normal = ["workspace-hack"]
 

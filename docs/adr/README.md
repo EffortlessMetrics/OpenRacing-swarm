@@ -43,5 +43,5 @@ This directory contains Architecture Decision Records for the Racing Wheel Softw
 ## Tools
 
 - Use `template.md` as starting point for new ADRs
-- Validate ADR format with `scripts/validate_adr.py` (if available)
-- Generate ADR index with `scripts/generate_adr_index.py` (if available)
+- Validate ADR format with `cargo run -p openracing-tools --bin validate-adr -- --verbose`
+- Generate ADR index with `cargo run -p openracing-tools --bin generate-docs-index --`

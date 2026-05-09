@@ -887,11 +887,11 @@ jobs:
 
       - name: Validate ADR format and references
         run: |
-          cargo run -p wheelctl --bin validate-adr -- --verbose
+          cargo run -p openracing-tools --bin validate-adr -- --verbose
 
       - name: Generate documentation index
         run: |
-          cargo run -p wheelctl --bin generate-docs-index --
+          cargo run -p openracing-tools --bin generate-docs-index --
 
       - name: Upload license report
         uses: actions/upload-artifact@v4
