@@ -18,10 +18,6 @@ categories = ["command-line-utilities"]
 name = "wheelctl"
 path = "src/main.rs"
 
-[[bin]]
-name = "yaml-sync-check"
-path = "src/bin/yaml_sync_check.rs"
-
 [package.metadata.cargo-udeps.ignore]
 normal = ["workspace-hack"]
 

@@ -136,7 +136,7 @@ owner = "release/ci"
 surface = "ci"
 classification = "config"
 reason = "GitHub Actions workflow definitions."
-covered_by = ["python scripts/check_yaml_sync.py"]
+covered_by = ["cargo run -p openracing-tools --bin yaml-sync-check -- --check"]
 
 [[allow]]
 glob = ".github/**/*.md"
@@ -568,7 +568,7 @@ classification = "production"
 reason = "Game support matrix consumed at runtime by the telemetry layer."
 covered_by = [
   "python scripts/validate_game_matrix.py",
-  "python scripts/check_yaml_sync.py",
+  "cargo run -p openracing-tools --bin yaml-sync-check -- --check",
 ]
 
 # --- UI (Tauri + dist bundle) ----------------------------------------------

@@ -18,19 +18,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"
-
-      - name: Install PyYAML
-        run: pip install pyyaml
-
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
 
       - name: Check game support matrix files are identical
-        run: |
-          cargo run -p wheelctl --bin yaml-sync-check --locked -- \
-            crates/telemetry-config/src/game_support_matrix.yaml \
-            crates/telemetry-support/src/game_support_matrix.yaml
+        run: cargo run -p openracing-tools --bin yaml-sync-check --locked -- --check

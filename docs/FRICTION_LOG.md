@@ -22,9 +22,9 @@ Every time a game is added, both files must be updated manually. When they diver
 
 **Remedy:** Generate one file from the other at build time, or introduce a CI check that diffs the two files and fails if they differ. Long term: merge into a single source of truth consumed by both crates.
 
-**Update (CI check):** `.github/workflows/yaml-sync-check.yml` + `scripts/check_yaml_sync.py` confirmed present. The workflow runs on every push/PR and fails with a clear diff message if the files diverge.
+**Update (CI check):** `.github/workflows/yaml-sync-check.yml` + `cargo run -p openracing-tools --bin yaml-sync-check -- --check` confirmed present. The workflow runs on every push/PR and fails with a clear diff message if the files diverge.
 
-**Update (sync script):** `scripts/sync_yaml.py` added — run `python scripts/sync_yaml.py --fix` after editing the canonical file to keep both files in sync. See F-013 (Resolved). The single-source-of-truth refactor remains a long-term goal.
+**Update (sync tool):** `cargo run -p openracing-tools --bin yaml-sync-check -- --fix` copies the canonical file after editing to keep both files in sync. See F-013 (Resolved). The single-source-of-truth refactor remains a long-term goal.
 
 **Current state:** Files are now identical. The `dirt_rally_2` content divergence (6 lines of `supported_fields`) and `raceroom` omission were resolved. See F-013.
 
@@ -34,9 +34,9 @@ Every time a game is added, both files must be updated manually. When they diver
 
 **Encountered:** RC sprint / feat/r5-test-coverage-and-integration — F-001 kept recurring because developers had no easy command to sync the two YAML files after editing the canonical one.
 
-The CI check (`check_yaml_sync.py`) would catch divergence at PR time, but offered no fix path — developers had to manually copy the file or hunt down the right diff. This caused repeated F-001/F-013 CI failures.
+The CI check catches divergence at PR time and the Rust sync tool now offers a fix path. Before that, developers had to manually copy the file or hunt down the right diff. This caused repeated F-001/F-013 CI failures.
 
-**Fix applied:** `scripts/sync_yaml.py` added. Run `python scripts/sync_yaml.py --fix` after editing `crates/telemetry-config/src/game_support_matrix.yaml` to copy it to the mirror. Use `--check` in CI or pre-commit hooks to verify without writing. Documented in `docs/DEVELOPMENT.md` under "Keeping game support matrix files in sync". Requires Python 3.8+, no external dependencies.
+**Fix applied:** `cargo run -p openracing-tools --bin yaml-sync-check -- --fix` copies `crates/telemetry-config/src/game_support_matrix.yaml` to the mirror. Use `--check` in CI or pre-commit hooks to verify without writing. Documented in `docs/DEVELOPMENT.md` under "Keeping game support matrix files in sync".
 
 ---
 
@@ -116,7 +116,7 @@ Snapshot tests provide no protection against "wrong but consistent" values: the 
 
 Both `crates/telemetry-config/src/game_support_matrix.yaml` and `crates/telemetry-support/src/game_support_matrix.yaml` must be kept identical. Every game addition requires two manual edits. The files have already diverged (see F-001); the CI diff check is the only safety net.
 
-**Fix applied:** `scripts/sync_yaml.py` added — run `python scripts/sync_yaml.py --fix` after editing the canonical file to copy it to the mirror. The long-term single-source-of-truth refactor remains tracked under F-001. (feat/r5-test-coverage-and-integration)
+**Fix applied:** `cargo run -p openracing-tools --bin yaml-sync-check -- --fix` copies the canonical file to the mirror after editing. The long-term single-source-of-truth refactor remains tracked under F-001. (feat/r5-test-coverage-and-integration)
 
 ---
 

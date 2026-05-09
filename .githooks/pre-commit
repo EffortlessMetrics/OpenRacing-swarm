@@ -26,18 +26,16 @@ fi
 # --------------------------------------------------------------------------- #
 # 2. YAML sync check (game_support_matrix must be identical in both crates)   #
 # --------------------------------------------------------------------------- #
-if command -v diff &>/dev/null; then
-    REPO_ROOT="$(git rev-parse --show-toplevel)"
-    YAML_A="$REPO_ROOT/crates/telemetry-config/src/game_support_matrix.yaml"
-    YAML_B="$REPO_ROOT/crates/telemetry-support/src/game_support_matrix.yaml"
-    if [[ -f "$YAML_A" && -f "$YAML_B" ]]; then
-        if ! diff -q "$YAML_A" "$YAML_B" >/dev/null 2>&1; then
-            echo ""
-            echo "ERROR: game_support_matrix.yaml files are out of sync."
-            echo "  Run:  python scripts/sync_yaml.py"
-            echo "  Then: git add $YAML_A $YAML_B"
-            exit 1
-        fi
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+YAML_A="$REPO_ROOT/crates/telemetry-config/src/game_support_matrix.yaml"
+YAML_B="$REPO_ROOT/crates/telemetry-support/src/game_support_matrix.yaml"
+if [[ -f "$YAML_A" && -f "$YAML_B" ]]; then
+    if ! cargo run -p openracing-tools --bin yaml-sync-check --quiet -- --check; then
+        echo ""
+        echo "ERROR: game_support_matrix.yaml files are out of sync."
+        echo "  Run:  cargo run -p openracing-tools --bin yaml-sync-check -- --fix"
+        echo "  Then: git add $YAML_A $YAML_B"
+        exit 1
     fi
 fi
 
