@@ -4,6 +4,52 @@
 hosted runners are compatibility signals, not the default merge-safety gate for
 ordinary Rust, docs, schema, parser-fixture, or hardware-receipt changes.
 
+This document records the required merge policy for `main`. It exists because
+repository rulesets are configured in GitHub, not in this repository.
+
+## Current Audit
+
+Audited on 2026-05-08 with:
+
+```powershell
+gh api repos/EffortlessMetrics/OpenRacing/branches/main/protection
+gh api repos/EffortlessMetrics/OpenRacing/rulesets
+gh api repos/EffortlessMetrics/OpenRacing/rulesets/12099933
+```
+
+Findings:
+
+- Classic branch protection for `main` is not enabled.
+- Repository ruleset `main` (`12099933`) is active for the default branch.
+- The ruleset blocks branch deletion.
+- The ruleset blocks non-fast-forward updates.
+- The ruleset requires pull requests.
+- The ruleset did not require status checks at the time of the audit.
+
+That last point was the operational gap: a pull request could merge while long
+CI jobs were still pending if a user or tool ran a merge command.
+
+Follow-up on 2026-05-08: ruleset `12099933` was updated to require the Linux
+correctness checks listed below with stale-check protection enabled. Hardware
+receipt enforcement remains separate because the Moza receipt workflow is
+path-filtered and should not be required globally for ordinary pull requests.
+
+## Required Policy
+
+`main` must not accept a pull request until required checks have completed and
+passed. This is especially important for hardware receipt PRs, where a premature
+merge can make unvalidated evidence look accepted by the project history.
+
+The `main` ruleset should include a required status check rule with stale-check
+protection enabled. In the GitHub UI, configure:
+
+- Rulesets -> `main` -> Rules -> Require status checks to pass.
+- Enable "Require branches to be up to date before merging" if available.
+- Add each required check by its exact status-check name.
+- Keep pull requests required.
+- Keep deletion and non-fast-forward protection enabled.
+- Do not grant bypass actors for routine project work.
+
 ## Required PR Checks
 
 Configure the `main` ruleset so pull requests cannot merge until these checks
@@ -78,3 +124,24 @@ emulation. The `Hardware Receipt Verification` workflow runs on Linux and checks
 dated receipt bundles, parser fixture replay, schemas, and claim boundaries. It
 must not open HID devices, send FFB reports, run serial configuration, or issue
 firmware/DFU commands.
+
+For hardware PR review, also confirm:
+
+- The PR claim ceiling matches the receipt stage.
+- No staged receipt is missing from the lane manifest.
+- No hardware validation boolean is promoted without matching receipts.
+- No high-torque, serial configuration, firmware, or DFU claim is introduced by
+  passive or zero-output receipt PRs.
+
+## Verification Commands
+
+Before merging a PR, use:
+
+```powershell
+gh pr checks <pr-number>
+gh pr view <pr-number> --json mergeStateStatus,state,isDraft,headRefOid
+```
+
+The PR is merge-ready only when required checks are passing and GitHub reports a
+mergeable state. Do not use `gh pr merge --auto` as a substitute for enforced
+required checks; if the ruleset is incomplete, it can merge immediately.
