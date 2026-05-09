@@ -20,6 +20,14 @@ path = "src/bin/generate_docs_index.rs"
 name = "yaml-sync-check"
 path = "src/bin/yaml_sync_check.rs"
 
+[[bin]]
+name = "check-glob-reexports"
+path = "src/bin/check_glob_reexports.rs"
+
+[[bin]]
+name = "check-private-imports"
+path = "src/bin/check_private_imports.rs"
+
 [dependencies]
 serde_yaml = { workspace = true }
 
