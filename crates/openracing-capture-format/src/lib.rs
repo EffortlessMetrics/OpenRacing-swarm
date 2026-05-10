@@ -13,10 +13,15 @@
 
 #![deny(static_mut_refs)]
 
+mod fixture;
 pub mod replay;
 mod synthetic;
 
 use serde::{Deserialize, Serialize};
+
+pub use fixture::{
+    CaptureEvidenceSource, CaptureFixtureMetadata, CaptureFixtureMetadataError, CaptureKind,
+};
 
 // ── Core types ───────────────────────────────────────────────────────────────
 
@@ -76,6 +81,10 @@ pub struct CaptureMetadata {
     /// real hardware.
     #[serde(default)]
     pub synthetic: bool,
+    /// Optional shared fixture metadata used by parser replay and validation
+    /// lanes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fixture: Option<CaptureFixtureMetadata>,
 }
 
 /// A complete capture session with device identity, metadata, and records.
@@ -108,6 +117,10 @@ pub enum CaptureError {
     /// Format version is not supported.
     #[error("unsupported format version: {0}")]
     UnsupportedVersion(String),
+
+    /// Capture fixture metadata is structurally invalid.
+    #[error("invalid fixture metadata: {0}")]
+    FixtureMetadata(#[from] CaptureFixtureMetadataError),
 }
 
 // ── Constructors ─────────────────────────────────────────────────────────────
@@ -123,7 +136,15 @@ impl CaptureMetadata {
             tool: Some("openracing-capture-format".to_owned()),
             description: Some(description.to_owned()),
             synthetic: true,
+            fixture: None,
         }
+    }
+
+    /// Attach shared fixture metadata to this capture.
+    #[must_use]
+    pub fn with_fixture(mut self, fixture: CaptureFixtureMetadata) -> Self {
+        self.fixture = Some(fixture);
+        self
     }
 }
 
@@ -140,6 +161,9 @@ impl CaptureSession {
             return Err(CaptureError::UnsupportedVersion(
                 session.metadata.format_version.clone(),
             ));
+        }
+        if let Some(fixture) = &session.metadata.fixture {
+            fixture.validate()?;
         }
         Ok(session)
     }
@@ -232,6 +256,63 @@ mod tests {
         let json = session.to_json()?;
         let restored = CaptureSession::from_json(&json)?;
         assert_eq!(session, restored);
+        Ok(())
+    }
+
+    #[test]
+    fn session_with_fixture_metadata_roundtrips() -> Result<(), CaptureError> {
+        let mut session = sample_session();
+        session.metadata = session.metadata.with_fixture(
+            CaptureFixtureMetadata::new(
+                0x346E,
+                0x0014,
+                CaptureKind::Idle,
+                CaptureEvidenceSource::Real,
+            )
+            .with_report_descriptor_crc32("0xD8079D85")?,
+        );
+
+        let json = session.to_json()?;
+        let restored = CaptureSession::from_json(&json)?;
+        assert_eq!(
+            restored
+                .metadata
+                .fixture
+                .as_ref()
+                .map(CaptureFixtureMetadata::vendor_id),
+            Some("0x346E")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn from_json_rejects_invalid_fixture_metadata() -> Result<(), Box<dyn std::error::Error>> {
+        let json = r#"{
+          "device": {"vid": 13422, "pid": 20},
+          "metadata": {
+            "format_version": "1.0",
+            "synthetic": false,
+            "fixture": {
+              "vendor_id": "0x346e",
+              "product_id": "0x0014",
+              "capture_kind": "idle",
+              "hardware_source": "real",
+              "real_hardware_validated": false
+            }
+          },
+          "records": []
+        }"#;
+
+        let result = CaptureSession::from_json(json);
+        assert!(matches!(
+            result,
+            Err(CaptureError::FixtureMetadata(
+                CaptureFixtureMetadataError::InvalidHex {
+                    field: "vendor_id",
+                    ..
+                }
+            ))
+        ));
         Ok(())
     }
 
