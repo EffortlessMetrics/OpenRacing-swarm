@@ -67,6 +67,9 @@ ADRs document significant architectural decisions:
 | [0004](adr/0004-rt-scheduling-architecture.md) | Real-Time Scheduling Architecture |
 | [0005](adr/0005-plugin-architecture.md) | Plugin Architecture |
 | [0006](adr/0006-safety-interlocks.md) | Safety Interlocks and Fault Management |
+| [0007](adr/0007-multi-vendor-hid-protocol-architecture.md) | Multi-Vendor HID Protocol Architecture |
+| [0008](adr/0008-game-auto-configure-telemetry-bridge.md) | Game Auto-Configure and Telemetry Bridge |
+| [0009](adr/0009-hardware-validation-evidence-state-machine.md) | Hardware Validation Evidence State Machine |
 
 See the [ADR Index](adr/INDEX.md) for more details and the [ADR README](adr/README.md) for guidelines on creating new ADRs.
 

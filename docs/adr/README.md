@@ -12,6 +12,7 @@ This directory contains Architecture Decision Records for the Racing Wheel Softw
 - [ADR-0006: Safety Interlocks and Fault Management](0006-safety-interlocks.md) - Comprehensive safety system design
 - [ADR-0007: Multi-Vendor HID Protocol Architecture](0007-multi-vendor-hid-protocol-architecture.md) - SRP microcrates for vendor-specific HID protocols
 - [ADR-0008: Game Auto-Configure and Telemetry Bridge](0008-game-auto-configure-telemetry-bridge.md) - Automatic game telemetry config and adapter lifecycle management
+- [ADR-0009: Hardware Validation Evidence State Machine](0009-hardware-validation-evidence-state-machine.md) - Typed evidence ordering for hardware validation lanes
 
 ## Creating New ADRs
 

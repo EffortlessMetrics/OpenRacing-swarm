@@ -4508,6 +4508,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "openracing-hardware-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "workspace-hack",
+]
+
+[[package]]
 name = "openracing-hardware-watchdog"
 version = "0.1.0"
 dependencies = [

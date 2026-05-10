@@ -1,6 +1,6 @@
 # Architecture Decision Records Index
 
-Total ADRs: 8
+Total ADRs: 9
 
 | ADR | Title | Status | Date | Authors |
 |-----|-------|--------|------|---------|
@@ -12,15 +12,16 @@ Total ADRs: 8
 | [0006](0006-safety-interlocks.md) | ADR-0006: Safety Interlocks and Fault Management | Accepted | 2024-01-15 | Safety Team, Architecture Team |
 | [0007](0007-multi-vendor-hid-protocol-architecture.md) | ADR-0007: Multi-Vendor HID Protocol Architecture (SRP Microcrates) | Accepted | 2025-01-01 | Architecture Team, Hardware Team |
 | [0008](0008-game-auto-configure-telemetry-bridge.md) | ADR-0008: Game Auto-Configure and Telemetry Bridge | Accepted | 2025-01-15 | Architecture Team, Game Integration Team |
+| [0009](0009-hardware-validation-evidence-state-machine.md) | ADR-0009: Hardware Validation Evidence State Machine | Accepted | 2026-05-09 | Architecture Team, Hardware Team |
 
 ## Status Summary
 
-- **Accepted**: 8
+- **Accepted**: 9
 
 ## Recent Changes
 
+- 2026-05-09: [ADR-0009: Hardware Validation Evidence State Machine](0009-hardware-validation-evidence-state-machine.md)
 - 2025-01-15: [ADR-0008: Game Auto-Configure and Telemetry Bridge](0008-game-auto-configure-telemetry-bridge.md)
 - 2025-01-01: [ADR-0007: Multi-Vendor HID Protocol Architecture (SRP Microcrates)](0007-multi-vendor-hid-protocol-architecture.md)
 - 2024-01-15: [ADR-0001: Force Feedback Mode Matrix](0001-ffb-mode-matrix.md)
 - 2024-01-15: [ADR-0002: IPC Transport Layer](0002-ipc-transport.md)
-- 2024-01-15: [ADR-0003: OWP-1 (Open Wheel Protocol) Specification](0003-owp1-protocol.md)

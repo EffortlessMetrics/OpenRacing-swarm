@@ -41,6 +41,7 @@ members = [
     "crates/openracing-fmea",
     "crates/openracing-watchdog",
     "crates/openracing-hardware-watchdog",
+    "crates/openracing-hardware-core",
     "crates/openracing-profile-repository",
     "crates/openracing-profile",
     "crates/openracing-firmware-update",
@@ -140,6 +141,7 @@ openracing-test-helpers = { path = "crates/openracing-test-helpers" }
 openracing-fmea = { path = "crates/openracing-fmea" }
 openracing-watchdog = { path = "crates/openracing-watchdog" }
 openracing-hardware-watchdog = { path = "crates/openracing-hardware-watchdog" }
+openracing-hardware-core = { path = "crates/openracing-hardware-core" }
 openracing-profile-repository = { path = "crates/openracing-profile-repository" }
 openracing-firmware-update = { path = "crates/openracing-firmware-update" }
 openracing-ipc = { path = "crates/openracing-ipc" }
