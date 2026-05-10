@@ -11,9 +11,14 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod capability_registry;
 pub mod output_barrier;
 pub mod virtual_hid;
 
+pub use capability_registry::{
+    CapabilityRegistryError, DeviceCapabilityKind, DeviceCapabilityRecord,
+    DeviceCapabilityRegistry, DeviceFamily,
+};
 pub use output_barrier::{
     FinalZeroPolicy, OutputBarrierDecision, OutputBarrierDecisionReason, OutputBarrierError,
     OutputBarrierEvent, OutputBarrierEventKind, OutputCapability, OutputCapabilityStage,
