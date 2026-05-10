@@ -11,8 +11,14 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod output_barrier;
 pub mod virtual_hid;
 
+pub use output_barrier::{
+    FinalZeroPolicy, OutputBarrierDecision, OutputBarrierDecisionReason, OutputBarrierError,
+    OutputBarrierEvent, OutputBarrierEventKind, OutputCapability, OutputCapabilityStage,
+    OutputCommand, OutputWatchdogState, OutputWriteBarrier,
+};
 pub use virtual_hid::{
     VirtualHidDescriptor, VirtualHidError, VirtualHidFaultEvent, VirtualHidFaultKind,
     VirtualHidIdentity, VirtualHidReplay, VirtualHidReplayReceipt, VirtualInputLogEntry,
