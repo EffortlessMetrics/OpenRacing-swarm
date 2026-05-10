@@ -35,6 +35,7 @@ The crate owns:
 - typed evidence wrappers for enumeration, descriptor trust, passive verification, zero output, low torque, simulator telemetry, simulator smoke, and final zero
 - a typestate flow for ordered validation tokens
 - a runtime `HardwareValidationMachine` mirror for receipt verifiers
+- software-only virtual HID replay primitives for parser/output planning
 
 The ordered stages are:
 
@@ -53,6 +54,8 @@ SmokeReady
 The typestate structs have private fields and are only advanced by methods that consume the previous state and typed evidence. For example, `LowTorqueArmed` can only be produced from `ZeroOutputVerified`, and `SmokeReady` can only be produced after low torque, simulator telemetry, simulator smoke, and final-zero evidence.
 
 The runtime machine exposes the same transition table for code that must evaluate receipts loaded from disk. Invalid runtime transitions return explicit errors instead of silently promoting a lane.
+
+The virtual HID replay module records raw input reports, output/feature write attempts, and injected faults such as disconnects, stale descriptors, wrong product IDs, short reports, duplicate timestamps, and watchdog expiry. Its receipts are always marked `hardware_source = virtual` and `real_hardware_validated = false`, so they can support software tests without satisfying real hardware gates.
 
 This crate does not open HID devices, parse vendor reports, send FFB output, or define device-specific constants.
 
@@ -97,7 +100,7 @@ This crate does not open HID devices, parse vendor reports, send FFB output, or 
 - Typestate structs do not implement `Deserialize`; external code cannot materialize output-capable tokens from receipt JSON.
 - `ValidationLineage` and `HardwareValidationMachine` are serializable for diagnostics and verifier output.
 - Evidence wrappers validate that artifact paths are non-empty and carry an `EvidenceSource` of `real_hardware`, `virtual`, or `synthetic`.
-- Follow-up PRs should wire Moza verifier gates, virtual HID replay, and device capability registry code to this shared crate.
+- Follow-up PRs should wire Moza verifier gates and device capability registry code to this shared crate.
 
 ## Compliance & Verification
 

@@ -11,6 +11,14 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod virtual_hid;
+
+pub use virtual_hid::{
+    VirtualHidDescriptor, VirtualHidError, VirtualHidFaultEvent, VirtualHidFaultKind,
+    VirtualHidIdentity, VirtualHidReplay, VirtualHidReplayReceipt, VirtualInputLogEntry,
+    VirtualInputReport, VirtualOutputKind, VirtualOutputLogEntry, VirtualWriteResult,
+};
+
 /// Ordered stages for receipt-backed hardware validation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
