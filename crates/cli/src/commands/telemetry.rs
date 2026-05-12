@@ -361,6 +361,93 @@ async fn record_normalized_snapshots(
         ));
     }
 
+    let mut snapshots = Vec::with_capacity(records.len());
+    let mut previous_timestamp_ns = None;
+    for (sequence, record) in records.iter().enumerate() {
+        let mut snapshot = normalized_telemetry_payload(record)
+            .ok_or_else(|| anyhow!("record {sequence} is not a JSON object"))?
+            .clone();
+        if !normalized_telemetry_payload_is_valid(&snapshot) {
+            return Err(anyhow!(
+                "record {sequence} is missing valid normalized telemetry fields"
+            ));
+        }
+        {
+            let Some(object) = snapshot.as_object_mut() else {
+                return Err(anyhow!("record {sequence} is not a JSON object"));
+            };
+            let expected_sequence =
+                u64::try_from(sequence).context("too many normalized telemetry records")?;
+            match object.get("sequence") {
+                Some(value) if value.as_u64() == Some(expected_sequence) => {}
+                Some(_) => {
+                    return Err(anyhow!(
+                        "record {sequence} has non-contiguous sequence metadata"
+                    ));
+                }
+                None => {
+                    object.insert("sequence".to_string(), serde_json::json!(expected_sequence));
+                }
+            }
+
+            let default_timestamp_ns =
+                expected_sequence.saturating_mul(DEFAULT_RECORD_FRAME_PERIOD_NS);
+            let timestamp_ns = match object.get("timestamp_ns") {
+                Some(value) => value
+                    .as_u64()
+                    .ok_or_else(|| anyhow!("record {sequence} has invalid timestamp_ns"))?,
+                None => {
+                    object.insert(
+                        "timestamp_ns".to_string(),
+                        serde_json::json!(default_timestamp_ns),
+                    );
+                    default_timestamp_ns
+                }
+            };
+            if previous_timestamp_ns
+                .map(|previous| timestamp_ns <= previous)
+                .unwrap_or(false)
+            {
+                return Err(anyhow!(
+                    "record {sequence} has stale or non-monotonic timestamp_ns"
+                ));
+            }
+            previous_timestamp_ns = Some(timestamp_ns);
+
+            object.insert(
+                "recorder_command".to_string(),
+                serde_json::json!(RECORD_COMMAND),
+            );
+            object.insert(
+                "recorder_session_id".to_string(),
+                serde_json::json!(session_id),
+            );
+            object.insert(
+                "recording_duration_ms".to_string(),
+                serde_json::json!(duration_ms),
+            );
+            object.insert("game".to_string(), serde_json::json!(game_id));
+            object.insert(
+                "telemetry_source".to_string(),
+                serde_json::json!(telemetry_source),
+            );
+            object.insert(
+                "hardware_output_enabled".to_string(),
+                serde_json::json!(false),
+            );
+            object.insert("no_ffb_writes".to_string(), serde_json::json!(true));
+            object.insert(
+                "no_serial_config_commands".to_string(),
+                serde_json::json!(true),
+            );
+            object.insert(
+                "no_firmware_or_dfu_commands".to_string(),
+                serde_json::json!(true),
+            );
+        }
+        snapshots.push(snapshot);
+    }
+
     if let Some(parent) = Path::new(output_path)
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
@@ -371,55 +458,7 @@ async fn record_normalized_snapshots(
     let mut file = File::create(output_path)
         .with_context(|| format!("failed to create recorder output '{}'", output_path))?;
 
-    for (sequence, record) in records.iter().enumerate() {
-        let mut snapshot = normalized_telemetry_payload(record)
-            .ok_or_else(|| anyhow!("record {sequence} is not a JSON object"))?
-            .clone();
-        if !normalized_telemetry_payload_is_valid(&snapshot) {
-            return Err(anyhow!(
-                "record {sequence} is missing valid normalized telemetry fields"
-            ));
-        }
-        let Some(object) = snapshot.as_object_mut() else {
-            return Err(anyhow!("record {sequence} is not a JSON object"));
-        };
-        object
-            .entry("sequence")
-            .or_insert_with(|| serde_json::json!(sequence));
-        object.entry("timestamp_ns").or_insert_with(|| {
-            serde_json::json!((sequence as u64).saturating_mul(DEFAULT_RECORD_FRAME_PERIOD_NS))
-        });
-        object.insert(
-            "recorder_command".to_string(),
-            serde_json::json!(RECORD_COMMAND),
-        );
-        object.insert(
-            "recorder_session_id".to_string(),
-            serde_json::json!(session_id),
-        );
-        object.insert(
-            "recording_duration_ms".to_string(),
-            serde_json::json!(duration_ms),
-        );
-        object.insert("game".to_string(), serde_json::json!(game_id));
-        object.insert(
-            "telemetry_source".to_string(),
-            serde_json::json!(telemetry_source),
-        );
-        object.insert(
-            "hardware_output_enabled".to_string(),
-            serde_json::json!(false),
-        );
-        object.insert("no_ffb_writes".to_string(), serde_json::json!(true));
-        object.insert(
-            "no_serial_config_commands".to_string(),
-            serde_json::json!(true),
-        );
-        object.insert(
-            "no_firmware_or_dfu_commands".to_string(),
-            serde_json::json!(true),
-        );
-
+    for snapshot in &snapshots {
         let line = serde_json::to_string(&snapshot)?;
         file.write_all(line.as_bytes())?;
         file.write_all(b"\n")?;
@@ -724,6 +763,7 @@ impl<'a> PacketReader<'a> {
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::PathBuf;
     use std::time::Duration;
 
     type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -749,6 +789,48 @@ mod tests {
             lines.push('\n');
         }
         fs::write(path, lines)?;
+        Ok(())
+    }
+
+    fn telemetry_fixture_path(relative: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("fixtures")
+            .join("telemetry")
+            .join(relative)
+    }
+
+    fn read_jsonl_values(path: &Path) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
+        let contents = fs::read_to_string(path)?;
+        let mut values = Vec::new();
+        for (line_index, line) in contents.lines().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let value: Value = serde_json::from_str(trimmed)
+                .map_err(|error| format!("invalid JSONL line {}: {error}", line_index + 1))?;
+            values.push(value);
+        }
+        Ok(values)
+    }
+
+    fn assert_fixture_records_are_synthetic(path: &Path) -> TestResult {
+        let records = read_jsonl_values(path)?;
+        assert!(!records.is_empty());
+        for record in records {
+            assert_eq!(
+                record.get("fixture_source").and_then(Value::as_str),
+                Some("synthetic")
+            );
+            assert_eq!(
+                record
+                    .get("real_simulator_validated")
+                    .and_then(Value::as_bool),
+                Some(false)
+            );
+        }
         Ok(())
     }
 
@@ -825,6 +907,122 @@ mod tests {
         assert_eq!(first.get("no_ffb_writes"), Some(&serde_json::json!(true)));
         assert!(lines.next().is_some());
         assert!(lines.next().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn checked_in_replay_fixtures_are_synthetic_and_valid() -> TestResult {
+        for fixture in [
+            "simhub/basic-lap.jsonl",
+            "iracing/basic-lap.jsonl",
+            "acc/basic-lap.jsonl",
+        ] {
+            let path = telemetry_fixture_path(fixture);
+            assert_fixture_records_are_synthetic(&path)?;
+            let records =
+                read_normalized_telemetry_records(path.to_str().ok_or("path not UTF-8")?)?;
+            assert_eq!(records.len(), 3);
+            for record in records {
+                let payload =
+                    normalized_telemetry_payload(&record).ok_or("missing normalized payload")?;
+                assert!(normalized_telemetry_payload_is_valid(payload));
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn record_normalized_snapshots_accepts_checked_in_replay_fixtures() -> TestResult {
+        for (fixture, game, telemetry_source) in [
+            ("simhub/basic-lap.jsonl", "simhub-bridge", "simhub_bridge"),
+            ("iracing/basic-lap.jsonl", "iracing", "real_game"),
+            ("acc/basic-lap.jsonl", "acc", "real_game"),
+        ] {
+            let dir = tempfile::tempdir()?;
+            let input = telemetry_fixture_path(fixture);
+            let output = dir.path().join("recording.jsonl");
+
+            record_normalized_snapshots(
+                game,
+                telemetry_source,
+                input.to_str().ok_or("input path not UTF-8")?,
+                output.to_str().ok_or("output path not UTF-8")?,
+                Some("fixture-session"),
+                5000,
+                false,
+            )
+            .await?;
+
+            let records = read_jsonl_values(&output)?;
+            assert_eq!(records.len(), 3);
+            for (sequence, record) in records.iter().enumerate() {
+                assert_eq!(record.get("game").and_then(Value::as_str), Some(game));
+                assert_eq!(
+                    record.get("telemetry_source").and_then(Value::as_str),
+                    Some(telemetry_source)
+                );
+                assert_eq!(
+                    record.get("recorder_session_id").and_then(Value::as_str),
+                    Some("fixture-session")
+                );
+                assert_eq!(
+                    record
+                        .get("hardware_output_enabled")
+                        .and_then(Value::as_bool),
+                    Some(false)
+                );
+                assert_eq!(
+                    record.get("no_ffb_writes").and_then(Value::as_bool),
+                    Some(true)
+                );
+                assert_eq!(
+                    record.get("sequence").and_then(Value::as_u64),
+                    Some(u64::try_from(sequence)?)
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn record_normalized_snapshots_rejects_fault_fixtures_without_output() -> TestResult {
+        for (fixture, expected_error) in [
+            (
+                "faults/missing-fields.jsonl",
+                "missing valid normalized telemetry fields",
+            ),
+            (
+                "faults/stale-frame.jsonl",
+                "stale or non-monotonic timestamp_ns",
+            ),
+        ] {
+            let dir = tempfile::tempdir()?;
+            let input = telemetry_fixture_path(fixture);
+            let output = dir.path().join("recording.jsonl");
+
+            let result = record_normalized_snapshots(
+                "simhub-bridge",
+                "simhub_bridge",
+                input.to_str().ok_or("input path not UTF-8")?,
+                output.to_str().ok_or("output path not UTF-8")?,
+                Some("fault-session"),
+                5000,
+                false,
+            )
+            .await;
+
+            let error = match result {
+                Ok(()) => {
+                    return Err(format!("fault fixture {fixture} unexpectedly recorded").into());
+                }
+                Err(error) => error.to_string(),
+            };
+            assert!(
+                error.contains(expected_error),
+                "expected error containing '{expected_error}', got '{error}'"
+            );
+            assert!(!output.exists());
+        }
         Ok(())
     }
 
