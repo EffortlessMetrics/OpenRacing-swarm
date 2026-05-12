@@ -19,6 +19,7 @@ Commands:
   diag            Diagnostic and monitoring commands
   game            Game integration commands
   telemetry       Telemetry probe and capture commands
+  hardware        Hardware environment diagnostics
   moza            Safe Moza HID probe and capture commands
   safety          Safety and control commands
   support-bundle  Generate diagnostic support bundle

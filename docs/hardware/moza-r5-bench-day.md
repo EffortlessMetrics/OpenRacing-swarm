@@ -25,6 +25,18 @@ git checkout main
 git pull --ff-only
 ```
 
+Before creating the receipt lane, run the observe-only hardware doctor:
+
+```powershell
+wheelctl hardware doctor `
+  --json-out target/hardware-doctor.json
+```
+
+This checks local HID enumeration, descriptor fallback expectations, known
+VID/PID visibility, and Pit House process state where the platform supports it.
+The receipt is diagnostic only; it is not hardware validation evidence and does
+not belong under the dated `ci/hardware/moza-r5/<date>/` lane.
+
 ## 3. Create Dated Branch And Lane
 
 ```powershell

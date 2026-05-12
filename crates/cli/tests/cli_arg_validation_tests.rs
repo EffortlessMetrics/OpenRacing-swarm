@@ -382,6 +382,7 @@ mod help_text_presence {
             "diag",
             "game",
             "telemetry",
+            "hardware",
             "safety",
             "completion",
             "health",

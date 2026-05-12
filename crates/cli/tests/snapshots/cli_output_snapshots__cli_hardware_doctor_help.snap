@@ -1,0 +1,13 @@
+---
+source: crates/cli/tests/cli_output_snapshots.rs
+expression: stdout
+---
+Inspect local hardware/tooling readiness without opening devices or sending writes
+
+Usage: wheelctl hardware doctor [OPTIONS]
+
+Options:
+      --json                 Output in JSON format for machine parsing
+      --json-out <JSON_OUT>  Write the hardware doctor receipt to this JSON file
+  -v, --verbose...           Verbose logging
+  -h, --help                 Print help

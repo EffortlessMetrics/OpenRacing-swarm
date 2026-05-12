@@ -53,6 +53,16 @@ fn snapshot_cli_safety_help() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[test]
+fn snapshot_cli_hardware_doctor_help() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = assert_cmd::Command::cargo_bin("wheelctl")?;
+    let output = cmd.args(["hardware", "doctor", "--help"]).output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = normalize_cli_output(&stdout);
+    insta::assert_snapshot!("cli_hardware_doctor_help", stdout);
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Error output snapshots
 // ---------------------------------------------------------------------------

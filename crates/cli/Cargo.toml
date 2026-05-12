@@ -26,6 +26,7 @@ racing-wheel-telemetry-config = { path = "../telemetry-config", version = "0.1.0
 racing-wheel-schemas = { path = "../schemas", version = "0.1.0" }
 racing-wheel-hid-moza-protocol = { path = "../hid-moza-protocol", version = "0.1.0" }
 racing-wheel-hid-capture = { path = "../hid-capture", version = "0.1.0" }
+openracing-hardware-core = { path = "../openracing-hardware-core", version = "0.1.0" }
 tokio = { workspace = true }
 tonic = { workspace = true }
 clap = { version = "4.5.60", features = ["derive", "env", "color"] }

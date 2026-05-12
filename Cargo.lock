@@ -9910,6 +9910,7 @@ dependencies = [
  "indicatif",
  "insta",
  "jsonschema",
+ "openracing-hardware-core",
  "predicates",
  "racing-wheel-hid-capture",
  "racing-wheel-hid-moza-protocol",

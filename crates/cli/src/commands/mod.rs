@@ -3,6 +3,7 @@
 pub mod device;
 pub mod diag;
 pub mod game;
+pub mod hardware;
 pub mod health;
 pub mod moza;
 pub mod plugin;
@@ -302,6 +303,16 @@ pub enum TelemetryCommands {
         /// Recording duration in milliseconds
         #[arg(long, default_value = "0")]
         duration_ms: u64,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum HardwareCommands {
+    /// Inspect local hardware/tooling readiness without opening devices or sending writes
+    Doctor {
+        /// Write the hardware doctor receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
     },
 }
 

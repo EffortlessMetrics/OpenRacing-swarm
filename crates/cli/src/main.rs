@@ -81,6 +81,10 @@ enum Commands {
     #[command(subcommand)]
     Telemetry(TelemetryCommands),
 
+    /// Hardware environment diagnostics
+    #[command(subcommand)]
+    Hardware(HardwareCommands),
+
     /// Safe Moza HID probe and capture commands
     #[command(subcommand)]
     Moza(MozaCommands),
@@ -219,6 +223,7 @@ async fn execute_command(cli: &Cli) -> Result<()> {
             commands::game::execute(cmd, cli.json, cli.endpoint.as_deref()).await
         }
         Commands::Telemetry(cmd) => commands::telemetry::execute(cmd, cli.json).await,
+        Commands::Hardware(cmd) => commands::hardware::execute(cmd, cli.json).await,
         Commands::Moza(cmd) => commands::moza::execute(cmd, cli.json).await,
         Commands::Safety(cmd) => {
             commands::safety::execute(cmd, cli.json, cli.endpoint.as_deref()).await
@@ -346,6 +351,27 @@ mod tests {
                 );
             }
             _ => return Err("expected Device List command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_hardware_doctor_json_out() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "hardware",
+            "doctor",
+            "--json-out",
+            "target/hardware-doctor.json",
+        ])?;
+        match &cli.command {
+            Commands::Hardware(HardwareCommands::Doctor { json_out }) => {
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/hardware-doctor.json")
+                );
+            }
+            _ => return Err("expected Hardware Doctor command".into()),
         }
         Ok(())
     }

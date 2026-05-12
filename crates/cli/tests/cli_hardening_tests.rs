@@ -99,6 +99,16 @@ mod subcommand_parsing {
     }
 
     #[test]
+    fn hardware_subcommand_accepted() -> TestResult {
+        wheelctl()?
+            .arg("hardware")
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("Usage").or(predicate::str::contains("subcommand")));
+        Ok(())
+    }
+
+    #[test]
     fn safety_subcommand_accepted() -> TestResult {
         wheelctl()?
             .arg("safety")
@@ -159,6 +169,7 @@ mod help_text {
             "diag",
             "game",
             "telemetry",
+            "hardware",
             "safety",
             "completion",
             "health",
@@ -439,6 +450,54 @@ mod output_formatting {
         assert!(
             !stderr.contains("\"error\""),
             "receipt failure should not append a second JSON error object: {stderr}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn hardware_doctor_json_is_observe_only_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let receipt_path = dir.path().join("hardware-doctor.json");
+        let receipt_arg = receipt_path.to_str().ok_or("invalid receipt path")?;
+        let output = wheelctl()?
+            .args(["--json", "hardware", "doctor", "--json-out", receipt_arg])
+            .output()?;
+
+        assert!(output.status.success());
+        let stdout_json = parse_json(&output.stdout)?;
+        assert_eq!(
+            stdout_json
+                .get("command")
+                .and_then(serde_json::Value::as_str),
+            Some("wheelctl hardware doctor")
+        );
+        assert_eq!(
+            stdout_json
+                .get("no_hid_device_opened")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            stdout_json
+                .get("no_ffb_writes")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+        assert!(receipt_path.exists());
+
+        let file_json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(receipt_path)?)?;
+        assert_eq!(
+            file_json
+                .get("no_feature_reports")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            file_json
+                .get("no_firmware_or_dfu_commands")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
         );
         Ok(())
     }

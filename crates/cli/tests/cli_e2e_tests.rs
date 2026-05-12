@@ -1280,6 +1280,7 @@ mod subcommand_discovery {
             "diag",
             "game",
             "telemetry",
+            "hardware",
             "safety",
             "completion",
             "health",
@@ -1376,6 +1377,7 @@ mod subcommand_discovery {
             vec!["diag", "--help"],
             vec!["game", "--help"],
             vec!["telemetry", "--help"],
+            vec!["hardware", "--help"],
             vec!["safety", "--help"],
         ];
         for args in subcommands {
@@ -1410,6 +1412,7 @@ mod subcommand_discovery {
             vec!["game", "test", "--help"],
             vec!["telemetry", "probe", "--help"],
             vec!["telemetry", "capture", "--help"],
+            vec!["hardware", "doctor", "--help"],
             vec!["safety", "enable", "--help"],
             vec!["safety", "stop", "--help"],
             vec!["safety", "status", "--help"],
