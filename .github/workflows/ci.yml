@@ -55,8 +55,21 @@ jobs:
             exit 0
           fi
 
-          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
-          mapfile -t changed < <(git diff --name-only "origin/${{ github.base_ref }}"...HEAD)
+          changed_files_for_pr() {
+            local base_ref="origin/${{ github.base_ref }}"
+            git fetch --no-tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+            if git merge-base "$base_ref" HEAD >/dev/null 2>&1; then
+              git diff --name-only "$base_ref...HEAD"
+            else
+              {
+                echo "No merge base found for $base_ref and HEAD."
+                echo "Falling back to direct base-to-head diff for PR surface classification."
+              } >> "$GITHUB_STEP_SUMMARY"
+              git diff --name-only "$base_ref" HEAD
+            fi
+          }
+
+          mapfile -t changed < <(changed_files_for_pr)
 
           if [ "${#changed[@]}" -eq 0 ]; then
             docs_only=false
@@ -583,9 +596,22 @@ jobs:
         run: |
           set -euo pipefail
 
+          changed_files_for_pr() {
+            local base_ref="origin/${{ github.base_ref }}"
+            git fetch --no-tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+            if git merge-base "$base_ref" HEAD >/dev/null 2>&1; then
+              git diff --name-only "$base_ref...HEAD"
+            else
+              {
+                echo "No merge base found for $base_ref and HEAD."
+                echo "Falling back to direct base-to-head diff for platform path detection."
+              } >> "$GITHUB_STEP_SUMMARY"
+              git diff --name-only "$base_ref" HEAD
+            fi
+          }
+
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
-            changed_files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+            changed_files=$(changed_files_for_pr)
           elif [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
             changed_files=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")
           else

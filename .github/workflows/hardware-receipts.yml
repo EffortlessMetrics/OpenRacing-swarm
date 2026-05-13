@@ -50,9 +50,22 @@ jobs:
         run: |
           set -euo pipefail
 
+          changed_files_for_pr() {
+            local base_ref="origin/${{ github.base_ref }}"
+            git fetch --no-tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+            if git merge-base "$base_ref" HEAD >/dev/null 2>&1; then
+              git diff --name-only "$base_ref...HEAD"
+            else
+              {
+                echo "No merge base found for $base_ref and HEAD."
+                echo "Falling back to direct base-to-head diff for hardware lane detection."
+              } >> "$GITHUB_STEP_SUMMARY"
+              git diff --name-only "$base_ref" HEAD
+            fi
+          }
+
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
-            changed_files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+            changed_files=$(changed_files_for_pr)
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             changed_files=$(find ci/hardware -mindepth 3 -maxdepth 3 -name manifest.json -print 2>/dev/null || true)
           elif [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
