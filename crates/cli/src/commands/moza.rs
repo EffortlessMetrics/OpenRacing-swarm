@@ -3673,7 +3673,7 @@ fn push_passive_next_commands(lane: &Path, wheelbase_pid: &str, commands: &mut V
         "wheelctl moza init-lane --lane {lane_arg} --wheelbase-pid {wheelbase_pid} --operator Steven"
     ));
     commands.push(format!(
-        "wheelctl device list --json-out {}",
+        "wheelctl device list --hid-observe-only --json-out {}",
         lane_path_arg(lane, "device-list.json")
     ));
     commands.push(format!(

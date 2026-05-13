@@ -18,11 +18,18 @@ use crate::output;
 
 /// Execute device command
 pub async fn execute(cmd: &DeviceCommands, json: bool, endpoint: Option<&str>) -> Result<()> {
-    let client = WheelClient::connect_or_mock(endpoint).await?;
-
     match cmd {
-        DeviceCommands::List { detailed, json_out } => {
-            list_devices(&client, json, *detailed, json_out.as_deref()).await
+        DeviceCommands::List {
+            detailed,
+            hid_observe_only,
+            json_out,
+        } => {
+            if *hid_observe_only {
+                list_hid_observed_devices(json, *detailed, json_out.as_deref()).await
+            } else {
+                let client = WheelClient::connect_or_mock(endpoint).await?;
+                list_devices(&client, json, *detailed, json_out.as_deref()).await
+            }
         }
         DeviceCommands::Status {
             device,
@@ -30,6 +37,7 @@ pub async fn execute(cmd: &DeviceCommands, json: bool, endpoint: Option<&str>) -
             json_out,
             watch,
         } => {
+            let client = WheelClient::connect_or_mock(endpoint).await?;
             device_status(
                 &client,
                 device,
@@ -44,8 +52,12 @@ pub async fn execute(cmd: &DeviceCommands, json: bool, endpoint: Option<&str>) -
             device,
             calibration_type,
             yes,
-        } => calibrate_device(&client, device, calibration_type, json, *yes).await,
+        } => {
+            let client = WheelClient::connect_or_mock(endpoint).await?;
+            calibrate_device(&client, device, calibration_type, json, *yes).await
+        }
         DeviceCommands::Reset { device, force } => {
+            let client = WheelClient::connect_or_mock(endpoint).await?;
             reset_device(&client, device, json, *force).await
         }
     }
@@ -62,7 +74,24 @@ async fn list_devices(
     let hid_observation = observe_known_hid_devices();
     let devices = merge_device_lists(service_devices, hid_observation.devices.clone());
     if let Some(path) = json_out {
-        write_device_list_receipt(path, &devices, &hid_observation)?;
+        write_device_list_receipt(path, &devices, &hid_observation, false)?;
+    }
+    output::print_device_list(&devices, json, detailed);
+    if !json && let Some(path) = json_out {
+        println!("Receipt: {}", path.display());
+    }
+    Ok(())
+}
+
+async fn list_hid_observed_devices(
+    json: bool,
+    detailed: bool,
+    json_out: Option<&Path>,
+) -> Result<()> {
+    let hid_observation = observe_known_hid_devices();
+    let devices = hid_observation.devices.clone();
+    if let Some(path) = json_out {
+        write_device_list_receipt(path, &devices, &hid_observation, true)?;
     }
     output::print_device_list(&devices, json, detailed);
     if !json && let Some(path) = json_out {
@@ -75,6 +104,7 @@ fn write_device_list_receipt(
     path: &Path,
     devices: &[DeviceInfo],
     hid_observation: &HidDeviceListObservation,
+    hid_observe_only: bool,
 ) -> Result<()> {
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent)
@@ -84,6 +114,7 @@ fn write_device_list_receipt(
     let receipt = json!({
         "success": true,
         "command": "wheelctl device list",
+        "hid_observe_only": hid_observe_only,
         "no_hid_device_opened": true,
         "no_ffb_writes": true,
         "no_output_reports": true,
@@ -498,7 +529,7 @@ mod tests {
             devices: devices.clone(),
         };
 
-        write_device_list_receipt(&path, &devices, &hid_observation)?;
+        write_device_list_receipt(&path, &devices, &hid_observation, true)?;
 
         let text = fs::read_to_string(&path)?;
         let value: serde_json::Value = serde_json::from_str(&text)?;
@@ -506,6 +537,10 @@ mod tests {
         assert_eq!(
             value.get("command").and_then(|v| v.as_str()),
             Some("wheelctl device list")
+        );
+        assert_eq!(
+            value.get("hid_observe_only").and_then(|v| v.as_bool()),
+            Some(true)
         );
         assert_eq!(
             value.get("no_ffb_writes").and_then(|v| v.as_bool()),
@@ -573,6 +608,7 @@ mod tests {
         let path = dir.path().join("device-list.json");
         let command = DeviceCommands::List {
             detailed: true,
+            hid_observe_only: false,
             json_out: Some(path.clone()),
         };
 
@@ -600,6 +636,41 @@ mod tests {
                 .get("hid_enumeration")
                 .and_then(|v| v.as_object())
                 .is_some()
+        );
+        assert_eq!(
+            value.get("hid_observe_only").and_then(|v| v.as_bool()),
+            Some(false)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn execute_list_hid_observe_only_excludes_mock_backend() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("device-list.json");
+        let command = DeviceCommands::List {
+            detailed: true,
+            hid_observe_only: true,
+            json_out: Some(path.clone()),
+        };
+
+        execute(&command, true, Some("http://127.0.0.1:9")).await?;
+
+        let text = fs::read_to_string(&path)?;
+        let value: serde_json::Value = serde_json::from_str(&text)?;
+        assert_eq!(
+            value.get("hid_observe_only").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let devices = value
+            .get("devices")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| anyhow::anyhow!("missing devices array"))?;
+        assert!(
+            devices.iter().all(|device| {
+                device.get("source").and_then(|v| v.as_str()) == Some("hid-observe")
+            }),
+            "hid-observe-only receipt must not include service/mock devices: {devices:?}"
         );
         Ok(())
     }
@@ -772,6 +843,7 @@ mod tests {
         let path = dir.path().join("device-list.json");
         let command = DeviceCommands::List {
             detailed: false,
+            hid_observe_only: false,
             json_out: Some(path.clone()),
         };
 

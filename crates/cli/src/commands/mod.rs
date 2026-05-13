@@ -20,6 +20,9 @@ pub enum DeviceCommands {
         /// Show detailed device information
         #[arg(short, long)]
         detailed: bool,
+        /// List only observe-only HID endpoints, without service/mock devices
+        #[arg(long)]
+        hid_observe_only: bool,
         /// Write the device list receipt to this JSON file
         #[arg(long)]
         json_out: Option<std::path::PathBuf>,

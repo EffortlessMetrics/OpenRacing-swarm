@@ -98,7 +98,7 @@ wheelctl moza init-lane --lane ci/hardware/moza-r5/<date> --wheelbase-pid 0x0014
 Passive commands must not open an output path or send feature/FFB reports.
 
 ```powershell
-wheelctl device list --json-out ci/hardware/moza-r5/<date>/device-list.json
+wheelctl device list --hid-observe-only --json-out ci/hardware/moza-r5/<date>/device-list.json
 wheelctl moza probe --json-out ci/hardware/moza-r5/<date>/moza-probe.json
 hid-capture list --vendor 0x346E --json-out ci/hardware/moza-r5/<date>/hid-list.json
 wheelctl moza descriptor --json-out ci/hardware/moza-r5/<date>/descriptor.json

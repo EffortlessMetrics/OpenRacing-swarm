@@ -35,7 +35,7 @@ Commands:
 ### Key Capabilities
 
 #### Device Management
-- `wheelctl device list [--detailed] [--json]` - List connected devices
+- `wheelctl device list [--detailed] [--hid-observe-only] [--json]` - List connected devices
 - `wheelctl device status <device> [--watch] [--json]` - Show device status
 - `wheelctl device calibrate <device> <type> [--yes]` - Calibrate device
 - `wheelctl device reset <device> [--force]` - Reset to safe state

@@ -64,6 +64,7 @@ Run these before any capture work:
 
 ```powershell
 wheelctl device list `
+  --hid-observe-only `
   --json-out "$LANE/device-list.json"
 
 wheelctl moza probe `

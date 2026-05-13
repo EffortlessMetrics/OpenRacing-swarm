@@ -270,6 +270,7 @@ mod tests {
             cli.command,
             Commands::Device(DeviceCommands::List {
                 detailed: false,
+                hid_observe_only: false,
                 json_out: None
             })
         ));
@@ -328,6 +329,21 @@ mod tests {
             cli.command,
             Commands::Device(DeviceCommands::List {
                 detailed: true,
+                hid_observe_only: false,
+                json_out: None
+            })
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn parse_device_list_hid_observe_only() -> TestResult {
+        let cli = Cli::try_parse_from(["wheelctl", "device", "list", "--hid-observe-only"])?;
+        assert!(matches!(
+            cli.command,
+            Commands::Device(DeviceCommands::List {
+                detailed: false,
+                hid_observe_only: true,
                 json_out: None
             })
         ));

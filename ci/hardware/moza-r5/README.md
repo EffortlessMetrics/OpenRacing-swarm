@@ -218,7 +218,7 @@ wheelctl moza init-lane --lane ci/hardware/moza-r5/YYYY-MM-DD --wheelbase-pid 0x
 Passive evidence:
 
 ```powershell
-wheelctl device list --json-out ci/hardware/moza-r5/YYYY-MM-DD/device-list.json
+wheelctl device list --hid-observe-only --json-out ci/hardware/moza-r5/YYYY-MM-DD/device-list.json
 wheelctl moza probe --json-out ci/hardware/moza-r5/YYYY-MM-DD/moza-probe.json
 hid-capture list --vendor 0x346E --json-out ci/hardware/moza-r5/YYYY-MM-DD/hid-list.json
 wheelctl moza descriptor --json-out ci/hardware/moza-r5/YYYY-MM-DD/descriptor.json
