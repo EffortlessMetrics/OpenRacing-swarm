@@ -287,8 +287,9 @@ wheelctl moza capture-input `
 
 ### ES Wheel Controls
 
-Gesture: mount ES, press representative buttons, move the hat/funky input, and
-exercise any available directional controls.
+Gesture: mount ES, press representative buttons one at a time, and exercise any
+available non-output controls. ES does not have a hat/funky control, so do not
+recapture solely to satisfy a hat/funky expectation.
 
 ```powershell
 wheelctl moza capture-input `

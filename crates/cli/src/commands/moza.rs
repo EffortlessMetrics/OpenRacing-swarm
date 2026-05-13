@@ -16,7 +16,7 @@ use racing_wheel_hid_moza_protocol::report::looks_like_live_r5_v1_extended_repor
 use racing_wheel_hid_moza_protocol::{
     DeviceWriter, FfbMode, MOZA_VENDOR_ID, MozaDeviceCategory, MozaDirectTorqueEncoder,
     MozaInitState, MozaInputState, MozaProtocol, MozaTopologyHint, REPORT_LEN, VendorProtocol,
-    identify_device, input_report, is_wheelbase_product, parse_axis, product_ids, rim_ids,
+    identify_device, input_report, is_wheelbase_product, parse_axis, product_ids,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -6084,7 +6084,6 @@ fn passive_capture_requirements() -> &'static [PassiveCaptureRequirement] {
     const PEDALS: &[&str] = &["throttle_u16", "brake_u16"];
     const HANDBRAKE: &[&str] = &["handbrake_u16"];
     const NO_EXACT: &[(&str, u16)] = &[];
-    const ES_RIM: &[(&str, u16)] = &[("funky_u8", rim_ids::ES as u16)];
     const NO_ANY: &[(&str, &[&str])] = &[];
     const HUB_CONTROL_AXIS_ANY: &[&str] = &[
         "throttle_u16",
@@ -6100,7 +6099,6 @@ fn passive_capture_requirements() -> &'static [PassiveCaptureRequirement] {
     const HUB_CONTROL_GROUPS: &[(&str, &[&str])] = &[("hub_control_axis", HUB_CONTROL_AXIS_ANY)];
     const BUTTONS_ANY: &[&str] = &["buttons_any_u8"];
     const KS_BUTTONS_ANY: &[&str] = &["ks_buttons_any_u8", "buttons_any_u8"];
-    const HAT_ANY: &[&str] = &["hat_u8"];
     const KS_DIRECTION_ANY: &[&str] = &["ks_hat_u8", "hat_u8"];
     const KS_CONTROL_GROUPS: &[(&str, &[&str])] = &[
         ("buttons", KS_BUTTONS_ANY),
@@ -6108,7 +6106,7 @@ fn passive_capture_requirements() -> &'static [PassiveCaptureRequirement] {
         // the legacy rim/funky and rotary bytes stay zero on this layout.
         ("direction", KS_DIRECTION_ANY),
     ];
-    const ES_CONTROL_GROUPS: &[(&str, &[&str])] = &[("buttons", BUTTONS_ANY), ("hat", HAT_ANY)];
+    const ES_CONTROL_GROUPS: &[(&str, &[&str])] = &[("buttons", BUTTONS_ANY)];
     const REQUIREMENTS: &[PassiveCaptureRequirement] = &[
         PassiveCaptureRequirement {
             relative_path: "captures/r5-idle.jsonl",
@@ -6212,7 +6210,7 @@ fn passive_capture_requirements() -> &'static [PassiveCaptureRequirement] {
             required_category: "wheelbase",
             expected_products: PassiveCaptureProductRequirement::ManifestR5,
             required_axis_variation: NONE,
-            required_axis_values: ES_RIM,
+            required_axis_values: NO_EXACT,
             required_any_axis_variation: ES_CONTROL_GROUPS,
             min_report_len: Some(31),
             always_required: false,
@@ -13821,6 +13819,7 @@ fn bytes_hex_array(bytes: &[u8]) -> Vec<String> {
 mod tests {
     use super::*;
     use clap::Parser;
+    use racing_wheel_hid_moza_protocol::rim_ids;
     use std::path::PathBuf;
 
     type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
@@ -14991,11 +14990,11 @@ mod tests {
                 "{}\n{}",
                 capture_line(
                     product_ids::R5_V2,
-                    &wheelbase_full_report_hex(0x8000, 0, 0, 0, 0, 0, 8, rim_ids::ES, 0, 0),
+                    &wheelbase_full_report_hex(0x8000, 0, 0, 0, 0, 0, 0, 0, 0, 0),
                 ),
                 capture_line(
                     product_ids::R5_V2,
-                    &wheelbase_full_report_hex(0x8000, 0, 0, 0, 0, 0x02, 2, rim_ids::ES, 0, 0),
+                    &wheelbase_full_report_hex(0x8000, 0, 0, 0, 0, 0x02, 0, 0, 0, 0),
                 )
             ),
         )?;
@@ -15105,6 +15104,42 @@ mod tests {
             "evidence_capture": evidence_capture
         });
         write_test_json_file(&root.join("manifest.json"), &manifest)
+    }
+
+    fn set_required_hub_controls(
+        root: &Path,
+        controls: &[(&str, &str, Option<&str>, &str)],
+    ) -> TestResult {
+        let mut manifest = read_json_path(&root.join("manifest.json"))?;
+        let logical_controls = manifest
+            .pointer_mut("/topology/logical_controls")
+            .and_then(Value::as_object_mut)
+            .ok_or("expected topology logical_controls object")?;
+        logical_controls.clear();
+        for (key, role, rim, evidence_capture) in controls {
+            let mut control = serde_json::json!({
+                "role": role,
+                "source_endpoint": "moza-r5-if2",
+                "connection": "wheelbase_hub",
+                "required": true,
+                "evidence_capture": evidence_capture
+            });
+            if let Some(rim) = rim {
+                control["rim"] = serde_json::json!(rim);
+            }
+            logical_controls.insert((*key).to_string(), control);
+        }
+        write_test_json_file(&root.join("manifest.json"), &manifest)
+    }
+
+    fn remove_optional_capture_files(root: &Path, captures: &[&str]) -> TestResult {
+        for capture in captures {
+            let path = root.join(capture);
+            if path.exists() {
+                fs::remove_file(path)?;
+            }
+        }
+        Ok(())
     }
 
     fn promoted_fixture_report_for_requirement(
@@ -21136,6 +21171,106 @@ mod tests {
     }
 
     #[test]
+    fn verify_bundle_passive_accepts_r5_ks_only_topology() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        set_required_hub_controls(
+            dir.path(),
+            &[
+                (
+                    "steering",
+                    "steering",
+                    None,
+                    "captures/r5-steering-sweep.jsonl",
+                ),
+                (
+                    "ks_rim_controls",
+                    "rim_controls",
+                    Some("KS"),
+                    "captures/ks-controls.jsonl",
+                ),
+            ],
+        )?;
+        remove_optional_capture_files(
+            dir.path(),
+            &[
+                "captures/r5-throttle-only-sweep.jsonl",
+                "captures/r5-brake-only-sweep.jsonl",
+                "captures/r5-clutch-only-sweep.jsonl",
+                "captures/r5-handbrake-only-sweep.jsonl",
+                "captures/es-controls.jsonl",
+            ],
+        )?;
+        refresh_passive_parser_receipts(dir.path())?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
+
+        assert!(
+            receipt.success,
+            "{}",
+            serde_json::to_string_pretty(&receipt)?
+        );
+        assert!(
+            receipt
+                .artifacts
+                .iter()
+                .all(|artifact| artifact.path != "captures/es-controls.jsonl"
+                    && artifact.path != "captures/r5-throttle-only-sweep.jsonl")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_passive_accepts_r5_es_only_topology() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        set_required_hub_controls(
+            dir.path(),
+            &[
+                (
+                    "steering",
+                    "steering",
+                    None,
+                    "captures/r5-steering-sweep.jsonl",
+                ),
+                (
+                    "es_rim_controls",
+                    "rim_controls",
+                    Some("ES"),
+                    "captures/es-controls.jsonl",
+                ),
+            ],
+        )?;
+        remove_optional_capture_files(
+            dir.path(),
+            &[
+                "captures/r5-throttle-only-sweep.jsonl",
+                "captures/r5-brake-only-sweep.jsonl",
+                "captures/r5-clutch-only-sweep.jsonl",
+                "captures/r5-handbrake-only-sweep.jsonl",
+                "captures/ks-controls.jsonl",
+            ],
+        )?;
+        refresh_passive_parser_receipts(dir.path())?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
+
+        assert!(
+            receipt.success,
+            "{}",
+            serde_json::to_string_pretty(&receipt)?
+        );
+        assert!(
+            receipt
+                .artifacts
+                .iter()
+                .all(|artifact| artifact.path != "captures/ks-controls.jsonl"
+                    && artifact.path != "captures/r5-clutch-only-sweep.jsonl")
+        );
+        Ok(())
+    }
+
+    #[test]
     fn verify_bundle_passive_requires_device_list_no_ffb_writes() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_minimal_passive_bundle(dir.path())?;
@@ -22005,7 +22140,7 @@ mod tests {
     }
 
     #[test]
-    fn verify_bundle_passive_requires_es_hat_and_button_variation() -> TestResult {
+    fn verify_bundle_passive_accepts_es_button_only_controls() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_minimal_passive_bundle(dir.path())?;
         write_text_file(
@@ -22014,24 +22149,18 @@ mod tests {
                 "{}\n{}",
                 capture_line(
                     product_ids::R5_V2,
-                    &wheelbase_full_report_hex(0x8000, 0, 0, 0, 0, 0, 8, rim_ids::ES, 0, 0)
+                    &wheelbase_full_report_hex(0x8000, 0, 0, 0, 0, 0, 0, 0, 0, 0)
                 ),
                 capture_line(
                     product_ids::R5_V2,
-                    &wheelbase_full_report_hex(0x8000, 0, 0, 0, 0, 0x02, 8, rim_ids::ES, 0, 0)
+                    &wheelbase_full_report_hex(0x8000, 0, 0, 0, 0, 0x02, 0, 0, 0, 0)
                 )
             ),
         )?;
 
         let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
 
-        assert!(!receipt.success);
-        assert!(
-            receipt
-                .gates
-                .iter()
-                .any(|gate| { gate.name == "passive_captures_parse" && gate.status == "fail" })
-        );
+        assert!(receipt.success);
         Ok(())
     }
 
@@ -22045,11 +22174,11 @@ mod tests {
                 "{}\n{}",
                 capture_line(
                     product_ids::R5_V2,
-                    &wheelbase_full_report_hex(0x8000, 0, 0, 0, 0, 0, 8, rim_ids::ES, 0, 0)
+                    &wheelbase_full_report_hex(0x8000, 0, 0, 0, 0, 0, 0, 0, 0, 0)
                 ),
                 capture_line(
                     product_ids::R5_V2,
-                    &wheelbase_full_report_hex(0x8000, 0, 0, 0, 0, 0x02, 8, rim_ids::ES, 0, 0)
+                    &wheelbase_full_report_hex(0x8000, 0, 0, 0, 0, 0, 0, 0, 0, 0)
                 )
             ),
         )?;
@@ -22060,23 +22189,18 @@ mod tests {
             .iter()
             .find(|entry| entry.capture == "captures/es-controls.jsonl")
             .ok_or("missing es-controls validation entry")?;
-        let hat_requirement = entry
+        let button_requirement = entry
             .required_any_axis_variation
             .iter()
-            .find(|requirement| requirement.group == "hat")
-            .ok_or("missing hat requirement")?;
-        let rim_requirement = entry
-            .required_axis_values
-            .iter()
-            .find(|requirement| requirement.axis == "funky_u8")
-            .ok_or("missing ES rim requirement")?;
+            .find(|requirement| requirement.group == "buttons")
+            .ok_or("missing ES button requirement")?;
 
         assert!(!receipt.success);
         assert!(!entry.success);
-        assert_eq!(hat_requirement.axes, vec!["hat_u8".to_string()]);
-        assert_eq!(rim_requirement.value, hex_u8(rim_ids::ES));
+        assert_eq!(button_requirement.axes, vec!["buttons_any_u8".to_string()]);
+        assert!(entry.required_axis_values.is_empty());
         assert!(entry.missing_requirements.iter().any(|requirement| {
-            requirement.contains("hat group") && requirement.contains("hat_u8")
+            requirement.contains("buttons group") && requirement.contains("buttons_any_u8")
         }));
         Ok(())
     }
