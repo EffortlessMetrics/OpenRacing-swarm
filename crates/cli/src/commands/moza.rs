@@ -3774,6 +3774,10 @@ fn push_passive_next_commands(lane: &Path, wheelbase_pid: &str, commands: &mut V
         "wheelctl moza descriptor --json-out {}",
         lane_path_arg(lane, "descriptor.json")
     ));
+    commands.push(format!(
+        "wheelctl moza descriptor --device {wheelbase_pid} --report-descriptor-hex-file target/moza-r5-report-descriptor.txt --json-out {}",
+        lane_path_arg(lane, "descriptor.json")
+    ));
 
     for requirement in passive_capture_requirements_for_lane(lane) {
         let (device, duration_ms) = passive_capture_next_command_hint(requirement.relative_path);
@@ -20955,6 +20959,11 @@ mod tests {
                 && command.contains("captures/r5-steering-sweep.jsonl")
         }));
         assert!(
+            receipt.next_commands.iter().any(|command| command
+                .contains("wheelctl moza descriptor --device 0x0014 --report-descriptor-hex-file")),
+            "passive next_commands should include the descriptor file fallback"
+        );
+        assert!(
             receipt
                 .next_commands
                 .iter()
@@ -20994,6 +21003,19 @@ mod tests {
         assert!(
             !init_command.contains("--wheelbase-pid 0x0014"),
             "init-lane next command must not suggest the default V2 PID for a V1 lane: {init_command}"
+        );
+        let descriptor_fallback_command = receipt
+            .next_commands
+            .iter()
+            .find(|command| command.contains("--report-descriptor-hex-file"))
+            .ok_or("expected descriptor file fallback next command")?;
+        assert!(
+            descriptor_fallback_command.contains("--device 0x0004"),
+            "descriptor file fallback should use manifest PID: {descriptor_fallback_command}"
+        );
+        assert!(
+            !descriptor_fallback_command.contains("--device 0x0014"),
+            "descriptor file fallback must not suggest the default V2 PID for a V1 lane: {descriptor_fallback_command}"
         );
         Ok(())
     }
