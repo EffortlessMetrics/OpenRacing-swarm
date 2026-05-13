@@ -421,6 +421,16 @@ pub enum MozaCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
+    /// Analyze raw byte/word movement in a captured Moza input JSONL without hardware writes
+    AnalyzeCapture {
+        /// JSON Lines file produced by `wheelctl moza capture-input`
+        #[arg(long)]
+        capture: std::path::PathBuf,
+        /// Write the analysis receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
     /// Validate every required Moza lane capture through the parser without hardware writes
     ValidateCaptures {
         /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06

@@ -194,6 +194,9 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             pid,
             json_out,
         } => validate_capture(json, capture, pid.as_deref(), json_out.as_deref()).await,
+        MozaCommands::AnalyzeCapture { capture, json_out } => {
+            analyze_capture(json, capture, json_out.as_deref()).await
+        }
         MozaCommands::ValidateCaptures { lane, json_out } => {
             validate_captures(json, lane, json_out.as_deref()).await
         }
@@ -771,6 +774,19 @@ async fn validate_capture(
         return Err(receipt_failure(format!(
             "Moza capture validation failed: {} parsed, {} rejected",
             receipt.parsed_reports, receipt.rejected_reports
+        )));
+    }
+    Ok(())
+}
+
+async fn analyze_capture(json: bool, capture: &Path, json_out: Option<&Path>) -> Result<()> {
+    let receipt = analyze_capture_file(capture)?;
+    write_json_receipt(json_out, &receipt)?;
+    print_capture_analysis_receipt(json, json_out, &receipt)?;
+    if !receipt.success {
+        return Err(receipt_failure(format!(
+            "Moza capture analysis failed: {} decoded, {} rejected",
+            receipt.decoded_reports, receipt.rejected_reports
         )));
     }
     Ok(())
@@ -10772,6 +10788,230 @@ fn validate_capture_file(
     })
 }
 
+fn analyze_capture_file(capture: &Path) -> Result<CaptureAnalysisReceipt> {
+    let file =
+        File::open(capture).with_context(|| format!("failed to open '{}'", capture.display()))?;
+    let reader = BufReader::new(file);
+    let mut total_reports = 0usize;
+    let mut decoded_reports = 0usize;
+    let mut rejected_reports = 0usize;
+    let mut capture_input_format_reports = 0usize;
+    let mut product_ids = BTreeMap::new();
+    let mut report_ids = BTreeMap::new();
+    let mut report_lengths = BTreeMap::new();
+    let mut byte_ranges = Vec::<AxisRange>::new();
+    let mut word_ranges_le = Vec::<AxisRange>::new();
+    let mut line_errors = Vec::new();
+    let mut line_errors_truncated = false;
+
+    for (idx, line) in reader.lines().enumerate() {
+        let line_no = idx + 1;
+        let line = match line {
+            Ok(line) => line,
+            Err(e) => {
+                record_capture_analysis_error(
+                    &mut line_errors,
+                    &mut line_errors_truncated,
+                    line_no,
+                    format!("failed to read line: {e}"),
+                );
+                rejected_reports += 1;
+                continue;
+            }
+        };
+
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        total_reports += 1;
+
+        let parsed_line: CapturedInputReportLine = match serde_json::from_str(&line) {
+            Ok(report) => report,
+            Err(e) => {
+                record_capture_analysis_error(
+                    &mut line_errors,
+                    &mut line_errors_truncated,
+                    line_no,
+                    format!("invalid JSON capture line: {e}"),
+                );
+                rejected_reports += 1;
+                continue;
+            }
+        };
+
+        let pid = parsed_line
+            .product_id
+            .as_deref()
+            .and_then(parse_hex_selector);
+        if let Some(pid) = pid {
+            increment_count(&mut product_ids, hex_u16(pid));
+        }
+
+        let data = match parsed_line.decode_data() {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                record_capture_analysis_error(
+                    &mut line_errors,
+                    &mut line_errors_truncated,
+                    line_no,
+                    e,
+                );
+                rejected_reports += 1;
+                continue;
+            }
+        };
+
+        if let Some(expected_len) = parsed_line.report_len
+            && expected_len != data.len()
+        {
+            record_capture_analysis_error(
+                &mut line_errors,
+                &mut line_errors_truncated,
+                line_no,
+                format!(
+                    "report_len mismatch: declared {expected_len}, decoded {}",
+                    data.len()
+                ),
+            );
+            rejected_reports += 1;
+            continue;
+        }
+
+        decoded_reports += 1;
+        let report_id = data.first().copied().unwrap_or(0);
+        increment_count(&mut report_ids, hex_u8(report_id));
+        increment_count(&mut report_lengths, data.len().to_string());
+        if pid
+            .map(|pid| parsed_line.has_capture_input_metadata(&data, pid))
+            .unwrap_or(false)
+        {
+            capture_input_format_reports += 1;
+        }
+
+        for (index, value) in data.iter().copied().enumerate() {
+            update_range_at(&mut byte_ranges, index, u16::from(value));
+        }
+
+        for (index, pair) in data.windows(2).enumerate() {
+            let value = u16::from_le_bytes([pair[0], pair[1]]);
+            update_range_at(&mut word_ranges_le, index, value);
+        }
+    }
+
+    let byte_ranges = materialize_byte_ranges(byte_ranges);
+    let word_ranges_le = materialize_word_ranges(word_ranges_le);
+    let moving_bytes = byte_ranges
+        .iter()
+        .filter(|range| range.changed)
+        .map(|range| range.index)
+        .collect::<Vec<_>>();
+    let moving_words_le = word_ranges_le
+        .iter()
+        .filter(|range| range.changed)
+        .map(|range| range.start_index)
+        .collect::<Vec<_>>();
+    let success = total_reports > 0 && rejected_reports == 0 && line_errors.is_empty();
+    let notes = if success {
+        vec![
+            "capture analysis reads stored JSONL reports only; no HID device is opened".to_string(),
+            "byte and word ranges are diagnostic evidence only and do not assign control semantics"
+                .to_string(),
+        ]
+    } else {
+        vec![
+            "capture analysis did not decode every line; inspect line_errors before using movement evidence".to_string(),
+            "analysis is offline and performs no HID reads, output writes, feature reports, or FFB actions".to_string(),
+        ]
+    };
+
+    Ok(CaptureAnalysisReceipt {
+        success,
+        command: "wheelctl moza analyze-capture",
+        generated_at_utc: now_utc(),
+        capture: capture.display().to_string(),
+        no_hid_device_opened: true,
+        no_ffb_writes: true,
+        no_output_reports: true,
+        no_feature_reports: true,
+        no_serial_config_commands: true,
+        no_firmware_or_dfu_commands: true,
+        total_reports,
+        decoded_reports,
+        rejected_reports,
+        capture_input_format_reports,
+        all_reports_have_capture_input_metadata: total_reports > 0
+            && capture_input_format_reports == total_reports,
+        product_ids,
+        report_ids,
+        report_lengths,
+        moving_byte_count: moving_bytes.len(),
+        moving_bytes,
+        byte_ranges,
+        moving_word_le_count: moving_words_le.len(),
+        moving_words_le,
+        word_ranges_le,
+        line_errors,
+        line_errors_truncated,
+        notes,
+    })
+}
+
+fn record_capture_analysis_error(
+    line_errors: &mut Vec<CaptureLineError>,
+    truncated: &mut bool,
+    line: usize,
+    error: String,
+) {
+    const MAX_LINE_ERRORS: usize = 16;
+    if line_errors.len() < MAX_LINE_ERRORS {
+        line_errors.push(CaptureLineError { line, error });
+    } else {
+        *truncated = true;
+    }
+}
+
+fn update_range_at(ranges: &mut Vec<AxisRange>, index: usize, value: u16) {
+    if ranges.len() <= index {
+        ranges.resize_with(index + 1, AxisRange::default);
+    }
+    ranges[index].update(value);
+}
+
+fn materialize_byte_ranges(ranges: Vec<AxisRange>) -> Vec<ByteRange> {
+    ranges
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, range)| {
+            let min = range.min?;
+            let max = range.max?;
+            Some(ByteRange {
+                index,
+                min,
+                max,
+                changed: min != max,
+            })
+        })
+        .collect()
+}
+
+fn materialize_word_ranges(ranges: Vec<AxisRange>) -> Vec<WordRange> {
+    ranges
+        .into_iter()
+        .enumerate()
+        .filter_map(|(start_index, range)| {
+            let min = range.min?;
+            let max = range.max?;
+            Some(WordRange {
+                start_index,
+                min,
+                max,
+                changed: min != max,
+            })
+        })
+        .collect()
+}
+
 fn validate_lane_captures(lane: &Path) -> Result<CaptureValidationSetReceipt> {
     let mut captures = Vec::new();
     let mut total_reports = 0usize;
@@ -11184,6 +11424,53 @@ struct CaptureValidationReceipt {
     line_errors: Vec<CaptureLineError>,
     line_errors_truncated: bool,
     notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct CaptureAnalysisReceipt {
+    success: bool,
+    command: &'static str,
+    generated_at_utc: String,
+    capture: String,
+    no_hid_device_opened: bool,
+    no_ffb_writes: bool,
+    no_output_reports: bool,
+    no_feature_reports: bool,
+    no_serial_config_commands: bool,
+    no_firmware_or_dfu_commands: bool,
+    total_reports: usize,
+    decoded_reports: usize,
+    rejected_reports: usize,
+    capture_input_format_reports: usize,
+    all_reports_have_capture_input_metadata: bool,
+    product_ids: BTreeMap<String, usize>,
+    report_ids: BTreeMap<String, usize>,
+    report_lengths: BTreeMap<String, usize>,
+    moving_byte_count: usize,
+    moving_bytes: Vec<usize>,
+    byte_ranges: Vec<ByteRange>,
+    moving_word_le_count: usize,
+    moving_words_le: Vec<usize>,
+    word_ranges_le: Vec<WordRange>,
+    line_errors: Vec<CaptureLineError>,
+    line_errors_truncated: bool,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ByteRange {
+    index: usize,
+    min: u16,
+    max: u16,
+    changed: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct WordRange {
+    start_index: usize,
+    min: u16,
+    max: u16,
+    changed: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -12816,6 +13103,29 @@ fn print_capture_validation_receipt(
         println!(
             "Validated {} Moza capture report(s): {} parsed, {} rejected; no FFB writes sent.",
             receipt.total_reports, receipt.parsed_reports, receipt.rejected_reports
+        );
+        if let Some(path) = json_out {
+            println!("Receipt: {}", path.display());
+        }
+    }
+    Ok(())
+}
+
+fn print_capture_analysis_receipt(
+    json: bool,
+    json_out: Option<&Path>,
+    receipt: &CaptureAnalysisReceipt,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Analyzed {} Moza capture report(s): {} decoded, {} rejected, {} moving byte(s), {} moving little-endian word(s); no HID device opened.",
+            receipt.total_reports,
+            receipt.decoded_reports,
+            receipt.rejected_reports,
+            receipt.moving_byte_count,
+            receipt.moving_word_le_count
         );
         if let Some(path) = json_out {
             println!("Receipt: {}", path.display());
@@ -15612,6 +15922,45 @@ mod tests {
         assert_eq!(receipt.parsed_reports, 0);
         assert_eq!(receipt.rejected_reports, 1);
         assert_eq!(receipt.line_errors.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn analyze_capture_reports_raw_byte_and_word_movement() -> TestResult {
+        let (_dir, path) = write_temp_capture(&[
+            &capture_line(
+                product_ids::R5_V1,
+                &live_r5_v1_extended_aux_report_hex(0x0001, 0x0100),
+            ),
+            &capture_line(
+                product_ids::R5_V1,
+                &live_r5_v1_extended_aux_report_hex(0x00FF, 0x0200),
+            ),
+        ])?;
+
+        let receipt = analyze_capture_file(&path)?;
+
+        assert!(receipt.success);
+        assert_eq!(receipt.total_reports, 2);
+        assert_eq!(receipt.decoded_reports, 2);
+        assert_eq!(receipt.rejected_reports, 0);
+        assert_eq!(receipt.product_ids.get("0x0004"), Some(&2));
+        assert!(receipt.no_hid_device_opened);
+        assert!(receipt.no_ffb_writes);
+        assert!(receipt.no_output_reports);
+        assert!(receipt.no_feature_reports);
+        assert!(receipt.no_serial_config_commands);
+        assert!(receipt.no_firmware_or_dfu_commands);
+        assert!(receipt.moving_bytes.contains(&34));
+        assert!(receipt.moving_words_le.contains(&34));
+        let aux0 = receipt
+            .word_ranges_le
+            .iter()
+            .find(|range| range.start_index == 34)
+            .ok_or("expected word range at byte 34")?;
+        assert_eq!(aux0.min, 0x0001);
+        assert_eq!(aux0.max, 0x00FF);
+        assert!(aux0.changed);
         Ok(())
     }
 

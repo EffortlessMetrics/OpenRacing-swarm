@@ -173,6 +173,16 @@ wheelctl moza capture-input --device <r5> --duration-ms 10000 --json-out ci/hard
 wheelctl moza capture-input --device <r5> --duration-ms 10000 --json-out ci/hardware/moza-r5/<date>/captures/es-controls.jsonl
 ```
 
+When an isolated capture parses but does not satisfy the declared role
+variation, inspect the stored artifact before recapturing blindly:
+
+```powershell
+wheelctl moza analyze-capture --capture ci/hardware/moza-r5/<date>/captures/r5-throttle-only-sweep.jsonl --json-out target/moza-passive-checks/r5-throttle-byte-delta.json --json
+```
+
+The analysis receipt is diagnostic only. It records raw byte and little-endian
+word ranges from JSONL reports and makes no semantic role claim.
+
 Done when:
 
 - Steering moves monotonically through full left/right sweeps.

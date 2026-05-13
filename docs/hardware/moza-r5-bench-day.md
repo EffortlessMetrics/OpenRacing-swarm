@@ -160,6 +160,23 @@ wheelctl moza capture-input `
   --json-out "$LANE/captures/r5-throttle-only-sweep.jsonl"
 ```
 
+If this capture still looks idle-like after one clean redo, stop recapturing
+and inspect the physical/vendor state first. Open Pit House in a normal
+non-update state and confirm whether the gas axis moves there. To inspect the
+stored OpenRacing capture without assigning semantics to unlabeled bytes, run:
+
+```powershell
+wheelctl moza analyze-capture `
+  --capture "$LANE/captures/r5-throttle-only-sweep.jsonl" `
+  --json-out "target/moza-passive-checks/r5-throttle-byte-delta.json" `
+  --json
+```
+
+`analyze-capture` reads JSONL artifacts only. It reports raw byte and
+little-endian word ranges without opening HID devices, sending output reports,
+or claiming that a changing byte is throttle, clutch, handbrake, or a rim
+control.
+
 ### Brake Through R5 Hub
 
 Gesture: 5 seconds idle, brake 0->100->0 slowly, 5 seconds idle. Do not move the

@@ -1251,6 +1251,33 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_analyze_capture() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "moza",
+            "analyze-capture",
+            "--capture",
+            "captures/r5-throttle-only-sweep.jsonl",
+            "--json-out",
+            "target/r5-throttle-analysis.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::AnalyzeCapture { capture, json_out }) => {
+                assert_eq!(
+                    capture.as_path().to_str(),
+                    Some("captures/r5-throttle-only-sweep.jsonl")
+                );
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/r5-throttle-analysis.json")
+                );
+            }
+            _ => return Err("expected Moza AnalyzeCapture command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_validate_captures() -> TestResult {
         let cli = Cli::try_parse_from([
             "wheelctl",
