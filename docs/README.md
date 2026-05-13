@@ -52,7 +52,8 @@ Detailed documentation for supported racing wheel protocols:
 Receipt-backed hardware validation lanes:
 
 - **[Hardware Lane Authoring Guide](hardware/hardware-lane-authoring.md)** - how to add reusable receipt-backed hardware lanes without overclaiming
-- **[Moza R5 Validation Lane](hardware/moza-r5-validation.md)** - Steven's R5 + KS/ES + SR-P + HBP bring-up lane
+- **[Moza R5 Live Testing Roadmap](hardware/moza-r5-live-testing-roadmap.md)** - passive-first live testing boundary, safety ladder, and stop conditions
+- **[Moza R5 Validation Lane](hardware/moza-r5-validation.md)** - Steven's R5 hub-connected KS/ES + SR-P + HBP bring-up lane
 - **[Moza Validation Matrix](hardware/moza-validation-matrix.md)** - separates source research from real hardware receipts
 - **[Moza R5 Artifact Checklist](hardware/moza-r5-artifact-checklist.md)** - maps every Moza bring-up claim to receipts and verifier gates
 
