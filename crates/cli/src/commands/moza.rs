@@ -12,10 +12,11 @@ use jsonschema::Validator;
 use racing_wheel_hid_capture::{
     HidReportDescriptorMetadata, HidReportDescriptorReport, parse_hid_report_descriptor_metadata,
 };
+use racing_wheel_hid_moza_protocol::report::looks_like_live_r5_v1_extended_report;
 use racing_wheel_hid_moza_protocol::{
     DeviceWriter, FfbMode, MOZA_VENDOR_ID, MozaDeviceCategory, MozaDirectTorqueEncoder,
     MozaInitState, MozaInputState, MozaProtocol, MozaTopologyHint, REPORT_LEN, VendorProtocol,
-    identify_device, is_wheelbase_product, product_ids, rim_ids,
+    identify_device, input_report, is_wheelbase_product, parse_axis, product_ids, rim_ids,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -4397,7 +4398,7 @@ fn build_capture_fixture(
         let state = protocol
             .parse_input_state(&data)
             .ok_or_else(|| anyhow!("line {line_no}: Moza parser rejected report"))?;
-        summary.record_parsed(pid, &state);
+        summary.record_parsed(pid, &state, &data);
 
         if reports.len() < max_reports {
             let identity = identify_device(pid);
@@ -5800,17 +5801,17 @@ fn passive_capture_requirements() -> &'static [PassiveCaptureRequirement] {
     const PEDALS_WITH_CLUTCH: &[&str] = &["throttle_u16", "brake_u16", "clutch_u16"];
     const HANDBRAKE: &[&str] = &["handbrake_u16"];
     const NO_EXACT: &[(&str, u16)] = &[];
-    const KS_RIM: &[(&str, u16)] = &[("funky_u8", rim_ids::KS as u16)];
     const ES_RIM: &[(&str, u16)] = &[("funky_u8", rim_ids::ES as u16)];
     const NO_ANY: &[(&str, &[&str])] = &[];
     const BUTTONS_ANY: &[&str] = &["buttons_any_u8"];
-    const CLUTCH_CANDIDATES: &[&str] = &["clutch_u16", "handbrake_u16"];
-    const ROTARY_ANY: &[&str] = &["rotary0_u8", "rotary1_u8"];
+    const KS_BUTTONS_ANY: &[&str] = &["ks_buttons_any_u8", "buttons_any_u8"];
     const HAT_ANY: &[&str] = &["hat_u8"];
+    const KS_DIRECTION_ANY: &[&str] = &["ks_hat_u8", "hat_u8"];
     const KS_CONTROL_GROUPS: &[(&str, &[&str])] = &[
-        ("buttons", BUTTONS_ANY),
-        ("clutch_paddles", CLUTCH_CANDIDATES),
-        ("rotaries", ROTARY_ANY),
+        ("buttons", KS_BUTTONS_ANY),
+        // Live R5 V1 + KS captures move a packed direction/control byte while
+        // the legacy rim/funky and rotary bytes stay zero on this layout.
+        ("direction", KS_DIRECTION_ANY),
     ];
     const ES_CONTROL_GROUPS: &[(&str, &[&str])] = &[("buttons", BUTTONS_ANY), ("hat", HAT_ANY)];
     const REQUIREMENTS: &[PassiveCaptureRequirement] = &[
@@ -5872,7 +5873,7 @@ fn passive_capture_requirements() -> &'static [PassiveCaptureRequirement] {
             required_category: "wheelbase",
             expected_products: PassiveCaptureProductRequirement::ManifestR5,
             required_axis_variation: NONE,
-            required_axis_values: KS_RIM,
+            required_axis_values: NO_EXACT,
             required_any_axis_variation: KS_CONTROL_GROUPS,
             min_report_len: Some(31),
         },
@@ -10335,7 +10336,7 @@ fn validate_capture_file(
             continue;
         };
 
-        summary.record_parsed(pid, &state);
+        summary.record_parsed(pid, &state, &data);
     }
 
     let success = summary.total_reports > 0
@@ -10583,7 +10584,7 @@ struct CaptureValidationSummary {
 }
 
 impl CaptureValidationSummary {
-    fn record_parsed(&mut self, pid: u16, state: &MozaInputState) {
+    fn record_parsed(&mut self, pid: u16, state: &MozaInputState, report: &[u8]) {
         self.parsed_reports += 1;
         let identity = identify_device(pid);
         increment_count(
@@ -10610,6 +10611,40 @@ impl CaptureValidationSummary {
         self.update_axis("funky_u8", u16::from(state.funky));
         self.update_axis("rotary0_u8", u16::from(state.rotary[0]));
         self.update_axis("rotary1_u8", u16::from(state.rotary[1]));
+        self.update_axis(
+            "ks_buttons_any_u8",
+            u16::from(
+                state
+                    .ks_snapshot
+                    .buttons
+                    .iter()
+                    .copied()
+                    .fold(0u8, |acc, value| acc | value),
+            ),
+        );
+        self.update_axis("ks_hat_u8", u16::from(state.ks_snapshot.hat));
+        if looks_like_live_r5_v1_extended_report(report) {
+            self.update_report_axis(
+                "r5_v1_extended_ks_axis0_u16",
+                report,
+                input_report::R5_V1_EXTENDED_KS_AXIS0_START,
+            );
+            self.update_report_axis(
+                "r5_v1_extended_axis0_u16",
+                report,
+                input_report::R5_V1_EXTENDED_AXIS0_START,
+            );
+            self.update_report_axis(
+                "r5_v1_extended_axis1_u16",
+                report,
+                input_report::R5_V1_EXTENDED_AXIS1_START,
+            );
+            self.update_report_axis(
+                "r5_v1_extended_axis2_u16",
+                report,
+                input_report::R5_V1_EXTENDED_AXIS2_START,
+            );
+        }
     }
 
     fn update_axis(&mut self, name: &str, value: u16) {
@@ -10617,6 +10652,12 @@ impl CaptureValidationSummary {
             .entry(name.to_string())
             .or_default()
             .update(value);
+    }
+
+    fn update_report_axis(&mut self, name: &str, report: &[u8], start: usize) {
+        if let Some(value) = parse_axis(report, start) {
+            self.update_axis(name, value);
+        }
     }
 
     fn record_rejection(&mut self, line: usize, error: String) {
@@ -13632,6 +13673,23 @@ mod tests {
         bytes_hex_compact(&report)
     }
 
+    fn live_r5_v1_ks_extended_report_hex(axis0: u16, button1: u8, direction: u8) -> String {
+        let mut report = [0u8; 42];
+        report[0] = 0x01;
+        report[1..3].copy_from_slice(&0x7A37u16.to_le_bytes());
+        report[3..5].copy_from_slice(&axis0.to_le_bytes());
+        report[5..7].copy_from_slice(&0x8000u16.to_le_bytes());
+        report[7..9].copy_from_slice(&0x8001u16.to_le_bytes());
+        report[9..11].copy_from_slice(&0x8001u16.to_le_bytes());
+        report[11..13].copy_from_slice(&0x8000u16.to_le_bytes());
+        report[13..15].copy_from_slice(&0x8001u16.to_le_bytes());
+        report[15..17].copy_from_slice(&0x8000u16.to_le_bytes());
+        report[17] = 0x08;
+        report[18] = button1;
+        report[28] = direction;
+        bytes_hex_compact(&report)
+    }
+
     fn write_minimal_passive_bundle(root: &Path) -> TestResult {
         let r5_device = sample_trusted_r5_json_device();
         let srp_device = sample_srp_json_device();
@@ -13746,7 +13804,7 @@ mod tests {
                         0x6000,
                         0,
                         0x01,
-                        8,
+                        2,
                         rim_ids::KS,
                         0x10,
                         0x20
@@ -20304,6 +20362,55 @@ mod tests {
                 .gates
                 .iter()
                 .any(|gate| { gate.name == "passive_captures_parse" && gate.status == "fail" })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn validate_lane_captures_accepts_live_r5_ks_extended_controls() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        write_text_file(
+            &dir.path().join("captures/ks-controls.jsonl"),
+            &format!(
+                "{}\n{}",
+                capture_line(
+                    product_ids::R5_V2,
+                    &live_r5_v1_ks_extended_report_hex(0x8001, 0x00, 0x00)
+                ),
+                capture_line(
+                    product_ids::R5_V2,
+                    &live_r5_v1_ks_extended_report_hex(0x1234, 0x04, 0x03)
+                )
+            ),
+        )?;
+
+        let receipt = validate_lane_captures(dir.path())?;
+        let entry = receipt
+            .captures
+            .iter()
+            .find(|entry| entry.capture == "captures/ks-controls.jsonl")
+            .ok_or("missing ks-controls validation entry")?;
+        let direction_requirement = entry
+            .required_any_axis_variation
+            .iter()
+            .find(|requirement| requirement.group == "direction")
+            .ok_or("missing direction requirement")?;
+
+        assert!(entry.success, "expected KS extended controls to validate");
+        assert!(entry.required_axis_values.is_empty());
+        assert!(entry.axis_ranges.contains_key("ks_buttons_any_u8"));
+        assert!(entry.axis_ranges.contains_key("ks_hat_u8"));
+        assert!(
+            entry
+                .axis_ranges
+                .contains_key("r5_v1_extended_ks_axis0_u16")
+        );
+        assert!(
+            direction_requirement
+                .axes
+                .iter()
+                .any(|axis| axis == "ks_hat_u8")
         );
         Ok(())
     }

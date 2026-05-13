@@ -33,8 +33,8 @@
 use crate::direct::REPORT_LEN;
 use crate::ids::rim_ids;
 use crate::report::{
-    RawWheelbaseReport, input_report, parse_wheelbase_input_report, parse_wheelbase_pedal_axes,
-    parse_wheelbase_report, report_ids,
+    RawWheelbaseReport, input_report, looks_like_live_r5_v1_extended_report,
+    parse_wheelbase_input_report, parse_wheelbase_pedal_axes, parse_wheelbase_report, report_ids,
 };
 use crate::types::{
     MozaDeviceCategory, MozaInputState, MozaModel, MozaPedalAxesRaw, es_compatibility,
@@ -260,6 +260,38 @@ fn default_wheelbase_ks_map() -> KsReportMap {
     }
 }
 
+fn live_r5_v1_extended_wheelbase_ks_map() -> KsReportMap {
+    KsReportMap {
+        report_id: Some(input_report::REPORT_ID),
+        buttons_offset: Some(input_report::R5_V1_EXTENDED_BUTTONS_START),
+        hat_offset: Some(input_report::R5_V1_EXTENDED_HAT_START),
+        encoders: [None; KS_ENCODER_COUNT],
+        clutch_left_axis: None,
+        clutch_right_axis: None,
+        clutch_combined_axis: None,
+        clutch_left_button: None,
+        clutch_right_button: None,
+        clutch_mode_hint: KsClutchMode::Unknown,
+        rotary_mode_hint: KsRotaryMode::Unknown,
+        left_rotary_axis: None,
+        right_rotary_axis: None,
+        joystick_mode_hint: KsJoystickMode::DPad,
+        joystick_hat: Some(KsByteSource::new(input_report::R5_V1_EXTENDED_HAT_START)),
+    }
+}
+
+fn uses_live_r5_v1_extended_layout(report: &[u8]) -> bool {
+    looks_like_live_r5_v1_extended_report(report)
+}
+
+fn wheelbase_ks_map_for_report(report: &[u8]) -> KsReportMap {
+    if uses_live_r5_v1_extended_layout(report) {
+        live_r5_v1_extended_wheelbase_ks_map()
+    } else {
+        default_wheelbase_ks_map()
+    }
+}
+
 /// Moza protocol handler.
 pub struct MozaProtocol {
     product_id: u16,
@@ -413,12 +445,14 @@ impl MozaProtocol {
             fallback_snapshot.encoders[0] = i16::from(rotary[0]);
             fallback_snapshot.encoders[1] = i16::from(rotary[1]);
 
-            if funky == rim_ids::KS {
-                if let Some(mut mapped) = default_wheelbase_ks_map().parse(0, report) {
-                    // Base wheelbase rotary bytes are authoritative for this path.
-                    // Keep these values even when the KS map parser yields encoder data.
-                    mapped.encoders[0] = fallback_snapshot.encoders[0];
-                    mapped.encoders[1] = fallback_snapshot.encoders[1];
+            if funky == rim_ids::KS || uses_live_r5_v1_extended_layout(report) {
+                if let Some(mut mapped) = wheelbase_ks_map_for_report(report).parse(0, report) {
+                    if !uses_live_r5_v1_extended_layout(report) {
+                        // Base wheelbase rotary bytes are authoritative for the legacy path.
+                        // Keep these values even when the KS map parser yields encoder data.
+                        mapped.encoders[0] = fallback_snapshot.encoders[0];
+                        mapped.encoders[1] = fallback_snapshot.encoders[1];
+                    }
                     mapped
                 } else {
                     fallback_snapshot
@@ -893,6 +927,55 @@ mod tests {
 
         assert_eq!(parsed.ks_snapshot.encoders[0], 0x19);
         assert_eq!(parsed.ks_snapshot.encoders[1], 0x64);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_input_state_maps_live_r5_v1_extended_ks_controls()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let protocol = MozaProtocol::new(product_ids::R5_V1);
+        let mut report = [0u8; input_report::R5_V1_EXTENDED_REPORT_LEN];
+        report[0] = input_report::REPORT_ID;
+        report[input_report::STEERING_START..input_report::STEERING_START + 2]
+            .copy_from_slice(&0x7A37u16.to_le_bytes());
+        report[input_report::R5_V1_EXTENDED_KS_AXIS0_START
+            ..input_report::R5_V1_EXTENDED_KS_AXIS0_START + 2]
+            .copy_from_slice(&0x4321u16.to_le_bytes());
+        report[input_report::R5_V1_EXTENDED_AXIS0_START
+            ..input_report::R5_V1_EXTENDED_AXIS0_START + 2]
+            .copy_from_slice(&0x8000u16.to_le_bytes());
+        report[input_report::R5_V1_EXTENDED_AXIS1_START
+            ..input_report::R5_V1_EXTENDED_AXIS1_START + 2]
+            .copy_from_slice(&0x8001u16.to_le_bytes());
+        report[input_report::R5_V1_EXTENDED_AXIS2_START
+            ..input_report::R5_V1_EXTENDED_AXIS2_START + 2]
+            .copy_from_slice(&0x8000u16.to_le_bytes());
+        report[input_report::R5_V1_EXTENDED_BUTTONS_START] = 0x08;
+        report[input_report::R5_V1_EXTENDED_BUTTONS_START + 1] = 0x04;
+        report[input_report::R5_V1_EXTENDED_BUTTONS_START + 10] = 0x80;
+        report[input_report::R5_V1_EXTENDED_HAT_START] = 0x03;
+
+        let parsed = protocol
+            .parse_input_state(&report)
+            .ok_or("expected live R5 V1 extended wheelbase parse")?;
+
+        assert_eq!(parsed.throttle_u16, 0);
+        assert_eq!(parsed.brake_u16, 0);
+        assert_eq!(parsed.clutch_u16, 0);
+        assert_eq!(parsed.handbrake_u16, 0);
+        assert_eq!(parsed.buttons[0], 0x08);
+        assert_eq!(parsed.buttons[1], 0x04);
+        assert_eq!(parsed.buttons[10], 0x80);
+        assert_eq!(parsed.hat, 0x03);
+        assert_eq!(parsed.funky, 0x00);
+        assert_eq!(parsed.rotary, [0x00, 0x00]);
+        assert_eq!(parsed.ks_snapshot.buttons[0], 0x08);
+        assert_eq!(parsed.ks_snapshot.buttons[1], 0x04);
+        assert_eq!(parsed.ks_snapshot.buttons[10], 0x80);
+        assert_eq!(parsed.ks_snapshot.hat, 0x03);
+        assert_eq!(parsed.ks_snapshot.clutch_combined, None);
+        assert_eq!(parsed.ks_snapshot.clutch_mode, KsClutchMode::Unknown);
+        assert_eq!(parsed.ks_snapshot.rotary_mode, KsRotaryMode::Unknown);
         Ok(())
     }
 

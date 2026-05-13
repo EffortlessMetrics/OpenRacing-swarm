@@ -34,6 +34,25 @@ pub mod input_report {
     pub const ROTARY_START: usize = FUNKY_START + 1;
     /// Number of rotary encoder bytes
     pub const ROTARY_LEN: usize = 2;
+
+    /// Observed report length for the live R5 V1 wheelbase + KS aggregated path.
+    ///
+    /// This extended path keeps steering at byte 1, but carries additional
+    /// axis-like values before the packed button/control surface.
+    pub const R5_V1_EXTENDED_REPORT_LEN: usize = 42;
+    /// Byte offset where the live R5 V1 extended axis block exposes the first
+    /// moving pedal-like slot observed during SR-P-through-wheelbase capture.
+    pub const R5_V1_EXTENDED_AXIS0_START: usize = 11;
+    /// Byte offset for the second observed live R5 V1 extended axis slot.
+    pub const R5_V1_EXTENDED_AXIS1_START: usize = 13;
+    /// Byte offset for the third observed live R5 V1 extended axis slot.
+    pub const R5_V1_EXTENDED_AXIS2_START: usize = 15;
+    /// Byte offset for an axis-like KS control observed in live R5 V1 + KS captures.
+    pub const R5_V1_EXTENDED_KS_AXIS0_START: usize = 3;
+    /// Byte offset where the live R5 V1 + KS packed control bytes begin.
+    pub const R5_V1_EXTENDED_BUTTONS_START: usize = 17;
+    /// Byte offset for the live R5 V1 + KS direction byte observed during KS capture.
+    pub const R5_V1_EXTENDED_HAT_START: usize = 28;
 }
 
 /// Minimum bytes required for a valid wheelbase report containing steering,
@@ -126,13 +145,84 @@ pub fn parse_axis(report: &[u8], start: usize) -> Option<u16> {
     Some(u16::from_le_bytes([report[start], report[start + 1]]))
 }
 
+/// Returns true for the live 42-byte R5 V1 aggregated layout observed during
+/// passive KS/SR-P hardware captures.
+///
+/// Older synthetic fixtures sometimes use padded 64-byte buffers with legacy
+/// offsets, so report length alone is intentionally not enough to select this
+/// layout. The live layout consistently carries `0x08` in the first packed
+/// control byte while preserving additional control bits in the same byte.
+pub fn looks_like_live_r5_v1_extended_report(report: &[u8]) -> bool {
+    report.len() == input_report::R5_V1_EXTENDED_REPORT_LEN
+        && report.first().copied() == Some(input_report::REPORT_ID)
+        && report
+            .get(input_report::R5_V1_EXTENDED_BUTTONS_START)
+            .copied()
+            .is_some_and(|value| value & 0x08 == 0x08)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct WheelbaseInputLayout {
+    throttle_start: Option<usize>,
+    brake_start: Option<usize>,
+    clutch_start: Option<usize>,
+    handbrake_start: Option<usize>,
+    buttons_start: usize,
+    hat_start: usize,
+    funky_start: Option<usize>,
+    rotary_start: Option<usize>,
+}
+
+impl WheelbaseInputLayout {
+    const LEGACY: Self = Self {
+        throttle_start: Some(input_report::THROTTLE_START),
+        brake_start: Some(input_report::BRAKE_START),
+        clutch_start: Some(input_report::CLUTCH_START),
+        handbrake_start: Some(input_report::HANDBRAKE_START),
+        buttons_start: input_report::BUTTONS_START,
+        hat_start: input_report::HAT_START,
+        funky_start: Some(input_report::FUNKY_START),
+        rotary_start: Some(input_report::ROTARY_START),
+    };
+
+    const R5_V1_EXTENDED: Self = Self {
+        throttle_start: None,
+        brake_start: None,
+        clutch_start: None,
+        handbrake_start: None,
+        buttons_start: input_report::R5_V1_EXTENDED_BUTTONS_START,
+        hat_start: input_report::R5_V1_EXTENDED_HAT_START,
+        funky_start: None,
+        rotary_start: None,
+    };
+}
+
+fn wheelbase_input_layout(report: &RawWheelbaseReport<'_>) -> WheelbaseInputLayout {
+    if looks_like_live_r5_v1_extended_report(report.report_bytes()) {
+        WheelbaseInputLayout::R5_V1_EXTENDED
+    } else {
+        WheelbaseInputLayout::LEGACY
+    }
+}
+
 fn parse_wheelbase_pedal_axes_from_report(
     report: &RawWheelbaseReport<'_>,
 ) -> Option<WheelbasePedalAxesRaw> {
-    let throttle = report.axis_u16_le(input_report::THROTTLE_START)?;
-    let brake = report.axis_u16_le(input_report::BRAKE_START)?;
-    let clutch = report.axis_u16_le(input_report::CLUTCH_START);
-    let handbrake = report.axis_u16_le(input_report::HANDBRAKE_START);
+    let layout = wheelbase_input_layout(report);
+    let throttle = layout
+        .throttle_start
+        .and_then(|start| report.axis_u16_le(start))
+        .unwrap_or(0);
+    let brake = layout
+        .brake_start
+        .and_then(|start| report.axis_u16_le(start))
+        .unwrap_or(0);
+    let clutch = layout
+        .clutch_start
+        .and_then(|start| report.axis_u16_le(start));
+    let handbrake = layout
+        .handbrake_start
+        .and_then(|start| report.axis_u16_le(start));
 
     Some(WheelbasePedalAxesRaw {
         throttle,
@@ -169,29 +259,33 @@ pub fn parse_wheelbase_pedal_axes(report: &[u8]) -> Option<WheelbasePedalAxesRaw
 /// zero-filled when their bytes are absent.
 pub fn parse_wheelbase_input_report(report: &[u8]) -> Option<WheelbaseInputRaw> {
     let report = parse_wheelbase_report(report)?;
+    let layout = wheelbase_input_layout(&report);
     let steering = report.axis_u16_le(input_report::STEERING_START)?;
     let pedals = parse_wheelbase_pedal_axes_from_report(&report)?;
 
     let mut buttons = [0u8; input_report::BUTTONS_LEN];
     let bytes = report.report_bytes();
-    if bytes.len() > input_report::BUTTONS_START {
+    if bytes.len() > layout.buttons_start {
         let end = bytes
             .len()
-            .min(input_report::BUTTONS_START + input_report::BUTTONS_LEN);
-        let count = end - input_report::BUTTONS_START;
-        buttons[..count].copy_from_slice(&bytes[input_report::BUTTONS_START..end]);
+            .min(layout.buttons_start + input_report::BUTTONS_LEN);
+        let count = end - layout.buttons_start;
+        buttons[..count].copy_from_slice(&bytes[layout.buttons_start..end]);
     }
 
-    let hat = report.byte(input_report::HAT_START).unwrap_or(0);
-    let funky = report.byte(input_report::FUNKY_START).unwrap_or(0);
+    let hat = report.byte(layout.hat_start).unwrap_or(0);
+    let funky = layout
+        .funky_start
+        .and_then(|start| report.byte(start))
+        .unwrap_or(0);
 
     let mut rotary = [0u8; input_report::ROTARY_LEN];
-    if bytes.len() > input_report::ROTARY_START {
-        let end = bytes
-            .len()
-            .min(input_report::ROTARY_START + input_report::ROTARY_LEN);
-        let count = end - input_report::ROTARY_START;
-        rotary[..count].copy_from_slice(&bytes[input_report::ROTARY_START..end]);
+    if let Some(rotary_start) = layout.rotary_start
+        && bytes.len() > rotary_start
+    {
+        let end = bytes.len().min(rotary_start + input_report::ROTARY_LEN);
+        let count = end - rotary_start;
+        rotary[..count].copy_from_slice(&bytes[rotary_start..end]);
     }
 
     Some(WheelbaseInputRaw {
@@ -329,6 +423,80 @@ mod tests {
         assert_eq!(parsed.hat, 0x04);
         assert_eq!(parsed.funky, 0x05);
         assert_eq!(parsed.rotary, [0x19, 0x64]);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_wheelbase_input_reads_live_r5_v1_extended_controls()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let mut report = [0u8; input_report::R5_V1_EXTENDED_REPORT_LEN];
+        report[0] = input_report::REPORT_ID;
+        report[input_report::STEERING_START..input_report::STEERING_START + 2]
+            .copy_from_slice(&0x7A37u16.to_le_bytes());
+        report[input_report::R5_V1_EXTENDED_KS_AXIS0_START
+            ..input_report::R5_V1_EXTENDED_KS_AXIS0_START + 2]
+            .copy_from_slice(&0x1234u16.to_le_bytes());
+        report[input_report::R5_V1_EXTENDED_AXIS0_START
+            ..input_report::R5_V1_EXTENDED_AXIS0_START + 2]
+            .copy_from_slice(&0x5678u16.to_le_bytes());
+        report[input_report::R5_V1_EXTENDED_AXIS1_START
+            ..input_report::R5_V1_EXTENDED_AXIS1_START + 2]
+            .copy_from_slice(&0x9ABCu16.to_le_bytes());
+        report[input_report::R5_V1_EXTENDED_AXIS2_START
+            ..input_report::R5_V1_EXTENDED_AXIS2_START + 2]
+            .copy_from_slice(&0xDEF0u16.to_le_bytes());
+        report[input_report::R5_V1_EXTENDED_BUTTONS_START] = 0x08;
+        report[input_report::R5_V1_EXTENDED_BUTTONS_START + 1] = 0x04;
+        report[input_report::R5_V1_EXTENDED_BUTTONS_START + 10] = 0x80;
+        report[input_report::R5_V1_EXTENDED_HAT_START] = 0x03;
+
+        let parsed = parse_wheelbase_input_report(&report)
+            .ok_or("expected live R5 V1 extended input parse")?;
+
+        assert_eq!(parsed.steering, 0x7A37);
+        assert_eq!(
+            parse_axis(&report, input_report::R5_V1_EXTENDED_AXIS0_START),
+            Some(0x5678)
+        );
+        assert_eq!(
+            parse_axis(&report, input_report::R5_V1_EXTENDED_AXIS1_START),
+            Some(0x9ABC)
+        );
+        assert_eq!(
+            parse_axis(&report, input_report::R5_V1_EXTENDED_AXIS2_START),
+            Some(0xDEF0)
+        );
+        assert_eq!(parsed.pedals.throttle, 0);
+        assert_eq!(parsed.pedals.brake, 0);
+        assert_eq!(parsed.pedals.clutch, None);
+        assert_eq!(parsed.pedals.handbrake, None);
+        assert_eq!(parsed.buttons[0], 0x08);
+        assert_eq!(parsed.buttons[1], 0x04);
+        assert_eq!(parsed.buttons[10], 0x80);
+        assert_eq!(parsed.hat, 0x03);
+        assert_eq!(parsed.funky, 0x00);
+        assert_eq!(parsed.rotary, [0x00, 0x00]);
+        Ok(())
+    }
+
+    #[test]
+    fn padded_legacy_report_does_not_select_live_r5_v1_extended_layout()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let mut report = [0u8; 64];
+        report[0] = input_report::REPORT_ID;
+        report[input_report::STEERING_START..input_report::STEERING_START + 2]
+            .copy_from_slice(&0x8000u16.to_le_bytes());
+        report[input_report::THROTTLE_START..input_report::THROTTLE_START + 2]
+            .copy_from_slice(&0x1234u16.to_le_bytes());
+        report[input_report::BRAKE_START..input_report::BRAKE_START + 2]
+            .copy_from_slice(&0x5678u16.to_le_bytes());
+
+        let parsed = parse_wheelbase_input_report(&report)
+            .ok_or("expected padded legacy report to parse")?;
+
+        assert!(!looks_like_live_r5_v1_extended_report(&report));
+        assert_eq!(parsed.pedals.throttle, 0x1234);
+        assert_eq!(parsed.pedals.brake, 0x5678);
         Ok(())
     }
 

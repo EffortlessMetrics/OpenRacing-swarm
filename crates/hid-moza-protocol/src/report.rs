@@ -3,8 +3,9 @@
 #![deny(static_mut_refs)]
 
 pub use racing_wheel_moza_wheelbase_report::{
-    RawWheelbaseReport, WheelbaseInputRaw, WheelbasePedalAxesRaw, input_report, parse_axis,
-    parse_wheelbase_input_report, parse_wheelbase_pedal_axes, parse_wheelbase_report,
+    RawWheelbaseReport, WheelbaseInputRaw, WheelbasePedalAxesRaw, input_report,
+    looks_like_live_r5_v1_extended_report, parse_axis, parse_wheelbase_input_report,
+    parse_wheelbase_pedal_axes, parse_wheelbase_report,
 };
 
 /// Best-effort layouts for direct USB HBP handbrake reports.
