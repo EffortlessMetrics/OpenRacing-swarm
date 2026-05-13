@@ -1318,6 +1318,33 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_analyze_lane() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "moza",
+            "analyze-lane",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-06",
+            "--json-out",
+            "target/lane-analysis.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::AnalyzeLane { lane, json_out }) => {
+                assert_eq!(
+                    lane.as_path().to_str(),
+                    Some("ci/hardware/moza-r5/2026-05-06")
+                );
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/lane-analysis.json")
+                );
+            }
+            _ => return Err("expected Moza AnalyzeLane command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_validate_captures() -> TestResult {
         let cli = Cli::try_parse_from([
             "wheelctl",

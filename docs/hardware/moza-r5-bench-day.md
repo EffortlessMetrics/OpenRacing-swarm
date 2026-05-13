@@ -184,6 +184,20 @@ little-endian word ranges without opening HID devices, sending output reports,
 or claiming that a changing byte is throttle, clutch, handbrake, or a rim
 control.
 
+After several isolated captures, compare the whole lane against idle before
+recapturing blindly:
+
+```powershell
+wheelctl moza analyze-lane `
+  --lane "$LANE" `
+  --json-out "target/moza-passive-checks/lane-analysis.json" `
+  --json
+```
+
+`analyze-lane` reads stored JSONL artifacts only. It reports which required
+captures decoded cleanly, which ones are missing, and which captures still lack
+parser-visible control evidence compared with the lane idle capture.
+
 ### Brake Through R5 Hub
 
 Gesture: 5 seconds idle, brake 0->100->0 slowly, 5 seconds idle. Do not move the

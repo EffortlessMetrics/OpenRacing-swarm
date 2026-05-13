@@ -199,6 +199,9 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
         MozaCommands::AnalyzeCapture { capture, json_out } => {
             analyze_capture(json, capture, json_out.as_deref()).await
         }
+        MozaCommands::AnalyzeLane { lane, json_out } => {
+            analyze_lane(json, lane, json_out.as_deref()).await
+        }
         MozaCommands::ValidateCaptures { lane, json_out } => {
             validate_captures(json, lane, json_out.as_deref()).await
         }
@@ -857,6 +860,19 @@ async fn analyze_capture(json: bool, capture: &Path, json_out: Option<&Path>) ->
         return Err(receipt_failure(format!(
             "Moza capture analysis failed: {} decoded, {} rejected",
             receipt.decoded_reports, receipt.rejected_reports
+        )));
+    }
+    Ok(())
+}
+
+async fn analyze_lane(json: bool, lane: &Path, json_out: Option<&Path>) -> Result<()> {
+    let receipt = analyze_lane_captures(lane)?;
+    write_json_receipt(json_out, &receipt)?;
+    print_lane_capture_analysis_receipt(json, json_out, &receipt)?;
+    if !receipt.success {
+        return Err(receipt_failure(format!(
+            "Moza lane capture analysis failed: {} of {} capture(s) decoded cleanly",
+            receipt.analyzed_capture_count, receipt.required_capture_count
         )));
     }
     Ok(())
@@ -11031,6 +11047,182 @@ fn analyze_capture_file(capture: &Path) -> Result<CaptureAnalysisReceipt> {
     })
 }
 
+fn analyze_lane_captures(lane: &Path) -> Result<LaneCaptureAnalysisReceipt> {
+    let requirements = passive_capture_requirements_for_lane(lane);
+    let idle = analyze_capture_file(&lane.join("captures/r5-idle.jsonl"))
+        .context("failed to analyze captures/r5-idle.jsonl")?;
+    let idle_moving_bytes = idle.moving_bytes.iter().copied().collect::<BTreeSet<_>>();
+    let idle_moving_words_le = idle
+        .moving_words_le
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
+
+    let mut captures = Vec::new();
+    let mut analyzed_capture_count = 0usize;
+    let mut total_reports = 0usize;
+    let mut decoded_reports = 0usize;
+    let mut rejected_reports = 0usize;
+
+    for requirement in &requirements {
+        let path = lane.join(requirement.relative_path);
+        let analysis = match analyze_capture_file(&path) {
+            Ok(analysis) => analysis,
+            Err(error) => {
+                captures.push(LaneCaptureAnalysisEntry::failed(
+                    requirement,
+                    format!("failed to analyze {}: {error}", requirement.relative_path),
+                ));
+                continue;
+            }
+        };
+
+        analyzed_capture_count += usize::from(analysis.success);
+        total_reports = total_reports.saturating_add(analysis.total_reports);
+        decoded_reports = decoded_reports.saturating_add(analysis.decoded_reports);
+        rejected_reports = rejected_reports.saturating_add(analysis.rejected_reports);
+
+        let unique_moving_bytes = analysis
+            .moving_bytes
+            .iter()
+            .copied()
+            .filter(|index| !idle_moving_bytes.contains(index))
+            .collect::<Vec<_>>();
+        let unique_moving_words_le = analysis
+            .moving_words_le
+            .iter()
+            .copied()
+            .filter(|index| !idle_moving_words_le.contains(index))
+            .collect::<Vec<_>>();
+
+        let validation = match validate_capture_file(&path, None) {
+            Ok(validation) => validation,
+            Err(error) => {
+                let mut missing_requirements = analysis
+                    .line_errors
+                    .iter()
+                    .map(|line_error| format!("line {}: {}", line_error.line, line_error.error))
+                    .collect::<Vec<_>>();
+                missing_requirements.push(format!(
+                    "failed to validate {}: {error}",
+                    requirement.relative_path
+                ));
+                captures.push(LaneCaptureAnalysisEntry {
+                    capture: requirement.relative_path.to_string(),
+                    fixture_id: requirement.fixture_id.to_string(),
+                    success: false,
+                    total_reports: analysis.total_reports,
+                    decoded_reports: analysis.decoded_reports,
+                    rejected_reports: analysis.rejected_reports,
+                    moving_bytes: analysis.moving_bytes,
+                    unique_moving_bytes_vs_idle: unique_moving_bytes,
+                    moving_words_le: analysis.moving_words_le,
+                    unique_moving_words_le_vs_idle: unique_moving_words_le,
+                    moving_required_axes: Vec::new(),
+                    control_evidence_ok: false,
+                    missing_requirements,
+                });
+                continue;
+            }
+        };
+        let expected_product_ids = expected_product_ids_for_requirement(requirement, lane);
+        let evaluation =
+            evaluate_passive_capture_requirement(requirement, &validation, &expected_product_ids);
+        let moving_required_axes = moving_required_axes(requirement, &validation.axis_ranges);
+        let control_evidence_ok = required_control_evidence_ok(requirement, &evaluation);
+
+        captures.push(LaneCaptureAnalysisEntry {
+            capture: requirement.relative_path.to_string(),
+            fixture_id: requirement.fixture_id.to_string(),
+            success: analysis.success && validation.success,
+            total_reports: analysis.total_reports,
+            decoded_reports: analysis.decoded_reports,
+            rejected_reports: analysis.rejected_reports,
+            moving_bytes: analysis.moving_bytes,
+            unique_moving_bytes_vs_idle: unique_moving_bytes,
+            moving_words_le: analysis.moving_words_le,
+            unique_moving_words_le_vs_idle: unique_moving_words_le,
+            moving_required_axes,
+            control_evidence_ok,
+            missing_requirements: evaluation.missing_requirements,
+        });
+    }
+
+    let failed_captures = captures
+        .iter()
+        .filter(|capture| !capture.success)
+        .map(|capture| capture.capture.clone())
+        .collect::<Vec<_>>();
+    let missing_control_evidence = captures
+        .iter()
+        .filter(|capture| !capture.control_evidence_ok)
+        .map(|capture| capture.capture.clone())
+        .collect::<Vec<_>>();
+    let success = failed_captures.is_empty() && missing_control_evidence.is_empty();
+
+    Ok(LaneCaptureAnalysisReceipt {
+        success,
+        command: "wheelctl moza analyze-lane",
+        generated_at_utc: now_utc(),
+        lane: lane.display().to_string(),
+        no_hid_device_opened: true,
+        no_ffb_writes: true,
+        no_output_reports: true,
+        no_feature_reports: true,
+        no_serial_config_commands: true,
+        no_firmware_or_dfu_commands: true,
+        required_capture_count: requirements.len(),
+        analyzed_capture_count,
+        total_reports,
+        decoded_reports,
+        rejected_reports,
+        idle_capture: idle.capture,
+        idle_moving_bytes: idle.moving_bytes,
+        idle_moving_words_le: idle.moving_words_le,
+        failed_captures,
+        missing_control_evidence,
+        captures,
+        notes: vec![
+            "analyze-lane reads stored JSONL reports only; no HID device is opened".to_string(),
+            "unique_moving_* fields compare each capture to r5-idle and are diagnostic only"
+                .to_string(),
+            "control_evidence_ok uses the same parser-visible requirements as passive validation"
+                .to_string(),
+        ],
+    })
+}
+
+fn moving_required_axes(
+    requirement: &PassiveCaptureRequirement,
+    ranges: &BTreeMap<String, AxisRange>,
+) -> Vec<String> {
+    let mut axes = BTreeSet::new();
+    for axis in requirement.required_axis_variation {
+        if axis_has_variation(ranges, axis) {
+            axes.insert((*axis).to_string());
+        }
+    }
+    for (_, group_axes) in requirement.required_any_axis_variation {
+        for axis in *group_axes {
+            if axis_has_variation(ranges, axis) {
+                axes.insert((*axis).to_string());
+            }
+        }
+    }
+    axes.into_iter().collect()
+}
+
+fn required_control_evidence_ok(
+    requirement: &PassiveCaptureRequirement,
+    evaluation: &PassiveCaptureEvaluation,
+) -> bool {
+    let has_control_requirements = !requirement.required_axis_variation.is_empty()
+        || !requirement.required_any_axis_variation.is_empty()
+        || !requirement.required_axis_values.is_empty();
+    !has_control_requirements
+        || (evaluation.axes_ok && evaluation.any_axes_ok && evaluation.exact_axes_ok)
+}
+
 fn record_capture_analysis_error(
     line_errors: &mut Vec<CaptureLineError>,
     truncated: &mut bool,
@@ -11531,6 +11723,69 @@ struct CaptureAnalysisReceipt {
     line_errors: Vec<CaptureLineError>,
     line_errors_truncated: bool,
     notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct LaneCaptureAnalysisReceipt {
+    success: bool,
+    command: &'static str,
+    generated_at_utc: String,
+    lane: String,
+    no_hid_device_opened: bool,
+    no_ffb_writes: bool,
+    no_output_reports: bool,
+    no_feature_reports: bool,
+    no_serial_config_commands: bool,
+    no_firmware_or_dfu_commands: bool,
+    required_capture_count: usize,
+    analyzed_capture_count: usize,
+    total_reports: usize,
+    decoded_reports: usize,
+    rejected_reports: usize,
+    idle_capture: String,
+    idle_moving_bytes: Vec<usize>,
+    idle_moving_words_le: Vec<usize>,
+    failed_captures: Vec<String>,
+    missing_control_evidence: Vec<String>,
+    captures: Vec<LaneCaptureAnalysisEntry>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct LaneCaptureAnalysisEntry {
+    capture: String,
+    fixture_id: String,
+    success: bool,
+    total_reports: usize,
+    decoded_reports: usize,
+    rejected_reports: usize,
+    moving_bytes: Vec<usize>,
+    unique_moving_bytes_vs_idle: Vec<usize>,
+    moving_words_le: Vec<usize>,
+    unique_moving_words_le_vs_idle: Vec<usize>,
+    moving_required_axes: Vec<String>,
+    control_evidence_ok: bool,
+    missing_requirements: Vec<String>,
+}
+
+impl LaneCaptureAnalysisEntry {
+    fn failed(requirement: &PassiveCaptureRequirement, reason: String) -> Self {
+        Self {
+            capture: requirement.relative_path.to_string(),
+            fixture_id: requirement.fixture_id.to_string(),
+            success: false,
+            total_reports: 0,
+            decoded_reports: 0,
+            rejected_reports: 0,
+            moving_bytes: Vec::new(),
+            unique_moving_bytes_vs_idle: Vec::new(),
+            moving_words_le: Vec::new(),
+            unique_moving_words_le_vs_idle: Vec::new(),
+            moving_required_axes: Vec::new(),
+            control_evidence_ok: false,
+            missing_requirements: vec![reason],
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -13210,6 +13465,29 @@ fn print_capture_analysis_receipt(
     Ok(())
 }
 
+fn print_lane_capture_analysis_receipt(
+    json: bool,
+    json_out: Option<&Path>,
+    receipt: &LaneCaptureAnalysisReceipt,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Analyzed {} of {} required Moza lane capture(s): {} decoded, {} rejected, {} missing control evidence; no HID device opened.",
+            receipt.analyzed_capture_count,
+            receipt.required_capture_count,
+            receipt.decoded_reports,
+            receipt.rejected_reports,
+            receipt.missing_control_evidence.len()
+        );
+        if let Some(path) = json_out {
+            println!("Receipt: {}", path.display());
+        }
+    }
+    Ok(())
+}
+
 fn print_capture_validation_set_receipt(
     json: bool,
     json_out: Option<&Path>,
@@ -14529,6 +14807,22 @@ mod tests {
         report[17] = 0x08;
         report[34..36].copy_from_slice(&aux0.to_le_bytes());
         report[36..38].copy_from_slice(&aux1.to_le_bytes());
+        bytes_hex_compact(&report)
+    }
+
+    fn live_r5_v1_trailer_report_hex(trailer: [u8; 4]) -> String {
+        let mut report = [0u8; 42];
+        report[0] = 0x01;
+        report[1..3].copy_from_slice(&0x7A37u16.to_le_bytes());
+        report[3..5].copy_from_slice(&0x8001u16.to_le_bytes());
+        report[5..7].copy_from_slice(&0x8000u16.to_le_bytes());
+        report[7..9].copy_from_slice(&0x8001u16.to_le_bytes());
+        report[9..11].copy_from_slice(&0x8001u16.to_le_bytes());
+        report[11..13].copy_from_slice(&0x8000u16.to_le_bytes());
+        report[13..15].copy_from_slice(&0x8001u16.to_le_bytes());
+        report[15..17].copy_from_slice(&0x8000u16.to_le_bytes());
+        report[17] = 0x08;
+        report[38..42].copy_from_slice(&trailer);
         bytes_hex_compact(&report)
     }
 
@@ -21615,6 +21909,52 @@ mod tests {
                 .get("clutch_u16")
                 .and_then(|axis| axis.max),
             Some(0)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn analyze_lane_reports_trailer_only_throttle_capture_without_control_evidence() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        write_text_file(
+            &dir.path().join("captures/r5-throttle-only-sweep.jsonl"),
+            &format!(
+                "{}\n{}",
+                capture_line(
+                    product_ids::R5_V1,
+                    &live_r5_v1_trailer_report_hex([0x00, 0x00, 0x00, 0x00])
+                ),
+                capture_line(
+                    product_ids::R5_V1,
+                    &live_r5_v1_trailer_report_hex([0xFF, 0xAA, 0x55, 0x40])
+                )
+            ),
+        )?;
+
+        let receipt = analyze_lane_captures(dir.path())?;
+        let throttle = receipt
+            .captures
+            .iter()
+            .find(|entry| entry.capture == "captures/r5-throttle-only-sweep.jsonl")
+            .ok_or("missing throttle analysis entry")?;
+
+        assert!(!receipt.success);
+        assert!(
+            receipt
+                .missing_control_evidence
+                .iter()
+                .any(|capture| capture == "captures/r5-throttle-only-sweep.jsonl")
+        );
+        assert!(throttle.success);
+        assert!(!throttle.control_evidence_ok);
+        assert!(throttle.moving_required_axes.is_empty());
+        assert_eq!(throttle.unique_moving_bytes_vs_idle, vec![38, 39, 40, 41]);
+        assert!(
+            throttle
+                .missing_requirements
+                .iter()
+                .any(|requirement| requirement.contains("variation in hub_control_axis group"))
         );
         Ok(())
     }

@@ -434,6 +434,16 @@ pub enum MozaCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
+    /// Compare required passive lane captures against idle without hardware writes
+    AnalyzeLane {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Write the lane analysis receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
     /// Validate every required Moza lane capture through the parser without hardware writes
     ValidateCaptures {
         /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06
