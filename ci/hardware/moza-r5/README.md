@@ -103,7 +103,8 @@ Use this state before any hardware evidence exists:
         "source_endpoint": "moza-r5-if2",
         "connection": "wheelbase_hub",
         "required": true,
-        "evidence_capture": "captures/r5-steering-sweep.jsonl"
+        "evidence_capture": "captures/r5-steering-sweep.jsonl",
+        "semantic_status": "deferred"
       },
       "ks_rim_controls": {
         "role": "rim_controls",
@@ -111,7 +112,8 @@ Use this state before any hardware evidence exists:
         "source_endpoint": "moza-r5-if2",
         "connection": "wheelbase_hub",
         "required": true,
-        "evidence_capture": "captures/ks-controls.jsonl"
+        "evidence_capture": "captures/ks-controls.jsonl",
+        "semantic_status": "deferred"
       },
       "es_rim_controls": {
         "role": "rim_controls",
@@ -119,35 +121,40 @@ Use this state before any hardware evidence exists:
         "source_endpoint": "moza-r5-if2",
         "connection": "wheelbase_hub",
         "required": true,
-        "evidence_capture": "captures/es-controls.jsonl"
+        "evidence_capture": "captures/es-controls.jsonl",
+        "semantic_status": "deferred"
       },
       "throttle": {
         "role": "throttle",
         "source_endpoint": "moza-r5-if2",
         "connection": "wheelbase_hub",
         "required": true,
-        "evidence_capture": "captures/r5-throttle-only-sweep.jsonl"
+        "evidence_capture": "captures/r5-throttle-only-sweep.jsonl",
+        "semantic_status": "deferred"
       },
       "brake": {
         "role": "brake",
         "source_endpoint": "moza-r5-if2",
         "connection": "wheelbase_hub",
         "required": true,
-        "evidence_capture": "captures/r5-brake-only-sweep.jsonl"
+        "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
+        "semantic_status": "deferred"
       },
       "clutch": {
         "role": "clutch",
         "source_endpoint": "moza-r5-if2",
         "connection": "wheelbase_hub",
         "required": true,
-        "evidence_capture": "captures/r5-clutch-only-sweep.jsonl"
+        "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
+        "semantic_status": "deferred"
       },
       "handbrake": {
         "role": "handbrake",
         "source_endpoint": "moza-r5-if2",
         "connection": "wheelbase_hub",
         "required": true,
-        "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl"
+        "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
+        "semantic_status": "deferred"
       }
     }
   },
@@ -206,6 +213,13 @@ Use this state before any hardware evidence exists:
   ]
 }
 ```
+
+Each logical control declares a `semantic_status` so the manifest can distinguish
+planned evidence from parser-backed proof. New lanes start at `deferred`.
+`proven` means parser-visible role-specific evidence exists, `generic_aux`
+means movement is visible only through generic R5 V1 extended fields, `missing`
+means the selected capture parsed but did not satisfy the role, and
+`unavailable` means the role has no selected capture or endpoint evidence.
 
 ## Verification Commands
 

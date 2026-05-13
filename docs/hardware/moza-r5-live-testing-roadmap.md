@@ -20,7 +20,7 @@ not a single fixed kit shape. A lane proves that a logical role was observed fro
 a concrete endpoint through a declared connection path:
 
 ```text
-logical role -> observed endpoint -> connection path -> capture evidence
+logical role -> observed endpoint -> connection path -> capture evidence -> semantic status
 ```
 
 For the primary Moza R5 lane, the R5 HID endpoint is the wheelbase hub and
@@ -28,6 +28,12 @@ expected source for steering, rim controls, throttle, brake, clutch when
 present, and handbrake. Standalone USB pedals, standalone USB handbrakes, button
 boxes, shifters, or mixed-vendor devices can be added later as separate observed
 endpoints that provide specific logical roles.
+
+The declared `semantic_status` is explicit: `deferred` is a planned lane role,
+`unavailable` is missing capture or endpoint evidence, `missing` is a parsed
+capture without parser-visible role movement, `generic_aux` is visible generic
+R5 V1 extended movement without a semantic field name, and `proven` is
+parser-visible role-specific evidence.
 
 If multiple output-capable endpoints are visible, passive enumeration may record
 all of them. Any later output-capable test must require one explicit selected

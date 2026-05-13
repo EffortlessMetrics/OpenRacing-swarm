@@ -5235,6 +5235,7 @@ fn topology_control_is_declared_role(control: &Value, endpoint_ids: &BTreeSet<&s
             json_string(control, "connection"),
             Some("wheelbase_hub" | "standalone_usb" | "cross_device" | "unknown")
         )
+        && topology_control_semantic_status_is_valid(control)
         && json_string(control, "evidence_capture")
             .map(|path| {
                 passive_capture_requirements()
@@ -5242,6 +5243,13 @@ fn topology_control_is_declared_role(control: &Value, endpoint_ids: &BTreeSet<&s
                     .any(|req| req.relative_path == path)
             })
             .unwrap_or(false)
+}
+
+fn topology_control_semantic_status_is_valid(control: &Value) -> bool {
+    matches!(
+        json_string(control, "semantic_status"),
+        Some("proven" | "generic_aux" | "missing" | "unavailable" | "deferred")
+    )
 }
 
 fn manifest_claims_are_staged(claims: Option<&Value>) -> bool {
@@ -5439,6 +5447,9 @@ fn verify_moza_topology_observed_gate(lane: &Path) -> BundleGateCheck {
     }
 
     for (name, control) in controls {
+        if !topology_control_semantic_status_is_valid(control) {
+            failures.push(format!("control:{name}:invalid-semantic-status"));
+        }
         let required = json_bool(control, "required").unwrap_or(true);
         if !required {
             continue;
@@ -10260,7 +10271,8 @@ fn moza_lane_manifest_topology_value(wheelbase_pid: u16) -> Value {
                 "source_endpoint": "moza-r5-if2",
                 "connection": "wheelbase_hub",
                 "required": true,
-                "evidence_capture": "captures/r5-steering-sweep.jsonl"
+                "evidence_capture": "captures/r5-steering-sweep.jsonl",
+                "semantic_status": "deferred"
             },
             "ks_rim_controls": {
                 "role": "rim_controls",
@@ -10268,7 +10280,8 @@ fn moza_lane_manifest_topology_value(wheelbase_pid: u16) -> Value {
                 "source_endpoint": "moza-r5-if2",
                 "connection": "wheelbase_hub",
                 "required": true,
-                "evidence_capture": "captures/ks-controls.jsonl"
+                "evidence_capture": "captures/ks-controls.jsonl",
+                "semantic_status": "deferred"
             },
             "es_rim_controls": {
                 "role": "rim_controls",
@@ -10276,35 +10289,40 @@ fn moza_lane_manifest_topology_value(wheelbase_pid: u16) -> Value {
                 "source_endpoint": "moza-r5-if2",
                 "connection": "wheelbase_hub",
                 "required": true,
-                "evidence_capture": "captures/es-controls.jsonl"
+                "evidence_capture": "captures/es-controls.jsonl",
+                "semantic_status": "deferred"
             },
             "throttle": {
                 "role": "throttle",
                 "source_endpoint": "moza-r5-if2",
                 "connection": "wheelbase_hub",
                 "required": true,
-                "evidence_capture": "captures/r5-throttle-only-sweep.jsonl"
+                "evidence_capture": "captures/r5-throttle-only-sweep.jsonl",
+                "semantic_status": "deferred"
             },
             "brake": {
                 "role": "brake",
                 "source_endpoint": "moza-r5-if2",
                 "connection": "wheelbase_hub",
                 "required": true,
-                "evidence_capture": "captures/r5-brake-only-sweep.jsonl"
+                "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
+                "semantic_status": "deferred"
             },
             "clutch": {
                 "role": "clutch",
                 "source_endpoint": "moza-r5-if2",
                 "connection": "wheelbase_hub",
                 "required": true,
-                "evidence_capture": "captures/r5-clutch-only-sweep.jsonl"
+                "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
+                "semantic_status": "deferred"
             },
             "handbrake": {
                 "role": "handbrake",
                 "source_endpoint": "moza-r5-if2",
                 "connection": "wheelbase_hub",
                 "required": true,
-                "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl"
+                "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
+                "semantic_status": "deferred"
             }
         },
         "notes": [
@@ -15257,7 +15275,8 @@ mod tests {
             "source_endpoint": endpoint_id,
             "connection": "standalone_usb",
             "required": true,
-            "evidence_capture": evidence_capture
+            "evidence_capture": evidence_capture,
+            "semantic_status": "deferred"
         });
         write_test_json_file(&root.join("manifest.json"), &manifest)
     }
@@ -15301,7 +15320,8 @@ mod tests {
             "source_endpoint": endpoint_id,
             "connection": connection,
             "required": true,
-            "evidence_capture": evidence_capture
+            "evidence_capture": evidence_capture,
+            "semantic_status": "deferred"
         });
         write_test_json_file(&root.join("manifest.json"), &manifest)
     }
@@ -15322,7 +15342,8 @@ mod tests {
                 "source_endpoint": "moza-r5-if2",
                 "connection": "wheelbase_hub",
                 "required": true,
-                "evidence_capture": evidence_capture
+                "evidence_capture": evidence_capture,
+                "semantic_status": "deferred"
             });
             if let Some(rim) = rim {
                 control["rim"] = serde_json::json!(rim);
@@ -16845,7 +16866,8 @@ mod tests {
                 "source_endpoint": "moza-r5-if2",
                 "connection": "wheelbase_hub",
                 "required": true,
-                "evidence_capture": "captures/r5-steering-sweep.jsonl"
+                "evidence_capture": "captures/r5-steering-sweep.jsonl",
+                "semantic_status": "deferred"
             }),
         );
         controls.insert(
@@ -16855,26 +16877,44 @@ mod tests {
                 "source_endpoint": "moza-r5-if2",
                 "connection": "wheelbase_hub",
                 "required": true,
-                "evidence_capture": "captures/r5-brake-only-sweep.jsonl"
+                "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
+                "semantic_status": "generic_aux"
             }),
         );
 
         assert!(manifest_topology_is_logical_role_model(&manifest));
 
-        let controls = manifest
-            .pointer_mut("/topology/logical_controls")
-            .and_then(Value::as_object_mut)
-            .ok_or("expected topology logical_controls object")?;
-        controls.insert(
-            "unmapped".to_string(),
-            serde_json::json!({
-                "role": "unmapped",
-                "source_endpoint": "moza-r5-if2",
-                "connection": "wheelbase_hub",
-                "required": true,
-                "evidence_capture": "captures/r5-brake-only-sweep.jsonl"
-            }),
-        );
+        {
+            let controls = manifest
+                .pointer_mut("/topology/logical_controls")
+                .and_then(Value::as_object_mut)
+                .ok_or("expected topology logical_controls object")?;
+            controls.insert(
+                "unmapped".to_string(),
+                serde_json::json!({
+                    "role": "unmapped",
+                    "source_endpoint": "moza-r5-if2",
+                    "connection": "wheelbase_hub",
+                    "required": true,
+                    "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
+                    "semantic_status": "deferred"
+                }),
+            );
+        }
+
+        assert!(!manifest_topology_is_logical_role_model(&manifest));
+
+        {
+            let controls = manifest
+                .pointer_mut("/topology/logical_controls")
+                .and_then(Value::as_object_mut)
+                .ok_or("expected topology logical_controls object")?;
+            let unmapped = controls
+                .get_mut("unmapped")
+                .ok_or("expected unmapped test control")?;
+            unmapped["role"] = serde_json::json!("brake");
+            unmapped["semantic_status"] = serde_json::json!("guessed");
+        }
 
         assert!(!manifest_topology_is_logical_role_model(&manifest));
         Ok(())
@@ -16896,6 +16936,25 @@ mod tests {
             );
             assert!(manifest_contract_is_moza_r5_lane(&manifest));
         }
+
+        let mut missing_semantic_status = sample_lane_manifest("not_started", false, false);
+        missing_semantic_status
+            .pointer_mut("/topology/logical_controls/throttle")
+            .and_then(Value::as_object_mut)
+            .ok_or("expected throttle topology control")?
+            .remove("semantic_status");
+        assert!(!manifest_schema_validation_errors(&missing_semantic_status).is_empty());
+        assert!(!manifest_topology_is_logical_role_model(
+            &missing_semantic_status
+        ));
+
+        let mut invalid_semantic_status = sample_lane_manifest("not_started", false, false);
+        invalid_semantic_status["topology"]["logical_controls"]["throttle"]["semantic_status"] =
+            serde_json::json!("guessed");
+        assert!(!manifest_schema_validation_errors(&invalid_semantic_status).is_empty());
+        assert!(!manifest_topology_is_logical_role_model(
+            &invalid_semantic_status
+        ));
 
         let mut passive_overclaim = sample_lane_manifest("passive_capture_ready", true, false);
         assert!(!manifest_schema_validation_errors(&passive_overclaim).is_empty());

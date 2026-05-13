@@ -190,7 +190,8 @@
               "source_endpoint",
               "connection",
               "required",
-              "evidence_capture"
+              "evidence_capture",
+              "semantic_status"
             ],
             "properties": {
               "role": {
@@ -224,6 +225,10 @@
               "evidence_capture": {
                 "type": "string",
                 "pattern": "^captures/.+\\.jsonl$"
+              },
+              "semantic_status": {
+                "type": "string",
+                "enum": ["proven", "generic_aux", "missing", "unavailable", "deferred"]
               }
             }
           }
