@@ -400,8 +400,16 @@ mod tests {
             device: DeviceInfo {
                 id: "wheel-001".to_string(),
                 name: "Test Wheel".to_string(),
+                source: None,
                 vendor_id: None,
                 product_id: None,
+                manufacturer: None,
+                product_string: None,
+                serial_number_present: None,
+                interface_number: None,
+                usage_page: None,
+                usage: None,
+                hid_path_present: None,
                 device_type: DeviceType::WheelBase,
                 state: DeviceState::Connected,
                 capabilities: DeviceCapabilities {

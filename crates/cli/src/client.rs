@@ -450,8 +450,16 @@ mod mock {
             DeviceInfo {
                 id: "wheel-001".to_string(),
                 name: "Fanatec DD Pro".to_string(),
+                source: Some("mock".to_string()),
                 vendor_id: None,
                 product_id: None,
+                manufacturer: None,
+                product_string: None,
+                serial_number_present: None,
+                interface_number: None,
+                usage_page: None,
+                usage: None,
+                hid_path_present: None,
                 device_type: DeviceType::WheelBase,
                 state: DeviceState::Connected,
                 capabilities: DeviceCapabilities {
@@ -467,8 +475,16 @@ mod mock {
             DeviceInfo {
                 id: "pedals-001".to_string(),
                 name: "Fanatec V3 Pedals".to_string(),
+                source: Some("mock".to_string()),
                 vendor_id: None,
                 product_id: None,
+                manufacturer: None,
+                product_string: None,
+                serial_number_present: None,
+                interface_number: None,
+                usage_page: None,
+                usage: None,
+                hid_path_present: None,
                 device_type: DeviceType::Pedals,
                 state: DeviceState::Connected,
                 capabilities: DeviceCapabilities {
@@ -494,8 +510,16 @@ mod mock {
             device: DeviceInfo {
                 id: device_id.to_string(),
                 name: "Mock Device".to_string(),
+                source: Some("mock".to_string()),
                 vendor_id: None,
                 product_id: None,
+                manufacturer: None,
+                product_string: None,
+                serial_number_present: None,
+                interface_number: None,
+                usage_page: None,
+                usage: None,
+                hid_path_present: None,
                 device_type: DeviceType::WheelBase,
                 state: DeviceState::Connected,
                 capabilities: DeviceCapabilities {
@@ -578,9 +602,25 @@ pub struct DeviceInfo {
     pub id: String,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub vendor_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub product_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manufacturer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub product_string: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub serial_number_present: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interface_number: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage_page: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hid_path_present: Option<bool>,
     pub device_type: DeviceType,
     pub state: DeviceState,
     pub capabilities: DeviceCapabilities,
@@ -591,8 +631,16 @@ impl DeviceInfo {
         Self {
             id: w.id,
             name: w.name,
+            source: Some("wheeld".to_string()),
             vendor_id: wire_u32_to_hex_u16(w.vendor_id),
             product_id: wire_u32_to_hex_u16(w.product_id),
+            manufacturer: None,
+            product_string: None,
+            serial_number_present: None,
+            interface_number: None,
+            usage_page: None,
+            usage: None,
+            hid_path_present: None,
             device_type: DeviceType::from_wire(w.r#type),
             state: DeviceState::from_wire(w.state),
             capabilities: w
@@ -713,8 +761,16 @@ impl DeviceStatus {
             .unwrap_or_else(|| DeviceInfo {
                 id: fallback_id.to_string(),
                 name: "Unknown".to_string(),
+                source: None,
                 vendor_id: None,
                 product_id: None,
+                manufacturer: None,
+                product_string: None,
+                serial_number_present: None,
+                interface_number: None,
+                usage_page: None,
+                usage: None,
+                hid_path_present: None,
                 device_type: DeviceType::WheelBase,
                 state: DeviceState::Connected,
                 capabilities: DeviceCapabilities::default(),
