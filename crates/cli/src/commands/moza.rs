@@ -3624,8 +3624,11 @@ fn next_commands_for_bundle_stage(
     }
 
     let lane = next_command_lane(lane);
+    let wheelbase_pid = lane_manifest_r5_pid(&lane)
+        .map(hex_u16)
+        .unwrap_or_else(|| "0x0014".to_string());
     let mut commands = Vec::new();
-    push_passive_next_commands(&lane, &mut commands);
+    push_passive_next_commands(&lane, &wheelbase_pid, &mut commands);
 
     if stage_rank(stage) >= stage_rank(MozaBundleStage::Zero) {
         push_zero_next_commands(&lane, &mut commands);
@@ -3655,7 +3658,7 @@ fn is_moza_lane_root(lane: &Path) -> bool {
         && !lane.join("manifest.json").is_file()
 }
 
-fn push_passive_next_commands(lane: &Path, commands: &mut Vec<String>) {
+fn push_passive_next_commands(lane: &Path, wheelbase_pid: &str, commands: &mut Vec<String>) {
     let lane_arg = command_arg(&lane.display().to_string());
     let fixture_dir = Path::new("crates/hid-moza-protocol/fixtures").join(format!(
         "moza-r5-{}",
@@ -3667,7 +3670,7 @@ fn push_passive_next_commands(lane: &Path, commands: &mut Vec<String>) {
     let fixture_dir_arg = command_arg(&fixture_dir.display().to_string());
 
     commands.push(format!(
-        "wheelctl moza init-lane --lane {lane_arg} --wheelbase-pid 0x0014 --operator Steven"
+        "wheelctl moza init-lane --lane {lane_arg} --wheelbase-pid {wheelbase_pid} --operator Steven"
     ));
     commands.push(format!(
         "wheelctl device list --json-out {}",
@@ -20500,6 +20503,33 @@ mod tests {
                 "passive next_commands must not include {forbidden}: {joined}"
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_next_commands_use_manifest_wheelbase_pid() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let mut manifest = sample_lane_manifest("not_started", false, false);
+        manifest["hardware"]["wheelbase_pid"] = Value::String("0x0004".to_string());
+        manifest["topology"] = moza_lane_manifest_topology_value(product_ids::R5_V1);
+        write_test_json_file(&dir.path().join("manifest.json"), &manifest)?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
+
+        assert!(!receipt.success);
+        let init_command = receipt
+            .next_commands
+            .iter()
+            .find(|command| command.contains("wheelctl moza init-lane"))
+            .ok_or("expected init-lane next command")?;
+        assert!(
+            init_command.contains("--wheelbase-pid 0x0004"),
+            "init-lane next command should use manifest PID: {init_command}"
+        );
+        assert!(
+            !init_command.contains("--wheelbase-pid 0x0014"),
+            "init-lane next command must not suggest the default V2 PID for a V1 lane: {init_command}"
+        );
         Ok(())
     }
 
