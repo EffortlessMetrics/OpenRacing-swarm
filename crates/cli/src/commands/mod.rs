@@ -444,6 +444,19 @@ pub enum MozaCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
+    /// Sync manifest logical-control semantic_status fields from stored captures
+    SyncRoleStatus {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Verify manifest statuses are current without writing manifest.json
+        #[arg(long)]
+        check: bool,
+        /// Write the sync receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
     /// Validate every required Moza lane capture through the parser without hardware writes
     ValidateCaptures {
         /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06

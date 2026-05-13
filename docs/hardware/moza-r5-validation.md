@@ -182,12 +182,16 @@ variation, inspect the stored artifact before recapturing blindly:
 ```powershell
 wheelctl moza analyze-capture --capture ci/hardware/moza-r5/<date>/captures/r5-throttle-only-sweep.jsonl --json-out target/moza-passive-checks/r5-throttle-byte-delta.json --json
 wheelctl moza analyze-lane --lane ci/hardware/moza-r5/<date> --json-out target/moza-passive-checks/lane-analysis.json --json
+wheelctl moza sync-role-status --lane ci/hardware/moza-r5/<date> --json-out target/moza-passive-checks/role-status-sync.json --json
 ```
 
 The analysis receipts are diagnostic only. They record raw byte and
 little-endian word ranges from JSONL reports and make no semantic role claim.
 `analyze-lane` also compares required captures with the lane idle capture and
 reports missing parser-visible control evidence before fixture promotion.
+`sync-role-status` copies those derived per-role statuses into `manifest.json`
+so stale `deferred` or over-optimistic fields are not hand-edited; it still does
+not promote receipts or make the passive bundle pass.
 
 Done when:
 

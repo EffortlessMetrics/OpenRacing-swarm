@@ -245,6 +245,7 @@ wheelctl moza capture-input --device <r5> --duration-ms 10000 --json-out ci/hard
 wheelctl moza capture-input --device <r5> --duration-ms 5000 --json-out ci/hardware/moza-r5/YYYY-MM-DD/captures/r5-aggregated-idle-after-controls.jsonl
 wheelctl moza capture-input --device <r5> --duration-ms 10000 --json-out ci/hardware/moza-r5/YYYY-MM-DD/captures/ks-controls.jsonl
 wheelctl moza capture-input --device <r5> --duration-ms 10000 --json-out ci/hardware/moza-r5/YYYY-MM-DD/captures/es-controls.jsonl
+wheelctl moza sync-role-status --lane ci/hardware/moza-r5/YYYY-MM-DD --json-out target/moza-role-status-sync.json
 wheelctl moza validate-captures --lane ci/hardware/moza-r5/YYYY-MM-DD --json-out ci/hardware/moza-r5/YYYY-MM-DD/parser-fixture-validation.json
 wheelctl moza promote-fixtures --lane ci/hardware/moza-r5/YYYY-MM-DD --fixture-dir crates/hid-moza-protocol/fixtures/moza-r5-YYYY-MM-DD --json-out ci/hardware/moza-r5/YYYY-MM-DD/fixture-promotion.json
 wheelctl moza verify-bundle --lane ci/hardware/moza-r5/YYYY-MM-DD --stage passive --json-out ci/hardware/moza-r5/YYYY-MM-DD/passive-verification.json

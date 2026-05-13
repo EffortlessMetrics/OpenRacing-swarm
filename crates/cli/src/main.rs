@@ -1345,6 +1345,39 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_sync_role_status() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "moza",
+            "sync-role-status",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-06",
+            "--check",
+            "--json-out",
+            "target/role-status-sync.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::SyncRoleStatus {
+                lane,
+                check,
+                json_out,
+            }) => {
+                assert_eq!(
+                    lane.as_path().to_str(),
+                    Some("ci/hardware/moza-r5/2026-05-06")
+                );
+                assert!(*check);
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/role-status-sync.json")
+                );
+            }
+            _ => return Err("expected Moza SyncRoleStatus command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_validate_captures() -> TestResult {
         let cli = Cli::try_parse_from([
             "wheelctl",

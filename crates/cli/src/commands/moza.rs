@@ -202,6 +202,11 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
         MozaCommands::AnalyzeLane { lane, json_out } => {
             analyze_lane(json, lane, json_out.as_deref()).await
         }
+        MozaCommands::SyncRoleStatus {
+            lane,
+            check,
+            json_out,
+        } => sync_role_status(json, lane, *check, json_out.as_deref()).await,
         MozaCommands::ValidateCaptures { lane, json_out } => {
             validate_captures(json, lane, json_out.as_deref()).await
         }
@@ -874,6 +879,23 @@ async fn analyze_lane(json: bool, lane: &Path, json_out: Option<&Path>) -> Resul
             "Moza lane capture analysis failed: {} of {} capture(s) decoded cleanly",
             receipt.analyzed_capture_count, receipt.required_capture_count
         )));
+    }
+    Ok(())
+}
+
+async fn sync_role_status(
+    json: bool,
+    lane: &Path,
+    check: bool,
+    json_out: Option<&Path>,
+) -> Result<()> {
+    let receipt = sync_role_status_receipt(lane, check)?;
+    write_json_receipt(json_out, &receipt)?;
+    print_role_status_sync_receipt(json, json_out, &receipt)?;
+    if !json_bool(&receipt, "success").unwrap_or(false) {
+        return Err(receipt_failure(
+            "Moza manifest semantic_status fields are not in sync with lane capture analysis",
+        ));
     }
     Ok(())
 }
@@ -11280,6 +11302,80 @@ fn lane_role_evidence_entries(
     entries
 }
 
+fn sync_role_status_receipt(lane: &Path, check: bool) -> Result<Value> {
+    let analysis = analyze_lane_captures(lane)?;
+    let mut manifest = read_json_value(lane, "manifest.json")?;
+    let controls = manifest
+        .pointer_mut("/topology/logical_controls")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| anyhow!("manifest.json topology is missing logical_controls object"))?;
+
+    let mut status_updates = Vec::new();
+    let mut stale_control_count = 0usize;
+
+    for entry in &analysis.role_evidence {
+        let control = controls
+            .get_mut(&entry.control)
+            .ok_or_else(|| anyhow!("missing logical control '{}'", entry.control))?;
+        let old_status = json_string(control, "semantic_status").map(str::to_string);
+        let changed = old_status.as_deref() != Some(entry.semantic_status);
+        if changed {
+            stale_control_count += 1;
+            if !check {
+                control["semantic_status"] = serde_json::json!(entry.semantic_status);
+            }
+        }
+
+        status_updates.push(serde_json::json!({
+            "control": entry.control,
+            "role": entry.role,
+            "required": entry.required,
+            "source_endpoint": entry.source_endpoint,
+            "connection": entry.connection,
+            "evidence_capture": entry.evidence_capture,
+            "old_semantic_status": old_status,
+            "new_semantic_status": entry.semantic_status,
+            "changed": changed,
+            "parser_visible": entry.parser_visible,
+            "moving_required_axes": entry.moving_required_axes,
+            "missing_requirements": entry.missing_requirements,
+            "notes": entry.notes,
+        }));
+    }
+
+    let manifest_written = !check && stale_control_count > 0;
+    if manifest_written {
+        write_json_file(&lane.join("manifest.json"), &manifest)?;
+    }
+
+    Ok(serde_json::json!({
+        "success": !check || stale_control_count == 0,
+        "command": "wheelctl moza sync-role-status",
+        "generated_at_utc": now_utc(),
+        "lane": lane.display().to_string(),
+        "manifest": "manifest.json",
+        "check_only": check,
+        "manifest_written": manifest_written,
+        "no_hid_device_opened": true,
+        "no_ffb_writes": true,
+        "no_output_reports": true,
+        "no_feature_reports": true,
+        "no_serial_config_commands": true,
+        "no_firmware_or_dfu_commands": true,
+        "lane_analysis_success": analysis.success,
+        "missing_control_evidence": analysis.missing_control_evidence,
+        "failed_captures": analysis.failed_captures,
+        "role_count": analysis.role_evidence.len(),
+        "stale_control_count": stale_control_count,
+        "status_updates": status_updates,
+        "notes": [
+            "sync-role-status reads stored JSONL reports only; no HID device is opened",
+            "semantic_status is diagnostic topology evidence and does not promote lane receipts",
+            "lane_analysis_success may remain false while missing roles are recorded honestly"
+        ]
+    }))
+}
+
 fn role_semantic_status(
     required: bool,
     capture: Option<&LaneCaptureAnalysisEntry>,
@@ -13629,6 +13725,32 @@ fn print_lane_capture_analysis_receipt(
             receipt.rejected_reports,
             receipt.missing_control_evidence.len()
         );
+        if let Some(path) = json_out {
+            println!("Receipt: {}", path.display());
+        }
+    }
+    Ok(())
+}
+
+fn print_role_status_sync_receipt(
+    json: bool,
+    json_out: Option<&Path>,
+    receipt: &Value,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        let stale_count = json_u64(receipt, "stale_control_count").unwrap_or(0);
+        let check_only = json_bool(receipt, "check_only").unwrap_or(false);
+        let manifest_written = json_bool(receipt, "manifest_written").unwrap_or(false);
+        let action = if check_only {
+            "Checked"
+        } else if manifest_written {
+            "Synced"
+        } else {
+            "Confirmed"
+        };
+        println!("{action} Moza role semantic statuses; stale controls: {stale_count}.");
         if let Some(path) = json_out {
             println!("Receipt: {}", path.display());
         }
@@ -22743,6 +22865,63 @@ mod tests {
                 .iter()
                 .any(|note| note.contains("semantic control naming remains unproven"))
         );
+    }
+
+    #[test]
+    fn sync_role_status_updates_manifest_from_lane_analysis() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        write_text_file(
+            &dir.path().join("captures/r5-throttle-only-sweep.jsonl"),
+            &format!(
+                "{}\n{}",
+                capture_line(
+                    product_ids::R5_V1,
+                    &live_r5_v1_trailer_report_hex([0x00, 0x00, 0x00, 0x00])
+                ),
+                capture_line(
+                    product_ids::R5_V1,
+                    &live_r5_v1_trailer_report_hex([0xFF, 0xAA, 0x55, 0x40])
+                )
+            ),
+        )?;
+
+        let stale_check = sync_role_status_receipt(dir.path(), true)?;
+        assert_eq!(json_bool(&stale_check, "success"), Some(false));
+        assert!(
+            json_u64(&stale_check, "stale_control_count").ok_or("missing stale control count")? > 0
+        );
+
+        let receipt = sync_role_status_receipt(dir.path(), false)?;
+        assert_eq!(json_bool(&receipt, "success"), Some(true));
+        assert_eq!(json_bool(&receipt, "manifest_written"), Some(true));
+        assert_eq!(json_bool(&receipt, "lane_analysis_success"), Some(false));
+
+        let manifest = read_json_path(&dir.path().join("manifest.json"))?;
+        assert_eq!(
+            json_string(
+                manifest
+                    .pointer("/topology/logical_controls/steering")
+                    .ok_or("missing steering control")?,
+                "semantic_status"
+            ),
+            Some("proven")
+        );
+        assert_eq!(
+            json_string(
+                manifest
+                    .pointer("/topology/logical_controls/throttle")
+                    .ok_or("missing throttle control")?,
+                "semantic_status"
+            ),
+            Some("missing")
+        );
+
+        let fresh_check = sync_role_status_receipt(dir.path(), true)?;
+        assert_eq!(json_bool(&fresh_check, "success"), Some(true));
+        assert_eq!(json_u64(&fresh_check, "stale_control_count"), Some(0));
+        assert_eq!(json_bool(&fresh_check, "manifest_written"), Some(false));
+        Ok(())
     }
 
     #[test]
