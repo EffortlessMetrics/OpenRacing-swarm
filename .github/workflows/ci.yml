@@ -16,6 +16,265 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  pr-change-filter:
+    name: PR Change Filter
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ci_paths: ${{ steps.filter.outputs.ci_paths }}
+      dependency_paths: ${{ steps.filter.outputs.dependency_paths }}
+      docs_only: ${{ steps.filter.outputs.docs_only }}
+      moza_paths: ${{ steps.filter.outputs.moza_paths }}
+      perf_paths: ${{ steps.filter.outputs.perf_paths }}
+      schema_paths: ${{ steps.filter.outputs.schema_paths }}
+      ui_paths: ${{ steps.filter.outputs.ui_paths }}
+      workspace_paths: ${{ steps.filter.outputs.workspace_paths }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: filter
+        name: Classify changed paths
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            {
+              echo "ci_paths=true"
+              echo "dependency_paths=true"
+              echo "docs_only=false"
+              echo "moza_paths=true"
+              echo "perf_paths=true"
+              echo "schema_paths=true"
+              echo "ui_paths=true"
+              echo "workspace_paths=true"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          mapfile -t changed < <(git diff --name-only "origin/${{ github.base_ref }}"...HEAD)
+
+          if [ "${#changed[@]}" -eq 0 ]; then
+            docs_only=false
+          elif printf '%s\n' "${changed[@]}" | grep -Ev '^(docs/|README\.md$|CHANGELOG\.md$|AGENTS\.md$|\.github/ISSUE_TEMPLATE/|\.github/pull_request_template\.md$)' >/dev/null; then
+            docs_only=false
+          else
+            docs_only=true
+          fi
+
+          match_any() {
+            local pattern="$1"
+            printf '%s\n' "${changed[@]}" | grep -E "$pattern" >/dev/null
+          }
+
+          ci_paths=false
+          dependency_paths=false
+          moza_paths=false
+          perf_paths=false
+          schema_paths=false
+          ui_paths=false
+          workspace_paths=false
+
+          if match_any '^(\.github/workflows/|\.github/actions/|scripts/|policy/|deny\.toml$)'; then
+            ci_paths=true
+          fi
+          if match_any '(^Cargo\.toml$|^Cargo\.lock$|^deny\.toml$|^workspace-hack/|/Cargo\.toml$)'; then
+            dependency_paths=true
+          fi
+          if match_any '^(crates/(cli/src/commands/moza\.rs|moza-wheelbase-report/|hid-moza-protocol/|hid-capture/|openracing-hardware-core/|openracing-hid-common/)|docs/hardware/|ci/hardware/|schemas/.+moza)'; then
+            moza_paths=true
+          fi
+          if match_any '^(crates/engine/|crates/integration-tests/|benches/|scripts/validate_performance\.py|docs/ci/timing-gates\.md)'; then
+            perf_paths=true
+          fi
+          if match_any '^(schemas/|crates/schemas/|proto/|.+\.proto$|.+\.schema\.json$)'; then
+            schema_paths=true
+          fi
+          if match_any '^(crates/ui/|package\.json$|package-lock\.json$|pnpm-lock\.yaml$|yarn\.lock$)'; then
+            ui_paths=true
+          fi
+
+          is_docs_path() {
+            [[ "$1" =~ ^(docs/|README\.md$|CHANGELOG\.md$|AGENTS\.md$|\.github/ISSUE_TEMPLATE/|\.github/pull_request_template\.md$) ]]
+          }
+          is_moza_path() {
+            [[ "$1" =~ ^(crates/(cli/src/commands/moza\.rs|moza-wheelbase-report/|hid-moza-protocol/|hid-capture/|openracing-hardware-core/|openracing-hid-common/)|docs/hardware/|ci/hardware/|schemas/.+moza) ]]
+          }
+          is_ui_path() {
+            [[ "$1" =~ ^(crates/ui/|package\.json$|package-lock\.json$|pnpm-lock\.yaml$|yarn\.lock$) ]]
+          }
+          is_dependency_path() {
+            [[ "$1" =~ (^Cargo\.toml$|^Cargo\.lock$|^deny\.toml$|^workspace-hack/|/Cargo\.toml$) ]]
+          }
+          is_ci_path() {
+            [[ "$1" =~ ^(\.github/workflows/|\.github/actions/|scripts/|policy/|deny\.toml$) ]]
+          }
+          is_perf_path() {
+            [[ "$1" =~ ^(crates/engine/|crates/integration-tests/|benches/|scripts/validate_performance\.py|docs/ci/timing-gates\.md) ]]
+          }
+          is_schema_path() {
+            [[ "$1" =~ ^(schemas/|crates/schemas/|proto/|.+\.proto$|.+\.schema\.json$) ]]
+          }
+
+          for path in "${changed[@]}"; do
+            if is_docs_path "$path" || is_moza_path "$path" || is_ui_path "$path"; then
+              continue
+            fi
+            if is_dependency_path "$path" || is_ci_path "$path" || is_perf_path "$path" || is_schema_path "$path"; then
+              workspace_paths=true
+              continue
+            fi
+            workspace_paths=true
+          done
+
+          {
+            echo "ci_paths=$ci_paths"
+            echo "dependency_paths=$dependency_paths"
+            echo "docs_only=$docs_only"
+            echo "moza_paths=$moza_paths"
+            echo "perf_paths=$perf_paths"
+            echo "schema_paths=$schema_paths"
+            echo "ui_paths=$ui_paths"
+            echo "workspace_paths=$workspace_paths"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Smoke-test path classifier patterns
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          classify_fixture() {
+            local docs_only ci_paths dependency_paths moza_paths perf_paths schema_paths ui_paths workspace_paths
+            local changed=("$@")
+
+            if [ "${#changed[@]}" -eq 0 ]; then
+              docs_only=false
+            elif printf '%s\n' "${changed[@]}" | grep -Ev '^(docs/|README\.md$|CHANGELOG\.md$|AGENTS\.md$|\.github/ISSUE_TEMPLATE/|\.github/pull_request_template\.md$)' >/dev/null; then
+              docs_only=false
+            else
+              docs_only=true
+            fi
+
+            match_fixture() {
+              local pattern="$1"
+              printf '%s\n' "${changed[@]}" | grep -E "$pattern" >/dev/null
+            }
+
+            ci_paths=false
+            dependency_paths=false
+            moza_paths=false
+            perf_paths=false
+            schema_paths=false
+            ui_paths=false
+            workspace_paths=false
+
+            if match_fixture '^(\.github/workflows/|\.github/actions/|scripts/|policy/|deny\.toml$)'; then
+              ci_paths=true
+            fi
+            if match_fixture '(^Cargo\.toml$|^Cargo\.lock$|^deny\.toml$|^workspace-hack/|/Cargo\.toml$)'; then
+              dependency_paths=true
+            fi
+            if match_fixture '^(crates/(cli/src/commands/moza\.rs|moza-wheelbase-report/|hid-moza-protocol/|hid-capture/|openracing-hardware-core/|openracing-hid-common/)|docs/hardware/|ci/hardware/|schemas/.+moza)'; then
+              moza_paths=true
+            fi
+            if match_fixture '^(crates/engine/|crates/integration-tests/|benches/|scripts/validate_performance\.py|docs/ci/timing-gates\.md)'; then
+              perf_paths=true
+            fi
+            if match_fixture '^(schemas/|crates/schemas/|proto/|.+\.proto$|.+\.schema\.json$)'; then
+              schema_paths=true
+            fi
+            if match_fixture '^(crates/ui/|package\.json$|package-lock\.json$|pnpm-lock\.yaml$|yarn\.lock$)'; then
+              ui_paths=true
+            fi
+
+            is_docs_fixture() {
+              [[ "$1" =~ ^(docs/|README\.md$|CHANGELOG\.md$|AGENTS\.md$|\.github/ISSUE_TEMPLATE/|\.github/pull_request_template\.md$) ]]
+            }
+            is_moza_fixture() {
+              [[ "$1" =~ ^(crates/(cli/src/commands/moza\.rs|moza-wheelbase-report/|hid-moza-protocol/|hid-capture/|openracing-hardware-core/|openracing-hid-common/)|docs/hardware/|ci/hardware/|schemas/.+moza) ]]
+            }
+            is_ui_fixture() {
+              [[ "$1" =~ ^(crates/ui/|package\.json$|package-lock\.json$|pnpm-lock\.yaml$|yarn\.lock$) ]]
+            }
+            is_dependency_fixture() {
+              [[ "$1" =~ (^Cargo\.toml$|^Cargo\.lock$|^deny\.toml$|^workspace-hack/|/Cargo\.toml$) ]]
+            }
+            is_ci_fixture() {
+              [[ "$1" =~ ^(\.github/workflows/|\.github/actions/|scripts/|policy/|deny\.toml$) ]]
+            }
+            is_perf_fixture() {
+              [[ "$1" =~ ^(crates/engine/|crates/integration-tests/|benches/|scripts/validate_performance\.py|docs/ci/timing-gates\.md) ]]
+            }
+            is_schema_fixture() {
+              [[ "$1" =~ ^(schemas/|crates/schemas/|proto/|.+\.proto$|.+\.schema\.json$) ]]
+            }
+
+            for path in "${changed[@]}"; do
+              if is_docs_fixture "$path" || is_moza_fixture "$path" || is_ui_fixture "$path"; then
+                continue
+              fi
+              if is_dependency_fixture "$path" || is_ci_fixture "$path" || is_perf_fixture "$path" || is_schema_fixture "$path"; then
+                workspace_paths=true
+                continue
+              fi
+              workspace_paths=true
+            done
+
+            printf 'docs_only=%s ci_paths=%s dependency_paths=%s moza_paths=%s perf_paths=%s schema_paths=%s ui_paths=%s workspace_paths=%s\n' \
+              "$docs_only" "$ci_paths" "$dependency_paths" "$moza_paths" "$perf_paths" "$schema_paths" "$ui_paths" "$workspace_paths"
+          }
+
+          assert_classifier() {
+            local label="$1"
+            local expected="$2"
+            shift 2
+
+            local actual
+            actual="$(classify_fixture "$@")"
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::Classifier fixture '$label' failed"
+              echo "expected: $expected"
+              echo "actual:   $actual"
+              exit 1
+            fi
+          }
+
+          assert_classifier "docs-only" \
+            "docs_only=true ci_paths=false dependency_paths=false moza_paths=true perf_paths=false schema_paths=false ui_paths=false workspace_paths=false" \
+            docs/hardware/moza-r5-live-testing-roadmap.md README.md
+
+          assert_classifier "moza-parser" \
+            "docs_only=false ci_paths=false dependency_paths=false moza_paths=true perf_paths=false schema_paths=false ui_paths=false workspace_paths=false" \
+            crates/moza-wheelbase-report/src/lib.rs
+
+          assert_classifier "hardware-receipt" \
+            "docs_only=false ci_paths=false dependency_paths=false moza_paths=true perf_paths=false schema_paths=false ui_paths=false workspace_paths=false" \
+            ci/hardware/moza-r5/2026-05-13/manifest.json
+
+          assert_classifier "dependency" \
+            "docs_only=false ci_paths=false dependency_paths=true moza_paths=false perf_paths=false schema_paths=false ui_paths=false workspace_paths=true" \
+            Cargo.lock
+
+          assert_classifier "ui" \
+            "docs_only=false ci_paths=false dependency_paths=false moza_paths=false perf_paths=false schema_paths=false ui_paths=true workspace_paths=false" \
+            crates/ui/src/lib.rs
+
+          assert_classifier "ci-workflow" \
+            "docs_only=false ci_paths=true dependency_paths=false moza_paths=false perf_paths=false schema_paths=false ui_paths=false workspace_paths=true" \
+            .github/workflows/ci.yml
+
+          assert_classifier "perf" \
+            "docs_only=false ci_paths=false dependency_paths=false moza_paths=false perf_paths=true schema_paths=false ui_paths=false workspace_paths=true" \
+            crates/engine/src/lib.rs
+
+          assert_classifier "schema" \
+            "docs_only=false ci_paths=false dependency_paths=false moza_paths=false perf_paths=false schema_paths=true ui_paths=false workspace_paths=true" \
+            crates/schemas/src/lib.rs
+
   # Phase 0: Documentation and format validation (fast, no build required)
   changelog-validation:
     name: CHANGELOG Validation
@@ -35,11 +294,39 @@ jobs:
           chmod +x scripts/validate_changelog.py
           python3 scripts/validate_changelog.py --verbose
 
+  docs-policy-checks:
+    name: Docs & Policy Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Validate non-Rust file policy
+        run: python scripts/policy_file.py
+
+      - name: Check whitespace-sensitive diffs
+        run: git diff --check
+
   # Phase 0b: MSRV (Minimum Supported Rust Version) check
   msrv-check:
     name: MSRV Check
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: [pr-change-filter]
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.pr-change-filter.outputs.workspace_paths == 'true' ||
+      needs.pr-change-filter.outputs.dependency_paths == 'true' ||
+      needs.pr-change-filter.outputs.ci_paths == 'true' ||
+      needs.pr-change-filter.outputs.perf_paths == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+      contains(github.event.pull_request.labels.*.name, 'release')
 
     steps:
       - uses: actions/checkout@v4
@@ -60,6 +347,15 @@ jobs:
     name: CLI Isolation Build
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    needs: [pr-change-filter]
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.pr-change-filter.outputs.workspace_paths == 'true' ||
+      needs.pr-change-filter.outputs.dependency_paths == 'true' ||
+      needs.pr-change-filter.outputs.ci_paths == 'true' ||
+      needs.pr-change-filter.outputs.perf_paths == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+      contains(github.event.pull_request.labels.*.name, 'release')
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -126,6 +422,15 @@ jobs:
     name: Service Isolation Build
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    needs: [pr-change-filter]
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.pr-change-filter.outputs.workspace_paths == 'true' ||
+      needs.pr-change-filter.outputs.dependency_paths == 'true' ||
+      needs.pr-change-filter.outputs.ci_paths == 'true' ||
+      needs.pr-change-filter.outputs.perf_paths == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+      contains(github.event.pull_request.labels.*.name, 'release')
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -159,6 +464,15 @@ jobs:
     name: Plugins Isolation Build
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    needs: [pr-change-filter]
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.pr-change-filter.outputs.workspace_paths == 'true' ||
+      needs.pr-change-filter.outputs.dependency_paths == 'true' ||
+      needs.pr-change-filter.outputs.ci_paths == 'true' ||
+      needs.pr-change-filter.outputs.perf_paths == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+      contains(github.event.pull_request.labels.*.name, 'release')
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -194,6 +508,14 @@ jobs:
     name: UI Isolation Build
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    needs: [pr-change-filter]
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.pr-change-filter.outputs.ui_paths == 'true' ||
+      needs.pr-change-filter.outputs.ci_paths == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'ui') ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+      contains(github.event.pull_request.labels.*.name, 'release')
     strategy:
       matrix:
         os: [ubuntu-22.04, ubuntu-24.04]
@@ -365,7 +687,14 @@ jobs:
     name: Schemas & Trybuild
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [isolation-cli, isolation-service, isolation-plugins, isolation-ui]
+    needs: [pr-change-filter]
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.pr-change-filter.outputs.schema_paths == 'true' ||
+      needs.pr-change-filter.outputs.dependency_paths == 'true' ||
+      needs.pr-change-filter.outputs.ci_paths == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+      contains(github.event.pull_request.labels.*.name, 'release')
 
     steps:
       - uses: actions/checkout@v4
@@ -424,6 +753,51 @@ jobs:
           # is auth/environment-dependent in hosted runners.
           buf build
 
+  moza-focused-checks:
+    name: Moza Focused Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [pr-change-filter]
+    if: >-
+      github.event_name != 'pull_request' ||
+      (needs.pr-change-filter.outputs.moza_paths == 'true' &&
+        needs.pr-change-filter.outputs.docs_only != 'true') ||
+      contains(github.event.pull_request.labels.*.name, 'moza') ||
+      contains(github.event.pull_request.labels.*.name, 'hardware') ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.4
+
+      - *sccache_best_effort
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev pkg-config python3
+
+      - name: Run focused Moza parser and verifier tests
+        run: |
+          cargo test -p racing-wheel-moza-wheelbase-report --locked
+          cargo test -p racing-wheel-hid-moza-protocol --locked
+          cargo test -p wheelctl --bin wheelctl moza --locked
+
+      - name: Run focused Moza clippy
+        run: |
+          cargo clippy \
+            -p racing-wheel-moza-wheelbase-report \
+            -p racing-wheel-hid-moza-protocol \
+            -p wheelctl \
+            --all-targets --all-features --locked -- -D warnings
+
   # Phase 3: Workspace default build
   workspace-default:
     name: Workspace Default Build
@@ -432,7 +806,15 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-    needs: [schemas-validation]
+    needs: [pr-change-filter]
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.pr-change-filter.outputs.workspace_paths == 'true' ||
+      needs.pr-change-filter.outputs.dependency_paths == 'true' ||
+      needs.pr-change-filter.outputs.ci_paths == 'true' ||
+      needs.pr-change-filter.outputs.perf_paths == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+      contains(github.event.pull_request.labels.*.name, 'release')
 
     steps:
       - uses: actions/checkout@v4
@@ -476,7 +858,14 @@ jobs:
     name: Feature Combinations
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [workspace-default]
+    needs: [pr-change-filter, workspace-default]
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.pr-change-filter.outputs.dependency_paths == 'true' ||
+      needs.pr-change-filter.outputs.ci_paths == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+      contains(github.event.pull_request.labels.*.name, 'dependency') ||
+      contains(github.event.pull_request.labels.*.name, 'release')
 
     steps:
       - uses: actions/checkout@v4
@@ -520,7 +909,14 @@ jobs:
     name: Dependency Governance
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: [feature-combinations]
+    needs: [pr-change-filter, workspace-default]
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.pr-change-filter.outputs.dependency_paths == 'true' ||
+      needs.pr-change-filter.outputs.ci_paths == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+      contains(github.event.pull_request.labels.*.name, 'dependency') ||
+      contains(github.event.pull_request.labels.*.name, 'release')
 
     steps:
       - uses: actions/checkout@v4
@@ -591,7 +987,16 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-    needs: [dependency-governance]
+    needs: [pr-change-filter, workspace-default]
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.pr-change-filter.outputs.dependency_paths == 'true' ||
+      needs.pr-change-filter.outputs.ci_paths == 'true' ||
+      needs.pr-change-filter.outputs.perf_paths == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+      contains(github.event.pull_request.labels.*.name, 'perf') ||
+      contains(github.event.pull_request.labels.*.name, 'dependency') ||
+      contains(github.event.pull_request.labels.*.name, 'release')
 
     steps:
       - uses: actions/checkout@v4
@@ -747,10 +1152,17 @@ jobs:
     name: Performance Gate
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [lint-gates]
-    # Run performance gates on main/develop branches and PRs targeting main
-    # This ensures performance regressions are caught before merge
-    # Requirement 14.1: THE CI_Pipeline SHALL run RT timing benchmarks on every PR
+    needs: [pr-change-filter, lint-gates]
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.pr-change-filter.outputs.perf_paths == 'true' ||
+      needs.pr-change-filter.outputs.ci_paths == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+      contains(github.event.pull_request.labels.*.name, 'perf') ||
+      contains(github.event.pull_request.labels.*.name, 'release')
+    # Hosted-runner performance is advisory for ordinary PRs. Run it for
+    # perf-sensitive paths, explicit labels, push-to-main/develop, and manual
+    # dispatch; strict timing remains in the timing-gates workflow.
 
     steps:
       - uses: actions/checkout@v4
@@ -846,7 +1258,14 @@ jobs:
     name: Security & License Audit
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [lint-gates]
+    needs: [pr-change-filter, lint-gates]
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.pr-change-filter.outputs.dependency_paths == 'true' ||
+      needs.pr-change-filter.outputs.ci_paths == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+      contains(github.event.pull_request.labels.*.name, 'dependency') ||
+      contains(github.event.pull_request.labels.*.name, 'release')
 
     steps:
       - uses: actions/checkout@v4
@@ -1039,7 +1458,12 @@ jobs:
     name: Final Workspace Validation
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
-    needs: [performance-gate, security-audit]
+    needs: [pr-change-filter, performance-gate, security-audit, feature-combinations]
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.pr-change-filter.outputs.ci_paths == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+      contains(github.event.pull_request.labels.*.name, 'release')
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -1104,3 +1528,149 @@ jobs:
           echo "All isolation builds: ✅"
           echo "All feature combinations: ✅" 
           echo "Complete workspace: ✅"
+
+  pr-required-baseline:
+    name: PR Required Baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - pr-change-filter
+      - changelog-validation
+      - docs-policy-checks
+      - msrv-check
+      - isolation-cli
+      - isolation-service
+      - isolation-plugins
+      - schemas-validation
+      - moza-focused-checks
+      - workspace-default
+      - feature-combinations
+      - dependency-governance
+      - lint-gates
+      - performance-gate
+      - security-audit
+      - final-validation
+    if: always()
+    env:
+      NEEDS_JSON: ${{ toJson(needs) }}
+      EVENT_NAME: ${{ github.event_name }}
+      LABELS: ${{ github.event_name == 'pull_request' && join(github.event.pull_request.labels.*.name, ',') || '' }}
+      DOCS_ONLY: ${{ needs.pr-change-filter.outputs.docs_only }}
+      MOZ_PATHS: ${{ needs.pr-change-filter.outputs.moza_paths }}
+      DEPENDENCY_PATHS: ${{ needs.pr-change-filter.outputs.dependency_paths }}
+      CI_PATHS: ${{ needs.pr-change-filter.outputs.ci_paths }}
+      PERF_PATHS: ${{ needs.pr-change-filter.outputs.perf_paths }}
+      SCHEMA_PATHS: ${{ needs.pr-change-filter.outputs.schema_paths }}
+      WORKSPACE_PATHS: ${{ needs.pr-change-filter.outputs.workspace_paths }}
+
+    steps:
+      - name: Summarize selected PR gates
+        shell: python
+        run: |
+          import json
+          import os
+          import sys
+
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          event_name = os.environ["EVENT_NAME"]
+          labels = {
+              label.strip()
+              for label in os.environ.get("LABELS", "").split(",")
+              if label.strip()
+          }
+
+          def flag(name: str) -> bool:
+              return os.environ.get(name, "").lower() == "true"
+
+          def require(job: str) -> None:
+              result = needs.get(job, {}).get("result")
+              if result != "success":
+                  failures.append(f"{job}={result}")
+
+          failures: list[str] = []
+
+          require("pr-change-filter")
+          require("changelog-validation")
+          require("docs-policy-checks")
+
+          full_or_release = "full-ci" in labels or "release" in labels
+
+          if event_name != "pull_request":
+              selected_core = True
+              selected_moza = True
+              selected_dependency = True
+              selected_perf = True
+              selected_final = True
+          else:
+              selected_core = (
+                  flag("WORKSPACE_PATHS")
+                  or flag("DEPENDENCY_PATHS")
+                  or flag("CI_PATHS")
+                  or flag("PERF_PATHS")
+                  or full_or_release
+              )
+              selected_moza = (
+                  (flag("MOZ_PATHS") and not flag("DOCS_ONLY"))
+                  or "moza" in labels
+                  or "hardware" in labels
+                  or full_or_release
+              )
+              selected_dependency = (
+                  flag("DEPENDENCY_PATHS")
+                  or flag("CI_PATHS")
+                  or "dependency" in labels
+                  or full_or_release
+              )
+              selected_perf = (
+                  flag("PERF_PATHS")
+                  or flag("CI_PATHS")
+                  or "perf" in labels
+                  or full_or_release
+              )
+              selected_final = flag("CI_PATHS") or full_or_release
+              selected_schema = (
+                  flag("SCHEMA_PATHS")
+                  or flag("DEPENDENCY_PATHS")
+                  or flag("CI_PATHS")
+                  or full_or_release
+              )
+
+          if selected_core:
+              for job in (
+                  "msrv-check",
+                  "isolation-cli",
+                  "isolation-service",
+                  "isolation-plugins",
+                  "workspace-default",
+              ):
+                  require(job)
+
+          if selected_schema:
+              require("schemas-validation")
+
+          if selected_moza:
+              require("moza-focused-checks")
+
+          if selected_dependency:
+              for job in (
+                  "feature-combinations",
+                  "dependency-governance",
+                  "lint-gates",
+                  "security-audit",
+              ):
+                  require(job)
+
+          if selected_perf:
+              require("lint-gates")
+              require("performance-gate")
+
+          if selected_final:
+              require("final-validation")
+
+          if failures:
+              print("Selected required PR gates failed or did not complete:")
+              for failure in failures:
+                  print(f"- {failure}")
+              sys.exit(1)
+
+          print("Selected PR gates completed successfully.")

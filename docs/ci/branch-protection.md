@@ -52,43 +52,55 @@ protection enabled. In the GitHub UI, configure:
 
 ## Required PR Checks
 
-Configure the `main` ruleset so pull requests cannot merge until these checks
-complete successfully:
+Configure the `main` ruleset so pull requests cannot merge until the stable
+baseline summary and the selected Linux correctness checks complete
+successfully. `PR Required Baseline` is intentionally stable: it runs on every
+CI invocation, treats intentionally skipped path-scoped jobs as skipped, and
+fails when a job selected by the PR surface failed, was cancelled, or did not
+complete.
+
+Global required checks:
 
 - `CHANGELOG Validation`
-- `MSRV Check`
-- `CLI Isolation Build (ubuntu-latest)`
-- `Service Isolation Build (ubuntu-latest)`
-- `Plugins Isolation Build (ubuntu-latest)`
-- `UI Isolation Build (ubuntu-22.04)`
-- `UI Isolation Build (ubuntu-24.04)`
-- `Schemas & Trybuild`
-- `Workspace Default Build (ubuntu-latest)`
-- `Feature Combinations`
-- `Dependency Governance`
-- `Comprehensive Lint Gates & Governance (ubuntu-latest)`
-- `Performance Gate`
-- `Security & License Audit`
-- `Final Workspace Validation (ubuntu-latest)`
-- `Smoke Tests`
-- `Performance Gates`
-- `User Journey Tests`
-- `Stress Tests`
-- `CI Soak Test`
-- `Acceptance Tests`
-- `Deprecated Field Detection`
-- `Trybuild Compile-Fail Tests`
-- `JSON Schema Validation`
-- `Lint Enforcement`
-- `Protobuf Breaking Changes`
-- `Comprehensive Validation`
+- `PR Change Filter`
+- `Docs & Policy Checks`
+- `PR Required Baseline`
 - `Game support matrix sync`
 - `track-compat-usage`
 
+`MSRV Check`, isolation builds, `Schemas & Trybuild`, and
+`Workspace Default Build (ubuntu-latest)` are selected by `PR Required
+Baseline` for ordinary Rust/workspace, dependency, CI, performance, release, and
+`full-ci` PRs. Docs-only, Moza-focused, and UI-only PRs can skip broad Rust
+workspace gates when their focused checks cover the touched surface.
+
+The regression and integration workflows (`Smoke Tests`, `User Journey Tests`,
+`Acceptance Tests`, `Deprecated Field Detection`, `Trybuild Compile-Fail Tests`,
+`JSON Schema Validation`, and `Protobuf Breaking Changes`) remain useful
+signals, but should be path-scoped or folded into the stable baseline before
+being made globally required for every ordinary PR.
+
+Additional path-scoped or label-scoped checks should be required by
+`PR Required Baseline` and by path-scoped rulesets only when the matching PR
+surface is present:
+
+| PR surface | Required checks |
+| --- | --- |
+| Docs-only changes | `CHANGELOG Validation`, `PR Change Filter`, `Docs & Policy Checks`, `PR Required Baseline`; Rust workspace, feature, dependency, UI, and performance checks should be skipped unless `full-ci` is requested |
+| Moza parser, verifier, or hardware receipt plumbing | `Moza Focused Checks`; `Moza Receipt Verification` for `ci/hardware/**` and `crates/hid-moza-protocol/fixtures/**` |
+| Hardware docs-only changes | Same docs-only lane unless the PR also changes real receipt artifacts or parser/verifier code |
+| UI or packaging paths | `UI Isolation Build (ubuntu-22.04)`, `UI Isolation Build (ubuntu-24.04)` |
+| Dependency, `Cargo.lock`, workspace feature, or `deny.toml` changes | `Feature Combinations`, `Dependency Governance`, `Security & License Audit`, `Comprehensive Lint Gates & Governance (ubuntu-latest)` |
+| CI, workflow, scripts, or policy changes | `Feature Combinations`, `Dependency Governance`, `Comprehensive Lint Gates & Governance (ubuntu-latest)`, `Final Workspace Validation (ubuntu-latest)` |
+| Performance-sensitive engine or integration-test paths | `Performance Gate` |
+| Release-candidate or `full-ci` labeled PRs | `Feature Combinations`, `Dependency Governance`, `Comprehensive Lint Gates & Governance (ubuntu-latest)`, `Performance Gate`, `Security & License Audit`, `Final Workspace Validation (ubuntu-latest)`, `Stress Tests`, `CI Soak Test`, `Comprehensive Validation` |
+
 For hardware receipt pull requests, require `Moza Receipt Verification` through a
 path-scoped ruleset for `ci/hardware/**`, `crates/hid-moza-protocol/fixtures/**`,
-and `docs/hardware/**`. Do not make that check globally required unless the
-workflow is guaranteed to run on every pull request.
+and other real receipt/fixture paths. Do not make that check globally required
+unless the workflow is guaranteed to run on every pull request. Hardware docs
+alone are not receipt evidence and should not force receipt verification unless
+they are packaged with receipt artifacts.
 
 ## Non-Required Checks
 
@@ -101,6 +113,14 @@ Do not require these checks for ordinary pull requests:
 - `Windows Platform Smoke`
 - `macOS Platform Smoke`
 - `Linux UI Packaging Smoke`
+- `Feature Combinations` for non-dependency, non-CI, non-release PRs
+- `Dependency Governance` for non-dependency, non-CI, non-release PRs
+- `Comprehensive Lint Gates & Governance (ubuntu-latest)` for ordinary docs,
+  parser, receipt, and narrow CLI PRs where a focused check covers the touched
+  surface
+- `Performance Gate` for ordinary non-performance PRs
+- `Security & License Audit` for ordinary non-dependency PRs
+- `Final Workspace Validation (ubuntu-latest)` for ordinary PRs
 - bot review checks, including `droid-review`, `CodeRabbit`, and similar advisory signals
 - skipped coverage duplicates
 
