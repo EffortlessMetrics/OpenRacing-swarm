@@ -852,7 +852,8 @@ async fn promote_fixtures(
 ) -> Result<()> {
     let mut fixtures = Vec::new();
 
-    for requirement in passive_capture_requirements() {
+    let requirements = passive_capture_requirements_for_lane(lane);
+    for requirement in &requirements {
         let capture = lane.join(requirement.relative_path);
         let fixture_out = fixture_dir.join(format!("{}.json", requirement.fixture_id));
         let fixture = build_capture_fixture(&capture, requirement.fixture_id, None, max_reports)
@@ -889,7 +890,7 @@ async fn promote_fixtures(
         no_firmware_or_dfu_commands: true,
         no_hid_device_opened: true,
         overwritten_existing: overwrite,
-        required_fixture_count: passive_capture_requirements().len(),
+        required_fixture_count: requirements.len(),
         fixture_count: fixtures.len(),
         fixtures,
         notes: vec![
@@ -3469,7 +3470,8 @@ fn verify_bundle_dir_with_support_validation(
     stage: MozaBundleStage,
     support_validation: SupportBundleValidationMode,
 ) -> BundleVerificationReceipt {
-    let artifact_checks: Vec<_> = bundle_artifact_requirements()
+    let artifact_requirements = bundle_artifact_requirements_for_lane(lane);
+    let artifact_checks: Vec<_> = artifact_requirements
         .iter()
         .filter(|requirement| stage_rank(requirement.stage) <= stage_rank(stage))
         .map(|requirement| check_bundle_artifact(lane, requirement))
@@ -3493,7 +3495,7 @@ fn verify_bundle_dir_with_support_validation(
         ),
     );
     gates.push(verify_moza_r5_observed_gate(lane));
-    gates.push(verify_moza_stack_observed_gate(lane));
+    gates.push(verify_moza_topology_observed_gate(lane));
     gates.push(verify_descriptor_metadata_gate(lane));
     gates.push(verify_passive_no_writes_gate(lane));
     gates.push(verify_passive_capture_parse_gate(lane));
@@ -3684,22 +3686,11 @@ fn push_passive_next_commands(lane: &Path, commands: &mut Vec<String>) {
         lane_path_arg(lane, "descriptor.json")
     ));
 
-    for (device, duration_ms, artifact) in [
-        ("<r5>", 5000, "captures/r5-idle.jsonl"),
-        ("<r5>", 10000, "captures/r5-steering-sweep.jsonl"),
-        (
-            "<r5>",
-            10000,
-            "captures/srp-wheelbase-aggregated-sweep.jsonl",
-        ),
-        ("<srp>", 10000, "captures/srp-standalone-sweep.jsonl"),
-        ("<hbp>", 10000, "captures/hbp-standalone-sweep.jsonl"),
-        ("<r5>", 10000, "captures/ks-controls.jsonl"),
-        ("<r5>", 10000, "captures/es-controls.jsonl"),
-    ] {
+    for requirement in passive_capture_requirements_for_lane(lane) {
+        let (device, duration_ms) = passive_capture_next_command_hint(requirement.relative_path);
         commands.push(format!(
             "wheelctl moza capture-input --device {device} --duration-ms {duration_ms} --json-out {}",
-            lane_path_arg(lane, artifact)
+            lane_path_arg(lane, requirement.relative_path)
         ));
     }
 
@@ -3727,6 +3718,21 @@ fn push_passive_next_commands(lane: &Path, commands: &mut Vec<String>) {
         "wheelctl moza audit-lane --lane {lane_arg} --stage passive --json-out {}",
         lane_path_arg(lane, audit_receipt_path(MozaBundleStage::Passive))
     ));
+}
+
+fn passive_capture_next_command_hint(relative_path: &str) -> (&'static str, u64) {
+    match relative_path {
+        "captures/r5-idle.jsonl" | "captures/r5-aggregated-idle-after-controls.jsonl" => {
+            ("<r5>", 5000)
+        }
+        "captures/r5-throttle-only-sweep.jsonl"
+        | "captures/r5-brake-only-sweep.jsonl"
+        | "captures/r5-clutch-only-sweep.jsonl"
+        | "captures/r5-handbrake-only-sweep.jsonl" => ("<r5>", 15000),
+        "captures/srp-standalone-sweep.jsonl" => ("<srp>", 10000),
+        "captures/hbp-standalone-sweep.jsonl" => ("<hbp>", 10000),
+        _ => ("<r5>", 10000),
+    }
 }
 
 fn push_zero_next_commands(lane: &Path, commands: &mut Vec<String>) {
@@ -4455,15 +4461,23 @@ fn bundle_artifact_requirements() -> &'static [BundleArtifactRequirement] {
             MozaBundleStage::Passive,
         ),
         BundleArtifactRequirement::jsonl(
-            "captures/srp-wheelbase-aggregated-sweep.jsonl",
+            "captures/r5-throttle-only-sweep.jsonl",
             MozaBundleStage::Passive,
         ),
         BundleArtifactRequirement::jsonl(
-            "captures/srp-standalone-sweep.jsonl",
+            "captures/r5-brake-only-sweep.jsonl",
             MozaBundleStage::Passive,
         ),
         BundleArtifactRequirement::jsonl(
-            "captures/hbp-standalone-sweep.jsonl",
+            "captures/r5-clutch-only-sweep.jsonl",
+            MozaBundleStage::Passive,
+        ),
+        BundleArtifactRequirement::jsonl(
+            "captures/r5-handbrake-only-sweep.jsonl",
+            MozaBundleStage::Passive,
+        ),
+        BundleArtifactRequirement::jsonl(
+            "captures/r5-aggregated-idle-after-controls.jsonl",
             MozaBundleStage::Passive,
         ),
         BundleArtifactRequirement::jsonl("captures/ks-controls.jsonl", MozaBundleStage::Passive),
@@ -4487,6 +4501,27 @@ fn bundle_artifact_requirements() -> &'static [BundleArtifactRequirement] {
         BundleArtifactRequirement::json("simulator-ffb-smoke.json", MozaBundleStage::SmokeReady),
     ];
     REQUIREMENTS
+}
+
+fn bundle_artifact_requirements_for_lane(lane: &Path) -> Vec<BundleArtifactRequirement> {
+    let passive_paths = passive_capture_requirements_for_lane(lane)
+        .into_iter()
+        .map(|requirement| requirement.relative_path)
+        .collect::<BTreeSet<_>>();
+    bundle_artifact_requirements()
+        .iter()
+        .copied()
+        .filter(|requirement| {
+            !is_passive_capture_artifact(requirement.relative_path)
+                || passive_paths.contains(requirement.relative_path)
+        })
+        .collect()
+}
+
+fn is_passive_capture_artifact(relative_path: &str) -> bool {
+    passive_capture_requirements()
+        .iter()
+        .any(|requirement| requirement.relative_path == relative_path)
 }
 
 fn lane_artifact_index_requirements() -> impl Iterator<Item = BundleArtifactRequirement> {
@@ -4699,13 +4734,16 @@ fn verify_manifest_r5_pid_consistency_gate_with_support_validation(
         }
     }
 
-    for path in [
-        "captures/r5-idle.jsonl",
-        "captures/r5-steering-sweep.jsonl",
-        "captures/srp-wheelbase-aggregated-sweep.jsonl",
-        "captures/ks-controls.jsonl",
-        "captures/es-controls.jsonl",
-    ] {
+    for requirement in passive_capture_requirements_for_lane(lane)
+        .into_iter()
+        .filter(|requirement| {
+            matches!(
+                requirement.expected_products,
+                PassiveCaptureProductRequirement::ManifestR5
+            )
+        })
+    {
+        let path = requirement.relative_path;
         match manifest_pid_capture_artifact_counts(lane, path) {
             Ok(counts) if pid_counts_only_expected(&counts, &expected) => {
                 observed.push(format!("{path}:{}", pid_counts_details(&counts)));
@@ -4715,8 +4753,8 @@ fn verify_manifest_r5_pid_consistency_gate_with_support_validation(
         }
     }
 
-    for requirement in passive_capture_requirements()
-        .iter()
+    for requirement in passive_capture_requirements_for_lane(lane)
+        .into_iter()
         .filter(|requirement| requirement.required_category == "wheelbase")
     {
         match manifest_pid_fixture_requirement_counts(lane, requirement) {
@@ -4983,6 +5021,7 @@ fn manifest_contract_is_moza_r5_lane(manifest: &Value) -> bool {
             .unwrap_or(false)
         && manifest_platform_is_windows_hid(manifest.get("platform"))
         && manifest_hardware_is_steven_moza_stack(manifest.get("hardware"))
+        && manifest_topology_is_logical_role_model(manifest)
         && manifest_claims_are_staged(manifest.get("claims"))
         && manifest_artifacts_match_lane_contract(manifest.get("artifacts"))
 }
@@ -5015,6 +5054,83 @@ fn manifest_hardware_is_steven_moza_stack(hardware: Option<&Value>) -> bool {
         && json_string(hardware, "handbrake") == Some("HBP")
 }
 
+fn manifest_topology_is_logical_role_model(manifest: &Value) -> bool {
+    let Some(topology) = manifest.get("topology") else {
+        return false;
+    };
+    let Some(endpoints) = topology.get("endpoints").and_then(Value::as_array) else {
+        return false;
+    };
+    let Some(controls) = topology.get("logical_controls").and_then(Value::as_object) else {
+        return false;
+    };
+    let Some(wheelbase_pid) = manifest
+        .get("hardware")
+        .and_then(|hardware| json_string(hardware, "wheelbase_pid"))
+    else {
+        return false;
+    };
+
+    let endpoint_ids = endpoints
+        .iter()
+        .filter_map(|endpoint| json_string(endpoint, "id"))
+        .collect::<BTreeSet<_>>();
+    let r5_hub_endpoint_ok = endpoints.iter().any(|endpoint| {
+        json_string(endpoint, "id") == Some("moza-r5-if2")
+            && json_string(endpoint, "kind") == Some("wheelbase_hub")
+            && json_string(endpoint, "vendor_id") == Some(MOZA_VENDOR_HEX)
+            && json_string(endpoint, "product_id") == Some(wheelbase_pid)
+            && json_u64(endpoint, "interface_number") == Some(2)
+            && json_string(endpoint, "usage_page") == Some("0x0001")
+            && json_string(endpoint, "usage") == Some("0x0004")
+            && json_bool(endpoint, "output_capable") == Some(true)
+    });
+
+    let controls_ok = !controls.is_empty()
+        && controls
+            .values()
+            .all(|control| topology_control_is_declared_role(control, &endpoint_ids));
+    let has_required_control = controls
+        .values()
+        .any(|control| json_bool(control, "required").unwrap_or(true));
+
+    json_string(topology, "primary_input_path") == Some("wheelbase_hub")
+        && r5_hub_endpoint_ok
+        && controls_ok
+        && has_required_control
+}
+
+fn topology_control_is_declared_role(control: &Value, endpoint_ids: &BTreeSet<&str>) -> bool {
+    let Some(endpoint) = json_string(control, "source_endpoint") else {
+        return false;
+    };
+    matches!(
+        json_string(control, "role"),
+        Some(
+            "steering"
+                | "rim_controls"
+                | "throttle"
+                | "brake"
+                | "clutch"
+                | "handbrake"
+                | "shifter"
+                | "button_box"
+        )
+    ) && json_bool(control, "required").is_some()
+        && endpoint_ids.contains(endpoint)
+        && matches!(
+            json_string(control, "connection"),
+            Some("wheelbase_hub" | "standalone_usb" | "cross_device" | "unknown")
+        )
+        && json_string(control, "evidence_capture")
+            .map(|path| {
+                passive_capture_requirements()
+                    .iter()
+                    .any(|req| req.relative_path == path)
+            })
+            .unwrap_or(false)
+}
+
 fn manifest_claims_are_staged(claims: Option<&Value>) -> bool {
     let Some(claims) = claims else {
         return false;
@@ -5041,16 +5157,24 @@ fn manifest_artifacts_match_lane_contract(artifacts: Option<&Value>) -> bool {
             "captures/r5-steering-sweep.jsonl",
         ),
         (
-            "capture_srp_wheelbase_aggregated_sweep",
-            "captures/srp-wheelbase-aggregated-sweep.jsonl",
+            "capture_r5_throttle_only_sweep",
+            "captures/r5-throttle-only-sweep.jsonl",
         ),
         (
-            "capture_srp_standalone_sweep",
-            "captures/srp-standalone-sweep.jsonl",
+            "capture_r5_brake_only_sweep",
+            "captures/r5-brake-only-sweep.jsonl",
         ),
         (
-            "capture_hbp_standalone_sweep",
-            "captures/hbp-standalone-sweep.jsonl",
+            "capture_r5_clutch_only_sweep",
+            "captures/r5-clutch-only-sweep.jsonl",
+        ),
+        (
+            "capture_r5_handbrake_only_sweep",
+            "captures/r5-handbrake-only-sweep.jsonl",
+        ),
+        (
+            "capture_r5_aggregated_idle_after_controls",
+            "captures/r5-aggregated-idle-after-controls.jsonl",
         ),
         ("capture_ks_controls", "captures/ks-controls.jsonl"),
         ("capture_es_controls", "captures/es-controls.jsonl"),
@@ -5162,23 +5286,72 @@ fn verify_moza_r5_observed_gate(lane: &Path) -> BundleGateCheck {
     }
 }
 
-fn verify_moza_stack_observed_gate(lane: &Path) -> BundleGateCheck {
-    let required_products = [
-        StackProductRequirement {
-            name: "r5_wheelbase",
-            product_ids: &[product_ids::R5_V1, product_ids::R5_V2],
-        },
-        StackProductRequirement {
-            name: "srp_pedals_standalone",
-            product_ids: &[product_ids::SR_P_PEDALS],
-        },
-        StackProductRequirement {
-            name: "hbp_handbrake_standalone",
-            product_ids: &[product_ids::HBP_HANDBRAKE],
-        },
-    ];
-    let mut observed = Vec::new();
+fn verify_moza_topology_observed_gate(lane: &Path) -> BundleGateCheck {
+    let manifest = match read_json_value(lane, "manifest.json") {
+        Ok(value) => value,
+        Err(e) => return BundleGateCheck::fail("moza_topology_observed", e.to_string()),
+    };
+    let Some(topology) = manifest.get("topology") else {
+        return BundleGateCheck::fail(
+            "moza_topology_observed",
+            "manifest.json is missing topology".to_string(),
+        );
+    };
+    let Some(endpoints) = topology.get("endpoints").and_then(Value::as_array) else {
+        return BundleGateCheck::fail(
+            "moza_topology_observed",
+            "manifest topology is missing endpoints[]".to_string(),
+        );
+    };
+    let Some(controls) = topology.get("logical_controls").and_then(Value::as_object) else {
+        return BundleGateCheck::fail(
+            "moza_topology_observed",
+            "manifest topology is missing logical_controls{}".to_string(),
+        );
+    };
+
+    let mut endpoint_ids = BTreeSet::new();
+    let mut endpoint_products = Vec::new();
     let mut failures = Vec::new();
+
+    for endpoint in endpoints {
+        let id = json_string(endpoint, "id").unwrap_or("<missing-id>");
+        endpoint_ids.insert(id.to_string());
+        match json_string(endpoint, "product_id").and_then(parse_hex_selector) {
+            Some(pid) => endpoint_products.push((id.to_string(), pid)),
+            None => failures.push(format!("endpoint:{id}:missing-or-invalid-product-id")),
+        }
+    }
+
+    for (name, control) in controls {
+        let required = json_bool(control, "required").unwrap_or(true);
+        if !required {
+            continue;
+        }
+        let Some(endpoint) = json_string(control, "source_endpoint") else {
+            failures.push(format!("control:{name}:missing-source-endpoint"));
+            continue;
+        };
+        if !endpoint_ids.contains(endpoint) {
+            failures.push(format!("control:{name}:unknown-endpoint:{endpoint}"));
+        }
+        if !matches!(
+            json_string(control, "connection"),
+            Some("wheelbase_hub" | "standalone_usb" | "cross_device" | "unknown")
+        ) {
+            failures.push(format!("control:{name}:invalid-connection"));
+        }
+        match json_string(control, "evidence_capture") {
+            Some(path)
+                if passive_capture_requirements()
+                    .iter()
+                    .any(|requirement| requirement.relative_path == path) => {}
+            Some(path) => failures.push(format!("control:{name}:unknown-evidence-capture:{path}")),
+            None => failures.push(format!("control:{name}:missing-evidence-capture")),
+        }
+    }
+
+    let mut observed = Vec::new();
 
     for path in [
         "device-list.json",
@@ -5188,12 +5361,15 @@ fn verify_moza_stack_observed_gate(lane: &Path) -> BundleGateCheck {
     ] {
         match read_json_value(lane, path) {
             Ok(value) => {
-                for requirement in &required_products {
-                    let count = count_stack_product_devices(&value, requirement.product_ids);
+                for (endpoint_id, product_id) in &endpoint_products {
+                    let count = count_stack_product_devices(&value, &[*product_id]);
                     if count > 0 {
-                        observed.push(format!("{path}:{}:{count}", requirement.name));
+                        observed.push(format!(
+                            "{path}:{endpoint_id}:{}:{count}",
+                            hex_u16(*product_id)
+                        ));
                     } else {
-                        failures.push(format!("{path}:{}:0", requirement.name));
+                        failures.push(format!("{path}:{endpoint_id}:{}:0", hex_u16(*product_id)));
                     }
                 }
             }
@@ -5203,25 +5379,20 @@ fn verify_moza_stack_observed_gate(lane: &Path) -> BundleGateCheck {
 
     if failures.is_empty() {
         BundleGateCheck::pass(
-            "moza_stack_observed",
+            "moza_topology_observed",
             format!(
-                "found R5, standalone SR-P, and standalone HBP VID/PID records in {}",
+                "found declared topology endpoint VID/PID records in {}",
                 observed.join(", ")
             ),
         )
     } else {
         BundleGateCheck::fail(
-            "moza_stack_observed",
+            "moza_topology_observed",
             format!(
-                "missing Steven Moza stack VID/PID observation in {failures:?}; passive lane requires R5 plus standalone SR-P and HBP enumeration receipts"
+                "missing declared topology endpoint observation or logical role evidence in {failures:?}"
             ),
         )
     }
-}
-
-struct StackProductRequirement {
-    name: &'static str,
-    product_ids: &'static [u16],
 }
 
 fn verify_descriptor_metadata_gate(lane: &Path) -> BundleGateCheck {
@@ -5745,7 +5916,7 @@ fn verify_passive_capture_parse_gate(lane: &Path) -> BundleGateCheck {
     let mut failures = Vec::new();
     let mut total_reports = 0usize;
 
-    for requirement in passive_capture_requirements() {
+    for requirement in passive_capture_requirements_for_lane(lane) {
         let path = lane.join(requirement.relative_path);
         let receipt = match validate_capture_file(&path, None) {
             Ok(receipt) => receipt,
@@ -5798,11 +5969,20 @@ fn passive_capture_requirements() -> &'static [PassiveCaptureRequirement] {
     const NONE: &[&str] = &[];
     const STEERING: &[&str] = &["steering_u16"];
     const PEDALS: &[&str] = &["throttle_u16", "brake_u16"];
-    const PEDALS_WITH_CLUTCH: &[&str] = &["throttle_u16", "brake_u16", "clutch_u16"];
     const HANDBRAKE: &[&str] = &["handbrake_u16"];
     const NO_EXACT: &[(&str, u16)] = &[];
     const ES_RIM: &[(&str, u16)] = &[("funky_u8", rim_ids::ES as u16)];
     const NO_ANY: &[(&str, &[&str])] = &[];
+    const HUB_CONTROL_AXIS_ANY: &[&str] = &[
+        "throttle_u16",
+        "brake_u16",
+        "clutch_u16",
+        "handbrake_u16",
+        "r5_v1_extended_axis0_u16",
+        "r5_v1_extended_axis1_u16",
+        "r5_v1_extended_axis2_u16",
+    ];
+    const HUB_CONTROL_GROUPS: &[(&str, &[&str])] = &[("hub_control_axis", HUB_CONTROL_AXIS_ANY)];
     const BUTTONS_ANY: &[&str] = &["buttons_any_u8"];
     const KS_BUTTONS_ANY: &[&str] = &["ks_buttons_any_u8", "buttons_any_u8"];
     const HAT_ANY: &[&str] = &["hat_u8"];
@@ -5824,6 +6004,8 @@ fn passive_capture_requirements() -> &'static [PassiveCaptureRequirement] {
             required_axis_values: NO_EXACT,
             required_any_axis_variation: NO_ANY,
             min_report_len: None,
+            always_required: true,
+            default_required: true,
         },
         PassiveCaptureRequirement {
             relative_path: "captures/r5-steering-sweep.jsonl",
@@ -5834,16 +6016,104 @@ fn passive_capture_requirements() -> &'static [PassiveCaptureRequirement] {
             required_axis_values: NO_EXACT,
             required_any_axis_variation: NO_ANY,
             min_report_len: None,
+            always_required: false,
+            default_required: true,
+        },
+        PassiveCaptureRequirement {
+            relative_path: "captures/r5-throttle-only-sweep.jsonl",
+            fixture_id: "r5_throttle_only_sweep",
+            required_category: "wheelbase",
+            expected_products: PassiveCaptureProductRequirement::ManifestR5,
+            required_axis_variation: NONE,
+            required_axis_values: NO_EXACT,
+            required_any_axis_variation: HUB_CONTROL_GROUPS,
+            min_report_len: None,
+            always_required: false,
+            default_required: true,
+        },
+        PassiveCaptureRequirement {
+            relative_path: "captures/r5-brake-only-sweep.jsonl",
+            fixture_id: "r5_brake_only_sweep",
+            required_category: "wheelbase",
+            expected_products: PassiveCaptureProductRequirement::ManifestR5,
+            required_axis_variation: NONE,
+            required_axis_values: NO_EXACT,
+            required_any_axis_variation: HUB_CONTROL_GROUPS,
+            min_report_len: None,
+            always_required: false,
+            default_required: true,
+        },
+        PassiveCaptureRequirement {
+            relative_path: "captures/r5-clutch-only-sweep.jsonl",
+            fixture_id: "r5_clutch_only_sweep",
+            required_category: "wheelbase",
+            expected_products: PassiveCaptureProductRequirement::ManifestR5,
+            required_axis_variation: NONE,
+            required_axis_values: NO_EXACT,
+            required_any_axis_variation: HUB_CONTROL_GROUPS,
+            min_report_len: None,
+            always_required: false,
+            default_required: true,
+        },
+        PassiveCaptureRequirement {
+            relative_path: "captures/r5-handbrake-only-sweep.jsonl",
+            fixture_id: "r5_handbrake_only_sweep",
+            required_category: "wheelbase",
+            expected_products: PassiveCaptureProductRequirement::ManifestR5,
+            required_axis_variation: NONE,
+            required_axis_values: NO_EXACT,
+            required_any_axis_variation: HUB_CONTROL_GROUPS,
+            min_report_len: None,
+            always_required: false,
+            default_required: true,
+        },
+        PassiveCaptureRequirement {
+            relative_path: "captures/r5-aggregated-idle-after-controls.jsonl",
+            fixture_id: "r5_aggregated_idle_after_controls",
+            required_category: "wheelbase",
+            expected_products: PassiveCaptureProductRequirement::ManifestR5,
+            required_axis_variation: NONE,
+            required_axis_values: NO_EXACT,
+            required_any_axis_variation: NO_ANY,
+            min_report_len: None,
+            always_required: true,
+            default_required: true,
+        },
+        PassiveCaptureRequirement {
+            relative_path: "captures/ks-controls.jsonl",
+            fixture_id: "ks_controls",
+            required_category: "wheelbase",
+            expected_products: PassiveCaptureProductRequirement::ManifestR5,
+            required_axis_variation: NONE,
+            required_axis_values: NO_EXACT,
+            required_any_axis_variation: KS_CONTROL_GROUPS,
+            min_report_len: Some(31),
+            always_required: false,
+            default_required: true,
+        },
+        PassiveCaptureRequirement {
+            relative_path: "captures/es-controls.jsonl",
+            fixture_id: "es_controls",
+            required_category: "wheelbase",
+            expected_products: PassiveCaptureProductRequirement::ManifestR5,
+            required_axis_variation: NONE,
+            required_axis_values: ES_RIM,
+            required_any_axis_variation: ES_CONTROL_GROUPS,
+            min_report_len: Some(31),
+            always_required: false,
+            default_required: true,
         },
         PassiveCaptureRequirement {
             relative_path: "captures/srp-wheelbase-aggregated-sweep.jsonl",
             fixture_id: "srp_wheelbase_aggregated_sweep",
             required_category: "wheelbase",
             expected_products: PassiveCaptureProductRequirement::ManifestR5,
-            required_axis_variation: PEDALS_WITH_CLUTCH,
+            required_axis_variation: NONE,
             required_axis_values: NO_EXACT,
-            required_any_axis_variation: NO_ANY,
+            required_any_axis_variation: HUB_CONTROL_GROUPS,
             min_report_len: None,
+            always_required: false,
+            default_required: false,
         },
         PassiveCaptureRequirement {
             relative_path: "captures/srp-standalone-sweep.jsonl",
@@ -5854,6 +6124,8 @@ fn passive_capture_requirements() -> &'static [PassiveCaptureRequirement] {
             required_axis_values: NO_EXACT,
             required_any_axis_variation: NO_ANY,
             min_report_len: None,
+            always_required: false,
+            default_required: false,
         },
         PassiveCaptureRequirement {
             relative_path: "captures/hbp-standalone-sweep.jsonl",
@@ -5866,29 +6138,59 @@ fn passive_capture_requirements() -> &'static [PassiveCaptureRequirement] {
             required_axis_values: NO_EXACT,
             required_any_axis_variation: NO_ANY,
             min_report_len: None,
-        },
-        PassiveCaptureRequirement {
-            relative_path: "captures/ks-controls.jsonl",
-            fixture_id: "ks_controls",
-            required_category: "wheelbase",
-            expected_products: PassiveCaptureProductRequirement::ManifestR5,
-            required_axis_variation: NONE,
-            required_axis_values: NO_EXACT,
-            required_any_axis_variation: KS_CONTROL_GROUPS,
-            min_report_len: Some(31),
-        },
-        PassiveCaptureRequirement {
-            relative_path: "captures/es-controls.jsonl",
-            fixture_id: "es_controls",
-            required_category: "wheelbase",
-            expected_products: PassiveCaptureProductRequirement::ManifestR5,
-            required_axis_variation: NONE,
-            required_axis_values: ES_RIM,
-            required_any_axis_variation: ES_CONTROL_GROUPS,
-            min_report_len: Some(31),
+            always_required: false,
+            default_required: false,
         },
     ];
     REQUIREMENTS
+}
+
+fn default_passive_capture_requirements() -> Vec<&'static PassiveCaptureRequirement> {
+    passive_capture_requirements()
+        .iter()
+        .filter(|requirement| requirement.default_required)
+        .collect()
+}
+
+fn passive_capture_requirements_for_lane(lane: &Path) -> Vec<&'static PassiveCaptureRequirement> {
+    let required_paths = read_json_value(lane, "manifest.json")
+        .ok()
+        .and_then(|manifest| manifest_topology_required_capture_paths(&manifest));
+    let mut selected = Vec::new();
+    let mut seen = BTreeSet::new();
+
+    for requirement in passive_capture_requirements() {
+        let required = required_paths
+            .as_ref()
+            .map(|paths| requirement.always_required || paths.contains(requirement.relative_path))
+            .unwrap_or(requirement.default_required);
+        if required && seen.insert(requirement.relative_path) {
+            selected.push(requirement);
+        }
+    }
+
+    if selected.is_empty() {
+        default_passive_capture_requirements()
+    } else {
+        selected
+    }
+}
+
+fn manifest_topology_required_capture_paths(manifest: &Value) -> Option<BTreeSet<String>> {
+    let controls = manifest
+        .get("topology")?
+        .get("logical_controls")?
+        .as_object()?;
+    let mut paths = BTreeSet::new();
+
+    for control in controls.values() {
+        let required = json_bool(control, "required").unwrap_or(true);
+        if required && let Some(path) = json_string(control, "evidence_capture") {
+            paths.insert(path.to_string());
+        }
+    }
+
+    if paths.is_empty() { None } else { Some(paths) }
 }
 
 fn axis_has_variation(ranges: &BTreeMap<String, AxisRange>, axis: &str) -> bool {
@@ -6119,15 +6421,18 @@ fn verify_parser_validation_gate(lane: &Path) -> BundleGateCheck {
         .get("captures")
         .and_then(Value::as_array)
         .map(Vec::as_slice);
+    let requirements = passive_capture_requirements_for_lane(lane);
     let coverage_ok = captures
-        .map(|captures| parser_validation_covers_all_required_captures(captures, lane))
+        .map(|captures| {
+            parser_validation_covers_all_required_captures(captures, lane, &requirements)
+        })
         .unwrap_or(false);
 
     if success
         && command_ok
         && no_out_of_scope
         && no_hid_device_opened
-        && required_capture_count == passive_capture_requirements().len() as u64
+        && required_capture_count == requirements.len() as u64
         && validated_capture_count == required_capture_count
         && total_reports > 0
         && parsed_reports == total_reports
@@ -6150,8 +6455,12 @@ fn verify_parser_validation_gate(lane: &Path) -> BundleGateCheck {
     }
 }
 
-fn parser_validation_covers_all_required_captures(captures: &[Value], lane: &Path) -> bool {
-    passive_capture_requirements().iter().all(|requirement| {
+fn parser_validation_covers_all_required_captures(
+    captures: &[Value],
+    lane: &Path,
+    requirements: &[&PassiveCaptureRequirement],
+) -> bool {
+    requirements.iter().all(|requirement| {
         captures
             .iter()
             .any(|entry| parser_validation_entry_matches_requirement(entry, requirement, lane))
@@ -6224,7 +6533,8 @@ fn verify_fixture_promotion_set_gate(lane: &Path, receipt: &Value) -> BundleGate
 
     let mut failures = Vec::new();
     let mut promoted_reports = 0u64;
-    for requirement in passive_capture_requirements() {
+    let requirements = passive_capture_requirements_for_lane(lane);
+    for requirement in &requirements {
         let Some(entry) = fixtures
             .iter()
             .find(|entry| fixture_entry_matches_requirement(entry, requirement))
@@ -6247,7 +6557,7 @@ fn verify_fixture_promotion_set_gate(lane: &Path, receipt: &Value) -> BundleGate
         && no_ffb_writes
         && no_out_of_scope
         && no_hid_device_opened
-        && required_fixture_count == passive_capture_requirements().len() as u64
+        && required_fixture_count == requirements.len() as u64
         && fixture_count >= required_fixture_count
         && failures.is_empty()
         && promoted_reports > 0;
@@ -9776,9 +10086,11 @@ fn moza_lane_manifest_artifacts_value() -> Value {
         "captures_dir": "captures",
         "capture_r5_idle": "captures/r5-idle.jsonl",
         "capture_r5_steering_sweep": "captures/r5-steering-sweep.jsonl",
-        "capture_srp_wheelbase_aggregated_sweep": "captures/srp-wheelbase-aggregated-sweep.jsonl",
-        "capture_srp_standalone_sweep": "captures/srp-standalone-sweep.jsonl",
-        "capture_hbp_standalone_sweep": "captures/hbp-standalone-sweep.jsonl",
+        "capture_r5_throttle_only_sweep": "captures/r5-throttle-only-sweep.jsonl",
+        "capture_r5_brake_only_sweep": "captures/r5-brake-only-sweep.jsonl",
+        "capture_r5_clutch_only_sweep": "captures/r5-clutch-only-sweep.jsonl",
+        "capture_r5_handbrake_only_sweep": "captures/r5-handbrake-only-sweep.jsonl",
+        "capture_r5_aggregated_idle_after_controls": "captures/r5-aggregated-idle-after-controls.jsonl",
         "capture_ks_controls": "captures/ks-controls.jsonl",
         "capture_es_controls": "captures/es-controls.jsonl",
         "parser_fixture_validation": "parser-fixture-validation.json",
@@ -9804,6 +10116,81 @@ fn moza_lane_manifest_artifacts_value() -> Value {
         "smoke_ready_verification": "smoke-ready-verification.json",
         "smoke_ready_manifest_promotion": "manifest-promotion-smoke-ready.json",
         "smoke_ready_lane_audit": "lane-audit-smoke-ready.json"
+    })
+}
+
+fn moza_lane_manifest_topology_value(wheelbase_pid: u16) -> Value {
+    serde_json::json!({
+        "primary_input_path": "wheelbase_hub",
+        "endpoints": [
+            {
+                "id": "moza-r5-if2",
+                "kind": "wheelbase_hub",
+                "vendor_id": MOZA_VENDOR_HEX,
+                "product_id": hex_u16(wheelbase_pid),
+                "interface_number": 2,
+                "usage_page": "0x0001",
+                "usage": "0x0004",
+                "output_capable": true
+            }
+        ],
+        "logical_controls": {
+            "steering": {
+                "role": "steering",
+                "source_endpoint": "moza-r5-if2",
+                "connection": "wheelbase_hub",
+                "required": true,
+                "evidence_capture": "captures/r5-steering-sweep.jsonl"
+            },
+            "ks_rim_controls": {
+                "role": "rim_controls",
+                "rim": "KS",
+                "source_endpoint": "moza-r5-if2",
+                "connection": "wheelbase_hub",
+                "required": true,
+                "evidence_capture": "captures/ks-controls.jsonl"
+            },
+            "es_rim_controls": {
+                "role": "rim_controls",
+                "rim": "ES",
+                "source_endpoint": "moza-r5-if2",
+                "connection": "wheelbase_hub",
+                "required": true,
+                "evidence_capture": "captures/es-controls.jsonl"
+            },
+            "throttle": {
+                "role": "throttle",
+                "source_endpoint": "moza-r5-if2",
+                "connection": "wheelbase_hub",
+                "required": true,
+                "evidence_capture": "captures/r5-throttle-only-sweep.jsonl"
+            },
+            "brake": {
+                "role": "brake",
+                "source_endpoint": "moza-r5-if2",
+                "connection": "wheelbase_hub",
+                "required": true,
+                "evidence_capture": "captures/r5-brake-only-sweep.jsonl"
+            },
+            "clutch": {
+                "role": "clutch",
+                "source_endpoint": "moza-r5-if2",
+                "connection": "wheelbase_hub",
+                "required": true,
+                "evidence_capture": "captures/r5-clutch-only-sweep.jsonl"
+            },
+            "handbrake": {
+                "role": "handbrake",
+                "source_endpoint": "moza-r5-if2",
+                "connection": "wheelbase_hub",
+                "required": true,
+                "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl"
+            }
+        },
+        "notes": [
+            "Primary Moza input evidence is captured through the R5 wheelbase hub aggregated HID endpoint.",
+            "Standalone SR-P or HBP USB endpoints are optional direct-plug evidence only when declared in topology."
+        ]
     })
 }
 
@@ -9834,6 +10221,7 @@ fn moza_lane_manifest_value(
             "pedals": ["SR-P"],
             "handbrake": "HBP"
         },
+        "topology": moza_lane_manifest_topology_value(wheelbase_pid),
         "claims": {
             "ffb": "staged",
             "high_torque": false,
@@ -10384,8 +10772,9 @@ fn validate_lane_captures(lane: &Path) -> Result<CaptureValidationSetReceipt> {
     let mut total_reports = 0usize;
     let mut parsed_reports = 0usize;
     let mut rejected_reports = 0usize;
+    let requirements = passive_capture_requirements_for_lane(lane);
 
-    for requirement in passive_capture_requirements() {
+    for requirement in &requirements {
         let path = lane.join(requirement.relative_path);
         let receipt = validate_capture_file(&path, None)
             .with_context(|| format!("failed to validate {}", requirement.relative_path))?;
@@ -10425,7 +10814,7 @@ fn validate_lane_captures(lane: &Path) -> Result<CaptureValidationSetReceipt> {
         });
     }
 
-    let required_capture_count = passive_capture_requirements().len();
+    let required_capture_count = requirements.len();
     let validated_capture_count = captures.iter().filter(|entry| entry.success).count();
     let success = required_capture_count > 0
         && validated_capture_count == required_capture_count
@@ -11901,6 +12290,8 @@ struct PassiveCaptureRequirement {
     required_axis_values: &'static [(&'static str, u16)],
     required_any_axis_variation: &'static [(&'static str, &'static [&'static str])],
     min_report_len: Option<usize>,
+    always_required: bool,
+    default_required: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -13649,6 +14040,7 @@ mod tests {
                 "pedals": ["SR-P"],
                 "handbrake": "HBP"
             },
+            "topology": moza_lane_manifest_topology_value(product_ids::R5_V2),
             "claims": {
                 "ffb": "staged",
                 "high_torque": false,
@@ -13790,33 +14182,66 @@ mod tests {
             ),
         )?;
         write_text_file(
-            &root.join("captures/srp-wheelbase-aggregated-sweep.jsonl"),
+            &root.join("captures/r5-throttle-only-sweep.jsonl"),
             &format!(
                 "{}\n{}",
                 capture_line(
                     product_ids::R5_V2,
-                    &wheelbase_full_report_hex(0x8000, 0x0000, 0x0000, 0x0000, 0, 0, 0, 0, 0, 0)
+                    &wheelbase_full_report_hex(0x8000, 0x0000, 0, 0, 0, 0, 0, 0, 0, 0)
                 ),
                 capture_line(
                     product_ids::R5_V2,
-                    &wheelbase_full_report_hex(0x8000, 0xFFFF, 0x8000, 0x4000, 0, 0, 0, 0, 0, 0)
+                    &wheelbase_full_report_hex(0x8000, 0xFFFF, 0, 0, 0, 0, 0, 0, 0, 0)
                 )
             ),
         )?;
         write_text_file(
-            &root.join("captures/srp-standalone-sweep.jsonl"),
+            &root.join("captures/r5-brake-only-sweep.jsonl"),
             &format!(
                 "{}\n{}",
-                capture_line(product_ids::SR_P_PEDALS, "0100000000"),
-                capture_line(product_ids::SR_P_PEDALS, "01FFFF0080")
+                capture_line(
+                    product_ids::R5_V2,
+                    &wheelbase_full_report_hex(0x8000, 0, 0x0000, 0, 0, 0, 0, 0, 0, 0)
+                ),
+                capture_line(
+                    product_ids::R5_V2,
+                    &wheelbase_full_report_hex(0x8000, 0, 0xFFFF, 0, 0, 0, 0, 0, 0, 0)
+                )
             ),
         )?;
         write_text_file(
-            &root.join("captures/hbp-standalone-sweep.jsonl"),
+            &root.join("captures/r5-clutch-only-sweep.jsonl"),
             &format!(
                 "{}\n{}",
-                capture_line(product_ids::HBP_HANDBRAKE, "01000000"),
-                capture_line(product_ids::HBP_HANDBRAKE, "01FFFF01")
+                capture_line(
+                    product_ids::R5_V2,
+                    &wheelbase_full_report_hex(0x8000, 0, 0, 0x0000, 0, 0, 0, 0, 0, 0)
+                ),
+                capture_line(
+                    product_ids::R5_V2,
+                    &wheelbase_full_report_hex(0x8000, 0, 0, 0xFFFF, 0, 0, 0, 0, 0, 0)
+                )
+            ),
+        )?;
+        write_text_file(
+            &root.join("captures/r5-handbrake-only-sweep.jsonl"),
+            &format!(
+                "{}\n{}",
+                capture_line(
+                    product_ids::R5_V2,
+                    &wheelbase_full_report_hex(0x8000, 0, 0, 0, 0x0000, 0, 0, 0, 0, 0)
+                ),
+                capture_line(
+                    product_ids::R5_V2,
+                    &wheelbase_full_report_hex(0x8000, 0, 0, 0, 0xFFFF, 0, 0, 0, 0, 0)
+                )
+            ),
+        )?;
+        write_text_file(
+            &root.join("captures/r5-aggregated-idle-after-controls.jsonl"),
+            &capture_line(
+                product_ids::R5_V2,
+                &wheelbase_full_report_hex(0x8000, 0, 0, 0, 0, 0, 0, 0, 0, 0),
             ),
         )?;
         write_text_file(
@@ -13869,7 +14294,8 @@ mod tests {
 
     fn write_fixture_promotion_set(root: &Path) -> TestResult {
         let mut fixtures = Vec::new();
-        for requirement in passive_capture_requirements() {
+        let requirements = passive_capture_requirements_for_lane(root);
+        for requirement in &requirements {
             let fixture_out = format!("fixtures/{}.json", requirement.fixture_id);
             let expected_product_ids = expected_product_ids_for_requirement(requirement, root);
             let product_id = expected_product_ids
@@ -13916,11 +14342,53 @@ mod tests {
                 "no_serial_config_commands": true,
                 "no_firmware_or_dfu_commands": true,
                 "no_hid_device_opened": true,
-                "required_fixture_count": passive_capture_requirements().len(),
+                "required_fixture_count": requirements.len(),
                 "fixture_count": fixtures.len(),
                 "fixtures": fixtures
             }),
         )
+    }
+
+    fn refresh_passive_parser_receipts(root: &Path) -> TestResult {
+        write_test_json_file(
+            &root.join("parser-fixture-validation.json"),
+            &serde_json::to_value(validate_lane_captures(root)?)?,
+        )?;
+        write_fixture_promotion_set(root)
+    }
+
+    fn declare_standalone_control_topology(
+        root: &Path,
+        control_key: &str,
+        role: &str,
+        endpoint_id: &str,
+        endpoint_kind: &str,
+        product_id: u16,
+        evidence_capture: &str,
+    ) -> TestResult {
+        let mut manifest = read_json_path(&root.join("manifest.json"))?;
+        let endpoint = serde_json::json!({
+            "id": endpoint_id,
+            "kind": endpoint_kind,
+            "vendor_id": MOZA_VENDOR_HEX,
+            "product_id": hex_u16(product_id),
+            "interface_number": 0,
+            "usage_page": "0x0001",
+            "usage": "0x0004",
+            "output_capable": false
+        });
+        manifest["topology"]["endpoints"]
+            .as_array_mut()
+            .ok_or("expected topology endpoints")?
+            .push(endpoint);
+        manifest["topology"]["logical_controls"][control_key] = serde_json::json!({
+            "role": role,
+            "source_endpoint": endpoint_id,
+            "connection": "standalone_usb",
+            "required": true,
+            "evidence_capture": evidence_capture
+        });
+        write_test_json_file(&root.join("manifest.json"), &manifest)
     }
 
     fn promoted_fixture_report_for_requirement(
@@ -15139,17 +15607,15 @@ mod tests {
         let receipt = validate_lane_captures(dir.path())?;
 
         assert!(receipt.success);
-        assert_eq!(
-            receipt.required_capture_count,
-            passive_capture_requirements().len()
-        );
+        let requirements = passive_capture_requirements_for_lane(dir.path());
+        assert_eq!(receipt.required_capture_count, requirements.len());
         assert_eq!(
             receipt.validated_capture_count,
             receipt.required_capture_count
         );
         assert!(receipt.total_reports > 0);
         assert_eq!(receipt.rejected_reports, 0);
-        for requirement in passive_capture_requirements() {
+        for requirement in requirements {
             assert!(receipt.captures.iter().any(|entry| {
                 entry.fixture_id == requirement.fixture_id
                     && path_string_ends_with(&entry.capture, requirement.relative_path)
@@ -15258,9 +15724,9 @@ mod tests {
         );
         assert_eq!(
             json_u64(&receipt, "fixture_count"),
-            Some(passive_capture_requirements().len() as u64)
+            Some(passive_capture_requirements_for_lane(dir.path()).len() as u64)
         );
-        for requirement in passive_capture_requirements() {
+        for requirement in passive_capture_requirements_for_lane(dir.path()) {
             assert!(
                 fixture_dir
                     .join(format!("{}.json", requirement.fixture_id))
@@ -15276,7 +15742,7 @@ mod tests {
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ci/hardware/moza-r5/README.md");
         let readme = fs::read_to_string(&readme_path)?;
 
-        for requirement in passive_capture_requirements() {
+        for requirement in default_passive_capture_requirements() {
             assert!(
                 readme.contains(requirement.relative_path),
                 "expected {} to document {}",
@@ -15354,6 +15820,56 @@ mod tests {
         assert_eq!(json_bool(&manifest, "simulator_validated"), Some(false));
         assert_eq!(json_bool(&manifest, "high_torque_validated"), Some(false));
         assert_eq!(json_bool(&manifest, "release_ready"), Some(false));
+        Ok(())
+    }
+
+    #[test]
+    fn manifest_topology_contract_uses_declared_roles_not_fixed_kit() -> TestResult {
+        let mut manifest = sample_lane_manifest("not_started", false, false);
+        let controls = manifest
+            .pointer_mut("/topology/logical_controls")
+            .and_then(Value::as_object_mut)
+            .ok_or("expected topology logical_controls object")?;
+        controls.clear();
+        controls.insert(
+            "steering".to_string(),
+            serde_json::json!({
+                "role": "steering",
+                "source_endpoint": "moza-r5-if2",
+                "connection": "wheelbase_hub",
+                "required": true,
+                "evidence_capture": "captures/r5-steering-sweep.jsonl"
+            }),
+        );
+        controls.insert(
+            "brake".to_string(),
+            serde_json::json!({
+                "role": "brake",
+                "source_endpoint": "moza-r5-if2",
+                "connection": "wheelbase_hub",
+                "required": true,
+                "evidence_capture": "captures/r5-brake-only-sweep.jsonl"
+            }),
+        );
+
+        assert!(manifest_topology_is_logical_role_model(&manifest));
+
+        let controls = manifest
+            .pointer_mut("/topology/logical_controls")
+            .and_then(Value::as_object_mut)
+            .ok_or("expected topology logical_controls object")?;
+        controls.insert(
+            "unmapped".to_string(),
+            serde_json::json!({
+                "role": "unmapped",
+                "source_endpoint": "moza-r5-if2",
+                "connection": "wheelbase_hub",
+                "required": true,
+                "evidence_capture": "captures/r5-brake-only-sweep.jsonl"
+            }),
+        );
+
+        assert!(!manifest_topology_is_logical_role_model(&manifest));
         Ok(())
     }
 
@@ -19605,6 +20121,24 @@ mod tests {
     fn verify_bundle_passive_rejects_promoted_standalone_hbp_fixture_pid_mismatch() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_minimal_passive_bundle(dir.path())?;
+        declare_standalone_control_topology(
+            dir.path(),
+            "handbrake",
+            "handbrake",
+            "moza-hbp-standalone",
+            "standalone_handbrake",
+            product_ids::HBP_HANDBRAKE,
+            "captures/hbp-standalone-sweep.jsonl",
+        )?;
+        write_text_file(
+            &dir.path().join("captures/hbp-standalone-sweep.jsonl"),
+            &format!(
+                "{}\n{}",
+                capture_line(product_ids::HBP_HANDBRAKE, "01000000"),
+                capture_line(product_ids::HBP_HANDBRAKE, "01FFFF01")
+            ),
+        )?;
+        refresh_passive_parser_receipts(dir.path())?;
         let fixture_path = dir.path().join("fixtures/hbp_standalone_sweep.json");
         let mut fixture = read_json_path(&fixture_path)?;
         fixture["product_ids"] = serde_json::json!({"0x0014": 1});
@@ -19704,28 +20238,59 @@ mod tests {
     }
 
     #[test]
-    fn verify_bundle_passive_requires_full_stack_enumeration_receipts() -> TestResult {
+    fn verify_bundle_passive_accepts_hub_topology_without_standalone_enumeration() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_minimal_passive_bundle(dir.path())?;
-        write_test_json_file(
-            &dir.path().join("moza-probe.json"),
-            &serde_json::json!({
-                "success": true,
-                "no_ffb_writes": true,
-                "no_serial_config_commands": true,
-                "no_firmware_or_dfu_commands": true,
-                "devices": [sample_r5_json_device(), sample_srp_json_device()]
-            }),
-        )?;
+        let r5_device = sample_trusted_r5_json_device();
+        for artifact in [
+            "device-list.json",
+            "moza-probe.json",
+            "hid-list.json",
+            "descriptor.json",
+        ] {
+            let mut receipt = read_json_path(&dir.path().join(artifact))?;
+            receipt["devices"] = serde_json::json!([r5_device.clone()]);
+            write_test_json_file(&dir.path().join(artifact), &receipt)?;
+        }
 
         let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
 
-        assert!(!receipt.success);
+        assert!(receipt.success);
         assert!(
             receipt
                 .gates
                 .iter()
-                .any(|gate| { gate.name == "moza_stack_observed" && gate.status == "fail" })
+                .any(|gate| { gate.name == "moza_topology_observed" && gate.status == "pass" })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_passive_uses_declared_topology_without_placeholder_artifacts() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        let mut manifest = read_json_path(&dir.path().join("manifest.json"))?;
+        manifest
+            .pointer_mut("/topology/logical_controls")
+            .and_then(Value::as_object_mut)
+            .ok_or("expected topology logical_controls object")?
+            .remove("clutch");
+        write_test_json_file(&dir.path().join("manifest.json"), &manifest)?;
+        fs::remove_file(dir.path().join("captures/r5-clutch-only-sweep.jsonl"))?;
+        refresh_passive_parser_receipts(dir.path())?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
+
+        assert!(
+            receipt.success,
+            "{}",
+            serde_json::to_string_pretty(&receipt)?
+        );
+        assert!(
+            receipt
+                .artifacts
+                .iter()
+                .all(|artifact| artifact.path != "captures/r5-clutch-only-sweep.jsonl")
         );
         Ok(())
     }
@@ -20173,12 +20738,11 @@ mod tests {
     }
 
     #[test]
-    fn verify_bundle_passive_requires_aggregated_clutch_sweep() -> TestResult {
+    fn verify_bundle_passive_requires_isolated_clutch_role_movement() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_minimal_passive_bundle(dir.path())?;
         write_text_file(
-            &dir.path()
-                .join("captures/srp-wheelbase-aggregated-sweep.jsonl"),
+            &dir.path().join("captures/r5-clutch-only-sweep.jsonl"),
             &format!(
                 "{}\n{}",
                 capture_line(
@@ -20187,7 +20751,7 @@ mod tests {
                 ),
                 capture_line(
                     product_ids::R5_V2,
-                    &wheelbase_full_report_hex(0x8000, 0xFFFF, 0x8000, 0, 0, 0, 0, 0, 0, 0)
+                    &wheelbase_full_report_hex(0x8001, 0x0000, 0x0000, 0, 0, 0, 0, 0, 0, 0)
                 )
             ),
         )?;
@@ -20208,6 +20772,15 @@ mod tests {
     fn verify_bundle_passive_requires_standalone_srp_capture_pid() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_minimal_passive_bundle(dir.path())?;
+        declare_standalone_control_topology(
+            dir.path(),
+            "throttle",
+            "throttle",
+            "moza-srp-standalone",
+            "standalone_pedals",
+            product_ids::SR_P_PEDALS,
+            "captures/srp-standalone-sweep.jsonl",
+        )?;
         write_text_file(
             &dir.path().join("captures/srp-standalone-sweep.jsonl"),
             &format!(
@@ -20248,6 +20821,15 @@ mod tests {
     fn verify_bundle_passive_requires_standalone_hbp_capture_pid() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_minimal_passive_bundle(dir.path())?;
+        declare_standalone_control_topology(
+            dir.path(),
+            "handbrake",
+            "handbrake",
+            "moza-hbp-standalone",
+            "standalone_handbrake",
+            product_ids::HBP_HANDBRAKE,
+            "captures/hbp-standalone-sweep.jsonl",
+        )?;
         write_text_file(
             &dir.path().join("captures/hbp-standalone-sweep.jsonl"),
             &format!(

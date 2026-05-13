@@ -12,6 +12,7 @@
     "operator",
     "platform",
     "hardware",
+    "topology",
     "claims",
     "hardware_validated",
     "simulator_validated",
@@ -111,6 +112,130 @@
         }
       }
     },
+    "topology": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["primary_input_path", "endpoints", "logical_controls"],
+      "properties": {
+        "primary_input_path": {
+          "type": "string",
+          "enum": ["wheelbase_hub", "standalone_usb", "cross_device"]
+        },
+        "endpoints": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "kind",
+              "vendor_id",
+              "product_id",
+              "interface_number",
+              "usage_page",
+              "usage",
+              "output_capable"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "wheelbase_hub",
+                  "standalone_pedals",
+                  "standalone_handbrake",
+                  "button_box",
+                  "shifter",
+                  "other_hid"
+                ]
+              },
+              "vendor_id": {
+                "type": "string",
+                "pattern": "^0x[0-9A-Fa-f]{4}$"
+              },
+              "product_id": {
+                "type": "string",
+                "pattern": "^0x[0-9A-Fa-f]{4}$"
+              },
+              "interface_number": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "usage_page": {
+                "type": "string",
+                "pattern": "^0x[0-9A-Fa-f]{4}$"
+              },
+              "usage": {
+                "type": "string",
+                "pattern": "^0x[0-9A-Fa-f]{4}$"
+              },
+              "output_capable": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "logical_controls": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "role",
+              "source_endpoint",
+              "connection",
+              "required",
+              "evidence_capture"
+            ],
+            "properties": {
+              "role": {
+                "type": "string",
+                "enum": [
+                  "steering",
+                  "rim_controls",
+                  "throttle",
+                  "brake",
+                  "clutch",
+                  "handbrake",
+                  "shifter",
+                  "button_box"
+                ]
+              },
+              "rim": {
+                "type": "string",
+                "enum": ["KS", "ES"]
+              },
+              "source_endpoint": {
+                "type": "string",
+                "minLength": 1
+              },
+              "connection": {
+                "type": "string",
+                "enum": ["wheelbase_hub", "standalone_usb", "cross_device", "unknown"]
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "evidence_capture": {
+                "type": "string",
+                "pattern": "^captures/.+\\.jsonl$"
+              }
+            }
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "claims": {
       "type": "object",
       "additionalProperties": false,
@@ -156,9 +281,11 @@
         "captures_dir",
         "capture_r5_idle",
         "capture_r5_steering_sweep",
-        "capture_srp_wheelbase_aggregated_sweep",
-        "capture_srp_standalone_sweep",
-        "capture_hbp_standalone_sweep",
+        "capture_r5_throttle_only_sweep",
+        "capture_r5_brake_only_sweep",
+        "capture_r5_clutch_only_sweep",
+        "capture_r5_handbrake_only_sweep",
+        "capture_r5_aggregated_idle_after_controls",
         "capture_ks_controls",
         "capture_es_controls",
         "parser_fixture_validation",
@@ -218,17 +345,25 @@
           "type": "string",
           "const": "captures/r5-steering-sweep.jsonl"
         },
-        "capture_srp_wheelbase_aggregated_sweep": {
+        "capture_r5_throttle_only_sweep": {
           "type": "string",
-          "const": "captures/srp-wheelbase-aggregated-sweep.jsonl"
+          "const": "captures/r5-throttle-only-sweep.jsonl"
         },
-        "capture_srp_standalone_sweep": {
+        "capture_r5_brake_only_sweep": {
           "type": "string",
-          "const": "captures/srp-standalone-sweep.jsonl"
+          "const": "captures/r5-brake-only-sweep.jsonl"
         },
-        "capture_hbp_standalone_sweep": {
+        "capture_r5_clutch_only_sweep": {
           "type": "string",
-          "const": "captures/hbp-standalone-sweep.jsonl"
+          "const": "captures/r5-clutch-only-sweep.jsonl"
+        },
+        "capture_r5_handbrake_only_sweep": {
+          "type": "string",
+          "const": "captures/r5-handbrake-only-sweep.jsonl"
+        },
+        "capture_r5_aggregated_idle_after_controls": {
+          "type": "string",
+          "const": "captures/r5-aggregated-idle-after-controls.jsonl"
         },
         "capture_ks_controls": {
           "type": "string",

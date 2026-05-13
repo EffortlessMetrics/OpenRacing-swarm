@@ -85,6 +85,8 @@ continuing. Do not create captures from an empty or non-Moza lane.
 The passive lane must observe:
 
 - R5 wheelbase PID `0x0014` or `0x0004`
+- standalone SR-P PID `0x0003`, only if direct-plug topology is declared
+- standalone HBP PID `0x0022`, only if direct-plug topology is declared
 - Moza VID `0x346E`
 
 Standalone SR-P PID `0x0003` and standalone HBP PID `0x0022` are expected only
@@ -145,20 +147,7 @@ wheelctl moza capture-input `
   --json-out "$LANE/captures/r5-steering-sweep.jsonl"
 ```
 
-### SR-P Through R5 Base/Hub
-
-Gesture: sweep throttle, brake, and clutch through the R5 aggregated input path.
-This combined capture proves the through-base topology is active; use the
-isolated captures below to assign fields safely.
-
-```powershell
-wheelctl moza capture-input `
-  --device <r5> `
-  --duration-ms 10000 `
-  --json-out "$LANE/captures/srp-wheelbase-aggregated-sweep.jsonl"
-```
-
-### Isolated Throttle Through R5
+### Throttle Through R5 Hub
 
 Gesture: 5 seconds idle, throttle 0->100->0 slowly, 5 seconds idle. Do not move
 the wheel, brake, clutch, or handbrake.
@@ -170,7 +159,7 @@ wheelctl moza capture-input `
   --json-out "$LANE/captures/r5-throttle-only-sweep.jsonl"
 ```
 
-### Isolated Brake Through R5
+### Brake Through R5 Hub
 
 Gesture: 5 seconds idle, brake 0->100->0 slowly, 5 seconds idle. Do not move the
 wheel, throttle, clutch, or handbrake.
@@ -182,7 +171,7 @@ wheelctl moza capture-input `
   --json-out "$LANE/captures/r5-brake-only-sweep.jsonl"
 ```
 
-### Isolated Clutch Through R5
+### Clutch Through R5 Hub
 
 Gesture: 5 seconds idle, clutch 0->100->0 slowly, 5 seconds idle. Do not move
 the wheel, throttle, brake, or handbrake.
@@ -194,7 +183,7 @@ wheelctl moza capture-input `
   --json-out "$LANE/captures/r5-clutch-only-sweep.jsonl"
 ```
 
-### Isolated Handbrake Through R5
+### HBP Through R5 Hub
 
 Gesture: 5 seconds idle, handbrake 0->100->0 slowly, 5 seconds idle. Do not move
 the wheel, throttle, brake, or clutch.
@@ -219,12 +208,12 @@ wheelctl moza capture-input `
 
 ### Optional SR-P Standalone USB
 
-Gesture: connect SR-P directly over USB, then sweep throttle and brake. Sweep
-clutch if present, but standalone reports may not expose it.
+Capture this only when SR-P is intentionally connected as a standalone USB
+endpoint and the manifest topology declares `standalone_usb` evidence.
 
 ```powershell
 wheelctl moza capture-input `
-  --device <srp-standalone> `
+  --device <srp> `
   --duration-ms 10000 `
   --json-out "$LANE/captures/srp-standalone-sweep.jsonl"
 ```
@@ -233,7 +222,8 @@ Skip this artifact when SR-P is attached only through the R5 base/hub.
 
 ### Optional HBP Standalone USB
 
-Gesture: connect HBP directly over USB, then sweep the lever across its range.
+Capture this only when HBP is intentionally connected as a standalone USB
+endpoint and the manifest topology declares `standalone_usb` evidence.
 
 ```powershell
 wheelctl moza capture-input `

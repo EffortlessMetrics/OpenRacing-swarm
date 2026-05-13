@@ -61,9 +61,11 @@ Representative missing artifacts included:
 - `descriptor.json`
 - `captures/r5-idle.jsonl`
 - `captures/r5-steering-sweep.jsonl`
-- `captures/srp-wheelbase-aggregated-sweep.jsonl`
-- `captures/srp-standalone-sweep.jsonl`
-- `captures/hbp-standalone-sweep.jsonl`
+- `captures/r5-throttle-only-sweep.jsonl`
+- `captures/r5-brake-only-sweep.jsonl`
+- `captures/r5-clutch-only-sweep.jsonl`
+- `captures/r5-handbrake-only-sweep.jsonl`
+- `captures/r5-aggregated-idle-after-controls.jsonl`
 - `captures/ks-controls.jsonl`
 - `captures/es-controls.jsonl`
 - `parser-fixture-validation.json`

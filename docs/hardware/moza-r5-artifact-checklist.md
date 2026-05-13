@@ -27,9 +27,9 @@ The only valid lane completion states are:
 |-----------------------|--------------------------------|----------------------------|--------------------------|
 | Name Steven's target stack exactly | `wheelctl moza init-lane` writes `manifest.json` with R5, KS, ES, SR-P, HBP, Windows, HID-only transport | `manifest.schema.json`, `verify-bundle --stage passive`, `promote-manifest` | Schema and starter docs exist; no dated hardware manifest is checked in |
 | Keep research separate from validation | `docs/hardware/moza-validation-matrix.md` lists researched coverage as source/code verified only | Matrix row changes only after receipts and promotion | Matrix says `Not started`, hardware No, simulator No |
-| Passive device enumeration | `wheelctl device list` -> `device-list.json`; `wheelctl moza probe` -> `moza-probe.json`; `hid-capture list --vendor 0x346E` -> `hid-list.json` | Passive verifier requires R5 PID plus standalone SR-P and HBP records in enumeration receipts | Commands and gates exist; no real devices observed in repo |
+| Passive device enumeration | `wheelctl device list` -> `device-list.json`; `wheelctl moza probe` -> `moza-probe.json`; `hid-capture list --vendor 0x346E` -> `hid-list.json` | Passive verifier requires the manifest-declared topology endpoints; the primary Moza path is R5 hub evidence, with standalone SR-P/HBP required only for direct-plug topology | Commands and gates exist; no real devices observed in repo |
 | Descriptor capture | `wheelctl moza descriptor` -> `descriptor.json`; use `--device <r5> --report-descriptor-hex` when Windows cannot expose bytes | Passive verifier checks descriptor source, CRC, serial presence, manufacturer, interface, usage, input lengths, output report `0x20` with 8-byte report length, feature reports `0x03`/`0x11` | Command and docs exist; no real descriptor receipt exists |
-| Passive input capture | `wheelctl moza capture-input` writes `captures/r5-idle.jsonl`, `captures/r5-steering-sweep.jsonl`, `captures/srp-wheelbase-aggregated-sweep.jsonl`, `captures/srp-standalone-sweep.jsonl`, `captures/hbp-standalone-sweep.jsonl`, `captures/ks-controls.jsonl`, and `captures/es-controls.jsonl` | `validate-captures` checks parser success, expected product IDs, axis movement, rim discriminators, KS/ES controls, SR-P clutch distinction, per-line no-output assertions | Capture command and verifier exist; no real captures exist |
+| Passive input capture | `wheelctl moza capture-input` writes `captures/r5-idle.jsonl`, isolated through-R5 role captures, `captures/r5-aggregated-idle-after-controls.jsonl`, `captures/ks-controls.jsonl`, and `captures/es-controls.jsonl` | `validate-captures` checks parser success, expected product IDs, role evidence movement, rim controls, per-line no-output assertions, and topology-declared optional direct-plug captures | Capture command and verifier exist; no real captures exist |
 | Parser fixture promotion | `wheelctl moza validate-captures` -> `parser-fixture-validation.json`; `wheelctl moza promote-fixtures` -> `fixture-promotion.json` and sanitized fixtures under `crates/hid-moza-protocol/fixtures/...` | Passive verifier checks fixture coverage, sanitization, PID consistency, and parser replay equality from lane-relative fixtures or repo-relative `crates/hid-moza-protocol/fixtures/...` paths; `cargo test -p racing-wheel-hid-moza-protocol promoted_capture_fixtures_replay_through_moza_parser` also covers promoted fixtures | Replay harness exists with synthetic smoke fixture; no real promoted Moza fixture set exists |
 | Passive promotion | `wheelctl moza verify-bundle --stage passive` -> `passive-verification.json`; `wheelctl moza promote-manifest --stage passive` -> `manifest-promotion-passive.json` | `wheelctl moza audit-lane --stage passive`; manifest moves to `passive_capture_ready` without hardware/simulator claims | Commands and gates exist; no real passive verification receipt exists |
 | Zero torque | `wheelctl moza zero --repeat 100 --hz 1000` -> `zero-torque-proof.json` | Zero verifier checks same-lane `receipt_path`, valid timestamp, real HID opened, only report `0x20` zero payload, no high torque, no feature reports, exact write accounting, final zero | Command and gate exist; no real zero receipt exists |
@@ -57,9 +57,11 @@ descriptor.json
 captures
 captures/r5-idle.jsonl
 captures/r5-steering-sweep.jsonl
-captures/srp-wheelbase-aggregated-sweep.jsonl
-captures/srp-standalone-sweep.jsonl
-captures/hbp-standalone-sweep.jsonl
+captures/r5-throttle-only-sweep.jsonl
+captures/r5-brake-only-sweep.jsonl
+captures/r5-clutch-only-sweep.jsonl
+captures/r5-handbrake-only-sweep.jsonl
+captures/r5-aggregated-idle-after-controls.jsonl
 captures/ks-controls.jsonl
 captures/es-controls.jsonl
 parser-fixture-validation.json
@@ -124,7 +126,7 @@ wheelctl support-bundle --device <r5> --moza-lane
 Before marking the lane complete, answer each question from actual files in `ci/hardware/moza-r5/<date>/`:
 
 - Does every required artifact exist under one dated lane directory?
-- Does every passive receipt identify the same R5 PID as `manifest.json`, plus standalone SR-P and HBP where required?
+- Does every passive receipt identify the same R5 PID as `manifest.json`, plus any standalone SR-P/HBP endpoints only when the topology declares direct-plug coverage?
 - Did every passive command declare no HID output, no serial config, and no firmware or DFU command?
 - Do the real captures prove steering, pedals, clutch behavior, HBP, KS, and ES controls rather than only parser success?
 - Did fixture promotion sanitize local HID paths and raw serial information?

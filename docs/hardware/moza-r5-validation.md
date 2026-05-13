@@ -5,8 +5,8 @@ This document defines the first OpenRacing real-hardware validation lane for Ste
 - Moza R5 wheelbase, PID `0x0004` or `0x0014`
 - Moza KS wheel
 - Moza ES wheel
-- Moza SR-P pedals, standalone USB and wheelbase pedal-port aggregation when available
-- Moza HBP handbrake, standalone USB
+- Moza SR-P pedals through the R5 hub, with standalone USB as optional direct-plug evidence
+- Moza HBP handbrake through the R5 hub, with standalone USB as optional direct-plug evidence
 - Windows over USB HID
 
 OpenRacing is still in pre-validation until this lane has real receipts. The existing Moza VID/PID table, parsers, protocol handler, direct torque encoder, and safety gates are research-backed implementation scaffolding. They are not a claim that Steven's hardware has passed.
@@ -51,9 +51,11 @@ ci/hardware/moza-r5/<date>/
   captures/
     r5-idle.jsonl
     r5-steering-sweep.jsonl
-    srp-wheelbase-aggregated-sweep.jsonl
-    srp-standalone-sweep.jsonl
-    hbp-standalone-sweep.jsonl
+    r5-throttle-only-sweep.jsonl
+    r5-brake-only-sweep.jsonl
+    r5-clutch-only-sweep.jsonl
+    r5-handbrake-only-sweep.jsonl
+    r5-aggregated-idle-after-controls.jsonl
     ks-controls.jsonl
     es-controls.jsonl
   parser-fixture-validation.json
@@ -120,7 +122,7 @@ If Windows cannot expose the raw HID report descriptor, paste descriptor hex fro
 wheelctl moza descriptor --device <r5> --report-descriptor-hex "<hex bytes>" --json-out ci/hardware/moza-r5/<date>/descriptor.json
 ```
 
-Use the vendor-wide `wheelctl moza descriptor` command for the lane receipt so `descriptor.json` contains the R5, standalone SR-P, and standalone HBP records. When Windows cannot expose the raw R5 report descriptor, rerun it with `--device <r5>` and `--report-descriptor-hex`; the receipt preserves the vendor-wide Moza records and applies the supplied descriptor bytes only to the one selected R5 record. `hid-capture descriptor --vendor 0x346E` is still an accepted lower-level producer for the same receipt shape, but the lane runbook uses the wheelctl command so all Moza receipts share one command surface.
+Use the vendor-wide `wheelctl moza descriptor` command for the lane receipt so `descriptor.json` contains the observed Moza records. When Windows cannot expose the raw R5 report descriptor, rerun it with `--device <r5>` and `--report-descriptor-hex`; the receipt preserves the vendor-wide Moza records and applies the supplied descriptor bytes only to the one selected R5 record. `hid-capture descriptor --vendor 0x346E` is still an accepted lower-level producer for the same receipt shape, but the lane runbook uses the wheelctl command so all Moza receipts share one command surface.
 
 Required R5 descriptor fields:
 
@@ -143,16 +145,16 @@ Required R5 descriptor fields:
 }
 ```
 
-The passive verifier requires the R5 VID/PID to appear in `device-list.json`, `moza-probe.json`, `hid-list.json`, and `descriptor.json`, and it requires standalone SR-P (`0x0003`) and HBP (`0x0022`) VID/PID records in those same enumeration/descriptor receipts. The descriptor record must include a descriptor source (`linux_sysfs` or `operator_supplied_hex`), descriptor CRC, serial-presence flag, manufacturer, interface number, usage page, expected R5 input lengths, output report `0x20` with 8-byte report length, and staged feature reports `0x03`/`0x11`. Descriptor commands parse supplied or sysfs descriptor bytes into report lengths and IDs; they set `report_metadata_source: "report_descriptor_parsed"` only when that metadata came from descriptor bytes. Protocol-expected report metadata is passive evidence only. Direct-mode descriptor trust requires descriptor-derived report metadata in lane `descriptor.json` plus stored `report_descriptor_hex` whose CRC, parsed report IDs, and parsed `0x20` output report length match the receipt; otherwise low-torque direct mode and simulator FFB smoke must use an explicit operator override. Passive receipts must come from the expected observation commands, have `success: true`, and declare `no_ffb_writes: true`, `no_serial_config_commands: true`, and `no_firmware_or_dfu_commands: true`; pure observation receipts (`moza-probe.json`, `hid-list.json`, `descriptor.json`, `parser-fixture-validation.json`, and `fixture-promotion.json`) must also declare `no_hid_device_opened: true`.
+The passive verifier requires the R5 VID/PID to appear in `device-list.json`, `moza-probe.json`, `hid-list.json`, and `descriptor.json`, then validates the manifest-declared topology endpoints and logical-control evidence. The default Moza path is `wheelbase_hub`: steering, rim controls, pedals, and handbrake are proven through the R5 aggregated HID endpoint. Standalone SR-P (`0x0003`) and HBP (`0x0022`) records are optional direct-plug evidence only when topology declares `connection: "standalone_usb"`. The descriptor record must include a descriptor source (`linux_sysfs` or `operator_supplied_hex`), descriptor CRC, serial-presence flag, manufacturer, interface number, usage page, expected R5 input lengths, output report `0x20` with 8-byte report length, and staged feature reports `0x03`/`0x11`. Descriptor commands parse supplied or sysfs descriptor bytes into report lengths and IDs; they set `report_metadata_source: "report_descriptor_parsed"` only when that metadata came from descriptor bytes. Protocol-expected report metadata is passive evidence only. Direct-mode descriptor trust requires descriptor-derived report metadata in lane `descriptor.json` plus stored `report_descriptor_hex` whose CRC, parsed report IDs, and parsed `0x20` output report length match the receipt; otherwise low-torque direct mode and simulator FFB smoke must use an explicit operator override. Passive receipts must come from the expected observation commands, have `success: true`, and declare `no_ffb_writes: true`, `no_serial_config_commands: true`, and `no_firmware_or_dfu_commands: true`; pure observation receipts (`moza-probe.json`, `hid-list.json`, `descriptor.json`, `parser-fixture-validation.json`, and `fixture-promotion.json`) must also declare `no_hid_device_opened: true`.
 
-The passive capture verifier is stricter than parse success. Every capture JSONL report line must include `command: "wheelctl moza capture-input"` plus per-line no-output assertions (`no_ffb_writes`, `no_output_reports`, `no_feature_reports`, `no_serial_config_commands`, and `no_firmware_or_dfu_commands`), device path/interface/usage metadata, VID/PID, report ID, report length, and raw report bytes. The manifest's `hardware.wheelbase_pid` is a hard consistency gate: all R5 enumeration records, wheelbase captures, promoted wheelbase parser fixtures, later output receipts, service receipts, and simulator writer receipts must match that exact R5 PID (`0x0004` or `0x0014`). Standalone captures are pinned too: `srp-standalone-sweep.jsonl` must contain SR-P PID `0x0003`, and `hbp-standalone-sweep.jsonl` must contain HBP PID `0x0022`. `srp-wheelbase-aggregated-sweep.jsonl` must show throttle, brake, and clutch variation; `srp-standalone-sweep.jsonl` must show throttle and brake variation because standalone SR-P reports may not expose clutch. `ks-controls.jsonl` must be full-length wheelbase reports with the KS discriminator and observed button, clutch-like, and rotary variation. `es-controls.jsonl` must be full-length wheelbase reports with the ES discriminator and observed button plus hat variation.
+The passive capture verifier is stricter than parse success. Every capture JSONL report line must include `command: "wheelctl moza capture-input"` plus per-line no-output assertions (`no_ffb_writes`, `no_output_reports`, `no_feature_reports`, `no_serial_config_commands`, and `no_firmware_or_dfu_commands`), device path/interface/usage metadata, VID/PID, report ID, report length, and raw report bytes. The manifest's `hardware.wheelbase_pid` is a hard consistency gate: all R5 enumeration records, wheelbase-hub captures, promoted wheelbase parser fixtures, later output receipts, service receipts, and simulator writer receipts must match that exact R5 PID (`0x0004` or `0x0014`). Default passive evidence uses isolated through-R5 captures for throttle, brake, clutch, and handbrake. Standalone captures are pinned only when declared in topology: `srp-standalone-sweep.jsonl` must contain SR-P PID `0x0003`, and `hbp-standalone-sweep.jsonl` must contain HBP PID `0x0022`. `ks-controls.jsonl` must be full-length wheelbase reports with observed KS button/direction movement. `es-controls.jsonl` must be full-length wheelbase reports with the ES discriminator and observed button plus hat variation.
 
 Done when:
 
 - The R5 appears as VID `0x346E`, PID `0x0004` or `0x0014`.
-- R5, standalone SR-P, and standalone HBP VID/PID records appear in every enumeration/descriptor receipt.
+- The R5 endpoint appears in every enumeration/descriptor receipt, and any standalone endpoints appear only when declared in topology.
 - KS and ES identity is inferred from wheelbase input reports, not USB PID.
-- SR-P and HBP standalone USB devices are observed when plugged in directly.
+- Direct-plug SR-P and HBP endpoints are observed only when that topology is declared.
 - Descriptor CRC is stored for later allowlist work.
 
 ## Phase 2: Passive Input Capture
@@ -162,9 +164,11 @@ No FFB output is allowed in this phase.
 ```powershell
 wheelctl moza capture-input --device <r5> --duration-ms 5000 --json-out ci/hardware/moza-r5/<date>/captures/r5-idle.jsonl
 wheelctl moza capture-input --device <r5> --duration-ms 10000 --json-out ci/hardware/moza-r5/<date>/captures/r5-steering-sweep.jsonl
-wheelctl moza capture-input --device <r5> --duration-ms 10000 --json-out ci/hardware/moza-r5/<date>/captures/srp-wheelbase-aggregated-sweep.jsonl
-wheelctl moza capture-input --device <srp> --duration-ms 10000 --json-out ci/hardware/moza-r5/<date>/captures/srp-standalone-sweep.jsonl
-wheelctl moza capture-input --device <hbp> --duration-ms 10000 --json-out ci/hardware/moza-r5/<date>/captures/hbp-standalone-sweep.jsonl
+wheelctl moza capture-input --device <r5> --duration-ms 10000 --json-out ci/hardware/moza-r5/<date>/captures/r5-throttle-only-sweep.jsonl
+wheelctl moza capture-input --device <r5> --duration-ms 10000 --json-out ci/hardware/moza-r5/<date>/captures/r5-brake-only-sweep.jsonl
+wheelctl moza capture-input --device <r5> --duration-ms 10000 --json-out ci/hardware/moza-r5/<date>/captures/r5-clutch-only-sweep.jsonl
+wheelctl moza capture-input --device <r5> --duration-ms 10000 --json-out ci/hardware/moza-r5/<date>/captures/r5-handbrake-only-sweep.jsonl
+wheelctl moza capture-input --device <r5> --duration-ms 5000 --json-out ci/hardware/moza-r5/<date>/captures/r5-aggregated-idle-after-controls.jsonl
 wheelctl moza capture-input --device <r5> --duration-ms 10000 --json-out ci/hardware/moza-r5/<date>/captures/ks-controls.jsonl
 wheelctl moza capture-input --device <r5> --duration-ms 10000 --json-out ci/hardware/moza-r5/<date>/captures/es-controls.jsonl
 ```
@@ -173,9 +177,9 @@ Done when:
 
 - Steering moves monotonically through full left/right sweeps.
 - Throttle, brake, clutch, and handbrake normalize correctly for observed paths.
-- HBP reports parse in every observed standalone layout.
+- HBP movement is proven for the declared connection path.
 - KS and ES controls map to stable button, hat, funky, clutch paddle, and encoder fields.
-- SR-P clutch exposure is resolved for standalone and wheelbase-aggregated paths.
+- SR-P clutch exposure is resolved for the declared connection path.
 
 ## Phase 3: Parser Fixture Promotion
 
@@ -194,9 +198,9 @@ When `verify-bundle` fails, its JSON receipt includes `next_commands` with the s
 
 Validate every passive capture before promoting fixtures. The verifier consumes `parser-fixture-validation.json` from `wheelctl moza validate-captures` as the lane summary and requires `fixture-promotion.json` from `wheelctl moza promote-fixtures`; it rejects a single passing idle capture as coverage for steering, pedals, HBP, KS, and ES. Promoted fixture entries may point to lane-relative files or repo-relative files under `crates/hid-moza-protocol/fixtures/...`, matching the documented parser fixture promotion command.
 
-`parser-fixture-validation.json` records each capture's required product IDs, required category, axis variation, exact discriminator values, any-of control groups, minimum full-report length, and `missing_requirements`. If passive validation fails, use those fields as the operator checklist before recapturing; they identify missing evidence such as an aggregated clutch sweep, standalone SR-P/HBP PID mismatch, KS rotary movement, ES hat movement, full-length wheelbase reports, or missing `capture-input` metadata.
+`parser-fixture-validation.json` records each capture's required product IDs, required category, axis variation, exact discriminator values, any-of control groups, minimum full-report length, and `missing_requirements`. If passive validation fails, use those fields as the operator checklist before recapturing; they identify missing evidence such as through-R5 role movement, standalone SR-P/HBP PID mismatch when direct-plug topology is declared, KS direction/button movement, ES hat movement, full-length wheelbase reports, or missing `capture-input` metadata.
 
-`verify-bundle --stage passive` also replays every required capture JSONL through the Moza parsers. The R5 captures must use the manifest-selected R5 PID, the standalone SR-P capture must use SR-P PID `0x0003`, and the standalone HBP capture must use HBP PID `0x0022`. The steering, SR-P aggregated, SR-P standalone, and HBP captures must show axis movement, while KS and ES control captures must be full wheelbase reports with the expected rim discriminator and control movement described above. Placeholder JSONL cannot satisfy passive evidence.
+`verify-bundle --stage passive` also replays every required capture JSONL through the Moza parsers. The R5 captures must use the manifest-selected R5 PID. Standalone captures must use their declared PIDs only when topology requests direct-plug coverage. The steering and isolated through-R5 role captures must show movement, while KS and ES control captures must be full wheelbase reports with the expected control movement described above. Placeholder JSONL cannot satisfy passive evidence.
 
 Promoted fixtures must cover every required passive capture and must not contain HID paths, raw serial numbers, or other per-user device identity fields.
 Once fixtures are promoted into `crates/hid-moza-protocol/fixtures/`, the parser crate replay test consumes them as normal cargo-test regression coverage. The checked-in `fixtures/synthetic/parser_replay_smoke.json` file only proves the fixture schema and replay harness; it is not real hardware evidence.
