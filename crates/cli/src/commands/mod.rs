@@ -387,6 +387,9 @@ pub enum MozaCommands {
         /// Operator-supplied HID report descriptor hex, used when the OS cannot expose raw bytes
         #[arg(long)]
         report_descriptor_hex: Option<String>,
+        /// File containing operator-supplied HID report descriptor hex
+        #[arg(long)]
+        report_descriptor_hex_file: Option<std::path::PathBuf>,
         /// Write the descriptor receipt to this JSON file
         #[arg(long)]
         json_out: Option<std::path::PathBuf>,

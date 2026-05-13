@@ -1172,11 +1172,51 @@ mod tests {
                 device,
                 descriptor_hex,
                 report_descriptor_hex,
+                report_descriptor_hex_file,
                 json_out,
             }) => {
                 assert_eq!(device.as_deref(), Some("0x0014"));
                 assert!(*descriptor_hex);
                 assert_eq!(report_descriptor_hex.as_deref(), Some("05010904"));
+                assert!(report_descriptor_hex_file.is_none());
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("descriptor.json")
+                );
+            }
+            _ => return Err("expected Moza Descriptor command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_moza_descriptor_with_report_descriptor_hex_file() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "moza",
+            "descriptor",
+            "--device",
+            "0x0004",
+            "--report-descriptor-hex-file",
+            "target/r5-report-descriptor.txt",
+            "--json-out",
+            "descriptor.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::Descriptor {
+                device,
+                descriptor_hex,
+                report_descriptor_hex,
+                report_descriptor_hex_file,
+                json_out,
+            }) => {
+                assert_eq!(device.as_deref(), Some("0x0004"));
+                assert!(!*descriptor_hex);
+                assert!(report_descriptor_hex.is_none());
+                assert_eq!(
+                    report_descriptor_hex_file.as_ref().and_then(|p| p.to_str()),
+                    Some("target/r5-report-descriptor.txt")
+                );
                 assert_eq!(
                     json_out.as_ref().and_then(|p| p.to_str()),
                     Some("descriptor.json")

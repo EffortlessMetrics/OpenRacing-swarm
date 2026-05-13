@@ -75,7 +75,6 @@ hid-capture list `
   --json-out "$LANE/hid-list.json"
 
 wheelctl moza descriptor `
-  --vendor 0x346E `
   --json-out "$LANE/descriptor.json"
 ```
 
@@ -113,8 +112,16 @@ Use the selected R5 device only for the supplied hex:
 ```powershell
 wheelctl moza descriptor `
   --device <r5-selector> `
-  --vendor 0x346E `
   --report-descriptor-hex "<hex bytes from USBTreeView>" `
+  --json-out "$LANE/descriptor.json"
+```
+
+If the descriptor bytes are easier to save as a text file, use the file form:
+
+```powershell
+wheelctl moza descriptor `
+  --device <r5-selector> `
+  --report-descriptor-hex-file "target/moza-r5-report-descriptor.txt" `
   --json-out "$LANE/descriptor.json"
 ```
 

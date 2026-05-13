@@ -116,13 +116,16 @@ wheelctl support-bundle --device <r5> --moza-lane ci/hardware/moza-r5/<date> --o
 
 `wheeld --hardware-lane moza-r5` labels service-side Moza readiness as part of `DeviceStatus`; if `--hardware-lane` points at a lane directory or `descriptor.json`, the service also reports descriptor CRC/source/trust from the receipt. When a lane directory contains stored `passive-verification.json`, `zero-verification.json`, or `smoke-ready-verification.json`, the service reports the highest stored receipt stage in `safety_state`/`safety_reason` as diagnostic context only; when `zero-verification.json`, `init-off.json`, and `init-standard.json` all pass, the state may say the low-torque gate receipts are observed while torque readiness remains disabled. It does not initialize Moza protocol or send reports. `wheelctl moza status` summarizes Moza HID identity, whether the selected device is output-capable, and the lane verifier state if `--lane` is supplied. `wheelctl device status --moza-lane --json-out` writes the service-facing `device-status.json` receipt with the same descriptor and stored-stage overlay when the status has a Moza VID/PID. `wheelctl support-bundle --device <r5> --moza-lane` writes `support-bundle.json` with device status snapshots and a Moza artifact index. These status paths leave `ffb_ready=false` and `safe_to_send_torque=false` until explicit init, zero, and torque receipts exist.
 
-If Windows cannot expose the raw HID report descriptor, paste descriptor hex from USBTreeView or an equivalent descriptor tool:
+If Windows cannot expose the raw HID report descriptor, paste descriptor hex
+from USBTreeView or an equivalent descriptor tool, or save the descriptor bytes
+as a text file:
 
 ```powershell
 wheelctl moza descriptor --device <r5> --report-descriptor-hex "<hex bytes>" --json-out ci/hardware/moza-r5/<date>/descriptor.json
+wheelctl moza descriptor --device <r5> --report-descriptor-hex-file target/moza-r5-report-descriptor.txt --json-out ci/hardware/moza-r5/<date>/descriptor.json
 ```
 
-Use the vendor-wide `wheelctl moza descriptor` command for the lane receipt so `descriptor.json` contains the observed Moza records. When Windows cannot expose the raw R5 report descriptor, rerun it with `--device <r5>` and `--report-descriptor-hex`; the receipt preserves the vendor-wide Moza records and applies the supplied descriptor bytes only to the one selected R5 record. `hid-capture descriptor --vendor 0x346E` is still an accepted lower-level producer for the same receipt shape, but the lane runbook uses the wheelctl command so all Moza receipts share one command surface.
+Use the vendor-wide `wheelctl moza descriptor` command for the lane receipt so `descriptor.json` contains the observed Moza records. When Windows cannot expose the raw R5 report descriptor, rerun it with `--device <r5>` and `--report-descriptor-hex` or `--report-descriptor-hex-file`; the receipt preserves the vendor-wide Moza records and applies the supplied descriptor bytes only to the one selected R5 record. `hid-capture descriptor --vendor 0x346E` is still an accepted lower-level producer for the same receipt shape, but the lane runbook uses the wheelctl command so all Moza receipts share one command surface.
 
 Required R5 descriptor fields:
 

@@ -163,6 +163,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             device,
             descriptor_hex,
             report_descriptor_hex,
+            report_descriptor_hex_file,
             json_out,
         } => {
             descriptor(
@@ -170,6 +171,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 device.as_deref(),
                 *descriptor_hex,
                 report_descriptor_hex.as_deref(),
+                report_descriptor_hex_file.as_deref(),
                 json_out.as_deref(),
             )
             .await
@@ -596,12 +598,15 @@ async fn descriptor(
     selector: Option<&str>,
     include_descriptor_hex: bool,
     report_descriptor_hex: Option<&str>,
+    report_descriptor_hex_file: Option<&Path>,
     json_out: Option<&Path>,
 ) -> Result<()> {
     let api = HidApi::new().context("failed to initialize HID API")?;
     let mut devices: Vec<_> = enumerate_moza_devices(&api, true, include_descriptor_hex);
+    let operator_descriptor_hex =
+        operator_report_descriptor_hex(report_descriptor_hex, report_descriptor_hex_file)?;
 
-    if let Some(hex) = report_descriptor_hex {
+    if let Some(hex) = operator_descriptor_hex.as_deref() {
         apply_operator_report_descriptor_to_selected_device(&mut devices, selector, hex)?;
     } else {
         devices.retain(|device| selector_matches(device, selector));
@@ -624,7 +629,11 @@ async fn descriptor(
         no_serial_config_commands: true,
         no_firmware_or_dfu_commands: true,
         descriptor_hex_included: include_descriptor_hex,
-        operator_descriptor_hex_supplied: report_descriptor_hex.is_some(),
+        operator_descriptor_hex_supplied: operator_descriptor_hex.is_some(),
+        operator_descriptor_hex_source: operator_descriptor_source(
+            report_descriptor_hex,
+            report_descriptor_hex_file,
+        ),
         devices,
         notes: vec![
             "descriptor metadata is read from enumeration/sysfs or operator-supplied descriptor hex only; no HID reports are sent".to_string(),
@@ -665,6 +674,67 @@ fn apply_operator_report_descriptor_to_selected_device(
             "--report-descriptor-hex selected device disappeared before descriptor metadata could be applied"
         ))
     }
+}
+
+fn operator_report_descriptor_hex(
+    inline_hex: Option<&str>,
+    hex_file: Option<&Path>,
+) -> Result<Option<String>> {
+    match (inline_hex, hex_file) {
+        (Some(_), Some(_)) => Err(anyhow!(
+            "use only one of --report-descriptor-hex or --report-descriptor-hex-file"
+        )),
+        (Some(hex), None) => Ok(Some(hex.to_string())),
+        (None, Some(path)) => read_report_descriptor_hex_file(path).map(Some),
+        (None, None) => Ok(None),
+    }
+}
+
+fn operator_descriptor_source(
+    inline_hex: Option<&str>,
+    hex_file: Option<&Path>,
+) -> Option<&'static str> {
+    if inline_hex.is_some() {
+        Some("inline")
+    } else if hex_file.is_some() {
+        Some("file")
+    } else {
+        None
+    }
+}
+
+fn read_report_descriptor_hex_file(path: &Path) -> Result<String> {
+    let text =
+        fs::read_to_string(path).with_context(|| format!("failed to read '{}'", path.display()))?;
+    let bytes = extract_hex_bytes_from_descriptor_text(&text)?;
+    if bytes.is_empty() {
+        return Err(anyhow!("no descriptor bytes found in '{}'", path.display()));
+    }
+    Ok(bytes_hex_compact(&bytes))
+}
+
+fn extract_hex_bytes_from_descriptor_text(text: &str) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    for line in text.lines() {
+        let without_comments = line.split("//").next().unwrap_or_default();
+        for token in without_comments.split(|c: char| c.is_whitespace() || c == ',') {
+            let token = token.trim();
+            if token.is_empty() || token.ends_with(':') {
+                continue;
+            }
+            let token = token
+                .strip_prefix("0x")
+                .or_else(|| token.strip_prefix("0X"))
+                .unwrap_or(token);
+            if token.len() != 2 || !token.chars().all(|c| c.is_ascii_hexdigit()) {
+                continue;
+            }
+            let byte = u8::from_str_radix(token, 16)
+                .with_context(|| format!("invalid descriptor byte token '{token}'"))?;
+            bytes.push(byte);
+        }
+    }
+    Ok(bytes)
 }
 
 async fn capture_input(
@@ -11378,6 +11448,8 @@ struct DescriptorReceipt {
     no_firmware_or_dfu_commands: bool,
     descriptor_hex_included: bool,
     operator_descriptor_hex_supplied: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    operator_descriptor_hex_source: Option<&'static str>,
     devices: Vec<MozaDeviceRecord>,
     notes: Vec<String>,
 }
@@ -16968,6 +17040,50 @@ mod tests {
                 .map(|crc| crc.starts_with("0x"))
                 .unwrap_or(false)
         );
+        assert_eq!(device.report_descriptor_hex.as_deref(), Some("05010904"));
+        Ok(())
+    }
+
+    #[test]
+    fn operator_descriptor_hex_file_extracts_usbtreeview_style_bytes() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("r5-report-descriptor.txt");
+        write_text_file(
+            &path,
+            "Report Descriptor:\n\
+             0000: 05 01 09 04 A1 01 // Usage Page, Usage, Collection\n\
+             0006: 85 01, 09 30\n",
+        )?;
+
+        let hex = read_report_descriptor_hex_file(&path)?;
+
+        assert_eq!(hex, "05010904A10185010930");
+        Ok(())
+    }
+
+    #[test]
+    fn operator_descriptor_hex_source_rejects_inline_and_file_together() -> TestResult {
+        let path = Path::new("r5-report-descriptor.txt");
+        let result = operator_report_descriptor_hex(Some("05 01"), Some(path));
+
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn operator_descriptor_hex_file_updates_device_descriptor_metadata() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("r5-report-descriptor.txt");
+        write_text_file(&path, "05 01 09 04")?;
+        let hex = operator_report_descriptor_hex(None, Some(&path))?
+            .ok_or("expected descriptor hex from file")?;
+        let descriptor = report_descriptor_from_operator_hex(&hex)?;
+        let mut device = sample_device();
+
+        device.apply_report_descriptor(descriptor, "operator_supplied_hex");
+
+        assert_eq!(device.descriptor_source, "operator_supplied_hex");
+        assert_eq!(device.report_descriptor_len, Some(4));
         assert_eq!(device.report_descriptor_hex.as_deref(), Some("05010904"));
         Ok(())
     }
