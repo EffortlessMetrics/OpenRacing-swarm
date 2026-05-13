@@ -11169,6 +11169,7 @@ fn analyze_lane_captures(lane: &Path) -> Result<LaneCaptureAnalysisReceipt> {
         .filter(|capture| !capture.control_evidence_ok)
         .map(|capture| capture.capture.clone())
         .collect::<Vec<_>>();
+    let role_evidence = lane_role_evidence_entries(lane, &captures);
     let success = failed_captures.is_empty() && missing_control_evidence.is_empty();
 
     Ok(LaneCaptureAnalysisReceipt {
@@ -11192,6 +11193,7 @@ fn analyze_lane_captures(lane: &Path) -> Result<LaneCaptureAnalysisReceipt> {
         idle_moving_words_le: idle.moving_words_le,
         failed_captures,
         missing_control_evidence,
+        role_evidence,
         captures,
         notes: vec![
             "analyze-lane reads stored JSONL reports only; no HID device is opened".to_string(),
@@ -11199,8 +11201,104 @@ fn analyze_lane_captures(lane: &Path) -> Result<LaneCaptureAnalysisReceipt> {
                 .to_string(),
             "control_evidence_ok uses the same parser-visible requirements as passive validation"
                 .to_string(),
+            "role_evidence derives semantic_status from manifest topology and parser-visible capture evidence; it does not promote lane receipts".to_string(),
         ],
     })
+}
+
+fn lane_role_evidence_entries(
+    lane: &Path,
+    captures: &[LaneCaptureAnalysisEntry],
+) -> Vec<LaneRoleEvidenceEntry> {
+    let Ok(manifest) = read_json_value(lane, "manifest.json") else {
+        return Vec::new();
+    };
+    let Some(controls) = manifest
+        .get("topology")
+        .and_then(|topology| topology.get("logical_controls"))
+        .and_then(Value::as_object)
+    else {
+        return Vec::new();
+    };
+    let capture_by_path = captures
+        .iter()
+        .map(|capture| (capture.capture.as_str(), capture))
+        .collect::<BTreeMap<_, _>>();
+    let mut entries = Vec::new();
+
+    for (control_key, control) in controls {
+        let required = json_bool(control, "required").unwrap_or(true);
+        let evidence_capture = json_string(control, "evidence_capture").map(str::to_string);
+        let capture = evidence_capture
+            .as_deref()
+            .and_then(|path| capture_by_path.get(path).copied());
+        let moving_required_axes = capture
+            .map(|capture| capture.moving_required_axes.clone())
+            .unwrap_or_default();
+        let missing_requirements = capture
+            .map(|capture| capture.missing_requirements.clone())
+            .unwrap_or_default();
+        let mut notes = Vec::new();
+        let semantic_status = role_semantic_status(required, capture, &mut notes);
+
+        entries.push(LaneRoleEvidenceEntry {
+            control: control_key.to_string(),
+            role: json_string(control, "role")
+                .unwrap_or("unknown")
+                .to_string(),
+            required,
+            rim: json_string(control, "rim").map(str::to_string),
+            source_endpoint: json_string(control, "source_endpoint").map(str::to_string),
+            connection: json_string(control, "connection").map(str::to_string),
+            evidence_capture,
+            semantic_status,
+            parser_visible: matches!(semantic_status, "proven" | "generic_aux"),
+            moving_required_axes,
+            missing_requirements,
+            notes,
+        });
+    }
+
+    entries
+}
+
+fn role_semantic_status(
+    required: bool,
+    capture: Option<&LaneCaptureAnalysisEntry>,
+    notes: &mut Vec<String>,
+) -> &'static str {
+    let Some(capture) = capture else {
+        if required {
+            notes.push("required role has no selected capture evidence".to_string());
+            return "unavailable";
+        }
+        notes.push("optional role has no selected capture evidence".to_string());
+        return "deferred";
+    };
+
+    if !capture.success {
+        notes.push("capture failed to parse or validate".to_string());
+        return "missing";
+    }
+    if !capture.control_evidence_ok {
+        notes.push(
+            "capture parsed, but no parser-visible control movement satisfied the role".to_string(),
+        );
+        return "missing";
+    }
+    if capture
+        .moving_required_axes
+        .iter()
+        .any(|axis| axis.starts_with("r5_v1_extended_"))
+    {
+        notes.push(
+            "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
+                .to_string(),
+        );
+        return "generic_aux";
+    }
+
+    "proven"
 }
 
 fn moving_required_axes(
@@ -11758,7 +11856,28 @@ struct LaneCaptureAnalysisReceipt {
     idle_moving_words_le: Vec<usize>,
     failed_captures: Vec<String>,
     missing_control_evidence: Vec<String>,
+    role_evidence: Vec<LaneRoleEvidenceEntry>,
     captures: Vec<LaneCaptureAnalysisEntry>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct LaneRoleEvidenceEntry {
+    control: String,
+    role: String,
+    required: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rim: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_endpoint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    connection: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    evidence_capture: Option<String>,
+    semantic_status: &'static str,
+    parser_visible: bool,
+    moving_required_axes: Vec<String>,
+    missing_requirements: Vec<String>,
     notes: Vec<String>,
 }
 
@@ -22505,6 +22624,11 @@ mod tests {
             .iter()
             .find(|entry| entry.capture == "captures/r5-throttle-only-sweep.jsonl")
             .ok_or("missing throttle analysis entry")?;
+        let throttle_role = receipt
+            .role_evidence
+            .iter()
+            .find(|entry| entry.control == "throttle")
+            .ok_or("missing throttle role evidence entry")?;
 
         assert!(!receipt.success);
         assert!(
@@ -22523,7 +22647,43 @@ mod tests {
                 .iter()
                 .any(|requirement| requirement.contains("variation in hub_control_axis group"))
         );
+        assert_eq!(throttle_role.role, "throttle");
+        assert_eq!(throttle_role.semantic_status, "missing");
+        assert!(!throttle_role.parser_visible);
+        assert_eq!(
+            throttle_role.evidence_capture.as_deref(),
+            Some("captures/r5-throttle-only-sweep.jsonl")
+        );
         Ok(())
+    }
+
+    #[test]
+    fn analyze_lane_role_status_marks_generic_extended_axes() {
+        let entry = LaneCaptureAnalysisEntry {
+            capture: "captures/r5-clutch-only-sweep.jsonl".to_string(),
+            fixture_id: "r5_clutch_only_sweep".to_string(),
+            success: true,
+            total_reports: 2,
+            decoded_reports: 2,
+            rejected_reports: 0,
+            moving_bytes: Vec::new(),
+            unique_moving_bytes_vs_idle: Vec::new(),
+            moving_words_le: Vec::new(),
+            unique_moving_words_le_vs_idle: Vec::new(),
+            moving_required_axes: vec!["r5_v1_extended_aux0_u16".to_string()],
+            control_evidence_ok: true,
+            missing_requirements: Vec::new(),
+        };
+        let mut notes = Vec::new();
+
+        let status = role_semantic_status(true, Some(&entry), &mut notes);
+
+        assert_eq!(status, "generic_aux");
+        assert!(
+            notes
+                .iter()
+                .any(|note| note.contains("semantic control naming remains unproven"))
+        );
     }
 
     #[test]
