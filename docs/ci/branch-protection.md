@@ -53,11 +53,9 @@ protection enabled. In the GitHub UI, configure:
 ## Required PR Checks
 
 Configure the `main` ruleset so pull requests cannot merge until the stable
-baseline summary and the selected Linux correctness checks complete
-successfully. `PR Required Baseline` is intentionally stable: it runs on every
-CI invocation, treats intentionally skipped path-scoped jobs as skipped, and
-fails when a job selected by the PR surface failed, was cancelled, or did not
-complete.
+baseline checks complete successfully. `PR Required Baseline` is intentionally
+stable: it runs on every CI invocation, depends only on the fast global checks,
+and publishes a fixed status before long path-scoped or advisory jobs finish.
 
 Global required checks:
 
@@ -69,8 +67,8 @@ Global required checks:
 - `track-compat-usage`
 
 `MSRV Check`, isolation builds, `Schemas & Trybuild`, and
-`Workspace Default Build (ubuntu-latest)` are selected by `PR Required
-Baseline` for ordinary Rust/workspace, dependency, CI, performance, release, and
+`Workspace Default Build (ubuntu-latest)` are selected by PR surface, path, or
+label for ordinary Rust/workspace, dependency, CI, performance, release, and
 `full-ci` PRs. Docs-only, Moza-focused, and UI-only PRs can skip broad Rust
 workspace gates when their focused checks cover the touched surface.
 
@@ -80,9 +78,8 @@ The regression and integration workflows (`Smoke Tests`, `User Journey Tests`,
 signals, but should be path-scoped or folded into the stable baseline before
 being made globally required for every ordinary PR.
 
-Additional path-scoped or label-scoped checks should be required by
-`PR Required Baseline` and by path-scoped rulesets only when the matching PR
-surface is present:
+Additional path-scoped or label-scoped checks should be required by path-scoped
+rulesets only when the matching PR surface is present:
 
 | PR surface | Required checks |
 | --- | --- |

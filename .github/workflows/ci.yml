@@ -1537,24 +1537,9 @@ jobs:
       - pr-change-filter
       - changelog-validation
       - docs-policy-checks
-      - msrv-check
-      - isolation-cli
-      - isolation-service
-      - isolation-plugins
-      - schemas-validation
-      - moza-focused-checks
-      - workspace-default
-      - feature-combinations
-      - dependency-governance
-      - lint-gates
-      - performance-gate
-      - security-audit
-      - final-validation
     if: always()
     env:
       NEEDS_JSON: ${{ toJson(needs) }}
-      EVENT_NAME: ${{ github.event_name }}
-      LABELS: ${{ github.event_name == 'pull_request' && join(github.event.pull_request.labels.*.name, ',') || '' }}
       DOCS_ONLY: ${{ needs.pr-change-filter.outputs.docs_only }}
       MOZ_PATHS: ${{ needs.pr-change-filter.outputs.moza_paths }}
       DEPENDENCY_PATHS: ${{ needs.pr-change-filter.outputs.dependency_paths }}
@@ -1564,7 +1549,7 @@ jobs:
       WORKSPACE_PATHS: ${{ needs.pr-change-filter.outputs.workspace_paths }}
 
     steps:
-      - name: Summarize selected PR gates
+      - name: Summarize baseline PR gates
         shell: python
         run: |
           import json
@@ -1572,15 +1557,6 @@ jobs:
           import sys
 
           needs = json.loads(os.environ["NEEDS_JSON"])
-          event_name = os.environ["EVENT_NAME"]
-          labels = {
-              label.strip()
-              for label in os.environ.get("LABELS", "").split(",")
-              if label.strip()
-          }
-
-          def flag(name: str) -> bool:
-              return os.environ.get(name, "").lower() == "true"
 
           def require(job: str) -> None:
               result = needs.get(job, {}).get("result")
@@ -1593,84 +1569,20 @@ jobs:
           require("changelog-validation")
           require("docs-policy-checks")
 
-          full_or_release = "full-ci" in labels or "release" in labels
-
-          if event_name != "pull_request":
-              selected_core = True
-              selected_moza = True
-              selected_dependency = True
-              selected_perf = True
-              selected_final = True
-          else:
-              selected_core = (
-                  flag("WORKSPACE_PATHS")
-                  or flag("DEPENDENCY_PATHS")
-                  or flag("CI_PATHS")
-                  or flag("PERF_PATHS")
-                  or full_or_release
-              )
-              selected_moza = (
-                  (flag("MOZ_PATHS") and not flag("DOCS_ONLY"))
-                  or "moza" in labels
-                  or "hardware" in labels
-                  or full_or_release
-              )
-              selected_dependency = (
-                  flag("DEPENDENCY_PATHS")
-                  or flag("CI_PATHS")
-                  or "dependency" in labels
-                  or full_or_release
-              )
-              selected_perf = (
-                  flag("PERF_PATHS")
-                  or flag("CI_PATHS")
-                  or "perf" in labels
-                  or full_or_release
-              )
-              selected_final = flag("CI_PATHS") or full_or_release
-              selected_schema = (
-                  flag("SCHEMA_PATHS")
-                  or flag("DEPENDENCY_PATHS")
-                  or flag("CI_PATHS")
-                  or full_or_release
-              )
-
-          if selected_core:
-              for job in (
-                  "msrv-check",
-                  "isolation-cli",
-                  "isolation-service",
-                  "isolation-plugins",
-                  "workspace-default",
-              ):
-                  require(job)
-
-          if selected_schema:
-              require("schemas-validation")
-
-          if selected_moza:
-              require("moza-focused-checks")
-
-          if selected_dependency:
-              for job in (
-                  "feature-combinations",
-                  "dependency-governance",
-                  "lint-gates",
-                  "security-audit",
-              ):
-                  require(job)
-
-          if selected_perf:
-              require("lint-gates")
-              require("performance-gate")
-
-          if selected_final:
-              require("final-validation")
-
           if failures:
-              print("Selected required PR gates failed or did not complete:")
+              print("Baseline PR gates failed or did not complete:")
               for failure in failures:
                   print(f"- {failure}")
               sys.exit(1)
 
-          print("Selected PR gates completed successfully.")
+          print("Baseline PR gates completed successfully.")
+          print(
+              "Surface flags: "
+              f"docs_only={os.environ.get('DOCS_ONLY', '')}, "
+              f"moza_paths={os.environ.get('MOZ_PATHS', '')}, "
+              f"dependency_paths={os.environ.get('DEPENDENCY_PATHS', '')}, "
+              f"ci_paths={os.environ.get('CI_PATHS', '')}, "
+              f"perf_paths={os.environ.get('PERF_PATHS', '')}, "
+              f"schema_paths={os.environ.get('SCHEMA_PATHS', '')}, "
+              f"workspace_paths={os.environ.get('WORKSPACE_PATHS', '')}"
+          )
