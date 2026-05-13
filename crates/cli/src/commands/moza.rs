@@ -3752,7 +3752,7 @@ fn next_commands_for_bundle_stage(
         .map(hex_u16)
         .unwrap_or_else(|| "0x0014".to_string());
     let mut commands = Vec::new();
-    push_passive_next_commands(&lane, &wheelbase_pid, &mut commands);
+    push_passive_next_commands(&lane, &wheelbase_pid, artifact_checks, &mut commands);
 
     if stage_rank(stage) >= stage_rank(MozaBundleStage::Zero) {
         push_zero_next_commands(&lane, &mut commands);
@@ -3782,7 +3782,12 @@ fn is_moza_lane_root(lane: &Path) -> bool {
         && !lane.join("manifest.json").is_file()
 }
 
-fn push_passive_next_commands(lane: &Path, wheelbase_pid: &str, commands: &mut Vec<String>) {
+fn push_passive_next_commands(
+    lane: &Path,
+    wheelbase_pid: &str,
+    artifact_checks: &[BundleArtifactCheck],
+    commands: &mut Vec<String>,
+) {
     let lane_arg = command_arg(&lane.display().to_string());
     let fixture_dir = Path::new("crates/hid-moza-protocol/fixtures").join(format!(
         "moza-r5-{}",
@@ -3818,13 +3823,25 @@ fn push_passive_next_commands(lane: &Path, wheelbase_pid: &str, commands: &mut V
     ));
 
     for requirement in passive_capture_requirements_for_lane(lane) {
-        let (device, duration_ms) = passive_capture_next_command_hint(requirement.relative_path);
-        commands.push(format!(
-            "wheelctl moza capture-input --device {device} --duration-ms {duration_ms} --json-out {}",
-            lane_path_arg(lane, requirement.relative_path)
-        ));
+        if bundle_artifact_needs_regeneration(artifact_checks, requirement.relative_path) {
+            let (device, duration_ms) =
+                passive_capture_next_command_hint(requirement.relative_path);
+            commands.push(format!(
+                "wheelctl moza capture-input --device {device} --duration-ms {duration_ms} --json-out {}",
+                lane_path_arg(lane, requirement.relative_path)
+            ));
+        }
     }
 
+    commands.push(format!(
+        "wheelctl moza analyze-lane --lane {lane_arg} --json-out target/moza-lane-analysis.json"
+    ));
+    commands.push(format!(
+        "wheelctl moza sync-role-status --lane {lane_arg} --json-out target/moza-role-status-sync.json"
+    ));
+    commands.push(format!(
+        "wheelctl moza sync-role-status --lane {lane_arg} --check --json-out target/moza-role-status-check.json"
+    ));
     commands.push(format!(
         "wheelctl moza validate-captures --lane {lane_arg} --json-out {}",
         lane_path_arg(lane, "parser-fixture-validation.json")
@@ -3849,6 +3866,16 @@ fn push_passive_next_commands(lane: &Path, wheelbase_pid: &str, commands: &mut V
         "wheelctl moza audit-lane --lane {lane_arg} --stage passive --json-out {}",
         lane_path_arg(lane, audit_receipt_path(MozaBundleStage::Passive))
     ));
+}
+
+fn bundle_artifact_needs_regeneration(
+    artifact_checks: &[BundleArtifactCheck],
+    relative_path: &str,
+) -> bool {
+    artifact_checks
+        .iter()
+        .find(|check| check.path == relative_path)
+        .is_none_or(|check| check.status != "pass")
 }
 
 fn passive_capture_next_command_hint(relative_path: &str) -> (&'static str, u64) {
@@ -22138,6 +22165,44 @@ mod tests {
                 "passive next_commands must not include {forbidden}: {joined}"
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_failed_existing_capture_suggests_analysis_not_recapture() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        write_text_file(
+            &dir.path().join("captures/r5-throttle-only-sweep.jsonl"),
+            &format!(
+                "{}\n{}",
+                capture_line(
+                    product_ids::R5_V2,
+                    &wheelbase_full_report_hex(0x8000, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+                ),
+                capture_line(
+                    product_ids::R5_V2,
+                    &wheelbase_full_report_hex(0x8000, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+                )
+            ),
+        )?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
+
+        assert!(!receipt.success);
+        let joined = receipt.next_commands.join("\n");
+        assert!(
+            joined.contains("wheelctl moza analyze-lane"),
+            "failed existing captures should suggest offline lane analysis: {joined}"
+        );
+        assert!(
+            joined.contains("wheelctl moza sync-role-status"),
+            "failed existing captures should suggest semantic-status sync: {joined}"
+        );
+        assert!(
+            !joined.contains("wheelctl moza capture-input"),
+            "existing parseable captures should not be blindly recaptured from next_commands: {joined}"
+        );
         Ok(())
     }
 
