@@ -18711,6 +18711,64 @@ mod tests {
     }
 
     #[test]
+    fn verify_simulator_ffb_gate_rejects_virtual_output_log_evidence() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_simulator_artifacts(dir.path())?;
+        write_simulator_ffb_output_jsonl_mutated(
+            &dir.path().join("simulator-ffb-output.jsonl"),
+            240,
+            180,
+            60,
+            |_, record| {
+                if let Some(object) = record.as_object_mut() {
+                    object.insert(
+                        "writer_command".to_string(),
+                        serde_json::json!("wheelctl telemetry virtual-ffb-log"),
+                    );
+                    object.insert(
+                        "producer_command".to_string(),
+                        serde_json::json!("wheelctl telemetry virtual-ffb-log"),
+                    );
+                    object.insert("hardware_source".to_string(), serde_json::json!("virtual"));
+                    object.insert(
+                        "real_hardware_validated".to_string(),
+                        serde_json::json!(false),
+                    );
+                    object.insert(
+                        "real_simulator_validated".to_string(),
+                        serde_json::json!(false),
+                    );
+                    object.insert(
+                        "hardware_output_enabled".to_string(),
+                        serde_json::json!(false),
+                    );
+                    object.insert("no_hid_device_opened".to_string(), serde_json::json!(true));
+                    object.insert("no_ffb_writes".to_string(), serde_json::json!(true));
+                    object.insert(
+                        "virtual_output_enabled".to_string(),
+                        serde_json::json!(true),
+                    );
+                }
+            },
+        )?;
+        write_test_json_file(
+            &dir.path().join("simulator-ffb-smoke.json"),
+            &simulator_ffb_receipt(),
+        )?;
+
+        let gate = verify_simulator_ffb_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details.contains("output_log_provenance_valid=false")
+                || gate.details.contains("output_log_artifact_valid=false"),
+            "expected virtual output evidence rejection, got {}",
+            gate.details
+        );
+        Ok(())
+    }
+
+    #[test]
     fn verify_simulator_ffb_gate_requires_writer_provenance() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_simulator_artifacts(dir.path())?;
