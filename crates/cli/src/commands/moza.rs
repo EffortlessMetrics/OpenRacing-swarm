@@ -5981,6 +5981,8 @@ fn passive_capture_requirements() -> &'static [PassiveCaptureRequirement] {
         "r5_v1_extended_axis0_u16",
         "r5_v1_extended_axis1_u16",
         "r5_v1_extended_axis2_u16",
+        "r5_v1_extended_aux0_u16",
+        "r5_v1_extended_aux1_u16",
     ];
     const HUB_CONTROL_GROUPS: &[(&str, &[&str])] = &[("hub_control_axis", HUB_CONTROL_AXIS_ANY)];
     const BUTTONS_ANY: &[&str] = &["buttons_any_u8"];
@@ -11033,6 +11035,16 @@ impl CaptureValidationSummary {
                 report,
                 input_report::R5_V1_EXTENDED_AXIS2_START,
             );
+            self.update_report_axis(
+                "r5_v1_extended_aux0_u16",
+                report,
+                input_report::R5_V1_EXTENDED_AUX0_START,
+            );
+            self.update_report_axis(
+                "r5_v1_extended_aux1_u16",
+                report,
+                input_report::R5_V1_EXTENDED_AUX1_START,
+            );
         }
     }
 
@@ -14111,6 +14123,23 @@ mod tests {
         report[17] = 0x08;
         report[18] = button1;
         report[28] = direction;
+        bytes_hex_compact(&report)
+    }
+
+    fn live_r5_v1_extended_aux_report_hex(aux0: u16, aux1: u16) -> String {
+        let mut report = [0u8; 42];
+        report[0] = 0x01;
+        report[1..3].copy_from_slice(&0x7A37u16.to_le_bytes());
+        report[3..5].copy_from_slice(&0x8001u16.to_le_bytes());
+        report[5..7].copy_from_slice(&0x8000u16.to_le_bytes());
+        report[7..9].copy_from_slice(&0x8001u16.to_le_bytes());
+        report[9..11].copy_from_slice(&0x8001u16.to_le_bytes());
+        report[11..13].copy_from_slice(&0x8000u16.to_le_bytes());
+        report[13..15].copy_from_slice(&0x8001u16.to_le_bytes());
+        report[15..17].copy_from_slice(&0x8000u16.to_le_bytes());
+        report[17] = 0x08;
+        report[34..36].copy_from_slice(&aux0.to_le_bytes());
+        report[36..38].copy_from_slice(&aux1.to_le_bytes());
         bytes_hex_compact(&report)
     }
 
@@ -21025,6 +21054,50 @@ mod tests {
                 .axes
                 .iter()
                 .any(|axis| axis == "ks_hat_u8")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn validate_capture_records_live_r5_v1_auxiliary_hub_signals() -> TestResult {
+        let low = format!(
+            r#"{{"product_id":"0x0004","report_len":42,"data_hex":"{}"}}"#,
+            live_r5_v1_extended_aux_report_hex(0x0000, 0x8000)
+        );
+        let high = format!(
+            r#"{{"product_id":"0x0004","report_len":42,"data_hex":"{}"}}"#,
+            live_r5_v1_extended_aux_report_hex(0x1234, 0xFEDC)
+        );
+        let (_dir, path) = write_temp_capture(&[low.as_str(), high.as_str()])?;
+
+        let receipt = validate_capture_file(&path, None)?;
+
+        assert!(receipt.success);
+        let aux0 = receipt
+            .axis_ranges
+            .get("r5_v1_extended_aux0_u16")
+            .ok_or("expected aux0 axis stats")?;
+        let aux1 = receipt
+            .axis_ranges
+            .get("r5_v1_extended_aux1_u16")
+            .ok_or("expected aux1 axis stats")?;
+        assert_eq!(aux0.min, Some(0x0000));
+        assert_eq!(aux0.max, Some(0x1234));
+        assert_eq!(aux1.min, Some(0x8000));
+        assert_eq!(aux1.max, Some(0xFEDC));
+        assert_eq!(
+            receipt
+                .axis_ranges
+                .get("throttle_u16")
+                .and_then(|axis| axis.max),
+            Some(0)
+        );
+        assert_eq!(
+            receipt
+                .axis_ranges
+                .get("clutch_u16")
+                .and_then(|axis| axis.max),
+            Some(0)
         );
         Ok(())
     }

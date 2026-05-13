@@ -53,6 +53,16 @@ pub mod input_report {
     pub const R5_V1_EXTENDED_BUTTONS_START: usize = 17;
     /// Byte offset for the live R5 V1 + KS direction byte observed during KS capture.
     pub const R5_V1_EXTENDED_HAT_START: usize = 28;
+    /// Byte offset for the first auxiliary live R5 V1 hub signal observed in
+    /// isolated through-wheelbase control captures.
+    ///
+    /// This is intentionally not assigned a pedal/rim semantic label yet. It is
+    /// useful as generic passive evidence until isolated captures and descriptor
+    /// evidence prove a stable control role.
+    pub const R5_V1_EXTENDED_AUX0_START: usize = 34;
+    /// Byte offset for the second auxiliary live R5 V1 hub signal observed in
+    /// isolated through-wheelbase control captures.
+    pub const R5_V1_EXTENDED_AUX1_START: usize = 36;
 }
 
 /// Minimum bytes required for a valid wheelbase report containing steering,
@@ -445,6 +455,12 @@ mod tests {
         report[input_report::R5_V1_EXTENDED_AXIS2_START
             ..input_report::R5_V1_EXTENDED_AXIS2_START + 2]
             .copy_from_slice(&0xDEF0u16.to_le_bytes());
+        report
+            [input_report::R5_V1_EXTENDED_AUX0_START..input_report::R5_V1_EXTENDED_AUX0_START + 2]
+            .copy_from_slice(&0x2468u16.to_le_bytes());
+        report
+            [input_report::R5_V1_EXTENDED_AUX1_START..input_report::R5_V1_EXTENDED_AUX1_START + 2]
+            .copy_from_slice(&0x1357u16.to_le_bytes());
         report[input_report::R5_V1_EXTENDED_BUTTONS_START] = 0x08;
         report[input_report::R5_V1_EXTENDED_BUTTONS_START + 1] = 0x04;
         report[input_report::R5_V1_EXTENDED_BUTTONS_START + 10] = 0x80;
@@ -465,6 +481,14 @@ mod tests {
         assert_eq!(
             parse_axis(&report, input_report::R5_V1_EXTENDED_AXIS2_START),
             Some(0xDEF0)
+        );
+        assert_eq!(
+            parse_axis(&report, input_report::R5_V1_EXTENDED_AUX0_START),
+            Some(0x2468)
+        );
+        assert_eq!(
+            parse_axis(&report, input_report::R5_V1_EXTENDED_AUX1_START),
+            Some(0x1357)
         );
         assert_eq!(parsed.pedals.throttle, 0);
         assert_eq!(parsed.pedals.brake, 0);
