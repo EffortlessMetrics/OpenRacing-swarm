@@ -304,6 +304,25 @@ pub enum TelemetryCommands {
         #[arg(long, default_value = "0")]
         duration_ms: u64,
     },
+
+    /// Replay normalized telemetry into a virtual FFB output log with no hardware writes
+    VirtualFfbLog {
+        /// JSON/JSONL normalized telemetry recording or fixture
+        #[arg(long)]
+        input: String,
+        /// Output JSONL virtual FFB log path; ci/hardware/** is refused
+        #[arg(long)]
+        out: String,
+        /// Stable virtual writer session ID
+        #[arg(long)]
+        session_id: Option<String>,
+        /// Maximum absolute virtual output percent
+        #[arg(long, default_value = "2")]
+        max_percent: f32,
+        /// Virtual watchdog timeout in milliseconds
+        #[arg(long, default_value = "100")]
+        watchdog_timeout_ms: u64,
+    },
 }
 
 #[derive(Subcommand)]

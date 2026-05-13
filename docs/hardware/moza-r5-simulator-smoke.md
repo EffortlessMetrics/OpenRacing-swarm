@@ -84,6 +84,26 @@ The receipt must prove:
 
 Telemetry-only proof does not validate Moza output.
 
+## Virtual FFB Log Dry Run
+
+Before a real output writer is armed, the checked-in telemetry fixtures can
+exercise the output-barrier and final-zero log shape with virtual evidence:
+
+```powershell
+wheelctl telemetry virtual-ffb-log `
+  --input fixtures/telemetry/simhub/basic-lap.jsonl `
+  --out target/virtual/simulator-ffb-output.virtual.jsonl `
+  --session-id virtual-smoke-dry-run `
+  --max-percent 2 `
+  --watchdog-timeout-ms 100 `
+  --json
+```
+
+This command opens no HID device, sends no real FFB writes, and refuses output
+paths under `ci/hardware/**`. The resulting JSONL is useful for software tests
+and operator rehearsal only; it is not a Moza receipt and cannot satisfy
+`wheelctl moza simulator-ffb-smoke`.
+
 ## Bounded FFB Smoke
 
 Run this only after the same dated lane contains the hardware prerequisite

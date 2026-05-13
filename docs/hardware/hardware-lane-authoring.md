@@ -32,6 +32,12 @@ Virtual and synthetic evidence must carry explicit non-real flags such as:
 
 Do not make a verifier infer this from a path or file name alone.
 
+Virtual output planning artifacts belong under `target/` or another scratch
+directory. For example, `wheelctl telemetry virtual-ffb-log` can turn normalized
+telemetry fixtures into a bounded virtual FFB JSONL log with clear-zero and
+final-zero records, but it refuses `ci/hardware/**` output paths and cannot
+advance any real hardware lane.
+
 ## Lane Anatomy
 
 A hardware family should have these pieces before the first real bench session:

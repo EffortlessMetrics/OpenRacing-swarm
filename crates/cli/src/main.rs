@@ -1015,6 +1015,42 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn parse_telemetry_virtual_ffb_log() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "telemetry",
+            "virtual-ffb-log",
+            "--input",
+            "simulator-telemetry-recording.jsonl",
+            "--out",
+            "target/virtual/simulator-ffb-output.virtual.jsonl",
+            "--session-id",
+            "virtual-session-001",
+            "--max-percent",
+            "2",
+            "--watchdog-timeout-ms",
+            "100",
+        ])?;
+        match &cli.command {
+            Commands::Telemetry(TelemetryCommands::VirtualFfbLog {
+                input,
+                out,
+                session_id,
+                max_percent,
+                watchdog_timeout_ms,
+            }) => {
+                assert_eq!(input, "simulator-telemetry-recording.jsonl");
+                assert_eq!(out, "target/virtual/simulator-ffb-output.virtual.jsonl");
+                assert_eq!(session_id.as_deref(), Some("virtual-session-001"));
+                assert_eq!(*max_percent, 2.0);
+                assert_eq!(*watchdog_timeout_ms, 100);
+            }
+            _ => return Err("expected Telemetry VirtualFfbLog command".into()),
+        }
+        Ok(())
+    }
+
     // --- Moza command parsing ---
 
     #[test]
