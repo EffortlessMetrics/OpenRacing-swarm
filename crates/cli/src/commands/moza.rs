@@ -4826,7 +4826,8 @@ fn verify_manifest_r5_pid_consistency_gate_with_support_validation(
     };
     let expected = hex_u16(expected_pid);
     let mut observed = Vec::new();
-    let mut failures = Vec::new();
+    let mut mismatches = Vec::new();
+    let mut unavailable = Vec::new();
 
     for path in [
         "device-list.json",
@@ -4838,8 +4839,8 @@ fn verify_manifest_r5_pid_consistency_gate_with_support_validation(
             Ok(counts) if pid_counts_only_expected(&counts, &expected) => {
                 observed.push(format!("{path}:{}", pid_counts_details(&counts)));
             }
-            Ok(counts) => failures.push(format!("{path}:{}", pid_counts_details(&counts))),
-            Err(error) => failures.push(format!("{path}:{error}")),
+            Ok(counts) => mismatches.push(format!("{path}:{}", pid_counts_details(&counts))),
+            Err(error) => unavailable.push(format!("{path}:{error}")),
         }
     }
 
@@ -4857,8 +4858,8 @@ fn verify_manifest_r5_pid_consistency_gate_with_support_validation(
             Ok(counts) if pid_counts_only_expected(&counts, &expected) => {
                 observed.push(format!("{path}:{}", pid_counts_details(&counts)));
             }
-            Ok(counts) => failures.push(format!("{path}:{}", pid_counts_details(&counts))),
-            Err(error) => failures.push(format!("{path}:{error}")),
+            Ok(counts) => mismatches.push(format!("{path}:{}", pid_counts_details(&counts))),
+            Err(error) => unavailable.push(format!("{path}:{error}")),
         }
     }
 
@@ -4874,12 +4875,12 @@ fn verify_manifest_r5_pid_consistency_gate_with_support_validation(
                     pid_counts_details(&counts)
                 ));
             }
-            Ok(counts) => failures.push(format!(
+            Ok(counts) => mismatches.push(format!(
                 "fixture:{}:{}",
                 requirement.fixture_id,
                 pid_counts_details(&counts)
             )),
-            Err(error) => failures.push(format!("fixture:{}:{error}", requirement.fixture_id)),
+            Err(error) => unavailable.push(format!("fixture:{}:{error}", requirement.fixture_id)),
         }
     }
 
@@ -4891,8 +4892,8 @@ fn verify_manifest_r5_pid_consistency_gate_with_support_validation(
         ] {
             match manifest_pid_receipt_device_pid(lane, path) {
                 Ok(pid) if pid == expected => observed.push(format!("{path}:{pid}")),
-                Ok(pid) => failures.push(format!("{path}:{pid}")),
-                Err(error) => failures.push(format!("{path}:{error}")),
+                Ok(pid) => mismatches.push(format!("{path}:{pid}")),
+                Err(error) => unavailable.push(format!("{path}:{error}")),
             }
         }
     }
@@ -4906,37 +4907,40 @@ fn verify_manifest_r5_pid_consistency_gate_with_support_validation(
         ] {
             match manifest_pid_receipt_device_pid(lane, path) {
                 Ok(pid) if pid == expected => observed.push(format!("{path}:{pid}")),
-                Ok(pid) => failures.push(format!("{path}:{pid}")),
-                Err(error) => failures.push(format!("{path}:{error}")),
+                Ok(pid) => mismatches.push(format!("{path}:{pid}")),
+                Err(error) => unavailable.push(format!("{path}:{error}")),
             }
         }
         match manifest_pid_simulator_writer_pid(lane) {
             Ok(pid) if pid == expected => observed.push(format!("simulator-ffb-writer:{pid}")),
-            Ok(pid) => failures.push(format!("simulator-ffb-writer:{pid}")),
-            Err(error) => failures.push(format!("simulator-ffb-writer:{error}")),
+            Ok(pid) => mismatches.push(format!("simulator-ffb-writer:{pid}")),
+            Err(error) => unavailable.push(format!("simulator-ffb-writer:{error}")),
         }
         match manifest_pid_service_receipts_with_support_validation(lane, support_validation) {
             Ok(pids) if pids.iter().all(|pid| pid == &expected) => {
                 observed.push(format!("service-status:{}", pids.join(",")));
             }
-            Ok(pids) => failures.push(format!("service-status:{}", pids.join(","))),
-            Err(error) => failures.push(format!("service-status:{error}")),
+            Ok(pids) => mismatches.push(format!("service-status:{}", pids.join(","))),
+            Err(error) => unavailable.push(format!("service-status:{error}")),
         }
     }
 
-    if failures.is_empty() {
-        BundleGateCheck::pass(
-            "manifest_r5_pid_consistency",
-            format!(
-                "manifest hardware.wheelbase_pid {expected} matches lane R5 receipts: {}",
-                observed.join(", ")
-            ),
-        )
+    if mismatches.is_empty() {
+        let mut details = format!(
+            "manifest hardware.wheelbase_pid {expected} matches available lane R5 receipts: {}",
+            observed.join(", ")
+        );
+        if !unavailable.is_empty() {
+            details.push_str(&format!(
+                "; unavailable PID evidence is covered by stage artifact gates: {unavailable:?}"
+            ));
+        }
+        BundleGateCheck::pass("manifest_r5_pid_consistency", details)
     } else {
         BundleGateCheck::fail(
             "manifest_r5_pid_consistency",
             format!(
-                "manifest hardware.wheelbase_pid {expected} does not match lane R5 receipt PID evidence: {failures:?}"
+                "manifest hardware.wheelbase_pid {expected} does not match available lane R5 receipt PID evidence: {mismatches:?}; unavailable PID evidence: {unavailable:?}"
             ),
         )
     }
@@ -20867,6 +20871,47 @@ mod tests {
             gate.details.contains("0x0004") && gate.details.contains("0x0014"),
             "expected manifest/receipt PID mismatch details, got {}",
             gate.details
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_passive_pid_gate_does_not_fail_on_missing_artifacts() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        fs::remove_file(dir.path().join("captures/es-controls.jsonl"))?;
+        fs::remove_file(dir.path().join("fixture-promotion.json"))?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
+
+        assert!(!receipt.success);
+        let gate = receipt
+            .gates
+            .iter()
+            .find(|gate| gate.name == "manifest_r5_pid_consistency")
+            .ok_or("expected manifest PID gate")?;
+        assert_eq!(gate.status, "pass");
+        assert!(
+            gate.details.contains("matches available lane R5 receipts")
+                && gate.details.contains("unavailable PID evidence")
+                && gate.details.contains("captures/es-controls.jsonl")
+                && gate.details.contains("fixture:r5_idle"),
+            "expected missing PID evidence to be reported without failing the PID gate, got {}",
+            gate.details
+        );
+        assert!(
+            receipt
+                .gates
+                .iter()
+                .any(|gate| gate.name == "passive_captures_parse" && gate.status == "fail"),
+            "missing ES capture should still fail the passive capture gate"
+        );
+        assert!(
+            receipt
+                .gates
+                .iter()
+                .any(|gate| gate.name == "fixture_promotion" && gate.status == "fail"),
+            "missing fixture promotion should still fail the fixture gate"
         );
         Ok(())
     }
