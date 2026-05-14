@@ -65,7 +65,8 @@ presence, the next blocked stage, and safe next commands for observe-only or
 passive evidence. It deliberately keeps `evidence_claims_validated`,
 `ready_for_zero_torque`, and `ready_for_ffb` false; family verifiers remain
 authoritative for actual hardware claims. The inventory command withholds
-zero-torque and FFB commands because it does not validate prerequisites.
+fixture-promotion, zero-torque, and FFB commands because it does not validate
+descriptor trust or later-stage prerequisites.
 
 ## Adapter Contract
 

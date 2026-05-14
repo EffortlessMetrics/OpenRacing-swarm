@@ -506,9 +506,9 @@ fn lane_status_safe_next_commands(
                 lane_path_arg(lane, "parser-fixture-validation.json")
             ),
             format!(
-                "wheelctl moza promote-fixtures --lane {} --fixture-dir crates/hid-moza-protocol/fixtures/<lane-id> --json-out {} --json",
+                "wheelctl moza verify-bundle --lane {} --stage passive --json-out {} --json",
                 shell_path_arg(lane),
-                lane_path_arg(lane, "fixture-promotion.json")
+                lane_path_arg(lane, "passive-verification.json")
             ),
         ],
         ("moza-r5", "pre_output_readiness") => vec![
@@ -2364,6 +2364,56 @@ mod tests {
                     && !command.contains("ffb")
                     && !command.contains("output"))
         );
+        assert!(!status.ready_for_zero_torque);
+        assert!(!status.ready_for_ffb);
+        Ok(())
+    }
+
+    #[test]
+    fn lane_status_requires_verifier_before_fixture_promotion_guidance() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("moza-r5-lane");
+        let _receipt =
+            scaffold_hardware_lane(&lane, "moza-r5", "wheelbase-hub", "Steven", false, None)?;
+        for artifact in [
+            "device-list.json",
+            "hardware-doctor.json",
+            "hid-list.json",
+            "moza-probe.json",
+            "lane-capture-analysis.json",
+            "parser-fixture-validation.json",
+            "descriptor.json",
+        ] {
+            fs::write(lane.join(artifact), "{}\n")?;
+        }
+        for role in [
+            "r5-steering-sweep.jsonl",
+            "r5-throttle-only-sweep.jsonl",
+            "r5-brake-only-sweep.jsonl",
+        ] {
+            fs::write(lane.join("captures").join(role), "{}\n")?;
+        }
+        fs::write(
+            lane.join("captures").join("declared-rim-controls.jsonl"),
+            "{}\n",
+        )?;
+
+        let status = build_hardware_lane_status_receipt(&lane)?;
+
+        assert_eq!(status.next_blocked_stage, "fixture_promotion");
+        assert!(
+            status
+                .safe_next_commands
+                .iter()
+                .any(|command| command.contains("verify-bundle --lane"))
+        );
+        assert!(status.safe_next_commands.iter().all(
+            |command| !command.contains("promote-fixtures")
+                && !command.contains("torque")
+                && !command.contains("ffb")
+                && !command.contains("output")
+        ));
+        assert!(!status.evidence_claims_validated);
         assert!(!status.ready_for_zero_torque);
         assert!(!status.ready_for_ffb);
         Ok(())
