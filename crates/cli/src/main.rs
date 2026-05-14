@@ -417,6 +417,43 @@ mod tests {
     }
 
     #[test]
+    fn parse_hardware_lane_init() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "hardware",
+            "lane",
+            "init",
+            "--family",
+            "moza-r5",
+            "--topology",
+            "wheelbase-hub",
+            "--lane",
+            "target/hardware-lane",
+            "--json-out",
+            "target/hardware-lane/lane-init.json",
+        ])?;
+        match &cli.command {
+            Commands::Hardware(HardwareCommands::Lane(HardwareLaneCommands::Init {
+                family,
+                topology,
+                lane,
+                json_out,
+                ..
+            })) => {
+                assert_eq!(family, "moza-r5");
+                assert_eq!(topology, "wheelbase-hub");
+                assert_eq!(lane.to_str(), Some("target/hardware-lane"));
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/hardware-lane/lane-init.json")
+                );
+            }
+            _ => return Err("expected Hardware Lane Init command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_device_status() -> TestResult {
         let cli = Cli::try_parse_from(["wheelctl", "device", "status", "wheel-001"])?;
         match &cli.command {

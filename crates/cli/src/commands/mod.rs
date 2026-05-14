@@ -346,6 +346,35 @@ pub enum HardwareCommands {
         #[arg(long)]
         json_out: Option<std::path::PathBuf>,
     },
+
+    /// Scaffold a hardware validation lane from a device-family rail adapter
+    #[command(subcommand)]
+    Lane(HardwareLaneCommands),
+}
+
+#[derive(Subcommand)]
+pub enum HardwareLaneCommands {
+    /// Create a lane manifest, checklist, capture plan, and stage-gate scaffold
+    Init {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-13
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Device-family adapter contract to use
+        #[arg(long, default_value = "generic-wheelbase")]
+        family: String,
+        /// Declared primary topology/path for this lane
+        #[arg(long, default_value = "unknown")]
+        topology: String,
+        /// Operator name recorded in the scaffold manifest
+        #[arg(long, default_value = "Steven")]
+        operator: String,
+        /// Replace scaffold files that already exist
+        #[arg(long)]
+        overwrite: bool,
+        /// Write the lane-init receipt to this JSON file instead of <lane>/lane-init.json
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]

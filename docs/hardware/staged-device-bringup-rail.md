@@ -35,6 +35,22 @@ wheelctl hardware bringup-rail `
 The command opens no HID device and sends no output, feature, serial, firmware,
 or DFU commands.
 
+## Lane Scaffold
+
+Use the generic lane scaffold before collecting device-family receipts:
+
+```powershell
+wheelctl hardware lane init `
+  --family moza-r5 `
+  --topology wheelbase-hub `
+  --lane ci\hardware\moza-r5\2026-05-13 `
+  --json
+```
+
+The scaffold creates a lane manifest, capture plan, artifact checklist, stage
+gates, and a lane-init receipt. It creates planning files only; it does not
+create fake pass/fail receipts and it does not open HID devices.
+
 ## Adapter Contract
 
 Each adapter declares:

@@ -17,7 +17,7 @@ use hidapi::{DeviceInfo, HidApi};
 use openracing_hardware_core::{DeviceCapabilityRegistry, DeviceFamily};
 use serde::{Deserialize, Serialize};
 
-use crate::commands::HardwareCommands;
+use crate::commands::{HardwareCommands, HardwareLaneCommands};
 
 pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
     match cmd {
@@ -25,7 +25,45 @@ pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
         HardwareCommands::BringupRail { family, json_out } => {
             bringup_rail(json, family, json_out.as_deref()).await
         }
+        HardwareCommands::Lane(command) => execute_lane(command, json).await,
     }
+}
+
+async fn execute_lane(cmd: &HardwareLaneCommands, json: bool) -> Result<()> {
+    match cmd {
+        HardwareLaneCommands::Init {
+            lane,
+            family,
+            topology,
+            operator,
+            overwrite,
+            json_out,
+        } => {
+            init_lane(
+                json,
+                lane,
+                family,
+                topology,
+                operator,
+                *overwrite,
+                json_out.as_deref(),
+            )
+            .await
+        }
+    }
+}
+
+async fn init_lane(
+    json: bool,
+    lane: &Path,
+    family: &str,
+    topology: &str,
+    operator: &str,
+    overwrite: bool,
+    json_out: Option<&Path>,
+) -> Result<()> {
+    let receipt = scaffold_hardware_lane(lane, family, topology, operator, overwrite, json_out)?;
+    print_lane_init_receipt(json, &receipt)
 }
 
 async fn bringup_rail(json: bool, family: &str, json_out: Option<&Path>) -> Result<()> {
@@ -68,6 +106,262 @@ fn build_bringup_rail_receipt(family: &str) -> Result<HardwareBringupRailReceipt
                 .to_string(),
         ],
     })
+}
+
+fn scaffold_hardware_lane(
+    lane: &Path,
+    family: &str,
+    topology: &str,
+    operator: &str,
+    overwrite: bool,
+    json_out: Option<&Path>,
+) -> Result<HardwareLaneInitReceipt> {
+    let adapter = hardware_family_adapter_contract(family)
+        .with_context(|| format!("unknown hardware bring-up family '{family}'"))?;
+    let stages = hardware_bringup_stages();
+    let generated_at = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
+    let captures_dir = lane.join("captures");
+    let manifest_path = lane.join("hardware-lane-manifest.json");
+    let checklist_path = lane.join("artifact-checklist.md");
+    let capture_plan_path = lane.join("capture-plan.md");
+    let stage_gates_path = lane.join("stage-gates.json");
+    let receipt_path = json_out
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| lane.join("lane-init.json"));
+
+    let planned_files = [
+        manifest_path.as_path(),
+        checklist_path.as_path(),
+        capture_plan_path.as_path(),
+        stage_gates_path.as_path(),
+        receipt_path.as_path(),
+    ];
+    if !overwrite {
+        let existing: Vec<_> = planned_files
+            .iter()
+            .filter(|path| path.exists())
+            .map(|path| path.display().to_string())
+            .collect();
+        if !existing.is_empty() {
+            anyhow::bail!(
+                "hardware lane scaffold files already exist; pass --overwrite to replace: {}",
+                existing.join(", ")
+            );
+        }
+    }
+
+    fs::create_dir_all(&captures_dir)
+        .with_context(|| format!("failed to create '{}'", captures_dir.display()))?;
+
+    let roles = default_lane_roles(&adapter, topology);
+    let manifest = HardwareLaneScaffoldManifest {
+        schema_version: 1,
+        generated_at_utc: generated_at.clone(),
+        lane: lane.display().to_string(),
+        family: adapter.id,
+        topology: topology.to_string(),
+        operator: operator.to_string(),
+        completion_state: "not_started",
+        rail_stage_order: stages.iter().map(|stage| stage.id).collect(),
+        declared_logical_roles: roles.clone(),
+        adapter_known_vid_pids: adapter.known_vid_pids.clone(),
+        notes: vec![
+            "scaffold records intended topology and required evidence; it is not hardware evidence"
+                .to_string(),
+            "no fake pass/fail receipts are created by lane init".to_string(),
+        ],
+    };
+    let stage_gates = HardwareLaneStageGates {
+        schema_version: 1,
+        generated_at_utc: generated_at.clone(),
+        family: adapter.id,
+        topology: topology.to_string(),
+        stages: stages.clone(),
+        adapter: adapter.clone(),
+        notes: vec![
+            "stage gates are copied from the common bring-up rail".to_string(),
+            "device-family adapter requirements refine evidence; they do not bypass gates"
+                .to_string(),
+        ],
+    };
+
+    write_json_file(&manifest_path, &manifest)?;
+    write_text_file(
+        &checklist_path,
+        &render_artifact_checklist(&adapter, &stages, &roles),
+    )?;
+    write_text_file(
+        &capture_plan_path,
+        &render_capture_plan(&adapter, topology, &roles),
+    )?;
+    write_json_file(&stage_gates_path, &stage_gates)?;
+
+    let receipt = HardwareLaneInitReceipt {
+        success: true,
+        command: "wheelctl hardware lane init",
+        generated_at_utc: generated_at,
+        no_hid_device_opened: true,
+        no_ffb_writes: true,
+        no_output_reports: true,
+        no_feature_reports: true,
+        no_serial_config_commands: true,
+        no_firmware_or_dfu_commands: true,
+        lane: lane.display().to_string(),
+        family: adapter.id,
+        topology: topology.to_string(),
+        operator: operator.to_string(),
+        captures_dir: captures_dir.display().to_string(),
+        created_files: vec![
+            manifest_path.display().to_string(),
+            checklist_path.display().to_string(),
+            capture_plan_path.display().to_string(),
+            stage_gates_path.display().to_string(),
+            receipt_path.display().to_string(),
+        ],
+        notes: vec![
+            "hardware lane init creates local scaffold files only; it opens no HID device"
+                .to_string(),
+            "capture/checklist entries are planned artifact paths, not evidence".to_string(),
+            "output-adjacent stages remain blocked until earlier receipts pass".to_string(),
+        ],
+    };
+    write_json_file(&receipt_path, &receipt)?;
+    Ok(receipt)
+}
+
+fn default_lane_roles(
+    adapter: &HardwareFamilyAdapterContract,
+    topology: &str,
+) -> Vec<HardwareLaneLogicalRole> {
+    adapter
+        .default_logical_controls
+        .iter()
+        .map(|control| {
+            let (role_id, required) = control
+                .strip_suffix("_optional")
+                .map_or((*control, true), |role| (role, false));
+            HardwareLaneLogicalRole {
+                id: role_id.to_string(),
+                required,
+                connection_path: default_connection_path(adapter.id, topology, role_id),
+                expected_endpoint: default_expected_endpoint(adapter.id, role_id),
+                evidence_artifact: default_role_evidence_artifact(adapter.id, role_id),
+                semantic_status: "pending_capture".to_string(),
+            }
+        })
+        .collect()
+}
+
+fn default_connection_path(adapter_id: &str, topology: &str, role_id: &str) -> String {
+    let normalized = topology.replace('-', "_");
+    if normalized == "wheelbase_hub" || normalized == "r5_hub" {
+        return "wheelbase_hub".to_string();
+    }
+    if normalized == "standalone_usb" {
+        return "standalone_usb".to_string();
+    }
+    if adapter_id == "moza-r5"
+        && matches!(
+            role_id,
+            "steering" | "rim_controls" | "throttle" | "brake" | "clutch" | "handbrake"
+        )
+    {
+        return "wheelbase_hub".to_string();
+    }
+    "unknown".to_string()
+}
+
+fn default_expected_endpoint(adapter_id: &str, role_id: &str) -> String {
+    if adapter_id == "moza-r5"
+        && matches!(
+            role_id,
+            "steering" | "rim_controls" | "throttle" | "brake" | "clutch" | "handbrake"
+        )
+    {
+        return "hid-0x346E-0x0004-if2-0x0001-0x0004".to_string();
+    }
+    "declare-observed-endpoint".to_string()
+}
+
+fn default_role_evidence_artifact(adapter_id: &str, role_id: &str) -> String {
+    if adapter_id == "moza-r5" {
+        match role_id {
+            "steering" => "captures/r5-steering-sweep.jsonl",
+            "rim_controls" => "captures/<declared-rim>-controls.jsonl",
+            "throttle" => "captures/r5-throttle-only-sweep.jsonl",
+            "brake" => "captures/r5-brake-only-sweep.jsonl",
+            "clutch" => "captures/r5-clutch-only-sweep.jsonl",
+            "handbrake" => "captures/r5-handbrake-only-sweep.jsonl",
+            _ => "captures/<role>.jsonl",
+        }
+        .to_string()
+    } else {
+        format!("captures/{role_id}.jsonl")
+    }
+}
+
+fn render_artifact_checklist(
+    adapter: &HardwareFamilyAdapterContract,
+    stages: &[HardwareBringupStage],
+    roles: &[HardwareLaneLogicalRole],
+) -> String {
+    let mut out = String::new();
+    out.push_str("# Hardware Lane Artifact Checklist\n\n");
+    out.push_str("This file is a scaffold. It is not evidence by itself.\n\n");
+    out.push_str(&format!("Device family: `{}`\n\n", adapter.id));
+    out.push_str("## Logical Roles\n\n");
+    out.push_str("| Role | Required | Connection path | Endpoint | Evidence artifact | Status |\n");
+    out.push_str("|------|----------|-----------------|----------|-------------------|--------|\n");
+    for role in roles {
+        out.push_str(&format!(
+            "| `{}` | `{}` | `{}` | `{}` | `{}` | `{}` |\n",
+            role.id,
+            role.required,
+            role.connection_path,
+            role.expected_endpoint,
+            role.evidence_artifact,
+            role.semantic_status
+        ));
+    }
+    out.push_str("\n## Stage Artifacts\n\n");
+    for stage in stages {
+        out.push_str(&format!("### {}. `{}`\n\n", stage.order, stage.id));
+        out.push_str(&format!("{}\n\n", stage.purpose));
+        out.push_str("Required artifacts:\n");
+        for artifact in &stage.required_artifacts {
+            out.push_str(&format!("- `{artifact}`\n"));
+        }
+        out.push('\n');
+    }
+    out.push_str("Do not create fake receipt files to satisfy this checklist.\n");
+    out
+}
+
+fn render_capture_plan(
+    adapter: &HardwareFamilyAdapterContract,
+    topology: &str,
+    roles: &[HardwareLaneLogicalRole],
+) -> String {
+    let mut out = String::new();
+    out.push_str("# Hardware Lane Capture Plan\n\n");
+    out.push_str(&format!("Device family: `{}`\n", adapter.id));
+    out.push_str(&format!("Topology: `{topology}`\n\n"));
+    out.push_str("Capture one declared role at a time. Keep output paths closed.\n\n");
+    for role in roles {
+        out.push_str(&format!("## `{}`\n\n", role.id));
+        out.push_str(&format!("Required: `{}`\n\n", role.required));
+        out.push_str(&format!(
+            "Expected endpoint: `{}`\n\n",
+            role.expected_endpoint
+        ));
+        out.push_str(&format!(
+            "Evidence artifact: `{}`\n\n",
+            role.evidence_artifact
+        ));
+        out.push_str("Gesture: idle, move only this role slowly through its range, idle.\n\n");
+    }
+    out.push_str("Forbidden during capture: torque, FFB, direct mode, output reports, feature reports, serial config, firmware, and DFU.\n");
+    out
 }
 
 fn hardware_bringup_stages() -> Vec<HardwareBringupStage> {
@@ -824,6 +1118,25 @@ fn write_json_receipt<T: Serialize>(path: Option<&Path>, value: &T) -> Result<()
     fs::write(path, json).with_context(|| format!("failed to write '{}'", path.display()))
 }
 
+fn write_json_file<T: Serialize>(path: &Path, value: &T) -> Result<()> {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create '{}'", parent.display()))?;
+    }
+
+    let json = serde_json::to_string_pretty(value).context("failed to serialize JSON file")?;
+    fs::write(path, json).with_context(|| format!("failed to write '{}'", path.display()))
+}
+
+fn write_text_file(path: &Path, value: &str) -> Result<()> {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create '{}'", parent.display()))?;
+    }
+
+    fs::write(path, value).with_context(|| format!("failed to write '{}'", path.display()))
+}
+
 fn print_doctor_receipt(
     json: bool,
     json_out: Option<&Path>,
@@ -871,6 +1184,25 @@ fn print_doctor_receipt(
     }
     if let Some(path) = json_out {
         write_stdout_line(&format!("Receipt: {}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn print_lane_init_receipt(json: bool, receipt: &HardwareLaneInitReceipt) -> Result<()> {
+    if json {
+        write_stdout_line(&serde_json::to_string_pretty(receipt)?)?;
+        return Ok(());
+    }
+
+    write_stdout_line(&format!(
+        "Hardware lane scaffold created for {} at {}.",
+        receipt.family, receipt.lane
+    ))?;
+    write_stdout_line(
+        "No HID devices were opened and no output, feature, serial, firmware, or DFU commands were sent.",
+    )?;
+    for path in &receipt.created_files {
+        write_stdout_line(&format!("Created: {path}"))?;
     }
     Ok(())
 }
@@ -1091,7 +1423,7 @@ struct HardwareBringupRailReceipt {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct HardwareBringupStage {
     id: &'static str,
     order: u8,
@@ -1105,7 +1437,7 @@ struct HardwareBringupStage {
     adapter_requirement_refs: Vec<&'static str>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct HardwareFamilyAdapterContract {
     id: &'static str,
     display_name: &'static str,
@@ -1119,6 +1451,62 @@ struct HardwareFamilyAdapterContract {
     zero_torque_eligibility: &'static str,
     ffb_eligibility: &'static str,
     known_unsafe_surfaces: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct HardwareLaneInitReceipt {
+    success: bool,
+    command: &'static str,
+    generated_at_utc: String,
+    no_hid_device_opened: bool,
+    no_ffb_writes: bool,
+    no_output_reports: bool,
+    no_feature_reports: bool,
+    no_serial_config_commands: bool,
+    no_firmware_or_dfu_commands: bool,
+    lane: String,
+    family: &'static str,
+    topology: String,
+    operator: String,
+    captures_dir: String,
+    created_files: Vec<String>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct HardwareLaneScaffoldManifest {
+    schema_version: u32,
+    generated_at_utc: String,
+    lane: String,
+    family: &'static str,
+    topology: String,
+    operator: String,
+    completion_state: &'static str,
+    rail_stage_order: Vec<&'static str>,
+    declared_logical_roles: Vec<HardwareLaneLogicalRole>,
+    adapter_known_vid_pids: Vec<&'static str>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct HardwareLaneStageGates {
+    schema_version: u32,
+    generated_at_utc: String,
+    family: &'static str,
+    topology: String,
+    stages: Vec<HardwareBringupStage>,
+    adapter: HardwareFamilyAdapterContract,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HardwareLaneLogicalRole {
+    id: String,
+    required: bool,
+    connection_path: String,
+    expected_endpoint: String,
+    evidence_artifact: String,
+    semantic_status: String,
 }
 
 #[cfg(test)]
@@ -1297,6 +1685,79 @@ mod tests {
     fn bringup_rail_rejects_unknown_adapter() {
         let err = build_bringup_rail_receipt("unknown-family").expect_err("expected error");
         assert!(err.to_string().contains("unknown hardware bring-up family"));
+    }
+
+    #[test]
+    fn lane_scaffold_creates_read_only_planning_files() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("moza-r5-lane");
+
+        let receipt =
+            scaffold_hardware_lane(&lane, "moza-r5", "wheelbase-hub", "Steven", false, None)?;
+
+        assert!(receipt.success);
+        assert!(receipt.no_hid_device_opened);
+        assert!(receipt.no_ffb_writes);
+        assert!(receipt.no_output_reports);
+        assert!(receipt.no_feature_reports);
+        assert!(receipt.no_serial_config_commands);
+        assert!(receipt.no_firmware_or_dfu_commands);
+        assert_eq!(receipt.family, "moza-r5");
+        assert!(lane.join("captures").is_dir());
+        assert!(lane.join("hardware-lane-manifest.json").is_file());
+        assert!(lane.join("artifact-checklist.md").is_file());
+        assert!(lane.join("capture-plan.md").is_file());
+        assert!(lane.join("stage-gates.json").is_file());
+        assert!(lane.join("lane-init.json").is_file());
+        assert!(!lane.join("passive-verification.json").exists());
+        assert!(!lane.join("zero-torque-proof.json").exists());
+
+        let manifest_text = fs::read_to_string(lane.join("hardware-lane-manifest.json"))?;
+        let manifest: serde_json::Value = serde_json::from_str(&manifest_text)?;
+        assert_eq!(manifest["completion_state"], "not_started");
+        assert_eq!(manifest["family"], "moza-r5");
+        assert_eq!(manifest["topology"], "wheelbase-hub");
+        let roles = manifest["declared_logical_roles"]
+            .as_array()
+            .ok_or_else(|| io::Error::other("logical roles should be an array"))?;
+        assert!(roles.iter().any(|role| role["id"] == "throttle"));
+        assert!(roles.iter().any(|role| {
+            role["id"] == "clutch"
+                && role["required"] == false
+                && role["connection_path"] == "wheelbase_hub"
+        }));
+
+        let gates_text = fs::read_to_string(lane.join("stage-gates.json"))?;
+        let gates: serde_json::Value = serde_json::from_str(&gates_text)?;
+        let stages = gates["stages"]
+            .as_array()
+            .ok_or_else(|| io::Error::other("stages should be an array"))?;
+        assert!(stages.iter().any(|stage| {
+            stage["id"] == "pre_output_readiness"
+                && stage["required_gates"]
+                    .as_array()
+                    .is_some_and(|gates| gates.iter().any(|gate| gate == "ready_for_ffb_false"))
+        }));
+        Ok(())
+    }
+
+    #[test]
+    fn lane_scaffold_refuses_to_overwrite_existing_files() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("generic-lane");
+        let _receipt =
+            scaffold_hardware_lane(&lane, "generic-wheelbase", "unknown", "Steven", false, None)?;
+
+        let err =
+            scaffold_hardware_lane(&lane, "generic-wheelbase", "unknown", "Steven", false, None)
+                .err()
+                .ok_or_else(|| io::Error::other("expected overwrite refusal"))?;
+        assert!(err.to_string().contains("--overwrite"));
+
+        let receipt =
+            scaffold_hardware_lane(&lane, "generic-wheelbase", "unknown", "Steven", true, None)?;
+        assert_eq!(receipt.family, "generic-wheelbase");
+        Ok(())
     }
 
     #[test]
