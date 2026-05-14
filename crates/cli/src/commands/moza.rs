@@ -6570,7 +6570,14 @@ fn verify_passive_capture_parse_gate(lane: &Path) -> BundleGateCheck {
             format!("replayed {total_reports} passive capture report(s) through Moza parsers"),
         )
     } else {
-        BundleGateCheck::fail("passive_captures_parse", failures.join("; "))
+        let mut details = failures.join("; ");
+        if let Ok(analysis) = analyze_lane_captures(lane)
+            && !analysis.safe_diagnostics.is_empty()
+        {
+            details.push_str("; safe_diagnostics=");
+            details.push_str(&format!("{:?}", analysis.safe_diagnostics));
+        }
+        BundleGateCheck::fail("passive_captures_parse", details)
     }
 }
 
@@ -24154,6 +24161,44 @@ mod tests {
                 && diagnostic.contains("do not recapture blindly")),
             "expected throttle trailer-only diagnostic, got {:?}",
             receipt.safe_diagnostics
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_passive_includes_safe_analyzer_diagnostics() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        write_text_file(
+            &dir.path().join("captures/r5-throttle-only-sweep.jsonl"),
+            &format!(
+                "{}\n{}",
+                capture_line(
+                    product_ids::R5_V1,
+                    &live_r5_v1_trailer_report_hex([0x00, 0x00, 0x00, 0x00])
+                ),
+                capture_line(
+                    product_ids::R5_V1,
+                    &live_r5_v1_trailer_report_hex([0xFF, 0xAA, 0x55, 0x40])
+                )
+            ),
+        )?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
+        let gate = receipt
+            .gates
+            .iter()
+            .find(|gate| gate.name == "passive_captures_parse")
+            .ok_or("missing passive capture parse gate")?;
+
+        assert!(!receipt.success);
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details.contains("safe_diagnostics=")
+                && gate.details.contains("only idle/trailer bytes moved")
+                && gate.details.contains("do not recapture blindly"),
+            "expected passive verifier to include analyzer diagnostic, got {}",
+            gate.details
         );
         Ok(())
     }
