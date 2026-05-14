@@ -105,12 +105,52 @@ explicit operator-selected endpoint before output is allowed.
 ## 5. Descriptor Fallback
 
 If Windows cannot expose the raw R5 HID report descriptor, collect the report
-descriptor bytes with USBTreeView or an equivalent USB descriptor tool.
+descriptor bytes with USBTreeView, USBPcap/Wireshark enumeration traffic, Linux
+sysfs, or an equivalent USB descriptor tool.
 The fallback needs the actual HID Report Descriptor byte block. A USBTreeView
 summary that only shows `wDescriptorLength`, or a descriptor read failure such
 as `ERROR_INVALID_PARAMETER`, is not enough to satisfy descriptor trust. A
 Windows `HidP KDR` collection/preparsed descriptor is also not the raw report
 descriptor and must not be imported as lane evidence.
+
+### Windows USBPcap enumeration fallback
+
+Use this only if installing a Windows USB capture driver is acceptable for the
+bench machine. It is passive USB observation, but it is still a system change.
+
+Allowed:
+
+- install/run USBPcap or Wireshark USB capture support
+- capture USB enumeration while unplugging and replugging the R5
+- extract the HID Report Descriptor bytes from the descriptor response
+
+Not allowed:
+
+- install Zadig
+- replace the MOZA HID driver
+- switch the R5 to WinUSB
+- open Pit House firmware or update flows
+- send HID output reports
+- send HID feature reports
+- touch serial configuration
+- run firmware or DFU tools
+
+Procedure:
+
+```text
+1. Close simulators and vendor update/configuration flows.
+2. Start USBPcap/Wireshark capture on the USB controller that contains the R5.
+3. Unplug and replug the R5 while capture is running.
+4. Stop capture after enumeration completes.
+5. Locate the HID Report Descriptor response for VID 0x346E, PID 0x0004 or
+   0x0014, interface 2, usage page 0x0001, usage 0x0004.
+6. Export only the HID Report Descriptor byte block as hex text or raw bytes.
+```
+
+The exported bytes must be the HID report descriptor payload, not the USB
+device/configuration/interface descriptor, not a `wDescriptorLength` summary,
+and not a Windows preparsed-data/KDR blob. If the capture cannot identify that
+payload unambiguously, do not import it.
 
 Use the selected R5 device only for the supplied hex:
 

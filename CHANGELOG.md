@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Windows USBPcap/Wireshark descriptor-capture fallback guidance for the Moza
+  R5 passive lane, including driver-change and no-output safety boundaries.
 - ROADMAP Phases 6–11 (First Hardware — Moza R5 Stack): incremental onramp from read-only enumeration (Phase 6) through input capture (7), handshake (8), low-torque FFB (9), game integration (10), and soak testing (11) for Moza R5, KS/ES wheels, SR-P pedals, and HBP handbrake
 - `docs/hardware_prep_report.md`: desk research report covering build verification, VID/PID tables, report layouts, safety review (encode_zero byte-exact, watchdog 100ms, interlock transitions), Linux kernel PIDFF quirk confirmation, and DFU mode risk assessment
 - `docs/safety_verification_report.md`: comprehensive end-to-end safety audit tracing torque path, verifying 12 safety invariants, analyzing 5-layer high-torque gates, and confirming no safety bypasses exist

@@ -137,8 +137,9 @@ must remain false until the later zero, watchdog, disconnect, low-torque, Pit
 House, and simulator telemetry prerequisites are also present.
 
 If Windows cannot expose the raw HID report descriptor, paste descriptor hex
-from USBTreeView or an equivalent descriptor tool, save the descriptor bytes as
-a text file, or import a raw binary Linux sysfs `report_descriptor` dump:
+from USBTreeView, USBPcap/Wireshark enumeration traffic, or an equivalent
+descriptor tool, save the descriptor bytes as a text file, or import a raw
+binary Linux sysfs `report_descriptor` dump:
 
 ```powershell
 wheelctl moza descriptor --device <r5> --report-descriptor-hex "<hex bytes>" --json-out ci/hardware/moza-r5/<date>/descriptor.json
@@ -153,6 +154,17 @@ KDR` collection/preparsed descriptor is useful failure evidence but does not
 satisfy descriptor trust. Use a report-descriptor hex block such as `0000: 05
 01 09 04 ...`, Linux `/sys/bus/hid/devices/.../report_descriptor` bytes, or
 another descriptor tool that exposes the raw HID report descriptor.
+
+On Windows, USBPcap/Wireshark is acceptable only as an enumeration-capture
+source for the raw HID report descriptor bytes. Capture the unplug/replug
+enumeration traffic for the R5, extract the HID Report Descriptor response for
+the exact R5 interface, and import only that byte block with
+`wheelctl moza descriptor`. Do not install Zadig, replace the MOZA HID driver,
+switch the device to WinUSB, open firmware/update flows, send HID output
+reports, send HID feature reports, touch serial configuration, or run
+firmware/DFU tools. If the capture yields only USB device/interface descriptor
+fields, a `wDescriptorLength` value, or a Windows preparsed-data/KDR blob, keep
+the descriptor gate red.
 
 On Linux, a connected R5 V1 descriptor can be exported without sending reports.
 Use native Linux or a WSL2 instance with explicit USB passthrough; ordinary WSL2
