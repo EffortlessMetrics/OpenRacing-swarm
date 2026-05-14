@@ -538,16 +538,19 @@ fn lane_status_safe_next_commands(
             );
             commands
         }
-        ("moza-r5", "descriptor_trust") => vec![
-            format!(
-                "wheelctl moza descriptor --device hid-0x346E-0x0004-if2-0x0001-0x0004 --report-descriptor-hex-file target/moza-r5-report-descriptor.txt --json-out {} --json",
-                lane_path_arg(lane, "descriptor.json")
-            ),
-            format!(
-                "wheelctl moza descriptor --device hid-0x346E-0x0004-if2-0x0001-0x0004 --report-descriptor-bin-file target/moza-r5-report-descriptor.bin --json-out {} --json",
-                lane_path_arg(lane, "descriptor.json")
-            ),
-        ],
+        ("moza-r5", "descriptor_trust") => {
+            let selector = moza_descriptor_selector(roles);
+            vec![
+                format!(
+                    "wheelctl moza descriptor --device {selector} --report-descriptor-hex-file target/moza-r5-report-descriptor.txt --json-out {} --json",
+                    lane_path_arg(lane, "descriptor.json")
+                ),
+                format!(
+                    "wheelctl moza descriptor --device {selector} --report-descriptor-bin-file target/moza-r5-report-descriptor.bin --json-out {} --json",
+                    lane_path_arg(lane, "descriptor.json")
+                ),
+            ]
+        }
         ("moza-r5", "fixture_promotion") => vec![
             format!(
                 "wheelctl moza validate-captures --lane {} --json-out {} --json",
@@ -589,6 +592,25 @@ fn passive_capture_duration_ms(role: &StoredHardwareLaneLogicalRole) -> u64 {
         "idle" | "aggregated_idle" => 5_000,
         _ => 10_000,
     }
+}
+
+fn moza_descriptor_selector(roles: &[StoredHardwareLaneLogicalRole]) -> &str {
+    roles
+        .iter()
+        .find(|role| {
+            role.id == "steering"
+                && role.connection_path == "wheelbase_hub"
+                && role.expected_endpoint != "declare-observed-endpoint"
+        })
+        .or_else(|| {
+            roles.iter().find(|role| {
+                role.connection_path == "wheelbase_hub"
+                    && role.expected_endpoint != "declare-observed-endpoint"
+            })
+        })
+        .map_or("hid-0x346E-0x0004-if2-0x0001-0x0004", |role| {
+            role.expected_endpoint.as_str()
+        })
 }
 
 fn lane_path_arg(lane: &Path, relative: &str) -> String {
@@ -2809,6 +2831,65 @@ mod tests {
         );
         assert!(!status.ready_for_zero_torque);
         assert!(!status.ready_for_ffb);
+        Ok(())
+    }
+
+    #[test]
+    fn lane_status_descriptor_guidance_uses_declared_wheelbase_endpoint() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("moza-r5-lane");
+        let role_overrides = HardwareLaneRoleOverrides::from_cli(
+            &[],
+            &[],
+            &[],
+            &["steering=hid-0x346E-0x0014-if2-0x0001-0x0004".to_string()],
+            &[],
+        )?;
+        let _receipt = scaffold_hardware_lane_with_overrides(
+            &lane,
+            "moza-r5",
+            "wheelbase-hub",
+            "Steven",
+            &role_overrides,
+            false,
+            None,
+        )?;
+        for artifact in [
+            "device-list.json",
+            "hardware-doctor.json",
+            "hid-list.json",
+            "moza-probe.json",
+            "lane-capture-analysis.json",
+            "parser-fixture-validation.json",
+        ] {
+            fs::write(lane.join(artifact), "{}\n")?;
+        }
+        for role in [
+            "r5-steering-sweep.jsonl",
+            "r5-throttle-only-sweep.jsonl",
+            "r5-brake-only-sweep.jsonl",
+        ] {
+            fs::write(lane.join("captures").join(role), "{}\n")?;
+        }
+        fs::write(
+            lane.join("captures").join("declared-rim-controls.jsonl"),
+            "{}\n",
+        )?;
+
+        let status = build_hardware_lane_status_receipt(&lane)?;
+        let joined = status.safe_next_commands.join("\n");
+
+        assert_eq!(status.next_blocked_stage, "descriptor_trust");
+        assert!(
+            joined.contains("--device hid-0x346E-0x0014-if2-0x0001-0x0004"),
+            "{joined}"
+        );
+        assert!(
+            !joined.contains("--device hid-0x346E-0x0004-if2-0x0001-0x0004"),
+            "{joined}"
+        );
+        assert!(!joined.contains("torque"));
+        assert!(!joined.contains("ffb"));
         Ok(())
     }
 
