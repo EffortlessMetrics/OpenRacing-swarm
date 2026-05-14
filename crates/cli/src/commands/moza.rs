@@ -5777,17 +5777,6 @@ fn manifest_artifacts_match_lane_contract(artifacts: Option<&Value>) -> bool {
     .all(|(key, expected)| json_string(artifacts, key) == Some(*expected))
 }
 
-fn json_usize_array_contains_all(value: &Value, key: &str, required: &[usize]) -> bool {
-    let Some(values) = value.get(key).and_then(Value::as_array) else {
-        return false;
-    };
-    required.iter().all(|required_value| {
-        values
-            .iter()
-            .any(|value| value.as_u64() == Some(*required_value as u64))
-    })
-}
-
 fn json_string_array_contains_all(value: &Value, key: &str, required: &[&str]) -> bool {
     let Some(values) = value.get(key).and_then(Value::as_array) else {
         return false;
@@ -6014,7 +6003,9 @@ fn r5_descriptor_metadata_is_complete(device: &Value) -> bool {
         && json_string(device, "usage_page")
             .map(|value| !value.trim().is_empty())
             .unwrap_or(false);
-    let input_ok = json_usize_array_contains_all(device, "input_report_lengths", &[7, 31]);
+    let input_ok = json_usize_array(device, "input_report_lengths")
+        .map(|lengths| r5_input_report_lengths_supported(device, &lengths))
+        .unwrap_or(false);
     let output_ok = json_string_array_contains_all(device, "output_report_ids", &["0x20"])
         && json_report_record_contains(device, "output_reports", "0x20", REPORT_LEN);
     let feature_ok =
@@ -6059,7 +6050,7 @@ fn report_descriptor_hex_proves_r5_metadata(device: &Value) -> bool {
                 .output_reports
                 .iter()
                 .any(|report| report.report_id == 0x20 && report.report_len == REPORT_LEN);
-            metadata.input_report_lengths == vec![7, 31]
+            r5_input_report_lengths_supported(device, &metadata.input_report_lengths)
                 && direct_output_report_shape_ok
                 && json_usize_array_equals(
                     device,
@@ -6085,6 +6076,19 @@ fn report_descriptor_hex_proves_r5_metadata(device: &Value) -> bool {
         .unwrap_or(false)
 }
 
+fn r5_input_report_lengths_supported(device: &Value, lengths: &[usize]) -> bool {
+    let product_id = json_string(device, "product_id").and_then(parse_hex_selector);
+    r5_supported_input_report_length_sets(product_id).contains(&lengths)
+}
+
+fn r5_supported_input_report_length_sets(product_id: Option<u16>) -> &'static [&'static [usize]] {
+    match product_id {
+        Some(product_ids::R5_V1) => &[&[42], &[7, 31], &[7, 31, 42]],
+        Some(product_ids::R5_V2) => &[&[7, 31]],
+        _ => &[&[7, 31], &[42], &[7, 31, 42]],
+    }
+}
+
 fn json_report_record_contains(
     value: &Value,
     key: &str,
@@ -6101,6 +6105,15 @@ fn json_report_record_contains(
             })
         })
         .unwrap_or(false)
+}
+
+fn json_usize_array(value: &Value, key: &str) -> Option<Vec<usize>> {
+    let values = value.get(key).and_then(Value::as_array)?;
+    let mut parsed = Vec::with_capacity(values.len());
+    for value in values {
+        parsed.push(value.as_u64()? as usize);
+    }
+    Some(parsed)
 }
 
 fn json_usize_array_equals(value: &Value, key: &str, expected: &[usize]) -> bool {
@@ -13986,7 +13999,9 @@ fn descriptor_source_label(report_descriptor: Option<&ReportDescriptor>) -> Stri
 }
 
 fn expected_input_report_lengths(pid: u16) -> Vec<usize> {
-    if is_wheelbase_product(pid) {
+    if pid == product_ids::R5_V1 {
+        vec![42]
+    } else if is_wheelbase_product(pid) {
         vec![7, 31]
     } else if pid == product_ids::SR_P_PEDALS {
         vec![5]
@@ -15024,6 +15039,11 @@ mod tests {
         let mut device = sample_trusted_r5_json_device();
         device["product_id"] = serde_json::json!("0x0004");
         device["product_name"] = serde_json::json!("Moza R5 V1");
+        device["report_descriptor_len"] = serde_json::json!(32);
+        device["report_descriptor_crc32"] = serde_json::json!("0x1C8EF640");
+        device["report_descriptor_hex"] =
+            serde_json::json!("85017508952981028520750895079102850375089503B102851175089503B102");
+        device["input_report_lengths"] = serde_json::json!([42]);
         device
     }
 
@@ -18254,6 +18274,48 @@ mod tests {
         assert!(gate.satisfied);
         assert!(gate.descriptor_trusted);
         assert!(!gate.explicit_operator_override);
+        Ok(())
+    }
+
+    #[test]
+    fn validate_direct_mode_gate_accepts_live_r5_v1_extended_descriptor() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let descriptor = dir.path().join("descriptor.json");
+        write_test_json_file(
+            &descriptor,
+            &serde_json::json!({
+                "success": true,
+                "no_ffb_writes": true,
+                "devices": [sample_trusted_r5_v1_json_device()]
+            }),
+        )?;
+
+        let gate = validate_direct_mode_gate_for_torque_test(Some(&descriptor), "0x0004", false)?;
+
+        assert!(gate.satisfied);
+        assert!(gate.descriptor_trusted);
+        assert!(!gate.explicit_operator_override);
+        Ok(())
+    }
+
+    #[test]
+    fn validate_direct_mode_gate_rejects_r5_v2_descriptor_with_v1_input_shape() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let descriptor = dir.path().join("descriptor.json");
+        let mut device = sample_trusted_r5_v1_json_device();
+        device["product_id"] = serde_json::json!("0x0014");
+        write_test_json_file(
+            &descriptor,
+            &serde_json::json!({
+                "success": true,
+                "no_ffb_writes": true,
+                "devices": [device]
+            }),
+        )?;
+
+        let result = validate_direct_mode_gate_for_torque_test(Some(&descriptor), "0x0014", false);
+
+        assert!(result.is_err());
         Ok(())
     }
 
@@ -23582,6 +23644,28 @@ mod tests {
                 .iter()
                 .any(|gate| { gate.name == "descriptor_metadata" && gate.status == "fail" })
         );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_passive_accepts_live_r5_v1_descriptor_input_length() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_test_json_file(
+            &dir.path().join("descriptor.json"),
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl moza descriptor",
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "devices": [sample_trusted_r5_v1_json_device()]
+            }),
+        )?;
+
+        let gate = verify_descriptor_metadata_gate(dir.path());
+
+        assert_eq!(gate.status, "pass", "{}", gate.details);
         Ok(())
     }
 
