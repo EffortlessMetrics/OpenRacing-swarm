@@ -131,7 +131,9 @@ wheelctl moza descriptor `
 ```
 
 If the descriptor bytes come from Linux sysfs as a raw binary
-`report_descriptor` file, use the binary file form:
+`report_descriptor` file, use native Linux or WSL2 with explicit USB
+passthrough. Ordinary WSL2 does not expose Windows host HID devices under
+`/sys/class/hidraw`. Use the binary file form:
 
 ```bash
 mkdir -p target

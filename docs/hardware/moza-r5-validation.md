@@ -134,7 +134,9 @@ satisfy descriptor trust. Use a report-descriptor hex block such as `0000: 05
 01 09 04 ...`, Linux `/sys/bus/hid/devices/.../report_descriptor` bytes, or
 another descriptor tool that exposes the raw HID report descriptor.
 
-On Linux, a connected R5 V1 descriptor can be exported without sending reports:
+On Linux, a connected R5 V1 descriptor can be exported without sending reports.
+Use native Linux or a WSL2 instance with explicit USB passthrough; ordinary WSL2
+does not expose Windows host HID devices under `/sys/class/hidraw`:
 
 ```bash
 mkdir -p target
