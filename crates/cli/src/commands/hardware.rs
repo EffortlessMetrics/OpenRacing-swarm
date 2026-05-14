@@ -353,11 +353,13 @@ fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusR
         first_missing_artifact_stage,
         !missing_role_endpoints.is_empty(),
     );
+    let descriptor_capture_tooling = lane_descriptor_capture_tooling_status(lane);
     let safe_next_commands = lane_status_safe_next_commands(
         lane,
         adapter.id,
         next_blocked_stage,
         &manifest.declared_logical_roles,
+        &descriptor_capture_tooling,
     );
 
     Ok(HardwareLaneStatusReceipt {
@@ -381,6 +383,7 @@ fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusR
         next_blocked_stage,
         safe_next_commands,
         blocking_items,
+        descriptor_capture_tooling,
         scaffold_files,
         role_evidence,
         stages: stage_status,
@@ -632,6 +635,7 @@ fn lane_status_safe_next_commands(
     family: &str,
     next_blocked_stage: &str,
     roles: &[StoredHardwareLaneLogicalRole],
+    descriptor_capture_tooling: &HardwareLaneDescriptorCaptureToolingStatus,
 ) -> Vec<String> {
     match (family, next_blocked_stage) {
         ("moza-r5", "discovery") => vec![
@@ -711,8 +715,13 @@ fn lane_status_safe_next_commands(
         }
         ("moza-r5", "descriptor_trust") => {
             let selector = moza_descriptor_selector(roles);
-            vec![
-                "powershell -ExecutionPolicy Bypass -File scripts/extract_usbpcap_report_descriptor.ps1 -InputPcapng target/moza-r5-usbpcap-enumeration.pcapng -Output target/moza-r5-report-descriptor.txt -InterfaceNumber 2".to_string(),
+            let mut commands = Vec::new();
+            if descriptor_capture_tooling.usbpcap_extractor_guidance_available() {
+                commands.push(
+                    "powershell -ExecutionPolicy Bypass -File scripts/extract_usbpcap_report_descriptor.ps1 -InputPcapng target/moza-r5-usbpcap-enumeration.pcapng -Output target/moza-r5-report-descriptor.txt -InterfaceNumber 2".to_string(),
+                );
+            }
+            commands.extend([
                 format!(
                     "wheelctl moza descriptor --device {selector} --report-descriptor-hex-file target/moza-r5-report-descriptor.txt --json-out {} --json",
                     lane_path_arg(lane, "descriptor.json")
@@ -721,7 +730,8 @@ fn lane_status_safe_next_commands(
                     "wheelctl moza descriptor --device {selector} --report-descriptor-bin-file target/moza-r5-report-descriptor.bin --json-out {} --json",
                     lane_path_arg(lane, "descriptor.json")
                 ),
-            ]
+            ]);
+            commands
         }
         ("moza-r5", "fixture_promotion") => vec![
             format!(
@@ -756,6 +766,78 @@ fn lane_status_safe_next_commands(
             Vec::new()
         }
         _ => Vec::new(),
+    }
+}
+
+fn lane_descriptor_capture_tooling_status(
+    lane: &Path,
+) -> HardwareLaneDescriptorCaptureToolingStatus {
+    let path = lane.join("hardware-doctor.json");
+    if !path.exists() {
+        return HardwareLaneDescriptorCaptureToolingStatus {
+            hardware_doctor_present: false,
+            hardware_doctor_parseable: false,
+            tshark_present: None,
+            usbpcap_interfaces_present: None,
+            usbpcap_interface_count: None,
+            ready_for_usbpcap_descriptor_capture: None,
+            guidance: "run wheelctl hardware doctor to inventory descriptor capture tooling"
+                .to_string(),
+        };
+    }
+
+    let Ok(receipt) = read_json_file::<serde_json::Value>(&path) else {
+        return HardwareLaneDescriptorCaptureToolingStatus {
+            hardware_doctor_present: true,
+            hardware_doctor_parseable: false,
+            tshark_present: None,
+            usbpcap_interfaces_present: None,
+            usbpcap_interface_count: None,
+            ready_for_usbpcap_descriptor_capture: None,
+            guidance: "hardware-doctor.json could not be parsed; refresh it before descriptor capture planning"
+                .to_string(),
+        };
+    };
+
+    let capture = receipt
+        .get("tools")
+        .and_then(|tools| tools.get("usbpcap_descriptor_capture"));
+    let tshark_present = capture
+        .and_then(|value| value.get("tshark_present"))
+        .and_then(serde_json::Value::as_bool);
+    let usbpcap_interfaces_present = capture
+        .and_then(|value| value.get("usbpcap_interfaces_present"))
+        .and_then(serde_json::Value::as_bool);
+    let usbpcap_interface_count = capture
+        .and_then(|value| value.get("usbpcap_interface_count"))
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|count| usize::try_from(count).ok());
+    let ready_for_usbpcap_descriptor_capture = capture
+        .and_then(|value| value.get("ready_for_usbpcap_descriptor_capture"))
+        .and_then(serde_json::Value::as_bool);
+    let guidance = match ready_for_usbpcap_descriptor_capture {
+        Some(true) => {
+            "USBPcap/Wireshark capture interfaces are available for descriptor enumeration capture"
+                .to_string()
+        }
+        Some(false) => {
+            "USBPcap/Wireshark capture interfaces are unavailable; use native Linux/sysfs, install USBPcap intentionally, or import descriptor bytes from another trusted raw HID descriptor source"
+                .to_string()
+        }
+        None => {
+            "hardware-doctor.json does not include USBPcap descriptor tooling status; refresh hardware doctor for host-aware guidance"
+                .to_string()
+        }
+    };
+
+    HardwareLaneDescriptorCaptureToolingStatus {
+        hardware_doctor_present: true,
+        hardware_doctor_parseable: true,
+        tshark_present,
+        usbpcap_interfaces_present,
+        usbpcap_interface_count,
+        ready_for_usbpcap_descriptor_capture,
+        guidance,
     }
 }
 
@@ -2123,6 +2205,10 @@ fn print_lane_status_receipt(
         "Next blocked stage: {}",
         receipt.next_blocked_stage
     ))?;
+    write_stdout_line(&format!(
+        "Descriptor capture tooling: {}",
+        receipt.descriptor_capture_tooling.guidance
+    ))?;
     for item in &receipt.blocking_items {
         write_stdout_line(&format!("Blocked: {item}"))?;
     }
@@ -2544,10 +2630,32 @@ struct HardwareLaneStatusReceipt {
     next_blocked_stage: &'static str,
     safe_next_commands: Vec<String>,
     blocking_items: Vec<String>,
+    descriptor_capture_tooling: HardwareLaneDescriptorCaptureToolingStatus,
     scaffold_files: Vec<HardwareLaneArtifactStatus>,
     role_evidence: Vec<HardwareLaneRoleEvidenceStatus>,
     stages: Vec<HardwareLaneStageStatus>,
     notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct HardwareLaneDescriptorCaptureToolingStatus {
+    hardware_doctor_present: bool,
+    hardware_doctor_parseable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tshark_present: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    usbpcap_interfaces_present: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    usbpcap_interface_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ready_for_usbpcap_descriptor_capture: Option<bool>,
+    guidance: String,
+}
+
+impl HardwareLaneDescriptorCaptureToolingStatus {
+    fn usbpcap_extractor_guidance_available(&self) -> bool {
+        self.ready_for_usbpcap_descriptor_capture != Some(false)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -3545,6 +3653,79 @@ mod tests {
         );
         assert!(
             !joined.contains("--device hid-0x346E-0x0004-if2-0x0001-0x0004"),
+            "{joined}"
+        );
+        assert!(!joined.contains("torque"));
+        assert!(!joined.contains("ffb"));
+        Ok(())
+    }
+
+    #[test]
+    fn lane_status_descriptor_guidance_uses_hardware_doctor_usbpcap_readiness() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("moza-r5-lane");
+        let _receipt =
+            scaffold_hardware_lane(&lane, "moza-r5", "wheelbase-hub", "Steven", false, None)?;
+        for artifact in [
+            "device-list.json",
+            "hid-list.json",
+            "moza-probe.json",
+            "lane-capture-analysis.json",
+            "parser-fixture-validation.json",
+        ] {
+            fs::write(lane.join(artifact), "{}\n")?;
+        }
+        fs::write(
+            lane.join("hardware-doctor.json"),
+            serde_json::to_string_pretty(&serde_json::json!({
+                "tools": {
+                    "usbpcap_descriptor_capture": {
+                        "tshark_present": true,
+                        "usbpcap_interfaces_present": false,
+                        "usbpcap_interface_count": 0,
+                        "ready_for_usbpcap_descriptor_capture": false
+                    }
+                }
+            }))?,
+        )?;
+        for role in [
+            "r5-steering-sweep.jsonl",
+            "r5-throttle-only-sweep.jsonl",
+            "r5-brake-only-sweep.jsonl",
+        ] {
+            fs::write(lane.join("captures").join(role), "{}\n")?;
+        }
+        fs::write(
+            lane.join("captures").join("declared-rim-controls.jsonl"),
+            "{}\n",
+        )?;
+
+        let status = build_hardware_lane_status_receipt(&lane)?;
+        let joined = status.safe_next_commands.join("\n");
+
+        assert_eq!(status.next_blocked_stage, "descriptor_trust");
+        assert_eq!(
+            status
+                .descriptor_capture_tooling
+                .ready_for_usbpcap_descriptor_capture,
+            Some(false)
+        );
+        assert!(
+            status
+                .descriptor_capture_tooling
+                .guidance
+                .contains("USBPcap/Wireshark capture interfaces are unavailable")
+        );
+        assert!(
+            !joined.contains("scripts/extract_usbpcap_report_descriptor.ps1"),
+            "{joined}"
+        );
+        assert!(
+            joined.contains("--report-descriptor-hex-file target/moza-r5-report-descriptor.txt"),
+            "{joined}"
+        );
+        assert!(
+            joined.contains("--report-descriptor-bin-file target/moza-r5-report-descriptor.bin"),
             "{joined}"
         );
         assert!(!joined.contains("torque"));
