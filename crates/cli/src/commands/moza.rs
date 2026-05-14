@@ -4646,6 +4646,9 @@ fn push_passive_next_commands(
             "wheelctl moza descriptor --json-out {}",
             lane_path_arg(lane, "descriptor.json")
         ));
+        commands.push(
+            "powershell -ExecutionPolicy Bypass -File scripts/extract_usbpcap_report_descriptor.ps1 -InputPcapng target/moza-r5-usbpcap-enumeration.pcapng -Output target/moza-r5-report-descriptor.txt -InterfaceNumber 2".to_string()
+        );
         commands.push(format!(
             "wheelctl moza descriptor --device {r5_selector} --report-descriptor-hex-file target/moza-r5-report-descriptor.txt --json-out {}",
             lane_path_arg(lane, "descriptor.json")
@@ -24837,6 +24840,13 @@ mod tests {
             "passive next_commands should include the descriptor file fallback"
         );
         assert!(
+            receipt
+                .next_commands
+                .iter()
+                .any(|command| command.contains("scripts/extract_usbpcap_report_descriptor.ps1")),
+            "passive next_commands should include the USBPcap descriptor extractor"
+        );
+        assert!(
             receipt.next_commands.iter().any(|command| command.contains(
                 "wheelctl moza descriptor --device 0x346E:0x0014 --report-descriptor-bin-file"
             )),
@@ -25415,6 +25425,19 @@ mod tests {
                         "racing-wheel-hid-moza-protocol",
                         "promoted_capture_fixtures_replay_through_moza_parser",
                     ] => {}
+                    [
+                        "powershell",
+                        "-ExecutionPolicy",
+                        "Bypass",
+                        "-File",
+                        "scripts/extract_usbpcap_report_descriptor.ps1",
+                        "-InputPcapng",
+                        "target/moza-r5-usbpcap-enumeration.pcapng",
+                        "-Output",
+                        "target/moza-r5-report-descriptor.txt",
+                        "-InterfaceNumber",
+                        "2",
+                    ] => {}
                     _ => {
                         return Err(format!(
                             "unexpected external generated next_command: {command}"
@@ -25427,8 +25450,8 @@ mod tests {
         }
 
         assert_eq!(
-            checked, 3,
-            "expected hid-capture, lane-status wheeld, and canonical simulator-writer wheeld next_commands"
+            checked, 4,
+            "expected hid-capture, USBPcap descriptor extraction, lane-status wheeld, and canonical simulator-writer wheeld next_commands"
         );
         Ok(())
     }

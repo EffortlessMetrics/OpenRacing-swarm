@@ -712,6 +712,7 @@ fn lane_status_safe_next_commands(
         ("moza-r5", "descriptor_trust") => {
             let selector = moza_descriptor_selector(roles);
             vec![
+                "powershell -ExecutionPolicy Bypass -File scripts/extract_usbpcap_report_descriptor.ps1 -InputPcapng target/moza-r5-usbpcap-enumeration.pcapng -Output target/moza-r5-report-descriptor.txt -InterfaceNumber 2".to_string(),
                 format!(
                     "wheelctl moza descriptor --device {selector} --report-descriptor-hex-file target/moza-r5-report-descriptor.txt --json-out {} --json",
                     lane_path_arg(lane, "descriptor.json")
@@ -3359,6 +3360,18 @@ mod tests {
         assert_eq!(status.next_blocked_stage, "descriptor_trust");
         assert!(
             joined.contains("--device hid-0x346E-0x0014-if2-0x0001-0x0004"),
+            "{joined}"
+        );
+        assert!(
+            joined.contains("scripts/extract_usbpcap_report_descriptor.ps1"),
+            "{joined}"
+        );
+        assert!(
+            joined.contains("-InputPcapng target/moza-r5-usbpcap-enumeration.pcapng"),
+            "{joined}"
+        );
+        assert!(
+            joined.contains("-Output target/moza-r5-report-descriptor.txt"),
             "{joined}"
         );
         assert!(
