@@ -3773,6 +3773,7 @@ fn verify_bundle_dir_with_support_validation(
         .count();
     let failed_gates = gates.iter().filter(|check| check.status == "fail").count();
     let success = missing_artifacts == 0 && invalid_artifacts == 0 && failed_gates == 0;
+    let endpoint_observations = bundle_endpoint_observations(lane);
     let operator_actions = operator_actions_for_bundle_stage(stage, &gates);
     let next_commands = next_commands_for_bundle_stage(lane, stage, &artifact_checks, &gates);
 
@@ -3787,6 +3788,7 @@ fn verify_bundle_dir_with_support_validation(
         failed_gates,
         artifacts: artifact_checks,
         gates,
+        endpoint_observations,
         operator_actions,
         next_commands,
         no_hid_device_opened: true,
@@ -3800,6 +3802,156 @@ fn verify_bundle_dir_with_support_validation(
                 .to_string(),
         ],
     }
+}
+
+fn bundle_endpoint_observations(lane: &Path) -> Vec<BundleEndpointObservation> {
+    let Ok(manifest) = read_json_value(lane, "manifest.json") else {
+        return Vec::new();
+    };
+    let Some(topology) = manifest.get("topology") else {
+        return Vec::new();
+    };
+    let Some(endpoints) = topology.get("endpoints").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    let controls = topology
+        .get("logical_controls")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+
+    endpoints
+        .iter()
+        .map(|endpoint| {
+            let id = json_string(endpoint, "id").unwrap_or("<missing-id>");
+            let required_logical_controls = endpoint_logical_controls(&controls, id, true);
+            let optional_logical_controls = endpoint_logical_controls(&controls, id, false);
+            let artifacts = [
+                "device-list.json",
+                "moza-probe.json",
+                "hid-list.json",
+                "descriptor.json",
+            ]
+            .into_iter()
+            .map(|path| endpoint_artifact_observation(lane, path, endpoint))
+            .collect::<Vec<_>>();
+            let observed_artifact_count = artifacts
+                .iter()
+                .filter(|artifact| artifact.vid_pid_count > 0)
+                .count();
+            let metadata_match_artifact_count = artifacts
+                .iter()
+                .filter(|artifact| artifact.metadata_match_count > 0)
+                .count();
+
+            BundleEndpointObservation {
+                id: id.to_string(),
+                kind: json_string(endpoint, "kind").map(str::to_string),
+                vendor_id: json_string(endpoint, "vendor_id").map(str::to_string),
+                product_id: json_string(endpoint, "product_id").map(str::to_string),
+                interface_number: json_u64(endpoint, "interface_number"),
+                usage_page: json_string(endpoint, "usage_page").map(str::to_string),
+                usage: json_string(endpoint, "usage").map(str::to_string),
+                output_capable: json_bool(endpoint, "output_capable"),
+                required_logical_controls,
+                optional_logical_controls,
+                observed_artifact_count,
+                metadata_match_artifact_count,
+                artifacts,
+            }
+        })
+        .collect()
+}
+
+fn endpoint_logical_controls(
+    controls: &serde_json::Map<String, Value>,
+    endpoint_id: &str,
+    required: bool,
+) -> Vec<String> {
+    let mut names = controls
+        .iter()
+        .filter(|(_, control)| json_string(control, "source_endpoint") == Some(endpoint_id))
+        .filter(|(_, control)| json_bool(control, "required").unwrap_or(true) == required)
+        .map(|(name, _)| name.to_string())
+        .collect::<Vec<_>>();
+    names.sort();
+    names
+}
+
+fn endpoint_artifact_observation(
+    lane: &Path,
+    path: &str,
+    endpoint: &Value,
+) -> BundleEndpointArtifactObservation {
+    match read_json_value(lane, path) {
+        Ok(receipt) => {
+            let vid_pid_count = count_topology_endpoint_vid_pid_devices(&receipt, endpoint);
+            let metadata_match_count = count_topology_endpoint_metadata_devices(&receipt, endpoint);
+            BundleEndpointArtifactObservation {
+                path: path.to_string(),
+                status: "read".to_string(),
+                vid_pid_count,
+                metadata_match_count,
+            }
+        }
+        Err(e) => BundleEndpointArtifactObservation {
+            path: path.to_string(),
+            status: format!("unavailable:{e}"),
+            vid_pid_count: 0,
+            metadata_match_count: 0,
+        },
+    }
+}
+
+fn count_topology_endpoint_vid_pid_devices(receipt: &Value, endpoint: &Value) -> usize {
+    let Some(vendor_id) = json_string(endpoint, "vendor_id").and_then(parse_hex_selector) else {
+        return 0;
+    };
+    let Some(product_id) = json_string(endpoint, "product_id").and_then(parse_hex_selector) else {
+        return 0;
+    };
+    count_vendor_product_devices(receipt, vendor_id, product_id)
+}
+
+fn count_topology_endpoint_metadata_devices(receipt: &Value, endpoint: &Value) -> usize {
+    receipt
+        .get("devices")
+        .and_then(Value::as_array)
+        .map(|devices| {
+            devices
+                .iter()
+                .filter(|device| topology_endpoint_metadata_matches_device(device, endpoint))
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+fn topology_endpoint_metadata_matches_device(device: &Value, endpoint: &Value) -> bool {
+    let Some(vendor_id) = json_string(endpoint, "vendor_id").and_then(parse_hex_selector) else {
+        return false;
+    };
+    let Some(product_id) = json_string(endpoint, "product_id").and_then(parse_hex_selector) else {
+        return false;
+    };
+    if !is_vendor_product_device_value(device, vendor_id, product_id) {
+        return false;
+    }
+    if let Some(interface_number) = json_u64(endpoint, "interface_number")
+        && json_u64(device, "interface_number") != Some(interface_number)
+    {
+        return false;
+    }
+    if let Some(usage_page) = json_string(endpoint, "usage_page")
+        && json_string(device, "usage_page") != Some(usage_page)
+    {
+        return false;
+    }
+    if let Some(usage) = json_string(endpoint, "usage")
+        && json_string(device, "usage") != Some(usage)
+    {
+        return false;
+    }
+    true
 }
 
 fn operator_actions_for_bundle_stage(
@@ -13338,6 +13490,7 @@ struct BundleVerificationReceipt {
     failed_gates: usize,
     artifacts: Vec<BundleArtifactCheck>,
     gates: Vec<BundleGateCheck>,
+    endpoint_observations: Vec<BundleEndpointObservation>,
     operator_actions: Vec<String>,
     next_commands: Vec<String>,
     no_hid_device_opened: bool,
@@ -13345,6 +13498,31 @@ struct BundleVerificationReceipt {
     no_serial_config_commands: bool,
     no_firmware_or_dfu_commands: bool,
     notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct BundleEndpointObservation {
+    id: String,
+    kind: Option<String>,
+    vendor_id: Option<String>,
+    product_id: Option<String>,
+    interface_number: Option<u64>,
+    usage_page: Option<String>,
+    usage: Option<String>,
+    output_capable: Option<bool>,
+    required_logical_controls: Vec<String>,
+    optional_logical_controls: Vec<String>,
+    observed_artifact_count: usize,
+    metadata_match_artifact_count: usize,
+    artifacts: Vec<BundleEndpointArtifactObservation>,
+}
+
+#[derive(Debug, Serialize)]
+struct BundleEndpointArtifactObservation {
+    path: String,
+    status: String,
+    vid_pid_count: usize,
+    metadata_match_count: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -14774,7 +14952,7 @@ mod tests {
             "product_name": "Moza R5",
             "manufacturer": "MOZA",
             "serial_number_present": true,
-            "interface_number": 0,
+            "interface_number": 2,
             "usage_page": "0x0001",
             "usage": "0x0004",
             "descriptor_source": "operator_supplied_hex",
@@ -23070,6 +23248,42 @@ mod tests {
     }
 
     #[test]
+    fn verify_bundle_reports_declared_endpoint_observations() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
+
+        let r5 = receipt
+            .endpoint_observations
+            .iter()
+            .find(|endpoint| endpoint.id == "moza-r5-if2")
+            .ok_or("expected R5 topology endpoint observation")?;
+        assert_eq!(r5.kind.as_deref(), Some("wheelbase_hub"));
+        assert_eq!(r5.vendor_id.as_deref(), Some("0x346E"));
+        assert_eq!(r5.product_id.as_deref(), Some("0x0014"));
+        assert_eq!(r5.interface_number, Some(2));
+        assert_eq!(r5.usage_page.as_deref(), Some("0x0001"));
+        assert_eq!(r5.usage.as_deref(), Some("0x0004"));
+        assert_eq!(r5.output_capable, Some(true));
+        assert!(
+            r5.required_logical_controls
+                .iter()
+                .any(|control| control == "throttle"),
+            "expected declared throttle role in endpoint observation: {:?}",
+            r5.required_logical_controls
+        );
+        assert_eq!(r5.observed_artifact_count, 4);
+        assert_eq!(r5.metadata_match_artifact_count, 4);
+        assert!(r5.artifacts.iter().all(|artifact| {
+            artifact.status == "read"
+                && artifact.vid_pid_count == 1
+                && artifact.metadata_match_count == 1
+        }));
+        Ok(())
+    }
+
+    #[test]
     fn verify_bundle_validated_captures_suggest_fixture_promotion_when_missing() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_minimal_passive_bundle(dir.path())?;
@@ -24267,6 +24481,7 @@ mod tests {
                     "manifest_no_overclaim",
                     "forced post-promotion verifier failure".to_string(),
                 )],
+                endpoint_observations: Vec::new(),
                 operator_actions: Vec::new(),
                 next_commands: Vec::new(),
                 no_hid_device_opened: true,
