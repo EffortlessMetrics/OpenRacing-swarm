@@ -4081,13 +4081,9 @@ fn topology_endpoint_metadata_matches_device(device: &Value, endpoint: &Value) -
 
 fn operator_actions_for_bundle_stage(
     lane: &Path,
-    stage: MozaBundleStage,
+    _stage: MozaBundleStage,
     gates: &[BundleGateCheck],
 ) -> Vec<String> {
-    if stage != MozaBundleStage::Passive {
-        return Vec::new();
-    }
-
     let mut actions = Vec::new();
     if !bundle_gate_check_passed(gates, "descriptor_metadata") {
         actions.push(
@@ -4186,12 +4182,15 @@ fn next_commands_for_bundle_stage(
     let mut commands = Vec::new();
     push_passive_next_commands(&lane, &wheelbase_pid, artifact_checks, gates, &mut commands);
 
-    if stage_rank(stage) >= stage_rank(MozaBundleStage::Zero) {
-        push_zero_next_commands(&lane, &mut commands);
+    let passive_ready = passive_stage_gates_passed(gates);
+    let zero_ready = zero_stage_gates_passed(gates);
+
+    if stage_rank(stage) >= stage_rank(MozaBundleStage::Zero) && passive_ready && !zero_ready {
+        push_zero_next_commands(&lane, gates, &mut commands);
     }
 
-    if stage_rank(stage) >= stage_rank(MozaBundleStage::SmokeReady) {
-        push_smoke_ready_next_commands(&lane, &mut commands);
+    if stage_rank(stage) >= stage_rank(MozaBundleStage::SmokeReady) && zero_ready {
+        push_smoke_ready_next_commands(&lane, gates, &mut commands);
     }
 
     commands
@@ -4312,6 +4311,7 @@ fn push_passive_next_commands(
     }
     if bundle_gate_check_passed(gates, "passive_captures_parse")
         && bundle_gate_check_passed(gates, "parser_fixture_validation")
+        && !bundle_gate_check_passed(gates, "fixture_promotion")
     {
         commands.push(format!(
             "wheelctl moza promote-fixtures --lane {lane_arg} --fixture-dir {fixture_dir_arg} --json-out {}",
@@ -4364,6 +4364,53 @@ fn bundle_gate_checks_passed(gates: &[BundleGateCheck], names: &[&str]) -> bool 
         .all(|name| bundle_gate_check_passed(gates, name))
 }
 
+fn passive_stage_gates_passed(gates: &[BundleGateCheck]) -> bool {
+    bundle_gate_checks_passed(
+        gates,
+        &[
+            "lane_directory",
+            "manifest_no_overclaim",
+            "manifest_r5_pid_consistency",
+            "moza_r5_observed",
+            "moza_topology_observed",
+            "descriptor_metadata",
+            "passive_receipts_successful",
+            "passive_receipts_no_ffb_writes",
+            "passive_captures_parse",
+            "parser_fixture_validation",
+            "fixture_promotion",
+        ],
+    )
+}
+
+fn zero_stage_gates_passed(gates: &[BundleGateCheck]) -> bool {
+    passive_stage_gates_passed(gates)
+        && bundle_gate_checks_passed(
+            gates,
+            &[
+                "zero_torque_real_hardware",
+                "watchdog_zero_output",
+                "disconnect_final_zero",
+            ],
+        )
+}
+
+fn smoke_ready_stage_gates_passed(gates: &[BundleGateCheck]) -> bool {
+    zero_stage_gates_passed(gates)
+        && bundle_gate_checks_passed(
+            gates,
+            &[
+                "init_off_handshake",
+                "init_standard_handshake",
+                "service_status_receipts",
+                "low_torque_bounded",
+                "pit_house_coexistence",
+                "simulator_telemetry",
+                "simulator_ffb_bounded",
+            ],
+        )
+}
+
 fn bundle_artifact_needs_regeneration(
     artifact_checks: &[BundleArtifactCheck],
     relative_path: &str,
@@ -4398,35 +4445,47 @@ fn passive_capture_next_command_hint(relative_path: &str) -> (&'static str, u64)
     }
 }
 
-fn push_zero_next_commands(lane: &Path, commands: &mut Vec<String>) {
+fn push_zero_next_commands(lane: &Path, gates: &[BundleGateCheck], commands: &mut Vec<String>) {
     let lane_arg = command_arg(&lane.display().to_string());
-    commands.push(format!(
-        "wheelctl moza zero --device <r5> --repeat 100 --hz 1000 --json-out {}",
-        lane_path_arg(lane, "zero-torque-proof.json")
-    ));
-    commands.push(format!(
-        "wheelctl moza watchdog-proof --device <r5> --pre-zero-count 3 --watchdog-timeout-ms 100 --json-out {}",
-        lane_path_arg(lane, "watchdog-proof.json")
-    ));
-    commands.push(format!(
-        "wheelctl moza disconnect-proof --device <r5> --confirm-disconnect-test --max-duration-ms 10000 --json-out {}",
-        lane_path_arg(lane, "disconnect-proof.json")
-    ));
+    if !bundle_gate_check_passed(gates, "zero_torque_real_hardware") {
+        commands.push(format!(
+            "wheelctl moza zero --device <r5> --repeat 100 --hz 1000 --json-out {}",
+            lane_path_arg(lane, "zero-torque-proof.json")
+        ));
+    }
+    if !bundle_gate_check_passed(gates, "watchdog_zero_output") {
+        commands.push(format!(
+            "wheelctl moza watchdog-proof --device <r5> --pre-zero-count 3 --watchdog-timeout-ms 100 --json-out {}",
+            lane_path_arg(lane, "watchdog-proof.json")
+        ));
+    }
+    if !bundle_gate_check_passed(gates, "disconnect_final_zero") {
+        commands.push(format!(
+            "wheelctl moza disconnect-proof --device <r5> --confirm-disconnect-test --max-duration-ms 10000 --json-out {}",
+            lane_path_arg(lane, "disconnect-proof.json")
+        ));
+    }
     commands.push(format!(
         "wheelctl moza verify-bundle --lane {lane_arg} --stage zero --json-out {}",
         lane_path_arg(lane, verification_receipt_path(MozaBundleStage::Zero))
     ));
-    commands.push(format!(
-        "wheelctl moza promote-manifest --lane {lane_arg} --stage zero --json-out {}",
-        lane_path_arg(lane, promotion_receipt_path(MozaBundleStage::Zero))
-    ));
-    commands.push(format!(
-        "wheelctl moza audit-lane --lane {lane_arg} --stage zero --json-out {}",
-        lane_path_arg(lane, audit_receipt_path(MozaBundleStage::Zero))
-    ));
+    if zero_stage_gates_passed(gates) {
+        commands.push(format!(
+            "wheelctl moza promote-manifest --lane {lane_arg} --stage zero --json-out {}",
+            lane_path_arg(lane, promotion_receipt_path(MozaBundleStage::Zero))
+        ));
+        commands.push(format!(
+            "wheelctl moza audit-lane --lane {lane_arg} --stage zero --json-out {}",
+            lane_path_arg(lane, audit_receipt_path(MozaBundleStage::Zero))
+        ));
+    }
 }
 
-fn push_smoke_ready_next_commands(lane: &Path, commands: &mut Vec<String>) {
+fn push_smoke_ready_next_commands(
+    lane: &Path,
+    gates: &[BundleGateCheck],
+    commands: &mut Vec<String>,
+) {
     let lane_arg = command_arg(&lane.display().to_string());
     commands.push(format!(
         "wheelctl moza init --device <r5> --mode off --json-out {}",
@@ -4558,14 +4617,16 @@ fn push_smoke_ready_next_commands(lane: &Path, commands: &mut Vec<String>) {
         "wheelctl moza verify-bundle --lane {lane_arg} --stage smoke-ready --json-out {}",
         lane_path_arg(lane, verification_receipt_path(MozaBundleStage::SmokeReady))
     ));
-    commands.push(format!(
-        "wheelctl moza promote-manifest --lane {lane_arg} --stage smoke-ready --json-out {}",
-        lane_path_arg(lane, promotion_receipt_path(MozaBundleStage::SmokeReady))
-    ));
-    commands.push(format!(
-        "wheelctl moza audit-lane --lane {lane_arg} --stage smoke-ready --json-out {}",
-        lane_path_arg(lane, audit_receipt_path(MozaBundleStage::SmokeReady))
-    ));
+    if smoke_ready_stage_gates_passed(gates) {
+        commands.push(format!(
+            "wheelctl moza promote-manifest --lane {lane_arg} --stage smoke-ready --json-out {}",
+            lane_path_arg(lane, promotion_receipt_path(MozaBundleStage::SmokeReady))
+        ));
+        commands.push(format!(
+            "wheelctl moza audit-lane --lane {lane_arg} --stage smoke-ready --json-out {}",
+            lane_path_arg(lane, audit_receipt_path(MozaBundleStage::SmokeReady))
+        ));
+    }
 }
 
 fn push_pit_house_observation_next_command(
@@ -16624,6 +16685,26 @@ mod tests {
         })
     }
 
+    fn receipt_with_lane_path(root: &Path, relative_path: &str, mut receipt: Value) -> Value {
+        receipt["receipt_path"] = serde_json::json!(root.join(relative_path).display().to_string());
+        receipt
+    }
+
+    fn write_zero_stage_receipts(root: &Path) -> TestResult {
+        write_test_json_file(
+            &root.join("zero-torque-proof.json"),
+            &receipt_with_lane_path(root, "zero-torque-proof.json", real_zero_receipt(100)),
+        )?;
+        write_test_json_file(
+            &root.join("watchdog-proof.json"),
+            &receipt_with_lane_path(root, "watchdog-proof.json", real_watchdog_receipt(3)),
+        )?;
+        write_test_json_file(
+            &root.join("disconnect-proof.json"),
+            &receipt_with_lane_path(root, "disconnect-proof.json", real_disconnect_receipt()),
+        )
+    }
+
     fn init_feature_reports(mode_payload: &str, result: &str) -> Vec<Value> {
         vec![
             serde_json::json!({
@@ -23901,6 +23982,106 @@ mod tests {
     }
 
     #[test]
+    fn verify_bundle_zero_next_commands_wait_for_passive_gates() -> TestResult {
+        let dir = tempfile::tempdir()?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Zero);
+
+        assert!(!receipt.success);
+        let joined = receipt.next_commands.join("\n");
+        assert!(
+            joined.contains("--stage passive"),
+            "blocked zero-stage guidance should return operators to passive verification: {joined}"
+        );
+        for forbidden in [
+            "wheelctl moza zero --device",
+            "wheelctl moza watchdog-proof",
+            "wheelctl moza disconnect-proof",
+            "wheelctl moza torque-test",
+            "--stage zero",
+            "manifest-promotion-zero.json",
+            "lane-audit-zero.json",
+        ] {
+            assert!(
+                !joined.contains(forbidden),
+                "zero-stage next_commands must not include {forbidden} before passive gates pass: {joined}"
+            );
+        }
+        assert!(
+            receipt
+                .operator_actions
+                .iter()
+                .any(|action| action.contains("Export the R5 HID report descriptor byte block")),
+            "later-stage receipts should still surface passive descriptor operator action: {:?}",
+            receipt.operator_actions
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_zero_next_commands_start_zero_only_after_passive_gates_pass() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Zero);
+
+        assert!(!receipt.success);
+        let joined = receipt.next_commands.join("\n");
+        for expected in [
+            "wheelctl moza zero --device",
+            "wheelctl moza watchdog-proof",
+            "wheelctl moza disconnect-proof",
+            "--stage zero",
+        ] {
+            assert!(
+                joined.contains(expected),
+                "zero-stage next_commands should include {expected} after passive gates pass: {joined}"
+            );
+        }
+        for forbidden in [
+            "wheelctl moza torque-test",
+            "manifest-promotion-zero.json",
+            "lane-audit-zero.json",
+        ] {
+            assert!(
+                !joined.contains(forbidden),
+                "zero-stage next_commands must not include {forbidden} before zero gates pass: {joined}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_smoke_next_commands_wait_for_zero_gates() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+
+        assert!(!receipt.success);
+        let joined = receipt.next_commands.join("\n");
+        assert!(
+            joined.contains("wheelctl moza zero --device"),
+            "smoke-ready guidance should first suggest the missing zero-stage proof: {joined}"
+        );
+        for forbidden in [
+            "wheelctl moza torque-test",
+            "wheelctl moza init --device",
+            "wheelctl moza simulator-ffb-smoke",
+            "wheelctl moza pit-house-proof",
+            "--stage smoke-ready",
+            "manifest-promotion-smoke-ready.json",
+            "lane-audit-smoke-ready.json",
+        ] {
+            assert!(
+                !joined.contains(forbidden),
+                "smoke-ready next_commands must not include {forbidden} before zero gates pass: {joined}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
     fn verify_bundle_next_commands_use_manifest_wheelbase_pid() -> TestResult {
         let dir = tempfile::tempdir()?;
         let mut manifest = sample_lane_manifest("not_started", false, false);
@@ -23964,6 +24145,9 @@ mod tests {
     #[test]
     fn verify_bundle_smoke_next_commands_match_dependency_order() -> TestResult {
         let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        write_zero_stage_receipts(dir.path())?;
+
         let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
 
         assert!(!receipt.success);
@@ -24067,21 +24251,28 @@ mod tests {
     #[test]
     fn verify_bundle_next_commands_parse_as_wheelctl_commands() -> TestResult {
         let lane_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ci/hardware/moza-r5");
-        let receipt = verify_bundle_dir(&lane_root, MozaBundleStage::SmokeReady);
+        let blocked_root_receipt = verify_bundle_dir(&lane_root, MozaBundleStage::SmokeReady);
+        let staged = tempfile::tempdir()?;
+        write_minimal_passive_bundle(staged.path())?;
+        write_zero_stage_receipts(staged.path())?;
+        let smoke_ready_receipt = verify_bundle_dir(staged.path(), MozaBundleStage::SmokeReady);
 
-        assert!(!receipt.success);
+        assert!(!blocked_root_receipt.success);
+        assert!(!smoke_ready_receipt.success);
         let mut checked = 0usize;
-        for command in receipt
-            .next_commands
-            .iter()
-            .filter(|command| command.starts_with("wheelctl "))
-        {
-            let command = command_with_test_placeholders(command);
-            let args = split_generated_command(&command)?;
-            crate::Cli::try_parse_from(args).map_err(|error| {
-                format!("generated next_command failed to parse: {command}\n{error}")
-            })?;
-            checked += 1;
+        for receipt in [&blocked_root_receipt, &smoke_ready_receipt] {
+            for command in receipt
+                .next_commands
+                .iter()
+                .filter(|command| command.starts_with("wheelctl "))
+            {
+                let command = command_with_test_placeholders(command);
+                let args = split_generated_command(&command)?;
+                crate::Cli::try_parse_from(args).map_err(|error| {
+                    format!("generated next_command failed to parse: {command}\n{error}")
+                })?;
+                checked += 1;
+            }
         }
 
         assert!(
@@ -24094,54 +24285,63 @@ mod tests {
     #[test]
     fn verify_bundle_next_commands_use_known_external_command_forms() -> TestResult {
         let lane_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ci/hardware/moza-r5");
-        let receipt = verify_bundle_dir(&lane_root, MozaBundleStage::SmokeReady);
+        let blocked_root_receipt = verify_bundle_dir(&lane_root, MozaBundleStage::SmokeReady);
+        let staged = tempfile::tempdir()?;
+        write_minimal_passive_bundle(staged.path())?;
+        write_zero_stage_receipts(staged.path())?;
+        let smoke_ready_receipt = verify_bundle_dir(staged.path(), MozaBundleStage::SmokeReady);
 
-        assert!(!receipt.success);
+        assert!(!blocked_root_receipt.success);
+        assert!(!smoke_ready_receipt.success);
         let mut checked = 0usize;
-        for command in receipt
-            .next_commands
-            .iter()
-            .filter(|command| !command.starts_with("wheelctl "))
-        {
-            let command = command_with_test_placeholders(command);
-            let args = split_generated_command(&command)?;
-            let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+        for receipt in [&blocked_root_receipt, &smoke_ready_receipt] {
+            for command in receipt
+                .next_commands
+                .iter()
+                .filter(|command| !command.starts_with("wheelctl "))
+            {
+                let command = command_with_test_placeholders(command);
+                let args = split_generated_command(&command)?;
+                let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
 
-            match arg_refs.as_slice() {
-                [
-                    "hid-capture",
-                    "list",
-                    "--vendor",
-                    "0x346E",
-                    "--json-out",
-                    path,
-                ] => {
-                    assert!(
-                        path.replace('\\', "/").ends_with("/hid-list.json"),
-                        "generated hid-capture next_command should write hid-list.json: {command}"
-                    );
+                match arg_refs.as_slice() {
+                    [
+                        "hid-capture",
+                        "list",
+                        "--vendor",
+                        "0x346E",
+                        "--json-out",
+                        path,
+                    ] => {
+                        assert!(
+                            path.replace('\\', "/").ends_with("/hid-list.json"),
+                            "generated hid-capture next_command should write hid-list.json: {command}"
+                        );
+                    }
+                    ["wheeld", "--hardware-lane", "moza-r5"] => {}
+                    ["wheeld", "--hardware-lane", lane] => {
+                        assert!(
+                            Path::new(lane).ends_with(staged.path())
+                                || lane.replace('\\', "/").contains("ci/hardware/moza-r5/"),
+                            "generated wheeld next_command should target the staged or dated Moza lane: {command}"
+                        );
+                    }
+                    [
+                        "cargo",
+                        "test",
+                        "-p",
+                        "racing-wheel-hid-moza-protocol",
+                        "promoted_capture_fixtures_replay_through_moza_parser",
+                    ] => {}
+                    _ => {
+                        return Err(format!(
+                            "unexpected external generated next_command: {command}"
+                        )
+                        .into());
+                    }
                 }
-                ["wheeld", "--hardware-lane", "moza-r5"] => {}
-                ["wheeld", "--hardware-lane", lane] => {
-                    assert!(
-                        lane.replace('\\', "/").contains("ci/hardware/moza-r5/"),
-                        "generated wheeld next_command should target the dated Moza lane: {command}"
-                    );
-                }
-                [
-                    "cargo",
-                    "test",
-                    "-p",
-                    "racing-wheel-hid-moza-protocol",
-                    "promoted_capture_fixtures_replay_through_moza_parser",
-                ] => {}
-                _ => {
-                    return Err(
-                        format!("unexpected external generated next_command: {command}").into(),
-                    );
-                }
+                checked += 1;
             }
-            checked += 1;
         }
 
         assert_eq!(
