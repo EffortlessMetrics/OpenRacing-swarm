@@ -205,6 +205,7 @@ ci/hardware/moza-r5/<date>/manifest.json
 ci/hardware/moza-r5/<date>/device-list.json
 ci/hardware/moza-r5/<date>/moza-probe.json
 ci/hardware/moza-r5/<date>/hid-list.json
+ci/hardware/moza-r5/<date>/hardware-doctor.json
 ci/hardware/moza-r5/<date>/descriptor.json
 ci/hardware/moza-r5/<date>/captures/r5-idle.jsonl
 ci/hardware/moza-r5/<date>/captures/r5-steering-sweep.jsonl

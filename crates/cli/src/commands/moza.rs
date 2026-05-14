@@ -3931,6 +3931,12 @@ fn push_passive_next_commands(
             lane_path_arg(lane, "hid-list.json")
         ));
     }
+    if bundle_artifact_needs_regeneration(artifact_checks, "hardware-doctor.json") {
+        commands.push(format!(
+            "wheelctl hardware doctor --json-out {}",
+            lane_path_arg(lane, "hardware-doctor.json")
+        ));
+    }
     if bundle_artifact_needs_regeneration(artifact_checks, "descriptor.json")
         || !bundle_gate_check_passed(gates, "descriptor_metadata")
     {
@@ -4780,6 +4786,7 @@ fn bundle_artifact_requirements() -> &'static [BundleArtifactRequirement] {
         BundleArtifactRequirement::json("device-list.json", MozaBundleStage::Passive),
         BundleArtifactRequirement::json("moza-probe.json", MozaBundleStage::Passive),
         BundleArtifactRequirement::json("hid-list.json", MozaBundleStage::Passive),
+        BundleArtifactRequirement::json("hardware-doctor.json", MozaBundleStage::Passive),
         BundleArtifactRequirement::json("descriptor.json", MozaBundleStage::Passive),
         BundleArtifactRequirement::jsonl("captures/r5-idle.jsonl", MozaBundleStage::Passive),
         BundleArtifactRequirement::jsonl(
@@ -5503,6 +5510,7 @@ fn manifest_artifacts_match_lane_contract(artifacts: Option<&Value>) -> bool {
         ("device_list", "device-list.json"),
         ("hid_list", "hid-list.json"),
         ("moza_probe", "moza-probe.json"),
+        ("hardware_doctor", "hardware-doctor.json"),
         ("descriptor", "descriptor.json"),
         ("captures_dir", "captures"),
         ("capture_r5_idle", "captures/r5-idle.jsonl"),
@@ -6263,7 +6271,7 @@ struct PassiveReceiptRequirement {
     no_hid_device_opened: bool,
 }
 
-fn passive_receipt_requirements() -> [PassiveReceiptRequirement; 6] {
+fn passive_receipt_requirements() -> [PassiveReceiptRequirement; 7] {
     [
         PassiveReceiptRequirement {
             path: "device-list.json",
@@ -6278,6 +6286,11 @@ fn passive_receipt_requirements() -> [PassiveReceiptRequirement; 6] {
         PassiveReceiptRequirement {
             path: "hid-list.json",
             allowed_commands: &["hid-capture list"],
+            no_hid_device_opened: true,
+        },
+        PassiveReceiptRequirement {
+            path: "hardware-doctor.json",
+            allowed_commands: &["wheelctl hardware doctor"],
             no_hid_device_opened: true,
         },
         PassiveReceiptRequirement {
@@ -10468,6 +10481,7 @@ fn moza_lane_manifest_artifacts_value() -> Value {
         "device_list": "device-list.json",
         "hid_list": "hid-list.json",
         "moza_probe": "moza-probe.json",
+        "hardware_doctor": "hardware-doctor.json",
         "descriptor": "descriptor.json",
         "captures_dir": "captures",
         "capture_r5_idle": "captures/r5-idle.jsonl",
@@ -15399,6 +15413,47 @@ mod tests {
                 "no_serial_config_commands": true,
                 "no_firmware_or_dfu_commands": true,
                 "devices": [r5_device.clone(), srp_device.clone(), hbp_device.clone()]
+            }),
+        )?;
+        write_test_json_file(
+            &root.join("hardware-doctor.json"),
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl hardware doctor",
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_output_reports": true,
+                "no_feature_reports": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "hid": {
+                    "api_available": true,
+                    "enumeration_available": true,
+                    "known_devices_visible": [r5_device.clone(), srp_device.clone(), hbp_device.clone()],
+                    "moza_vid_visible": true
+                },
+                "windows_pnp": {
+                    "scan_attempted": true,
+                    "moza_vid_visible": true,
+                    "hid_interface_count": 1,
+                    "serial_interface_count": 1,
+                    "devices": [
+                        {
+                            "class": "HIDClass",
+                            "vendor_id": "0x346E",
+                            "product_id": "0x0014",
+                            "interface_number": 2,
+                            "instance_id_present": true
+                        },
+                        {
+                            "class": "Ports",
+                            "vendor_id": "0x346E",
+                            "product_id": "0x0014",
+                            "interface_number": 0,
+                            "instance_id_present": true
+                        }
+                    ]
+                }
             }),
         )?;
         write_test_json_file(
@@ -22741,6 +22796,25 @@ mod tests {
     }
 
     #[test]
+    fn verify_bundle_passive_requires_hardware_doctor_no_hid_open() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        let mut receipt = read_json_path(&dir.path().join("hardware-doctor.json"))?;
+        receipt["no_hid_device_opened"] = serde_json::json!(false);
+        write_test_json_file(&dir.path().join("hardware-doctor.json"), &receipt)?;
+
+        let gate = verify_passive_no_writes_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details.contains("hardware-doctor.json"),
+            "expected hardware doctor no-HID-open failure, got {}",
+            gate.details
+        );
+        Ok(())
+    }
+
+    #[test]
     fn verify_parser_validation_gate_rejects_single_capture_receipt() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_test_json_file(
@@ -22807,6 +22881,14 @@ mod tests {
             receipt
                 .next_commands
                 .iter()
+                .any(|command| command.contains("wheelctl hardware doctor")
+                    && command.contains("hardware-doctor.json")),
+            "passive next_commands should include hardware doctor receipt generation"
+        );
+        assert!(
+            receipt
+                .next_commands
+                .iter()
                 .any(|command| command.contains("wheelctl moza verify-bundle")
                     && command.contains("--stage passive"))
         );
@@ -22860,6 +22942,7 @@ mod tests {
             "wheelctl device list",
             "wheelctl moza probe",
             "hid-capture list",
+            "wheelctl hardware doctor",
             "wheelctl moza descriptor",
         ] {
             assert!(

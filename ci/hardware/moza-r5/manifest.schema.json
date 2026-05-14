@@ -277,6 +277,7 @@
         "device_list",
         "hid_list",
         "moza_probe",
+        "hardware_doctor",
         "descriptor",
         "captures_dir",
         "capture_r5_idle",
@@ -328,6 +329,10 @@
         "moza_probe": {
           "type": "string",
           "const": "moza-probe.json"
+        },
+        "hardware_doctor": {
+          "type": "string",
+          "const": "hardware-doctor.json"
         },
         "descriptor": {
           "type": "string",
