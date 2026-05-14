@@ -404,7 +404,10 @@ pub(crate) async fn generate_support_bundle(
         pb.finish_with_message("Support bundle created");
     }
 
-    let devices = filter_support_bundle_devices(client.list_devices().await?, device_filter)?;
+    let devices = filter_support_bundle_devices(
+        merge_support_bundle_hid_observe_devices(client.list_devices().await?),
+        device_filter,
+    )?;
     let moza_lane_path = moza_lane.map(Path::new);
     let device_statuses = collect_device_statuses(client, &devices, moza_lane_path).await;
     let moza_status = moza_lane_path.map(crate::commands::moza::support_bundle_status);
@@ -415,6 +418,8 @@ pub(crate) async fn generate_support_bundle(
         "timestamp": chrono::Utc::now(),
         "no_hid_device_opened": true,
         "no_ffb_writes": true,
+        "no_output_reports": true,
+        "no_feature_reports": true,
         "no_serial_config_commands": true,
         "no_firmware_or_dfu_commands": true,
         "system_info": {
@@ -463,6 +468,24 @@ fn filter_support_bundle_devices(
     Ok(filtered)
 }
 
+fn merge_support_bundle_hid_observe_devices(
+    mut devices: Vec<crate::client::DeviceInfo>,
+) -> Vec<crate::client::DeviceInfo> {
+    for hid_device in crate::commands::device::known_hid_observe_devices() {
+        let duplicate = devices.iter().any(|device| {
+            device.vendor_id == hid_device.vendor_id
+                && device.product_id == hid_device.product_id
+                && device.interface_number == hid_device.interface_number
+                && device.usage_page == hid_device.usage_page
+                && device.usage == hid_device.usage
+        });
+        if !duplicate {
+            devices.push(hid_device);
+        }
+    }
+    devices
+}
+
 async fn collect_device_statuses(
     client: &WheelClient,
     devices: &[crate::client::DeviceInfo],
@@ -471,7 +494,7 @@ async fn collect_device_statuses(
     let mut statuses = Vec::with_capacity(devices.len());
     for device in devices {
         statuses.push(support_bundle_device_status_entry(
-            &device.id,
+            device,
             client.get_device_status(&device.id).await,
             moza_lane,
         ));
@@ -480,7 +503,7 @@ async fn collect_device_statuses(
 }
 
 fn support_bundle_device_status_entry(
-    device_id: &str,
+    device: &crate::client::DeviceInfo,
     status: Result<DeviceStatus>,
     moza_lane: Option<&Path>,
 ) -> serde_json::Value {
@@ -490,16 +513,40 @@ fn support_bundle_device_status_entry(
                 crate::commands::moza::apply_lane_readiness_to_device_status(&mut status, lane);
             }
             serde_json::json!({
-                "device_id": device_id,
+                "device_id": device.id,
                 "status": "ok",
                 "device_status": status
             })
         }
-        Err(error) => serde_json::json!({
-            "device_id": device_id,
-            "status": "error",
-            "error": error.to_string()
-        }),
+        Err(error) => {
+            if device.source.as_deref() == Some("hid-observe") {
+                let mut status = DeviceStatus {
+                    device: device.clone(),
+                    last_seen: chrono::Utc::now(),
+                    active_faults: Vec::new(),
+                    telemetry: crate::client::TelemetryData::default(),
+                    moza: crate::client::MozaReadinessStatus::from_device(device),
+                };
+                if let Some(lane) = moza_lane {
+                    crate::commands::moza::apply_lane_readiness_to_device_status(&mut status, lane);
+                }
+                serde_json::json!({
+                    "device_id": device.id,
+                    "status": "ok",
+                    "status_source": "hid-observe",
+                    "device_status": status,
+                    "notes": [
+                        "HID-observed device status is synthesized from observe-only enumeration because the service has no live device status row"
+                    ]
+                })
+            } else {
+                serde_json::json!({
+                    "device_id": device.id,
+                    "status": "error",
+                    "error": error.to_string()
+                })
+            }
+        }
     }
 }
 
@@ -824,6 +871,18 @@ mod tests {
         );
         assert_eq!(
             value
+                .get("no_output_reports")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            value
+                .get("no_feature_reports")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            value
                 .get("no_serial_config_commands")
                 .and_then(serde_json::Value::as_bool),
             Some(true)
@@ -838,7 +897,10 @@ mod tests {
             .get("device_statuses")
             .and_then(serde_json::Value::as_array)
             .ok_or("expected device status snapshots")?;
-        assert_eq!(device_statuses.len(), 2);
+        assert!(
+            device_statuses.len() >= 2,
+            "support bundle should include at least the mock service devices: {device_statuses:?}"
+        );
         assert!(
             device_statuses
                 .iter()
@@ -932,6 +994,18 @@ mod tests {
                 .and_then(serde_json::Value::as_object)
                 .is_some()
         );
+        assert_eq!(
+            value
+                .get("no_output_reports")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            value
+                .get("no_feature_reports")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
         let device_statuses = value
             .get("device_statuses")
             .and_then(serde_json::Value::as_array)
@@ -960,8 +1034,9 @@ mod tests {
             serde_json::to_string_pretty(&descriptor)?,
         )?;
 
-        let entry =
-            support_bundle_device_status_entry("r5-001", Ok(sample_moza_r5_status()), Some(&lane));
+        let status = sample_moza_r5_status();
+        let device = status.device.clone();
+        let entry = support_bundle_device_status_entry(&device, Ok(status), Some(&lane));
         assert_eq!(
             entry.get("device_id").and_then(serde_json::Value::as_str),
             Some("r5-001")

@@ -11,7 +11,10 @@ use std::path::Path;
 use std::time::Duration;
 use tokio::time::interval;
 
-use crate::client::{DeviceCapabilities, DeviceInfo, DeviceState, DeviceType, WheelClient};
+use crate::client::{
+    DeviceCapabilities, DeviceInfo, DeviceState, DeviceStatus, DeviceType, MozaReadinessStatus,
+    TelemetryData, WheelClient,
+};
 use crate::commands::{CalibrationType, DeviceCommands, moza};
 use crate::error::CliError;
 use crate::output;
@@ -170,6 +173,10 @@ fn observe_known_hid_devices() -> HidDeviceListObservation {
     }
 }
 
+pub(crate) fn known_hid_observe_devices() -> Vec<DeviceInfo> {
+    observe_known_hid_devices().devices
+}
+
 fn hid_device_info(
     registry: &DeviceCapabilityRegistry,
     device: &HidDeviceInfo,
@@ -255,6 +262,54 @@ fn hex_u16(value: u16) -> String {
     format!("0x{value:04X}")
 }
 
+fn hid_observe_device_status(selector: &str) -> Result<Option<DeviceStatus>> {
+    let devices = known_hid_observe_devices();
+    let matches = devices
+        .into_iter()
+        .filter(|device| hid_observe_selector_matches(device, selector))
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [] => Ok(None),
+        [device] => Ok(Some(device_status_from_hid_observe_device(device))),
+        _ => Err(CliError::ValidationError(format!(
+            "HID observe selector '{selector}' matched {} devices; use the full hid-* device id",
+            matches.len()
+        ))
+        .into()),
+    }
+}
+
+fn hid_observe_selector_matches(device: &DeviceInfo, selector: &str) -> bool {
+    if device.id.eq_ignore_ascii_case(selector) || device.name.eq_ignore_ascii_case(selector) {
+        return true;
+    }
+    if device
+        .product_string
+        .as_deref()
+        .is_some_and(|product| product.eq_ignore_ascii_case(selector))
+    {
+        return true;
+    }
+    let Some(vendor_id) = device.vendor_id.as_deref() else {
+        return false;
+    };
+    let Some(product_id) = device.product_id.as_deref() else {
+        return false;
+    };
+    selector.eq_ignore_ascii_case(&format!("{vendor_id}:{product_id}"))
+        || selector.eq_ignore_ascii_case(product_id)
+}
+
+fn device_status_from_hid_observe_device(device: &DeviceInfo) -> DeviceStatus {
+    DeviceStatus {
+        device: device.clone(),
+        last_seen: chrono::Utc::now(),
+        active_faults: Vec::new(),
+        telemetry: TelemetryData::default(),
+        moza: MozaReadinessStatus::from_device(device),
+    }
+}
+
 /// Show device status
 async fn device_status(
     client: &WheelClient,
@@ -274,10 +329,11 @@ async fn device_status(
     if watch {
         watch_device_status(client, device, json, moza_lane).await
     } else {
-        let mut status = client
-            .get_device_status(device)
-            .await
-            .map_err(|_| CliError::DeviceNotFound(device.to_string()))?;
+        let mut status = match client.get_device_status(device).await {
+            Ok(status) => status,
+            Err(_) => hid_observe_device_status(device)?
+                .ok_or_else(|| CliError::DeviceNotFound(device.to_string()))?,
+        };
         if let Some(lane) = moza_lane {
             moza::apply_lane_readiness_to_device_status(&mut status, lane);
         }
@@ -310,6 +366,8 @@ fn write_device_status_receipt(
         "moza_lane": moza_lane.map(|lane| lane.display().to_string()),
         "no_hid_device_opened": true,
         "no_ffb_writes": true,
+        "no_output_reports": true,
+        "no_feature_reports": true,
         "no_serial_config_commands": true,
         "no_firmware_or_dfu_commands": true,
         "status": status,
@@ -703,6 +761,14 @@ mod tests {
             Some(true)
         );
         assert_eq!(
+            value.get("no_output_reports").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            value.get("no_feature_reports").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
             value
                 .get("status")
                 .and_then(|status| status.get("device"))
@@ -791,6 +857,47 @@ mod tests {
         assert_eq!(r5.usage_page.as_deref(), Some("0x0001"));
         assert_eq!(r5.usage.as_deref(), Some("0x0004"));
         assert_eq!(r5.hid_path_present, Some(true));
+        Ok(())
+    }
+
+    #[test]
+    fn hid_observe_status_accepts_device_list_id_without_enabling_output() -> TestResult {
+        let device = DeviceInfo {
+            id: "hid-0x346E-0x0004-if2-0x0001-0x0004".to_string(),
+            name: "MOZA R5 Base".to_string(),
+            source: Some("hid-observe".to_string()),
+            vendor_id: Some("0x346E".to_string()),
+            product_id: Some("0x0004".to_string()),
+            manufacturer: Some("Gudsen".to_string()),
+            product_string: Some("MOZA R5 Base".to_string()),
+            serial_number_present: Some(true),
+            interface_number: Some(2),
+            usage_page: Some("0x0001".to_string()),
+            usage: Some("0x0004".to_string()),
+            hid_path_present: Some(true),
+            device_type: DeviceType::WheelBase,
+            state: DeviceState::Connected,
+            capabilities: DeviceCapabilities {
+                supports_health_stream: true,
+                ..DeviceCapabilities::default()
+            },
+        };
+
+        assert!(hid_observe_selector_matches(&device, &device.id));
+        assert!(hid_observe_selector_matches(&device, "0x346E:0x0004"));
+
+        let status = device_status_from_hid_observe_device(&device);
+        assert_eq!(status.device.id, device.id);
+        assert_eq!(status.device.source.as_deref(), Some("hid-observe"));
+        let moza = status
+            .moza
+            .ok_or_else(|| anyhow::anyhow!("expected Moza readiness status"))?;
+        assert_eq!(moza.product_id, "0x0004");
+        assert!(moza.output_capable);
+        assert!(!moza.ffb_ready);
+        assert!(!moza.direct_mode_allowed);
+        assert!(!moza.high_torque_allowed);
+        assert!(!moza.safe_to_send_torque);
         Ok(())
     }
 
