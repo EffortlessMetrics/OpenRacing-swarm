@@ -198,9 +198,36 @@ wheelctl moza capture-input `
 ```
 
 If this capture still looks idle-like after one clean redo, stop recapturing
-and inspect the physical/vendor state first. Open Pit House in a normal
-non-update state and confirm whether the gas axis moves there. To inspect the
-stored OpenRacing capture without assigning semantics to unlabeled bytes, run:
+and inspect the physical/vendor state first. If Pit House is installed, open it
+only in a normal non-update state and confirm whether the gas axis moves there.
+If Pit House is not installed or is unavailable, do not install firmware tools
+or enter update flows for this passive lane. Instead, power down the R5, reseat
+the throttle pedal cable and the pedal-set-to-R5 cable, confirm the throttle is
+on the expected SR-P throttle port or harness path, power the R5 back on, and
+run one target-only gas check before replacing the lane capture:
+
+```powershell
+New-Item -ItemType Directory -Force -Path "target/moza-gas-check" | Out-Null
+
+wheelctl moza capture-input `
+  --device <r5> `
+  --duration-ms 60000 `
+  --json-out "target/moza-gas-check/r5-gas-after-reseat-60s.jsonl" `
+  --json
+
+wheelctl moza analyze-capture `
+  --capture "target/moza-gas-check/r5-gas-after-reseat-60s.jsonl" `
+  --json-out "target/moza-gas-check/r5-gas-after-reseat-analysis.json" `
+  --json
+```
+
+Use the same gesture as the lane capture: 5 seconds idle, throttle
+0->100->0 slowly several times, then 5 seconds idle. Do not move the wheel,
+brake, clutch, handbrake, or rim controls. Replace
+`$LANE/captures/r5-throttle-only-sweep.jsonl` only if the target-only analysis
+shows parser-visible hub-control movement beyond the idle/trailer bytes. To
+inspect the stored lane capture without assigning semantics to unlabeled bytes,
+run:
 
 ```powershell
 wheelctl moza analyze-capture `
