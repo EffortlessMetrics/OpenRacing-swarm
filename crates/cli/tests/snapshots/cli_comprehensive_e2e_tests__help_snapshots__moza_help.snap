@@ -14,6 +14,9 @@ Commands:
   descriptor                 Capture descriptor metadata for connected Moza HID devices
   capture-input              Capture input reports from one Moza HID device without FFB writes
   validate-capture           Validate captured Moza input JSONL through the parser without hardware writes
+  analyze-capture            Analyze raw byte/word movement in a captured Moza input JSONL without hardware writes
+  analyze-lane               Compare required passive lane captures against idle without hardware writes
+  sync-role-status           Sync manifest logical-control semantic_status fields from stored captures
   validate-captures          Validate every required Moza lane capture through the parser without hardware writes
   promote-fixture            Promote a validated Moza capture JSONL into a parser fixture file
   promote-fixtures           Promote every required Moza lane capture into parser fixture files
