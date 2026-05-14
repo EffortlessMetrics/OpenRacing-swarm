@@ -23254,6 +23254,161 @@ mod tests {
     }
 
     #[test]
+    fn analyze_lane_scopes_missing_throttle_to_declared_topology_role() -> TestResult {
+        let ks_only = tempfile::tempdir()?;
+        write_minimal_passive_bundle(ks_only.path())?;
+        replace_observation_receipt_devices(ks_only.path(), &[sample_trusted_r5_json_device()])?;
+        set_declared_hardware(ks_only.path(), &["KS"], &[], None)?;
+        set_required_hub_controls(
+            ks_only.path(),
+            &[
+                (
+                    "steering",
+                    "steering",
+                    None,
+                    "captures/r5-steering-sweep.jsonl",
+                ),
+                (
+                    "ks_rim_controls",
+                    "rim_controls",
+                    Some("KS"),
+                    "captures/ks-controls.jsonl",
+                ),
+            ],
+        )?;
+        remove_optional_capture_files(
+            ks_only.path(),
+            &[
+                "captures/r5-throttle-only-sweep.jsonl",
+                "captures/r5-brake-only-sweep.jsonl",
+                "captures/r5-clutch-only-sweep.jsonl",
+                "captures/r5-handbrake-only-sweep.jsonl",
+                "captures/es-controls.jsonl",
+            ],
+        )?;
+
+        let ks_analysis = analyze_lane_captures(ks_only.path())?;
+
+        assert!(
+            ks_analysis.success,
+            "KS-only topology should not inherit throttle requirements: {}",
+            serde_json::to_string_pretty(&ks_analysis)?
+        );
+        assert!(ks_analysis.missing_control_evidence.is_empty());
+        assert!(
+            ks_analysis
+                .role_evidence
+                .iter()
+                .all(|entry| entry.role != "throttle")
+        );
+        assert!(
+            passive_capture_requirements_for_lane(ks_only.path())
+                .iter()
+                .all(|requirement| requirement.relative_path
+                    != "captures/r5-throttle-only-sweep.jsonl")
+        );
+
+        let throttle_required = tempfile::tempdir()?;
+        write_minimal_passive_bundle(throttle_required.path())?;
+        replace_observation_receipt_devices(
+            throttle_required.path(),
+            &[sample_trusted_r5_v1_json_device()],
+        )?;
+        set_declared_hardware(throttle_required.path(), &[], &["SR-P"], None)?;
+        set_required_hub_controls(
+            throttle_required.path(),
+            &[
+                (
+                    "steering",
+                    "steering",
+                    None,
+                    "captures/r5-steering-sweep.jsonl",
+                ),
+                (
+                    "throttle",
+                    "throttle",
+                    None,
+                    "captures/r5-throttle-only-sweep.jsonl",
+                ),
+            ],
+        )?;
+        remove_optional_capture_files(
+            throttle_required.path(),
+            &[
+                "captures/r5-brake-only-sweep.jsonl",
+                "captures/r5-clutch-only-sweep.jsonl",
+                "captures/r5-handbrake-only-sweep.jsonl",
+                "captures/ks-controls.jsonl",
+                "captures/es-controls.jsonl",
+            ],
+        )?;
+        write_text_file(
+            &throttle_required
+                .path()
+                .join("captures/r5-throttle-only-sweep.jsonl"),
+            &format!(
+                "{}\n{}",
+                capture_line(
+                    product_ids::R5_V1,
+                    &live_r5_v1_trailer_report_hex([0x00, 0x00, 0x00, 0x00])
+                ),
+                capture_line(
+                    product_ids::R5_V1,
+                    &live_r5_v1_trailer_report_hex([0x10, 0x20, 0x30, 0x40])
+                )
+            ),
+        )?;
+
+        let throttle_analysis = analyze_lane_captures(throttle_required.path())?;
+        let throttle_role = throttle_analysis
+            .role_evidence
+            .iter()
+            .find(|entry| entry.role == "throttle")
+            .ok_or("expected declared throttle role evidence")?;
+        let selected_requirements = passive_capture_requirements_for_lane(throttle_required.path());
+
+        assert!(!throttle_analysis.success);
+        assert_eq!(
+            throttle_analysis.missing_control_evidence,
+            vec!["captures/r5-throttle-only-sweep.jsonl".to_string()]
+        );
+        assert_eq!(throttle_role.semantic_status, "missing");
+        assert!(!throttle_role.parser_visible);
+        assert_eq!(
+            throttle_role.evidence_capture.as_deref(),
+            Some("captures/r5-throttle-only-sweep.jsonl")
+        );
+        assert!(
+            throttle_analysis
+                .role_evidence
+                .iter()
+                .all(|entry| entry.role != "brake"
+                    && entry.role != "clutch"
+                    && entry.role != "handbrake")
+        );
+        assert!(selected_requirements.iter().any(
+            |requirement| requirement.relative_path == "captures/r5-throttle-only-sweep.jsonl"
+        ));
+        for artifact in [
+            "captures/r5-brake-only-sweep.jsonl",
+            "captures/r5-clutch-only-sweep.jsonl",
+            "captures/r5-handbrake-only-sweep.jsonl",
+            "captures/ks-controls.jsonl",
+            "captures/es-controls.jsonl",
+            "captures/srp-standalone-sweep.jsonl",
+            "captures/hbp-standalone-sweep.jsonl",
+        ] {
+            assert!(
+                selected_requirements
+                    .iter()
+                    .all(|requirement| requirement.relative_path != artifact),
+                "throttle-required topology unexpectedly selected {artifact}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
     fn verify_bundle_passive_allows_optional_absent_roles_without_placeholder_artifacts()
     -> TestResult {
         let dir = tempfile::tempdir()?;
