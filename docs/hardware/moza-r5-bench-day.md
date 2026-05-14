@@ -131,6 +131,23 @@ wheelctl moza descriptor `
 If the descriptor bytes come from Linux sysfs as a raw binary
 `report_descriptor` file, use the binary file form:
 
+```bash
+mkdir -p target
+descriptor=$(
+  for node in /sys/class/hidraw/hidraw*; do
+    if grep -qi 'HID_ID=.*:0000346E:00000004' "$node/device/uevent"; then
+      printf '%s\n' "$node/device/report_descriptor"
+      break
+    fi
+  done
+)
+test -n "$descriptor"
+sudo cat "$descriptor" > target/moza-r5-report-descriptor.bin
+wc -c target/moza-r5-report-descriptor.bin
+```
+
+Then import that binary file:
+
 ```powershell
 wheelctl moza descriptor `
   --device <r5-selector> `

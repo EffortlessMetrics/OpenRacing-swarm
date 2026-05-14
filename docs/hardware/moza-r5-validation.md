@@ -134,6 +134,23 @@ block such as `0000: 05 01 09 04 ...`, Linux
 `/sys/bus/hid/devices/.../report_descriptor` bytes, or another descriptor tool
 that exposes the raw HID report descriptor.
 
+On Linux, a connected R5 V1 descriptor can be exported without sending reports:
+
+```bash
+mkdir -p target
+descriptor=$(
+  for node in /sys/class/hidraw/hidraw*; do
+    if grep -qi 'HID_ID=.*:0000346E:00000004' "$node/device/uevent"; then
+      printf '%s\n' "$node/device/report_descriptor"
+      break
+    fi
+  done
+)
+test -n "$descriptor"
+sudo cat "$descriptor" > target/moza-r5-report-descriptor.bin
+wc -c target/moza-r5-report-descriptor.bin
+```
+
 Use the vendor-wide `wheelctl moza descriptor` command for the lane receipt so `descriptor.json` contains the observed Moza records. When Windows cannot expose the raw R5 report descriptor, rerun it with `--device <r5>` and `--report-descriptor-hex`, `--report-descriptor-hex-file`, or `--report-descriptor-bin-file`; the receipt preserves the vendor-wide Moza records and applies the supplied descriptor bytes only to the one selected R5 record. `hid-capture descriptor --vendor 0x346E` is still an accepted lower-level producer for the same receipt shape, but the lane runbook uses the wheelctl command so all Moza receipts share one command surface.
 
 Required R5 descriptor fields:

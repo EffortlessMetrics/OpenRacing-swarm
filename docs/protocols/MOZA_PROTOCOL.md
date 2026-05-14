@@ -344,6 +344,21 @@ wheelctl moza descriptor `
 
 For a raw Linux sysfs descriptor dump:
 
+```bash
+mkdir -p target
+descriptor=$(
+  for node in /sys/class/hidraw/hidraw*; do
+    if grep -qi 'HID_ID=.*:0000346E:00000004' "$node/device/uevent"; then
+      printf '%s\n' "$node/device/report_descriptor"
+      break
+    fi
+  done
+)
+test -n "$descriptor"
+sudo cat "$descriptor" > target/moza-r5-report-descriptor.bin
+wc -c target/moza-r5-report-descriptor.bin
+```
+
 ```powershell
 wheelctl moza descriptor `
   --device 0x346E:0x0004 `
