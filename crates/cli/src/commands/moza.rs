@@ -3980,7 +3980,7 @@ fn operator_actions_for_bundle_stage(
     });
     if throttle_missing {
         actions.push(
-            "Throttle capture parsed but no parser-visible hub-control axis moved; check throttle pedal cable, pedal-set-to-R5 routing, and vendor input state before replacing the lane capture."
+            "Throttle capture parsed but no parser-visible hub-control axis moved; check throttle pedal cable, pedal-set-to-R5 routing, and vendor input state before replacing the lane capture. If Pit House is unavailable, use observe-only HID/PnP inspection to confirm endpoints; a visible Moza serial/COM interface is diagnostic topology only and must not be probed or configured in the passive lane."
                 .to_string(),
         );
     }
@@ -23460,11 +23460,11 @@ mod tests {
             "failed existing captures should suggest semantic-status sync: {joined}"
         );
         assert!(
-            receipt
-                .operator_actions
-                .iter()
-                .any(|action| action.contains("Throttle capture parsed")
-                    && action.contains("check throttle pedal cable")),
+            receipt.operator_actions.iter().any(|action| action
+                .contains("Throttle capture parsed")
+                && action.contains("check throttle pedal cable")
+                && action.contains("Pit House is unavailable")
+                && action.contains("must not be probed or configured")),
             "failed throttle role should include a physical-path diagnostic action: {:?}",
             receipt.operator_actions
         );
