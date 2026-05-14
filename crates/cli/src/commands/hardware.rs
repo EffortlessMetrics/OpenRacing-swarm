@@ -342,8 +342,13 @@ fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusR
         .collect();
     let missing_role_endpoints =
         required_roles_with_placeholder_endpoints(&manifest.declared_logical_roles);
-    let blocking_items =
-        lane_status_blocking_items(&stage_status, scaffold_complete, &missing_role_endpoints);
+    let verifier_receipt = lane_verifier_receipt_status(lane);
+    let blocking_items = lane_status_blocking_items(
+        &stage_status,
+        scaffold_complete,
+        &missing_role_endpoints,
+        &verifier_receipt,
+    );
     let first_missing_artifact_stage = stage_status
         .iter()
         .find(|stage| stage.artifacts_missing > 0)
@@ -351,6 +356,7 @@ fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusR
     let next_blocked_stage = lane_status_next_blocked_stage(
         first_missing_artifact_stage,
         !missing_role_endpoints.is_empty(),
+        verifier_receipt.stage_blocker.as_deref(),
     );
     let descriptor_capture_tooling = lane_descriptor_capture_tooling_status(lane);
     let safe_next_commands = lane_status_safe_next_commands(
@@ -383,6 +389,7 @@ fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusR
         next_blocked_stage,
         safe_next_commands,
         blocking_items,
+        verifier_receipt,
         descriptor_capture_tooling,
         scaffold_files,
         role_evidence,
@@ -726,6 +733,7 @@ fn lane_status_blocking_items(
     stage_status: &[HardwareLaneStageStatus],
     scaffold_complete: bool,
     missing_role_endpoints: &[String],
+    verifier_receipt: &HardwareLaneVerifierReceiptStatus,
 ) -> Vec<String> {
     let mut items = Vec::new();
     if !scaffold_complete {
@@ -745,8 +753,121 @@ fn lane_status_blocking_items(
                 .map(|role| format!("role_endpoint:{role}:missing")),
         );
     }
+    if !verifier_receipt.present {
+        items.push("verifier_receipt:passive-verification.json:missing".to_string());
+    } else if !verifier_receipt.parseable {
+        items.push("verifier_receipt:passive-verification.json:unparseable".to_string());
+    } else {
+        items.extend(
+            verifier_receipt
+                .failed_gates
+                .iter()
+                .map(|gate| format!("verifier_gate:{gate}:fail")),
+        );
+    }
     items.push("verifier_receipts_not_evaluated_by_status".to_string());
     items
+}
+
+fn lane_verifier_receipt_status(lane: &Path) -> HardwareLaneVerifierReceiptStatus {
+    let relative_path = "passive-verification.json";
+    let path = lane.join(relative_path);
+    if !path.exists() {
+        return HardwareLaneVerifierReceiptStatus {
+            path: relative_path.to_string(),
+            present: false,
+            parseable: false,
+            success: None,
+            failed_gates: Vec::new(),
+            stage_blocker: None,
+            guidance: "passive verifier receipt is missing; run wheelctl moza verify-bundle before trusting later-stage guidance".to_string(),
+        };
+    }
+
+    let Ok(receipt) = read_json_file::<serde_json::Value>(&path) else {
+        return HardwareLaneVerifierReceiptStatus {
+            path: relative_path.to_string(),
+            present: true,
+            parseable: false,
+            success: None,
+            failed_gates: Vec::new(),
+            stage_blocker: None,
+            guidance: "passive verifier receipt could not be parsed; refresh it before trusting later-stage guidance".to_string(),
+        };
+    };
+
+    let success = receipt.get("success").and_then(serde_json::Value::as_bool);
+    let failed_gates: Vec<_> = receipt
+        .get("gates")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|gate| {
+            let name = gate.get("name").and_then(serde_json::Value::as_str)?;
+            let status = gate
+                .get("status")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown");
+            (status != "pass").then(|| name.to_string())
+        })
+        .collect();
+    let stage_blocker = failed_gates
+        .iter()
+        .filter_map(|gate| verifier_gate_stage_blocker(gate))
+        .min_by_key(|stage| lane_stage_order(stage).unwrap_or(u8::MAX))
+        .map(str::to_string);
+    let guidance = if success == Some(true) {
+        "passive verifier receipt reports success; lane status still inventories artifacts only"
+            .to_string()
+    } else if let Some(stage) = &stage_blocker {
+        format!("passive verifier receipt has failing gates; earliest mapped blocker is {stage}")
+    } else if failed_gates.is_empty() {
+        "passive verifier receipt is present but has no gate summary; refresh it before trusting later-stage guidance".to_string()
+    } else {
+        "passive verifier receipt has failing gates that are not mapped to a rail stage; inspect verify-bundle output".to_string()
+    };
+
+    HardwareLaneVerifierReceiptStatus {
+        path: relative_path.to_string(),
+        present: true,
+        parseable: true,
+        success,
+        failed_gates,
+        stage_blocker,
+        guidance,
+    }
+}
+
+fn verifier_gate_stage_blocker(gate: &str) -> Option<&'static str> {
+    match gate {
+        "lane_directory"
+        | "manifest_no_overclaim"
+        | "manifest_r5_pid_consistency"
+        | "moza_r5_observed"
+        | "moza_topology_observed" => Some("discovery"),
+        "topology_required_evidence_supported"
+        | "passive_captures_parse"
+        | "parser_fixture_validation" => Some("passive"),
+        "descriptor_metadata" => Some("descriptor_trust"),
+        "fixture_promotion" => Some("fixture_promotion"),
+        _ => None,
+    }
+}
+
+fn lane_stage_order(stage: &str) -> Option<u8> {
+    match stage {
+        "discovery" => Some(0),
+        "passive" => Some(1),
+        "descriptor_trust" => Some(2),
+        "fixture_promotion" => Some(3),
+        "pre_output_readiness" => Some(4),
+        "zero_torque" => Some(5),
+        "watchdog" => Some(6),
+        "disconnect" => Some(7),
+        "bounded_ffb" => Some(8),
+        "ffb_extended" => Some(9),
+        _ => None,
+    }
 }
 
 fn required_roles_with_placeholder_endpoints(
@@ -762,14 +883,41 @@ fn required_roles_with_placeholder_endpoints(
 fn lane_status_next_blocked_stage(
     first_missing_artifact_stage: Option<(&'static str, u8)>,
     missing_required_role_endpoint: bool,
+    verifier_stage_blocker: Option<&str>,
 ) -> &'static str {
-    let passive_order = 1;
-    match first_missing_artifact_stage {
-        Some((stage, order)) if order <= passive_order => stage,
-        Some(_) if missing_required_role_endpoint => "passive",
-        Some((stage, _)) => stage,
-        None if missing_required_role_endpoint => "passive",
-        None => "verifier_receipts",
+    let mut earliest = first_missing_artifact_stage;
+    if missing_required_role_endpoint {
+        earliest = earlier_stage(earliest, ("passive", 1));
+    }
+    if let Some(stage) = verifier_stage_blocker.and_then(verifier_stage_with_order) {
+        earliest = earlier_stage(earliest, stage);
+    }
+    earliest.map_or("verifier_receipts", |(stage, _)| stage)
+}
+
+fn earlier_stage(
+    current: Option<(&'static str, u8)>,
+    candidate: (&'static str, u8),
+) -> Option<(&'static str, u8)> {
+    match current {
+        Some((_, order)) if order <= candidate.1 => current,
+        _ => Some(candidate),
+    }
+}
+
+fn verifier_stage_with_order(stage: &str) -> Option<(&'static str, u8)> {
+    match stage {
+        "discovery" => Some(("discovery", 0)),
+        "passive" => Some(("passive", 1)),
+        "descriptor_trust" => Some(("descriptor_trust", 2)),
+        "fixture_promotion" => Some(("fixture_promotion", 3)),
+        "pre_output_readiness" => Some(("pre_output_readiness", 4)),
+        "zero_torque" => Some(("zero_torque", 5)),
+        "watchdog" => Some(("watchdog", 6)),
+        "disconnect" => Some(("disconnect", 7)),
+        "bounded_ffb" => Some(("bounded_ffb", 8)),
+        "ffb_extended" => Some(("ffb_extended", 9)),
+        _ => None,
     }
 }
 
@@ -2353,6 +2501,10 @@ fn print_lane_status_receipt(
         "Descriptor capture tooling: {}",
         receipt.descriptor_capture_tooling.guidance
     ))?;
+    write_stdout_line(&format!(
+        "Verifier receipt: {}",
+        receipt.verifier_receipt.guidance
+    ))?;
     for item in &receipt.blocking_items {
         write_stdout_line(&format!("Blocked: {item}"))?;
     }
@@ -2777,11 +2929,25 @@ struct HardwareLaneStatusReceipt {
     next_blocked_stage: &'static str,
     safe_next_commands: Vec<String>,
     blocking_items: Vec<String>,
+    verifier_receipt: HardwareLaneVerifierReceiptStatus,
     descriptor_capture_tooling: HardwareLaneDescriptorCaptureToolingStatus,
     scaffold_files: Vec<HardwareLaneArtifactStatus>,
     role_evidence: Vec<HardwareLaneRoleEvidenceStatus>,
     stages: Vec<HardwareLaneStageStatus>,
     notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct HardwareLaneVerifierReceiptStatus {
+    path: String,
+    present: bool,
+    parseable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    success: Option<bool>,
+    failed_gates: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stage_blocker: Option<String>,
+    guidance: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -2952,6 +3118,26 @@ mod tests {
                         }
                     }
                 }
+            }))?,
+        )?;
+        Ok(())
+    }
+
+    fn write_passive_verification_receipt(lane: &Path, gates: &[(&str, &str)]) -> TestResult {
+        fs::write(
+            lane.join("passive-verification.json"),
+            serde_json::to_string_pretty(&serde_json::json!({
+                "success": gates.iter().all(|(_, status)| *status == "pass"),
+                "command": "wheelctl moza verify-bundle",
+                "requested_stage": "passive",
+                "gates": gates
+                    .iter()
+                    .map(|(name, status)| serde_json::json!({
+                        "name": name,
+                        "status": status,
+                        "details": "unit test"
+                    }))
+                    .collect::<Vec<_>>()
             }))?,
         )?;
         Ok(())
@@ -4088,6 +4274,128 @@ mod tests {
         assert!(!status.evidence_claims_validated);
         assert!(!status.ready_for_zero_torque);
         assert!(!status.ready_for_ffb);
+        Ok(())
+    }
+
+    #[test]
+    fn lane_status_uses_failed_descriptor_verifier_as_descriptor_blocker() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("moza-r5-lane");
+        let _receipt =
+            scaffold_hardware_lane(&lane, "moza-r5", "wheelbase-hub", "Steven", false, None)?;
+        for artifact in [
+            "device-list.json",
+            "hardware-doctor.json",
+            "hid-list.json",
+            "moza-probe.json",
+            "lane-capture-analysis.json",
+            "parser-fixture-validation.json",
+            "descriptor.json",
+        ] {
+            fs::write(lane.join(artifact), "{}\n")?;
+        }
+        for role in [
+            "r5-steering-sweep.jsonl",
+            "r5-throttle-only-sweep.jsonl",
+            "r5-brake-only-sweep.jsonl",
+        ] {
+            fs::write(lane.join("captures").join(role), "{}\n")?;
+        }
+        fs::write(
+            lane.join("captures").join("declared-rim-controls.jsonl"),
+            "{}\n",
+        )?;
+        write_passive_verification_receipt(
+            &lane,
+            &[
+                ("lane_directory", "pass"),
+                ("passive_captures_parse", "pass"),
+                ("descriptor_metadata", "fail"),
+                ("fixture_promotion", "fail"),
+            ],
+        )?;
+
+        let status = build_hardware_lane_status_receipt(&lane)?;
+        let joined = status.safe_next_commands.join("\n");
+
+        assert_eq!(status.next_blocked_stage, "descriptor_trust");
+        assert_eq!(
+            status.verifier_receipt.stage_blocker.as_deref(),
+            Some("descriptor_trust")
+        );
+        assert!(
+            status
+                .blocking_items
+                .contains(&"verifier_gate:descriptor_metadata:fail".to_string())
+        );
+        assert!(
+            joined.contains("--report-descriptor-bin-file target/moza-r5-report-descriptor.bin"),
+            "{joined}"
+        );
+        assert!(
+            !joined.contains("verify-bundle --lane"),
+            "descriptor guidance should come before fixture-promotion verifier reruns: {joined}"
+        );
+        assert!(!joined.contains("torque"));
+        assert!(!joined.contains("ffb"));
+        assert!(!joined.contains("output"));
+        assert!(!status.ready_for_zero_torque);
+        assert!(!status.ready_for_ffb);
+        Ok(())
+    }
+
+    #[test]
+    fn lane_status_uses_fixture_blocker_after_descriptor_verifier_passes() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("moza-r5-lane");
+        let _receipt =
+            scaffold_hardware_lane(&lane, "moza-r5", "wheelbase-hub", "Steven", false, None)?;
+        for artifact in [
+            "device-list.json",
+            "hardware-doctor.json",
+            "hid-list.json",
+            "moza-probe.json",
+            "lane-capture-analysis.json",
+            "parser-fixture-validation.json",
+            "descriptor.json",
+        ] {
+            fs::write(lane.join(artifact), "{}\n")?;
+        }
+        for role in [
+            "r5-steering-sweep.jsonl",
+            "r5-throttle-only-sweep.jsonl",
+            "r5-brake-only-sweep.jsonl",
+        ] {
+            fs::write(lane.join("captures").join(role), "{}\n")?;
+        }
+        fs::write(
+            lane.join("captures").join("declared-rim-controls.jsonl"),
+            "{}\n",
+        )?;
+        write_passive_verification_receipt(
+            &lane,
+            &[
+                ("lane_directory", "pass"),
+                ("passive_captures_parse", "pass"),
+                ("descriptor_metadata", "pass"),
+                ("fixture_promotion", "fail"),
+            ],
+        )?;
+
+        let status = build_hardware_lane_status_receipt(&lane)?;
+        let joined = status.safe_next_commands.join("\n");
+
+        assert_eq!(status.next_blocked_stage, "fixture_promotion");
+        assert_eq!(
+            status.verifier_receipt.stage_blocker.as_deref(),
+            Some("fixture_promotion")
+        );
+        assert!(joined.contains("wheelctl moza validate-captures"));
+        assert!(joined.contains("wheelctl moza verify-bundle"));
+        assert!(!joined.contains("promote-fixtures"));
+        assert!(!joined.contains("torque"));
+        assert!(!joined.contains("ffb"));
+        assert!(!joined.contains("output"));
         Ok(())
     }
 
