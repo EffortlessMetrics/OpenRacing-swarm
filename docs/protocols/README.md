@@ -9,7 +9,7 @@ This directory contains detailed protocol documentation for all racing wheel man
 | [Logitech](LOGITECH_PROTOCOL.md) | ✅ Supported | HID PIDFF + TrueForce | Well-documented |
 | [Fanatec](FANATEC_PROTOCOL.md) | ✅ Supported | Custom HID | Community reverse-engineered |
 | [Thrustmaster](THRUSTMASTER_PROTOCOL.md) | ✅ Supported | HID PIDFF | Full model coverage |
-| [Moza](MOZA_PROTOCOL.md) | ✅ Supported | Serial/HID PIDFF | Well-documented |
+| [Moza](MOZA_PROTOCOL.md) | Source-backed / receipt-gated | Serial/HID direct torque research | Lane receipts required before real-hardware output claims |
 | [Simagic](SIMAGIC_PROTOCOL.md) | ✅ Supported | HID PIDFF / Proprietary | Legacy + modern (0x2D5C) |
 | [Simucube 2](SIMUCUBE_PROTOCOL.md) | ✅ Supported | HID PIDFF (plug-and-play) | Granite Devices |
 | [VRS DirectForce Pro](VRS_PROTOCOL.md) | ✅ Supported | HID PIDFF | VRS (shares VID with Simagic) |

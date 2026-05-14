@@ -37,12 +37,14 @@ The items below describe the current architecture and design targets. They are n
 
 OpenRacing contains research-backed VID/PID and protocol coverage for 150+ devices across 28 vendors. These entries are sourced from kernel drivers, community hardware databases, and manufacturer documentation — they are **not yet validated on real hardware**. See [Device Support Matrix](docs/DEVICE_SUPPORT.md) for per-device sourcing status.
 
+Moza entries are source-backed protocol targets. Real-hardware compatibility and output claims require the receipt-backed Moza validation lane in [docs/hardware/moza-r5-validation.md](docs/hardware/moza-r5-validation.md) and [docs/hardware/moza-validation-matrix.md](docs/hardware/moza-validation-matrix.md).
+
 | Vendor | VID | Models | FFB |
 |--------|-----|--------|-----|
 | **Logitech** | `0x046D` | G27, G29, G923, G Pro | ✅ HID PIDFF + TrueForce |
 | **Fanatec** | `0x0EB7` | CSL DD, GT DD Pro, Podium DD1/DD2, CSW v2.5 | ✅ Custom HID |
 | **Thrustmaster** | `0x044F` | T150/Pro, TMX, T300RS/GT, TX, T500RS, T248/X, T-GT/II, TS-PC, TS-XW, T818 | ✅ HID PIDFF |
-| **Moza Racing** | `0x346E` | R3, R5 V1/V2, R9 V1/V2, R12 V1/V2, R16, R21 | ✅ Serial/HID PIDFF |
+| **Moza Racing** | `0x346E` | R3, R5 V1/V2, R9 V1/V2, R12 V1/V2, R16, R21 | Source-backed; receipt-gated HID output |
 | **Simagic** | `0x3670` / `0x0483` | Alpha, Alpha Mini/Ultimate, M10, EVO/Sport/Pro | ✅ Custom HID |
 | **Simucube 2** | `0x16D0` | Sport (17 Nm), Pro (25 Nm), Ultimate (32 Nm) | ✅ HID PIDFF |
 | **VRS DirectForce Pro** | `0x0483` | DirectForce Pro V1/V2 (20/25 Nm) | ✅ HID PIDFF |

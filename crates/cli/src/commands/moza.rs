@@ -17838,14 +17838,27 @@ mod tests {
     #[test]
     fn moza_validation_docs_link_checklist_and_remain_non_claiming() -> TestResult {
         let docs_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs");
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let root_readme_path = repo_root.join("README.md");
         let docs_readme_path = docs_root.join("README.md");
+        let setup_path = docs_root.join("SETUP.md");
+        let user_guide_path = docs_root.join("USER_GUIDE.md");
+        let protocols_readme_path = docs_root.join("protocols/README.md");
+        let device_support_path = docs_root.join("DEVICE_SUPPORT.md");
+        let device_capabilities_path = docs_root.join("DEVICE_CAPABILITIES.md");
         let validation_path = docs_root.join("hardware/moza-r5-validation.md");
         let matrix_path = docs_root.join("hardware/moza-validation-matrix.md");
         let checklist_path = docs_root.join("hardware/moza-r5-artifact-checklist.md");
         let ci_readme_path =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ci/hardware/moza-r5/README.md");
 
+        let root_readme = fs::read_to_string(&root_readme_path)?;
         let docs_readme = fs::read_to_string(&docs_readme_path)?;
+        let setup = fs::read_to_string(&setup_path)?;
+        let user_guide = fs::read_to_string(&user_guide_path)?;
+        let protocols_readme = fs::read_to_string(&protocols_readme_path)?;
+        let device_support = fs::read_to_string(&device_support_path)?;
+        let device_capabilities = fs::read_to_string(&device_capabilities_path)?;
         let validation = fs::read_to_string(&validation_path)?;
         let matrix = fs::read_to_string(&matrix_path)?;
         let checklist = fs::read_to_string(&checklist_path)?;
@@ -17873,6 +17886,60 @@ mod tests {
         assert!(
             checklist.contains("release_ready` and `high_torque_validated` must remain `false`")
         );
+
+        for (path, text) in [
+            (root_readme_path.as_path(), root_readme.as_str()),
+            (setup_path.as_path(), setup.as_str()),
+            (user_guide_path.as_path(), user_guide.as_str()),
+            (protocols_readme_path.as_path(), protocols_readme.as_str()),
+            (device_support_path.as_path(), device_support.as_str()),
+            (
+                device_capabilities_path.as_path(),
+                device_capabilities.as_str(),
+            ),
+        ] {
+            assert!(
+                text.contains("receipt") || text.contains("Source-backed"),
+                "{} must keep Moza real-hardware claims receipt-gated",
+                path.display()
+            );
+        }
+
+        assert!(root_readme.contains("Source-backed; receipt-gated HID output"));
+        assert!(setup.contains("Source-backed; hardware receipts required"));
+        assert!(user_guide.contains("protocol-known, real-hardware output requires lane receipts"));
+        assert!(protocols_readme.contains("Source-backed / receipt-gated"));
+        assert!(device_support.contains("Status: **Source-backed / receipt-gated**"));
+        assert!(device_capabilities.contains("status: **Source-backed / receipt-gated**"));
+
+        for stale_claim in [
+            "| **Moza Racing** | `0x346E` | R3, R5 V1/V2, R9 V1/V2, R12 V1/V2, R16, R21 | ✅ Serial/HID PIDFF |",
+            "| **Moza Racing** | `0x346E` | R3, R5 V1/V2, R9 V1/V2, R12 V1/V2, R16, R21 | ✅ Serial / HID PIDFF |",
+            "| [Moza](MOZA_PROTOCOL.md) | ✅ Supported | Serial/HID PIDFF |",
+            "### 4. Moza Racing — VID `0x346E` · Status: **Verified**",
+            "| R5 V1 | `0x0004` | Verified | universal-pidff |",
+            "| R5 V2 | `0x0014` | Verified | universal-pidff |",
+            "Source: `crates/hid-moza-protocol`; status: **Verified**",
+            "| Moza Racing (R3–R21 V1/V2) | Verified |",
+        ] {
+            for (path, text) in [
+                (root_readme_path.as_path(), root_readme.as_str()),
+                (setup_path.as_path(), setup.as_str()),
+                (user_guide_path.as_path(), user_guide.as_str()),
+                (protocols_readme_path.as_path(), protocols_readme.as_str()),
+                (device_support_path.as_path(), device_support.as_str()),
+                (
+                    device_capabilities_path.as_path(),
+                    device_capabilities.as_str(),
+                ),
+            ] {
+                assert!(
+                    !text.contains(stale_claim),
+                    "{} still contains stale Moza claim: {stale_claim}",
+                    path.display()
+                );
+            }
+        }
         Ok(())
     }
 

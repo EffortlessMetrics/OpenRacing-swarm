@@ -127,7 +127,7 @@ Source: `crates/hid-fanatec-protocol`; status: **Verified** (gotzl/hid-fanatecff
 
 ## 4. Moza Racing — VID `0x346E`
 
-Source: `crates/hid-moza-protocol`; status: **Verified** (universal-pidff, mozaracing.com).
+Source: `crates/hid-moza-protocol`; status: **Source-backed / receipt-gated** (universal-pidff, mozaracing.com; real-hardware claims require Moza lane receipts).
 
 | Model | PID | Torque (Nm) | Rotation (°) | Encoder (CPR) | Protocol |
 |-------|-----|-------------|--------------|---------------|----------|
@@ -443,7 +443,7 @@ Devices are assigned one of three status levels based on available evidence.
 | Logitech (G25–G PRO) | Verified | All PIDs from Linux kernel hid-ids.h, new-lg4ff, oversteer |
 | Thrustmaster (T150, T300, T500, T248, TS-PC, TS-XW, T818) | Verified | PIDs from hid-tmff2, linux-steering-wheels; T-GT/T-GT II PIDs **unknown** |
 | Fanatec (CSR Elite–DD2) | Verified (wheelbases) / Community (pedals) | PIDs from gotzl/hid-fanatecff |
-| Moza Racing (R3–R21 V1/V2) | Verified | All 12 PIDs web-verified (universal-pidff, mozaracing.com) |
+| Moza Racing (R3–R21 V1/V2) | Source-backed / receipt-gated | VID/PID and protocol research present; real-hardware validation requires Moza lane receipts |
 | Simagic EVO series | Verified (accessories Estimated) | EVO torques verified (9/12/18 Nm); legacy PID `0x0522` confirmed |
 | Simucube 1/2 Sport/Pro/Ultimate | Verified | SC2 Sport 17 Nm, Pro 25 Nm, Ultimate 32 Nm; SC1 PID `0x0D5A` |
 | Asetek Invicta / Forte | Verified (La Prima, TK: Community) | Torques from crate: 12/18/27 Nm; TK corrected 18→27 Nm (F-042) |

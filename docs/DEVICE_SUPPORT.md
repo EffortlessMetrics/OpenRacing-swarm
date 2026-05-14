@@ -70,22 +70,22 @@ For detailed capabilities (torque, encoder CPR, rotation, FFB effects), see [`DE
 | Podium DD1 | `0x0006` | Verified | hid-fanatecff |
 | Podium DD2 | `0x0007` | Verified | hid-fanatecff |
 
-### 4. Moza Racing — VID `0x346E` · Status: **Verified**
+### 4. Moza Racing — VID `0x346E` · Status: **Source-backed / receipt-gated**
 
 | Model | PID | Status | Source |
 |-------|-----|--------|--------|
-| R3 V1 | `0x0005` | Verified | universal-pidff |
-| R3 V2 | `0x0015` | Verified | universal-pidff |
-| R5 V1 | `0x0004` | Verified | universal-pidff |
-| R5 V2 | `0x0014` | Verified | universal-pidff |
-| R9 V1 | `0x0002` | Verified | universal-pidff |
-| R9 V2 | `0x0012` | Verified | universal-pidff |
-| R12 V1 | `0x0006` | Verified | universal-pidff |
-| R12 V2 | `0x0016` | Verified | universal-pidff |
-| R16 V1 | `0x0000` | Verified | universal-pidff |
-| R16 V2 | `0x0010` | Verified | universal-pidff |
-| R21 V1 | `0x0000` | Verified | universal-pidff |
-| R21 V2 | `0x0010` | Verified | universal-pidff |
+| R3 V1 | `0x0005` | Source-backed | universal-pidff; hardware receipts pending |
+| R3 V2 | `0x0015` | Source-backed | universal-pidff; hardware receipts pending |
+| R5 V1 | `0x0004` | Source-backed | universal-pidff; Steven lane receipts pending |
+| R5 V2 | `0x0014` | Source-backed | universal-pidff; hardware receipts pending |
+| R9 V1 | `0x0002` | Source-backed | universal-pidff; hardware receipts pending |
+| R9 V2 | `0x0012` | Source-backed | universal-pidff; hardware receipts pending |
+| R12 V1 | `0x0006` | Source-backed | universal-pidff; hardware receipts pending |
+| R12 V2 | `0x0016` | Source-backed | universal-pidff; hardware receipts pending |
+| R16 V1 | `0x0000` | Source-backed | universal-pidff; hardware receipts pending |
+| R16 V2 | `0x0010` | Source-backed | universal-pidff; hardware receipts pending |
+| R21 V1 | `0x0000` | Source-backed | universal-pidff; hardware receipts pending |
+| R21 V2 | `0x0010` | Source-backed | universal-pidff; hardware receipts pending |
 
 ### 5. Simagic — VID `0x3670` (EVO) / `0x0483` (legacy) · Status: **Verified** (EVO) / **Estimated** (legacy)
 
@@ -195,7 +195,7 @@ For detailed capabilities (torque, encoder CPR, rotation, FFB effects), see [`DE
 | Heusinkveld Sprint | Heusinkveld | `0x04D8` | `0xF6D0` | Community | OpenFlight |
 | Heusinkveld Ultimate+ | Heusinkveld | `0x04D8` | `0xF6D2` | Community | OpenFlight |
 | Heusinkveld Pro | Heusinkveld | `0x04D8` | `0xF6D3` | Community | OpenFlight |
-| Moza SR-P Pedals | Moza | `0x346E` | `0x0003` | Verified | universal-pidff |
+| Moza SR-P Pedals | Moza | `0x346E` | `0x0003` | Source-backed | universal-pidff; direct-plug receipts optional |
 | Fanatec ClubSport V1/V2 | Fanatec | `0x0EB7` | `0x1839` | Community | hid-fanatecff |
 | Fanatec ClubSport V3 | Fanatec | `0x0EB7` | `0x183B` | Community | hid-fanatecff |
 | Fanatec CSL Elite Pedals | Fanatec | `0x0EB7` | `0x6204` | Community | hid-fanatecff |
@@ -215,9 +215,9 @@ For detailed capabilities (torque, encoder CPR, rotation, FFB effects), see [`DE
 
 | Device | Vendor | VID | PID | Status | Source |
 |--------|--------|-----|-----|--------|--------|
-| Moza HBP Handbrake | Moza | `0x346E` | `0x0022` | Verified | universal-pidff |
-| Moza HGP Shifter | Moza | `0x346E` | `0x0020` | Verified | universal-pidff |
-| Moza SGP Shifter | Moza | `0x346E` | `0x0021` | Verified | universal-pidff |
+| Moza HBP Handbrake | Moza | `0x346E` | `0x0022` | Source-backed | universal-pidff; direct-plug receipts optional |
+| Moza HGP Shifter | Moza | `0x346E` | `0x0020` | Source-backed | universal-pidff; hardware receipts pending |
+| Moza SGP Shifter | Moza | `0x346E` | `0x0021` | Source-backed | universal-pidff; hardware receipts pending |
 | Simagic H-Pattern Shifter | Simagic | `0x3670` | `0x2001` | Estimated | extrapolated |
 | Simagic Sequential Shifter | Simagic | `0x3670` | `0x2002` | Estimated | extrapolated |
 | Simagic Handbrake | Simagic | `0x3670` | `0x3001` | Estimated | extrapolated |

@@ -65,7 +65,7 @@ OpenRacing is a safety-critical racing wheel and force feedback simulation softw
 
 OpenRacing contains protocol implementations for 28 vendors and their product lines through HID (Human Interface Device) communication:
 
-- Moza Racing (R3, R5, R9, R12, R16, R21)
+- Moza Racing (R3, R5, R9, R12, R16, R21; protocol-known, real-hardware output requires lane receipts)
 - Fanatec CSL DD, GT DD Pro, Podium DD1/DD2, CSW v2.5
 - Logitech G27, G29, G923, G Pro
 - Thrustmaster T-series and TX/T300/T818 series

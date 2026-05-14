@@ -124,7 +124,7 @@ OpenRacing supports 28 vendors with 150+ unique VID/PID pairs out of the box. Th
 
 | Vendor | USB VID | Representative models | FFB support |
 |--------|---------|----------------------|-------------|
-| **Moza Racing** | `0x346E` | R3, R5 V1/V2, R9 V1/V2, R12 V1/V2, R16, R21 | ✅ Serial / HID PIDFF |
+| **Moza Racing** | `0x346E` | R3, R5 V1/V2, R9 V1/V2, R12 V1/V2, R16, R21 | Source-backed; hardware receipts required |
 | **Fanatec** | `0x0EB7` | CSL DD, GT DD Pro, Podium DD1/DD2, CSW v2.5 | ✅ Custom HID |
 | **Logitech** | `0x046D` | G27, G29, G923, G Pro | ✅ HID PIDFF + TrueForce |
 | **Thrustmaster** | `0x044F` | T150/Pro, TMX, T300RS/GT, TX, T500RS, T248/X, T-GT/II, TS-PC, TS-XW, T818 | ✅ HID PIDFF |
