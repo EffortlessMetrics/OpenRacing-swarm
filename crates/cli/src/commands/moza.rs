@@ -4136,13 +4136,19 @@ fn operator_actions_for_bundle_stage(
             && gate.details.contains("any_axes_ok=false")
     });
     if throttle_missing {
+        let r5_selector =
+            lane_manifest_r5_hid_observe_selector(lane).unwrap_or_else(|| "<r5>".to_string());
+        let capture_command = format!(
+            "wheelctl moza capture-input --device {r5_selector} --duration-ms 60000 --json-out target/moza-gas-check/r5-gas-after-reseat-60s.jsonl --json"
+        );
+        let analyze_command = "wheelctl moza analyze-capture --capture target/moza-gas-check/r5-gas-after-reseat-60s.jsonl --json-out target/moza-gas-check/r5-gas-after-reseat-analysis.json --json";
         let endpoint_context = if lane_has_single_observed_moza_hid_endpoint(lane) {
             " Stored observe-only HID/PnP receipts already show only the R5 HID game-controller endpoint, so do not chase another Moza HID path; the visible Moza serial/COM interface is diagnostic topology only and must not be probed or configured in the passive lane."
         } else {
             " If Pit House is unavailable, use observe-only HID/PnP inspection to confirm endpoints; a visible Moza serial/COM interface is diagnostic topology only and must not be probed or configured in the passive lane."
         };
         actions.push(format!(
-            "Throttle capture parsed but no parser-visible hub-control axis moved; check throttle pedal cable, pedal-set-to-R5 routing, and vendor input state before replacing the lane capture. If Pit House is unavailable, keep the next check target-only: reseat and power-cycle the pedal path, capture gas to target/moza-gas-check/r5-gas-after-reseat-60s.jsonl, run analyze-capture, and replace the lane capture only if parser-visible hub-control movement appears.{endpoint_context}"
+            "Throttle capture parsed but no parser-visible hub-control axis moved; check throttle pedal cable, pedal-set-to-R5 routing, and vendor input state before replacing the lane capture. If Pit House is unavailable, keep the next check target-only: reseat and power-cycle the pedal path, then run `{capture_command}` followed by `{analyze_command}`. Replace the lane capture only if parser-visible hub-control movement appears.{endpoint_context}"
         ));
     }
 
@@ -24121,7 +24127,9 @@ mod tests {
                 && action.contains("check throttle pedal cable")
                 && action.contains("Pit House is unavailable")
                 && action.contains("target/moza-gas-check/r5-gas-after-reseat-60s.jsonl")
-                && action.contains("replace the lane capture only if parser-visible")
+                && action.contains("wheelctl moza capture-input --device")
+                && action.contains("wheelctl moza analyze-capture --capture")
+                && action.contains("Replace the lane capture only if parser-visible")
                 && action.contains("must not be probed or configured")),
             "failed throttle role should include a physical-path diagnostic action: {:?}",
             receipt.operator_actions
@@ -25136,6 +25144,10 @@ mod tests {
             receipt.operator_actions.iter().any(|action| action
                 .contains("already show only the R5 HID game-controller endpoint")
                 && action.contains("target/moza-gas-check/r5-gas-after-reseat-60s.jsonl")
+                && action.contains(
+                    "wheelctl moza capture-input --device hid-0x346E-0x0014-if2-0x0001-0x0004"
+                )
+                && action.contains("wheelctl moza analyze-capture --capture")
                 && action.contains("must not be probed or configured")),
             "expected single-endpoint operator action, got {:?}",
             receipt.operator_actions
