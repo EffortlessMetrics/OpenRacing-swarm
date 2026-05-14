@@ -3876,7 +3876,7 @@ fn verify_bundle_dir_with_support_validation(
     let failed_gates = gates.iter().filter(|check| check.status == "fail").count();
     let success = missing_artifacts == 0 && invalid_artifacts == 0 && failed_gates == 0;
     let endpoint_observations = bundle_endpoint_observations(lane);
-    let operator_actions = operator_actions_for_bundle_stage(stage, &gates);
+    let operator_actions = operator_actions_for_bundle_stage(lane, stage, &gates);
     let next_commands = next_commands_for_bundle_stage(lane, stage, &artifact_checks, &gates);
 
     BundleVerificationReceipt {
@@ -4057,6 +4057,7 @@ fn topology_endpoint_metadata_matches_device(device: &Value, endpoint: &Value) -
 }
 
 fn operator_actions_for_bundle_stage(
+    lane: &Path,
     stage: MozaBundleStage,
     gates: &[BundleGateCheck],
 ) -> Vec<String> {
@@ -4081,10 +4082,14 @@ fn operator_actions_for_bundle_stage(
             && gate.details.contains("any_axes_ok=false")
     });
     if throttle_missing {
-        actions.push(
-            "Throttle capture parsed but no parser-visible hub-control axis moved; check throttle pedal cable, pedal-set-to-R5 routing, and vendor input state before replacing the lane capture. If Pit House is unavailable, use observe-only HID/PnP inspection to confirm endpoints; a visible Moza serial/COM interface is diagnostic topology only and must not be probed or configured in the passive lane."
-                .to_string(),
-        );
+        let endpoint_context = if lane_has_single_observed_moza_hid_endpoint(lane) {
+            " Stored observe-only HID/PnP receipts already show only the R5 HID game-controller endpoint, so do not chase another Moza HID path; the visible Moza serial/COM interface is diagnostic topology only and must not be probed or configured in the passive lane."
+        } else {
+            " If Pit House is unavailable, use observe-only HID/PnP inspection to confirm endpoints; a visible Moza serial/COM interface is diagnostic topology only and must not be probed or configured in the passive lane."
+        };
+        actions.push(format!(
+            "Throttle capture parsed but no parser-visible hub-control axis moved; check throttle pedal cable, pedal-set-to-R5 routing, and vendor input state before replacing the lane capture.{endpoint_context}"
+        ));
     }
 
     let parser_validation_failed = !bundle_gate_check_passed(gates, "parser_fixture_validation");
@@ -11826,7 +11831,7 @@ fn analyze_lane_captures(lane: &Path) -> Result<LaneCaptureAnalysisReceipt> {
         .collect::<Vec<_>>();
     let role_evidence = lane_role_evidence_entries(lane, &captures);
     let success = failed_captures.is_empty() && missing_control_evidence.is_empty();
-    let safe_diagnostics = lane_capture_safe_diagnostics(&captures);
+    let safe_diagnostics = lane_capture_safe_diagnostics(lane, &captures);
 
     Ok(LaneCaptureAnalysisReceipt {
         success,
@@ -11863,7 +11868,10 @@ fn analyze_lane_captures(lane: &Path) -> Result<LaneCaptureAnalysisReceipt> {
     })
 }
 
-fn lane_capture_safe_diagnostics(captures: &[LaneCaptureAnalysisEntry]) -> Vec<String> {
+fn lane_capture_safe_diagnostics(
+    lane: &Path,
+    captures: &[LaneCaptureAnalysisEntry],
+) -> Vec<String> {
     let mut diagnostics = Vec::new();
 
     let Some(throttle) = captures
@@ -11885,9 +11893,44 @@ fn lane_capture_safe_diagnostics(captures: &[LaneCaptureAnalysisEntry]) -> Vec<S
             "captures/r5-throttle-only-sweep.jsonl parsed cleanly, but only idle/trailer bytes moved versus r5-idle; do not recapture blindly until the throttle physical/vendor path is checked."
                 .to_string(),
         );
+        if lane_has_single_observed_moza_hid_endpoint(lane) {
+            diagnostics.push(
+                "observe-only HID/PnP receipts show only the R5 HID game-controller endpoint; throttle is not visible on an alternate Moza HID endpoint, and the visible Moza serial/COM interface is diagnostic topology only and must not be probed or configured in the passive lane."
+                    .to_string(),
+            );
+        }
     }
 
     diagnostics
+}
+
+fn lane_has_single_observed_moza_hid_endpoint(lane: &Path) -> bool {
+    hid_list_moza_hid_device_count(lane) == Some(1)
+        && hardware_doctor_moza_hid_interface_count(lane).is_none_or(|count| count == 1)
+}
+
+fn hid_list_moza_hid_device_count(lane: &Path) -> Option<usize> {
+    let receipt = read_json_value(lane, "hid-list.json").ok()?;
+    receipt
+        .get("devices")
+        .and_then(Value::as_array)
+        .map(|devices| {
+            devices
+                .iter()
+                .filter(|device| {
+                    json_string(device, "vendor_id").and_then(parse_hex_selector)
+                        == Some(MOZA_VENDOR_ID)
+                })
+                .count()
+        })
+}
+
+fn hardware_doctor_moza_hid_interface_count(lane: &Path) -> Option<usize> {
+    let receipt = read_json_value(lane, "hardware-doctor.json").ok()?;
+    receipt
+        .get("windows_pnp")
+        .and_then(|pnp| json_u64(pnp, "hid_interface_count"))
+        .and_then(|count| usize::try_from(count).ok())
 }
 
 fn lane_role_evidence_entries(
@@ -24485,6 +24528,70 @@ mod tests {
                 && diagnostic.contains("do not recapture blindly")),
             "expected throttle trailer-only diagnostic, got {:?}",
             receipt.safe_diagnostics
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn analyze_lane_throttle_diagnostic_reports_single_observed_moza_hid_endpoint() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        replace_observation_receipt_devices(dir.path(), &[sample_trusted_r5_v1_json_device()])?;
+        write_text_file(
+            &dir.path().join("captures/r5-throttle-only-sweep.jsonl"),
+            &format!(
+                "{}\n{}",
+                capture_line(
+                    product_ids::R5_V1,
+                    &live_r5_v1_trailer_report_hex([0x00, 0x00, 0x00, 0x00])
+                ),
+                capture_line(
+                    product_ids::R5_V1,
+                    &live_r5_v1_trailer_report_hex([0xFF, 0xAA, 0x55, 0x40])
+                )
+            ),
+        )?;
+
+        let receipt = analyze_lane_captures(dir.path())?;
+
+        assert!(
+            receipt.safe_diagnostics.iter().any(|diagnostic| diagnostic
+                .contains("only the R5 HID game-controller endpoint")
+                && diagnostic.contains("must not be probed or configured")),
+            "expected single-endpoint throttle diagnostic, got {:?}",
+            receipt.safe_diagnostics
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_operator_action_uses_observed_single_hid_endpoint_context() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        replace_observation_receipt_devices(dir.path(), &[sample_trusted_r5_v1_json_device()])?;
+        write_text_file(
+            &dir.path().join("captures/r5-throttle-only-sweep.jsonl"),
+            &format!(
+                "{}\n{}",
+                capture_line(
+                    product_ids::R5_V1,
+                    &live_r5_v1_trailer_report_hex([0x00, 0x00, 0x00, 0x00])
+                ),
+                capture_line(
+                    product_ids::R5_V1,
+                    &live_r5_v1_trailer_report_hex([0xFF, 0xAA, 0x55, 0x40])
+                )
+            ),
+        )?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
+
+        assert!(
+            receipt.operator_actions.iter().any(|action| action
+                .contains("already show only the R5 HID game-controller endpoint")
+                && action.contains("must not be probed or configured")),
+            "expected single-endpoint operator action, got {:?}",
+            receipt.operator_actions
         );
         Ok(())
     }
