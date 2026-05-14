@@ -716,7 +716,10 @@ fn read_report_descriptor_hex_file(path: &Path) -> Result<String> {
         fs::read_to_string(path).with_context(|| format!("failed to read '{}'", path.display()))?;
     let bytes = extract_hex_bytes_from_descriptor_text(&text)?;
     if bytes.is_empty() {
-        return Err(anyhow!("no descriptor bytes found in '{}'", path.display()));
+        return Err(anyhow!(
+            "no HID report descriptor bytes found in '{}'; export or paste the Report Descriptor byte block, for example lines like '0000: 05 01 09 04 ...' or a compact hex descriptor, not only the USBTreeView device/interface summary",
+            path.display()
+        ));
     }
     Ok(bytes_hex_compact(&bytes))
 }
@@ -18022,7 +18025,14 @@ mod tests {
 
         let result = read_report_descriptor_hex_file(&path);
 
-        assert!(result.is_err());
+        let message = match result {
+            Ok(bytes) => format!("device summary parsed as descriptor bytes: {bytes}"),
+            Err(err) => err.to_string(),
+        };
+        assert!(message.contains("no HID report descriptor bytes found"));
+        assert!(message.contains("Report Descriptor byte block"));
+        assert!(message.contains("0000: 05 01 09 04"));
+        assert!(message.contains("USBTreeView device/interface summary"));
         Ok(())
     }
 
