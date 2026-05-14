@@ -49,6 +49,8 @@ pub mod input_report {
     pub const R5_V1_EXTENDED_AXIS2_START: usize = 15;
     /// Byte offset for an axis-like KS control observed in live R5 V1 + KS captures.
     pub const R5_V1_EXTENDED_KS_AXIS0_START: usize = 3;
+    /// Byte offset where isolated live R5 V1 through-hub throttle captures moved.
+    pub const R5_V1_EXTENDED_THROTTLE_START: usize = 5;
     /// Byte offset where the live R5 V1 + KS packed control bytes begin.
     pub const R5_V1_EXTENDED_BUTTONS_START: usize = 17;
     /// Byte offset for the live R5 V1 + KS direction byte observed during KS capture.
@@ -196,7 +198,7 @@ impl WheelbaseInputLayout {
     };
 
     const R5_V1_EXTENDED: Self = Self {
-        throttle_start: None,
+        throttle_start: Some(input_report::R5_V1_EXTENDED_THROTTLE_START),
         brake_start: None,
         clutch_start: None,
         handbrake_start: None,
@@ -446,6 +448,9 @@ mod tests {
         report[input_report::R5_V1_EXTENDED_KS_AXIS0_START
             ..input_report::R5_V1_EXTENDED_KS_AXIS0_START + 2]
             .copy_from_slice(&0x1234u16.to_le_bytes());
+        report[input_report::R5_V1_EXTENDED_THROTTLE_START
+            ..input_report::R5_V1_EXTENDED_THROTTLE_START + 2]
+            .copy_from_slice(&0x3456u16.to_le_bytes());
         report[input_report::R5_V1_EXTENDED_AXIS0_START
             ..input_report::R5_V1_EXTENDED_AXIS0_START + 2]
             .copy_from_slice(&0x5678u16.to_le_bytes());
@@ -490,7 +495,7 @@ mod tests {
             parse_axis(&report, input_report::R5_V1_EXTENDED_AUX1_START),
             Some(0x1357)
         );
-        assert_eq!(parsed.pedals.throttle, 0);
+        assert_eq!(parsed.pedals.throttle, 0x3456);
         assert_eq!(parsed.pedals.brake, 0);
         assert_eq!(parsed.pedals.clutch, None);
         assert_eq!(parsed.pedals.handbrake, None);

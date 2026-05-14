@@ -941,6 +941,9 @@ mod tests {
         report[input_report::R5_V1_EXTENDED_KS_AXIS0_START
             ..input_report::R5_V1_EXTENDED_KS_AXIS0_START + 2]
             .copy_from_slice(&0x4321u16.to_le_bytes());
+        report[input_report::R5_V1_EXTENDED_THROTTLE_START
+            ..input_report::R5_V1_EXTENDED_THROTTLE_START + 2]
+            .copy_from_slice(&0x3456u16.to_le_bytes());
         report[input_report::R5_V1_EXTENDED_AXIS0_START
             ..input_report::R5_V1_EXTENDED_AXIS0_START + 2]
             .copy_from_slice(&0x8000u16.to_le_bytes());
@@ -959,7 +962,7 @@ mod tests {
             .parse_input_state(&report)
             .ok_or("expected live R5 V1 extended wheelbase parse")?;
 
-        assert_eq!(parsed.throttle_u16, 0);
+        assert_eq!(parsed.throttle_u16, 0x3456);
         assert_eq!(parsed.brake_u16, 0);
         assert_eq!(parsed.clutch_u16, 0);
         assert_eq!(parsed.handbrake_u16, 0);

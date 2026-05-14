@@ -16065,7 +16065,7 @@ mod tests {
         report[0] = 0x01;
         report[1..3].copy_from_slice(&0x7A37u16.to_le_bytes());
         report[3..5].copy_from_slice(&axis0.to_le_bytes());
-        report[5..7].copy_from_slice(&0x8000u16.to_le_bytes());
+        report[5..7].copy_from_slice(&0x0000u16.to_le_bytes());
         report[7..9].copy_from_slice(&0x8001u16.to_le_bytes());
         report[9..11].copy_from_slice(&0x8001u16.to_le_bytes());
         report[11..13].copy_from_slice(&0x8000u16.to_le_bytes());
@@ -16082,7 +16082,7 @@ mod tests {
         report[0] = 0x01;
         report[1..3].copy_from_slice(&0x7A37u16.to_le_bytes());
         report[3..5].copy_from_slice(&0x8001u16.to_le_bytes());
-        report[5..7].copy_from_slice(&0x8000u16.to_le_bytes());
+        report[5..7].copy_from_slice(&0x0000u16.to_le_bytes());
         report[7..9].copy_from_slice(&0x8001u16.to_le_bytes());
         report[9..11].copy_from_slice(&0x8001u16.to_le_bytes());
         report[11..13].copy_from_slice(&0x8000u16.to_le_bytes());
@@ -16094,12 +16094,27 @@ mod tests {
         bytes_hex_compact(&report)
     }
 
+    fn live_r5_v1_extended_throttle_report_hex(throttle: u16) -> String {
+        let mut report = [0u8; 42];
+        report[0] = 0x01;
+        report[1..3].copy_from_slice(&0x7A37u16.to_le_bytes());
+        report[3..5].copy_from_slice(&0x8001u16.to_le_bytes());
+        report[5..7].copy_from_slice(&throttle.to_le_bytes());
+        report[7..9].copy_from_slice(&0x8001u16.to_le_bytes());
+        report[9..11].copy_from_slice(&0x8001u16.to_le_bytes());
+        report[11..13].copy_from_slice(&0x8000u16.to_le_bytes());
+        report[13..15].copy_from_slice(&0x8001u16.to_le_bytes());
+        report[15..17].copy_from_slice(&0x8000u16.to_le_bytes());
+        report[17] = 0x08;
+        bytes_hex_compact(&report)
+    }
+
     fn live_r5_v1_trailer_report_hex(trailer: [u8; 4]) -> String {
         let mut report = [0u8; 42];
         report[0] = 0x01;
         report[1..3].copy_from_slice(&0x7A37u16.to_le_bytes());
         report[3..5].copy_from_slice(&0x8001u16.to_le_bytes());
-        report[5..7].copy_from_slice(&0x8000u16.to_le_bytes());
+        report[5..7].copy_from_slice(&0x0000u16.to_le_bytes());
         report[7..9].copy_from_slice(&0x8001u16.to_le_bytes());
         report[9..11].copy_from_slice(&0x8001u16.to_le_bytes());
         report[11..13].copy_from_slice(&0x8000u16.to_le_bytes());
@@ -25194,6 +25209,52 @@ mod tests {
             receipt
                 .axis_ranges
                 .get("clutch_u16")
+                .and_then(|axis| axis.max),
+            Some(0)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn validate_capture_maps_live_r5_v1_throttle_sweep() -> TestResult {
+        let low = format!(
+            r#"{{"product_id":"0x0004","report_len":42,"data_hex":"{}"}}"#,
+            live_r5_v1_extended_throttle_report_hex(0x0011)
+        );
+        let high = format!(
+            r#"{{"product_id":"0x0004","report_len":42,"data_hex":"{}"}}"#,
+            live_r5_v1_extended_throttle_report_hex(0xFF96)
+        );
+        let (_dir, path) = write_temp_capture(&[low.as_str(), high.as_str()])?;
+
+        let receipt = validate_capture_file(&path, None)?;
+
+        assert!(receipt.success);
+        let throttle = receipt
+            .axis_ranges
+            .get("throttle_u16")
+            .ok_or("expected throttle axis stats")?;
+        assert_eq!(throttle.min, Some(0x0011));
+        assert_eq!(throttle.max, Some(0xFF96));
+        assert_ne!(throttle.min, throttle.max);
+        assert_eq!(
+            receipt
+                .axis_ranges
+                .get("brake_u16")
+                .and_then(|axis| axis.max),
+            Some(0)
+        );
+        assert_eq!(
+            receipt
+                .axis_ranges
+                .get("clutch_u16")
+                .and_then(|axis| axis.max),
+            Some(0)
+        );
+        assert_eq!(
+            receipt
+                .axis_ranges
+                .get("handbrake_u16")
                 .and_then(|axis| axis.max),
             Some(0)
         );
