@@ -127,12 +127,12 @@ wheelctl moza descriptor --device <r5> --report-descriptor-bin-file target/moza-
 ```
 
 The descriptor fallback needs the actual HID Report Descriptor byte block. A
-USBTreeView device/interface summary that only shows `wDescriptorLength`, or a
-descriptor read failure such as `ERROR_INVALID_PARAMETER`, is useful failure
-evidence but does not satisfy descriptor trust. Use a report-descriptor hex
-block such as `0000: 05 01 09 04 ...`, Linux
-`/sys/bus/hid/devices/.../report_descriptor` bytes, or another descriptor tool
-that exposes the raw HID report descriptor.
+USBTreeView device/interface summary that only shows `wDescriptorLength`, a
+descriptor read failure such as `ERROR_INVALID_PARAMETER`, or a Windows `HidP
+KDR` collection/preparsed descriptor is useful failure evidence but does not
+satisfy descriptor trust. Use a report-descriptor hex block such as `0000: 05
+01 09 04 ...`, Linux `/sys/bus/hid/devices/.../report_descriptor` bytes, or
+another descriptor tool that exposes the raw HID report descriptor.
 
 On Linux, a connected R5 V1 descriptor can be exported without sending reports:
 

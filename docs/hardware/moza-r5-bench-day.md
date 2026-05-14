@@ -108,7 +108,9 @@ If Windows cannot expose the raw R5 HID report descriptor, collect the report
 descriptor bytes with USBTreeView or an equivalent USB descriptor tool.
 The fallback needs the actual HID Report Descriptor byte block. A USBTreeView
 summary that only shows `wDescriptorLength`, or a descriptor read failure such
-as `ERROR_INVALID_PARAMETER`, is not enough to satisfy descriptor trust.
+as `ERROR_INVALID_PARAMETER`, is not enough to satisfy descriptor trust. A
+Windows `HidP KDR` collection/preparsed descriptor is also not the raw report
+descriptor and must not be imported as lane evidence.
 
 Use the selected R5 device only for the supplied hex:
 

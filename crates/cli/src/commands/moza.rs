@@ -732,7 +732,7 @@ fn read_report_descriptor_hex_file(path: &Path) -> Result<String> {
     let bytes = extract_hex_bytes_from_descriptor_text(&text)?;
     if bytes.is_empty() {
         return Err(anyhow!(
-            "no HID report descriptor bytes found in '{}'; export or paste the actual Report Descriptor byte block, for example lines like '0000: 05 01 09 04 ...' or a compact hex descriptor. A USBTreeView device/interface summary, wDescriptorLength value, or ERROR_INVALID_PARAMETER descriptor-read failure is not enough.",
+            "no HID report descriptor bytes found in '{}'; export or paste the actual Report Descriptor byte block, for example lines like '0000: 05 01 09 04 ...' or a compact hex descriptor. A USBTreeView device/interface summary, wDescriptorLength value, ERROR_INVALID_PARAMETER descriptor-read failure, or Windows HidP KDR collection/preparsed descriptor is not enough.",
             path.display()
         ));
     }
@@ -4133,7 +4133,7 @@ fn operator_actions_for_bundle_stage(
     let mut actions = Vec::new();
     if !bundle_gate_check_passed(gates, "descriptor_metadata") {
         actions.push(
-            "Export the R5 HID report descriptor byte block into target/moza-r5-report-descriptor.txt or target/moza-r5-report-descriptor.bin, then rerun the descriptor file fallback. A USBTreeView summary that only shows wDescriptorLength or ERROR_INVALID_PARAMETER is not enough; use the actual Report Descriptor hex block, Linux sysfs report_descriptor bytes, or an equivalent descriptor tool. Do not run firmware or DFU flows."
+            "Export the R5 HID report descriptor byte block into target/moza-r5-report-descriptor.txt or target/moza-r5-report-descriptor.bin, then rerun the descriptor file fallback. A USBTreeView summary that only shows wDescriptorLength or ERROR_INVALID_PARAMETER is not enough, and a Windows HidP KDR collection/preparsed descriptor is not the raw report descriptor; use the actual Report Descriptor hex block, Linux sysfs report_descriptor bytes, or an equivalent descriptor tool. Do not run firmware or DFU flows."
                 .to_string(),
         );
     }
@@ -24291,6 +24291,7 @@ mod tests {
                 .contains("Export the R5 HID report descriptor byte block")
                 && action.contains("wDescriptorLength")
                 && action.contains("ERROR_INVALID_PARAMETER")
+                && action.contains("HidP KDR")
                 && action.contains("Do not run firmware or DFU")),
             "passive operator actions should explain the descriptor export fallback: {:?}",
             receipt.operator_actions
