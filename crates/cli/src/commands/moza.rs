@@ -907,6 +907,15 @@ fn descriptor_byte_candidate(line: &str, allow_hexdump_prefix: bool) -> Option<&
         return None;
     }
 
+    if allow_hexdump_prefix {
+        let mut parts = line.splitn(2, char::is_whitespace);
+        let first = parts.next().unwrap_or_default().trim();
+        let rest = parts.next().unwrap_or_default().trim();
+        if is_hexdump_offset_column_token(first) && !rest.is_empty() {
+            return Some(rest);
+        }
+    }
+
     Some(line)
 }
 
@@ -924,6 +933,23 @@ fn is_hex_offset_token(token: &str) -> bool {
             .map(|c| c.is_ascii_digit())
             .unwrap_or(false)
         && value.len() <= 8
+        && value.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+fn is_hexdump_offset_column_token(token: &str) -> bool {
+    let value = token
+        .trim()
+        .strip_prefix("0x")
+        .or_else(|| token.trim().strip_prefix("0X"))
+        .unwrap_or(token.trim());
+    value.len() >= 4
+        && value.len() <= 8
+        && token
+            .trim()
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false)
         && value.chars().all(|c| c.is_ascii_hexdigit())
 }
 
@@ -19713,6 +19739,55 @@ mod tests {
         let hex = read_report_descriptor_hex_file(&path)?;
 
         assert_eq!(hex, "05010904A1018520750895069102C0");
+        Ok(())
+    }
+
+    #[test]
+    fn operator_descriptor_hex_file_accepts_usbpcap_wireshark_report_descriptor_hexdump()
+    -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let path = dir
+            .path()
+            .join("r5-usbpcap-wireshark-report-descriptor.txt");
+        write_text_file(
+            &path,
+            "Frame 7: 72 bytes on wire\n\
+             GET DESCRIPTOR Response HID Report\n\
+             HID Report Descriptor\n\
+             0000  05 01 09 04 a1 01 85 20 75 08 95 06 91 02 c0  ....... u......\n\
+             0010  09 30 15 00 26 ff 00 75 10 95 01 81 02        .0..&..u.....\n",
+        )?;
+
+        let hex = read_report_descriptor_hex_file(&path)?;
+
+        assert_eq!(
+            hex,
+            "05010904A1018520750895069102C00930150026FF00751095018102"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn operator_descriptor_hex_file_rejects_unlabeled_usbpcap_packet_bytes() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("r5-usbpcap-device-packet.txt");
+        write_text_file(
+            &path,
+            "Frame 3: USB device descriptor response\n\
+             0000  12 01 00 02 00 00 00 40 6e 34 04 00 00 01 01 02  .......@n4......\n\
+             0010  03 01                                            ..\n",
+        )?;
+
+        let result = read_report_descriptor_hex_file(&path);
+
+        let message = match result {
+            Ok(bytes) => format!("unlabeled USB packet bytes parsed as descriptor: {bytes}"),
+            Err(err) => err.to_string(),
+        };
+        assert!(
+            message.contains("no HID report descriptor bytes found"),
+            "{message}"
+        );
         Ok(())
     }
 
