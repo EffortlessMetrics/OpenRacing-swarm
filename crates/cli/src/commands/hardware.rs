@@ -304,6 +304,7 @@ fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusR
     let adapter = hardware_family_adapter_contract(&manifest.family)
         .with_context(|| format!("unknown hardware bring-up family '{}'", manifest.family))?;
     let scaffold_files = hardware_lane_scaffold_files(lane);
+    let scaffold_required = manifest.manifest_source == "hardware-lane-manifest.json";
     let scaffold_complete = scaffold_files.iter().all(|artifact| artifact.present);
     let role_evidence: Vec<_> = manifest
         .declared_logical_roles
@@ -345,6 +346,7 @@ fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusR
     let verifier_receipt = lane_verifier_receipt_status(lane);
     let blocking_items = lane_status_blocking_items(
         &stage_status,
+        scaffold_required,
         scaffold_complete,
         &missing_role_endpoints,
         &verifier_receipt,
@@ -382,6 +384,7 @@ fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusR
         family: adapter.id,
         topology: manifest.topology,
         completion_state: manifest.completion_state,
+        scaffold_required,
         scaffold_complete,
         evidence_claims_validated: false,
         ready_for_zero_torque: false,
@@ -397,6 +400,13 @@ fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusR
         notes: vec![
             "lane status is read-only and validates no hardware claims".to_string(),
             "artifact presence is not proof; verifier receipts remain authoritative".to_string(),
+            if scaffold_required {
+                "scaffold files are required because this lane uses hardware-lane-manifest.json"
+                    .to_string()
+            } else {
+                "legacy manifest lanes are adapted for status; missing scaffold files are inventoried, not blockers"
+                    .to_string()
+            },
             "ready_for_zero_torque and ready_for_ffb stay false in this inventory receipt"
                 .to_string(),
         ],
@@ -731,12 +741,13 @@ fn lane_artifact_status(lane: &Path, kind: &str, rel: &str) -> HardwareLaneArtif
 
 fn lane_status_blocking_items(
     stage_status: &[HardwareLaneStageStatus],
+    scaffold_required: bool,
     scaffold_complete: bool,
     missing_role_endpoints: &[String],
     verifier_receipt: &HardwareLaneVerifierReceiptStatus,
 ) -> Vec<String> {
     let mut items = Vec::new();
-    if !scaffold_complete {
+    if scaffold_required && !scaffold_complete {
         items.push("scaffold_files_missing".to_string());
     }
     if let Some(stage) = stage_status
@@ -2487,7 +2498,8 @@ fn print_lane_status_receipt(
     ))?;
     write_stdout_line(&format!("Manifest source: {}", receipt.manifest_source))?;
     write_stdout_line(&format!(
-        "Scaffold complete: {}; evidence claims validated: {}; ready_for_zero_torque: {}; ready_for_ffb: {}",
+        "Scaffold required: {}; scaffold complete: {}; evidence claims validated: {}; ready_for_zero_torque: {}; ready_for_ffb: {}",
+        receipt.scaffold_required,
         receipt.scaffold_complete,
         receipt.evidence_claims_validated,
         receipt.ready_for_zero_torque,
@@ -2922,6 +2934,7 @@ struct HardwareLaneStatusReceipt {
     family: &'static str,
     topology: String,
     completion_state: String,
+    scaffold_required: bool,
     scaffold_complete: bool,
     evidence_claims_validated: bool,
     ready_for_zero_torque: bool,
@@ -3539,6 +3552,7 @@ mod tests {
         assert!(status.no_feature_reports);
         assert!(status.no_serial_config_commands);
         assert!(status.no_firmware_or_dfu_commands);
+        assert!(status.scaffold_required);
         assert!(status.scaffold_complete);
         assert!(!status.evidence_claims_validated);
         assert!(!status.ready_for_zero_torque);
@@ -3624,6 +3638,7 @@ mod tests {
         assert_eq!(status.family, "moza-r5");
         assert_eq!(status.topology, "wheelbase_hub");
         assert_eq!(status.completion_state, "passive_in_progress");
+        assert!(!status.scaffold_required);
         assert!(!status.scaffold_complete);
         assert!(!status.evidence_claims_validated);
         assert!(!status.ready_for_zero_torque);
@@ -3632,7 +3647,8 @@ mod tests {
         assert!(
             status
                 .blocking_items
-                .contains(&"scaffold_files_missing".to_string())
+                .iter()
+                .all(|item| item != "scaffold_files_missing")
         );
         assert!(status.role_evidence.iter().any(|role| {
             role.id == "steering"
@@ -3658,6 +3674,28 @@ mod tests {
                     && !command.contains("ffb")
                     && !command.contains("output"))
         );
+        Ok(())
+    }
+
+    #[test]
+    fn lane_status_blocks_missing_scaffold_files_for_scaffold_manifest() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("moza-r5-lane");
+        let _receipt =
+            scaffold_hardware_lane(&lane, "moza-r5", "wheelbase-hub", "Steven", false, None)?;
+        fs::remove_file(lane.join("stage-gates.json"))?;
+
+        let status = build_hardware_lane_status_receipt(&lane)?;
+
+        assert!(status.scaffold_required);
+        assert!(!status.scaffold_complete);
+        assert!(
+            status
+                .blocking_items
+                .contains(&"scaffold_files_missing".to_string())
+        );
+        assert!(!status.ready_for_zero_torque);
+        assert!(!status.ready_for_ffb);
         Ok(())
     }
 
