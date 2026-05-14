@@ -3904,29 +3904,44 @@ fn push_passive_next_commands(
     let fixture_dir_arg = command_arg(&fixture_dir.display().to_string());
     let r5_selector = format!("0x346E:{wheelbase_pid}");
 
-    commands.push(format!(
-        "wheelctl moza init-lane --lane {lane_arg} --wheelbase-pid {wheelbase_pid} --operator Steven"
-    ));
-    commands.push(format!(
-        "wheelctl device list --hid-observe-only --json-out {}",
-        lane_path_arg(lane, "device-list.json")
-    ));
-    commands.push(format!(
-        "wheelctl moza probe --json-out {}",
-        lane_path_arg(lane, "moza-probe.json")
-    ));
-    commands.push(format!(
-        "hid-capture list --vendor 0x346E --json-out {}",
-        lane_path_arg(lane, "hid-list.json")
-    ));
-    commands.push(format!(
-        "wheelctl moza descriptor --json-out {}",
-        lane_path_arg(lane, "descriptor.json")
-    ));
-    commands.push(format!(
-        "wheelctl moza descriptor --device {r5_selector} --report-descriptor-hex-file target/moza-r5-report-descriptor.txt --json-out {}",
-        lane_path_arg(lane, "descriptor.json")
-    ));
+    if bundle_artifact_needs_regeneration(artifact_checks, "manifest.json")
+        || !bundle_gate_check_passed(gates, "manifest_no_overclaim")
+    {
+        commands.push(format!(
+            "wheelctl moza init-lane --lane {lane_arg} --wheelbase-pid {wheelbase_pid} --operator Steven"
+        ));
+    }
+    if bundle_artifacts_need_regeneration(
+        artifact_checks,
+        &["device-list.json", "moza-probe.json", "hid-list.json"],
+    ) || !bundle_gate_check_passed(gates, "moza_r5_observed")
+        || !bundle_gate_check_passed(gates, "moza_topology_observed")
+    {
+        commands.push(format!(
+            "wheelctl device list --hid-observe-only --json-out {}",
+            lane_path_arg(lane, "device-list.json")
+        ));
+        commands.push(format!(
+            "wheelctl moza probe --json-out {}",
+            lane_path_arg(lane, "moza-probe.json")
+        ));
+        commands.push(format!(
+            "hid-capture list --vendor 0x346E --json-out {}",
+            lane_path_arg(lane, "hid-list.json")
+        ));
+    }
+    if bundle_artifact_needs_regeneration(artifact_checks, "descriptor.json")
+        || !bundle_gate_check_passed(gates, "descriptor_metadata")
+    {
+        commands.push(format!(
+            "wheelctl moza descriptor --json-out {}",
+            lane_path_arg(lane, "descriptor.json")
+        ));
+        commands.push(format!(
+            "wheelctl moza descriptor --device {r5_selector} --report-descriptor-hex-file target/moza-r5-report-descriptor.txt --json-out {}",
+            lane_path_arg(lane, "descriptor.json")
+        ));
+    }
 
     for requirement in passive_capture_requirements_for_lane(lane) {
         if bundle_artifact_needs_regeneration(artifact_checks, requirement.relative_path) {
@@ -3939,19 +3954,24 @@ fn push_passive_next_commands(
         }
     }
 
-    commands.push(format!(
-        "wheelctl moza analyze-lane --lane {lane_arg} --json-out target/moza-lane-analysis.json"
-    ));
-    commands.push(format!(
-        "wheelctl moza sync-role-status --lane {lane_arg} --json-out target/moza-role-status-sync.json"
-    ));
-    commands.push(format!(
-        "wheelctl moza sync-role-status --lane {lane_arg} --check --json-out target/moza-role-status-check.json"
-    ));
-    commands.push(format!(
-        "wheelctl moza validate-captures --lane {lane_arg} --json-out {}",
-        lane_path_arg(lane, "parser-fixture-validation.json")
-    ));
+    if bundle_artifact_needs_regeneration(artifact_checks, "parser-fixture-validation.json")
+        || !bundle_gate_check_passed(gates, "passive_captures_parse")
+        || !bundle_gate_check_passed(gates, "parser_fixture_validation")
+    {
+        commands.push(format!(
+            "wheelctl moza analyze-lane --lane {lane_arg} --json-out target/moza-lane-analysis.json"
+        ));
+        commands.push(format!(
+            "wheelctl moza sync-role-status --lane {lane_arg} --json-out target/moza-role-status-sync.json"
+        ));
+        commands.push(format!(
+            "wheelctl moza sync-role-status --lane {lane_arg} --check --json-out target/moza-role-status-check.json"
+        ));
+        commands.push(format!(
+            "wheelctl moza validate-captures --lane {lane_arg} --json-out {}",
+            lane_path_arg(lane, "parser-fixture-validation.json")
+        ));
+    }
     if bundle_gate_check_passed(gates, "passive_captures_parse")
         && bundle_gate_check_passed(gates, "parser_fixture_validation")
     {
@@ -4014,6 +4034,15 @@ fn bundle_artifact_needs_regeneration(
         .iter()
         .find(|check| check.path == relative_path)
         .is_none_or(|check| check.status != "pass")
+}
+
+fn bundle_artifacts_need_regeneration(
+    artifact_checks: &[BundleArtifactCheck],
+    relative_paths: &[&str],
+) -> bool {
+    relative_paths
+        .iter()
+        .any(|path| bundle_artifact_needs_regeneration(artifact_checks, path))
 }
 
 fn passive_capture_next_command_hint(relative_path: &str) -> (&'static str, u64) {
@@ -22776,6 +22805,18 @@ mod tests {
             !joined.contains("wheelctl moza capture-input"),
             "existing parseable captures should not be blindly recaptured from next_commands: {joined}"
         );
+        for passing_observation_command in [
+            "wheelctl moza init-lane",
+            "wheelctl device list",
+            "wheelctl moza probe",
+            "hid-capture list",
+            "wheelctl moza descriptor",
+        ] {
+            assert!(
+                !joined.contains(passing_observation_command),
+                "failed parser-visible role evidence should not suggest already-passing observation command {passing_observation_command}: {joined}"
+            );
+        }
         assert!(
             !joined.contains("wheelctl moza promote-fixtures"),
             "failed parser-visible role evidence should not suggest fixture promotion: {joined}"
@@ -22827,18 +22868,13 @@ mod tests {
         let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
 
         assert!(!receipt.success);
-        let init_command = receipt
-            .next_commands
-            .iter()
-            .find(|command| command.contains("wheelctl moza init-lane"))
-            .ok_or("expected init-lane next command")?;
         assert!(
-            init_command.contains("--wheelbase-pid 0x0004"),
-            "init-lane next command should use manifest PID: {init_command}"
-        );
-        assert!(
-            !init_command.contains("--wheelbase-pid 0x0014"),
-            "init-lane next command must not suggest the default V2 PID for a V1 lane: {init_command}"
+            receipt
+                .next_commands
+                .iter()
+                .all(|command| !command.contains("wheelctl moza init-lane")),
+            "valid manifest should not suggest reinitializing the lane: {}",
+            receipt.next_commands.join("\n")
         );
         let descriptor_fallback_command = receipt
             .next_commands
