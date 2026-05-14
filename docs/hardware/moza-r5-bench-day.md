@@ -152,6 +152,22 @@ device/configuration/interface descriptor, not a `wDescriptorLength` summary,
 and not a Windows preparsed-data/KDR blob. If the capture cannot identify that
 payload unambiguously, do not import it.
 
+If the enumeration capture is saved as a `.pcapng`, extract the HID Report
+Descriptor response with the checked-in helper. The helper is read-only: it only
+asks `tshark` to read the capture file and write a compact hex text file.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/extract_usbpcap_report_descriptor.ps1 `
+  -InputPcapng "target/moza-r5-usbpcap-enumeration.pcapng" `
+  -Output "target/moza-r5-report-descriptor.txt" `
+  -InterfaceNumber 2
+```
+
+The helper fails closed if there is no HID Report Descriptor response or if more
+than one response matches the selected interface. In that case, narrow the
+capture or inspect the Wireshark packet list before importing anything into the
+lane.
+
 Use the selected R5 device only for the supplied hex:
 
 ```powershell
