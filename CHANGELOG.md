@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Kernel wire-format cross-check tests for 5 protocol crates (#207)
 
 ### Changed
+- Moza hardware-lane README now matches the Windows USBPcap/Wireshark raw
+  descriptor fallback documented in the bench-day runbook.
 - Moza R5 passive preflight now smokes the generic hardware lane
   scaffold/status rail before the Moza-specific verifier manifest.
 - Documentation accuracy pass for RC readiness (#225)
