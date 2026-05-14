@@ -712,8 +712,11 @@ fn operator_descriptor_source(
 }
 
 fn read_report_descriptor_hex_file(path: &Path) -> Result<String> {
-    let text =
-        fs::read_to_string(path).with_context(|| format!("failed to read '{}'", path.display()))?;
+    let raw = fs::read(path).with_context(|| format!("failed to read '{}'", path.display()))?;
+    let text = match String::from_utf8(raw) {
+        Ok(text) => text,
+        Err(err) => String::from_utf8_lossy(err.as_bytes()).into_owned(),
+    };
     let bytes = extract_hex_bytes_from_descriptor_text(&text)?;
     if bytes.is_empty() {
         return Err(anyhow!(
@@ -725,6 +728,13 @@ fn read_report_descriptor_hex_file(path: &Path) -> Result<String> {
 }
 
 fn extract_hex_bytes_from_descriptor_text(text: &str) -> Result<Vec<u8>> {
+    if let Some(bytes) = extract_explicit_report_descriptor_block(text)? {
+        return Ok(bytes);
+    }
+    if looks_like_usbtreeview_summary(text) {
+        return Ok(Vec::new());
+    }
+
     let mut bytes = Vec::new();
     for line in text.lines() {
         if let Some(mut line_bytes) = extract_hex_bytes_from_descriptor_line(line)? {
@@ -734,13 +744,77 @@ fn extract_hex_bytes_from_descriptor_text(text: &str) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
+fn extract_explicit_report_descriptor_block(text: &str) -> Result<Option<Vec<u8>>> {
+    let mut in_report_descriptor = false;
+    let mut bytes = Vec::new();
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if is_report_descriptor_heading(trimmed) {
+            in_report_descriptor = true;
+            continue;
+        }
+        if !in_report_descriptor {
+            continue;
+        }
+        if !bytes.is_empty() && starts_next_usbtreeview_descriptor_block(trimmed) {
+            break;
+        }
+        if let Some(mut line_bytes) =
+            extract_hex_bytes_from_descriptor_line_with_context(line, true)?
+        {
+            bytes.append(&mut line_bytes);
+        }
+    }
+
+    if in_report_descriptor {
+        Ok(Some(bytes))
+    } else {
+        Ok(None)
+    }
+}
+
+fn is_report_descriptor_heading(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    lower.contains("report descriptor")
+}
+
+fn starts_next_usbtreeview_descriptor_block(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    lower.contains("interface descriptor")
+        || lower.contains("endpoint descriptor")
+        || lower.contains("hid descriptor")
+        || lower.contains("string descriptor")
+        || lower.contains("device descriptor")
+        || lower.contains("configuration descriptor")
+}
+
+fn looks_like_usbtreeview_summary(text: &str) -> bool {
+    text.lines().any(|line| {
+        let lower = line.to_ascii_lowercase();
+        lower.contains("data (hexdump)")
+            || lower.contains("usb device")
+            || lower.contains("interface descriptor")
+            || lower.contains("hid descriptor")
+            || lower.contains("bdescriptortype")
+            || lower.contains("error reading descriptor")
+    })
+}
+
 fn extract_hex_bytes_from_descriptor_line(line: &str) -> Result<Option<Vec<u8>>> {
+    extract_hex_bytes_from_descriptor_line_with_context(line, false)
+}
+
+fn extract_hex_bytes_from_descriptor_line_with_context(
+    line: &str,
+    allow_hexdump_prefix: bool,
+) -> Result<Option<Vec<u8>>> {
     let without_comments = line.split("//").next().unwrap_or_default().trim();
     if without_comments.is_empty() {
         return Ok(None);
     }
 
-    let Some(candidate) = descriptor_byte_candidate(without_comments) else {
+    let Some(candidate) = descriptor_byte_candidate(without_comments, allow_hexdump_prefix) else {
         return Ok(None);
     };
     let tokens = candidate
@@ -758,6 +832,24 @@ fn extract_hex_bytes_from_descriptor_line(line: &str) -> Result<Option<Vec<u8>>>
     }
 
     if !tokens.iter().all(|token| is_hex_byte_token(token)) {
+        if allow_hexdump_prefix {
+            let prefix_tokens = tokens
+                .iter()
+                .copied()
+                .take_while(|token| is_hex_byte_token(token))
+                .collect::<Vec<_>>();
+            if !prefix_tokens.is_empty() {
+                return prefix_tokens
+                    .iter()
+                    .map(|token| {
+                        parse_hex_u8_token(token).map_err(|e| {
+                            anyhow!("invalid descriptor byte line '{without_comments}': {e}")
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()
+                    .map(Some);
+            }
+        }
         return Ok(None);
     }
 
@@ -771,11 +863,13 @@ fn extract_hex_bytes_from_descriptor_line(line: &str) -> Result<Option<Vec<u8>>>
         .map(Some)
 }
 
-fn descriptor_byte_candidate(line: &str) -> Option<&str> {
+fn descriptor_byte_candidate(line: &str, allow_hexdump_prefix: bool) -> Option<&str> {
     if let Some((prefix, suffix)) = line.split_once(':') {
         let prefix = prefix.trim();
         let suffix = suffix.trim();
-        if is_hex_offset_token(prefix) || prefix.to_ascii_lowercase().contains("report descriptor")
+        if is_hex_offset_token(prefix)
+            || prefix.to_ascii_lowercase().contains("report descriptor")
+            || (allow_hexdump_prefix && prefix.eq_ignore_ascii_case("data (hexdump)"))
         {
             return Some(suffix);
         }
@@ -791,7 +885,15 @@ fn is_hex_offset_token(token: &str) -> bool {
         .strip_prefix("0x")
         .or_else(|| token.trim().strip_prefix("0X"))
         .unwrap_or(token.trim());
-    !value.is_empty() && value.len() <= 8 && value.chars().all(|c| c.is_ascii_hexdigit())
+    !value.is_empty()
+        && token
+            .trim()
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false)
+        && value.len() <= 8
+        && value.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 fn is_hex_byte_token(token: &str) -> bool {
@@ -18651,6 +18753,72 @@ mod tests {
     }
 
     #[test]
+    fn operator_descriptor_hex_file_rejects_usbtreeview_report_read_error_without_summary_bytes()
+    -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("r5-usbtreeview-report-with-read-error.txt");
+        write_text_file(
+            &path,
+            "Data (HexDump)           : 03 00 00 00 12 01 00 02   ........\n\
+                                      00 01 01 02 03 01 01 01   ........\n\
+             bcdADC                   : 0x0100\n\
+             Interface Descriptor:\n\
+             bInterfaceNumber         : 0x02\n\
+             HID Descriptor:\n\
+             Descriptor 1:\n\
+             bDescriptorType          : 0x22 (Class=Report)\n\
+             wDescriptorLength        : 0x0523 (1315 bytes)\n\
+             Error reading descriptor : ERROR_INVALID_PARAMETER\n\
+             String Descriptor 1:\n\
+             Data (HexDump)           : 10 03 47 00 75 00 64 00   ..G.u.d.\n\
+                                      73 00 65 00 6E 00 00 00   s.e.n...\n",
+        )?;
+
+        let result = read_report_descriptor_hex_file(&path);
+
+        let message = match result {
+            Ok(bytes) => format!("USBTreeView summary parsed as descriptor bytes: {bytes}"),
+            Err(err) => err.to_string(),
+        };
+        assert!(
+            message.contains("no HID report descriptor bytes found"),
+            "{message}"
+        );
+        assert!(
+            !message.contains("invalid descriptor byte line"),
+            "{message}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn operator_descriptor_hex_file_reports_no_bytes_for_non_utf8_usbtreeview_summary() -> TestResult
+    {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("r5-usbtreeview-report-with-ansi-byte.txt");
+        fs::write(
+            &path,
+            b"HID Descriptor:\n\
+              bDescriptorType          : 0x22 (Class=Report)\n\
+              wDescriptorLength        : 0x0523 (1315 bytes)\n\
+              Error reading descriptor : ERROR_INVALID_PARAMETER\n\
+              Language 0x0409          : \"MOZA R5 Base\x90\"\n",
+        )?;
+
+        let result = read_report_descriptor_hex_file(&path);
+
+        let message = match result {
+            Ok(bytes) => format!("USBTreeView summary parsed as descriptor bytes: {bytes}"),
+            Err(err) => err.to_string(),
+        };
+        assert!(
+            message.contains("no HID report descriptor bytes found"),
+            "{message}"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn operator_descriptor_hex_file_accepts_descriptor_block_inside_summary() -> TestResult {
         let dir = tempfile::tempdir()?;
         let path = dir
@@ -18670,6 +18838,29 @@ mod tests {
         let hex = read_report_descriptor_hex_file(&path)?;
 
         assert_eq!(hex, "05010904A1018520750895069102");
+        Ok(())
+    }
+
+    #[test]
+    fn operator_descriptor_hex_file_accepts_usbtreeview_report_descriptor_hexdump() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let path = dir
+            .path()
+            .join("r5-usbtreeview-report-descriptor-hexdump.txt");
+        write_text_file(
+            &path,
+            "Interface Descriptor:\n\
+             bInterfaceNumber         : 0x02\n\
+             ------------------- Report Descriptor --------------------\n\
+             Data (HexDump)           : 05 01 09 04 A1 01 85 20   ....... \n\
+                                      75 08 95 06 91 02 C0      u......\n\
+             Endpoint Descriptor:\n\
+             bEndpointAddress         : 0x83\n",
+        )?;
+
+        let hex = read_report_descriptor_hex_file(&path)?;
+
+        assert_eq!(hex, "05010904A1018520750895069102C0");
         Ok(())
     }
 
