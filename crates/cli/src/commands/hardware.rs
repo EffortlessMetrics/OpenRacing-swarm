@@ -4,6 +4,7 @@
 //! available, records tool/platform readiness, and never opens devices or sends
 //! output, feature, serial, firmware, or DFU commands.
 
+use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::io::{self, Write};
@@ -187,6 +188,7 @@ fn inspect_windows_pnp() -> WindowsPnpChecks {
             tool: "Get-PnpDevice",
             moza_vid_visible: None,
             hid_interface_count: 0,
+            hid_pnp_device_count: 0,
             serial_interface_count: 0,
             devices: Vec::new(),
             error: Some("PnP inspection is currently implemented only on Windows".to_string()),
@@ -209,6 +211,7 @@ fn inspect_windows_pnp() -> WindowsPnpChecks {
             tool: "Get-PnpDevice",
             moza_vid_visible: None,
             hid_interface_count: 0,
+            hid_pnp_device_count: 0,
             serial_interface_count: 0,
             devices: Vec::new(),
             error: Some(format!(
@@ -221,6 +224,7 @@ fn inspect_windows_pnp() -> WindowsPnpChecks {
             tool: "Get-PnpDevice",
             moza_vid_visible: None,
             hid_interface_count: 0,
+            hid_pnp_device_count: 0,
             serial_interface_count: 0,
             devices: Vec::new(),
             error: Some(error.to_string()),
@@ -236,6 +240,7 @@ fn windows_pnp_checks_from_json(text: &str) -> WindowsPnpChecks {
             tool: "Get-PnpDevice",
             moza_vid_visible: Some(false),
             hid_interface_count: 0,
+            hid_pnp_device_count: 0,
             serial_interface_count: 0,
             devices: Vec::new(),
             error: None,
@@ -250,6 +255,7 @@ fn windows_pnp_checks_from_json(text: &str) -> WindowsPnpChecks {
                 tool: "Get-PnpDevice",
                 moza_vid_visible: None,
                 hid_interface_count: 0,
+                hid_pnp_device_count: 0,
                 serial_interface_count: 0,
                 devices: Vec::new(),
                 error: Some(format!("failed to parse Get-PnpDevice JSON: {error}")),
@@ -264,10 +270,11 @@ fn windows_pnp_checks_from_json(text: &str) -> WindowsPnpChecks {
             .collect::<Vec<_>>(),
         other => windows_pnp_device_from_value(&other).into_iter().collect(),
     };
-    let hid_interface_count = devices
+    let hid_pnp_device_count = devices
         .iter()
         .filter(|device| device.class_name.as_deref() == Some("HIDClass"))
         .count();
+    let hid_interface_count = unique_windows_pnp_hid_interface_count(&devices);
     let serial_interface_count = devices
         .iter()
         .filter(|device| {
@@ -289,10 +296,31 @@ fn windows_pnp_checks_from_json(text: &str) -> WindowsPnpChecks {
         tool: "Get-PnpDevice",
         moza_vid_visible,
         hid_interface_count,
+        hid_pnp_device_count,
         serial_interface_count,
         devices,
         error: None,
     }
+}
+
+fn unique_windows_pnp_hid_interface_count(devices: &[WindowsPnpDevice]) -> usize {
+    let mut interfaces = BTreeSet::new();
+    let mut hid_without_interface = 0usize;
+    for device in devices
+        .iter()
+        .filter(|device| device.class_name.as_deref() == Some("HIDClass"))
+    {
+        if let Some(interface_number) = device.interface_number {
+            interfaces.insert((
+                device.vendor_id.as_deref().unwrap_or_default(),
+                device.product_id.as_deref().unwrap_or_default(),
+                interface_number,
+            ));
+        } else {
+            hid_without_interface += 1;
+        }
+    }
+    interfaces.len() + hid_without_interface
 }
 
 fn windows_pnp_device_from_value(value: &serde_json::Value) -> Option<WindowsPnpDevice> {
@@ -472,10 +500,11 @@ fn print_doctor_receipt(
         receipt.hid.moza_vid_visible
     ))?;
     write_stdout_line(&format!(
-        "Windows PnP Moza devices: scanned={} visible={} hid_interfaces={} serial_interfaces={}",
+        "Windows PnP Moza devices: scanned={} visible={} hid_interfaces={} hid_pnp_devices={} serial_interfaces={}",
         receipt.windows_pnp.scan_attempted,
         receipt.windows_pnp.moza_vid_visible.unwrap_or(false),
         receipt.windows_pnp.hid_interface_count,
+        receipt.windows_pnp.hid_pnp_device_count,
         receipt.windows_pnp.serial_interface_count
     ))?;
     if let Some(running) = receipt.vendor_apps.pit_house_running {
@@ -576,6 +605,7 @@ struct WindowsPnpChecks {
     #[serde(skip_serializing_if = "Option::is_none")]
     moza_vid_visible: Option<bool>,
     hid_interface_count: usize,
+    hid_pnp_device_count: usize,
     serial_interface_count: usize,
     devices: Vec<WindowsPnpDevice>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -670,6 +700,7 @@ mod tests {
                 tool: "Get-PnpDevice",
                 moza_vid_visible: Some(false),
                 hid_interface_count: 0,
+                hid_pnp_device_count: 0,
                 serial_interface_count: 0,
                 devices: Vec::new(),
                 error: None,
@@ -725,6 +756,12 @@ mod tests {
             },
             {
                 "Status": "OK",
+                "Class": "HIDClass",
+                "FriendlyName": "USB Input Device",
+                "InstanceId": "HID\\VID_346E&PID_0004&MI_02\\8&6C29B84&0&0001"
+            },
+            {
+                "Status": "OK",
                 "Class": "USB",
                 "FriendlyName": "USB Composite Device",
                 "InstanceId": "USB\\VID_346E&PID_0004\\410051000251333135363734"
@@ -735,6 +772,7 @@ mod tests {
 
         assert_eq!(checks.moza_vid_visible, Some(true));
         assert_eq!(checks.hid_interface_count, 1);
+        assert_eq!(checks.hid_pnp_device_count, 2);
         assert_eq!(checks.serial_interface_count, 1);
         let serial = checks
             .devices
@@ -764,6 +802,7 @@ mod tests {
 
         assert_eq!(checks.moza_vid_visible, Some(true));
         assert_eq!(checks.hid_interface_count, 1);
+        assert_eq!(checks.hid_pnp_device_count, 1);
         assert_eq!(checks.serial_interface_count, 0);
         assert_eq!(checks.devices.len(), 1);
         let device = checks
