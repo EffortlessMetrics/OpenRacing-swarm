@@ -287,8 +287,10 @@ This design mirrors the [`openracing-capture-ids`](../../crates/openracing-captu
 Windows does not expose raw report descriptor bytes via hidapi enumeration. For the
 receipt-backed hardware lane, export the HID report descriptor with USBTreeView
 or an equivalent descriptor tool and import it through `wheelctl moza descriptor
---report-descriptor-hex-file`; the resulting receipt stores the raw descriptor
-hex, parsed report metadata, length, and CRC for verifier checks.
+--report-descriptor-hex-file`. If the bytes come from Linux sysfs as a raw
+binary `report_descriptor` file, import it with `--report-descriptor-bin-file`.
+The resulting receipt stores the raw descriptor hex, parsed report metadata,
+length, and CRC for verifier checks.
 
 ### Arming policy
 
@@ -336,6 +338,16 @@ capture that receipt with:
 wheelctl moza descriptor `
   --device 0x346E:0x0004 `
   --report-descriptor-hex-file target/moza-r5-report-descriptor.txt `
+  --json-out ci/hardware/moza-r5/<date>/descriptor.json `
+  --json
+```
+
+For a raw Linux sysfs descriptor dump:
+
+```powershell
+wheelctl moza descriptor `
+  --device 0x346E:0x0004 `
+  --report-descriptor-bin-file target/moza-r5-report-descriptor.bin `
   --json-out ci/hardware/moza-r5/<date>/descriptor.json `
   --json
 ```

@@ -102,7 +102,7 @@ For passive work, multiple visible endpoints may be recorded. For any later
 output-capable work, more than one visible motor-capable endpoint must require an
 explicit operator-selected endpoint before output is allowed.
 
-## 5. Descriptor Hex Fallback
+## 5. Descriptor Fallback
 
 If Windows cannot expose the raw R5 HID report descriptor, collect the report
 descriptor bytes with USBTreeView or an equivalent USB descriptor tool.
@@ -128,8 +128,18 @@ wheelctl moza descriptor `
   --json-out "$LANE/descriptor.json"
 ```
 
+If the descriptor bytes come from Linux sysfs as a raw binary
+`report_descriptor` file, use the binary file form:
+
+```powershell
+wheelctl moza descriptor `
+  --device <r5-selector> `
+  --report-descriptor-bin-file "target/moza-r5-report-descriptor.bin" `
+  --json-out "$LANE/descriptor.json"
+```
+
 Keep the vendor-wide Moza records in `descriptor.json`. The supplied descriptor
-hex should apply only to the selected R5 record.
+bytes should apply only to the selected R5 record.
 
 ## 6. Passive Captures
 

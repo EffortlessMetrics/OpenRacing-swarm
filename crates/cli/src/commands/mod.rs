@@ -390,6 +390,9 @@ pub enum MozaCommands {
         /// File containing operator-supplied HID report descriptor hex
         #[arg(long)]
         report_descriptor_hex_file: Option<std::path::PathBuf>,
+        /// Raw binary HID report descriptor file, for example Linux sysfs report_descriptor
+        #[arg(long)]
+        report_descriptor_bin_file: Option<std::path::PathBuf>,
         /// Write the descriptor receipt to this JSON file
         #[arg(long)]
         json_out: Option<std::path::PathBuf>,

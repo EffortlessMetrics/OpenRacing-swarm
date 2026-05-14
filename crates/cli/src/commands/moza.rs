@@ -164,6 +164,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             descriptor_hex,
             report_descriptor_hex,
             report_descriptor_hex_file,
+            report_descriptor_bin_file,
             json_out,
         } => {
             descriptor(
@@ -172,6 +173,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 *descriptor_hex,
                 report_descriptor_hex.as_deref(),
                 report_descriptor_hex_file.as_deref(),
+                report_descriptor_bin_file.as_deref(),
                 json_out.as_deref(),
             )
             .await
@@ -607,12 +609,16 @@ async fn descriptor(
     include_descriptor_hex: bool,
     report_descriptor_hex: Option<&str>,
     report_descriptor_hex_file: Option<&Path>,
+    report_descriptor_bin_file: Option<&Path>,
     json_out: Option<&Path>,
 ) -> Result<()> {
     let api = HidApi::new().context("failed to initialize HID API")?;
     let mut devices: Vec<_> = enumerate_moza_devices(&api, true, include_descriptor_hex);
-    let operator_descriptor_hex =
-        operator_report_descriptor_hex(report_descriptor_hex, report_descriptor_hex_file)?;
+    let operator_descriptor_hex = operator_report_descriptor_hex(
+        report_descriptor_hex,
+        report_descriptor_hex_file,
+        report_descriptor_bin_file,
+    )?;
 
     if let Some(hex) = operator_descriptor_hex.as_deref() {
         apply_operator_report_descriptor_to_selected_device(&mut devices, selector, hex)?;
@@ -641,10 +647,11 @@ async fn descriptor(
         operator_descriptor_hex_source: operator_descriptor_source(
             report_descriptor_hex,
             report_descriptor_hex_file,
+            report_descriptor_bin_file,
         ),
         devices,
         notes: vec![
-            "descriptor metadata is read from enumeration/sysfs or operator-supplied descriptor hex only; no HID reports are sent".to_string(),
+            "descriptor metadata is read from enumeration/sysfs or operator-supplied descriptor bytes only; no HID reports are sent".to_string(),
         ],
     };
 
@@ -665,7 +672,7 @@ fn apply_operator_report_descriptor_to_selected_device(
 
     if selected_indices.len() != 1 {
         return Err(anyhow!(
-            "--report-descriptor-hex requires exactly one selected Moza HID device, found {}",
+            "operator-supplied report descriptor requires exactly one selected Moza HID device, found {}",
             selected_indices.len()
         ));
     }
@@ -679,7 +686,7 @@ fn apply_operator_report_descriptor_to_selected_device(
         Ok(())
     } else {
         Err(anyhow!(
-            "--report-descriptor-hex selected device disappeared before descriptor metadata could be applied"
+            "operator-supplied report descriptor selected device disappeared before descriptor metadata could be applied"
         ))
     }
 }
@@ -687,25 +694,30 @@ fn apply_operator_report_descriptor_to_selected_device(
 fn operator_report_descriptor_hex(
     inline_hex: Option<&str>,
     hex_file: Option<&Path>,
+    bin_file: Option<&Path>,
 ) -> Result<Option<String>> {
-    match (inline_hex, hex_file) {
-        (Some(_), Some(_)) => Err(anyhow!(
-            "use only one of --report-descriptor-hex or --report-descriptor-hex-file"
+    match (inline_hex.is_some(), hex_file.is_some(), bin_file.is_some()) {
+        (false, false, false) => Ok(None),
+        (true, false, false) => Ok(inline_hex.map(str::to_string)),
+        (false, true, false) => hex_file.map(read_report_descriptor_hex_file).transpose(),
+        (false, false, true) => bin_file.map(read_report_descriptor_bin_file).transpose(),
+        _ => Err(anyhow!(
+            "use only one of --report-descriptor-hex, --report-descriptor-hex-file, or --report-descriptor-bin-file"
         )),
-        (Some(hex), None) => Ok(Some(hex.to_string())),
-        (None, Some(path)) => read_report_descriptor_hex_file(path).map(Some),
-        (None, None) => Ok(None),
     }
 }
 
 fn operator_descriptor_source(
     inline_hex: Option<&str>,
     hex_file: Option<&Path>,
+    bin_file: Option<&Path>,
 ) -> Option<&'static str> {
     if inline_hex.is_some() {
         Some("inline")
     } else if hex_file.is_some() {
         Some("file")
+    } else if bin_file.is_some() {
+        Some("binary_file")
     } else {
         None
     }
@@ -721,6 +733,17 @@ fn read_report_descriptor_hex_file(path: &Path) -> Result<String> {
     if bytes.is_empty() {
         return Err(anyhow!(
             "no HID report descriptor bytes found in '{}'; export or paste the actual Report Descriptor byte block, for example lines like '0000: 05 01 09 04 ...' or a compact hex descriptor. A USBTreeView device/interface summary, wDescriptorLength value, or ERROR_INVALID_PARAMETER descriptor-read failure is not enough.",
+            path.display()
+        ));
+    }
+    Ok(bytes_hex_compact(&bytes))
+}
+
+fn read_report_descriptor_bin_file(path: &Path) -> Result<String> {
+    let bytes = fs::read(path).with_context(|| format!("failed to read '{}'", path.display()))?;
+    if bytes.is_empty() {
+        return Err(anyhow!(
+            "no HID report descriptor bytes found in '{}'; provide the raw binary HID report_descriptor file, for example Linux /sys/class/hidraw/<node>/device/report_descriptor.",
             path.display()
         ));
     }
@@ -4068,7 +4091,7 @@ fn operator_actions_for_bundle_stage(
     let mut actions = Vec::new();
     if !bundle_gate_check_passed(gates, "descriptor_metadata") {
         actions.push(
-            "Export the R5 HID report descriptor byte block into target/moza-r5-report-descriptor.txt, then rerun the descriptor file fallback. A USBTreeView summary that only shows wDescriptorLength or ERROR_INVALID_PARAMETER is not enough; use the actual Report Descriptor hex block, Linux sysfs report_descriptor bytes, or an equivalent descriptor tool. Do not run firmware or DFU flows."
+            "Export the R5 HID report descriptor byte block into target/moza-r5-report-descriptor.txt or target/moza-r5-report-descriptor.bin, then rerun the descriptor file fallback. A USBTreeView summary that only shows wDescriptorLength or ERROR_INVALID_PARAMETER is not enough; use the actual Report Descriptor hex block, Linux sysfs report_descriptor bytes, or an equivalent descriptor tool. Do not run firmware or DFU flows."
                 .to_string(),
         );
     }
@@ -4250,6 +4273,10 @@ fn push_passive_next_commands(
         ));
         commands.push(format!(
             "wheelctl moza descriptor --device {r5_selector} --report-descriptor-hex-file target/moza-r5-report-descriptor.txt --json-out {}",
+            lane_path_arg(lane, "descriptor.json")
+        ));
+        commands.push(format!(
+            "wheelctl moza descriptor --device {r5_selector} --report-descriptor-bin-file target/moza-r5-report-descriptor.bin --json-out {}",
             lane_path_arg(lane, "descriptor.json")
         ));
     }
@@ -17810,6 +17837,11 @@ mod tests {
                 "expected {} to document operator-supplied descriptor hex through wheelctl",
                 path.display()
             );
+            assert!(
+                text.contains("--report-descriptor-bin-file"),
+                "expected {} to document operator-supplied binary descriptor bytes through wheelctl",
+                path.display()
+            );
         }
 
         Ok(())
@@ -18926,9 +18958,50 @@ mod tests {
     }
 
     #[test]
+    fn operator_descriptor_bin_file_accepts_raw_sysfs_bytes() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("report_descriptor");
+        fs::write(&path, [0x05, 0x01, 0x09, 0x04, 0xA1, 0x01])?;
+
+        let hex = read_report_descriptor_bin_file(&path)?;
+
+        assert_eq!(hex, "05010904A101");
+        Ok(())
+    }
+
+    #[test]
+    fn operator_descriptor_bin_file_rejects_empty_raw_file() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("report_descriptor");
+        fs::write(&path, [])?;
+
+        let result = read_report_descriptor_bin_file(&path);
+
+        let message = match result {
+            Ok(bytes) => format!("empty descriptor parsed as bytes: {bytes}"),
+            Err(err) => err.to_string(),
+        };
+        assert!(
+            message.contains("raw binary HID report_descriptor file"),
+            "{message}"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn operator_descriptor_hex_source_rejects_inline_and_file_together() -> TestResult {
         let path = Path::new("r5-report-descriptor.txt");
-        let result = operator_report_descriptor_hex(Some("05 01"), Some(path));
+        let result = operator_report_descriptor_hex(Some("05 01"), Some(path), None);
+
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn operator_descriptor_hex_source_rejects_text_and_binary_files_together() -> TestResult {
+        let text_path = Path::new("r5-report-descriptor.txt");
+        let binary_path = Path::new("report_descriptor");
+        let result = operator_report_descriptor_hex(None, Some(text_path), Some(binary_path));
 
         assert!(result.is_err());
         Ok(())
@@ -18939,8 +19012,26 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let path = dir.path().join("r5-report-descriptor.txt");
         write_text_file(&path, "05 01 09 04")?;
-        let hex = operator_report_descriptor_hex(None, Some(&path))?
+        let hex = operator_report_descriptor_hex(None, Some(&path), None)?
             .ok_or("expected descriptor hex from file")?;
+        let descriptor = report_descriptor_from_operator_hex(&hex)?;
+        let mut device = sample_device();
+
+        device.apply_report_descriptor(descriptor, "operator_supplied_hex");
+
+        assert_eq!(device.descriptor_source, "operator_supplied_hex");
+        assert_eq!(device.report_descriptor_len, Some(4));
+        assert_eq!(device.report_descriptor_hex.as_deref(), Some("05010904"));
+        Ok(())
+    }
+
+    #[test]
+    fn operator_descriptor_bin_file_updates_device_descriptor_metadata() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("report_descriptor");
+        fs::write(&path, [0x05, 0x01, 0x09, 0x04])?;
+        let hex = operator_report_descriptor_hex(None, None, Some(&path))?
+            .ok_or("expected descriptor hex from binary file")?;
         let descriptor = report_descriptor_from_operator_hex(&hex)?;
         let mut device = sample_device();
 
@@ -23635,6 +23726,12 @@ mod tests {
                 "wheelctl moza descriptor --device 0x346E:0x0014 --report-descriptor-hex-file"
             )),
             "passive next_commands should include the descriptor file fallback"
+        );
+        assert!(
+            receipt.next_commands.iter().any(|command| command.contains(
+                "wheelctl moza descriptor --device 0x346E:0x0014 --report-descriptor-bin-file"
+            )),
+            "passive next_commands should include the binary descriptor file fallback"
         );
         assert!(
             receipt.operator_actions.iter().any(|action| action

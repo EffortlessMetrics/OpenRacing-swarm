@@ -185,7 +185,7 @@ All transitions produce zero torque in `SafeMode` and `EmergencyStop`. Property-
 - **Protocol Concurrency**: Both applications may attempt to send the 3-step feature report handshake (0x02, 0x03, 0x11). 
     - **Conflict Risk**: If OpenRacing requests `Direct` FFB mode (0x02) while Pit House requests `Standard` (0x00), the device state may flip-flop.
     - **Stability Strategy**: Simulation (Phase 3) will verify OpenRacing’s behavior under handshake race conditions.
-- **Fingerprinting Parity**: Windows hidapi enumeration does not expose raw HID report descriptor bytes. For the receipt-backed Moza lane, export the descriptor with USBTreeView or an equivalent tool and import it with `wheelctl moza descriptor --report-descriptor-hex-file` so the lane stores descriptor hex, parsed report metadata, and CRC evidence. If no trusted descriptor receipt exists, bounded output bring-up must use an explicit operator override recorded in the receipt, and high torque stays disabled.
+- **Fingerprinting Parity**: Windows hidapi enumeration does not expose raw HID report descriptor bytes. For the receipt-backed Moza lane, export the descriptor with USBTreeView, Linux sysfs, or an equivalent tool and import it with `wheelctl moza descriptor --report-descriptor-hex-file` or `--report-descriptor-bin-file` so the lane stores descriptor hex, parsed report metadata, and CRC evidence. If no trusted descriptor receipt exists, bounded output bring-up must use an explicit operator override recorded in the receipt, and high torque stays disabled.
 
 ### HID vs Serial/CDC ACM
 
