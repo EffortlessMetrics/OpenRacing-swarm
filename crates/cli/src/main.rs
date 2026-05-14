@@ -530,6 +530,45 @@ mod tests {
     }
 
     #[test]
+    fn parse_hardware_lane_set_role_endpoint() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "hardware",
+            "lane",
+            "set-role-endpoint",
+            "--lane",
+            "target/hardware-lane",
+            "--role",
+            "button_box",
+            "--endpoint",
+            "hid-0x1234-0x5678-if0-0x0001-0x0004",
+            "--json-out",
+            "target/hardware-lane/role-endpoint-button_box.json",
+        ])?;
+        match &cli.command {
+            Commands::Hardware(HardwareCommands::Lane(command)) => match command.as_ref() {
+                HardwareLaneCommands::SetRoleEndpoint {
+                    lane,
+                    role,
+                    endpoint,
+                    json_out,
+                } => {
+                    assert_eq!(lane.to_str(), Some("target/hardware-lane"));
+                    assert_eq!(role, "button_box");
+                    assert_eq!(endpoint, "hid-0x1234-0x5678-if0-0x0001-0x0004");
+                    assert_eq!(
+                        json_out.as_ref().and_then(|p| p.to_str()),
+                        Some("target/hardware-lane/role-endpoint-button_box.json")
+                    );
+                }
+                _ => return Err("expected Hardware Lane SetRoleEndpoint command".into()),
+            },
+            _ => return Err("expected Hardware Lane SetRoleEndpoint command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_device_status() -> TestResult {
         let cli = Cli::try_parse_from(["wheelctl", "device", "status", "wheel-001"])?;
         match &cli.command {

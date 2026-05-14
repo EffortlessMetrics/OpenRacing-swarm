@@ -78,6 +78,21 @@ Metadata overrides for a new role require `--required-role` or
 requirements. Role connection overrides are limited to
 `wheelbase_hub`, `standalone_usb`, `cross_device`, or `unknown`.
 
+After discovery, replace a placeholder role endpoint in the lane manifest with
+the observed selector instead of hand-editing JSON:
+
+```powershell
+wheelctl hardware lane set-role-endpoint `
+  --lane ci\hardware\moza-r5\2026-05-13 `
+  --role button_box `
+  --endpoint hid-0x1234-0x5678-if0-0x0001-0x0004 `
+  --json-out ci\hardware\moza-r5\2026-05-13\role-endpoint-button_box.json `
+  --json
+```
+
+The endpoint update command edits scaffold metadata only, refreshes the
+checklist/capture plan, and preserves the no-HID-open/no-output safety flags.
+
 Inventory a scaffolded lane without validating hardware claims:
 
 ```powershell
@@ -91,6 +106,8 @@ The status receipt reports scaffold files, planned role evidence, stage artifact
 presence, the next blocked stage, and safe next commands for observe-only or
 passive evidence. Passive capture commands are listed only for required role
 captures that are still missing from the lane and have a declared endpoint.
+Missing required captures with placeholder endpoints receive a
+`hardware lane set-role-endpoint` guidance command first.
 Descriptor import commands use the declared wheelbase-hub endpoint from the
 lane roles rather than a fixed R5 PID. It deliberately keeps
 `evidence_claims_validated`,

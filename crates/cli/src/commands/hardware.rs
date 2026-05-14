@@ -67,6 +67,12 @@ async fn execute_lane(cmd: &HardwareLaneCommands, json: bool) -> Result<()> {
         HardwareLaneCommands::Status { lane, json_out } => {
             lane_status(json, lane, json_out.as_deref()).await
         }
+        HardwareLaneCommands::SetRoleEndpoint {
+            lane,
+            role,
+            endpoint,
+            json_out,
+        } => lane_set_role_endpoint(json, lane, role, endpoint, json_out.as_deref()).await,
     }
 }
 
@@ -96,6 +102,17 @@ async fn lane_status(json: bool, lane: &Path, json_out: Option<&Path>) -> Result
     let receipt = build_hardware_lane_status_receipt(lane)?;
     write_json_receipt(json_out, &receipt)?;
     print_lane_status_receipt(json, json_out, &receipt)
+}
+
+async fn lane_set_role_endpoint(
+    json: bool,
+    lane: &Path,
+    role: &str,
+    endpoint: &str,
+    json_out: Option<&Path>,
+) -> Result<()> {
+    let receipt = set_hardware_lane_role_endpoint(lane, role, endpoint, json_out)?;
+    print_lane_role_endpoint_receipt(json, json_out, &receipt)
 }
 
 async fn bringup_rail(json: bool, family: &str, json_out: Option<&Path>) -> Result<()> {
@@ -370,6 +387,102 @@ fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusR
     })
 }
 
+fn set_hardware_lane_role_endpoint(
+    lane: &Path,
+    role: &str,
+    endpoint: &str,
+    json_out: Option<&Path>,
+) -> Result<HardwareLaneRoleEndpointReceipt> {
+    let role = normalize_role_id(role, "--role")?;
+    let endpoint = validate_role_endpoint(endpoint, "--endpoint")?;
+    let manifest_path = lane.join("hardware-lane-manifest.json");
+    let mut manifest: serde_json::Value = read_json_file(&manifest_path)?;
+    let family = manifest
+        .get("family")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| anyhow::anyhow!("hardware-lane-manifest.json missing family"))?
+        .to_string();
+    let topology = manifest
+        .get("topology")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| anyhow::anyhow!("hardware-lane-manifest.json missing topology"))?
+        .to_string();
+    let roles = manifest
+        .get_mut("declared_logical_roles")
+        .and_then(serde_json::Value::as_array_mut)
+        .ok_or_else(|| {
+            anyhow::anyhow!("hardware-lane-manifest.json missing declared_logical_roles array")
+        })?;
+    let role_value = roles
+        .iter_mut()
+        .find(|candidate| {
+            candidate
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|candidate_id| candidate_id == role)
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "role '{role}' is not declared in {}; add it with hardware lane init role overrides before setting an endpoint",
+                manifest_path.display()
+            )
+        })?;
+    let previous_endpoint = role_value
+        .get("expected_endpoint")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("declare-observed-endpoint")
+        .to_string();
+    role_value["expected_endpoint"] = serde_json::Value::String(endpoint.clone());
+    write_json_file(&manifest_path, &manifest)?;
+
+    let stored: StoredHardwareLaneScaffoldManifest = serde_json::from_value(manifest)
+        .with_context(|| format!("failed to re-read updated '{}'", manifest_path.display()))?;
+    let adapter = hardware_family_adapter_contract(&family)
+        .with_context(|| format!("unknown hardware bring-up family '{family}'"))?;
+    let logical_roles = stored_lane_roles_to_logical(&stored.declared_logical_roles);
+    let checklist_path = lane.join("artifact-checklist.md");
+    let capture_plan_path = lane.join("capture-plan.md");
+    write_text_file(
+        &checklist_path,
+        &render_artifact_checklist(&adapter, &hardware_bringup_stages(), &logical_roles),
+    )?;
+    write_text_file(
+        &capture_plan_path,
+        &render_capture_plan(&adapter, &topology, &logical_roles),
+    )?;
+
+    let receipt = HardwareLaneRoleEndpointReceipt {
+        success: true,
+        command: "wheelctl hardware lane set-role-endpoint",
+        generated_at_utc: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        no_hid_device_opened: true,
+        no_ffb_writes: true,
+        no_output_reports: true,
+        no_feature_reports: true,
+        no_serial_config_commands: true,
+        no_firmware_or_dfu_commands: true,
+        lane: lane.display().to_string(),
+        family,
+        topology,
+        role,
+        previous_endpoint,
+        expected_endpoint: endpoint,
+        manifest_path: manifest_path.display().to_string(),
+        updated_files: vec![
+            manifest_path.display().to_string(),
+            checklist_path.display().to_string(),
+            capture_plan_path.display().to_string(),
+        ],
+        notes: vec![
+            "role endpoint update edits lane scaffold metadata only".to_string(),
+            "no HID device was opened and no output, feature, serial, firmware, or DFU command was sent".to_string(),
+            "run hardware lane status again to refresh safe next commands".to_string(),
+        ],
+    };
+    write_json_receipt(json_out, &receipt)?;
+    Ok(receipt)
+}
+
 fn hardware_lane_scaffold_files(lane: &Path) -> Vec<HardwareLaneArtifactStatus> {
     [
         ("manifest", "hardware-lane-manifest.json"),
@@ -540,6 +653,23 @@ fn lane_status_safe_next_commands(
                         )
                     }),
             );
+            commands.extend(
+                roles
+                    .iter()
+                    .filter(|role| {
+                        role.required
+                            && !lane.join(&role.evidence_artifact).exists()
+                            && !has_declared_endpoint(&role.expected_endpoint)
+                    })
+                    .map(|role| {
+                        format!(
+                            "wheelctl hardware lane set-role-endpoint --lane {} --role {} --endpoint <observed-endpoint-selector> --json-out {} --json",
+                            shell_path_arg(lane),
+                            role.id,
+                            lane_path_arg(lane, &format!("role-endpoint-{}.json", role.id))
+                        )
+                    }),
+            );
             commands
         }
         ("moza-r5", "descriptor_trust") => {
@@ -618,7 +748,10 @@ fn moza_descriptor_selector(roles: &[StoredHardwareLaneLogicalRole]) -> &str {
 }
 
 fn has_declared_endpoint(endpoint: &str) -> bool {
-    endpoint != "declare-observed-endpoint"
+    let endpoint = endpoint.trim();
+    !endpoint.is_empty()
+        && endpoint != "declare-observed-endpoint"
+        && endpoint != "<observed-endpoint-selector>"
 }
 
 fn lane_path_arg(lane: &Path, relative: &str) -> String {
@@ -725,6 +858,33 @@ fn normalize_role_id(value: &str, flag: &str) -> Result<String> {
         );
     }
     Ok(role.to_string())
+}
+
+fn validate_role_endpoint(value: &str, flag: &str) -> Result<String> {
+    let endpoint = value.trim();
+    if !has_declared_endpoint(endpoint) {
+        anyhow::bail!("{flag} must be an observed endpoint selector, not a placeholder");
+    }
+    if endpoint.chars().any(|ch| ch == '\r' || ch == '\n') {
+        anyhow::bail!("{flag} must not contain line breaks");
+    }
+    Ok(endpoint.to_string())
+}
+
+fn stored_lane_roles_to_logical(
+    roles: &[StoredHardwareLaneLogicalRole],
+) -> Vec<HardwareLaneLogicalRole> {
+    roles
+        .iter()
+        .map(|role| HardwareLaneLogicalRole {
+            id: role.id.clone(),
+            required: role.required,
+            connection_path: role.connection_path.clone(),
+            expected_endpoint: role.expected_endpoint.clone(),
+            evidence_artifact: role.evidence_artifact.clone(),
+            semantic_status: role.semantic_status.clone(),
+        })
+        .collect()
 }
 
 fn validate_relative_artifact_path(path: &str) -> Result<()> {
@@ -1827,6 +1987,36 @@ fn print_lane_status_receipt(
     Ok(())
 }
 
+fn print_lane_role_endpoint_receipt(
+    json: bool,
+    json_out: Option<&Path>,
+    receipt: &HardwareLaneRoleEndpointReceipt,
+) -> Result<()> {
+    if json {
+        write_stdout_line(&serde_json::to_string_pretty(receipt)?)?;
+        return Ok(());
+    }
+
+    write_stdout_line(&format!(
+        "Hardware lane role endpoint updated for {} at {}.",
+        receipt.role, receipt.lane
+    ))?;
+    write_stdout_line(&format!(
+        "Endpoint: {} -> {}",
+        receipt.previous_endpoint, receipt.expected_endpoint
+    ))?;
+    write_stdout_line(
+        "No HID devices were opened and no output, feature, serial, firmware, or DFU commands were sent.",
+    )?;
+    for path in &receipt.updated_files {
+        write_stdout_line(&format!("Updated: {path}"))?;
+    }
+    if let Some(path) = json_out {
+        write_stdout_line(&format!("Receipt: {}", path.display()))?;
+    }
+    Ok(())
+}
+
 fn print_bringup_rail_receipt(
     json: bool,
     json_out: Option<&Path>,
@@ -2090,6 +2280,28 @@ struct HardwareLaneInitReceipt {
     operator: String,
     captures_dir: String,
     created_files: Vec<String>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct HardwareLaneRoleEndpointReceipt {
+    success: bool,
+    command: &'static str,
+    generated_at_utc: String,
+    no_hid_device_opened: bool,
+    no_ffb_writes: bool,
+    no_output_reports: bool,
+    no_feature_reports: bool,
+    no_serial_config_commands: bool,
+    no_firmware_or_dfu_commands: bool,
+    lane: String,
+    family: String,
+    topology: String,
+    role: String,
+    previous_endpoint: String,
+    expected_endpoint: String,
+    manifest_path: String,
+    updated_files: Vec<String>,
     notes: Vec<String>,
 }
 
@@ -2834,7 +3046,102 @@ mod tests {
                     && !role.artifact_present)
         );
         assert!(!joined.contains("declare-observed-endpoint"), "{joined}");
+        assert!(
+            joined.contains("wheelctl hardware lane set-role-endpoint"),
+            "{joined}"
+        );
+        assert!(joined.contains("--role button_box"), "{joined}");
         assert!(joined.contains("wheelctl moza capture-input --device hid-0x346E-0x0004"));
+        Ok(())
+    }
+
+    #[test]
+    fn lane_set_role_endpoint_updates_manifest_and_capture_guidance() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("moza-r5-lane");
+        let role_overrides = HardwareLaneRoleOverrides::from_cli(
+            &["button_box".to_string()],
+            &[],
+            &["button_box=captures/button-box.jsonl".to_string()],
+            &[],
+            &["button_box=wheelbase_hub".to_string()],
+        )?;
+        let _receipt = scaffold_hardware_lane_with_overrides(
+            &lane,
+            "moza-r5",
+            "wheelbase-hub",
+            "Steven",
+            &role_overrides,
+            false,
+            None,
+        )?;
+        for artifact in [
+            "device-list.json",
+            "hardware-doctor.json",
+            "hid-list.json",
+            "moza-probe.json",
+        ] {
+            fs::write(lane.join(artifact), "{}\n")?;
+        }
+
+        let receipt = set_hardware_lane_role_endpoint(
+            &lane,
+            "button_box",
+            "hid-0x1234-0x5678-if0-0x0001-0x0004",
+            Some(&lane.join("role-endpoint-button_box.json")),
+        )?;
+        assert!(receipt.success);
+        assert!(receipt.no_hid_device_opened);
+        assert!(receipt.no_output_reports);
+        assert!(receipt.no_feature_reports);
+        assert_eq!(receipt.role, "button_box");
+        assert_eq!(receipt.previous_endpoint, "declare-observed-endpoint");
+        assert_eq!(
+            receipt.expected_endpoint,
+            "hid-0x1234-0x5678-if0-0x0001-0x0004"
+        );
+        assert!(lane.join("role-endpoint-button_box.json").exists());
+
+        let manifest_text = fs::read_to_string(lane.join("hardware-lane-manifest.json"))?;
+        assert!(manifest_text.contains("hid-0x1234-0x5678-if0-0x0001-0x0004"));
+        let checklist_text = fs::read_to_string(lane.join("artifact-checklist.md"))?;
+        assert!(checklist_text.contains("hid-0x1234-0x5678-if0-0x0001-0x0004"));
+        let capture_plan_text = fs::read_to_string(lane.join("capture-plan.md"))?;
+        assert!(capture_plan_text.contains("hid-0x1234-0x5678-if0-0x0001-0x0004"));
+
+        let status = build_hardware_lane_status_receipt(&lane)?;
+        let joined = status.safe_next_commands.join("\n");
+        assert!(joined.contains("wheelctl moza capture-input --device hid-0x1234-0x5678"));
+        assert!(!joined.contains("wheelctl hardware lane set-role-endpoint"));
+        Ok(())
+    }
+
+    #[test]
+    fn lane_set_role_endpoint_rejects_unknown_role_or_placeholder() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("moza-r5-lane");
+        let _receipt =
+            scaffold_hardware_lane(&lane, "moza-r5", "wheelbase-hub", "Steven", false, None)?;
+
+        let placeholder =
+            set_hardware_lane_role_endpoint(&lane, "steering", "declare-observed-endpoint", None)
+                .err()
+                .ok_or_else(|| io::Error::other("expected placeholder endpoint failure"))?;
+        assert!(
+            placeholder
+                .to_string()
+                .contains("must be an observed endpoint selector")
+        );
+
+        let unknown = set_hardware_lane_role_endpoint(
+            &lane,
+            "button_box",
+            "hid-0x1234-0x5678-if0-0x0001-0x0004",
+            None,
+        )
+        .err()
+        .ok_or_else(|| io::Error::other("expected unknown role failure"))?;
+        assert!(unknown.to_string().contains("is not declared"));
         Ok(())
     }
 

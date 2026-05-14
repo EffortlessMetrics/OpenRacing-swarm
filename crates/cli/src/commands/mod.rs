@@ -400,6 +400,22 @@ pub enum HardwareLaneCommands {
         #[arg(long)]
         json_out: Option<std::path::PathBuf>,
     },
+
+    /// Update one declared role endpoint in the lane manifest after discovery
+    SetRoleEndpoint {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-13
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Declared logical role to update
+        #[arg(long)]
+        role: String,
+        /// Observed endpoint selector for that role
+        #[arg(long)]
+        endpoint: String,
+        /// Write the role-endpoint update receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
