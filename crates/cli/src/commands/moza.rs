@@ -747,6 +747,7 @@ fn read_report_descriptor_bin_file(path: &Path) -> Result<String> {
             path.display()
         ));
     }
+    reject_unsupported_report_descriptor_bytes(&bytes)?;
     Ok(bytes_hex_compact(&bytes))
 }
 
@@ -14388,6 +14389,7 @@ fn report_descriptor_from_operator_hex(value: &str) -> Result<ReportDescriptor> 
             "report descriptor hex must contain at least one byte"
         ));
     }
+    reject_unsupported_report_descriptor_bytes(&bytes)?;
     let mut hasher = crc32fast::Hasher::new();
     hasher.update(&bytes);
     let crc = hasher.finalize();
@@ -14397,6 +14399,15 @@ fn report_descriptor_from_operator_hex(value: &str) -> Result<ReportDescriptor> 
         hex: Some(bytes_hex_compact(&bytes)),
         metadata: parse_hid_report_descriptor_metadata(&bytes),
     })
+}
+
+fn reject_unsupported_report_descriptor_bytes(bytes: &[u8]) -> Result<()> {
+    if bytes.starts_with(b"HidP KDR") {
+        return Err(anyhow!(
+            "Windows HID collection/preparsed descriptor bytes are not raw HID report descriptor bytes; export the actual Report Descriptor block instead, for example Linux sysfs report_descriptor bytes or a USB descriptor tool's Report Descriptor hexdump."
+        ));
+    }
+    Ok(())
 }
 
 fn descriptor_source_label(report_descriptor: Option<&ReportDescriptor>) -> String {
@@ -19261,6 +19272,43 @@ mod tests {
         };
         assert!(
             message.contains("raw binary HID report_descriptor file"),
+            "{message}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn operator_descriptor_bin_file_rejects_windows_hid_collection_descriptor() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("r5-ioctl-collection-descriptor.bin");
+        fs::write(&path, b"HidP KDR\x04\x00\x01\x00")?;
+
+        let result = read_report_descriptor_bin_file(&path);
+
+        let message = match result {
+            Ok(bytes) => format!("Windows HID collection descriptor parsed as bytes: {bytes}"),
+            Err(err) => err.to_string(),
+        };
+        assert!(
+            message.contains("Windows HID collection/preparsed descriptor bytes"),
+            "{message}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn operator_descriptor_hex_rejects_windows_hid_collection_descriptor() -> TestResult {
+        let result = report_descriptor_from_operator_hex("48 69 64 50 20 4B 44 52");
+
+        let message = match result {
+            Ok(descriptor) => format!(
+                "Windows HID collection descriptor parsed with crc {}",
+                descriptor.crc32
+            ),
+            Err(err) => err.to_string(),
+        };
+        assert!(
+            message.contains("Windows HID collection/preparsed descriptor bytes"),
             "{message}"
         );
         Ok(())
