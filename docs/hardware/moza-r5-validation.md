@@ -125,6 +125,14 @@ wheelctl moza descriptor --device <r5> --report-descriptor-hex "<hex bytes>" --j
 wheelctl moza descriptor --device <r5> --report-descriptor-hex-file target/moza-r5-report-descriptor.txt --json-out ci/hardware/moza-r5/<date>/descriptor.json
 ```
 
+The descriptor fallback needs the actual HID Report Descriptor byte block. A
+USBTreeView device/interface summary that only shows `wDescriptorLength`, or a
+descriptor read failure such as `ERROR_INVALID_PARAMETER`, is useful failure
+evidence but does not satisfy descriptor trust. Use a report-descriptor hex
+block such as `0000: 05 01 09 04 ...`, Linux
+`/sys/bus/hid/devices/.../report_descriptor` bytes, or another descriptor tool
+that exposes the raw HID report descriptor.
+
 Use the vendor-wide `wheelctl moza descriptor` command for the lane receipt so `descriptor.json` contains the observed Moza records. When Windows cannot expose the raw R5 report descriptor, rerun it with `--device <r5>` and `--report-descriptor-hex` or `--report-descriptor-hex-file`; the receipt preserves the vendor-wide Moza records and applies the supplied descriptor bytes only to the one selected R5 record. `hid-capture descriptor --vendor 0x346E` is still an accepted lower-level producer for the same receipt shape, but the lane runbook uses the wheelctl command so all Moza receipts share one command surface.
 
 Required R5 descriptor fields:
