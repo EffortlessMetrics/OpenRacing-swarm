@@ -7,11 +7,54 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 jobs:
+  pr-change-filter:
+    name: YAML Sync Change Filter
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      yaml_sync_paths: ${{ steps.filter.outputs.yaml_sync_paths }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: filter
+        name: Classify YAML-sync-relevant paths
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "yaml_sync_paths=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          base_ref="origin/${{ github.base_ref }}"
+          git fetch --no-tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+          if git merge-base "$base_ref" HEAD >/dev/null 2>&1; then
+            mapfile -t changed < <(git diff --name-only "$base_ref...HEAD")
+          else
+            mapfile -t changed < <(git diff --name-only "$base_ref" HEAD)
+          fi
+
+          yaml_sync_paths=false
+          if printf '%s\n' "${changed[@]}" | grep -E '^(\.github/workflows/yaml-sync-check\.yml$|Cargo\.toml$|Cargo\.lock$|crates/tools/src/bin/yaml_sync_check\.rs$|crates/telemetry-config/src/game_support_matrix\.yaml$|crates/telemetry-support/src/game_support_matrix\.yaml$|crates/service/src/game_support_matrix\.rs$|crates/integration-tests/tests/game_support_matrix_tests\.rs$)' >/dev/null; then
+            yaml_sync_paths=true
+          fi
+
+          echo "yaml_sync_paths=$yaml_sync_paths" >> "$GITHUB_OUTPUT"
+
   yaml-sync:
     name: Game support matrix sync
+    needs: pr-change-filter
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.pr-change-filter.outputs.yaml_sync_paths == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
     runs-on: ubuntu-latest
     timeout-minutes: 5
 

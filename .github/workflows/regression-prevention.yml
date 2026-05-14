@@ -9,15 +9,59 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
 jobs:
+  pr-change-filter:
+    name: Regression Change Filter
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      regression_paths: ${{ steps.filter.outputs.regression_paths }}
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - id: filter
+      name: Classify regression-relevant paths
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        if [ "${{ github.event_name }}" != "pull_request" ]; then
+          echo "regression_paths=true" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        base_ref="origin/${{ github.base_ref }}"
+        git fetch --no-tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+        if git merge-base "$base_ref" HEAD >/dev/null 2>&1; then
+          mapfile -t changed < <(git diff --name-only "$base_ref...HEAD")
+        else
+          mapfile -t changed < <(git diff --name-only "$base_ref" HEAD)
+        fi
+
+        regression_paths=false
+        if printf '%s\n' "${changed[@]}" | grep -E '^(\.github/workflows/regression-prevention\.yml$|Cargo\.toml$|Cargo\.lock$|workspace-hack/|deny\.toml$|proto/|schemas/|crates/(schemas|telemetry-contracts|telemetry-core|openracing-ipc)/|.*\.(proto|schema\.json)$)' >/dev/null; then
+          regression_paths=true
+        fi
+
+        echo "regression_paths=$regression_paths" >> "$GITHUB_OUTPUT"
+
   deprecated-field-detection:
     name: Deprecated Field Detection
+    needs: pr-change-filter
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.pr-change-filter.outputs.regression_paths == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+      contains(github.event.pull_request.labels.*.name, 'regression')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     
@@ -121,6 +165,12 @@ jobs:
 
   trybuild-compile-fail-tests:
     name: Trybuild Compile-Fail Tests
+    needs: pr-change-filter
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.pr-change-filter.outputs.regression_paths == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+      contains(github.event.pull_request.labels.*.name, 'regression')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     
@@ -180,6 +230,12 @@ jobs:
 
   json-schema-validation:
     name: JSON Schema Validation
+    needs: pr-change-filter
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.pr-change-filter.outputs.regression_paths == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+      contains(github.event.pull_request.labels.*.name, 'regression')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     
@@ -304,6 +360,12 @@ jobs:
 
   lint-enforcement:
     name: Lint Enforcement
+    needs: pr-change-filter
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.pr-change-filter.outputs.regression_paths == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+      contains(github.event.pull_request.labels.*.name, 'regression')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     
@@ -429,6 +491,12 @@ jobs:
 
   protobuf-breaking-changes:
     name: Protobuf Breaking Changes
+    needs: pr-change-filter
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.pr-change-filter.outputs.regression_paths == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+      contains(github.event.pull_request.labels.*.name, 'regression')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     
@@ -479,7 +547,12 @@ jobs:
     name: Comprehensive Validation
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [deprecated-field-detection, trybuild-compile-fail-tests, json-schema-validation, lint-enforcement, protobuf-breaking-changes]
+    needs: [pr-change-filter, deprecated-field-detection, trybuild-compile-fail-tests, json-schema-validation, lint-enforcement, protobuf-breaking-changes]
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.pr-change-filter.outputs.regression_paths == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+      contains(github.event.pull_request.labels.*.name, 'regression')
     
     steps:
     - name: Free disk space
