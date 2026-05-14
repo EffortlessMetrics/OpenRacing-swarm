@@ -12055,6 +12055,9 @@ fn validate_lane_captures(lane: &Path) -> Result<CaptureValidationSetReceipt> {
         && validated_capture_count == required_capture_count
         && total_reports > 0
         && rejected_reports == 0;
+    let safe_diagnostics = analyze_lane_captures(lane)
+        .map(|analysis| analysis.safe_diagnostics)
+        .unwrap_or_default();
 
     Ok(CaptureValidationSetReceipt {
         success,
@@ -12070,6 +12073,7 @@ fn validate_lane_captures(lane: &Path) -> Result<CaptureValidationSetReceipt> {
         total_reports,
         parsed_reports,
         rejected_reports,
+        safe_diagnostics,
         captures,
         notes: vec![
             "validate-captures replays every required passive lane capture through Moza parsers only; no HID device is opened".to_string(),
@@ -12565,6 +12569,8 @@ struct CaptureValidationSetReceipt {
     total_reports: usize,
     parsed_reports: usize,
     rejected_reports: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    safe_diagnostics: Vec<String>,
     captures: Vec<CaptureValidationSetEntry>,
     notes: Vec<String>,
 }
@@ -24265,6 +24271,38 @@ mod tests {
                 && gate.details.contains("do not recapture blindly"),
             "expected passive verifier to include analyzer diagnostic, got {}",
             gate.details
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn validate_lane_captures_includes_safe_analyzer_diagnostics() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        write_text_file(
+            &dir.path().join("captures/r5-throttle-only-sweep.jsonl"),
+            &format!(
+                "{}\n{}",
+                capture_line(
+                    product_ids::R5_V1,
+                    &live_r5_v1_trailer_report_hex([0x00, 0x00, 0x00, 0x00])
+                ),
+                capture_line(
+                    product_ids::R5_V1,
+                    &live_r5_v1_trailer_report_hex([0xFF, 0xAA, 0x55, 0x40])
+                )
+            ),
+        )?;
+
+        let receipt = validate_lane_captures(dir.path())?;
+
+        assert!(!receipt.success);
+        assert!(
+            receipt.safe_diagnostics.iter().any(|diagnostic| diagnostic
+                .contains("only idle/trailer bytes moved")
+                && diagnostic.contains("do not recapture blindly")),
+            "expected validate-captures to include analyzer diagnostic, got {:?}",
+            receipt.safe_diagnostics
         );
         Ok(())
     }
