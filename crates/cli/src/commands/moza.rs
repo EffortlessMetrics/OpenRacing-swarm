@@ -4141,7 +4141,7 @@ fn operator_actions_for_bundle_stage(
             " If Pit House is unavailable, use observe-only HID/PnP inspection to confirm endpoints; a visible Moza serial/COM interface is diagnostic topology only and must not be probed or configured in the passive lane."
         };
         actions.push(format!(
-            "Throttle capture parsed but no parser-visible hub-control axis moved; check throttle pedal cable, pedal-set-to-R5 routing, and vendor input state before replacing the lane capture.{endpoint_context}"
+            "Throttle capture parsed but no parser-visible hub-control axis moved; check throttle pedal cable, pedal-set-to-R5 routing, and vendor input state before replacing the lane capture. If Pit House is unavailable, keep the next check target-only: reseat and power-cycle the pedal path, capture gas to target/moza-gas-check/r5-gas-after-reseat-60s.jsonl, run analyze-capture, and replace the lane capture only if parser-visible hub-control movement appears.{endpoint_context}"
         ));
     }
 
@@ -12013,7 +12013,7 @@ fn lane_capture_safe_diagnostics(
             .all(|byte| matches!(*byte, 38..=41))
     {
         diagnostics.push(
-            "captures/r5-throttle-only-sweep.jsonl parsed cleanly, but only idle/trailer bytes moved versus r5-idle; do not recapture blindly until the throttle physical/vendor path is checked."
+            "captures/r5-throttle-only-sweep.jsonl parsed cleanly, but only idle/trailer bytes moved versus r5-idle; do not recapture blindly until the throttle physical/vendor path is checked. If Pit House is unavailable, run one target-only post-reseat gas check under target/moza-gas-check and replace the lane capture only if parser-visible hub-control movement appears."
                 .to_string(),
         );
         if lane_has_single_observed_moza_hid_endpoint(lane) {
@@ -23987,6 +23987,8 @@ mod tests {
                 .contains("Throttle capture parsed")
                 && action.contains("check throttle pedal cable")
                 && action.contains("Pit House is unavailable")
+                && action.contains("target/moza-gas-check/r5-gas-after-reseat-60s.jsonl")
+                && action.contains("replace the lane capture only if parser-visible")
                 && action.contains("must not be probed or configured")),
             "failed throttle role should include a physical-path diagnostic action: {:?}",
             receipt.operator_actions
@@ -24934,7 +24936,9 @@ mod tests {
         assert!(
             receipt.safe_diagnostics.iter().any(|diagnostic| diagnostic
                 .contains("only idle/trailer bytes moved")
-                && diagnostic.contains("do not recapture blindly")),
+                && diagnostic.contains("do not recapture blindly")
+                && diagnostic.contains("target/moza-gas-check")
+                && diagnostic.contains("replace the lane capture only if parser-visible")),
             "expected throttle trailer-only diagnostic, got {:?}",
             receipt.safe_diagnostics
         );
@@ -24998,6 +25002,7 @@ mod tests {
         assert!(
             receipt.operator_actions.iter().any(|action| action
                 .contains("already show only the R5 HID game-controller endpoint")
+                && action.contains("target/moza-gas-check/r5-gas-after-reseat-60s.jsonl")
                 && action.contains("must not be probed or configured")),
             "expected single-endpoint operator action, got {:?}",
             receipt.operator_actions
@@ -25036,7 +25041,8 @@ mod tests {
         assert!(
             gate.details.contains("safe_diagnostics=")
                 && gate.details.contains("only idle/trailer bytes moved")
-                && gate.details.contains("do not recapture blindly"),
+                && gate.details.contains("do not recapture blindly")
+                && gate.details.contains("target/moza-gas-check"),
             "expected passive verifier to include analyzer diagnostic, got {}",
             gate.details
         );
@@ -25068,7 +25074,8 @@ mod tests {
         assert!(
             receipt.safe_diagnostics.iter().any(|diagnostic| diagnostic
                 .contains("only idle/trailer bytes moved")
-                && diagnostic.contains("do not recapture blindly")),
+                && diagnostic.contains("do not recapture blindly")
+                && diagnostic.contains("target/moza-gas-check")),
             "expected validate-captures to include analyzer diagnostic, got {:?}",
             receipt.safe_diagnostics
         );
