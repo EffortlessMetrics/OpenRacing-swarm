@@ -51,6 +51,32 @@ The scaffold creates a lane manifest, capture plan, artifact checklist, stage
 gates, and a lane-init receipt. It creates planning files only; it does not
 create fake pass/fail receipts and it does not open HID devices.
 
+The lane profile decides required roles. Use repeatable role overrides to
+declare a specific bench topology without changing the adapter's default for all
+users:
+
+```powershell
+wheelctl hardware lane init `
+  --family moza-r5 `
+  --topology wheelbase-hub `
+  --lane ci\hardware\moza-r5\2026-05-13 `
+  --required-role handbrake `
+  --required-role ks_controls `
+  --required-role es_controls `
+  --role-artifact ks_controls=captures/ks-controls.jsonl `
+  --role-artifact es_controls=captures/es-controls.jsonl `
+  --role-endpoint ks_controls=hid-0x346E-0x0004-if2-0x0001-0x0004 `
+  --role-endpoint es_controls=hid-0x346E-0x0004-if2-0x0001-0x0004 `
+  --role-connection ks_controls=wheelbase_hub `
+  --role-connection es_controls=wheelbase_hub `
+  --json
+```
+
+Role artifact paths must be relative to the lane directory and stay inside it.
+Metadata overrides for a new role require `--required-role` or
+`--optional-role`, so an accidental typo cannot silently add evidence
+requirements.
+
 Inventory a scaffolded lane without validating hardware claims:
 
 ```powershell

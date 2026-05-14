@@ -349,7 +349,7 @@ pub enum HardwareCommands {
 
     /// Scaffold a hardware validation lane from a device-family rail adapter
     #[command(subcommand)]
-    Lane(HardwareLaneCommands),
+    Lane(Box<HardwareLaneCommands>),
 }
 
 #[derive(Subcommand)]
@@ -368,6 +368,21 @@ pub enum HardwareLaneCommands {
         /// Operator name recorded in the scaffold manifest
         #[arg(long, default_value = "Steven")]
         operator: String,
+        /// Mark a logical role as required, adding it to the lane if needed
+        #[arg(long = "required-role")]
+        required_roles: Vec<String>,
+        /// Mark a logical role as optional, adding it to the lane if needed
+        #[arg(long = "optional-role")]
+        optional_roles: Vec<String>,
+        /// Override a role evidence artifact as role=relative/path
+        #[arg(long = "role-artifact")]
+        role_artifacts: Vec<String>,
+        /// Override a role endpoint selector as role=selector
+        #[arg(long = "role-endpoint")]
+        role_endpoints: Vec<String>,
+        /// Override a role connection path as role=path
+        #[arg(long = "role-connection")]
+        role_connections: Vec<String>,
         /// Replace scaffold files that already exist
         #[arg(long)]
         overwrite: bool,

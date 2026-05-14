@@ -4,11 +4,11 @@
 //! available, records tool/platform readiness, and never opens devices or sends
 //! output, feature, serial, firmware, or DFU commands.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result};
@@ -37,15 +37,28 @@ async fn execute_lane(cmd: &HardwareLaneCommands, json: bool) -> Result<()> {
             family,
             topology,
             operator,
+            required_roles,
+            optional_roles,
+            role_artifacts,
+            role_endpoints,
+            role_connections,
             overwrite,
             json_out,
         } => {
+            let role_overrides = HardwareLaneRoleOverrides::from_cli(
+                required_roles,
+                optional_roles,
+                role_artifacts,
+                role_endpoints,
+                role_connections,
+            )?;
             init_lane(
                 json,
                 lane,
                 family,
                 topology,
                 operator,
+                &role_overrides,
                 *overwrite,
                 json_out.as_deref(),
             )
@@ -63,10 +76,19 @@ async fn init_lane(
     family: &str,
     topology: &str,
     operator: &str,
+    role_overrides: &HardwareLaneRoleOverrides,
     overwrite: bool,
     json_out: Option<&Path>,
 ) -> Result<()> {
-    let receipt = scaffold_hardware_lane(lane, family, topology, operator, overwrite, json_out)?;
+    let receipt = scaffold_hardware_lane_with_overrides(
+        lane,
+        family,
+        topology,
+        operator,
+        role_overrides,
+        overwrite,
+        json_out,
+    )?;
     print_lane_init_receipt(json, &receipt)
 }
 
@@ -118,11 +140,32 @@ fn build_bringup_rail_receipt(family: &str) -> Result<HardwareBringupRailReceipt
     })
 }
 
+#[cfg(test)]
 fn scaffold_hardware_lane(
     lane: &Path,
     family: &str,
     topology: &str,
     operator: &str,
+    overwrite: bool,
+    json_out: Option<&Path>,
+) -> Result<HardwareLaneInitReceipt> {
+    scaffold_hardware_lane_with_overrides(
+        lane,
+        family,
+        topology,
+        operator,
+        &HardwareLaneRoleOverrides::default(),
+        overwrite,
+        json_out,
+    )
+}
+
+fn scaffold_hardware_lane_with_overrides(
+    lane: &Path,
+    family: &str,
+    topology: &str,
+    operator: &str,
+    role_overrides: &HardwareLaneRoleOverrides,
     overwrite: bool,
     json_out: Option<&Path>,
 ) -> Result<HardwareLaneInitReceipt> {
@@ -163,7 +206,7 @@ fn scaffold_hardware_lane(
     fs::create_dir_all(&captures_dir)
         .with_context(|| format!("failed to create '{}'", captures_dir.display()))?;
 
-    let roles = default_lane_roles(&adapter, topology);
+    let roles = lane_roles(&adapter, topology, role_overrides)?;
     let manifest = HardwareLaneScaffoldManifest {
         schema_version: 1,
         generated_at_utc: generated_at.clone(),
@@ -548,6 +591,154 @@ fn shell_path_arg(path: &Path) -> String {
     }
 }
 
+#[derive(Debug, Default)]
+struct HardwareLaneRoleOverrides {
+    required_roles: BTreeSet<String>,
+    optional_roles: BTreeSet<String>,
+    role_artifacts: BTreeMap<String, String>,
+    role_endpoints: BTreeMap<String, String>,
+    role_connections: BTreeMap<String, String>,
+}
+
+impl HardwareLaneRoleOverrides {
+    fn from_cli(
+        required_roles: &[String],
+        optional_roles: &[String],
+        role_artifacts: &[String],
+        role_endpoints: &[String],
+        role_connections: &[String],
+    ) -> Result<Self> {
+        let required_roles = parse_role_set(required_roles, "--required-role")?;
+        let optional_roles = parse_role_set(optional_roles, "--optional-role")?;
+        if let Some(role) = required_roles.intersection(&optional_roles).next() {
+            anyhow::bail!("role '{role}' cannot be both required and optional");
+        }
+        let role_artifacts = parse_role_kv_entries(role_artifacts, "--role-artifact")?;
+        let role_endpoints = parse_role_kv_entries(role_endpoints, "--role-endpoint")?;
+        let role_connections = parse_role_kv_entries(role_connections, "--role-connection")?;
+        for artifact in role_artifacts.values() {
+            validate_relative_artifact_path(artifact)?;
+        }
+        Ok(Self {
+            required_roles,
+            optional_roles,
+            role_artifacts,
+            role_endpoints,
+            role_connections,
+        })
+    }
+
+    fn referenced_roles(&self) -> BTreeSet<String> {
+        self.required_roles
+            .iter()
+            .chain(self.optional_roles.iter())
+            .chain(self.role_artifacts.keys())
+            .chain(self.role_endpoints.keys())
+            .chain(self.role_connections.keys())
+            .cloned()
+            .collect()
+    }
+}
+
+fn parse_role_set(values: &[String], flag: &str) -> Result<BTreeSet<String>> {
+    values
+        .iter()
+        .map(|value| normalize_role_id(value, flag))
+        .collect()
+}
+
+fn parse_role_kv_entries(values: &[String], flag: &str) -> Result<BTreeMap<String, String>> {
+    let mut entries = BTreeMap::new();
+    for value in values {
+        let (role, item) = value
+            .split_once('=')
+            .ok_or_else(|| anyhow::anyhow!("{flag} entries must use role=value syntax"))?;
+        let role = normalize_role_id(role, flag)?;
+        let item = item.trim();
+        if item.is_empty() {
+            anyhow::bail!("{flag} entry for role '{role}' has an empty value");
+        }
+        if entries.insert(role.clone(), item.to_string()).is_some() {
+            anyhow::bail!("{flag} specified more than once for role '{role}'");
+        }
+    }
+    Ok(entries)
+}
+
+fn normalize_role_id(value: &str, flag: &str) -> Result<String> {
+    let role = value.trim();
+    if role.is_empty() {
+        anyhow::bail!("{flag} role id cannot be empty");
+    }
+    if !role
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+    {
+        anyhow::bail!(
+            "{flag} role id '{role}' may contain only ASCII letters, numbers, '_' or '-'"
+        );
+    }
+    Ok(role.to_string())
+}
+
+fn validate_relative_artifact_path(path: &str) -> Result<()> {
+    let path = Path::new(path);
+    if path.is_absolute() {
+        anyhow::bail!("role artifact paths must be relative to the lane directory");
+    }
+    if path
+        .components()
+        .any(|component| matches!(component, Component::ParentDir | Component::Prefix(_)))
+    {
+        anyhow::bail!("role artifact paths must stay within the lane directory");
+    }
+    Ok(())
+}
+
+fn lane_roles(
+    adapter: &HardwareFamilyAdapterContract,
+    topology: &str,
+    overrides: &HardwareLaneRoleOverrides,
+) -> Result<Vec<HardwareLaneLogicalRole>> {
+    let mut roles = default_lane_roles(adapter, topology);
+    let mut known: BTreeSet<String> = roles.iter().map(|role| role.id.clone()).collect();
+    for role_id in overrides.referenced_roles() {
+        if !known.contains(&role_id)
+            && !overrides.required_roles.contains(&role_id)
+            && !overrides.optional_roles.contains(&role_id)
+        {
+            anyhow::bail!(
+                "role override references unknown role '{role_id}'; declare it with --required-role or --optional-role"
+            );
+        }
+        if !known.contains(&role_id) {
+            let required = overrides.required_roles.contains(&role_id);
+            roles.push(default_lane_role(adapter.id, topology, &role_id, required));
+            known.insert(role_id);
+        }
+    }
+
+    for role in &mut roles {
+        if overrides.required_roles.contains(&role.id) {
+            role.required = true;
+        }
+        if overrides.optional_roles.contains(&role.id) {
+            role.required = false;
+        }
+        if let Some(connection) = overrides.role_connections.get(&role.id) {
+            role.connection_path.clone_from(connection);
+        }
+        if let Some(endpoint) = overrides.role_endpoints.get(&role.id) {
+            role.expected_endpoint.clone_from(endpoint);
+        }
+        if let Some(artifact) = overrides.role_artifacts.get(&role.id) {
+            role.evidence_artifact.clone_from(artifact);
+        }
+    }
+
+    Ok(roles)
+}
+
 fn default_lane_roles(
     adapter: &HardwareFamilyAdapterContract,
     topology: &str,
@@ -559,16 +750,25 @@ fn default_lane_roles(
             let (role_id, required) = control
                 .strip_suffix("_optional")
                 .map_or((*control, true), |role| (role, false));
-            HardwareLaneLogicalRole {
-                id: role_id.to_string(),
-                required,
-                connection_path: default_connection_path(adapter.id, topology, role_id),
-                expected_endpoint: default_expected_endpoint(adapter.id, role_id),
-                evidence_artifact: default_role_evidence_artifact(adapter.id, role_id),
-                semantic_status: "pending_capture".to_string(),
-            }
+            default_lane_role(adapter.id, topology, role_id, required)
         })
         .collect()
+}
+
+fn default_lane_role(
+    adapter_id: &str,
+    topology: &str,
+    role_id: &str,
+    required: bool,
+) -> HardwareLaneLogicalRole {
+    HardwareLaneLogicalRole {
+        id: role_id.to_string(),
+        required,
+        connection_path: default_connection_path(adapter_id, topology, role_id),
+        expected_endpoint: default_expected_endpoint(adapter_id, role_id),
+        evidence_artifact: default_role_evidence_artifact(adapter_id, role_id),
+        semantic_status: "pending_capture".to_string(),
+    }
 }
 
 fn default_connection_path(adapter_id: &str, topology: &str, role_id: &str) -> String {
@@ -611,7 +811,7 @@ fn default_role_evidence_artifact(adapter_id: &str, role_id: &str) -> String {
             "brake" => "captures/r5-brake-only-sweep.jsonl",
             "clutch" => "captures/r5-clutch-only-sweep.jsonl",
             "handbrake" => "captures/r5-handbrake-only-sweep.jsonl",
-            _ => "captures/<role>.jsonl",
+            _ => return format!("captures/{role_id}.jsonl"),
         }
         .to_string()
     } else {
@@ -2196,6 +2396,126 @@ mod tests {
         let receipt =
             scaffold_hardware_lane(&lane, "generic-wheelbase", "unknown", "Steven", true, None)?;
         assert_eq!(receipt.family, "generic-wheelbase");
+        Ok(())
+    }
+
+    #[test]
+    fn lane_scaffold_role_overrides_declare_bench_profile_without_fixed_defaults() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("moza-r5-lane");
+        let overrides = HardwareLaneRoleOverrides::from_cli(
+            &[
+                "handbrake".to_string(),
+                "ks_controls".to_string(),
+                "es_controls".to_string(),
+            ],
+            &[],
+            &[
+                "ks_controls=captures/ks-controls.jsonl".to_string(),
+                "es_controls=captures/es-controls.jsonl".to_string(),
+            ],
+            &[
+                "ks_controls=hid-0x346E-0x0004-if2-0x0001-0x0004".to_string(),
+                "es_controls=hid-0x346E-0x0004-if2-0x0001-0x0004".to_string(),
+            ],
+            &[
+                "ks_controls=wheelbase_hub".to_string(),
+                "es_controls=wheelbase_hub".to_string(),
+            ],
+        )?;
+
+        let _receipt = scaffold_hardware_lane_with_overrides(
+            &lane,
+            "moza-r5",
+            "wheelbase-hub",
+            "Steven",
+            &overrides,
+            false,
+            None,
+        )?;
+        let manifest_text = fs::read_to_string(lane.join("hardware-lane-manifest.json"))?;
+        let manifest: serde_json::Value = serde_json::from_str(&manifest_text)?;
+        let roles = manifest["declared_logical_roles"]
+            .as_array()
+            .ok_or_else(|| io::Error::other("logical roles should be an array"))?;
+
+        assert!(roles.iter().any(|role| {
+            role["id"] == "handbrake"
+                && role["required"] == true
+                && role["evidence_artifact"] == "captures/r5-handbrake-only-sweep.jsonl"
+        }));
+        assert!(roles.iter().any(|role| {
+            role["id"] == "ks_controls"
+                && role["required"] == true
+                && role["connection_path"] == "wheelbase_hub"
+                && role["expected_endpoint"] == "hid-0x346E-0x0004-if2-0x0001-0x0004"
+                && role["evidence_artifact"] == "captures/ks-controls.jsonl"
+        }));
+        assert!(roles.iter().any(|role| {
+            role["id"] == "es_controls"
+                && role["required"] == true
+                && role["connection_path"] == "wheelbase_hub"
+                && role["expected_endpoint"] == "hid-0x346E-0x0004-if2-0x0001-0x0004"
+                && role["evidence_artifact"] == "captures/es-controls.jsonl"
+        }));
+
+        let status = build_hardware_lane_status_receipt(&lane)?;
+        let passive = status
+            .stages
+            .iter()
+            .find(|stage| stage.id == "passive")
+            .ok_or_else(|| io::Error::other("missing passive stage"))?;
+        assert!(passive.expected_artifacts.iter().any(|artifact| {
+            artifact.kind == "capture" && artifact.relative_path == "captures/ks-controls.jsonl"
+        }));
+        assert!(passive.expected_artifacts.iter().any(|artifact| {
+            artifact.kind == "capture" && artifact.relative_path == "captures/es-controls.jsonl"
+        }));
+        Ok(())
+    }
+
+    #[test]
+    fn lane_scaffold_role_overrides_reject_ambiguous_or_unsafe_specs() -> TestResult {
+        let ambiguous = HardwareLaneRoleOverrides::from_cli(
+            &["handbrake".to_string()],
+            &["handbrake".to_string()],
+            &[],
+            &[],
+            &[],
+        )
+        .err()
+        .ok_or_else(|| io::Error::other("expected ambiguous role failure"))?;
+        assert!(ambiguous.to_string().contains("both required and optional"));
+
+        let unsafe_artifact = HardwareLaneRoleOverrides::from_cli(
+            &["ks_controls".to_string()],
+            &[],
+            &["ks_controls=../ks-controls.jsonl".to_string()],
+            &[],
+            &[],
+        )
+        .err()
+        .ok_or_else(|| io::Error::other("expected unsafe artifact failure"))?;
+        assert!(
+            unsafe_artifact
+                .to_string()
+                .contains("within the lane directory")
+        );
+
+        let unknown_role = HardwareLaneRoleOverrides::from_cli(
+            &[],
+            &[],
+            &["ks_controls=captures/ks-controls.jsonl".to_string()],
+            &[],
+            &[],
+        )?;
+        let err = lane_roles(&moza_r5_adapter_contract(), "wheelbase-hub", &unknown_role)
+            .err()
+            .ok_or_else(|| io::Error::other("expected unknown role failure"))?;
+        assert!(
+            err.to_string()
+                .contains("--required-role or --optional-role")
+        );
         Ok(())
     }
 

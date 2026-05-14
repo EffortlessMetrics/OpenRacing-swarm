@@ -433,21 +433,69 @@ mod tests {
             "target/hardware-lane/lane-init.json",
         ])?;
         match &cli.command {
-            Commands::Hardware(HardwareCommands::Lane(HardwareLaneCommands::Init {
-                family,
-                topology,
-                lane,
-                json_out,
-                ..
-            })) => {
-                assert_eq!(family, "moza-r5");
-                assert_eq!(topology, "wheelbase-hub");
-                assert_eq!(lane.to_str(), Some("target/hardware-lane"));
-                assert_eq!(
-                    json_out.as_ref().and_then(|p| p.to_str()),
-                    Some("target/hardware-lane/lane-init.json")
-                );
-            }
+            Commands::Hardware(HardwareCommands::Lane(command)) => match command.as_ref() {
+                HardwareLaneCommands::Init {
+                    family,
+                    topology,
+                    lane,
+                    json_out,
+                    ..
+                } => {
+                    assert_eq!(family, "moza-r5");
+                    assert_eq!(topology, "wheelbase-hub");
+                    assert_eq!(lane.to_str(), Some("target/hardware-lane"));
+                    assert_eq!(
+                        json_out.as_ref().and_then(|p| p.to_str()),
+                        Some("target/hardware-lane/lane-init.json")
+                    );
+                }
+                _ => return Err("expected Hardware Lane Init command".into()),
+            },
+            _ => return Err("expected Hardware Lane Init command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_hardware_lane_init_role_overrides() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "hardware",
+            "lane",
+            "init",
+            "--family",
+            "moza-r5",
+            "--lane",
+            "target/hardware-lane",
+            "--required-role",
+            "handbrake",
+            "--required-role",
+            "ks_controls",
+            "--role-artifact",
+            "ks_controls=captures/ks-controls.jsonl",
+            "--role-endpoint",
+            "ks_controls=hid-0x346E-0x0004-if2-0x0001-0x0004",
+        ])?;
+        match &cli.command {
+            Commands::Hardware(HardwareCommands::Lane(command)) => match command.as_ref() {
+                HardwareLaneCommands::Init {
+                    required_roles,
+                    role_artifacts,
+                    role_endpoints,
+                    ..
+                } => {
+                    assert_eq!(required_roles, &vec!["handbrake", "ks_controls"]);
+                    assert_eq!(
+                        role_artifacts,
+                        &vec!["ks_controls=captures/ks-controls.jsonl"]
+                    );
+                    assert_eq!(
+                        role_endpoints,
+                        &vec!["ks_controls=hid-0x346E-0x0004-if2-0x0001-0x0004"]
+                    );
+                }
+                _ => return Err("expected Hardware Lane Init command".into()),
+            },
             _ => return Err("expected Hardware Lane Init command".into()),
         }
         Ok(())
@@ -466,16 +514,16 @@ mod tests {
             "target/hardware-lane/lane-status.json",
         ])?;
         match &cli.command {
-            Commands::Hardware(HardwareCommands::Lane(HardwareLaneCommands::Status {
-                lane,
-                json_out,
-            })) => {
-                assert_eq!(lane.to_str(), Some("target/hardware-lane"));
-                assert_eq!(
-                    json_out.as_ref().and_then(|p| p.to_str()),
-                    Some("target/hardware-lane/lane-status.json")
-                );
-            }
+            Commands::Hardware(HardwareCommands::Lane(command)) => match command.as_ref() {
+                HardwareLaneCommands::Status { lane, json_out } => {
+                    assert_eq!(lane.to_str(), Some("target/hardware-lane"));
+                    assert_eq!(
+                        json_out.as_ref().and_then(|p| p.to_str()),
+                        Some("target/hardware-lane/lane-status.json")
+                    );
+                }
+                _ => return Err("expected Hardware Lane Status command".into()),
+            },
             _ => return Err("expected Hardware Lane Status command".into()),
         }
         Ok(())
