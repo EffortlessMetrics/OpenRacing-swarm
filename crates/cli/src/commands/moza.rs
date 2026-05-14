@@ -977,6 +977,7 @@ async fn promote_fixtures(
     let mut fixtures = Vec::new();
 
     let requirements = passive_capture_requirements_for_lane(lane);
+    validate_required_passive_captures_for_fixture_promotion(lane, &requirements)?;
     for requirement in &requirements {
         let capture = lane.join(requirement.relative_path);
         let fixture_out = fixture_dir.join(format!("{}.json", requirement.fixture_id));
@@ -1025,6 +1026,42 @@ async fn promote_fixtures(
 
     write_json_receipt(json_out, &receipt)?;
     print_fixture_set_promotion_receipt(json, json_out, &receipt)
+}
+
+fn validate_required_passive_captures_for_fixture_promotion(
+    lane: &Path,
+    requirements: &[&PassiveCaptureRequirement],
+) -> Result<()> {
+    let mut failures = Vec::new();
+
+    for requirement in requirements {
+        let capture = lane.join(requirement.relative_path);
+        let receipt = validate_capture_file(&capture, None)
+            .with_context(|| format!("failed to validate {}", capture.display()))?;
+        let expected_product_ids = expected_product_ids_for_requirement(requirement, lane);
+        let evaluation =
+            evaluate_passive_capture_requirement(requirement, &receipt, &expected_product_ids);
+
+        if !receipt.success || !evaluation.success {
+            failures.push(format!(
+                "{}: success={}, expected_product_ids={:?}, product_ids={:?}, missing_requirements={:?}",
+                requirement.relative_path,
+                receipt.success,
+                product_id_hex_list(&expected_product_ids),
+                receipt.product_ids,
+                evaluation.missing_requirements
+            ));
+        }
+    }
+
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "refusing to promote passive fixtures until required captures validate: {}",
+            failures.join("; ")
+        ))
+    }
 }
 
 async fn zero_torque(
@@ -3752,7 +3789,7 @@ fn next_commands_for_bundle_stage(
         .map(hex_u16)
         .unwrap_or_else(|| "0x0014".to_string());
     let mut commands = Vec::new();
-    push_passive_next_commands(&lane, &wheelbase_pid, artifact_checks, &mut commands);
+    push_passive_next_commands(&lane, &wheelbase_pid, artifact_checks, gates, &mut commands);
 
     if stage_rank(stage) >= stage_rank(MozaBundleStage::Zero) {
         push_zero_next_commands(&lane, &mut commands);
@@ -3786,6 +3823,7 @@ fn push_passive_next_commands(
     lane: &Path,
     wheelbase_pid: &str,
     artifact_checks: &[BundleArtifactCheck],
+    gates: &[BundleGateCheck],
     commands: &mut Vec<String>,
 ) {
     let lane_arg = command_arg(&lane.display().to_string());
@@ -3847,26 +3885,58 @@ fn push_passive_next_commands(
         "wheelctl moza validate-captures --lane {lane_arg} --json-out {}",
         lane_path_arg(lane, "parser-fixture-validation.json")
     ));
-    commands.push(format!(
-        "wheelctl moza promote-fixtures --lane {lane_arg} --fixture-dir {fixture_dir_arg} --json-out {}",
-        lane_path_arg(lane, "fixture-promotion.json")
-    ));
-    commands.push(
-        "cargo test -p racing-wheel-hid-moza-protocol promoted_capture_fixtures_replay_through_moza_parser"
-            .to_string(),
-    );
+    if bundle_gate_check_passed(gates, "passive_captures_parse")
+        && bundle_gate_check_passed(gates, "parser_fixture_validation")
+    {
+        commands.push(format!(
+            "wheelctl moza promote-fixtures --lane {lane_arg} --fixture-dir {fixture_dir_arg} --json-out {}",
+            lane_path_arg(lane, "fixture-promotion.json")
+        ));
+        commands.push(
+            "cargo test -p racing-wheel-hid-moza-protocol promoted_capture_fixtures_replay_through_moza_parser"
+                .to_string(),
+        );
+    }
     commands.push(format!(
         "wheelctl moza verify-bundle --lane {lane_arg} --stage passive --json-out {}",
         lane_path_arg(lane, verification_receipt_path(MozaBundleStage::Passive))
     ));
-    commands.push(format!(
-        "wheelctl moza promote-manifest --lane {lane_arg} --stage passive --json-out {}",
-        lane_path_arg(lane, promotion_receipt_path(MozaBundleStage::Passive))
-    ));
-    commands.push(format!(
-        "wheelctl moza audit-lane --lane {lane_arg} --stage passive --json-out {}",
-        lane_path_arg(lane, audit_receipt_path(MozaBundleStage::Passive))
-    ));
+    if bundle_gate_checks_passed(
+        gates,
+        &[
+            "lane_directory",
+            "manifest_no_overclaim",
+            "manifest_r5_pid_consistency",
+            "moza_r5_observed",
+            "moza_topology_observed",
+            "descriptor_metadata",
+            "passive_receipts_no_ffb_writes",
+            "passive_captures_parse",
+            "parser_fixture_validation",
+            "fixture_promotion",
+        ],
+    ) {
+        commands.push(format!(
+            "wheelctl moza promote-manifest --lane {lane_arg} --stage passive --json-out {}",
+            lane_path_arg(lane, promotion_receipt_path(MozaBundleStage::Passive))
+        ));
+        commands.push(format!(
+            "wheelctl moza audit-lane --lane {lane_arg} --stage passive --json-out {}",
+            lane_path_arg(lane, audit_receipt_path(MozaBundleStage::Passive))
+        ));
+    }
+}
+
+fn bundle_gate_check_passed(gates: &[BundleGateCheck], name: &str) -> bool {
+    gates
+        .iter()
+        .any(|gate| gate.name == name && gate.status == "pass")
+}
+
+fn bundle_gate_checks_passed(gates: &[BundleGateCheck], names: &[&str]) -> bool {
+    names
+        .iter()
+        .all(|name| bundle_gate_check_passed(gates, name))
 }
 
 fn bundle_artifact_needs_regeneration(
@@ -16914,6 +16984,54 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn promote_fixtures_refuses_invalid_required_capture_before_writing() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        write_text_file(
+            &dir.path().join("captures/r5-throttle-only-sweep.jsonl"),
+            &format!(
+                "{}\n{}",
+                capture_line(
+                    product_ids::R5_V2,
+                    &wheelbase_full_report_hex(0x8000, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+                ),
+                capture_line(
+                    product_ids::R5_V2,
+                    &wheelbase_full_report_hex(0x8000, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+                )
+            ),
+        )?;
+        let fixture_dir = dir.path().join("promoted-fixtures");
+        let receipt_path = dir.path().join("fixture-promotion.json");
+
+        let result = promote_fixtures(
+            false,
+            dir.path(),
+            &fixture_dir,
+            16,
+            true,
+            Some(&receipt_path),
+        )
+        .await;
+
+        assert!(result.is_err());
+        let message = result
+            .err()
+            .map(|error| error.to_string())
+            .ok_or("expected promote-fixtures to fail")?;
+        assert!(
+            message.contains("refusing to promote passive fixtures")
+                && message.contains("captures/r5-throttle-only-sweep.jsonl"),
+            "expected invalid throttle capture in promotion preflight error, got {message}"
+        );
+        assert!(
+            !fixture_dir.join("r5_idle.json").exists(),
+            "promote-fixtures must not write partial fixture outputs after preflight failure"
+        );
+        Ok(())
+    }
+
     #[test]
     fn ci_lane_readme_lists_every_required_passive_capture() -> TestResult {
         let readme_path =
@@ -22205,6 +22323,43 @@ mod tests {
             !joined.contains("wheelctl moza capture-input"),
             "existing parseable captures should not be blindly recaptured from next_commands: {joined}"
         );
+        assert!(
+            !joined.contains("wheelctl moza promote-fixtures"),
+            "failed parser-visible role evidence should not suggest fixture promotion: {joined}"
+        );
+        assert!(
+            !joined.contains("promoted_capture_fixtures_replay_through_moza_parser"),
+            "failed parser-visible role evidence should not suggest promoted-fixture replay tests: {joined}"
+        );
+        assert!(
+            !joined.contains("wheelctl moza promote-manifest"),
+            "failed passive verification should not suggest manifest promotion: {joined}"
+        );
+        assert!(
+            !joined.contains("wheelctl moza audit-lane"),
+            "failed passive verification should not suggest lane audit: {joined}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_validated_captures_suggest_fixture_promotion_when_missing() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        fs::remove_file(dir.path().join("fixture-promotion.json"))?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
+
+        assert!(!receipt.success);
+        let joined = receipt.next_commands.join("\n");
+        assert!(
+            joined.contains("wheelctl moza promote-fixtures"),
+            "missing fixture promotion should be suggested after capture validation passes: {joined}"
+        );
+        assert!(
+            joined.contains("promoted_capture_fixtures_replay_through_moza_parser"),
+            "promoted fixture replay test should follow fixture promotion when validation passes: {joined}"
+        );
         Ok(())
     }
 
@@ -22260,8 +22415,12 @@ mod tests {
             "root lane next_commands should point operators at a dated child lane: {joined}"
         );
         assert!(
-            joined.contains("crates/hid-moza-protocol/fixtures/moza-r5-YYYY-MM-DD"),
-            "fixture dir should use the dated lane name, not the root lane name: {joined}"
+            !joined.contains("wheelctl moza promote-fixtures"),
+            "root lane next_commands should wait for dated-lane capture validation before fixture promotion: {joined}"
+        );
+        assert!(
+            !joined.contains("wheelctl moza promote-manifest"),
+            "root lane next_commands should wait for a passing dated-lane verifier before manifest promotion: {joined}"
         );
         assert!(
             !joined.contains("--lane ci/hardware/moza-r5 --wheelbase-pid"),
@@ -22454,8 +22613,8 @@ mod tests {
         }
 
         assert_eq!(
-            checked, 4,
-            "expected hid-capture, cargo parser replay, lane-status wheeld, and canonical simulator-writer wheeld next_commands"
+            checked, 3,
+            "expected hid-capture, lane-status wheeld, and canonical simulator-writer wheeld next_commands"
         );
         Ok(())
     }
