@@ -2891,6 +2891,40 @@ fn lane_manifest_r5_pid(lane: &Path) -> Option<u16> {
     matches!(pid, product_ids::R5_V1 | product_ids::R5_V2).then_some(pid)
 }
 
+fn lane_manifest_r5_hid_observe_selector(lane: &Path) -> Option<String> {
+    let manifest = read_json_value(lane, "manifest.json").ok()?;
+    let expected_pid = lane_manifest_r5_pid(lane);
+    let endpoints = manifest
+        .get("topology")?
+        .get("endpoints")
+        .and_then(Value::as_array)?;
+
+    endpoints.iter().find_map(|endpoint| {
+        if json_string(endpoint, "kind") != Some("wheelbase_hub") {
+            return None;
+        }
+        let vendor_id = json_string(endpoint, "vendor_id").and_then(parse_hex_selector)?;
+        let product_id = json_string(endpoint, "product_id").and_then(parse_hex_selector)?;
+        if vendor_id != MOZA_VENDOR_ID
+            || !matches!(product_id, product_ids::R5_V1 | product_ids::R5_V2)
+            || expected_pid.is_some_and(|expected| expected != product_id)
+        {
+            return None;
+        }
+        let interface_number = json_u64(endpoint, "interface_number")?;
+        let usage_page = json_string(endpoint, "usage_page").and_then(parse_hex_selector)?;
+        let usage = json_string(endpoint, "usage").and_then(parse_hex_selector)?;
+        Some(format!(
+            "hid-{}-{}-if{}-{}-{}",
+            hex_u16(vendor_id),
+            hex_u16(product_id),
+            interface_number,
+            hex_u16(usage_page),
+            hex_u16(usage)
+        ))
+    })
+}
+
 fn proof_output_path(lane: &Path, json_out: Option<&Path>, default_file: &str) -> PathBuf {
     json_out
         .map(Path::to_path_buf)
@@ -4229,7 +4263,8 @@ fn push_passive_next_commands(
             .unwrap_or("YYYY-MM-DD")
     ));
     let fixture_dir_arg = command_arg(&fixture_dir.display().to_string());
-    let r5_selector = format!("0x346E:{wheelbase_pid}");
+    let r5_selector = lane_manifest_r5_hid_observe_selector(lane)
+        .unwrap_or_else(|| format!("0x346E:{wheelbase_pid}"));
 
     if bundle_artifact_needs_regeneration(artifact_checks, "manifest.json")
         || !bundle_gate_check_passed(gates, "manifest_no_overclaim")
@@ -24150,7 +24185,7 @@ mod tests {
     }
 
     #[test]
-    fn verify_bundle_next_commands_use_manifest_wheelbase_pid() -> TestResult {
+    fn verify_bundle_next_commands_use_manifest_topology_hid_selector() -> TestResult {
         let dir = tempfile::tempdir()?;
         let mut manifest = sample_lane_manifest("not_started", false, false);
         manifest["hardware"]["wheelbase_pid"] = Value::String("0x0004".to_string());
@@ -24174,12 +24209,13 @@ mod tests {
             .find(|command| command.contains("--report-descriptor-hex-file"))
             .ok_or("expected descriptor file fallback next command")?;
         assert!(
-            descriptor_fallback_command.contains("--device 0x346E:0x0004"),
-            "descriptor file fallback should use manifest PID: {descriptor_fallback_command}"
+            descriptor_fallback_command.contains("--device hid-0x346E-0x0004-if2-0x0001-0x0004"),
+            "descriptor file fallback should use manifest topology endpoint: {descriptor_fallback_command}"
         );
         assert!(
-            !descriptor_fallback_command.contains("--device 0x346E:0x0014"),
-            "descriptor file fallback must not suggest the default V2 PID for a V1 lane: {descriptor_fallback_command}"
+            !descriptor_fallback_command.contains("--device 0x346E:0x0004")
+                && !descriptor_fallback_command.contains("--device 0x346E:0x0014"),
+            "descriptor file fallback must not collapse a manifest topology endpoint to VID:PID: {descriptor_fallback_command}"
         );
         Ok(())
     }
