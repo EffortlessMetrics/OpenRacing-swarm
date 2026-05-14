@@ -724,25 +724,89 @@ fn read_report_descriptor_hex_file(path: &Path) -> Result<String> {
 fn extract_hex_bytes_from_descriptor_text(text: &str) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     for line in text.lines() {
-        let without_comments = line.split("//").next().unwrap_or_default();
-        for token in without_comments.split(|c: char| c.is_whitespace() || c == ',') {
-            let token = token.trim();
-            if token.is_empty() || token.ends_with(':') {
-                continue;
-            }
-            let token = token
-                .strip_prefix("0x")
-                .or_else(|| token.strip_prefix("0X"))
-                .unwrap_or(token);
-            if token.len() != 2 || !token.chars().all(|c| c.is_ascii_hexdigit()) {
-                continue;
-            }
-            let byte = u8::from_str_radix(token, 16)
-                .with_context(|| format!("invalid descriptor byte token '{token}'"))?;
-            bytes.push(byte);
+        if let Some(mut line_bytes) = extract_hex_bytes_from_descriptor_line(line)? {
+            bytes.append(&mut line_bytes);
         }
     }
     Ok(bytes)
+}
+
+fn extract_hex_bytes_from_descriptor_line(line: &str) -> Result<Option<Vec<u8>>> {
+    let without_comments = line.split("//").next().unwrap_or_default().trim();
+    if without_comments.is_empty() {
+        return Ok(None);
+    }
+
+    let Some(candidate) = descriptor_byte_candidate(without_comments) else {
+        return Ok(None);
+    };
+    let tokens = candidate
+        .split(|c: char| c.is_whitespace() || c == ',')
+        .filter(|token| !token.trim().is_empty())
+        .collect::<Vec<_>>();
+    if tokens.is_empty() {
+        return Ok(None);
+    }
+
+    if tokens.len() == 1 && is_compact_hex_byte_string(tokens[0]) {
+        return parse_hex_bytes(tokens[0])
+            .map(Some)
+            .map_err(|e| anyhow!("invalid descriptor byte line '{without_comments}': {e}"));
+    }
+
+    if !tokens.iter().all(|token| is_hex_byte_token(token)) {
+        return Ok(None);
+    }
+
+    tokens
+        .iter()
+        .map(|token| {
+            parse_hex_u8_token(token)
+                .map_err(|e| anyhow!("invalid descriptor byte line '{without_comments}': {e}"))
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(Some)
+}
+
+fn descriptor_byte_candidate(line: &str) -> Option<&str> {
+    if let Some((prefix, suffix)) = line.split_once(':') {
+        let prefix = prefix.trim();
+        let suffix = suffix.trim();
+        if is_hex_offset_token(prefix) || prefix.to_ascii_lowercase().contains("report descriptor")
+        {
+            return Some(suffix);
+        }
+        return None;
+    }
+
+    Some(line)
+}
+
+fn is_hex_offset_token(token: &str) -> bool {
+    let value = token
+        .trim()
+        .strip_prefix("0x")
+        .or_else(|| token.trim().strip_prefix("0X"))
+        .unwrap_or(token.trim());
+    !value.is_empty() && value.len() <= 8 && value.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+fn is_hex_byte_token(token: &str) -> bool {
+    let value = token
+        .trim()
+        .strip_prefix("0x")
+        .or_else(|| token.trim().strip_prefix("0X"))
+        .unwrap_or(token.trim());
+    value.len() == 2 && value.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+fn is_compact_hex_byte_string(token: &str) -> bool {
+    let value = token
+        .trim()
+        .strip_prefix("0x")
+        .or_else(|| token.trim().strip_prefix("0X"))
+        .unwrap_or(token.trim());
+    value.len() > 2 && value.len().is_multiple_of(2) && value.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 async fn capture_input(
@@ -17939,6 +18003,61 @@ mod tests {
         let hex = read_report_descriptor_hex_file(&path)?;
 
         assert_eq!(hex, "05010904A10185010930");
+        Ok(())
+    }
+
+    #[test]
+    fn operator_descriptor_hex_file_ignores_usbtreeview_device_summary_fields() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("r5-usbtreeview-device-summary.txt");
+        write_text_file(
+            &path,
+            "Device ID: USB\\VID_346E&PID_0004\\6&00000000&0&2\n\
+             bcdUSB: 2.00\n\
+             Interface Descriptor:\n\
+             bInterfaceNumber: 02\n\
+             HID Descriptor:\n\
+             bNumDescriptors: 01\n",
+        )?;
+
+        let result = read_report_descriptor_hex_file(&path);
+
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn operator_descriptor_hex_file_accepts_descriptor_block_inside_summary() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let path = dir
+            .path()
+            .join("r5-usbtreeview-summary-with-report-descriptor.txt");
+        write_text_file(
+            &path,
+            "Device ID: USB\\VID_346E&PID_0004\\6&00000000&0&2\n\
+             bcdUSB: 2.00\n\
+             Report Descriptor:\n\
+             0000: 05 01 09 04 A1 01\n\
+             0006: 85 20 75 08 95 06 91 02\n\
+             Interface Descriptor:\n\
+             bInterfaceNumber: 02\n",
+        )?;
+
+        let hex = read_report_descriptor_hex_file(&path)?;
+
+        assert_eq!(hex, "05010904A1018520750895069102");
+        Ok(())
+    }
+
+    #[test]
+    fn operator_descriptor_hex_file_accepts_compact_hex_file() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("r5-report-descriptor-compact.txt");
+        write_text_file(&path, "05010904A101")?;
+
+        let hex = read_report_descriptor_hex_file(&path)?;
+
+        assert_eq!(hex, "05010904A101");
         Ok(())
     }
 
