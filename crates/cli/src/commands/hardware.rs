@@ -300,8 +300,7 @@ fn scaffold_hardware_lane_with_overrides(
 }
 
 fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusReceipt> {
-    let manifest_path = lane.join("hardware-lane-manifest.json");
-    let manifest: StoredHardwareLaneScaffoldManifest = read_json_file(&manifest_path)?;
+    let manifest = read_hardware_lane_status_manifest(lane)?;
     let adapter = hardware_family_adapter_contract(&manifest.family)
         .with_context(|| format!("unknown hardware bring-up family '{}'", manifest.family))?;
     let scaffold_files = hardware_lane_scaffold_files(lane);
@@ -373,6 +372,7 @@ fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusR
         no_serial_config_commands: true,
         no_firmware_or_dfu_commands: true,
         lane: lane.display().to_string(),
+        manifest_source: manifest.manifest_source,
         family: adapter.id,
         topology: manifest.topology,
         completion_state: manifest.completion_state,
@@ -394,6 +394,149 @@ fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusR
                 .to_string(),
         ],
     })
+}
+
+fn read_hardware_lane_status_manifest(lane: &Path) -> Result<StoredHardwareLaneScaffoldManifest> {
+    let scaffold_path = lane.join("hardware-lane-manifest.json");
+    if scaffold_path.exists() {
+        let mut manifest: StoredHardwareLaneScaffoldManifest = read_json_file(&scaffold_path)?;
+        manifest.manifest_source = "hardware-lane-manifest.json".to_string();
+        return Ok(manifest);
+    }
+
+    let legacy_path = lane.join("manifest.json");
+    let legacy: serde_json::Value = read_json_file(&legacy_path)?;
+    legacy_moza_manifest_to_lane_status_manifest(&legacy)
+        .with_context(|| format!("failed to adapt legacy '{}'", legacy_path.display()))
+}
+
+fn legacy_moza_manifest_to_lane_status_manifest(
+    manifest: &serde_json::Value,
+) -> Result<StoredHardwareLaneScaffoldManifest> {
+    let wheelbase = manifest
+        .get("hardware")
+        .and_then(|hardware| hardware.get("wheelbase"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    if !wheelbase.to_ascii_lowercase().contains("moza r5") {
+        anyhow::bail!("legacy manifest.json is not a Moza R5 lane manifest");
+    }
+
+    let topology = manifest
+        .get("topology")
+        .ok_or_else(|| anyhow::anyhow!("legacy manifest.json missing topology"))?;
+    let topology_name = topology
+        .get("primary_input_path")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("wheelbase_hub")
+        .to_string();
+    let completion_state = manifest
+        .get("completion_state")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("unknown")
+        .to_string();
+    let endpoints = topology
+        .get("endpoints")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let logical_controls = topology
+        .get("logical_controls")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| anyhow::anyhow!("legacy manifest.json missing topology.logical_controls"))?;
+    let mut declared_logical_roles = Vec::new();
+    for (id, control) in logical_controls {
+        let role_id = control
+            .get("role")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(id);
+        let source_endpoint = control
+            .get("source_endpoint")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        let expected_endpoint = legacy_endpoint_selector_for_source(&endpoints, source_endpoint)
+            .unwrap_or_else(|| {
+                if source_endpoint.is_empty() {
+                    "declare-observed-endpoint".to_string()
+                } else {
+                    source_endpoint.to_string()
+                }
+            });
+        declared_logical_roles.push(StoredHardwareLaneLogicalRole {
+            id: id.clone(),
+            required: control
+                .get("required")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+            connection_path: control
+                .get("connection")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown")
+                .to_string(),
+            expected_endpoint,
+            evidence_artifact: control
+                .get("evidence_capture")
+                .and_then(serde_json::Value::as_str)
+                .map_or_else(
+                    || default_role_evidence_artifact("moza-r5", role_id),
+                    str::to_string,
+                ),
+            semantic_status: control
+                .get("semantic_status")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("pending_capture")
+                .to_string(),
+        });
+    }
+    declared_logical_roles.sort_by(|a, b| a.id.cmp(&b.id));
+
+    Ok(StoredHardwareLaneScaffoldManifest {
+        manifest_source: "manifest.json".to_string(),
+        family: "moza-r5".to_string(),
+        topology: topology_name,
+        completion_state,
+        declared_logical_roles,
+    })
+}
+
+fn legacy_endpoint_selector_for_source(
+    endpoints: &[serde_json::Value],
+    source_endpoint: &str,
+) -> Option<String> {
+    let endpoint = endpoints.iter().find(|endpoint| {
+        endpoint
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|id| id == source_endpoint)
+    })?;
+    let vendor_id = endpoint
+        .get("vendor_id")
+        .and_then(serde_json::Value::as_str)?;
+    let product_id = endpoint
+        .get("product_id")
+        .and_then(serde_json::Value::as_str)?;
+    let interface_number = endpoint
+        .get("interface_number")
+        .and_then(serde_json::Value::as_u64)?;
+    let usage_page = endpoint
+        .get("usage_page")
+        .and_then(serde_json::Value::as_str)?;
+    let usage = endpoint.get("usage").and_then(serde_json::Value::as_str)?;
+    Some(format!(
+        "hid-{}-{}-if{}-{}-{}",
+        normalize_selector_hex(vendor_id),
+        normalize_selector_hex(product_id),
+        interface_number,
+        normalize_selector_hex(usage_page),
+        normalize_selector_hex(usage)
+    ))
+}
+
+fn normalize_selector_hex(value: &str) -> String {
+    format!(
+        "0x{}",
+        value.trim().trim_start_matches("0x").to_ascii_uppercase()
+    )
 }
 
 fn set_hardware_lane_role_endpoint(
@@ -2194,6 +2337,7 @@ fn print_lane_status_receipt(
         "Hardware lane status for {} at {}.",
         receipt.family, receipt.lane
     ))?;
+    write_stdout_line(&format!("Manifest source: {}", receipt.manifest_source))?;
     write_stdout_line(&format!(
         "Scaffold complete: {}; evidence claims validated: {}; ready_for_zero_torque: {}; ready_for_ffb: {}",
         receipt.scaffold_complete,
@@ -2592,6 +2736,8 @@ struct HardwareLaneLogicalRole {
 
 #[derive(Debug, Deserialize)]
 struct StoredHardwareLaneScaffoldManifest {
+    #[serde(default)]
+    manifest_source: String,
     family: String,
     topology: String,
     completion_state: String,
@@ -2620,6 +2766,7 @@ struct HardwareLaneStatusReceipt {
     no_serial_config_commands: bool,
     no_firmware_or_dfu_commands: bool,
     lane: String,
+    manifest_source: String,
     family: &'static str,
     topology: String,
     completion_state: String,
@@ -2737,6 +2884,77 @@ mod tests {
                 error: None,
             },
         )
+    }
+
+    fn write_legacy_moza_manifest(lane: &Path, wheelbase: &str) -> TestResult {
+        fs::write(
+            lane.join("manifest.json"),
+            serde_json::to_string_pretty(&serde_json::json!({
+                "completion_state": "passive_in_progress",
+                "hardware": {
+                    "wheelbase": wheelbase,
+                    "wheelbase_pid": "0x0004"
+                },
+                "topology": {
+                    "primary_input_path": "wheelbase_hub",
+                    "endpoints": [
+                        {
+                            "id": "moza-r5-if2",
+                            "kind": "wheelbase_hub",
+                            "vendor_id": "0x346E",
+                            "product_id": "0x0004",
+                            "interface_number": 2,
+                            "usage_page": "0x0001",
+                            "usage": "0x0004",
+                            "output_capable": true
+                        }
+                    ],
+                    "logical_controls": {
+                        "steering": {
+                            "role": "steering",
+                            "required": true,
+                            "connection": "wheelbase_hub",
+                            "source_endpoint": "moza-r5-if2",
+                            "evidence_capture": "captures/r5-steering-sweep.jsonl",
+                            "semantic_status": "proven"
+                        },
+                        "throttle": {
+                            "role": "throttle",
+                            "required": true,
+                            "connection": "wheelbase_hub",
+                            "source_endpoint": "moza-r5-if2",
+                            "evidence_capture": "captures/r5-throttle-only-sweep.jsonl",
+                            "semantic_status": "proven"
+                        },
+                        "brake": {
+                            "role": "brake",
+                            "required": true,
+                            "connection": "wheelbase_hub",
+                            "source_endpoint": "moza-r5-if2",
+                            "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
+                            "semantic_status": "generic_aux"
+                        },
+                        "ks_rim_controls": {
+                            "role": "rim_controls",
+                            "required": true,
+                            "connection": "wheelbase_hub",
+                            "source_endpoint": "moza-r5-if2",
+                            "evidence_capture": "captures/ks-controls.jsonl",
+                            "semantic_status": "proven"
+                        },
+                        "clutch": {
+                            "role": "clutch",
+                            "required": false,
+                            "connection": "wheelbase_hub",
+                            "source_endpoint": "moza-r5-if2",
+                            "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
+                            "semantic_status": "generic_aux"
+                        }
+                    }
+                }
+            }))?,
+        )?;
+        Ok(())
     }
 
     #[test]
@@ -3182,6 +3400,96 @@ mod tests {
                 .expected_artifacts
                 .iter()
                 .any(|artifact| artifact.relative_path == "pre-output-readiness.json")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn lane_status_reads_legacy_moza_manifest_without_scaffold_manifest() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("legacy-moza-r5-lane");
+        fs::create_dir_all(lane.join("captures"))?;
+        write_legacy_moza_manifest(&lane, "Moza R5")?;
+        for artifact in [
+            "device-list.json",
+            "hid-list.json",
+            "hardware-doctor.json",
+            "moza-probe.json",
+            "lane-capture-analysis.json",
+            "parser-fixture-validation.json",
+            "descriptor.json",
+        ] {
+            fs::write(lane.join(artifact), "{}\n")?;
+        }
+        for capture in [
+            "r5-steering-sweep.jsonl",
+            "r5-throttle-only-sweep.jsonl",
+            "r5-brake-only-sweep.jsonl",
+            "ks-controls.jsonl",
+        ] {
+            fs::write(lane.join("captures").join(capture), "{}\n")?;
+        }
+
+        let status = build_hardware_lane_status_receipt(&lane)?;
+        let joined = status.safe_next_commands.join("\n");
+
+        assert!(status.success);
+        assert_eq!(status.manifest_source, "manifest.json");
+        assert_eq!(status.family, "moza-r5");
+        assert_eq!(status.topology, "wheelbase_hub");
+        assert_eq!(status.completion_state, "passive_in_progress");
+        assert!(!status.scaffold_complete);
+        assert!(!status.evidence_claims_validated);
+        assert!(!status.ready_for_zero_torque);
+        assert!(!status.ready_for_ffb);
+        assert_eq!(status.next_blocked_stage, "fixture_promotion");
+        assert!(
+            status
+                .blocking_items
+                .contains(&"scaffold_files_missing".to_string())
+        );
+        assert!(status.role_evidence.iter().any(|role| {
+            role.id == "steering"
+                && role.required
+                && role.expected_endpoint == "hid-0x346E-0x0004-if2-0x0001-0x0004"
+                && role.artifact_present
+                && role.semantic_status == "proven"
+        }));
+        assert!(status.role_evidence.iter().any(|role| {
+            role.id == "clutch"
+                && !role.required
+                && role.expected_endpoint == "hid-0x346E-0x0004-if2-0x0001-0x0004"
+                && !role.artifact_present
+                && role.semantic_status == "generic_aux"
+        }));
+        assert!(joined.contains("wheelctl moza validate-captures"));
+        assert!(joined.contains("wheelctl moza verify-bundle"));
+        assert!(
+            status
+                .safe_next_commands
+                .iter()
+                .all(|command| !command.contains("torque")
+                    && !command.contains("ffb")
+                    && !command.contains("output"))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn lane_status_rejects_non_moza_legacy_manifest() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("legacy-other-lane");
+        fs::create_dir_all(&lane)?;
+        write_legacy_moza_manifest(&lane, "Other Wheelbase")?;
+
+        let err = build_hardware_lane_status_receipt(&lane)
+            .err()
+            .ok_or_else(|| io::Error::other("expected non-Moza legacy manifest failure"))?;
+        let error_chain = format!("{err:#}");
+
+        assert!(
+            error_chain.contains("legacy manifest.json is not a Moza R5 lane manifest"),
+            "{error_chain}"
         );
         Ok(())
     }
