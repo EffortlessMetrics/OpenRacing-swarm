@@ -1449,6 +1449,33 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_pre_output_readiness() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "moza",
+            "pre-output-readiness",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-06",
+            "--json-out",
+            "pre-output-readiness.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::PreOutputReadiness { lane, json_out }) => {
+                assert_eq!(
+                    lane.as_path().to_str(),
+                    Some("ci/hardware/moza-r5/2026-05-06")
+                );
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("pre-output-readiness.json")
+                );
+            }
+            _ => return Err("expected Moza PreOutputReadiness command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_promote_fixture() -> TestResult {
         let cli = Cli::try_parse_from([
             "wheelctl",

@@ -212,6 +212,9 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
         MozaCommands::ValidateCaptures { lane, json_out } => {
             validate_captures(json, lane, json_out.as_deref()).await
         }
+        MozaCommands::PreOutputReadiness { lane, json_out } => {
+            pre_output_readiness(json, lane, json_out.as_deref()).await
+        }
         MozaCommands::PromoteFixture {
             capture,
             fixture_id,
@@ -569,6 +572,8 @@ async fn probe(json: bool, json_out: Option<&Path>) -> Result<()> {
         vendor_id: hex_u16(MOZA_VENDOR_ID),
         no_hid_device_opened: true,
         no_ffb_writes: true,
+        no_output_reports: true,
+        no_feature_reports: true,
         no_serial_config_commands: true,
         no_firmware_or_dfu_commands: true,
         devices,
@@ -640,6 +645,8 @@ async fn descriptor(
         selector: selector.map(str::to_string),
         no_hid_device_opened: true,
         no_ffb_writes: true,
+        no_output_reports: true,
+        no_feature_reports: true,
         no_serial_config_commands: true,
         no_firmware_or_dfu_commands: true,
         descriptor_hex_included: include_descriptor_hex,
@@ -2175,6 +2182,19 @@ async fn verify_bundle(
         return Err(receipt_failure(format!(
             "Moza bundle verification failed: {} missing artifact(s), {} invalid artifact(s), {} failed gate(s)",
             receipt.missing_artifacts, receipt.invalid_artifacts, receipt.failed_gates
+        )));
+    }
+    Ok(())
+}
+
+async fn pre_output_readiness(json: bool, lane: &Path, json_out: Option<&Path>) -> Result<()> {
+    let receipt = pre_output_readiness_dir(lane);
+    write_json_receipt(json_out, &receipt)?;
+    print_pre_output_readiness_receipt(json, json_out, &receipt)?;
+    if !receipt.success {
+        return Err(receipt_failure(format!(
+            "Moza pre-output readiness failed: ready_for_zero_torque={}, ready_for_ffb={}, blocking_items={:?}",
+            receipt.ready_for_zero_torque, receipt.ready_for_ffb, receipt.blocking_items
         )));
     }
     Ok(())
@@ -3834,6 +3854,8 @@ fn moza_status_receipt(
         "lane_status": lane_status,
         "no_hid_device_opened": true,
         "no_ffb_writes": true,
+        "no_output_reports": true,
+        "no_feature_reports": true,
         "no_serial_config_commands": true,
         "no_firmware_or_dfu_commands": true,
         "notes": [
@@ -4213,6 +4235,281 @@ fn audit_lane_dir(lane: &Path, stage: MozaBundleStage) -> LaneAuditReceipt {
             "audit-lane is a post-promotion completeness audit, not a release-readiness claim".to_string(),
         ],
     }
+}
+
+fn pre_output_readiness_dir(lane: &Path) -> PreOutputReadinessReceipt {
+    let passive = verify_bundle_dir(lane, MozaBundleStage::Passive);
+    let zero = verify_bundle_dir(lane, MozaBundleStage::Zero);
+    let smoke_ready = verify_bundle_dir(lane, MozaBundleStage::SmokeReady);
+    let passive_audit_passed = stored_lane_audit_receipt_passed(lane, MozaBundleStage::Passive);
+    let zero_audit_passed = stored_lane_audit_receipt_passed(lane, MozaBundleStage::Zero);
+    let smoke_ready_audit_passed =
+        stored_lane_audit_receipt_passed(lane, MozaBundleStage::SmokeReady);
+    let status_receipts = pre_output_status_receipt_checks(lane);
+    let status_receipts_no_output = status_receipts.iter().all(|check| check.status == "pass");
+
+    let role_evidence_complete = required_role_evidence_complete(&passive);
+    let ready_for_zero_torque =
+        passive.success && passive_audit_passed && status_receipts_no_output;
+    let ready_for_ffb = ready_for_zero_torque
+        && zero.success
+        && zero_audit_passed
+        && bounded_ffb_prerequisite_gates_passed(&smoke_ready);
+
+    let blocking_items =
+        pre_output_zero_blocking_items(&passive, passive_audit_passed, status_receipts_no_output);
+    let ffb_blocking_items = pre_output_ffb_blocking_items(&zero, &smoke_ready, zero_audit_passed);
+    let passed_items = pre_output_passed_items(
+        &passive,
+        role_evidence_complete,
+        passive_audit_passed,
+        status_receipts_no_output,
+        ready_for_zero_torque,
+        ready_for_ffb,
+    );
+
+    PreOutputReadinessReceipt {
+        success: ready_for_zero_torque,
+        command: "wheelctl moza pre-output-readiness",
+        generated_at_utc: now_utc(),
+        lane: lane.display().to_string(),
+        stage: "pre_output_readiness",
+        ready_for_zero_torque,
+        ready_for_ffb,
+        blocking_items,
+        ffb_blocking_items,
+        passed_items,
+        status_receipts,
+        passive_verification: support_verification_summary(&passive),
+        zero_verification: support_verification_summary(&zero),
+        smoke_ready_verification: support_verification_summary(&smoke_ready),
+        passive_audit_passed,
+        zero_audit_passed,
+        smoke_ready_audit_passed,
+        no_hid_device_opened: true,
+        no_ffb_writes: true,
+        no_output_reports: true,
+        no_feature_reports: true,
+        no_serial_config_commands: true,
+        no_firmware_or_dfu_commands: true,
+        hard_forbidden_until_ready: vec![
+            "ffb",
+            "direct_mode",
+            "nonzero_torque",
+            "output_reports",
+            "feature_reports",
+            "serial_config",
+            "firmware_dfu",
+        ],
+        notes: vec![
+            "pre-output-readiness reads existing lane receipts only; it opens no HID device and sends no reports".to_string(),
+            "ready_for_zero_torque is the first output-adjacent gate and still does not permit nonzero torque or FFB".to_string(),
+            "ready_for_ffb is false until zero, watchdog, disconnect, low-torque, Pit House, and simulator telemetry prerequisites are present".to_string(),
+        ],
+    }
+}
+
+fn pre_output_passed_items(
+    passive: &BundleVerificationReceipt,
+    role_evidence_complete: bool,
+    passive_audit_passed: bool,
+    status_receipts_no_output: bool,
+    ready_for_zero_torque: bool,
+    ready_for_ffb: bool,
+) -> Vec<String> {
+    let mut passed = Vec::new();
+    if bundle_gate_passed(passive, "moza_r5_observed") {
+        passed.push("r5_endpoint_observed".to_string());
+    }
+    if bundle_gate_passed(passive, "moza_topology_observed") {
+        passed.push("topology_endpoint_observed".to_string());
+    }
+    if role_evidence_complete {
+        passed.push("role_evidence_complete".to_string());
+    }
+    if bundle_gate_passed(passive, "passive_captures_parse") {
+        passed.push("passive_captures_parse".to_string());
+    }
+    if bundle_gate_passed(passive, "parser_fixture_validation") {
+        passed.push("parser_fixture_validation".to_string());
+    }
+    if bundle_gate_passed(passive, "descriptor_metadata") {
+        passed.push("descriptor_metadata".to_string());
+    }
+    if bundle_gate_passed(passive, "fixture_promotion") {
+        passed.push("fixture_promotion".to_string());
+    }
+    if status_receipts_no_output {
+        passed.push("status_receipts_no_output".to_string());
+        passed.push("support_bundle_no_output".to_string());
+    }
+    if passive.success {
+        passed.push("passive_verification".to_string());
+    }
+    if passive_audit_passed {
+        passed.push("passive_audit".to_string());
+    }
+    if ready_for_zero_torque {
+        passed.push("ready_for_zero_torque".to_string());
+    }
+    if ready_for_ffb {
+        passed.push("ready_for_ffb".to_string());
+    }
+    passed
+}
+
+fn pre_output_zero_blocking_items(
+    passive: &BundleVerificationReceipt,
+    passive_audit_passed: bool,
+    status_receipts_no_output: bool,
+) -> Vec<String> {
+    let mut blockers = Vec::new();
+    append_verification_blocking_items(&mut blockers, passive);
+    if !passive_audit_passed {
+        blockers.push("passive_audit".to_string());
+    }
+    if !status_receipts_no_output {
+        blockers.push("status_receipts_no_output".to_string());
+    }
+    blockers.sort();
+    blockers.dedup();
+    blockers
+}
+
+fn pre_output_ffb_blocking_items(
+    zero: &BundleVerificationReceipt,
+    smoke_ready: &BundleVerificationReceipt,
+    zero_audit_passed: bool,
+) -> Vec<String> {
+    let mut blockers = Vec::new();
+    append_verification_blocking_items(&mut blockers, zero);
+    for gate in [
+        "init_off_handshake",
+        "init_standard_handshake",
+        "service_status_receipts",
+        "low_torque_bounded",
+        "pit_house_coexistence",
+        "simulator_telemetry",
+    ] {
+        if !bundle_gate_passed(smoke_ready, gate) {
+            blockers.push(gate.to_string());
+        }
+    }
+    if !zero_audit_passed {
+        blockers.push("zero_audit".to_string());
+    }
+    blockers.sort();
+    blockers.dedup();
+    blockers
+}
+
+fn append_verification_blocking_items(
+    blockers: &mut Vec<String>,
+    receipt: &BundleVerificationReceipt,
+) {
+    blockers.extend(
+        receipt
+            .artifacts
+            .iter()
+            .filter(|artifact| artifact.status != "pass")
+            .map(|artifact| artifact.path.clone()),
+    );
+    blockers.extend(
+        receipt
+            .gates
+            .iter()
+            .filter(|gate| gate.status == "fail")
+            .map(|gate| gate.name.to_string()),
+    );
+}
+
+fn bounded_ffb_prerequisite_gates_passed(receipt: &BundleVerificationReceipt) -> bool {
+    zero_stage_gates_passed(&receipt.gates)
+        && bundle_gate_checks_passed(
+            &receipt.gates,
+            &[
+                "init_off_handshake",
+                "init_standard_handshake",
+                "service_status_receipts",
+                "low_torque_bounded",
+                "pit_house_coexistence",
+                "simulator_telemetry",
+            ],
+        )
+}
+
+fn required_role_evidence_complete(receipt: &BundleVerificationReceipt) -> bool {
+    !receipt.role_evidence.is_empty()
+        && receipt
+            .role_evidence
+            .iter()
+            .filter(|role| role.required)
+            .all(|role| role.parser_visible && role.missing_requirements.is_empty())
+}
+
+fn pre_output_status_receipt_checks(lane: &Path) -> Vec<PreOutputReadinessCheck> {
+    [
+        ("moza_status", "moza-status.json", "wheelctl moza status"),
+        (
+            "device_status",
+            "device-status.json",
+            "wheelctl device status",
+        ),
+        (
+            "support_bundle",
+            "support-bundle.json",
+            "wheelctl support-bundle",
+        ),
+    ]
+    .into_iter()
+    .map(|(name, path, command)| pre_output_status_receipt_check(lane, name, path, command))
+    .collect()
+}
+
+fn pre_output_status_receipt_check(
+    lane: &Path,
+    name: &'static str,
+    path: &'static str,
+    command: &'static str,
+) -> PreOutputReadinessCheck {
+    let receipt = match read_json_value(lane, path) {
+        Ok(value) => value,
+        Err(e) => {
+            return PreOutputReadinessCheck::fail(name, format!("{path}: {e}"));
+        }
+    };
+
+    let command_ok = json_string(&receipt, "command") == Some(command);
+    let no_output = receipt_observe_only_no_output_flags_ok(&receipt);
+    let lane_ok = match path {
+        "moza-status.json" => lane_path_value_matches(lane, json_string(&receipt, "lane")),
+        "device-status.json" => lane_path_value_matches(lane, json_string(&receipt, "moza_lane")),
+        "support-bundle.json" => receipt
+            .get("moza_lane")
+            .map(|status| lane_path_value_matches(lane, json_string(status, "lane")))
+            .unwrap_or(false),
+        _ => false,
+    };
+    if command_ok && lane_ok && no_output {
+        PreOutputReadinessCheck::pass(
+            name,
+            format!("{path} is observe-only and bound to {}", lane.display()),
+        )
+    } else {
+        PreOutputReadinessCheck::fail(
+            name,
+            format!("command_ok={command_ok}, lane_ok={lane_ok}, no_output={no_output}"),
+        )
+    }
+}
+
+fn receipt_observe_only_no_output_flags_ok(receipt: &Value) -> bool {
+    json_bool(receipt, "success") == Some(true)
+        && json_bool(receipt, "no_hid_device_opened") == Some(true)
+        && json_bool(receipt, "no_ffb_writes") == Some(true)
+        && json_bool(receipt, "no_output_reports") == Some(true)
+        && json_bool(receipt, "no_feature_reports") == Some(true)
+        && no_out_of_scope_device_commands(receipt)
 }
 
 fn next_commands_for_bundle_stage(
@@ -4878,6 +5175,28 @@ fn path_value_matches(expected: &Path, recorded: Option<&str>) -> bool {
         (Ok(expected), Ok(recorded)) => expected == recorded,
         _ => false,
     }
+}
+
+fn lane_path_value_matches(expected: &Path, recorded: Option<&str>) -> bool {
+    let Some(recorded) = recorded.map(str::trim).filter(|value| !value.is_empty()) else {
+        return false;
+    };
+    if path_value_matches(expected, Some(recorded)) {
+        return true;
+    }
+
+    let recorded_path = Path::new(recorded);
+    if recorded_path.is_absolute() || recorded.contains(':') {
+        return false;
+    }
+
+    let expected = normalized_path_string(&expected.display().to_string());
+    let recorded = normalized_path_string(recorded);
+    expected == recorded || expected.ends_with(&format!("/{recorded}"))
+}
+
+fn normalized_path_string(path: &str) -> String {
+    path.replace('\\', "/").trim_end_matches('/').to_string()
 }
 
 fn receipt_path_matches(lane: &Path, receipt: &Value, relative_path: &str) -> bool {
@@ -8446,9 +8765,7 @@ fn moza_status_receipt_summary(receipt: &Value, lane: &Path) -> ServiceReceiptSu
     let success = json_bool(receipt, "success") == Some(true);
     let command_ok = json_string(receipt, "command") == Some("wheelctl moza status");
     let lane_ok = path_value_matches(lane, json_string(receipt, "lane"));
-    let no_hid_device_opened = json_bool(receipt, "no_hid_device_opened") == Some(true);
-    let no_ffb_writes = json_bool(receipt, "no_ffb_writes") == Some(true);
-    let no_out_of_scope = no_out_of_scope_device_commands(receipt);
+    let no_output = receipt_observe_only_no_output_flags_ok(receipt);
     let device_count = json_u64(receipt, "device_count").unwrap_or(0);
     let r5_entry = receipt
         .get("devices")
@@ -8465,20 +8782,13 @@ fn moza_status_receipt_summary(receipt: &Value, lane: &Path) -> ServiceReceiptSu
             .map(str::to_string)
     });
     let r5_observe_only = r5_entry.is_some();
-    let ok = success
-        && command_ok
-        && lane_ok
-        && no_hid_device_opened
-        && no_ffb_writes
-        && no_out_of_scope
-        && device_count > 0
-        && r5_observe_only;
+    let ok = success && command_ok && lane_ok && no_output && device_count > 0 && r5_observe_only;
 
     ServiceReceiptSummary {
         ok,
         product_id,
         details: format!(
-            "success={success}, command_ok={command_ok}, lane_ok={lane_ok}, no_hid_device_opened={no_hid_device_opened}, no_ffb_writes={no_ffb_writes}, no_out_of_scope={no_out_of_scope}, device_count={device_count}, r5_observe_only={r5_observe_only}"
+            "success={success}, command_ok={command_ok}, lane_ok={lane_ok}, no_output={no_output}, device_count={device_count}, r5_observe_only={r5_observe_only}"
         ),
     }
 }
@@ -8500,9 +8810,7 @@ fn moza_status_device_is_observe_only(entry: &Value) -> bool {
 fn device_status_receipt_summary(receipt: &Value, lane: &Path) -> ServiceReceiptSummary {
     let success = json_bool(receipt, "success") == Some(true);
     let command_ok = json_string(receipt, "command") == Some("wheelctl device status");
-    let no_hid_device_opened = json_bool(receipt, "no_hid_device_opened") == Some(true);
-    let no_ffb_writes = json_bool(receipt, "no_ffb_writes") == Some(true);
-    let no_out_of_scope = no_out_of_scope_device_commands(receipt);
+    let no_output = receipt_observe_only_no_output_flags_ok(receipt);
     let moza_lane_ok = path_value_matches(lane, json_string(receipt, "moza_lane"));
     let status = receipt.get("status");
     let observe_only = status
@@ -8512,19 +8820,13 @@ fn device_status_receipt_summary(receipt: &Value, lane: &Path) -> ServiceReceipt
         .and_then(|status| status.get("device"))
         .and_then(|device| json_string(device, "product_id"))
         .map(str::to_string);
-    let ok = success
-        && command_ok
-        && no_hid_device_opened
-        && no_ffb_writes
-        && no_out_of_scope
-        && moza_lane_ok
-        && observe_only;
+    let ok = success && command_ok && no_output && moza_lane_ok && observe_only;
 
     ServiceReceiptSummary {
         ok,
         product_id,
         details: format!(
-            "success={success}, command_ok={command_ok}, no_hid_device_opened={no_hid_device_opened}, no_ffb_writes={no_ffb_writes}, no_out_of_scope={no_out_of_scope}, moza_lane_ok={moza_lane_ok}, observe_only={observe_only}"
+            "success={success}, command_ok={command_ok}, no_output={no_output}, moza_lane_ok={moza_lane_ok}, observe_only={observe_only}"
         ),
     }
 }
@@ -8536,9 +8838,7 @@ fn support_bundle_receipt_summary_with_validation(
 ) -> ServiceReceiptSummary {
     let success = json_bool(receipt, "success") == Some(true);
     let command_ok = json_string(receipt, "command") == Some("wheelctl support-bundle");
-    let no_hid_device_opened = json_bool(receipt, "no_hid_device_opened") == Some(true);
-    let no_ffb_writes = json_bool(receipt, "no_ffb_writes") == Some(true);
-    let no_out_of_scope = no_out_of_scope_device_commands(receipt);
+    let no_output = receipt_observe_only_no_output_flags_ok(receipt);
     let device_filter_present = json_string(receipt, "device_filter")
         .map(|value| !value.trim().is_empty())
         .unwrap_or(false);
@@ -8592,9 +8892,7 @@ fn support_bundle_receipt_summary_with_validation(
         .unwrap_or(false);
     let ok = success
         && command_ok
-        && no_hid_device_opened
-        && no_ffb_writes
-        && no_out_of_scope
+        && no_output
         && device_filter_present
         && moza_lane_status_ok
         && observe_only
@@ -8605,7 +8903,7 @@ fn support_bundle_receipt_summary_with_validation(
         ok,
         product_id,
         details: format!(
-            "success={success}, command_ok={command_ok}, no_hid_device_opened={no_hid_device_opened}, no_ffb_writes={no_ffb_writes}, no_out_of_scope={no_out_of_scope}, device_filter_present={device_filter_present}, moza_lane_status_ok={moza_lane_status_ok}, moza_lane_lane_ok={moza_lane_lane_ok}, moza_lane_readiness_ok={moza_lane_readiness_ok}, moza_lane_artifact_index_ok={moza_lane_artifact_index_ok}, moza_lane_notes_ok={moza_lane_notes_ok}, observe_only={observe_only}, top_level_r5_present={top_level_r5_present}, top_level_pid_matches_status={top_level_pid_matches_status}, top_level_r5_product_ids={top_level_r5_product_ids:?}"
+            "success={success}, command_ok={command_ok}, no_output={no_output}, device_filter_present={device_filter_present}, moza_lane_status_ok={moza_lane_status_ok}, moza_lane_lane_ok={moza_lane_lane_ok}, moza_lane_readiness_ok={moza_lane_readiness_ok}, moza_lane_artifact_index_ok={moza_lane_artifact_index_ok}, moza_lane_notes_ok={moza_lane_notes_ok}, observe_only={observe_only}, top_level_r5_present={top_level_r5_present}, top_level_pid_matches_status={top_level_pid_matches_status}, top_level_r5_product_ids={top_level_r5_product_ids:?}"
         ),
     }
 }
@@ -12749,6 +13047,8 @@ struct ProbeReceipt {
     vendor_id: String,
     no_hid_device_opened: bool,
     no_ffb_writes: bool,
+    no_output_reports: bool,
+    no_feature_reports: bool,
     no_serial_config_commands: bool,
     no_firmware_or_dfu_commands: bool,
     devices: Vec<MozaDeviceRecord>,
@@ -12765,6 +13065,8 @@ struct DescriptorReceipt {
     selector: Option<String>,
     no_hid_device_opened: bool,
     no_ffb_writes: bool,
+    no_output_reports: bool,
+    no_feature_reports: bool,
     no_serial_config_commands: bool,
     no_firmware_or_dfu_commands: bool,
     descriptor_hex_included: bool,
@@ -13925,6 +14227,60 @@ struct BundleVerificationReceipt {
 }
 
 #[derive(Debug, Serialize)]
+struct PreOutputReadinessReceipt {
+    success: bool,
+    command: &'static str,
+    generated_at_utc: String,
+    lane: String,
+    stage: &'static str,
+    ready_for_zero_torque: bool,
+    ready_for_ffb: bool,
+    blocking_items: Vec<String>,
+    ffb_blocking_items: Vec<String>,
+    passed_items: Vec<String>,
+    status_receipts: Vec<PreOutputReadinessCheck>,
+    passive_verification: Value,
+    zero_verification: Value,
+    smoke_ready_verification: Value,
+    passive_audit_passed: bool,
+    zero_audit_passed: bool,
+    smoke_ready_audit_passed: bool,
+    no_hid_device_opened: bool,
+    no_ffb_writes: bool,
+    no_output_reports: bool,
+    no_feature_reports: bool,
+    no_serial_config_commands: bool,
+    no_firmware_or_dfu_commands: bool,
+    hard_forbidden_until_ready: Vec<&'static str>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct PreOutputReadinessCheck {
+    name: &'static str,
+    status: &'static str,
+    details: String,
+}
+
+impl PreOutputReadinessCheck {
+    fn pass(name: &'static str, details: String) -> Self {
+        Self {
+            name,
+            status: "pass",
+            details,
+        }
+    }
+
+    fn fail(name: &'static str, details: String) -> Self {
+        Self {
+            name,
+            status: "fail",
+            details,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
 struct BundleEndpointObservation {
     id: String,
     kind: Option<String>,
@@ -14942,6 +15298,27 @@ fn print_bundle_verification_receipt(
     Ok(())
 }
 
+fn print_pre_output_readiness_receipt(
+    json: bool,
+    json_out: Option<&Path>,
+    receipt: &PreOutputReadinessReceipt,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Moza pre-output readiness: zero_torque={}, ffb={}; {} blocker(s).",
+            receipt.ready_for_zero_torque,
+            receipt.ready_for_ffb,
+            receipt.blocking_items.len()
+        );
+        if let Some(path) = json_out {
+            println!("Receipt: {}", path.display());
+        }
+    }
+    Ok(())
+}
+
 fn print_lane_audit_receipt(
     json: bool,
     json_out: Option<&Path>,
@@ -15568,6 +15945,8 @@ mod tests {
         );
         assert_eq!(json_bool(&receipt, "no_hid_device_opened"), Some(true));
         assert_eq!(json_bool(&receipt, "no_ffb_writes"), Some(true));
+        assert_eq!(json_bool(&receipt, "no_output_reports"), Some(true));
+        assert_eq!(json_bool(&receipt, "no_feature_reports"), Some(true));
         assert_eq!(json_bool(&receipt, "no_serial_config_commands"), Some(true));
         assert_eq!(
             json_bool(&receipt, "no_firmware_or_dfu_commands"),
@@ -15987,6 +16366,102 @@ mod tests {
             readiness.get("release_ready").and_then(Value::as_bool),
             Some(false)
         );
+        Ok(())
+    }
+
+    #[test]
+    fn pre_output_readiness_blocks_zero_torque_until_descriptor_and_fixtures_pass() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        write_service_status_artifacts(dir.path())?;
+        fs::remove_file(dir.path().join("fixture-promotion.json"))?;
+        let mut descriptor = trusted_r5_descriptor_receipt();
+        let device = descriptor
+            .get_mut("devices")
+            .and_then(Value::as_array_mut)
+            .and_then(|devices| devices.first_mut())
+            .and_then(Value::as_object_mut)
+            .ok_or("expected R5 descriptor record")?;
+        device.insert(
+            "descriptor_source".to_string(),
+            Value::String("unavailable".to_string()),
+        );
+        device.remove("report_descriptor_crc32");
+        write_test_json_file(&dir.path().join("descriptor.json"), &descriptor)?;
+
+        let receipt = pre_output_readiness_dir(dir.path());
+
+        assert!(!receipt.success);
+        assert!(!receipt.ready_for_zero_torque);
+        assert!(!receipt.ready_for_ffb);
+        assert!(
+            receipt
+                .blocking_items
+                .iter()
+                .any(|item| item == "descriptor_metadata")
+        );
+        assert!(
+            receipt
+                .blocking_items
+                .iter()
+                .any(|item| item == "fixture_promotion")
+        );
+        assert!(
+            receipt
+                .passed_items
+                .iter()
+                .any(|item| item == "status_receipts_no_output")
+        );
+        assert!(receipt.hard_forbidden_until_ready.contains(&"ffb"));
+        Ok(())
+    }
+
+    #[test]
+    fn pre_output_readiness_allows_zero_torque_after_passive_audit_only() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        write_service_status_artifacts(dir.path())?;
+        write_lane_audit_receipts(dir.path(), MozaBundleStage::Passive)?;
+
+        let receipt = pre_output_readiness_dir(dir.path());
+
+        assert!(receipt.success);
+        assert!(receipt.ready_for_zero_torque);
+        assert!(!receipt.ready_for_ffb);
+        assert!(receipt.blocking_items.is_empty());
+        assert!(
+            receipt
+                .passed_items
+                .iter()
+                .any(|item| item == "ready_for_zero_torque")
+        );
+        assert!(
+            receipt
+                .ffb_blocking_items
+                .iter()
+                .any(|item| item == "zero_torque_real_hardware")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn pre_output_lane_binding_accepts_repo_relative_lane_path() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir
+            .path()
+            .join("ci")
+            .join("hardware")
+            .join("moza-r5")
+            .join("2026-05-13");
+
+        assert!(lane_path_value_matches(
+            &lane,
+            Some("ci\\hardware\\moza-r5\\2026-05-13")
+        ));
+        assert!(!lane_path_value_matches(
+            &lane,
+            Some("ci\\hardware\\moza-r5\\2026-05-14")
+        ));
         Ok(())
     }
 
@@ -17517,6 +17992,8 @@ mod tests {
             "moza_lane": root.display().to_string(),
             "no_hid_device_opened": true,
             "no_ffb_writes": true,
+            "no_output_reports": true,
+            "no_feature_reports": true,
             "no_serial_config_commands": true,
             "no_firmware_or_dfu_commands": true,
             "status": service_device_status_value(root)
@@ -17530,6 +18007,8 @@ mod tests {
             "timestamp": "2026-05-06T00:00:00Z",
             "no_hid_device_opened": true,
             "no_ffb_writes": true,
+            "no_output_reports": true,
+            "no_feature_reports": true,
             "no_serial_config_commands": true,
             "no_firmware_or_dfu_commands": true,
             "system_info": {
@@ -17776,6 +18255,8 @@ mod tests {
             vendor_id: "0x346E".to_string(),
             no_hid_device_opened: true,
             no_ffb_writes: true,
+            no_output_reports: true,
+            no_feature_reports: true,
             no_serial_config_commands: true,
             no_firmware_or_dfu_commands: true,
             devices: vec![sample_device()],

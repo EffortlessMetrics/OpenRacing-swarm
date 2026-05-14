@@ -470,6 +470,16 @@ pub enum MozaCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
+    /// Summarize whether a Moza lane is ready for zero-torque or FFB output
+    PreOutputReadiness {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Write the readiness receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
     /// Promote a validated Moza capture JSONL into a parser fixture file
     PromoteFixture {
         /// JSON Lines file produced by `wheelctl moza capture-input`

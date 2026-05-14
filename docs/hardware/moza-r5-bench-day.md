@@ -162,6 +162,18 @@ wheelctl moza descriptor `
 Keep the vendor-wide Moza records in `descriptor.json`. The supplied descriptor
 bytes should apply only to the selected R5 record.
 
+When passive verification and audit are later green, record the read-only
+pre-output ledger before starting any zero-torque work:
+
+```powershell
+wheelctl moza pre-output-readiness `
+  --lane "$LANE" `
+  --json-out "$LANE/pre-output-readiness.json"
+```
+
+If `ready_for_zero_torque` is false, stop. This receipt is a blocker summary,
+not permission to run FFB.
+
 ## 6. Passive Captures
 
 Each capture must be produced by `wheelctl moza capture-input`. Do not use FFB,

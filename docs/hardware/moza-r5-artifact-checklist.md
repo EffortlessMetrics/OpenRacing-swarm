@@ -40,6 +40,7 @@ The only valid lane completion states are:
 | Low torque | `wheelctl moza torque-test --confirm-low-torque --max-percent 2` -> `low-torque-proof.json` | Low-torque preflight requires `--lane` and same-lane zero/init/descriptor artifacts before HID initialization; gate requires same-lane zero proof, off/standard init summaries with timestamp/CRC matches, descriptor trust or explicit override, direct mode gate, bounded payload recomputation, abort-to-zero | Command and gate exist; no real low-torque receipt exists |
 | Pit House coexistence | `wheelctl moza pit-house-observation`, `wheelctl moza pit-house-case`, and `wheelctl moza pit-house-proof` -> `pit-house-coexistence.json` plus five case artifacts | Smoke-ready verifier requires all five cases, non-notes evidence artifacts, source receipt links, direct-mode block or ack, mode-mismatch fail-safe, firmware-page high-risk refusal | Commands and gates exist; no Pit House evidence exists |
 | Service readiness status | `wheeld --hardware-lane ...`, `wheelctl moza status` -> `moza-status.json`, `wheelctl device status --moza-lane` -> `device-status.json`, `wheelctl support-bundle --device <r5> --moza-lane` -> `support-bundle.json` | Service-status gate requires matching R5 PID, descriptor metadata, torque readiness disabled, no FFB/serial/firmware/DFU, and support-bundle artifact/readiness diagnostics that do not overclaim the current lane | Service overlay and gates exist; no real service receipts exist |
+| Pre-output readiness | `wheelctl moza pre-output-readiness` -> `pre-output-readiness.json` | Read-only ledger separates `ready_for_zero_torque` from `ready_for_ffb`, checks passive verification, passive audit, service/status no-output receipts, zero-stage receipts, and bounded-FFB prerequisites without opening HID devices or suggesting output while passive is red | Command exists; no real readiness receipt is checked in |
 | Simulator telemetry | `wheelctl telemetry record` creates a recorder artifact; `wheelctl moza simulator-telemetry-proof` -> `simulator-telemetry-proof.json` | Telemetry gate requires telemetry-only operation, normalized snapshots, recorder provenance, no hardware output, no faults | Commands and gate exist; no real simulator telemetry receipt exists |
 | Bounded simulator FFB smoke | `wheelctl moza simulator-ffb-smoke` -> `simulator-ffb-smoke.json` plus output log | Smoke gate requires hardware prerequisites bound by same-lane prerequisite artifact CRC/timestamp summaries before writer start, direct mode gate, high torque false, watchdog active, bounded non-zero output, final zero, stop/pause/game-exit/mode-mismatch clear events, telemetry and lane-bound writer provenance | Command and gate exist; no real simulator FFB receipt exists |
 | Smoke-ready promotion | `wheelctl moza verify-bundle --stage smoke-ready` -> `smoke-ready-verification.json`; `wheelctl moza promote-manifest --stage smoke-ready` -> `manifest-promotion-smoke-ready.json` | `wheelctl moza audit-lane --stage smoke-ready`; manifest moves to `real_hardware_smoke_ready`, `hardware_validated=true`, `simulator_validated=true`, `high_torque_validated=false`, `release_ready=false` | Commands and gates exist; no real smoke-ready promotion exists |
@@ -81,6 +82,7 @@ init-standard.json
 moza-status.json
 device-status.json
 support-bundle.json
+pre-output-readiness.json
 low-torque-proof.json
 pit-house-coexistence.json
 simulator-telemetry-proof.json
@@ -122,6 +124,7 @@ wheelctl moza simulator-ffb-smoke
 wheelctl moza status
 wheelctl device status --moza-lane
 wheelctl support-bundle --device <r5> --moza-lane
+wheelctl moza pre-output-readiness
 ```
 
 ## Final Audit Questions
