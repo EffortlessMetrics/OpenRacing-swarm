@@ -525,8 +525,9 @@ fn lane_status_safe_next_commands(
             ];
             commands.extend(roles.iter().filter(|role| role.required).map(|role| {
                 format!(
-                    "wheelctl moza capture-input --device {} --json-out {} --json",
+                    "wheelctl moza capture-input --device {} --duration-ms {} --json-out {} --json",
                     role.expected_endpoint,
+                    passive_capture_duration_ms(role),
                     lane_path_arg(lane, &role.evidence_artifact)
                 )
             }));
@@ -575,6 +576,13 @@ fn lane_status_safe_next_commands(
             Vec::new()
         }
         _ => Vec::new(),
+    }
+}
+
+fn passive_capture_duration_ms(role: &StoredHardwareLaneLogicalRole) -> u64 {
+    match role.id.as_str() {
+        "idle" | "aggregated_idle" => 5_000,
+        _ => 10_000,
     }
 }
 
@@ -2636,6 +2644,46 @@ mod tests {
         }));
         assert!(!status.ready_for_zero_torque);
         assert!(!status.ready_for_ffb);
+        Ok(())
+    }
+
+    #[test]
+    fn lane_status_passive_capture_guidance_includes_duration() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("moza-r5-lane");
+        let _receipt =
+            scaffold_hardware_lane(&lane, "moza-r5", "wheelbase-hub", "Steven", false, None)?;
+        for artifact in [
+            "device-list.json",
+            "hardware-doctor.json",
+            "hid-list.json",
+            "moza-probe.json",
+        ] {
+            fs::write(lane.join(artifact), "{}\n")?;
+        }
+
+        let status = build_hardware_lane_status_receipt(&lane)?;
+
+        assert_eq!(status.next_blocked_stage, "passive");
+        let capture_commands: Vec<_> = status
+            .safe_next_commands
+            .iter()
+            .filter(|command| command.contains("wheelctl moza capture-input"))
+            .collect();
+        assert!(!capture_commands.is_empty());
+        assert!(capture_commands.iter().all(|command| {
+            command.contains("--duration-ms 10000")
+                && command.contains("--json-out")
+                && command.contains("--json")
+        }));
+        assert!(
+            status
+                .safe_next_commands
+                .iter()
+                .all(|command| !command.contains("torque")
+                    && !command.contains("ffb")
+                    && !command.contains("output"))
+        );
         Ok(())
     }
 
