@@ -11590,13 +11590,19 @@ fn sync_role_status_receipt(lane: &Path, check: bool) -> Result<Value> {
         }));
     }
 
-    let manifest_written = !check && stale_control_count > 0;
+    let expected_artifacts = moza_lane_manifest_artifacts_value();
+    let artifact_map_changed = manifest.get("artifacts") != Some(&expected_artifacts);
+    if artifact_map_changed && !check {
+        manifest["artifacts"] = expected_artifacts;
+    }
+
+    let manifest_written = !check && (stale_control_count > 0 || artifact_map_changed);
     if manifest_written {
         write_json_file(&lane.join("manifest.json"), &manifest)?;
     }
 
     Ok(serde_json::json!({
-        "success": !check || stale_control_count == 0,
+        "success": !check || (stale_control_count == 0 && !artifact_map_changed),
         "command": "wheelctl moza sync-role-status",
         "generated_at_utc": now_utc(),
         "lane": lane.display().to_string(),
@@ -11614,10 +11620,12 @@ fn sync_role_status_receipt(lane: &Path, check: bool) -> Result<Value> {
         "failed_captures": analysis.failed_captures,
         "role_count": analysis.role_evidence.len(),
         "stale_control_count": stale_control_count,
+        "artifact_map_changed": artifact_map_changed,
         "status_updates": status_updates,
         "notes": [
             "sync-role-status reads stored JSONL reports only; no HID device is opened",
             "semantic_status is diagnostic topology evidence and does not promote lane receipts",
+            "manifest artifacts are refreshed to the current lane contract without promoting receipts",
             "lane_analysis_success may remain false while missing roles are recorded honestly"
         ]
     }))
@@ -23768,7 +23776,44 @@ mod tests {
         let fresh_check = sync_role_status_receipt(dir.path(), true)?;
         assert_eq!(json_bool(&fresh_check, "success"), Some(true));
         assert_eq!(json_u64(&fresh_check, "stale_control_count"), Some(0));
+        assert_eq!(json_bool(&fresh_check, "artifact_map_changed"), Some(false));
         assert_eq!(json_bool(&fresh_check, "manifest_written"), Some(false));
+        Ok(())
+    }
+
+    #[test]
+    fn sync_role_status_refreshes_manifest_artifact_contract() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        sync_role_status_receipt(dir.path(), false)?;
+
+        let mut manifest = read_json_path(&dir.path().join("manifest.json"))?;
+        manifest["artifacts"]
+            .as_object_mut()
+            .ok_or("expected artifacts map")?
+            .remove("hardware_doctor");
+        write_test_json_file(&dir.path().join("manifest.json"), &manifest)?;
+
+        let stale_check = sync_role_status_receipt(dir.path(), true)?;
+        assert_eq!(json_bool(&stale_check, "success"), Some(false));
+        assert_eq!(json_bool(&stale_check, "artifact_map_changed"), Some(true));
+        assert_eq!(json_u64(&stale_check, "stale_control_count"), Some(0));
+
+        let receipt = sync_role_status_receipt(dir.path(), false)?;
+        assert_eq!(json_bool(&receipt, "success"), Some(true));
+        assert_eq!(json_bool(&receipt, "manifest_written"), Some(true));
+        assert_eq!(json_bool(&receipt, "artifact_map_changed"), Some(true));
+
+        let refreshed = read_json_path(&dir.path().join("manifest.json"))?;
+        assert_eq!(
+            json_string(
+                refreshed
+                    .get("artifacts")
+                    .ok_or("missing artifacts map after refresh")?,
+                "hardware_doctor"
+            ),
+            Some("hardware-doctor.json")
+        );
         Ok(())
     }
 
