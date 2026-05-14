@@ -5970,24 +5970,49 @@ fn verify_descriptor_metadata_gate(lane: &Path) -> BundleGateCheck {
             format!("found complete descriptor metadata on {valid_count} R5 record(s)"),
         )
     } else {
+        let diagnostics = r5_devices
+            .iter()
+            .enumerate()
+            .map(|(index, device)| {
+                let product_id = json_string(device, "product_id").unwrap_or("<missing>");
+                let descriptor_source =
+                    json_string(device, "descriptor_source").unwrap_or("<missing>");
+                let report_metadata_source =
+                    json_string(device, "report_metadata_source").unwrap_or("<missing>");
+                let missing = r5_descriptor_metadata_missing_requirements(device);
+                format!(
+                    "r5[{index}] product_id={product_id} descriptor_source={descriptor_source} report_metadata_source={report_metadata_source} missing={missing:?}"
+                )
+            })
+            .collect::<Vec<_>>();
         BundleGateCheck::fail(
             "descriptor_metadata",
             format!(
-                "descriptor.json has {} R5 record(s), but none have trusted descriptor source, CRC, identity metadata, and R5 input/output/feature report metadata",
-                r5_devices.len()
+                "descriptor.json has {} R5 record(s), but none have trusted descriptor source, CRC, identity metadata, and R5 input/output/feature report metadata; diagnostics={diagnostics:?}",
+                r5_devices.len(),
             ),
         )
     }
 }
 
 fn r5_descriptor_metadata_is_complete(device: &Value) -> bool {
-    let source_ok = matches!(
+    r5_descriptor_metadata_missing_requirements(device).is_empty()
+}
+
+fn r5_descriptor_metadata_missing_requirements(device: &Value) -> Vec<&'static str> {
+    let mut missing = Vec::new();
+    if !matches!(
         json_string(device, "descriptor_source"),
         Some("linux_sysfs" | "operator_supplied_hex")
-    );
-    let crc_ok = json_string(device, "report_descriptor_crc32")
+    ) {
+        missing.push("descriptor_source");
+    }
+    if !json_string(device, "report_descriptor_crc32")
         .map(|value| value.starts_with("0x") && value.len() == 10)
-        .unwrap_or(false);
+        .unwrap_or(false)
+    {
+        missing.push("report_descriptor_crc32");
+    }
     let identity_ok = json_bool(device, "serial_number_present") == Some(true)
         && json_string(device, "product_name")
             .or_else(|| json_string(device, "product_string"))
@@ -5996,6 +6021,9 @@ fn r5_descriptor_metadata_is_complete(device: &Value) -> bool {
         && json_string(device, "manufacturer")
             .map(|value| !value.trim().is_empty())
             .unwrap_or(false);
+    if !identity_ok {
+        missing.push("identity_metadata");
+    }
     let interface_ok = device
         .get("interface_number")
         .and_then(Value::as_i64)
@@ -6003,15 +6031,24 @@ fn r5_descriptor_metadata_is_complete(device: &Value) -> bool {
         && json_string(device, "usage_page")
             .map(|value| !value.trim().is_empty())
             .unwrap_or(false);
+    if !interface_ok {
+        missing.push("interface_usage_metadata");
+    }
     let input_ok = json_usize_array(device, "input_report_lengths")
         .map(|lengths| r5_input_report_lengths_supported(device, &lengths))
         .unwrap_or(false);
+    if !input_ok {
+        missing.push("input_report_lengths");
+    }
     let output_ok = json_string_array_contains_all(device, "output_report_ids", &["0x20"])
         && json_report_record_contains(device, "output_reports", "0x20", REPORT_LEN);
-    let feature_ok =
-        json_string_array_contains_all(device, "feature_report_ids", &["0x03", "0x11"]);
-
-    source_ok && crc_ok && identity_ok && interface_ok && input_ok && output_ok && feature_ok
+    if !output_ok {
+        missing.push("output_report_0x20_len_8");
+    }
+    if !json_string_array_contains_all(device, "feature_report_ids", &["0x03", "0x11"]) {
+        missing.push("feature_report_ids_0x03_0x11");
+    }
+    missing
 }
 
 fn r5_descriptor_trusted_for_direct_mode(device: &Value) -> bool {
@@ -23794,13 +23831,25 @@ mod tests {
         )?;
 
         let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
+        let gate = receipt
+            .gates
+            .iter()
+            .find(|gate| gate.name == "descriptor_metadata")
+            .ok_or("missing descriptor metadata gate")?;
 
         assert!(!receipt.success);
+        assert_eq!(gate.status, "fail");
         assert!(
-            receipt
-                .gates
-                .iter()
-                .any(|gate| { gate.name == "descriptor_metadata" && gate.status == "fail" })
+            gate.details.contains("diagnostics=")
+                && gate.details.contains("descriptor_source")
+                && gate.details.contains("report_descriptor_crc32")
+                && gate.details.contains("identity_metadata")
+                && gate.details.contains("interface_usage_metadata")
+                && gate.details.contains("input_report_lengths")
+                && gate.details.contains("output_report_0x20_len_8")
+                && gate.details.contains("feature_report_ids_0x03_0x11"),
+            "expected actionable descriptor diagnostics, got {}",
+            gate.details
         );
         Ok(())
     }
