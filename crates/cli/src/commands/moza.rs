@@ -3773,6 +3773,7 @@ fn verify_bundle_dir_with_support_validation(
         .count();
     let failed_gates = gates.iter().filter(|check| check.status == "fail").count();
     let success = missing_artifacts == 0 && invalid_artifacts == 0 && failed_gates == 0;
+    let operator_actions = operator_actions_for_bundle_stage(stage, &gates);
     let next_commands = next_commands_for_bundle_stage(lane, stage, &artifact_checks, &gates);
 
     BundleVerificationReceipt {
@@ -3786,6 +3787,7 @@ fn verify_bundle_dir_with_support_validation(
         failed_gates,
         artifacts: artifact_checks,
         gates,
+        operator_actions,
         next_commands,
         no_hid_device_opened: true,
         no_ffb_writes: true,
@@ -3798,6 +3800,49 @@ fn verify_bundle_dir_with_support_validation(
                 .to_string(),
         ],
     }
+}
+
+fn operator_actions_for_bundle_stage(
+    stage: MozaBundleStage,
+    gates: &[BundleGateCheck],
+) -> Vec<String> {
+    if stage != MozaBundleStage::Passive {
+        return Vec::new();
+    }
+
+    let mut actions = Vec::new();
+    if !bundle_gate_check_passed(gates, "descriptor_metadata") {
+        actions.push(
+            "Export the R5 HID report descriptor byte block with USBTreeView or an equivalent descriptor tool into target/moza-r5-report-descriptor.txt, then rerun the descriptor file fallback; do not run firmware or DFU flows."
+                .to_string(),
+        );
+    }
+
+    let throttle_missing = gates.iter().any(|gate| {
+        gate.name == "passive_captures_parse"
+            && gate.status == "fail"
+            && gate
+                .details
+                .contains("captures/r5-throttle-only-sweep.jsonl")
+            && gate.details.contains("any_axes_ok=false")
+    });
+    if throttle_missing {
+        actions.push(
+            "Throttle capture parsed but no parser-visible hub-control axis moved; check throttle pedal cable, pedal-set-to-R5 routing, and vendor input state before replacing the lane capture."
+                .to_string(),
+        );
+    }
+
+    let parser_validation_failed = !bundle_gate_check_passed(gates, "parser_fixture_validation");
+    let fixture_promotion_failed = !bundle_gate_check_passed(gates, "fixture_promotion");
+    if parser_validation_failed && fixture_promotion_failed {
+        actions.push(
+            "Do not run fixture promotion until validate-captures passes for every manifest-required logical role."
+                .to_string(),
+        );
+    }
+
+    actions
 }
 
 fn audit_lane_dir(lane: &Path, stage: MozaBundleStage) -> LaneAuditReceipt {
@@ -11458,6 +11503,7 @@ fn analyze_lane_captures(lane: &Path) -> Result<LaneCaptureAnalysisReceipt> {
         .collect::<Vec<_>>();
     let role_evidence = lane_role_evidence_entries(lane, &captures);
     let success = failed_captures.is_empty() && missing_control_evidence.is_empty();
+    let safe_diagnostics = lane_capture_safe_diagnostics(&captures);
 
     Ok(LaneCaptureAnalysisReceipt {
         success,
@@ -11480,6 +11526,7 @@ fn analyze_lane_captures(lane: &Path) -> Result<LaneCaptureAnalysisReceipt> {
         idle_moving_words_le: idle.moving_words_le,
         failed_captures,
         missing_control_evidence,
+        safe_diagnostics,
         role_evidence,
         captures,
         notes: vec![
@@ -11491,6 +11538,33 @@ fn analyze_lane_captures(lane: &Path) -> Result<LaneCaptureAnalysisReceipt> {
             "role_evidence derives semantic_status from manifest topology and parser-visible capture evidence; it does not promote lane receipts".to_string(),
         ],
     })
+}
+
+fn lane_capture_safe_diagnostics(captures: &[LaneCaptureAnalysisEntry]) -> Vec<String> {
+    let mut diagnostics = Vec::new();
+
+    let Some(throttle) = captures
+        .iter()
+        .find(|capture| capture.capture == "captures/r5-throttle-only-sweep.jsonl")
+    else {
+        return diagnostics;
+    };
+
+    if throttle.success
+        && !throttle.control_evidence_ok
+        && throttle.moving_required_axes.is_empty()
+        && throttle
+            .unique_moving_bytes_vs_idle
+            .iter()
+            .all(|byte| matches!(*byte, 38..=41))
+    {
+        diagnostics.push(
+            "captures/r5-throttle-only-sweep.jsonl parsed cleanly, but only idle/trailer bytes moved versus r5-idle; do not recapture blindly until the throttle physical/vendor path is checked."
+                .to_string(),
+        );
+    }
+
+    diagnostics
 }
 
 fn lane_role_evidence_entries(
@@ -12225,6 +12299,7 @@ struct LaneCaptureAnalysisReceipt {
     idle_moving_words_le: Vec<usize>,
     failed_captures: Vec<String>,
     missing_control_evidence: Vec<String>,
+    safe_diagnostics: Vec<String>,
     role_evidence: Vec<LaneRoleEvidenceEntry>,
     captures: Vec<LaneCaptureAnalysisEntry>,
     notes: Vec<String>,
@@ -13263,6 +13338,7 @@ struct BundleVerificationReceipt {
     failed_gates: usize,
     artifacts: Vec<BundleArtifactCheck>,
     gates: Vec<BundleGateCheck>,
+    operator_actions: Vec<String>,
     next_commands: Vec<String>,
     no_hid_device_opened: bool,
     no_ffb_writes: bool,
@@ -22886,6 +22962,13 @@ mod tests {
             "passive next_commands should include the descriptor file fallback"
         );
         assert!(
+            receipt.operator_actions.iter().any(|action| action
+                .contains("Export the R5 HID report descriptor byte block")
+                && action.contains("do not run firmware or DFU")),
+            "passive operator actions should explain the descriptor export fallback: {:?}",
+            receipt.operator_actions
+        );
+        assert!(
             receipt
                 .next_commands
                 .iter()
@@ -22940,6 +23023,15 @@ mod tests {
         assert!(
             joined.contains("wheelctl moza sync-role-status"),
             "failed existing captures should suggest semantic-status sync: {joined}"
+        );
+        assert!(
+            receipt
+                .operator_actions
+                .iter()
+                .any(|action| action.contains("Throttle capture parsed")
+                    && action.contains("check throttle pedal cable")),
+            "failed throttle role should include a physical-path diagnostic action: {:?}",
+            receipt.operator_actions
         );
         assert!(
             !joined.contains("wheelctl moza capture-input"),
@@ -23691,6 +23783,13 @@ mod tests {
             throttle_role.evidence_capture.as_deref(),
             Some("captures/r5-throttle-only-sweep.jsonl")
         );
+        assert!(
+            receipt.safe_diagnostics.iter().any(|diagnostic| diagnostic
+                .contains("only idle/trailer bytes moved")
+                && diagnostic.contains("do not recapture blindly")),
+            "expected throttle trailer-only diagnostic, got {:?}",
+            receipt.safe_diagnostics
+        );
         Ok(())
     }
 
@@ -24168,6 +24267,7 @@ mod tests {
                     "manifest_no_overclaim",
                     "forced post-promotion verifier failure".to_string(),
                 )],
+                operator_actions: Vec::new(),
                 next_commands: Vec::new(),
                 no_hid_device_opened: true,
                 no_ffb_writes: true,
