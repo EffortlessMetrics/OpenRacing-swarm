@@ -526,7 +526,11 @@ fn lane_status_safe_next_commands(
             commands.extend(
                 roles
                     .iter()
-                    .filter(|role| role.required && !lane.join(&role.evidence_artifact).exists())
+                    .filter(|role| {
+                        role.required
+                            && !lane.join(&role.evidence_artifact).exists()
+                            && has_declared_endpoint(&role.expected_endpoint)
+                    })
                     .map(|role| {
                         format!(
                             "wheelctl moza capture-input --device {} --duration-ms {} --json-out {} --json",
@@ -600,17 +604,21 @@ fn moza_descriptor_selector(roles: &[StoredHardwareLaneLogicalRole]) -> &str {
         .find(|role| {
             role.id == "steering"
                 && role.connection_path == "wheelbase_hub"
-                && role.expected_endpoint != "declare-observed-endpoint"
+                && has_declared_endpoint(&role.expected_endpoint)
         })
         .or_else(|| {
             roles.iter().find(|role| {
                 role.connection_path == "wheelbase_hub"
-                    && role.expected_endpoint != "declare-observed-endpoint"
+                    && has_declared_endpoint(&role.expected_endpoint)
             })
         })
         .map_or("hid-0x346E-0x0004-if2-0x0001-0x0004", |role| {
             role.expected_endpoint.as_str()
         })
+}
+
+fn has_declared_endpoint(endpoint: &str) -> bool {
+    endpoint != "declare-observed-endpoint"
 }
 
 fn lane_path_arg(lane: &Path, relative: &str) -> String {
@@ -2781,6 +2789,52 @@ mod tests {
                 .iter()
                 .any(|command| command.contains("r5-steering-sweep.jsonl"))
         );
+        Ok(())
+    }
+
+    #[test]
+    fn lane_status_passive_capture_guidance_skips_placeholder_endpoints() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("moza-r5-lane");
+        let role_overrides = HardwareLaneRoleOverrides::from_cli(
+            &["button_box".to_string()],
+            &[],
+            &["button_box=captures/button-box.jsonl".to_string()],
+            &[],
+            &["button_box=wheelbase_hub".to_string()],
+        )?;
+        let _receipt = scaffold_hardware_lane_with_overrides(
+            &lane,
+            "moza-r5",
+            "wheelbase-hub",
+            "Steven",
+            &role_overrides,
+            false,
+            None,
+        )?;
+        for artifact in [
+            "device-list.json",
+            "hardware-doctor.json",
+            "hid-list.json",
+            "moza-probe.json",
+        ] {
+            fs::write(lane.join(artifact), "{}\n")?;
+        }
+
+        let status = build_hardware_lane_status_receipt(&lane)?;
+        let joined = status.safe_next_commands.join("\n");
+
+        assert_eq!(status.next_blocked_stage, "passive");
+        assert!(
+            status
+                .role_evidence
+                .iter()
+                .any(|role| role.id == "button_box"
+                    && role.expected_endpoint == "declare-observed-endpoint"
+                    && !role.artifact_present)
+        );
+        assert!(!joined.contains("declare-observed-endpoint"), "{joined}");
+        assert!(joined.contains("wheelctl moza capture-input --device hid-0x346E-0x0004"));
         Ok(())
     }
 
