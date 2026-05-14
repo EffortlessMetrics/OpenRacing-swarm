@@ -4364,6 +4364,7 @@ fn push_passive_next_commands(
     }
     if bundle_gate_check_passed(gates, "passive_captures_parse")
         && bundle_gate_check_passed(gates, "parser_fixture_validation")
+        && bundle_gate_check_passed(gates, "descriptor_metadata")
         && !bundle_gate_check_passed(gates, "fixture_promotion")
     {
         commands.push(format!(
@@ -24467,6 +24468,39 @@ mod tests {
         assert!(
             joined.contains("promoted_capture_fixtures_replay_through_moza_parser"),
             "promoted fixture replay test should follow fixture promotion when validation passes: {joined}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_validated_captures_wait_for_descriptor_before_fixture_promotion() -> TestResult
+    {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        fs::remove_file(dir.path().join("fixture-promotion.json"))?;
+        let mut descriptor = read_json_path(&dir.path().join("descriptor.json"))?;
+        descriptor["devices"][0]["descriptor_source"] = serde_json::json!("unavailable");
+        descriptor["devices"][0]
+            .as_object_mut()
+            .ok_or("descriptor devices[0] should be object")?
+            .remove("report_descriptor_crc32");
+        write_test_json_file(&dir.path().join("descriptor.json"), &descriptor)?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
+
+        assert!(!receipt.success);
+        let joined = receipt.next_commands.join("\n");
+        assert!(
+            joined.contains("--report-descriptor-bin-file"),
+            "missing descriptor trust should suggest descriptor byte import: {joined}"
+        );
+        assert!(
+            !joined.contains("wheelctl moza promote-fixtures"),
+            "fixture promotion should wait for descriptor metadata trust: {joined}"
+        );
+        assert!(
+            !joined.contains("promoted_capture_fixtures_replay_through_moza_parser"),
+            "fixture replay test should wait for descriptor metadata trust: {joined}"
         );
         Ok(())
     }
