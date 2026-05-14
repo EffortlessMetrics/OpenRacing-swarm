@@ -4264,9 +4264,9 @@ fn audit_lane_dir(lane: &Path, stage: MozaBundleStage) -> LaneAuditReceipt {
 }
 
 fn pre_output_readiness_dir(lane: &Path) -> PreOutputReadinessReceipt {
-    let passive = verify_bundle_dir(lane, MozaBundleStage::Passive);
-    let zero = verify_bundle_dir(lane, MozaBundleStage::Zero);
-    let smoke_ready = verify_bundle_dir(lane, MozaBundleStage::SmokeReady);
+    let passive = pre_output_stored_verification_receipt(lane, MozaBundleStage::Passive);
+    let zero = pre_output_stored_verification_receipt(lane, MozaBundleStage::Zero);
+    let smoke_ready = pre_output_stored_verification_receipt(lane, MozaBundleStage::SmokeReady);
     let passive_audit_passed = stored_lane_audit_receipt_passed(lane, MozaBundleStage::Passive);
     let zero_audit_passed = stored_lane_audit_receipt_passed(lane, MozaBundleStage::Zero);
     let smoke_ready_audit_passed =
@@ -4280,7 +4280,7 @@ fn pre_output_readiness_dir(lane: &Path) -> PreOutputReadinessReceipt {
     let ready_for_ffb = ready_for_zero_torque
         && zero.success
         && zero_audit_passed
-        && bounded_ffb_prerequisite_gates_passed(&smoke_ready);
+        && pre_output_bounded_ffb_prerequisite_gates_passed(&smoke_ready);
 
     let blocking_items =
         pre_output_zero_blocking_items(&passive, passive_audit_passed, status_receipts_no_output);
@@ -4306,9 +4306,9 @@ fn pre_output_readiness_dir(lane: &Path) -> PreOutputReadinessReceipt {
         ffb_blocking_items,
         passed_items,
         status_receipts,
-        passive_verification: support_verification_summary(&passive),
-        zero_verification: support_verification_summary(&zero),
-        smoke_ready_verification: support_verification_summary(&smoke_ready),
+        passive_verification: pre_output_verification_summary(&passive),
+        zero_verification: pre_output_verification_summary(&zero),
+        smoke_ready_verification: pre_output_verification_summary(&smoke_ready),
         passive_audit_passed,
         zero_audit_passed,
         smoke_ready_audit_passed,
@@ -4336,7 +4336,7 @@ fn pre_output_readiness_dir(lane: &Path) -> PreOutputReadinessReceipt {
 }
 
 fn pre_output_passed_items(
-    passive: &BundleVerificationReceipt,
+    passive: &PreOutputVerificationReceipt,
     role_evidence_complete: bool,
     passive_audit_passed: bool,
     status_receipts_no_output: bool,
@@ -4344,25 +4344,25 @@ fn pre_output_passed_items(
     ready_for_ffb: bool,
 ) -> Vec<String> {
     let mut passed = Vec::new();
-    if bundle_gate_passed(passive, "moza_r5_observed") {
+    if pre_output_gate_passed(passive, "moza_r5_observed") {
         passed.push("r5_endpoint_observed".to_string());
     }
-    if bundle_gate_passed(passive, "moza_topology_observed") {
+    if pre_output_gate_passed(passive, "moza_topology_observed") {
         passed.push("topology_endpoint_observed".to_string());
     }
     if role_evidence_complete {
         passed.push("role_evidence_complete".to_string());
     }
-    if bundle_gate_passed(passive, "passive_captures_parse") {
+    if pre_output_gate_passed(passive, "passive_captures_parse") {
         passed.push("passive_captures_parse".to_string());
     }
-    if bundle_gate_passed(passive, "parser_fixture_validation") {
+    if pre_output_gate_passed(passive, "parser_fixture_validation") {
         passed.push("parser_fixture_validation".to_string());
     }
-    if bundle_gate_passed(passive, "descriptor_metadata") {
+    if pre_output_gate_passed(passive, "descriptor_metadata") {
         passed.push("descriptor_metadata".to_string());
     }
-    if bundle_gate_passed(passive, "fixture_promotion") {
+    if pre_output_gate_passed(passive, "fixture_promotion") {
         passed.push("fixture_promotion".to_string());
     }
     if status_receipts_no_output {
@@ -4385,7 +4385,7 @@ fn pre_output_passed_items(
 }
 
 fn pre_output_zero_blocking_items(
-    passive: &BundleVerificationReceipt,
+    passive: &PreOutputVerificationReceipt,
     passive_audit_passed: bool,
     status_receipts_no_output: bool,
 ) -> Vec<String> {
@@ -4403,8 +4403,8 @@ fn pre_output_zero_blocking_items(
 }
 
 fn pre_output_ffb_blocking_items(
-    zero: &BundleVerificationReceipt,
-    smoke_ready: &BundleVerificationReceipt,
+    zero: &PreOutputVerificationReceipt,
+    smoke_ready: &PreOutputVerificationReceipt,
     zero_audit_passed: bool,
 ) -> Vec<String> {
     let mut blockers = Vec::new();
@@ -4417,7 +4417,7 @@ fn pre_output_ffb_blocking_items(
         "pit_house_coexistence",
         "simulator_telemetry",
     ] {
-        if !bundle_gate_passed(smoke_ready, gate) {
+        if !pre_output_gate_passed(smoke_ready, gate) {
             blockers.push(gate.to_string());
         }
     }
@@ -4431,7 +4431,7 @@ fn pre_output_ffb_blocking_items(
 
 fn append_verification_blocking_items(
     blockers: &mut Vec<String>,
-    receipt: &BundleVerificationReceipt,
+    receipt: &PreOutputVerificationReceipt,
 ) {
     blockers.extend(
         receipt
@@ -4449,10 +4449,12 @@ fn append_verification_blocking_items(
     );
 }
 
-fn bounded_ffb_prerequisite_gates_passed(receipt: &BundleVerificationReceipt) -> bool {
-    zero_stage_gates_passed(&receipt.gates)
-        && bundle_gate_checks_passed(
-            &receipt.gates,
+fn pre_output_bounded_ffb_prerequisite_gates_passed(
+    receipt: &PreOutputVerificationReceipt,
+) -> bool {
+    pre_output_zero_stage_gates_passed(receipt)
+        && pre_output_gate_checks_passed(
+            receipt,
             &[
                 "init_off_handshake",
                 "init_standard_handshake",
@@ -4464,13 +4466,227 @@ fn bounded_ffb_prerequisite_gates_passed(receipt: &BundleVerificationReceipt) ->
         )
 }
 
-fn required_role_evidence_complete(receipt: &BundleVerificationReceipt) -> bool {
+fn pre_output_zero_stage_gates_passed(receipt: &PreOutputVerificationReceipt) -> bool {
+    pre_output_passive_stage_gates_passed(receipt)
+        && pre_output_gate_checks_passed(
+            receipt,
+            &[
+                "zero_torque_real_hardware",
+                "watchdog_zero_output",
+                "disconnect_final_zero",
+            ],
+        )
+}
+
+fn pre_output_passive_stage_gates_passed(receipt: &PreOutputVerificationReceipt) -> bool {
+    pre_output_gate_checks_passed(
+        receipt,
+        &[
+            "lane_directory",
+            "manifest_no_overclaim",
+            "manifest_r5_pid_consistency",
+            "moza_r5_observed",
+            "moza_topology_observed",
+            "descriptor_metadata",
+            "passive_receipts_successful",
+            "passive_receipts_no_ffb_writes",
+            "passive_captures_parse",
+            "parser_fixture_validation",
+            "fixture_promotion",
+        ],
+    )
+}
+
+fn pre_output_gate_checks_passed(receipt: &PreOutputVerificationReceipt, names: &[&str]) -> bool {
+    names
+        .iter()
+        .all(|name| pre_output_gate_passed(receipt, name))
+}
+
+fn pre_output_gate_passed(receipt: &PreOutputVerificationReceipt, name: &str) -> bool {
+    receipt
+        .gates
+        .iter()
+        .any(|gate| gate.name == name && gate.status == "pass")
+}
+
+fn required_role_evidence_complete(receipt: &PreOutputVerificationReceipt) -> bool {
     !receipt.role_evidence.is_empty()
         && receipt
             .role_evidence
             .iter()
             .filter(|role| role.required)
             .all(|role| role.parser_visible && role.missing_requirements.is_empty())
+}
+
+fn pre_output_stored_verification_receipt(
+    lane: &Path,
+    stage: MozaBundleStage,
+) -> PreOutputVerificationReceipt {
+    let relative_path = verification_receipt_path(stage);
+    let receipt = match read_json_value(lane, relative_path) {
+        Ok(receipt) => receipt,
+        Err(e) => {
+            return PreOutputVerificationReceipt::missing(
+                stage,
+                relative_path,
+                format!("failed to read {relative_path}: {e}"),
+            );
+        }
+    };
+
+    if !stored_verification_identity_safe(lane, stage, &receipt) {
+        return PreOutputVerificationReceipt::invalid(
+            stage,
+            relative_path,
+            format!("{relative_path} is not a trusted observe-only verify-bundle receipt"),
+        );
+    }
+
+    PreOutputVerificationReceipt {
+        success: json_bool(&receipt, "success") == Some(true)
+            && json_u64(&receipt, "missing_artifacts") == Some(0)
+            && json_u64(&receipt, "invalid_artifacts") == Some(0)
+            && json_u64(&receipt, "failed_gates") == Some(0),
+        requested_stage: json_string(&receipt, "requested_stage")
+            .unwrap_or(stage_label(stage))
+            .to_string(),
+        missing_artifacts: json_u64(&receipt, "missing_artifacts")
+            .map(|value| value as usize)
+            .unwrap_or_else(|| pre_output_artifact_status_count(&receipt, "missing")),
+        invalid_artifacts: json_u64(&receipt, "invalid_artifacts")
+            .map(|value| value as usize)
+            .unwrap_or_else(|| pre_output_artifact_status_count(&receipt, "invalid")),
+        failed_gates: json_u64(&receipt, "failed_gates")
+            .map(|value| value as usize)
+            .unwrap_or_else(|| pre_output_gate_status_count(&receipt, "fail")),
+        artifacts: pre_output_artifacts_from_receipt(&receipt),
+        gates: pre_output_gates_from_receipt(&receipt),
+        role_evidence: pre_output_role_evidence_from_receipt(&receipt),
+    }
+}
+
+fn pre_output_artifact_status_count(receipt: &Value, status: &str) -> usize {
+    receipt
+        .get("artifacts")
+        .and_then(Value::as_array)
+        .map(|artifacts| {
+            artifacts
+                .iter()
+                .filter(|artifact| json_string(artifact, "status") == Some(status))
+                .count()
+        })
+        .unwrap_or_default()
+}
+
+fn pre_output_gate_status_count(receipt: &Value, status: &str) -> usize {
+    receipt
+        .get("gates")
+        .and_then(Value::as_array)
+        .map(|gates| {
+            gates
+                .iter()
+                .filter(|gate| json_string(gate, "status") == Some(status))
+                .count()
+        })
+        .unwrap_or_default()
+}
+
+fn pre_output_artifacts_from_receipt(receipt: &Value) -> Vec<PreOutputVerificationArtifact> {
+    receipt
+        .get("artifacts")
+        .and_then(Value::as_array)
+        .map(|artifacts| {
+            artifacts
+                .iter()
+                .map(|artifact| PreOutputVerificationArtifact {
+                    path: json_string(artifact, "path")
+                        .unwrap_or("<missing-path>")
+                        .to_string(),
+                    status: json_string(artifact, "status")
+                        .unwrap_or("invalid")
+                        .to_string(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn pre_output_gates_from_receipt(receipt: &Value) -> Vec<PreOutputVerificationGate> {
+    receipt
+        .get("gates")
+        .and_then(Value::as_array)
+        .map(|gates| {
+            gates
+                .iter()
+                .map(|gate| PreOutputVerificationGate {
+                    name: json_string(gate, "name")
+                        .unwrap_or("<missing-name>")
+                        .to_string(),
+                    status: json_string(gate, "status").unwrap_or("fail").to_string(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn pre_output_role_evidence_from_receipt(receipt: &Value) -> Vec<PreOutputRoleEvidence> {
+    receipt
+        .get("role_evidence")
+        .and_then(Value::as_array)
+        .map(|roles| {
+            roles
+                .iter()
+                .map(|role| PreOutputRoleEvidence {
+                    required: json_bool(role, "required").unwrap_or(false),
+                    parser_visible: json_bool(role, "parser_visible").unwrap_or(false),
+                    missing_requirements: role
+                        .get("missing_requirements")
+                        .and_then(Value::as_array)
+                        .map(|requirements| {
+                            requirements
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .map(str::to_string)
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn pre_output_verification_summary(receipt: &PreOutputVerificationReceipt) -> Value {
+    let missing_artifacts: Vec<_> = receipt
+        .artifacts
+        .iter()
+        .filter(|artifact| artifact.status == "missing")
+        .map(|artifact| artifact.path.clone())
+        .collect();
+    let invalid_artifacts: Vec<_> = receipt
+        .artifacts
+        .iter()
+        .filter(|artifact| artifact.status == "invalid")
+        .map(|artifact| artifact.path.clone())
+        .collect();
+    let failed_gates: Vec<_> = receipt
+        .gates
+        .iter()
+        .filter(|gate| gate.status == "fail")
+        .map(|gate| gate.name.clone())
+        .collect();
+
+    serde_json::json!({
+        "success": receipt.success,
+        "requested_stage": receipt.requested_stage,
+        "missing_artifacts": receipt.missing_artifacts,
+        "invalid_artifacts": receipt.invalid_artifacts,
+        "failed_gates": receipt.failed_gates,
+        "missing_artifact_paths": missing_artifacts,
+        "invalid_artifact_paths": invalid_artifacts,
+        "failed_gate_names": failed_gates
+    })
 }
 
 fn pre_output_status_receipt_checks(lane: &Path) -> Vec<PreOutputReadinessCheck> {
@@ -6978,20 +7194,7 @@ fn read_stored_verification_receipt(
 ) -> Option<StoredVerificationReceipt> {
     let relative_path = verification_receipt_path(stage);
     let receipt = read_json_value(lane, relative_path).ok()?;
-    let command_ok = json_string(&receipt, "command") == Some("wheelctl moza verify-bundle");
-    let lane_ok = path_value_matches(lane, json_string(&receipt, "lane"));
-    let stage_ok = json_string(&receipt, "requested_stage") == Some(stage_label(stage));
-    let no_hid_device_opened = json_bool(&receipt, "no_hid_device_opened") == Some(true);
-    let no_ffb_writes = json_bool(&receipt, "no_ffb_writes") == Some(true);
-    let no_out_of_scope = no_out_of_scope_device_commands(&receipt);
-    let identity_safe = command_ok
-        && lane_ok
-        && stage_ok
-        && no_hid_device_opened
-        && no_ffb_writes
-        && no_out_of_scope;
-
-    if !identity_safe {
+    if !stored_verification_identity_safe(lane, stage, &receipt) {
         return None;
     }
 
@@ -7016,6 +7219,15 @@ fn read_stored_verification_receipt(
             })
             .unwrap_or_default(),
     })
+}
+
+fn stored_verification_identity_safe(lane: &Path, stage: MozaBundleStage, receipt: &Value) -> bool {
+    json_string(receipt, "command") == Some("wheelctl moza verify-bundle")
+        && lane_path_value_matches(lane, json_string(receipt, "lane"))
+        && json_string(receipt, "requested_stage") == Some(stage_label(stage))
+        && json_bool(receipt, "no_hid_device_opened") == Some(true)
+        && json_bool(receipt, "no_ffb_writes") == Some(true)
+        && no_out_of_scope_device_commands(receipt)
 }
 
 fn verify_passive_no_writes_gate(lane: &Path) -> BundleGateCheck {
@@ -14284,6 +14496,68 @@ struct PreOutputReadinessReceipt {
     notes: Vec<String>,
 }
 
+#[derive(Debug)]
+struct PreOutputVerificationReceipt {
+    success: bool,
+    requested_stage: String,
+    missing_artifacts: usize,
+    invalid_artifacts: usize,
+    failed_gates: usize,
+    artifacts: Vec<PreOutputVerificationArtifact>,
+    gates: Vec<PreOutputVerificationGate>,
+    role_evidence: Vec<PreOutputRoleEvidence>,
+}
+
+impl PreOutputVerificationReceipt {
+    fn missing(stage: MozaBundleStage, path: &str, details: String) -> Self {
+        Self::from_unavailable(stage, path, "missing", details)
+    }
+
+    fn invalid(stage: MozaBundleStage, path: &str, details: String) -> Self {
+        Self::from_unavailable(stage, path, "invalid", details)
+    }
+
+    fn from_unavailable(
+        stage: MozaBundleStage,
+        path: &str,
+        status: &str,
+        _details: String,
+    ) -> Self {
+        Self {
+            success: false,
+            requested_stage: stage_label(stage).to_string(),
+            missing_artifacts: usize::from(status == "missing"),
+            invalid_artifacts: usize::from(status == "invalid"),
+            failed_gates: 0,
+            artifacts: vec![PreOutputVerificationArtifact {
+                path: path.to_string(),
+                status: status.to_string(),
+            }],
+            gates: Vec::new(),
+            role_evidence: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct PreOutputVerificationArtifact {
+    path: String,
+    status: String,
+}
+
+#[derive(Debug)]
+struct PreOutputVerificationGate {
+    name: String,
+    status: String,
+}
+
+#[derive(Debug)]
+struct PreOutputRoleEvidence {
+    required: bool,
+    parser_visible: bool,
+    missing_requirements: Vec<String>,
+}
+
 #[derive(Debug, Serialize)]
 struct PreOutputReadinessCheck {
     name: &'static str,
@@ -16417,6 +16691,11 @@ mod tests {
         );
         device.remove("report_descriptor_crc32");
         write_test_json_file(&dir.path().join("descriptor.json"), &descriptor)?;
+        let passive = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
+        write_test_json_file(
+            &dir.path().join("passive-verification.json"),
+            &serde_json::to_value(passive)?,
+        )?;
 
         let receipt = pre_output_readiness_dir(dir.path());
 
@@ -16468,7 +16747,51 @@ mod tests {
             receipt
                 .ffb_blocking_items
                 .iter()
-                .any(|item| item == "zero_torque_real_hardware")
+                .any(|item| item == "zero-verification.json")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn pre_output_readiness_uses_stored_receipts_without_replaying_captures() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_service_status_artifacts(dir.path())?;
+        write_stage_audit_receipts(dir.path(), MozaBundleStage::Passive)?;
+        write_test_json_file(
+            &dir.path().join("lane-audit-passive.json"),
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl moza audit-lane",
+                "lane": dir.path().display().to_string(),
+                "requested_stage": "passive",
+                "live_verification_success": true,
+                "missing_receipts": 0,
+                "invalid_receipts": 0,
+                "receipt_checks": [
+                    {"status": "pass"},
+                    {"status": "pass"}
+                ],
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true
+            }),
+        )?;
+
+        let receipt = pre_output_readiness_dir(dir.path());
+
+        assert!(receipt.success);
+        assert!(receipt.ready_for_zero_torque);
+        assert!(!receipt.ready_for_ffb);
+        assert!(
+            receipt
+                .ffb_blocking_items
+                .iter()
+                .any(|item| item == "zero-verification.json")
+        );
+        assert!(
+            !dir.path().join("manifest.json").exists(),
+            "pre-output-readiness should trust stored verification receipts instead of requiring raw lane artifacts"
         );
         Ok(())
     }
