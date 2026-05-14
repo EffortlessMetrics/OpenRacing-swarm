@@ -30,8 +30,14 @@ function Invoke-ExpectedVerifierFailure {
     )
 
     Write-Host "==> verify passive bundle negative path"
-    $output = & cargo run -p wheelctl -- moza verify-bundle --lane $LanePath --stage passive --json 2>&1
-    $exitCode = $LASTEXITCODE
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = & cargo run -p wheelctl -- moza verify-bundle --lane $LanePath --stage passive --json 2>&1
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     $text = ($output | Out-String)
 
     if ($text -match "panicked|thread '.*' panicked|stack backtrace") {
@@ -51,6 +57,67 @@ function Invoke-ExpectedVerifierFailure {
     Write-Host "Expected no-hardware verifier result observed."
 }
 
+function Invoke-HardwareRailSmoke {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$LanePath,
+        [Parameter(Mandatory = $true)]
+        [string]$OperatorName
+    )
+
+    Invoke-CargoTool "init generic hardware lane scaffold" @(
+        "run", "-p", "wheelctl", "--",
+        "hardware", "lane", "init",
+        "--family", "moza-r5",
+        "--topology", "wheelbase-hub",
+        "--lane", $LanePath,
+        "--operator", $OperatorName,
+        "--json"
+    )
+
+    $statusPath = Join-Path $LanePath "hardware-lane-status.json"
+    Invoke-CargoTool "inventory generic hardware lane scaffold" @(
+        "run", "-p", "wheelctl", "--",
+        "hardware", "lane", "status",
+        "--lane", $LanePath,
+        "--json-out", $statusPath,
+        "--json"
+    )
+
+    $status = Get-Content -Raw -LiteralPath $statusPath | ConvertFrom-Json
+    if ($status.no_hid_device_opened -ne $true) {
+        throw "hardware lane status should not open HID devices"
+    }
+    if ($status.no_ffb_writes -ne $true) {
+        throw "hardware lane status should not write FFB"
+    }
+    if ($status.no_output_reports -ne $true) {
+        throw "hardware lane status should not write output reports"
+    }
+    if ($status.no_feature_reports -ne $true) {
+        throw "hardware lane status should not write feature reports"
+    }
+    if ($status.no_serial_config_commands -ne $true) {
+        throw "hardware lane status should not touch serial config"
+    }
+    if ($status.no_firmware_or_dfu_commands -ne $true) {
+        throw "hardware lane status should not run firmware or DFU commands"
+    }
+    if ($status.ready_for_zero_torque -ne $false) {
+        throw "fresh scaffold must not be ready for zero torque"
+    }
+    if ($status.ready_for_ffb -ne $false) {
+        throw "fresh scaffold must not be ready for FFB"
+    }
+
+    $safeNext = ($status.safe_next_commands -join "`n")
+    if ($safeNext -match "(?i)(zero-torque|torque-test|watchdog-proof|disconnect-proof|simulator-ffb-smoke|feature-report|output-report|serial|firmware|dfu|ffb)") {
+        throw "hardware lane status suggested an output-adjacent command for a fresh scaffold.`n$safeNext"
+    }
+
+    Write-Host "Expected generic hardware rail scaffold/status result observed."
+}
+
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
 
@@ -64,6 +131,8 @@ Write-Host "Lane: $Lane"
 
 Invoke-CargoTool "wheelctl moza help" @("run", "-p", "wheelctl", "--", "moza", "--help")
 Invoke-CargoTool "hid-capture help" @("run", "-p", "racing-wheel-hid-capture", "--bin", "hid-capture", "--", "--help")
+
+Invoke-HardwareRailSmoke -LanePath $Lane -OperatorName $Operator
 
 Invoke-CargoTool "init temporary lane" @(
     "run", "-p", "wheelctl", "--",

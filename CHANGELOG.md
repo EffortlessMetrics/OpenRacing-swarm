@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Kernel wire-format cross-check tests for 5 protocol crates (#207)
 
 ### Changed
+- Moza R5 passive preflight now smokes the generic hardware lane
+  scaffold/status rail before the Moza-specific verifier manifest.
 - Documentation accuracy pass for RC readiness (#225)
 - Formatted vendor_timing_replay_tests.rs with rustfmt (#212)
 
