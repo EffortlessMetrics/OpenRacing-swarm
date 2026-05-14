@@ -7037,6 +7037,16 @@ fn verify_parser_validation_gate(lane: &Path) -> BundleGateCheck {
         .get("captures")
         .and_then(Value::as_array)
         .map(Vec::as_slice);
+    let safe_diagnostics = receipt
+        .get("safe_diagnostics")
+        .and_then(Value::as_array)
+        .map(|diagnostics| {
+            diagnostics
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     let requirements = passive_capture_requirements_for_lane(lane);
     let coverage_ok = captures
         .map(|captures| {
@@ -7062,12 +7072,14 @@ fn verify_parser_validation_gate(lane: &Path) -> BundleGateCheck {
             ),
         )
     } else {
-        BundleGateCheck::fail(
-            "parser_fixture_validation",
-            format!(
-                "success={success}, command_ok={command_ok}, no_out_of_scope={no_out_of_scope}, no_hid_device_opened={no_hid_device_opened}, required_capture_count={required_capture_count}, validated_capture_count={validated_capture_count}, total_reports={total_reports}, parsed_reports={parsed_reports}, rejected_reports={rejected_reports}, coverage_ok={coverage_ok}"
-            ),
-        )
+        let mut details = format!(
+            "success={success}, command_ok={command_ok}, no_out_of_scope={no_out_of_scope}, no_hid_device_opened={no_hid_device_opened}, required_capture_count={required_capture_count}, validated_capture_count={validated_capture_count}, total_reports={total_reports}, parsed_reports={parsed_reports}, rejected_reports={rejected_reports}, coverage_ok={coverage_ok}"
+        );
+        if !safe_diagnostics.is_empty() {
+            details.push_str(", safe_diagnostics=");
+            details.push_str(&format!("{safe_diagnostics:?}"));
+        }
+        BundleGateCheck::fail("parser_fixture_validation", details)
     }
 }
 
@@ -24303,6 +24315,49 @@ mod tests {
                 && diagnostic.contains("do not recapture blindly")),
             "expected validate-captures to include analyzer diagnostic, got {:?}",
             receipt.safe_diagnostics
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_parser_validation_gate_includes_safe_diagnostics() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        write_text_file(
+            &dir.path().join("captures/r5-throttle-only-sweep.jsonl"),
+            &format!(
+                "{}\n{}",
+                capture_line(
+                    product_ids::R5_V1,
+                    &live_r5_v1_trailer_report_hex([0x00, 0x00, 0x00, 0x00])
+                ),
+                capture_line(
+                    product_ids::R5_V1,
+                    &live_r5_v1_trailer_report_hex([0xFF, 0xAA, 0x55, 0x40])
+                )
+            ),
+        )?;
+        let validation = validate_lane_captures(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("parser-fixture-validation.json"),
+            &serde_json::to_value(validation)?,
+        )?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
+        let gate = receipt
+            .gates
+            .iter()
+            .find(|gate| gate.name == "parser_fixture_validation")
+            .ok_or("missing parser fixture validation gate")?;
+
+        assert!(!receipt.success);
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details.contains("safe_diagnostics=")
+                && gate.details.contains("only idle/trailer bytes moved")
+                && gate.details.contains("do not recapture blindly"),
+            "expected parser validation gate to include analyzer diagnostic, got {}",
+            gate.details
         );
         Ok(())
     }
