@@ -3883,6 +3883,7 @@ fn verify_bundle_dir_with_support_validation(
     );
     gates.push(verify_moza_r5_observed_gate(lane));
     gates.push(verify_moza_topology_observed_gate(lane));
+    gates.push(verify_topology_required_evidence_supported_gate(lane));
     gates.push(verify_descriptor_metadata_gate(lane));
     gates.push(verify_passive_receipts_success_gate(lane));
     gates.push(verify_passive_no_writes_gate(lane));
@@ -7074,6 +7075,67 @@ fn manifest_topology_required_capture_paths(manifest: &Value) -> Option<BTreeSet
     }
 
     if paths.is_empty() { None } else { Some(paths) }
+}
+
+fn verify_topology_required_evidence_supported_gate(lane: &Path) -> BundleGateCheck {
+    let manifest = match read_json_value(lane, "manifest.json") {
+        Ok(value) => value,
+        Err(e) => {
+            return BundleGateCheck::fail("topology_required_evidence_supported", e.to_string());
+        }
+    };
+    let unsupported = unsupported_required_topology_evidence(&manifest);
+
+    if unsupported.is_empty() {
+        BundleGateCheck::pass(
+            "topology_required_evidence_supported",
+            "every required topology evidence capture is covered by passive verifier requirements"
+                .to_string(),
+        )
+    } else {
+        BundleGateCheck::fail(
+            "topology_required_evidence_supported",
+            format!(
+                "required topology evidence is declared but not covered by passive verifier requirements: {}; add a parser/fixture requirement for that role before it can satisfy passive verification",
+                unsupported.join("; ")
+            ),
+        )
+    }
+}
+
+fn unsupported_required_topology_evidence(manifest: &Value) -> Vec<String> {
+    let known_paths = passive_capture_requirements()
+        .iter()
+        .map(|requirement| requirement.relative_path)
+        .collect::<BTreeSet<_>>();
+    let Some(controls) = manifest
+        .get("topology")
+        .and_then(|topology| topology.get("logical_controls"))
+        .and_then(Value::as_object)
+    else {
+        return Vec::new();
+    };
+
+    controls
+        .iter()
+        .filter_map(|(name, control)| {
+            let required = json_bool(control, "required").unwrap_or(true);
+            if !required {
+                return None;
+            }
+            let evidence_capture = json_string(control, "evidence_capture")?;
+            if known_paths.contains(evidence_capture) {
+                return None;
+            }
+
+            let role = json_string(control, "role").unwrap_or("missing");
+            let connection = json_string(control, "connection").unwrap_or("missing");
+            let source_endpoint = json_string(control, "source_endpoint").unwrap_or("missing");
+            Some(format!(
+                "{name}: role={role}, connection={connection}, source_endpoint={source_endpoint}, evidence_capture={evidence_capture}"
+            ))
+        })
+        .collect()
 }
 
 fn axis_has_variation(ranges: &BTreeMap<String, AxisRange>, axis: &str) -> bool {
@@ -23668,6 +23730,77 @@ mod tests {
         assert_eq!(gate.status, "pass", "{}", gate.details);
         assert!(
             gate.details.contains("external-pedals:0x1234:0xABCD"),
+            "{}",
+            gate.details
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_passive_rejects_required_topology_evidence_without_verifier_coverage()
+    -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        replace_observation_receipt_devices(dir.path(), &[sample_trusted_r5_json_device()])?;
+        set_required_hub_controls(
+            dir.path(),
+            &[(
+                "steering",
+                "steering",
+                None,
+                "captures/r5-steering-sweep.jsonl",
+            )],
+        )?;
+        let external_pedals = sample_mixed_vendor_pedals_json_device();
+        add_topology_endpoint(
+            dir.path(),
+            "external-pedals",
+            "standalone_pedals",
+            "0x1234",
+            "0xABCD",
+            false,
+        )?;
+        add_topology_control(
+            dir.path(),
+            "external_throttle",
+            "throttle",
+            "external-pedals",
+            "cross_device",
+            "captures/external-pedals.jsonl",
+        )?;
+        append_device_to_observation_receipts(dir.path(), &external_pedals)?;
+        remove_optional_capture_files(
+            dir.path(),
+            &[
+                "captures/r5-throttle-only-sweep.jsonl",
+                "captures/r5-brake-only-sweep.jsonl",
+                "captures/r5-clutch-only-sweep.jsonl",
+                "captures/r5-handbrake-only-sweep.jsonl",
+                "captures/ks-controls.jsonl",
+                "captures/es-controls.jsonl",
+            ],
+        )?;
+        refresh_passive_parser_receipts(dir.path())?;
+        let manifest = read_json_path(&dir.path().join("manifest.json"))?;
+        let schema_errors = manifest_schema_validation_errors(&manifest);
+        assert!(schema_errors.is_empty(), "{schema_errors:?}");
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
+
+        assert!(
+            !receipt.success,
+            "{}",
+            serde_json::to_string_pretty(&receipt)?
+        );
+        let gate = receipt
+            .gates
+            .iter()
+            .find(|gate| gate.name == "topology_required_evidence_supported")
+            .ok_or("expected topology_required_evidence_supported gate")?;
+        assert_eq!(gate.status, "fail", "{}", gate.details);
+        assert!(
+            gate.details.contains("external_throttle")
+                && gate.details.contains("captures/external-pedals.jsonl"),
             "{}",
             gate.details
         );
