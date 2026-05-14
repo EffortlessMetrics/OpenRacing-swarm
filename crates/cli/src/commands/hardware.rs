@@ -39,14 +39,16 @@ fn build_doctor_receipt() -> HardwareDoctorReceipt {
     };
     let hid = inspect_hid(&registry);
     let vendor_apps = detect_vendor_apps();
+    let windows_pnp = inspect_windows_pnp();
 
-    build_doctor_receipt_from_checks(tools, hid, vendor_apps)
+    build_doctor_receipt_from_checks(tools, hid, vendor_apps, windows_pnp)
 }
 
 fn build_doctor_receipt_from_checks(
     tools: ToolChecks,
     hid: HidChecks,
     vendor_apps: VendorAppChecks,
+    windows_pnp: WindowsPnpChecks,
 ) -> HardwareDoctorReceipt {
     let warnings = doctor_warnings(&tools, &hid);
 
@@ -68,6 +70,7 @@ fn build_doctor_receipt_from_checks(
         },
         tools,
         hid,
+        windows_pnp,
         vendor_apps,
         warnings,
         notes: vec![
@@ -76,6 +79,7 @@ fn build_doctor_receipt_from_checks(
                 .to_string(),
             "virtual or synthetic evidence must not satisfy real hardware receipt gates"
                 .to_string(),
+            "Windows PnP inspection records redacted interface topology only; it does not open or configure serial devices".to_string(),
         ],
     }
 }
@@ -174,6 +178,163 @@ fn detect_vendor_apps() -> VendorAppChecks {
             error: Some("process scan is currently implemented only on Windows".to_string()),
         }
     }
+}
+
+fn inspect_windows_pnp() -> WindowsPnpChecks {
+    if !cfg!(windows) {
+        return WindowsPnpChecks {
+            scan_attempted: false,
+            tool: "Get-PnpDevice",
+            moza_vid_visible: None,
+            hid_interface_count: 0,
+            serial_interface_count: 0,
+            devices: Vec::new(),
+            error: Some("PnP inspection is currently implemented only on Windows".to_string()),
+        };
+    }
+
+    let script = "Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -like '*VID_346E*' } | Select-Object Status,Class,FriendlyName,InstanceId | ConvertTo-Json -Compress";
+    match Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let mut receipt = windows_pnp_checks_from_json(&stdout);
+            receipt.scan_attempted = true;
+            receipt
+        }
+        Ok(output) => WindowsPnpChecks {
+            scan_attempted: true,
+            tool: "Get-PnpDevice",
+            moza_vid_visible: None,
+            hid_interface_count: 0,
+            serial_interface_count: 0,
+            devices: Vec::new(),
+            error: Some(format!(
+                "Get-PnpDevice exited with status {}",
+                output.status
+            )),
+        },
+        Err(error) => WindowsPnpChecks {
+            scan_attempted: true,
+            tool: "Get-PnpDevice",
+            moza_vid_visible: None,
+            hid_interface_count: 0,
+            serial_interface_count: 0,
+            devices: Vec::new(),
+            error: Some(error.to_string()),
+        },
+    }
+}
+
+fn windows_pnp_checks_from_json(text: &str) -> WindowsPnpChecks {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return WindowsPnpChecks {
+            scan_attempted: true,
+            tool: "Get-PnpDevice",
+            moza_vid_visible: Some(false),
+            hid_interface_count: 0,
+            serial_interface_count: 0,
+            devices: Vec::new(),
+            error: None,
+        };
+    }
+
+    let value = match serde_json::from_str::<serde_json::Value>(trimmed) {
+        Ok(value) => value,
+        Err(error) => {
+            return WindowsPnpChecks {
+                scan_attempted: true,
+                tool: "Get-PnpDevice",
+                moza_vid_visible: None,
+                hid_interface_count: 0,
+                serial_interface_count: 0,
+                devices: Vec::new(),
+                error: Some(format!("failed to parse Get-PnpDevice JSON: {error}")),
+            };
+        }
+    };
+
+    let devices = match value {
+        serde_json::Value::Array(values) => values
+            .iter()
+            .filter_map(windows_pnp_device_from_value)
+            .collect::<Vec<_>>(),
+        other => windows_pnp_device_from_value(&other).into_iter().collect(),
+    };
+    let hid_interface_count = devices
+        .iter()
+        .filter(|device| device.class_name.as_deref() == Some("HIDClass"))
+        .count();
+    let serial_interface_count = devices
+        .iter()
+        .filter(|device| {
+            device.class_name.as_deref() == Some("Ports")
+                || device
+                    .friendly_name
+                    .as_deref()
+                    .is_some_and(|name| name.to_ascii_lowercase().contains("serial"))
+        })
+        .count();
+    let moza_vid_visible = Some(
+        devices
+            .iter()
+            .any(|device| device.vendor_id.as_deref() == Some("0x346E")),
+    );
+
+    WindowsPnpChecks {
+        scan_attempted: true,
+        tool: "Get-PnpDevice",
+        moza_vid_visible,
+        hid_interface_count,
+        serial_interface_count,
+        devices,
+        error: None,
+    }
+}
+
+fn windows_pnp_device_from_value(value: &serde_json::Value) -> Option<WindowsPnpDevice> {
+    let object = value.as_object()?;
+    let instance_id = object
+        .get("InstanceId")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    Some(WindowsPnpDevice {
+        status: object
+            .get("Status")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+        class_name: object
+            .get("Class")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+        friendly_name: object
+            .get("FriendlyName")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+        vendor_id: extract_instance_hex(instance_id, "VID_"),
+        product_id: extract_instance_hex(instance_id, "PID_"),
+        interface_number: extract_interface_number(instance_id),
+        instance_id_present: !instance_id.is_empty(),
+    })
+}
+
+fn extract_instance_hex(instance_id: &str, marker: &str) -> Option<String> {
+    let start = instance_id.find(marker)? + marker.len();
+    let hex = instance_id.get(start..start + 4)?;
+    if hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        Some(format!("0x{}", hex.to_ascii_uppercase()))
+    } else {
+        None
+    }
+}
+
+fn extract_interface_number(instance_id: &str) -> Option<i32> {
+    let start = instance_id.find("MI_")? + 3;
+    let hex = instance_id.get(start..start + 2)?;
+    i32::from_str_radix(hex, 16).ok()
 }
 
 fn detect_vendor_apps_windows() -> VendorAppChecks {
@@ -310,6 +471,13 @@ fn print_doctor_receipt(
         "Moza VID 0x346E visible: {}",
         receipt.hid.moza_vid_visible
     ))?;
+    write_stdout_line(&format!(
+        "Windows PnP Moza devices: scanned={} visible={} hid_interfaces={} serial_interfaces={}",
+        receipt.windows_pnp.scan_attempted,
+        receipt.windows_pnp.moza_vid_visible.unwrap_or(false),
+        receipt.windows_pnp.hid_interface_count,
+        receipt.windows_pnp.serial_interface_count
+    ))?;
     if let Some(running) = receipt.vendor_apps.pit_house_running {
         write_stdout_line(&format!("Pit House likely running: {running}"))?;
     }
@@ -345,6 +513,7 @@ struct HardwareDoctorReceipt {
     os: OsInfo,
     tools: ToolChecks,
     hid: HidChecks,
+    windows_pnp: WindowsPnpChecks,
     vendor_apps: VendorAppChecks,
     warnings: Vec<String>,
     notes: Vec<String>,
@@ -398,6 +567,36 @@ struct HidChecks {
     moza_vid_visible: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct WindowsPnpChecks {
+    scan_attempted: bool,
+    tool: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    moza_vid_visible: Option<bool>,
+    hid_interface_count: usize,
+    serial_interface_count: usize,
+    devices: Vec<WindowsPnpDevice>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct WindowsPnpDevice {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status: Option<String>,
+    #[serde(rename = "class", skip_serializing_if = "Option::is_none")]
+    class_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    friendly_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vendor_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    product_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    interface_number: Option<i32>,
+    instance_id_present: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -466,6 +665,15 @@ mod tests {
                 matched_processes: Vec::new(),
                 error: Some("not scanned in unit test".to_string()),
             },
+            WindowsPnpChecks {
+                scan_attempted: true,
+                tool: "Get-PnpDevice",
+                moza_vid_visible: Some(false),
+                hid_interface_count: 0,
+                serial_interface_count: 0,
+                devices: Vec::new(),
+                error: None,
+            },
         )
     }
 
@@ -498,6 +706,72 @@ mod tests {
         assert!(receipt.no_feature_reports);
         assert!(receipt.no_serial_config_commands);
         assert!(receipt.no_firmware_or_dfu_commands);
+    }
+
+    #[test]
+    fn windows_pnp_parser_extracts_moza_composite_interfaces() -> TestResult {
+        let text = r#"[
+            {
+                "Status": "OK",
+                "Class": "HIDClass",
+                "FriendlyName": "HID-compliant game controller",
+                "InstanceId": "HID\\VID_346E&PID_0004&MI_02\\8&6C29B84&0&0000"
+            },
+            {
+                "Status": "OK",
+                "Class": "Ports",
+                "FriendlyName": "USB Serial Device (COM4)",
+                "InstanceId": "USB\\VID_346E&PID_0004&MI_00\\7&13CD44B0&0&0000"
+            },
+            {
+                "Status": "OK",
+                "Class": "USB",
+                "FriendlyName": "USB Composite Device",
+                "InstanceId": "USB\\VID_346E&PID_0004\\410051000251333135363734"
+            }
+        ]"#;
+
+        let checks = windows_pnp_checks_from_json(text);
+
+        assert_eq!(checks.moza_vid_visible, Some(true));
+        assert_eq!(checks.hid_interface_count, 1);
+        assert_eq!(checks.serial_interface_count, 1);
+        let serial = checks
+            .devices
+            .iter()
+            .find(|device| device.class_name.as_deref() == Some("Ports"))
+            .ok_or_else(|| io::Error::other("missing serial-class PnP device"))?;
+        assert_eq!(serial.vendor_id.as_deref(), Some("0x346E"));
+        assert_eq!(serial.product_id.as_deref(), Some("0x0004"));
+        assert_eq!(serial.interface_number, Some(0));
+
+        let json = serde_json::to_string(&checks)?;
+        assert!(!json.contains("InstanceId"));
+        assert!(!json.contains("410051000251333135363734"));
+        Ok(())
+    }
+
+    #[test]
+    fn windows_pnp_parser_accepts_single_device_json_object() -> TestResult {
+        let text = r#"{
+            "Status": "OK",
+            "Class": "HIDClass",
+            "FriendlyName": "USB Input Device",
+            "InstanceId": "USB\\VID_346E&PID_0004&MI_02\\7&13CD44B0&0&0002"
+        }"#;
+
+        let checks = windows_pnp_checks_from_json(text);
+
+        assert_eq!(checks.moza_vid_visible, Some(true));
+        assert_eq!(checks.hid_interface_count, 1);
+        assert_eq!(checks.serial_interface_count, 0);
+        assert_eq!(checks.devices.len(), 1);
+        let device = checks
+            .devices
+            .first()
+            .ok_or_else(|| io::Error::other("missing PnP device"))?;
+        assert_eq!(device.interface_number, Some(2));
+        Ok(())
     }
 
     #[test]
