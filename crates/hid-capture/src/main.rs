@@ -594,7 +594,8 @@ fn expected_input_report_lengths(vendor_id: u16, product_id: u16) -> Vec<usize> 
     }
 
     match product_id {
-        MOZA_R5_V1_PID | MOZA_R5_V2_PID => vec![7, 31],
+        MOZA_R5_V1_PID => vec![42],
+        MOZA_R5_V2_PID => vec![7, 31],
         MOZA_SRP_PID => vec![5],
         MOZA_HBP_PID => vec![2, 3, 4, 5],
         _ => Vec::new(),
@@ -1543,6 +1544,10 @@ mod tests {
 
     #[test]
     fn given_moza_r5_when_expected_metadata_requested_then_lane_reports_are_returned() {
+        assert_eq!(
+            expected_input_report_lengths(MOZA_VENDOR_ID, MOZA_R5_V1_PID),
+            vec![42]
+        );
         assert_eq!(
             expected_input_report_lengths(MOZA_VENDOR_ID, MOZA_R5_V2_PID),
             vec![7, 31]
