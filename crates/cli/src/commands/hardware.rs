@@ -1462,6 +1462,7 @@ fn build_doctor_receipt() -> HardwareDoctorReceipt {
     let tools = ToolChecks {
         hid_capture_on_path: executable_on_path("hid-capture"),
         wheelctl_self_check: true,
+        usbpcap_descriptor_capture: inspect_usbpcap_descriptor_capture_tools(),
     };
     let hid = inspect_hid(&registry);
     let vendor_apps = detect_vendor_apps();
@@ -1583,6 +1584,12 @@ fn doctor_warnings(tools: &ToolChecks, hid: &HidChecks) -> Vec<String> {
     if !tools.hid_capture_on_path {
         warnings.push("hid-capture was not found on PATH".to_string());
     }
+    if !tools
+        .usbpcap_descriptor_capture
+        .ready_for_usbpcap_descriptor_capture
+    {
+        warnings.push("USBPcap/Wireshark descriptor capture is not ready on this host".to_string());
+    }
     if !hid.api_available {
         warnings.push("HID API initialization failed".to_string());
     }
@@ -1591,6 +1598,109 @@ fn doctor_warnings(tools: &ToolChecks, hid: &HidChecks) -> Vec<String> {
     }
 
     warnings
+}
+
+fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks {
+    let Some(tshark_path) = find_tshark_path() else {
+        return UsbPcapDescriptorCaptureChecks {
+            tshark_present: false,
+            tshark_path: None,
+            interface_scan_attempted: false,
+            usbpcap_interfaces_present: false,
+            usbpcap_interface_count: 0,
+            usbpcap_interfaces: Vec::new(),
+            ready_for_usbpcap_descriptor_capture: false,
+            error: Some(
+                "tshark was not found; install Wireshark or set WIRESHARK_TSHARK".to_string(),
+            ),
+        };
+    };
+
+    let output = Command::new(&tshark_path).arg("-D").output();
+    let Ok(output) = output else {
+        return UsbPcapDescriptorCaptureChecks {
+            tshark_present: true,
+            tshark_path: Some(tshark_path.display().to_string()),
+            interface_scan_attempted: true,
+            usbpcap_interfaces_present: false,
+            usbpcap_interface_count: 0,
+            usbpcap_interfaces: Vec::new(),
+            ready_for_usbpcap_descriptor_capture: false,
+            error: Some("failed to run tshark -D".to_string()),
+        };
+    };
+
+    if !output.status.success() {
+        return UsbPcapDescriptorCaptureChecks {
+            tshark_present: true,
+            tshark_path: Some(tshark_path.display().to_string()),
+            interface_scan_attempted: true,
+            usbpcap_interfaces_present: false,
+            usbpcap_interface_count: 0,
+            usbpcap_interfaces: Vec::new(),
+            ready_for_usbpcap_descriptor_capture: false,
+            error: Some(format!(
+                "tshark -D failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )),
+        };
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let interfaces = usbpcap_interfaces_from_tshark_list(&stdout);
+    let ready_for_usbpcap_descriptor_capture = !interfaces.is_empty();
+    UsbPcapDescriptorCaptureChecks {
+        tshark_present: true,
+        tshark_path: Some(tshark_path.display().to_string()),
+        interface_scan_attempted: true,
+        usbpcap_interfaces_present: ready_for_usbpcap_descriptor_capture,
+        usbpcap_interface_count: interfaces.len(),
+        usbpcap_interfaces: interfaces,
+        ready_for_usbpcap_descriptor_capture,
+        error: None,
+    }
+}
+
+fn find_tshark_path() -> Option<PathBuf> {
+    if let Some(path) = env::var_os("WIRESHARK_TSHARK").map(PathBuf::from)
+        && path.is_file()
+    {
+        return Some(path);
+    }
+
+    if cfg!(windows) {
+        for path in [
+            PathBuf::from(r"C:\Program Files\Wireshark\tshark.exe"),
+            PathBuf::from(r"C:\Program Files (x86)\Wireshark\tshark.exe"),
+        ] {
+            if path.is_file() {
+                return Some(path);
+            }
+        }
+    }
+
+    executable_path_on_path("tshark")
+}
+
+fn executable_path_on_path(name: &str) -> Option<PathBuf> {
+    env::var_os("PATH").and_then(|paths| {
+        env::split_paths(&paths).find_map(|dir| {
+            executable_candidates(name).find_map(|candidate| {
+                let path = dir.join(candidate);
+                path.is_file().then_some(path)
+            })
+        })
+    })
+}
+
+fn usbpcap_interfaces_from_tshark_list(output: &str) -> Vec<String> {
+    output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .filter(|line| line.to_ascii_lowercase().contains("usbpcap"))
+        .map(str::to_string)
+        .collect()
 }
 
 fn detect_vendor_apps() -> VendorAppChecks {
@@ -2150,6 +2260,21 @@ impl RawDescriptorCaptureSupport {
 struct ToolChecks {
     hid_capture_on_path: bool,
     wheelctl_self_check: bool,
+    usbpcap_descriptor_capture: UsbPcapDescriptorCaptureChecks,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct UsbPcapDescriptorCaptureChecks {
+    tshark_present: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tshark_path: Option<String>,
+    interface_scan_attempted: bool,
+    usbpcap_interfaces_present: bool,
+    usbpcap_interface_count: usize,
+    usbpcap_interfaces: Vec<String>,
+    ready_for_usbpcap_descriptor_capture: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -2468,6 +2593,16 @@ mod tests {
             ToolChecks {
                 hid_capture_on_path: false,
                 wheelctl_self_check: true,
+                usbpcap_descriptor_capture: UsbPcapDescriptorCaptureChecks {
+                    tshark_present: true,
+                    tshark_path: Some("tshark".to_string()),
+                    interface_scan_attempted: true,
+                    usbpcap_interfaces_present: false,
+                    usbpcap_interface_count: 0,
+                    usbpcap_interfaces: Vec::new(),
+                    ready_for_usbpcap_descriptor_capture: false,
+                    error: None,
+                },
             },
             HidChecks {
                 api_available: true,
@@ -2525,6 +2660,40 @@ mod tests {
         assert!(receipt.no_feature_reports);
         assert!(receipt.no_serial_config_commands);
         assert!(receipt.no_firmware_or_dfu_commands);
+    }
+
+    #[test]
+    fn tshark_interface_parser_detects_usbpcap_interfaces() {
+        let output =
+            "1. USBPcap1 (USBPcap1)\n2. \\Device\\NPF_Loopback (Loopback)\n3. USBPcap2 (USBPcap2)";
+
+        let interfaces = usbpcap_interfaces_from_tshark_list(output);
+
+        assert_eq!(
+            interfaces,
+            vec![
+                "1. USBPcap1 (USBPcap1)".to_string(),
+                "3. USBPcap2 (USBPcap2)".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn doctor_warns_when_usbpcap_descriptor_capture_is_unavailable() {
+        let receipt = sample_receipt();
+
+        assert!(
+            receipt
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("USBPcap/Wireshark descriptor capture"))
+        );
+        assert!(
+            !receipt
+                .tools
+                .usbpcap_descriptor_capture
+                .ready_for_usbpcap_descriptor_capture
+        );
     }
 
     #[test]

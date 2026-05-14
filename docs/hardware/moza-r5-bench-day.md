@@ -168,6 +168,15 @@ than one response matches the selected interface. In that case, narrow the
 capture or inspect the Wireshark packet list before importing anything into the
 lane.
 
+`wheelctl hardware doctor` also records whether this Windows host has `tshark`
+and USBPcap capture interfaces available under
+`tools.usbpcap_descriptor_capture`. If `tshark_present` is true but
+`usbpcap_interfaces_present` is false, Wireshark is installed but USBPcap capture
+support is not available to this host yet; use native Linux/sysfs, install
+USBPcap intentionally, or move the R5 to a machine that can produce the raw HID
+Report Descriptor response. Do not import Windows HidP KDR/preparsed data as a
+substitute.
+
 Use the selected R5 device only for the supplied hex:
 
 ```powershell
