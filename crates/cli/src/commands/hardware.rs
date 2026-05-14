@@ -627,6 +627,9 @@ impl HardwareLaneRoleOverrides {
         for artifact in role_artifacts.values() {
             validate_relative_artifact_path(artifact)?;
         }
+        for connection in role_connections.values() {
+            validate_connection_path(connection)?;
+        }
         Ok(Self {
             required_roles,
             optional_roles,
@@ -701,6 +704,18 @@ fn validate_relative_artifact_path(path: &str) -> Result<()> {
         anyhow::bail!("role artifact paths must stay within the lane directory");
     }
     Ok(())
+}
+
+fn validate_connection_path(connection: &str) -> Result<()> {
+    if matches!(
+        connection,
+        "wheelbase_hub" | "standalone_usb" | "cross_device" | "unknown"
+    ) {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "role connection '{connection}' must be one of wheelbase_hub, standalone_usb, cross_device, unknown"
+    )
 }
 
 fn lane_roles(
@@ -2508,6 +2523,21 @@ mod tests {
             unsafe_artifact
                 .to_string()
                 .contains("within the lane directory")
+        );
+
+        let invalid_connection = HardwareLaneRoleOverrides::from_cli(
+            &["ks_controls".to_string()],
+            &[],
+            &[],
+            &[],
+            &["ks_controls=wheelbase-hub".to_string()],
+        )
+        .err()
+        .ok_or_else(|| io::Error::other("expected invalid connection failure"))?;
+        assert!(
+            invalid_connection
+                .to_string()
+                .contains("must be one of wheelbase_hub")
         );
 
         let unknown_role = HardwareLaneRoleOverrides::from_cli(

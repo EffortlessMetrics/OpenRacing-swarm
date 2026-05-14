@@ -75,7 +75,8 @@ wheelctl hardware lane init `
 Role artifact paths must be relative to the lane directory and stay inside it.
 Metadata overrides for a new role require `--required-role` or
 `--optional-role`, so an accidental typo cannot silently add evidence
-requirements.
+requirements. Role connection overrides are limited to
+`wheelbase_hub`, `standalone_usb`, `cross_device`, or `unknown`.
 
 Inventory a scaffolded lane without validating hardware claims:
 
