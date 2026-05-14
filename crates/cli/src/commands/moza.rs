@@ -22684,6 +22684,72 @@ mod tests {
     }
 
     #[test]
+    fn verify_bundle_passive_allows_optional_absent_handbrake_without_placeholder_artifacts()
+    -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        replace_observation_receipt_devices(dir.path(), &[sample_trusted_r5_json_device()])?;
+        set_declared_hardware(dir.path(), &[], &["SR-P"], None)?;
+        set_required_hub_controls(
+            dir.path(),
+            &[
+                (
+                    "steering",
+                    "steering",
+                    None,
+                    "captures/r5-steering-sweep.jsonl",
+                ),
+                (
+                    "throttle",
+                    "throttle",
+                    None,
+                    "captures/r5-throttle-only-sweep.jsonl",
+                ),
+                ("brake", "brake", None, "captures/r5-brake-only-sweep.jsonl"),
+            ],
+        )?;
+        let mut manifest = read_json_path(&dir.path().join("manifest.json"))?;
+        manifest["topology"]["logical_controls"]["handbrake"] = serde_json::json!({
+            "role": "handbrake",
+            "source_endpoint": "moza-r5-if2",
+            "connection": "wheelbase_hub",
+            "required": false,
+            "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
+            "semantic_status": "deferred"
+        });
+        write_test_json_file(&dir.path().join("manifest.json"), &manifest)?;
+        remove_optional_capture_files(
+            dir.path(),
+            &[
+                "captures/r5-clutch-only-sweep.jsonl",
+                "captures/r5-handbrake-only-sweep.jsonl",
+                "captures/ks-controls.jsonl",
+                "captures/es-controls.jsonl",
+            ],
+        )?;
+        refresh_passive_parser_receipts(dir.path())?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
+
+        assert!(
+            receipt.success,
+            "{}",
+            serde_json::to_string_pretty(&receipt)?
+        );
+        assert!(
+            passive_capture_requirements_for_lane(dir.path())
+                .iter()
+                .all(|requirement| requirement.relative_path
+                    != "captures/r5-handbrake-only-sweep.jsonl"
+                    && requirement.relative_path != "captures/hbp-standalone-sweep.jsonl")
+        );
+        assert!(receipt.artifacts.iter().all(|artifact| artifact.path
+            != "captures/r5-handbrake-only-sweep.jsonl"
+            && artifact.path != "captures/hbp-standalone-sweep.jsonl"));
+        Ok(())
+    }
+
+    #[test]
     fn verify_bundle_passive_accepts_r5_ks_only_topology() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_minimal_passive_bundle(dir.path())?;
