@@ -107,7 +107,9 @@ presence, the next blocked stage, and safe next commands for observe-only or
 passive evidence. Passive capture commands are listed only for required role
 captures that are still missing from the lane and have a declared endpoint.
 Missing required captures with placeholder endpoints receive a
-`hardware lane set-role-endpoint` guidance command first.
+`hardware lane set-role-endpoint` guidance command first. Required roles with
+placeholder endpoints remain passive-stage blockers even if their capture file
+already exists, because artifact presence is not proof of source identity.
 Descriptor import commands use the declared wheelbase-hub endpoint from the
 lane roles rather than a fixed R5 PID. It deliberately keeps
 `evidence_claims_validated`,

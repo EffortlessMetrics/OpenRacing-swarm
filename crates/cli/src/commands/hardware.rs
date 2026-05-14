@@ -341,12 +341,18 @@ fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusR
             }
         })
         .collect();
-    let blocking_items = lane_status_blocking_items(&stage_status, scaffold_complete);
-    let next_blocked_stage = stage_status
+    let missing_role_endpoints =
+        required_roles_with_placeholder_endpoints(&manifest.declared_logical_roles);
+    let blocking_items =
+        lane_status_blocking_items(&stage_status, scaffold_complete, &missing_role_endpoints);
+    let first_missing_artifact_stage = stage_status
         .iter()
         .find(|stage| stage.artifacts_missing > 0)
-        .map(|stage| stage.id)
-        .unwrap_or("verifier_receipts");
+        .map(|stage| (stage.id, stage.order));
+    let next_blocked_stage = lane_status_next_blocked_stage(
+        first_missing_artifact_stage,
+        !missing_role_endpoints.is_empty(),
+    );
     let safe_next_commands = lane_status_safe_next_commands(
         lane,
         adapter.id,
@@ -573,6 +579,7 @@ fn lane_artifact_status(lane: &Path, kind: &str, rel: &str) -> HardwareLaneArtif
 fn lane_status_blocking_items(
     stage_status: &[HardwareLaneStageStatus],
     scaffold_complete: bool,
+    missing_role_endpoints: &[String],
 ) -> Vec<String> {
     let mut items = Vec::new();
     if !scaffold_complete {
@@ -584,8 +591,40 @@ fn lane_status_blocking_items(
     {
         items.push(format!("{}:missing_artifacts", stage.id));
     }
+    if !missing_role_endpoints.is_empty() {
+        items.push("passive:missing_role_endpoints".to_string());
+        items.extend(
+            missing_role_endpoints
+                .iter()
+                .map(|role| format!("role_endpoint:{role}:missing")),
+        );
+    }
     items.push("verifier_receipts_not_evaluated_by_status".to_string());
     items
+}
+
+fn required_roles_with_placeholder_endpoints(
+    roles: &[StoredHardwareLaneLogicalRole],
+) -> Vec<String> {
+    roles
+        .iter()
+        .filter(|role| role.required && !has_declared_endpoint(&role.expected_endpoint))
+        .map(|role| role.id.clone())
+        .collect()
+}
+
+fn lane_status_next_blocked_stage(
+    first_missing_artifact_stage: Option<(&'static str, u8)>,
+    missing_required_role_endpoint: bool,
+) -> &'static str {
+    let passive_order = 1;
+    match first_missing_artifact_stage {
+        Some((stage, order)) if order <= passive_order => stage,
+        Some(_) if missing_required_role_endpoint => "passive",
+        Some((stage, _)) => stage,
+        None if missing_required_role_endpoint => "passive",
+        None => "verifier_receipts",
+    }
 }
 
 fn lane_status_safe_next_commands(
@@ -657,9 +696,7 @@ fn lane_status_safe_next_commands(
                 roles
                     .iter()
                     .filter(|role| {
-                        role.required
-                            && !lane.join(&role.evidence_artifact).exists()
-                            && !has_declared_endpoint(&role.expected_endpoint)
+                        role.required && !has_declared_endpoint(&role.expected_endpoint)
                     })
                     .map(|role| {
                         format!(
@@ -3045,6 +3082,16 @@ mod tests {
                     && role.expected_endpoint == "declare-observed-endpoint"
                     && !role.artifact_present)
         );
+        assert!(
+            status
+                .blocking_items
+                .contains(&"passive:missing_role_endpoints".to_string())
+        );
+        assert!(
+            status
+                .blocking_items
+                .contains(&"role_endpoint:button_box:missing".to_string())
+        );
         assert!(!joined.contains("declare-observed-endpoint"), "{joined}");
         assert!(
             joined.contains("wheelctl hardware lane set-role-endpoint"),
@@ -3052,6 +3099,75 @@ mod tests {
         );
         assert!(joined.contains("--role button_box"), "{joined}");
         assert!(joined.contains("wheelctl moza capture-input --device hid-0x346E-0x0004"));
+        Ok(())
+    }
+
+    #[test]
+    fn lane_status_blocks_passive_when_present_capture_has_placeholder_endpoint() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("moza-r5-lane");
+        let role_overrides = HardwareLaneRoleOverrides::from_cli(
+            &["button_box".to_string()],
+            &[],
+            &["button_box=captures/button-box.jsonl".to_string()],
+            &[],
+            &["button_box=wheelbase_hub".to_string()],
+        )?;
+        let _receipt = scaffold_hardware_lane_with_overrides(
+            &lane,
+            "moza-r5",
+            "wheelbase-hub",
+            "Steven",
+            &role_overrides,
+            false,
+            None,
+        )?;
+        for artifact in [
+            "device-list.json",
+            "hardware-doctor.json",
+            "hid-list.json",
+            "moza-probe.json",
+            "lane-capture-analysis.json",
+            "parser-fixture-validation.json",
+        ] {
+            fs::write(lane.join(artifact), "{}\n")?;
+        }
+        for role in [
+            "r5-steering-sweep.jsonl",
+            "r5-throttle-only-sweep.jsonl",
+            "r5-brake-only-sweep.jsonl",
+            "declared-rim-controls.jsonl",
+            "button-box.jsonl",
+        ] {
+            fs::write(lane.join("captures").join(role), "{}\n")?;
+        }
+
+        let status = build_hardware_lane_status_receipt(&lane)?;
+        let joined = status.safe_next_commands.join("\n");
+
+        assert_eq!(status.next_blocked_stage, "passive");
+        assert!(
+            status
+                .blocking_items
+                .contains(&"passive:missing_role_endpoints".to_string())
+        );
+        assert!(
+            status
+                .blocking_items
+                .contains(&"role_endpoint:button_box:missing".to_string())
+        );
+        assert!(
+            joined.contains("wheelctl hardware lane set-role-endpoint"),
+            "{joined}"
+        );
+        assert!(joined.contains("--role button_box"), "{joined}");
+        assert!(
+            !joined.contains("captures/button-box.jsonl"),
+            "capture should not be suggested again when only the endpoint is missing: {joined}"
+        );
+        assert!(!status.evidence_claims_validated);
+        assert!(!status.ready_for_zero_torque);
+        assert!(!status.ready_for_ffb);
         Ok(())
     }
 
