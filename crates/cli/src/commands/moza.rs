@@ -3725,6 +3725,7 @@ fn verify_bundle_dir_with_support_validation(
     gates.push(verify_moza_r5_observed_gate(lane));
     gates.push(verify_moza_topology_observed_gate(lane));
     gates.push(verify_descriptor_metadata_gate(lane));
+    gates.push(verify_passive_receipts_success_gate(lane));
     gates.push(verify_passive_no_writes_gate(lane));
     gates.push(verify_passive_capture_parse_gate(lane));
     gates.push(verify_parser_validation_gate(lane));
@@ -6168,7 +6169,6 @@ fn read_stored_verification_receipt(
 fn verify_passive_no_writes_gate(lane: &Path) -> BundleGateCheck {
     let mut missing = Vec::new();
     let mut wrong_command = Vec::new();
-    let mut unsuccessful = Vec::new();
     let mut unsafe_receipts = Vec::new();
     let mut opened_hid = Vec::new();
     let mut out_of_scope_receipts = Vec::new();
@@ -6182,9 +6182,6 @@ fn verify_passive_no_writes_gate(lane: &Path) -> BundleGateCheck {
                     .any(|allowed| command == Some(*allowed))
                 {
                     wrong_command.push(requirement.path.to_string());
-                }
-                if json_bool(&value, "success") != Some(true) {
-                    unsuccessful.push(requirement.path.to_string());
                 }
                 if requirement.no_hid_device_opened
                     && json_bool(&value, "no_hid_device_opened") != Some(true)
@@ -6204,20 +6201,57 @@ fn verify_passive_no_writes_gate(lane: &Path) -> BundleGateCheck {
 
     if missing.is_empty()
         && wrong_command.is_empty()
-        && unsuccessful.is_empty()
         && unsafe_receipts.is_empty()
         && opened_hid.is_empty()
         && out_of_scope_receipts.is_empty()
     {
         BundleGateCheck::pass(
             "passive_receipts_no_ffb_writes",
-            "passive receipts come from expected successful observe-only commands, declare no_ffb_writes=true, keep pure observation receipts no_hid_device_opened=true, and declare no serial/firmware/DFU commands".to_string(),
+            "passive receipts come from expected observe-only commands, declare no_ffb_writes=true, keep pure observation receipts no_hid_device_opened=true, and declare no serial/firmware/DFU commands".to_string(),
         )
     } else {
         BundleGateCheck::fail(
             "passive_receipts_no_ffb_writes",
             format!(
-                "missing={missing:?}, wrong_command={wrong_command:?}, unsuccessful={unsuccessful:?}, not_no_ffb_writes={unsafe_receipts:?}, opened_hid={opened_hid:?}, missing_no_serial_firmware_dfu={out_of_scope_receipts:?}"
+                "missing={missing:?}, wrong_command={wrong_command:?}, not_no_ffb_writes={unsafe_receipts:?}, opened_hid={opened_hid:?}, missing_no_serial_firmware_dfu={out_of_scope_receipts:?}"
+            ),
+        )
+    }
+}
+
+fn verify_passive_receipts_success_gate(lane: &Path) -> BundleGateCheck {
+    let mut missing = Vec::new();
+    let mut wrong_command = Vec::new();
+    let mut unsuccessful = Vec::new();
+    for requirement in passive_receipt_requirements() {
+        match read_json_value(lane, requirement.path) {
+            Ok(value) => {
+                let command = json_string(&value, "command");
+                if !requirement
+                    .allowed_commands
+                    .iter()
+                    .any(|allowed| command == Some(*allowed))
+                {
+                    wrong_command.push(requirement.path.to_string());
+                }
+                if json_bool(&value, "success") != Some(true) {
+                    unsuccessful.push(requirement.path.to_string());
+                }
+            }
+            Err(_) => missing.push(requirement.path.to_string()),
+        }
+    }
+
+    if missing.is_empty() && wrong_command.is_empty() && unsuccessful.is_empty() {
+        BundleGateCheck::pass(
+            "passive_receipts_successful",
+            "passive receipts come from expected successful observe-only commands".to_string(),
+        )
+    } else {
+        BundleGateCheck::fail(
+            "passive_receipts_successful",
+            format!(
+                "missing={missing:?}, wrong_command={wrong_command:?}, unsuccessful={unsuccessful:?}"
             ),
         )
     }
@@ -22660,14 +22694,30 @@ mod tests {
         receipt["success"] = serde_json::json!(false);
         write_test_json_file(&dir.path().join("hid-list.json"), &receipt)?;
 
-        let gate = verify_passive_no_writes_gate(dir.path());
+        let gate = verify_passive_receipts_success_gate(dir.path());
 
         assert_eq!(gate.status, "fail");
+        assert_eq!(gate.name, "passive_receipts_successful");
         assert!(
             gate.details.contains("unsuccessful"),
             "expected unsuccessful receipt failure, got {}",
             gate.details
         );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_passive_no_writes_accepts_unsuccessful_safe_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        let mut receipt = read_json_path(&dir.path().join("parser-fixture-validation.json"))?;
+        receipt["success"] = serde_json::json!(false);
+        write_test_json_file(&dir.path().join("parser-fixture-validation.json"), &receipt)?;
+
+        let gate = verify_passive_no_writes_gate(dir.path());
+
+        assert_eq!(gate.status, "pass", "{}", gate.details);
+        assert_eq!(gate.name, "passive_receipts_no_ffb_writes");
         Ok(())
     }
 
