@@ -375,6 +375,16 @@ pub enum HardwareLaneCommands {
         #[arg(long)]
         json_out: Option<std::path::PathBuf>,
     },
+
+    /// Inventory a scaffolded hardware lane without validating hardware claims
+    Status {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-13
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Write the lane-status receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]

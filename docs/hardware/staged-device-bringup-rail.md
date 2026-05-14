@@ -51,6 +51,20 @@ The scaffold creates a lane manifest, capture plan, artifact checklist, stage
 gates, and a lane-init receipt. It creates planning files only; it does not
 create fake pass/fail receipts and it does not open HID devices.
 
+Inventory a scaffolded lane without validating hardware claims:
+
+```powershell
+wheelctl hardware lane status `
+  --lane ci\hardware\moza-r5\2026-05-13 `
+  --json-out ci\hardware\moza-r5\2026-05-13\hardware-lane-status.json `
+  --json
+```
+
+The status receipt reports scaffold files, planned role evidence, stage artifact
+presence, and the next blocked stage. It deliberately keeps
+`evidence_claims_validated`, `ready_for_zero_torque`, and `ready_for_ffb` false;
+family verifiers remain authoritative for actual hardware claims.
+
 ## Adapter Contract
 
 Each adapter declares:

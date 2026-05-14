@@ -15,6 +15,7 @@ use anyhow::{Context, Result};
 use chrono::{SecondsFormat, Utc};
 use hidapi::{DeviceInfo, HidApi};
 use openracing_hardware_core::{DeviceCapabilityRegistry, DeviceFamily};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::{HardwareCommands, HardwareLaneCommands};
@@ -50,6 +51,9 @@ async fn execute_lane(cmd: &HardwareLaneCommands, json: bool) -> Result<()> {
             )
             .await
         }
+        HardwareLaneCommands::Status { lane, json_out } => {
+            lane_status(json, lane, json_out.as_deref()).await
+        }
     }
 }
 
@@ -64,6 +68,12 @@ async fn init_lane(
 ) -> Result<()> {
     let receipt = scaffold_hardware_lane(lane, family, topology, operator, overwrite, json_out)?;
     print_lane_init_receipt(json, &receipt)
+}
+
+async fn lane_status(json: bool, lane: &Path, json_out: Option<&Path>) -> Result<()> {
+    let receipt = build_hardware_lane_status_receipt(lane)?;
+    write_json_receipt(json_out, &receipt)?;
+    print_lane_status_receipt(json, json_out, &receipt)
 }
 
 async fn bringup_rail(json: bool, family: &str, json_out: Option<&Path>) -> Result<()> {
@@ -227,6 +237,192 @@ fn scaffold_hardware_lane(
     };
     write_json_file(&receipt_path, &receipt)?;
     Ok(receipt)
+}
+
+fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusReceipt> {
+    let manifest_path = lane.join("hardware-lane-manifest.json");
+    let manifest: StoredHardwareLaneScaffoldManifest = read_json_file(&manifest_path)?;
+    let adapter = hardware_family_adapter_contract(&manifest.family)
+        .with_context(|| format!("unknown hardware bring-up family '{}'", manifest.family))?;
+    let scaffold_files = hardware_lane_scaffold_files(lane);
+    let scaffold_complete = scaffold_files.iter().all(|artifact| artifact.present);
+    let role_evidence: Vec<_> = manifest
+        .declared_logical_roles
+        .iter()
+        .map(|role| HardwareLaneRoleEvidenceStatus {
+            id: role.id.clone(),
+            required: role.required,
+            connection_path: role.connection_path.clone(),
+            expected_endpoint: role.expected_endpoint.clone(),
+            evidence_artifact: role.evidence_artifact.clone(),
+            artifact_present: lane.join(&role.evidence_artifact).exists(),
+            semantic_status: role.semantic_status.clone(),
+            validation_status: "not_validated_by_status".to_string(),
+        })
+        .collect();
+    let stage_status: Vec<_> = hardware_bringup_stages()
+        .into_iter()
+        .map(|stage| {
+            let artifacts = stage_expected_artifacts(lane, &stage, &manifest.declared_logical_roles);
+            let present = artifacts.iter().filter(|artifact| artifact.present).count();
+            let missing = artifacts.len().saturating_sub(present);
+            HardwareLaneStageStatus {
+                id: stage.id,
+                order: stage.order,
+                purpose: stage.purpose,
+                artifacts_present: present,
+                artifacts_missing: missing,
+                expected_artifacts: artifacts,
+                gate_status: "not_validated_by_status",
+                notes: vec![
+                    "status inventories artifact presence only; run the family verifier for evidence claims"
+                        .to_string(),
+                ],
+            }
+        })
+        .collect();
+    let blocking_items = lane_status_blocking_items(&stage_status, scaffold_complete);
+    let next_blocked_stage = stage_status
+        .iter()
+        .find(|stage| stage.artifacts_missing > 0)
+        .map(|stage| stage.id)
+        .unwrap_or("verifier_receipts");
+
+    Ok(HardwareLaneStatusReceipt {
+        success: true,
+        command: "wheelctl hardware lane status",
+        generated_at_utc: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        no_hid_device_opened: true,
+        no_ffb_writes: true,
+        no_output_reports: true,
+        no_feature_reports: true,
+        no_serial_config_commands: true,
+        no_firmware_or_dfu_commands: true,
+        lane: lane.display().to_string(),
+        family: adapter.id,
+        topology: manifest.topology,
+        completion_state: manifest.completion_state,
+        scaffold_complete,
+        evidence_claims_validated: false,
+        ready_for_zero_torque: false,
+        ready_for_ffb: false,
+        next_blocked_stage,
+        blocking_items,
+        scaffold_files,
+        role_evidence,
+        stages: stage_status,
+        notes: vec![
+            "lane status is read-only and validates no hardware claims".to_string(),
+            "artifact presence is not proof; verifier receipts remain authoritative".to_string(),
+            "ready_for_zero_torque and ready_for_ffb stay false in this inventory receipt"
+                .to_string(),
+        ],
+    })
+}
+
+fn hardware_lane_scaffold_files(lane: &Path) -> Vec<HardwareLaneArtifactStatus> {
+    [
+        ("manifest", "hardware-lane-manifest.json"),
+        ("stage_gates", "stage-gates.json"),
+        ("artifact_checklist", "artifact-checklist.md"),
+        ("capture_plan", "capture-plan.md"),
+        ("lane_init_receipt", "lane-init.json"),
+        ("captures_dir", "captures"),
+    ]
+    .into_iter()
+    .map(|(kind, rel)| lane_artifact_status(lane, kind, rel))
+    .collect()
+}
+
+fn stage_expected_artifacts(
+    lane: &Path,
+    stage: &HardwareBringupStage,
+    roles: &[StoredHardwareLaneLogicalRole],
+) -> Vec<HardwareLaneArtifactStatus> {
+    let mut artifacts = match stage.id {
+        "discovery" => vec![
+            lane_artifact_status(lane, "receipt", "device-list.json"),
+            lane_artifact_status(lane, "receipt", "hid-list.json"),
+            lane_artifact_status(lane, "receipt", "hardware-doctor.json"),
+            lane_artifact_status(lane, "receipt", "moza-probe.json"),
+        ],
+        "passive" => {
+            let mut artifacts = vec![
+                lane_artifact_status(lane, "receipt", "lane-capture-analysis.json"),
+                lane_artifact_status(lane, "receipt", "parser-fixture-validation.json"),
+            ];
+            artifacts.extend(
+                roles
+                    .iter()
+                    .filter(|role| role.required)
+                    .map(|role| lane_artifact_status(lane, "capture", &role.evidence_artifact)),
+            );
+            artifacts
+        }
+        "descriptor_trust" => vec![lane_artifact_status(lane, "receipt", "descriptor.json")],
+        "fixture_promotion" => {
+            vec![lane_artifact_status(
+                lane,
+                "receipt",
+                "fixture-promotion.json",
+            )]
+        }
+        "pre_output_readiness" => vec![
+            lane_artifact_status(lane, "receipt", "passive-verification.json"),
+            lane_artifact_status(lane, "receipt", "lane-audit-passive.json"),
+            lane_artifact_status(lane, "receipt", "pre-output-readiness.json"),
+        ],
+        "zero_torque" => vec![lane_artifact_status(
+            lane,
+            "receipt",
+            "zero-torque-proof.json",
+        )],
+        "watchdog" => vec![lane_artifact_status(lane, "receipt", "watchdog-proof.json")],
+        "disconnect" => vec![lane_artifact_status(
+            lane,
+            "receipt",
+            "disconnect-proof.json",
+        )],
+        "bounded_ffb" => vec![
+            lane_artifact_status(lane, "receipt", "low-torque-proof.json"),
+            lane_artifact_status(lane, "receipt", "pit-house-coexistence.json"),
+            lane_artifact_status(lane, "receipt", "simulator-telemetry-proof.json"),
+            lane_artifact_status(lane, "receipt", "simulator-ffb-smoke.json"),
+        ],
+        "ffb_extended" => vec![
+            lane_artifact_status(lane, "receipt", "simulator-ffb-smoke.json"),
+            lane_artifact_status(lane, "artifact", "regression-fixtures"),
+        ],
+        _ => Vec::new(),
+    };
+    artifacts.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+    artifacts
+}
+
+fn lane_artifact_status(lane: &Path, kind: &str, rel: &str) -> HardwareLaneArtifactStatus {
+    HardwareLaneArtifactStatus {
+        kind: kind.to_string(),
+        relative_path: rel.to_string(),
+        present: lane.join(rel).exists(),
+    }
+}
+
+fn lane_status_blocking_items(
+    stage_status: &[HardwareLaneStageStatus],
+    scaffold_complete: bool,
+) -> Vec<String> {
+    let mut items = Vec::new();
+    if !scaffold_complete {
+        items.push("scaffold_files_missing".to_string());
+    }
+    if let Some(stage) = stage_status
+        .iter()
+        .find(|stage| stage.artifacts_missing > 0)
+    {
+        items.push(format!("{}:missing_artifacts", stage.id));
+    }
+    items.push("verifier_receipts_not_evaluated_by_status".to_string());
+    items
 }
 
 fn default_lane_roles(
@@ -1128,6 +1324,12 @@ fn write_json_file<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     fs::write(path, json).with_context(|| format!("failed to write '{}'", path.display()))
 }
 
+fn read_json_file<T: DeserializeOwned>(path: &Path) -> Result<T> {
+    let text =
+        fs::read_to_string(path).with_context(|| format!("failed to read '{}'", path.display()))?;
+    serde_json::from_str(&text).with_context(|| format!("failed to parse '{}'", path.display()))
+}
+
 fn write_text_file(path: &Path, value: &str) -> Result<()> {
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent)
@@ -1203,6 +1405,40 @@ fn print_lane_init_receipt(json: bool, receipt: &HardwareLaneInitReceipt) -> Res
     )?;
     for path in &receipt.created_files {
         write_stdout_line(&format!("Created: {path}"))?;
+    }
+    Ok(())
+}
+
+fn print_lane_status_receipt(
+    json: bool,
+    json_out: Option<&Path>,
+    receipt: &HardwareLaneStatusReceipt,
+) -> Result<()> {
+    if json {
+        write_stdout_line(&serde_json::to_string_pretty(receipt)?)?;
+        return Ok(());
+    }
+
+    write_stdout_line(&format!(
+        "Hardware lane status for {} at {}.",
+        receipt.family, receipt.lane
+    ))?;
+    write_stdout_line(&format!(
+        "Scaffold complete: {}; evidence claims validated: {}; ready_for_zero_torque: {}; ready_for_ffb: {}",
+        receipt.scaffold_complete,
+        receipt.evidence_claims_validated,
+        receipt.ready_for_zero_torque,
+        receipt.ready_for_ffb
+    ))?;
+    write_stdout_line(&format!(
+        "Next blocked stage: {}",
+        receipt.next_blocked_stage
+    ))?;
+    for item in &receipt.blocking_items {
+        write_stdout_line(&format!("Blocked: {item}"))?;
+    }
+    if let Some(path) = json_out {
+        write_stdout_line(&format!("Receipt: {}", path.display()))?;
     }
     Ok(())
 }
@@ -1509,6 +1745,82 @@ struct HardwareLaneLogicalRole {
     semantic_status: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct StoredHardwareLaneScaffoldManifest {
+    family: String,
+    topology: String,
+    completion_state: String,
+    declared_logical_roles: Vec<StoredHardwareLaneLogicalRole>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StoredHardwareLaneLogicalRole {
+    id: String,
+    required: bool,
+    connection_path: String,
+    expected_endpoint: String,
+    evidence_artifact: String,
+    semantic_status: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct HardwareLaneStatusReceipt {
+    success: bool,
+    command: &'static str,
+    generated_at_utc: String,
+    no_hid_device_opened: bool,
+    no_ffb_writes: bool,
+    no_output_reports: bool,
+    no_feature_reports: bool,
+    no_serial_config_commands: bool,
+    no_firmware_or_dfu_commands: bool,
+    lane: String,
+    family: &'static str,
+    topology: String,
+    completion_state: String,
+    scaffold_complete: bool,
+    evidence_claims_validated: bool,
+    ready_for_zero_torque: bool,
+    ready_for_ffb: bool,
+    next_blocked_stage: &'static str,
+    blocking_items: Vec<String>,
+    scaffold_files: Vec<HardwareLaneArtifactStatus>,
+    role_evidence: Vec<HardwareLaneRoleEvidenceStatus>,
+    stages: Vec<HardwareLaneStageStatus>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct HardwareLaneArtifactStatus {
+    kind: String,
+    relative_path: String,
+    present: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct HardwareLaneRoleEvidenceStatus {
+    id: String,
+    required: bool,
+    connection_path: String,
+    expected_endpoint: String,
+    evidence_artifact: String,
+    artifact_present: bool,
+    semantic_status: String,
+    validation_status: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct HardwareLaneStageStatus {
+    id: &'static str,
+    order: u8,
+    purpose: &'static str,
+    artifacts_present: usize,
+    artifacts_missing: usize,
+    expected_artifacts: Vec<HardwareLaneArtifactStatus>,
+    gate_status: &'static str,
+    notes: Vec<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1757,6 +2069,76 @@ mod tests {
         let receipt =
             scaffold_hardware_lane(&lane, "generic-wheelbase", "unknown", "Steven", true, None)?;
         assert_eq!(receipt.family, "generic-wheelbase");
+        Ok(())
+    }
+
+    #[test]
+    fn lane_status_inventories_scaffold_without_validating_claims() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("moza-r5-lane");
+        let _receipt =
+            scaffold_hardware_lane(&lane, "moza-r5", "wheelbase-hub", "Steven", false, None)?;
+
+        let status = build_hardware_lane_status_receipt(&lane)?;
+
+        assert!(status.success);
+        assert!(status.no_hid_device_opened);
+        assert!(status.no_ffb_writes);
+        assert!(status.no_output_reports);
+        assert!(status.no_feature_reports);
+        assert!(status.no_serial_config_commands);
+        assert!(status.no_firmware_or_dfu_commands);
+        assert!(status.scaffold_complete);
+        assert!(!status.evidence_claims_validated);
+        assert!(!status.ready_for_zero_torque);
+        assert!(!status.ready_for_ffb);
+        assert_eq!(status.next_blocked_stage, "discovery");
+        assert!(
+            status
+                .blocking_items
+                .contains(&"discovery:missing_artifacts".to_string())
+        );
+        assert!(status.role_evidence.iter().any(|role| {
+            role.id == "throttle"
+                && role.required
+                && !role.artifact_present
+                && role.validation_status == "not_validated_by_status"
+        }));
+        let pre_output = status
+            .stages
+            .iter()
+            .find(|stage| stage.id == "pre_output_readiness")
+            .ok_or_else(|| io::Error::other("missing pre-output status"))?;
+        assert_eq!(pre_output.gate_status, "not_validated_by_status");
+        assert!(
+            pre_output
+                .expected_artifacts
+                .iter()
+                .any(|artifact| artifact.relative_path == "pre-output-readiness.json")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn lane_status_marks_presence_without_treating_it_as_proof() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("moza-r5-lane");
+        let _receipt =
+            scaffold_hardware_lane(&lane, "moza-r5", "wheelbase-hub", "Steven", false, None)?;
+        let throttle = lane.join("captures").join("r5-throttle-only-sweep.jsonl");
+        fs::write(&throttle, "{}\n")?;
+
+        let status = build_hardware_lane_status_receipt(&lane)?;
+
+        let throttle_role = status
+            .role_evidence
+            .iter()
+            .find(|role| role.id == "throttle")
+            .ok_or_else(|| io::Error::other("missing throttle role"))?;
+        assert!(throttle_role.artifact_present);
+        assert_eq!(throttle_role.validation_status, "not_validated_by_status");
+        assert!(!status.evidence_claims_validated);
+        assert!(!status.ready_for_zero_torque);
         Ok(())
     }
 

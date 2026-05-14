@@ -454,6 +454,34 @@ mod tests {
     }
 
     #[test]
+    fn parse_hardware_lane_status() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "hardware",
+            "lane",
+            "status",
+            "--lane",
+            "target/hardware-lane",
+            "--json-out",
+            "target/hardware-lane/lane-status.json",
+        ])?;
+        match &cli.command {
+            Commands::Hardware(HardwareCommands::Lane(HardwareLaneCommands::Status {
+                lane,
+                json_out,
+            })) => {
+                assert_eq!(lane.to_str(), Some("target/hardware-lane"));
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/hardware-lane/lane-status.json")
+                );
+            }
+            _ => return Err("expected Hardware Lane Status command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_device_status() -> TestResult {
         let cli = Cli::try_parse_from(["wheelctl", "device", "status", "wheel-001"])?;
         match &cli.command {
