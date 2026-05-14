@@ -393,6 +393,30 @@ mod tests {
     }
 
     #[test]
+    fn parse_hardware_bringup_rail() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "hardware",
+            "bringup-rail",
+            "--family",
+            "moza-r5",
+            "--json-out",
+            "target/hardware-bringup-rail.json",
+        ])?;
+        match &cli.command {
+            Commands::Hardware(HardwareCommands::BringupRail { family, json_out }) => {
+                assert_eq!(family, "moza-r5");
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/hardware-bringup-rail.json")
+                );
+            }
+            _ => return Err("expected Hardware BringupRail command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_device_status() -> TestResult {
         let cli = Cli::try_parse_from(["wheelctl", "device", "status", "wheel-001"])?;
         match &cli.command {

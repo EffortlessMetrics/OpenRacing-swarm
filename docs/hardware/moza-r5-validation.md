@@ -11,6 +11,12 @@ This document defines the first OpenRacing real-hardware validation lane for Ste
 
 OpenRacing is still in pre-validation until this lane has real receipts. The existing Moza VID/PID table, parsers, protocol handler, direct torque encoder, and safety gates are research-backed implementation scaffolding. They are not a claim that Steven's hardware has passed.
 
+Moza R5 is the first fully exercised consumer of the generic
+[staged device bring-up rail](staged-device-bringup-rail.md). The Moza adapter
+declares R5 VID/PIDs, wheelbase-hub topology, logical controls, descriptor
+expectations, parser fixtures, and output eligibility while the rail keeps
+stage ordering common across future device families.
+
 ## Lane Identity
 
 ```yaml

@@ -336,6 +336,16 @@ pub enum HardwareCommands {
         #[arg(long)]
         json_out: Option<std::path::PathBuf>,
     },
+
+    /// Print the staged hardware bring-up rail for a device family
+    BringupRail {
+        /// Device-family adapter contract to include in the rail receipt
+        #[arg(long, default_value = "generic-wheelbase")]
+        family: String,
+        /// Write the staged rail receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]

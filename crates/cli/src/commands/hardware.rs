@@ -22,7 +22,17 @@ use crate::commands::HardwareCommands;
 pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
     match cmd {
         HardwareCommands::Doctor { json_out } => doctor(json, json_out.as_deref()).await,
+        HardwareCommands::BringupRail { family, json_out } => {
+            bringup_rail(json, family, json_out.as_deref()).await
+        }
     }
+}
+
+async fn bringup_rail(json: bool, family: &str, json_out: Option<&Path>) -> Result<()> {
+    let receipt = build_bringup_rail_receipt(family)?;
+    write_json_receipt(json_out, &receipt)?;
+    print_bringup_rail_receipt(json, json_out, &receipt)?;
+    Ok(())
 }
 
 async fn doctor(json: bool, json_out: Option<&Path>) -> Result<()> {
@@ -30,6 +40,352 @@ async fn doctor(json: bool, json_out: Option<&Path>) -> Result<()> {
     write_json_receipt(json_out, &receipt)?;
     print_doctor_receipt(json, json_out, &receipt)?;
     Ok(())
+}
+
+fn build_bringup_rail_receipt(family: &str) -> Result<HardwareBringupRailReceipt> {
+    let adapter = hardware_family_adapter_contract(family)
+        .with_context(|| format!("unknown hardware bring-up family '{family}'"))?;
+    Ok(HardwareBringupRailReceipt {
+        success: true,
+        command: "wheelctl hardware bringup-rail",
+        generated_at: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        rail_version: 1,
+        family: adapter.id,
+        no_hid_device_opened: true,
+        no_ffb_writes: true,
+        no_output_reports: true,
+        no_feature_reports: true,
+        no_serial_config_commands: true,
+        no_firmware_or_dfu_commands: true,
+        stages: hardware_bringup_stages(),
+        adapter,
+        notes: vec![
+            "hardware bring-up rail is read-only; it opens no HID device and sends no reports"
+                .to_string(),
+            "device-family adapters provide requirements, while the stage ordering and safety boundaries stay common"
+                .to_string(),
+            "FFB is not a discovery or passive-stage action; zero-torque and fail-closed receipts come first"
+                .to_string(),
+        ],
+    })
+}
+
+fn hardware_bringup_stages() -> Vec<HardwareBringupStage> {
+    vec![
+        HardwareBringupStage {
+            id: "discovery",
+            order: 0,
+            purpose: "observe attached endpoints and stable identity before any device-specific claim",
+            required_artifacts: vec![
+                "device-list.json",
+                "hid-list.json",
+                "hardware-doctor.json",
+                "probe/status/support receipts",
+            ],
+            required_gates: vec![
+                "endpoint_identity_observed",
+                "output_capable_endpoint_selection_explicit",
+            ],
+            forbidden_actions: COMMON_FORBIDDEN_ACTIONS.to_vec(),
+            next_commands: vec![
+                "wheelctl hardware doctor --json-out <lane>/hardware-doctor.json",
+                "wheelctl device list --hid-observe-only --json-out <lane>/device-list.json",
+            ],
+            operator_actions: vec!["declare topology and logical roles for this lane"],
+            ready_outputs: vec!["stable_endpoint_selector"],
+            adapter_requirement_refs: vec!["known_vid_pids", "known_endpoint_roles"],
+        },
+        HardwareBringupStage {
+            id: "passive",
+            order: 1,
+            purpose: "prove declared logical controls with observe-only captures",
+            required_artifacts: vec![
+                "idle capture",
+                "per-role captures",
+                "lane-capture-analysis.json",
+                "parser-fixture-validation.json",
+            ],
+            required_gates: vec![
+                "declared_required_roles_parser_visible",
+                "optional_absent_roles_not_required",
+                "virtual_evidence_rejected",
+            ],
+            forbidden_actions: COMMON_FORBIDDEN_ACTIONS.to_vec(),
+            next_commands: vec![
+                "capture each declared role through its declared endpoint/path",
+                "validate captures with the family parser",
+            ],
+            operator_actions: vec!["move exactly one declared control per isolated capture"],
+            ready_outputs: vec!["role_evidence_complete", "parser_validation_passed"],
+            adapter_requirement_refs: vec![
+                "default_logical_controls",
+                "passive_capture_requirements",
+            ],
+        },
+        HardwareBringupStage {
+            id: "descriptor_trust",
+            order: 2,
+            purpose: "trust raw HID report descriptor bytes and report metadata before output-adjacent work",
+            required_artifacts: vec![
+                "descriptor.json",
+                "raw report descriptor bytes",
+                "descriptor CRC",
+            ],
+            required_gates: vec![
+                "descriptor_source_trusted",
+                "report_descriptor_crc32_present",
+                "metadata_matches_selected_endpoint",
+                "invalid_descriptor_blobs_rejected",
+            ],
+            forbidden_actions: COMMON_FORBIDDEN_ACTIONS.to_vec(),
+            next_commands: vec![
+                "import raw descriptor bytes or trusted descriptor hex for the selected endpoint",
+            ],
+            operator_actions: vec![
+                "obtain raw descriptor bytes from OS/tooling without firmware or config changes",
+            ],
+            ready_outputs: vec!["descriptor_metadata_trusted"],
+            adapter_requirement_refs: vec!["report_descriptor_expectations"],
+        },
+        HardwareBringupStage {
+            id: "fixture_promotion",
+            order: 3,
+            purpose: "freeze known-good passive evidence as parser fixtures after descriptor trust",
+            required_artifacts: vec!["fixture-promotion.json", "protocol parser fixtures"],
+            required_gates: vec![
+                "descriptor_trust_passed",
+                "fixtures_replay_through_parser",
+                "fixture_pid_topology_consistency",
+            ],
+            forbidden_actions: COMMON_FORBIDDEN_ACTIONS.to_vec(),
+            next_commands: vec!["promote validated passive captures into protocol fixtures"],
+            operator_actions: vec![],
+            ready_outputs: vec!["fixture_replay_green"],
+            adapter_requirement_refs: vec!["parser_fixture_requirements"],
+        },
+        HardwareBringupStage {
+            id: "pre_output_readiness",
+            order: 4,
+            purpose: "collate passive, descriptor, fixtures, status, support, and audit state before any output-adjacent stage",
+            required_artifacts: vec![
+                "passive-verification.json",
+                "lane-audit-passive.json",
+                "pre-output-readiness.json",
+                "status/support no-output receipts",
+            ],
+            required_gates: vec![
+                "passive_verification_passed",
+                "passive_audit_passed",
+                "status_receipts_no_output",
+                "ready_for_zero_torque_true",
+                "ready_for_ffb_false",
+            ],
+            forbidden_actions: COMMON_FORBIDDEN_ACTIONS.to_vec(),
+            next_commands: vec!["wheelctl <family> pre-output-readiness --lane <lane>"],
+            operator_actions: vec!["stop if ready_for_zero_torque is false"],
+            ready_outputs: vec!["ready_for_zero_torque"],
+            adapter_requirement_refs: vec!["zero_torque_eligibility"],
+        },
+        HardwareBringupStage {
+            id: "zero_torque",
+            order: 5,
+            purpose: "prove output plumbing with zero torque only",
+            required_artifacts: vec![
+                "zero-torque-proof.json",
+                "explicit endpoint selector",
+                "write log",
+            ],
+            required_gates: vec![
+                "operator_confirmed",
+                "zero_output_only",
+                "no_nonzero_torque",
+                "bounded_duration",
+                "watchdog_armed",
+            ],
+            forbidden_actions: POST_PASSIVE_FORBIDDEN_ACTIONS.to_vec(),
+            next_commands: vec![
+                "run the family zero-torque command only after pre-output readiness passes",
+            ],
+            operator_actions: vec!["operator present, wheel clear, kill path known"],
+            ready_outputs: vec!["zero_torque_verified"],
+            adapter_requirement_refs: vec!["zero_torque_eligibility", "known_output_reports"],
+        },
+        HardwareBringupStage {
+            id: "watchdog",
+            order: 6,
+            purpose: "prove timeout/fail-closed behavior for the zero-output path",
+            required_artifacts: vec!["watchdog-proof.json"],
+            required_gates: vec!["watchdog_triggered", "final_zero_last", "no_nonzero_torque"],
+            forbidden_actions: POST_PASSIVE_FORBIDDEN_ACTIONS.to_vec(),
+            next_commands: vec!["run watchdog proof after zero-torque proof"],
+            operator_actions: vec!["keep wheel clear and observe fail-closed behavior"],
+            ready_outputs: vec!["watchdog_fail_closed"],
+            adapter_requirement_refs: vec!["watchdog_expectations"],
+        },
+        HardwareBringupStage {
+            id: "disconnect",
+            order: 7,
+            purpose: "prove device-loss behavior cannot leave stale output state",
+            required_artifacts: vec!["disconnect-proof.json"],
+            required_gates: vec![
+                "disconnect_observed",
+                "final_zero_attempted",
+                "no_nonzero_torque",
+            ],
+            forbidden_actions: POST_PASSIVE_FORBIDDEN_ACTIONS.to_vec(),
+            next_commands: vec!["run disconnect proof after zero-torque proof"],
+            operator_actions: vec!["perform only the declared disconnect action"],
+            ready_outputs: vec!["disconnect_fail_closed"],
+            adapter_requirement_refs: vec!["disconnect_expectations"],
+        },
+        HardwareBringupStage {
+            id: "bounded_ffb",
+            order: 8,
+            purpose: "first real-force smoke under explicit force and duration caps",
+            required_artifacts: vec![
+                "low-torque-proof.json",
+                "pit-house-coexistence.json",
+                "simulator-telemetry-proof.json",
+                "bounded FFB output log",
+            ],
+            required_gates: vec![
+                "zero_watchdog_disconnect_passed",
+                "low_force_cap",
+                "short_duration_cap",
+                "manual_operator_present",
+                "no_escalation",
+            ],
+            forbidden_actions: vec![
+                "direct_mode_without_gate",
+                "high_torque_without_stage",
+                "feature_reports_without_stage",
+                "firmware_dfu",
+                "serial_config",
+            ],
+            next_commands: vec!["run bounded FFB only after zero/watchdog/disconnect gates pass"],
+            operator_actions: vec!["operator present, wheel clear, kill path known"],
+            ready_outputs: vec!["bounded_ffb_smoke_ready"],
+            adapter_requirement_refs: vec!["ffb_eligibility", "known_unsafe_surfaces"],
+        },
+        HardwareBringupStage {
+            id: "ffb_extended",
+            order: 9,
+            purpose: "expand from smoke to longer simulator and effect coverage",
+            required_artifacts: vec![
+                "simulator-ffb-smoke.json",
+                "timing/latency receipts",
+                "regression fixtures",
+            ],
+            required_gates: vec![
+                "bounded_ffb_passed",
+                "effect_matrix_covered",
+                "timing_within_bounds",
+                "release_claims_audited",
+            ],
+            forbidden_actions: vec![
+                "direct_mode_without_gate",
+                "high_torque_without_stage",
+                "feature_reports_without_stage",
+                "firmware_dfu",
+                "serial_config_without_stage",
+            ],
+            next_commands: vec!["extend coverage only after bounded FFB smoke is green"],
+            operator_actions: vec!["monitor thermals/power where relevant"],
+            ready_outputs: vec!["release_candidate_hardware_evidence"],
+            adapter_requirement_refs: vec!["extended_ffb_requirements"],
+        },
+    ]
+}
+
+fn hardware_family_adapter_contract(family: &str) -> Result<HardwareFamilyAdapterContract> {
+    match family {
+        "generic-wheelbase" => Ok(generic_wheelbase_adapter_contract()),
+        "moza-r5" => Ok(moza_r5_adapter_contract()),
+        _ => anyhow::bail!("supported families: generic-wheelbase, moza-r5"),
+    }
+}
+
+fn generic_wheelbase_adapter_contract() -> HardwareFamilyAdapterContract {
+    HardwareFamilyAdapterContract {
+        id: "generic-wheelbase",
+        display_name: "Generic FFB-capable wheelbase",
+        known_vid_pids: Vec::new(),
+        known_endpoint_roles: vec!["wheelbase_output_endpoint", "input_endpoint"],
+        default_logical_controls: vec!["steering", "rim_controls", "throttle", "brake"],
+        report_descriptor_expectations: vec![
+            "raw HID report descriptor bytes required before output-adjacent work",
+            "input/output/feature report IDs must come from trusted descriptor or protocol adapter",
+        ],
+        passive_capture_requirements: vec![
+            "idle capture",
+            "one isolated capture per required logical role declared by the lane profile",
+        ],
+        parser_fixture_requirements: vec![
+            "parser-visible movement for declared roles",
+            "fixtures replay without virtual/synthetic hardware claims",
+        ],
+        output_capability: "adapter-declared; output endpoints must be explicitly selected",
+        zero_torque_eligibility: "requires descriptor trust, passive/audit green, and adapter zero-output encoder",
+        ffb_eligibility: "requires zero/watchdog/disconnect proof plus bounded-force adapter support",
+        known_unsafe_surfaces: vec![
+            "nonzero_torque",
+            "direct_mode",
+            "feature_reports",
+            "serial_config",
+            "firmware_dfu",
+        ],
+    }
+}
+
+fn moza_r5_adapter_contract() -> HardwareFamilyAdapterContract {
+    HardwareFamilyAdapterContract {
+        id: "moza-r5",
+        display_name: "Moza R5 wheelbase hub",
+        known_vid_pids: vec!["0x346E:0x0004", "0x346E:0x0014"],
+        known_endpoint_roles: vec![
+            "wheelbase_hub",
+            "steering",
+            "rim_controls",
+            "pedals_through_hub",
+            "handbrake_through_hub",
+        ],
+        default_logical_controls: vec![
+            "steering",
+            "rim_controls",
+            "throttle",
+            "brake",
+            "clutch_optional",
+            "handbrake_optional",
+        ],
+        report_descriptor_expectations: vec![
+            "selected R5 HID endpoint must have trusted raw report descriptor bytes and CRC",
+            "Windows HidP KDR collection blobs are not report descriptor evidence",
+            "R5 V1 live input report 0x01 is 42 bytes when using the observed extended hub path",
+        ],
+        passive_capture_requirements: vec![
+            "R5 idle",
+            "steering sweep",
+            "isolated through-R5 captures for declared pedals/handbrake roles",
+            "rim controls only for the mounted rim declared by the lane profile",
+        ],
+        parser_fixture_requirements: vec![
+            "R5 V1 throttle bytes 5-6 replay as throttle when present",
+            "generic aux evidence remains generic unless isolated role captures prove semantics",
+            "fixture promotion waits for descriptor trust",
+        ],
+        output_capability: "R5 wheelbase is output-capable, but output is locked behind explicit endpoint selection and staged receipts",
+        zero_torque_eligibility: "requires passive verify/audit, descriptor CRC, fixture promotion, pre-output readiness, and zero report 0x20 encoder",
+        ffb_eligibility: "requires zero-torque, watchdog, disconnect, low-torque, Pit House, and simulator telemetry receipts",
+        known_unsafe_surfaces: vec![
+            "nonzero_torque",
+            "direct_mode",
+            "high_torque",
+            "feature_reports",
+            "serial_config",
+            "firmware_dfu",
+            "operator_override_for_output",
+        ],
+    }
 }
 
 fn build_doctor_receipt() -> HardwareDoctorReceipt {
@@ -519,6 +875,35 @@ fn print_doctor_receipt(
     Ok(())
 }
 
+fn print_bringup_rail_receipt(
+    json: bool,
+    json_out: Option<&Path>,
+    receipt: &HardwareBringupRailReceipt,
+) -> Result<()> {
+    if json {
+        write_stdout_line(&serde_json::to_string_pretty(receipt)?)?;
+        return Ok(());
+    }
+
+    write_stdout_line(&format!(
+        "Hardware bring-up rail for {}: {} stages, no HID devices opened.",
+        receipt.adapter.display_name,
+        receipt.stages.len()
+    ))?;
+    for stage in &receipt.stages {
+        write_stdout_line(&format!(
+            "{}. {}: {}",
+            stage.order + 1,
+            stage.id,
+            stage.purpose
+        ))?;
+    }
+    if let Some(path) = json_out {
+        write_stdout_line(&format!("Receipt: {}", path.display()))?;
+    }
+    Ok(())
+}
+
 fn write_stdout_line(line: &str) -> Result<()> {
     let mut stdout = io::stdout().lock();
     writeln!(stdout, "{line}").context("failed to write stdout")
@@ -668,6 +1053,74 @@ struct VendorAppChecks {
 
 const MOZA_VENDOR_ID: u16 = 0x346E;
 
+const COMMON_FORBIDDEN_ACTIONS: &[&str] = &[
+    "ffb",
+    "direct_mode",
+    "nonzero_torque",
+    "output_reports",
+    "feature_reports",
+    "serial_config",
+    "firmware_dfu",
+];
+
+const POST_PASSIVE_FORBIDDEN_ACTIONS: &[&str] = &[
+    "ffb",
+    "direct_mode",
+    "nonzero_torque",
+    "high_torque",
+    "feature_reports_without_stage",
+    "serial_config",
+    "firmware_dfu",
+];
+
+#[derive(Debug, Serialize, Deserialize)]
+struct HardwareBringupRailReceipt {
+    success: bool,
+    command: &'static str,
+    generated_at: String,
+    rail_version: u32,
+    family: &'static str,
+    no_hid_device_opened: bool,
+    no_ffb_writes: bool,
+    no_output_reports: bool,
+    no_feature_reports: bool,
+    no_serial_config_commands: bool,
+    no_firmware_or_dfu_commands: bool,
+    stages: Vec<HardwareBringupStage>,
+    adapter: HardwareFamilyAdapterContract,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct HardwareBringupStage {
+    id: &'static str,
+    order: u8,
+    purpose: &'static str,
+    required_artifacts: Vec<&'static str>,
+    required_gates: Vec<&'static str>,
+    forbidden_actions: Vec<&'static str>,
+    next_commands: Vec<&'static str>,
+    operator_actions: Vec<&'static str>,
+    ready_outputs: Vec<&'static str>,
+    adapter_requirement_refs: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct HardwareFamilyAdapterContract {
+    id: &'static str,
+    display_name: &'static str,
+    known_vid_pids: Vec<&'static str>,
+    known_endpoint_roles: Vec<&'static str>,
+    default_logical_controls: Vec<&'static str>,
+    report_descriptor_expectations: Vec<&'static str>,
+    passive_capture_requirements: Vec<&'static str>,
+    parser_fixture_requirements: Vec<&'static str>,
+    output_capability: &'static str,
+    zero_torque_eligibility: &'static str,
+    ffb_eligibility: &'static str,
+    known_unsafe_surfaces: Vec<&'static str>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -737,6 +1190,113 @@ mod tests {
         assert!(receipt.no_feature_reports);
         assert!(receipt.no_serial_config_commands);
         assert!(receipt.no_firmware_or_dfu_commands);
+    }
+
+    #[test]
+    fn bringup_rail_is_ordered_and_read_only() -> TestResult {
+        let receipt = build_bringup_rail_receipt("generic-wheelbase")?;
+
+        assert!(receipt.success);
+        assert!(receipt.no_hid_device_opened);
+        assert!(receipt.no_ffb_writes);
+        assert!(receipt.no_output_reports);
+        assert!(receipt.no_feature_reports);
+        assert!(receipt.no_serial_config_commands);
+        assert!(receipt.no_firmware_or_dfu_commands);
+        assert_eq!(
+            receipt.stages.first().map(|stage| stage.id),
+            Some("discovery")
+        );
+        assert_eq!(
+            receipt.stages.last().map(|stage| stage.id),
+            Some("ffb_extended")
+        );
+        assert!(
+            receipt
+                .stages
+                .windows(2)
+                .all(|pair| pair[0].order < pair[1].order)
+        );
+        let pre_output = receipt
+            .stages
+            .iter()
+            .find(|stage| stage.id == "pre_output_readiness")
+            .ok_or_else(|| io::Error::other("missing pre-output stage"))?;
+        assert!(
+            pre_output
+                .required_gates
+                .contains(&"ready_for_zero_torque_true")
+        );
+        assert!(pre_output.required_gates.contains(&"ready_for_ffb_false"));
+        assert!(pre_output.forbidden_actions.contains(&"output_reports"));
+        Ok(())
+    }
+
+    #[test]
+    fn bringup_rail_keeps_output_after_passive_and_descriptor() -> TestResult {
+        let receipt = build_bringup_rail_receipt("moza-r5")?;
+        let passive = receipt
+            .stages
+            .iter()
+            .find(|stage| stage.id == "passive")
+            .ok_or_else(|| io::Error::other("missing passive stage"))?;
+        let descriptor = receipt
+            .stages
+            .iter()
+            .find(|stage| stage.id == "descriptor_trust")
+            .ok_or_else(|| io::Error::other("missing descriptor stage"))?;
+        let zero = receipt
+            .stages
+            .iter()
+            .find(|stage| stage.id == "zero_torque")
+            .ok_or_else(|| io::Error::other("missing zero stage"))?;
+
+        assert!(passive.forbidden_actions.contains(&"output_reports"));
+        assert!(
+            descriptor
+                .required_gates
+                .contains(&"report_descriptor_crc32_present")
+        );
+        assert!(zero.order > descriptor.order);
+        assert!(zero.required_gates.contains(&"zero_output_only"));
+        assert!(!zero.required_gates.contains(&"low_force_cap"));
+        Ok(())
+    }
+
+    #[test]
+    fn bringup_rail_uses_family_adapter_contracts() -> TestResult {
+        let generic = build_bringup_rail_receipt("generic-wheelbase")?;
+        let moza = build_bringup_rail_receipt("moza-r5")?;
+
+        assert_eq!(generic.stages.len(), moza.stages.len());
+        assert_eq!(generic.stages[0].id, moza.stages[0].id);
+        assert!(generic.adapter.known_vid_pids.is_empty());
+        assert!(moza.adapter.known_vid_pids.contains(&"0x346E:0x0004"));
+        assert!(moza.adapter.known_vid_pids.contains(&"0x346E:0x0014"));
+        assert!(
+            generic
+                .adapter
+                .default_logical_controls
+                .contains(&"rim_controls")
+        );
+        assert!(
+            moza.adapter
+                .default_logical_controls
+                .contains(&"clutch_optional")
+        );
+        assert!(
+            !generic
+                .adapter
+                .default_logical_controls
+                .contains(&"clutch_optional")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn bringup_rail_rejects_unknown_adapter() {
+        let err = build_bringup_rail_receipt("unknown-family").expect_err("expected error");
+        assert!(err.to_string().contains("unknown hardware bring-up family"));
     }
 
     #[test]
