@@ -3934,6 +3934,7 @@ fn verify_bundle_dir_with_support_validation(
     let failed_gates = gates.iter().filter(|check| check.status == "fail").count();
     let success = missing_artifacts == 0 && invalid_artifacts == 0 && failed_gates == 0;
     let endpoint_observations = bundle_endpoint_observations(lane);
+    let role_evidence = bundle_role_evidence(lane);
     let operator_actions = operator_actions_for_bundle_stage(lane, stage, &gates);
     let next_commands = next_commands_for_bundle_stage(lane, stage, &artifact_checks, &gates);
 
@@ -3949,6 +3950,7 @@ fn verify_bundle_dir_with_support_validation(
         artifacts: artifact_checks,
         gates,
         endpoint_observations,
+        role_evidence,
         operator_actions,
         next_commands,
         no_hid_device_opened: true,
@@ -3960,8 +3962,16 @@ fn verify_bundle_dir_with_support_validation(
                 .to_string(),
             "a passing bundle is evidence for the requested lane stage only, not release readiness"
                 .to_string(),
+            "role_evidence is derived from stored capture analysis and does not promote lane receipts"
+                .to_string(),
         ],
     }
+}
+
+fn bundle_role_evidence(lane: &Path) -> Vec<LaneRoleEvidenceEntry> {
+    analyze_lane_captures(lane)
+        .map(|analysis| analysis.role_evidence)
+        .unwrap_or_default()
 }
 
 fn bundle_endpoint_observations(lane: &Path) -> Vec<BundleEndpointObservation> {
@@ -13902,6 +13912,7 @@ struct BundleVerificationReceipt {
     artifacts: Vec<BundleArtifactCheck>,
     gates: Vec<BundleGateCheck>,
     endpoint_observations: Vec<BundleEndpointObservation>,
+    role_evidence: Vec<LaneRoleEvidenceEntry>,
     operator_actions: Vec<String>,
     next_commands: Vec<String>,
     no_hid_device_opened: bool,
@@ -24358,6 +24369,21 @@ mod tests {
                 && artifact.vid_pid_count == 1
                 && artifact.metadata_match_count == 1
         }));
+        let throttle = receipt
+            .role_evidence
+            .iter()
+            .find(|entry| entry.control == "throttle")
+            .ok_or("expected throttle role evidence in bundle receipt")?;
+        assert_eq!(throttle.role, "throttle");
+        assert!(throttle.required);
+        assert_eq!(throttle.source_endpoint.as_deref(), Some("moza-r5-if2"));
+        assert_eq!(throttle.connection.as_deref(), Some("wheelbase_hub"));
+        assert_eq!(
+            throttle.evidence_capture.as_deref(),
+            Some("captures/r5-throttle-only-sweep.jsonl")
+        );
+        assert_eq!(throttle.semantic_status, "proven");
+        assert!(throttle.parser_visible);
         Ok(())
     }
 
@@ -25900,6 +25926,7 @@ mod tests {
                     "forced post-promotion verifier failure".to_string(),
                 )],
                 endpoint_observations: Vec::new(),
+                role_evidence: Vec::new(),
                 operator_actions: Vec::new(),
                 next_commands: Vec::new(),
                 no_hid_device_opened: true,
