@@ -61,9 +61,11 @@ wheelctl hardware lane status `
 ```
 
 The status receipt reports scaffold files, planned role evidence, stage artifact
-presence, and the next blocked stage. It deliberately keeps
-`evidence_claims_validated`, `ready_for_zero_torque`, and `ready_for_ffb` false;
-family verifiers remain authoritative for actual hardware claims.
+presence, the next blocked stage, and safe next commands for observe-only or
+passive evidence. It deliberately keeps `evidence_claims_validated`,
+`ready_for_zero_torque`, and `ready_for_ffb` false; family verifiers remain
+authoritative for actual hardware claims. The inventory command withholds
+zero-torque and FFB commands because it does not validate prerequisites.
 
 ## Adapter Contract
 

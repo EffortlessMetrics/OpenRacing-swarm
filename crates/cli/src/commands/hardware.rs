@@ -287,6 +287,12 @@ fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusR
         .find(|stage| stage.artifacts_missing > 0)
         .map(|stage| stage.id)
         .unwrap_or("verifier_receipts");
+    let safe_next_commands = lane_status_safe_next_commands(
+        lane,
+        adapter.id,
+        next_blocked_stage,
+        &manifest.declared_logical_roles,
+    );
 
     Ok(HardwareLaneStatusReceipt {
         success: true,
@@ -307,6 +313,7 @@ fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusR
         ready_for_zero_torque: false,
         ready_for_ffb: false,
         next_blocked_stage,
+        safe_next_commands,
         blocking_items,
         scaffold_files,
         role_evidence,
@@ -425,6 +432,122 @@ fn lane_status_blocking_items(
     items
 }
 
+fn lane_status_safe_next_commands(
+    lane: &Path,
+    family: &str,
+    next_blocked_stage: &str,
+    roles: &[StoredHardwareLaneLogicalRole],
+) -> Vec<String> {
+    match (family, next_blocked_stage) {
+        ("moza-r5", "discovery") => vec![
+            format!(
+                "wheelctl hardware doctor --json-out {}",
+                lane_path_arg(lane, "hardware-doctor.json")
+            ),
+            format!(
+                "wheelctl device list --hid-observe-only --json-out {} --json",
+                lane_path_arg(lane, "device-list.json")
+            ),
+            format!(
+                "hid-capture list --vendor 0x346E --json-out {}",
+                lane_path_arg(lane, "hid-list.json")
+            ),
+            format!(
+                "wheelctl moza probe --json-out {} --json",
+                lane_path_arg(lane, "moza-probe.json")
+            ),
+        ],
+        (_, "discovery") => vec![
+            format!(
+                "wheelctl hardware doctor --json-out {}",
+                lane_path_arg(lane, "hardware-doctor.json")
+            ),
+            format!(
+                "wheelctl device list --hid-observe-only --json-out {} --json",
+                lane_path_arg(lane, "device-list.json")
+            ),
+        ],
+        ("moza-r5", "passive") => {
+            let mut commands = vec![
+                format!(
+                    "wheelctl moza analyze-lane --lane {} --json-out {} --json",
+                    shell_path_arg(lane),
+                    lane_path_arg(lane, "lane-capture-analysis.json")
+                ),
+                format!(
+                    "wheelctl moza validate-captures --lane {} --json-out {} --json",
+                    shell_path_arg(lane),
+                    lane_path_arg(lane, "parser-fixture-validation.json")
+                ),
+            ];
+            commands.extend(roles.iter().filter(|role| role.required).map(|role| {
+                format!(
+                    "wheelctl moza capture-input --device {} --json-out {} --json",
+                    role.expected_endpoint,
+                    lane_path_arg(lane, &role.evidence_artifact)
+                )
+            }));
+            commands
+        }
+        ("moza-r5", "descriptor_trust") => vec![
+            format!(
+                "wheelctl moza descriptor --device hid-0x346E-0x0004-if2-0x0001-0x0004 --report-descriptor-hex-file target/moza-r5-report-descriptor.txt --json-out {} --json",
+                lane_path_arg(lane, "descriptor.json")
+            ),
+            format!(
+                "wheelctl moza descriptor --device hid-0x346E-0x0004-if2-0x0001-0x0004 --report-descriptor-bin-file target/moza-r5-report-descriptor.bin --json-out {} --json",
+                lane_path_arg(lane, "descriptor.json")
+            ),
+        ],
+        ("moza-r5", "fixture_promotion") => vec![
+            format!(
+                "wheelctl moza validate-captures --lane {} --json-out {} --json",
+                shell_path_arg(lane),
+                lane_path_arg(lane, "parser-fixture-validation.json")
+            ),
+            format!(
+                "wheelctl moza promote-fixtures --lane {} --fixture-dir crates/hid-moza-protocol/fixtures/<lane-id> --json-out {} --json",
+                shell_path_arg(lane),
+                lane_path_arg(lane, "fixture-promotion.json")
+            ),
+        ],
+        ("moza-r5", "pre_output_readiness") => vec![
+            format!(
+                "wheelctl moza verify-bundle --lane {} --stage passive --json-out {} --json",
+                shell_path_arg(lane),
+                lane_path_arg(lane, "passive-verification.json")
+            ),
+            format!(
+                "wheelctl moza audit-lane --lane {} --stage passive --json-out {} --json",
+                shell_path_arg(lane),
+                lane_path_arg(lane, "lane-audit-passive.json")
+            ),
+            format!(
+                "wheelctl moza pre-output-readiness --lane {} --json-out {} --json",
+                shell_path_arg(lane),
+                lane_path_arg(lane, "pre-output-readiness.json")
+            ),
+        ],
+        (_, "zero_torque" | "watchdog" | "disconnect" | "bounded_ffb" | "ffb_extended") => {
+            Vec::new()
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn lane_path_arg(lane: &Path, relative: &str) -> String {
+    shell_path_arg(&lane.join(relative))
+}
+
+fn shell_path_arg(path: &Path) -> String {
+    let text = path.display().to_string();
+    if text.contains(' ') {
+        format!("\"{text}\"")
+    } else {
+        text
+    }
+}
+
 fn default_lane_roles(
     adapter: &HardwareFamilyAdapterContract,
     topology: &str,
@@ -483,7 +606,7 @@ fn default_role_evidence_artifact(adapter_id: &str, role_id: &str) -> String {
     if adapter_id == "moza-r5" {
         match role_id {
             "steering" => "captures/r5-steering-sweep.jsonl",
-            "rim_controls" => "captures/<declared-rim>-controls.jsonl",
+            "rim_controls" => "captures/declared-rim-controls.jsonl",
             "throttle" => "captures/r5-throttle-only-sweep.jsonl",
             "brake" => "captures/r5-brake-only-sweep.jsonl",
             "clutch" => "captures/r5-clutch-only-sweep.jsonl",
@@ -1437,6 +1560,9 @@ fn print_lane_status_receipt(
     for item in &receipt.blocking_items {
         write_stdout_line(&format!("Blocked: {item}"))?;
     }
+    for command in &receipt.safe_next_commands {
+        write_stdout_line(&format!("Next: {command}"))?;
+    }
     if let Some(path) = json_out {
         write_stdout_line(&format!("Receipt: {}", path.display()))?;
     }
@@ -1783,6 +1909,7 @@ struct HardwareLaneStatusReceipt {
     ready_for_zero_torque: bool,
     ready_for_ffb: bool,
     next_blocked_stage: &'static str,
+    safe_next_commands: Vec<String>,
     blocking_items: Vec<String>,
     scaffold_files: Vec<HardwareLaneArtifactStatus>,
     role_evidence: Vec<HardwareLaneRoleEvidenceStatus>,
@@ -2098,6 +2225,26 @@ mod tests {
                 .blocking_items
                 .contains(&"discovery:missing_artifacts".to_string())
         );
+        assert!(
+            status
+                .safe_next_commands
+                .iter()
+                .any(|command| command.contains("wheelctl hardware doctor"))
+        );
+        assert!(
+            status
+                .safe_next_commands
+                .iter()
+                .any(|command| command.contains("wheelctl moza probe"))
+        );
+        assert!(
+            status
+                .safe_next_commands
+                .iter()
+                .all(|command| !command.contains("torque")
+                    && !command.contains("ffb")
+                    && !command.contains("output"))
+        );
         assert!(status.role_evidence.iter().any(|role| {
             role.id == "throttle"
                 && role.required
@@ -2139,6 +2286,129 @@ mod tests {
         assert_eq!(throttle_role.validation_status, "not_validated_by_status");
         assert!(!status.evidence_claims_validated);
         assert!(!status.ready_for_zero_torque);
+        Ok(())
+    }
+
+    #[test]
+    fn lane_status_generic_discovery_avoids_moza_specific_commands() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("generic-lane");
+        let _receipt =
+            scaffold_hardware_lane(&lane, "generic-wheelbase", "unknown", "Steven", false, None)?;
+
+        let status = build_hardware_lane_status_receipt(&lane)?;
+
+        assert_eq!(status.next_blocked_stage, "discovery");
+        assert!(
+            status
+                .safe_next_commands
+                .iter()
+                .any(|command| command.contains("wheelctl hardware doctor"))
+        );
+        assert!(
+            status
+                .safe_next_commands
+                .iter()
+                .any(|command| command.contains("wheelctl device list"))
+        );
+        assert!(status.safe_next_commands.iter().all(|command| {
+            !command.contains("moza") && !command.contains("0x346E") && !command.contains("torque")
+        }));
+        assert!(!status.ready_for_zero_torque);
+        assert!(!status.ready_for_ffb);
+        Ok(())
+    }
+
+    #[test]
+    fn lane_status_suggests_descriptor_import_without_output_commands() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("moza-r5-lane");
+        let _receipt =
+            scaffold_hardware_lane(&lane, "moza-r5", "wheelbase-hub", "Steven", false, None)?;
+        for artifact in [
+            "device-list.json",
+            "hardware-doctor.json",
+            "hid-list.json",
+            "moza-probe.json",
+            "lane-capture-analysis.json",
+            "parser-fixture-validation.json",
+        ] {
+            fs::write(lane.join(artifact), "{}\n")?;
+        }
+        for role in [
+            "r5-steering-sweep.jsonl",
+            "r5-throttle-only-sweep.jsonl",
+            "r5-brake-only-sweep.jsonl",
+        ] {
+            fs::write(lane.join("captures").join(role), "{}\n")?;
+        }
+        fs::write(
+            lane.join("captures").join("declared-rim-controls.jsonl"),
+            "{}\n",
+        )?;
+
+        let status = build_hardware_lane_status_receipt(&lane)?;
+
+        assert_eq!(status.next_blocked_stage, "descriptor_trust");
+        assert!(
+            status
+                .safe_next_commands
+                .iter()
+                .any(|command| command.contains("--report-descriptor-bin-file"))
+        );
+        assert!(
+            status
+                .safe_next_commands
+                .iter()
+                .all(|command| !command.contains("torque")
+                    && !command.contains("ffb")
+                    && !command.contains("output"))
+        );
+        assert!(!status.ready_for_zero_torque);
+        assert!(!status.ready_for_ffb);
+        Ok(())
+    }
+
+    #[test]
+    fn lane_status_withholds_output_stage_commands() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("moza-r5-lane");
+        let _receipt =
+            scaffold_hardware_lane(&lane, "moza-r5", "wheelbase-hub", "Steven", false, None)?;
+        for artifact in [
+            "device-list.json",
+            "hardware-doctor.json",
+            "hid-list.json",
+            "moza-probe.json",
+            "lane-capture-analysis.json",
+            "parser-fixture-validation.json",
+            "descriptor.json",
+            "fixture-promotion.json",
+            "passive-verification.json",
+            "lane-audit-passive.json",
+            "pre-output-readiness.json",
+        ] {
+            fs::write(lane.join(artifact), "{}\n")?;
+        }
+        for role in [
+            "r5-steering-sweep.jsonl",
+            "r5-throttle-only-sweep.jsonl",
+            "r5-brake-only-sweep.jsonl",
+        ] {
+            fs::write(lane.join("captures").join(role), "{}\n")?;
+        }
+        fs::write(
+            lane.join("captures").join("declared-rim-controls.jsonl"),
+            "{}\n",
+        )?;
+
+        let status = build_hardware_lane_status_receipt(&lane)?;
+
+        assert_eq!(status.next_blocked_stage, "zero_torque");
+        assert!(status.safe_next_commands.is_empty());
+        assert!(!status.evidence_claims_validated);
+        assert!(!status.ready_for_zero_torque);
+        assert!(!status.ready_for_ffb);
         Ok(())
     }
 
