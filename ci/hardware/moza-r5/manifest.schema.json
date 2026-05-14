@@ -75,7 +75,7 @@
     "hardware": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["wheelbase", "wheelbase_pid", "rims", "pedals", "handbrake"],
+      "required": ["wheelbase", "wheelbase_pid"],
       "properties": {
         "wheelbase": {
           "type": "string",
@@ -91,10 +91,6 @@
             "type": "string",
             "enum": ["KS", "ES"]
           },
-          "contains": {
-            "const": "KS"
-          },
-          "minItems": 2,
           "uniqueItems": true
         },
         "pedals": {
@@ -103,7 +99,6 @@
             "type": "string",
             "const": "SR-P"
           },
-          "minItems": 1,
           "uniqueItems": true
         },
         "handbrake": {

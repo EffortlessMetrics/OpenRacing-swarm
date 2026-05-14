@@ -5320,7 +5320,7 @@ fn manifest_contract_is_moza_r5_lane(manifest: &Value) -> bool {
             .map(|operator| !operator.trim().is_empty())
             .unwrap_or(false)
         && manifest_platform_is_windows_hid(manifest.get("platform"))
-        && manifest_hardware_is_steven_moza_stack(manifest.get("hardware"))
+        && manifest_hardware_is_declared_moza_r5(manifest.get("hardware"))
         && manifest_topology_is_logical_role_model(manifest)
         && manifest_claims_are_staged(manifest.get("claims"))
         && manifest_artifacts_match_lane_contract(manifest.get("artifacts"))
@@ -5340,7 +5340,7 @@ fn manifest_platform_is_windows_hid(platform: Option<&Value>) -> bool {
             .unwrap_or(false)
 }
 
-fn manifest_hardware_is_steven_moza_stack(hardware: Option<&Value>) -> bool {
+fn manifest_hardware_is_declared_moza_r5(hardware: Option<&Value>) -> bool {
     let Some(hardware) = hardware else {
         return false;
     };
@@ -5349,9 +5349,25 @@ fn manifest_hardware_is_steven_moza_stack(hardware: Option<&Value>) -> bool {
             json_string(hardware, "wheelbase_pid"),
             Some("0x0004" | "0x0014")
         )
-        && json_array_contains_strings(hardware, "rims", &["KS", "ES"])
-        && json_array_contains_strings(hardware, "pedals", &["SR-P"])
-        && json_string(hardware, "handbrake") == Some("HBP")
+        && optional_json_array_only_contains_strings(hardware, "rims", &["KS", "ES"])
+        && optional_json_array_only_contains_strings(hardware, "pedals", &["SR-P"])
+        && json_string(hardware, "handbrake")
+            .map(|handbrake| handbrake == "HBP")
+            .unwrap_or(true)
+}
+
+fn optional_json_array_only_contains_strings(value: &Value, key: &str, allowed: &[&str]) -> bool {
+    let Some(items) = value.get(key) else {
+        return true;
+    };
+    let Some(items) = items.as_array() else {
+        return false;
+    };
+    items.iter().all(|item| {
+        item.as_str()
+            .map(|item| allowed.contains(&item))
+            .unwrap_or(false)
+    })
 }
 
 fn manifest_topology_is_logical_role_model(manifest: &Value) -> bool {
@@ -5524,17 +5540,6 @@ fn manifest_artifacts_match_lane_contract(artifacts: Option<&Value>) -> bool {
     ]
     .iter()
     .all(|(key, expected)| json_string(artifacts, key) == Some(*expected))
-}
-
-fn json_array_contains_strings(value: &Value, key: &str, required: &[&str]) -> bool {
-    let Some(values) = value.get(key).and_then(Value::as_array) else {
-        return false;
-    };
-    required.iter().all(|required_value| {
-        values
-            .iter()
-            .any(|value| value.as_str() == Some(*required_value))
-    })
 }
 
 fn json_usize_array_contains_all(value: &Value, key: &str, required: &[usize]) -> bool {
@@ -15640,6 +15645,30 @@ mod tests {
         write_test_json_file(&root.join("manifest.json"), &manifest)
     }
 
+    fn set_declared_hardware(
+        root: &Path,
+        rims: &[&str],
+        pedals: &[&str],
+        handbrake: Option<&str>,
+    ) -> TestResult {
+        let mut manifest = read_json_path(&root.join("manifest.json"))?;
+        let hardware = manifest
+            .get_mut("hardware")
+            .and_then(Value::as_object_mut)
+            .ok_or("expected manifest hardware object")?;
+        hardware.insert("rims".to_string(), serde_json::json!(rims));
+        hardware.insert("pedals".to_string(), serde_json::json!(pedals));
+        match handbrake {
+            Some(handbrake) => {
+                hardware.insert("handbrake".to_string(), serde_json::json!(handbrake));
+            }
+            None => {
+                hardware.remove("handbrake");
+            }
+        }
+        write_test_json_file(&root.join("manifest.json"), &manifest)
+    }
+
     fn append_device_to_observation_receipts(root: &Path, device: &Value) -> TestResult {
         for artifact in [
             "device-list.json",
@@ -15652,6 +15681,20 @@ mod tests {
                 .as_array_mut()
                 .ok_or("expected devices array")?
                 .push(device.clone());
+            write_test_json_file(&root.join(artifact), &receipt)?;
+        }
+        Ok(())
+    }
+
+    fn replace_observation_receipt_devices(root: &Path, devices: &[Value]) -> TestResult {
+        for artifact in [
+            "device-list.json",
+            "moza-probe.json",
+            "hid-list.json",
+            "descriptor.json",
+        ] {
+            let mut receipt = read_json_path(&root.join(artifact))?;
+            receipt["devices"] = serde_json::Value::Array(devices.to_vec());
             write_test_json_file(&root.join(artifact), &receipt)?;
         }
         Ok(())
@@ -21833,6 +21876,287 @@ mod tests {
             receipt.success,
             "{}",
             serde_json::to_string_pretty(&receipt)?
+        );
+        assert!(
+            receipt
+                .artifacts
+                .iter()
+                .all(|artifact| artifact.path != "captures/r5-clutch-only-sweep.jsonl")
+        );
+        Ok(())
+    }
+
+    struct TopologyMatrixCase {
+        name: &'static str,
+        rims: &'static [&'static str],
+        pedals: &'static [&'static str],
+        handbrake: Option<&'static str>,
+        controls: &'static [(
+            &'static str,
+            &'static str,
+            Option<&'static str>,
+            &'static str,
+        )],
+        removed_captures: &'static [&'static str],
+        absent_artifacts: &'static [&'static str],
+    }
+
+    #[test]
+    fn verify_bundle_passive_accepts_declared_topology_matrix_without_fixed_kit_leakage()
+    -> TestResult {
+        let cases = [
+            TopologyMatrixCase {
+                name: "r5_ks_only",
+                rims: &["KS"],
+                pedals: &[],
+                handbrake: None,
+                controls: &[
+                    (
+                        "steering",
+                        "steering",
+                        None,
+                        "captures/r5-steering-sweep.jsonl",
+                    ),
+                    (
+                        "ks_rim_controls",
+                        "rim_controls",
+                        Some("KS"),
+                        "captures/ks-controls.jsonl",
+                    ),
+                ],
+                removed_captures: &[
+                    "captures/r5-throttle-only-sweep.jsonl",
+                    "captures/r5-brake-only-sweep.jsonl",
+                    "captures/r5-clutch-only-sweep.jsonl",
+                    "captures/r5-handbrake-only-sweep.jsonl",
+                    "captures/es-controls.jsonl",
+                ],
+                absent_artifacts: &[
+                    "captures/r5-throttle-only-sweep.jsonl",
+                    "captures/r5-brake-only-sweep.jsonl",
+                    "captures/r5-clutch-only-sweep.jsonl",
+                    "captures/r5-handbrake-only-sweep.jsonl",
+                    "captures/es-controls.jsonl",
+                    "captures/srp-standalone-sweep.jsonl",
+                    "captures/hbp-standalone-sweep.jsonl",
+                ],
+            },
+            TopologyMatrixCase {
+                name: "r5_es_only",
+                rims: &["ES"],
+                pedals: &[],
+                handbrake: None,
+                controls: &[
+                    (
+                        "steering",
+                        "steering",
+                        None,
+                        "captures/r5-steering-sweep.jsonl",
+                    ),
+                    (
+                        "es_rim_controls",
+                        "rim_controls",
+                        Some("ES"),
+                        "captures/es-controls.jsonl",
+                    ),
+                ],
+                removed_captures: &[
+                    "captures/r5-throttle-only-sweep.jsonl",
+                    "captures/r5-brake-only-sweep.jsonl",
+                    "captures/r5-clutch-only-sweep.jsonl",
+                    "captures/r5-handbrake-only-sweep.jsonl",
+                    "captures/ks-controls.jsonl",
+                ],
+                absent_artifacts: &[
+                    "captures/r5-throttle-only-sweep.jsonl",
+                    "captures/r5-brake-only-sweep.jsonl",
+                    "captures/r5-clutch-only-sweep.jsonl",
+                    "captures/r5-handbrake-only-sweep.jsonl",
+                    "captures/ks-controls.jsonl",
+                    "captures/srp-standalone-sweep.jsonl",
+                    "captures/hbp-standalone-sweep.jsonl",
+                ],
+            },
+            TopologyMatrixCase {
+                name: "r5_throttle_brake_no_clutch_or_handbrake",
+                rims: &[],
+                pedals: &["SR-P"],
+                handbrake: None,
+                controls: &[
+                    (
+                        "steering",
+                        "steering",
+                        None,
+                        "captures/r5-steering-sweep.jsonl",
+                    ),
+                    (
+                        "throttle",
+                        "throttle",
+                        None,
+                        "captures/r5-throttle-only-sweep.jsonl",
+                    ),
+                    ("brake", "brake", None, "captures/r5-brake-only-sweep.jsonl"),
+                ],
+                removed_captures: &[
+                    "captures/r5-clutch-only-sweep.jsonl",
+                    "captures/r5-handbrake-only-sweep.jsonl",
+                    "captures/ks-controls.jsonl",
+                    "captures/es-controls.jsonl",
+                ],
+                absent_artifacts: &[
+                    "captures/r5-clutch-only-sweep.jsonl",
+                    "captures/r5-handbrake-only-sweep.jsonl",
+                    "captures/ks-controls.jsonl",
+                    "captures/es-controls.jsonl",
+                    "captures/srp-standalone-sweep.jsonl",
+                    "captures/hbp-standalone-sweep.jsonl",
+                ],
+            },
+            TopologyMatrixCase {
+                name: "r5_hbp_through_hub",
+                rims: &[],
+                pedals: &[],
+                handbrake: Some("HBP"),
+                controls: &[
+                    (
+                        "steering",
+                        "steering",
+                        None,
+                        "captures/r5-steering-sweep.jsonl",
+                    ),
+                    (
+                        "handbrake",
+                        "handbrake",
+                        None,
+                        "captures/r5-handbrake-only-sweep.jsonl",
+                    ),
+                ],
+                removed_captures: &[
+                    "captures/r5-throttle-only-sweep.jsonl",
+                    "captures/r5-brake-only-sweep.jsonl",
+                    "captures/r5-clutch-only-sweep.jsonl",
+                    "captures/ks-controls.jsonl",
+                    "captures/es-controls.jsonl",
+                ],
+                absent_artifacts: &[
+                    "captures/r5-throttle-only-sweep.jsonl",
+                    "captures/r5-brake-only-sweep.jsonl",
+                    "captures/r5-clutch-only-sweep.jsonl",
+                    "captures/ks-controls.jsonl",
+                    "captures/es-controls.jsonl",
+                    "captures/srp-standalone-sweep.jsonl",
+                    "captures/hbp-standalone-sweep.jsonl",
+                ],
+            },
+        ];
+
+        for case in cases {
+            let dir = tempfile::tempdir()?;
+            write_minimal_passive_bundle(dir.path())?;
+            replace_observation_receipt_devices(dir.path(), &[sample_trusted_r5_json_device()])?;
+            set_declared_hardware(dir.path(), case.rims, case.pedals, case.handbrake)?;
+            set_required_hub_controls(dir.path(), case.controls)?;
+            remove_optional_capture_files(dir.path(), case.removed_captures)?;
+            refresh_passive_parser_receipts(dir.path())?;
+
+            let manifest = read_json_path(&dir.path().join("manifest.json"))?;
+            let schema_errors = manifest_schema_validation_errors(&manifest);
+            assert!(
+                schema_errors.is_empty(),
+                "{} schema errors: {schema_errors:?}",
+                case.name
+            );
+
+            let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
+
+            assert!(
+                receipt.success,
+                "{} failed: {}",
+                case.name,
+                serde_json::to_string_pretty(&receipt)?
+            );
+            let selected_requirements = passive_capture_requirements_for_lane(dir.path());
+            for artifact in case.absent_artifacts {
+                assert!(
+                    receipt
+                        .artifacts
+                        .iter()
+                        .all(|receipt_artifact| receipt_artifact.path != *artifact),
+                    "{} unexpectedly required artifact {}",
+                    case.name,
+                    artifact
+                );
+                assert!(
+                    selected_requirements
+                        .iter()
+                        .all(|requirement| requirement.relative_path != *artifact),
+                    "{} unexpectedly selected capture {}",
+                    case.name,
+                    artifact
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_passive_allows_optional_absent_roles_without_placeholder_artifacts()
+    -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        replace_observation_receipt_devices(dir.path(), &[sample_trusted_r5_json_device()])?;
+        set_declared_hardware(dir.path(), &[], &["SR-P"], None)?;
+        set_required_hub_controls(
+            dir.path(),
+            &[
+                (
+                    "steering",
+                    "steering",
+                    None,
+                    "captures/r5-steering-sweep.jsonl",
+                ),
+                (
+                    "throttle",
+                    "throttle",
+                    None,
+                    "captures/r5-throttle-only-sweep.jsonl",
+                ),
+                ("brake", "brake", None, "captures/r5-brake-only-sweep.jsonl"),
+            ],
+        )?;
+        let mut manifest = read_json_path(&dir.path().join("manifest.json"))?;
+        manifest["topology"]["logical_controls"]["clutch"] = serde_json::json!({
+            "role": "clutch",
+            "source_endpoint": "moza-r5-if2",
+            "connection": "wheelbase_hub",
+            "required": false,
+            "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
+            "semantic_status": "deferred"
+        });
+        write_test_json_file(&dir.path().join("manifest.json"), &manifest)?;
+        remove_optional_capture_files(
+            dir.path(),
+            &[
+                "captures/r5-clutch-only-sweep.jsonl",
+                "captures/r5-handbrake-only-sweep.jsonl",
+                "captures/ks-controls.jsonl",
+                "captures/es-controls.jsonl",
+            ],
+        )?;
+        refresh_passive_parser_receipts(dir.path())?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
+
+        assert!(
+            receipt.success,
+            "{}",
+            serde_json::to_string_pretty(&receipt)?
+        );
+        assert!(
+            passive_capture_requirements_for_lane(dir.path())
+                .iter()
+                .all(|requirement| requirement.relative_path
+                    != "captures/r5-clutch-only-sweep.jsonl")
         );
         assert!(
             receipt

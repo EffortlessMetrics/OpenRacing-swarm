@@ -220,6 +220,10 @@ planned evidence from parser-backed proof. New lanes start at `deferred`.
 means movement is visible only through generic R5 V1 extended fields, `missing`
 means the selected capture parsed but did not satisfy the role, and
 `unavailable` means the role has no selected capture or endpoint evidence.
+The `hardware` section is declared inventory for the bench profile: only the R5
+wheelbase identity is mandatory, while rims, pedals, and handbrake are optional
+inventory hints. Required evidence comes from `topology.logical_controls`, not
+from a fixed Moza kit checklist.
 
 ## Verification Commands
 
