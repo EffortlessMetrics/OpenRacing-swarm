@@ -3797,6 +3797,7 @@ fn push_passive_next_commands(
             .unwrap_or("YYYY-MM-DD")
     ));
     let fixture_dir_arg = command_arg(&fixture_dir.display().to_string());
+    let r5_selector = format!("0x346E:{wheelbase_pid}");
 
     commands.push(format!(
         "wheelctl moza init-lane --lane {lane_arg} --wheelbase-pid {wheelbase_pid} --operator Steven"
@@ -3818,7 +3819,7 @@ fn push_passive_next_commands(
         lane_path_arg(lane, "descriptor.json")
     ));
     commands.push(format!(
-        "wheelctl moza descriptor --device {wheelbase_pid} --report-descriptor-hex-file target/moza-r5-report-descriptor.txt --json-out {}",
+        "wheelctl moza descriptor --device {r5_selector} --report-descriptor-hex-file target/moza-r5-report-descriptor.txt --json-out {}",
         lane_path_arg(lane, "descriptor.json")
     ));
 
@@ -22147,8 +22148,9 @@ mod tests {
                 && command.contains("captures/r5-steering-sweep.jsonl")
         }));
         assert!(
-            receipt.next_commands.iter().any(|command| command
-                .contains("wheelctl moza descriptor --device 0x0014 --report-descriptor-hex-file")),
+            receipt.next_commands.iter().any(|command| command.contains(
+                "wheelctl moza descriptor --device 0x346E:0x0014 --report-descriptor-hex-file"
+            )),
             "passive next_commands should include the descriptor file fallback"
         );
         assert!(
@@ -22236,11 +22238,11 @@ mod tests {
             .find(|command| command.contains("--report-descriptor-hex-file"))
             .ok_or("expected descriptor file fallback next command")?;
         assert!(
-            descriptor_fallback_command.contains("--device 0x0004"),
+            descriptor_fallback_command.contains("--device 0x346E:0x0004"),
             "descriptor file fallback should use manifest PID: {descriptor_fallback_command}"
         );
         assert!(
-            !descriptor_fallback_command.contains("--device 0x0014"),
+            !descriptor_fallback_command.contains("--device 0x346E:0x0014"),
             "descriptor file fallback must not suggest the default V2 PID for a V1 lane: {descriptor_fallback_command}"
         );
         Ok(())
