@@ -281,10 +281,14 @@ This design mirrors the [`openracing-capture-ids`](../../crates/openracing-captu
 | `interface_number` | hidapi / sysfs | sysfs symlink (`.N` suffix) | hidapi `interface_number()` |
 | `usage_page` | report descriptor / hidapi | parsed from first `0x05/0x06` tag | hidapi `usage_page()` |
 | `usage` | report descriptor / hidapi | parsed from first `0x09/0x0A` tag | hidapi `usage()` |
-| `report_descriptor_len` | raw descriptor bytes | `descriptor.len()` | not available (always `None`) |
-| `report_descriptor_crc32` | CRC32 of raw descriptor | `crc32fast::Hasher` over descriptor | not available (always `None`) |
+| `report_descriptor_len` | raw descriptor bytes | `descriptor.len()` | unavailable from hidapi enumeration; available when the operator supplies exported descriptor bytes |
+| `report_descriptor_crc32` | CRC32 of raw descriptor | `crc32fast::Hasher` over descriptor | unavailable from hidapi enumeration; available when the operator supplies exported descriptor bytes |
 
-Windows does not expose raw report descriptor bytes via hidapi. The `report_descriptor_crc32` is therefore always `None` on Windows until a separate Windows fingerprinting path is implemented.
+Windows does not expose raw report descriptor bytes via hidapi enumeration. For the
+receipt-backed hardware lane, export the HID report descriptor with USBTreeView
+or an equivalent descriptor tool and import it through `wheelctl moza descriptor
+--report-descriptor-hex-file`; the resulting receipt stores the raw descriptor
+hex, parsed report metadata, length, and CRC for verifier checks.
 
 ### Arming policy
 
@@ -296,7 +300,7 @@ Windows does not expose raw report descriptor bytes via hidapi. The `report_desc
 **Direct FFB mode** (`OPENRACING_MOZA_FFB_MODE=direct`):
 - If the device signature is not trusted, the runtime downgrades to `standard` mode and emits a warning.
 
-### Descriptor CRC32 allowlist
+### Descriptor CRC32 allowlist and lane receipts
 
 On Linux, a device is trusted when its `report_descriptor_crc32` appears in:
 
@@ -320,6 +324,26 @@ export OPENRACING_MOZA_DESCRIPTOR_CRC32_ALLOWLIST=0xDEADBEEF
 export OPENRACING_MOZA_HIGH_TORQUE=1
 ```
 
+For the dated Moza hardware lane, descriptor trust is tied to
+`ci/hardware/moza-r5/<date>/descriptor.json`, not only to the process
+environment. The trusted receipt must contain descriptor-derived metadata
+(`report_metadata_source: "report_descriptor_parsed"`), the stored descriptor
+hex, a matching `report_descriptor_len`, a matching `report_descriptor_crc32`,
+the R5 identity fields, and the expected R5 report IDs and lengths. On Windows,
+capture that receipt with:
+
+```powershell
+wheelctl moza descriptor `
+  --device 0x346E:0x0004 `
+  --report-descriptor-hex-file target/moza-r5-report-descriptor.txt `
+  --json-out ci/hardware/moza-r5/<date>/descriptor.json `
+  --json
+```
+
+The descriptor import path is observe-only. It parses bytes supplied by the
+operator and does not open the HID device or send output, feature, serial,
+firmware, or DFU commands.
+
 ### Escape hatch (developers only)
 
 ```bash
@@ -328,14 +352,23 @@ export OPENRACING_MOZA_ALLOW_UNKNOWN_SIGNATURE=1
 export OPENRACING_MOZA_HIGH_TORQUE=1
 ```
 
-**Warning:** the escape hatch sends high torque to any Moza wheelbase regardless of identity. Only use on hardware you own in a safe environment.
+**Warning:** the lower-level escape hatch sends high torque to any Moza
+wheelbase regardless of identity. It is not passive evidence, and it is not a
+substitute for the hardware-lane descriptor receipt. The receipt-backed
+low-torque and simulator-smoke gates instead require either descriptor trust
+from the same dated lane or an explicit operator override recorded in the output
+receipt. High torque remains out of scope for the Steven R5 bring-up lane.
 
 ### Windows parity note
 
-Windows currently gets `report_descriptor_crc32=None`, which means:
-- `signature_is_trusted(None)` returns `false` by default.
-- High torque and direct mode require `OPENRACING_MOZA_ALLOW_UNKNOWN_SIGNATURE=1` on Windows until a Windows descriptor fingerprinting path is implemented.
-- This is a deliberate safe-default: do not assume Windows is silently working in an untrusted state.
+Windows hidapi enumeration currently gets `report_descriptor_crc32=None`, which
+means `signature_is_trusted(None)` returns `false` by default. A Windows lane can
+still become descriptor-trusted when the operator imports raw descriptor bytes
+from USBTreeView or an equivalent tool and the verifier can recompute the stored
+CRC and parsed report metadata. If no trusted descriptor receipt exists, any
+future bounded output proof must record an explicit operator override and keep
+high torque disabled. This is a deliberate safe-default: do not assume Windows is
+silently working in an untrusted state.
 
 ### Environment variable reference
 
@@ -343,6 +376,6 @@ Windows currently gets `report_descriptor_crc32=None`, which means:
 |---|---|---|
 | `OPENRACING_MOZA_FFB_MODE` | `standard` (default), `direct`, `off` | Selects FFB mode; `direct` is downgraded if untrusted |
 | `OPENRACING_MOZA_HIGH_TORQUE` | `1` / `true` | Requests high torque (requires trusted signature) |
-| `OPENRACING_MOZA_DESCRIPTOR_CRC32_ALLOWLIST` | `0xHEX,...` | Comma-separated trusted descriptor CRC32s (Linux) |
-| `OPENRACING_MOZA_ALLOW_UNKNOWN_SIGNATURE` | `1` / `true` | Bypass allowlist check (developer escape hatch) |
+| `OPENRACING_MOZA_DESCRIPTOR_CRC32_ALLOWLIST` | `0xHEX,...` | Comma-separated trusted descriptor CRC32s for the lower-level protocol gate |
+| `OPENRACING_MOZA_ALLOW_UNKNOWN_SIGNATURE` | `1` / `true` | Bypass allowlist check for lower-level development only; not hardware-lane evidence |
 | `OPENRACING_MOZA_TRANSPORT_MODE` | `raw-hidraw` (default), `kernel-pidff` | Linux transport; `kernel-pidff` skips vendor handshake |
