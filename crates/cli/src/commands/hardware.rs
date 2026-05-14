@@ -523,14 +523,19 @@ fn lane_status_safe_next_commands(
                     lane_path_arg(lane, "parser-fixture-validation.json")
                 ),
             ];
-            commands.extend(roles.iter().filter(|role| role.required).map(|role| {
-                format!(
-                    "wheelctl moza capture-input --device {} --duration-ms {} --json-out {} --json",
-                    role.expected_endpoint,
-                    passive_capture_duration_ms(role),
-                    lane_path_arg(lane, &role.evidence_artifact)
-                )
-            }));
+            commands.extend(
+                roles
+                    .iter()
+                    .filter(|role| role.required && !lane.join(&role.evidence_artifact).exists())
+                    .map(|role| {
+                        format!(
+                            "wheelctl moza capture-input --device {} --duration-ms {} --json-out {} --json",
+                            role.expected_endpoint,
+                            passive_capture_duration_ms(role),
+                            lane_path_arg(lane, &role.evidence_artifact)
+                        )
+                    }),
+            );
             commands
         }
         ("moza-r5", "descriptor_trust") => vec![
@@ -2713,6 +2718,46 @@ mod tests {
                 .all(|command| !command.contains("torque")
                     && !command.contains("ffb")
                     && !command.contains("output"))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn lane_status_passive_capture_guidance_skips_present_role_artifacts() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("moza-r5-lane");
+        let _receipt =
+            scaffold_hardware_lane(&lane, "moza-r5", "wheelbase-hub", "Steven", false, None)?;
+        for artifact in [
+            "device-list.json",
+            "hardware-doctor.json",
+            "hid-list.json",
+            "moza-probe.json",
+        ] {
+            fs::write(lane.join(artifact), "{}\n")?;
+        }
+        fs::write(
+            lane.join("captures").join("r5-throttle-only-sweep.jsonl"),
+            "{}\n",
+        )?;
+
+        let status = build_hardware_lane_status_receipt(&lane)?;
+
+        assert_eq!(status.next_blocked_stage, "passive");
+        let capture_commands: Vec<_> = status
+            .safe_next_commands
+            .iter()
+            .filter(|command| command.contains("wheelctl moza capture-input"))
+            .collect();
+        assert!(
+            capture_commands
+                .iter()
+                .all(|command| !command.contains("r5-throttle-only-sweep.jsonl"))
+        );
+        assert!(
+            capture_commands
+                .iter()
+                .any(|command| command.contains("r5-steering-sweep.jsonl"))
         );
         Ok(())
     }
