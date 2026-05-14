@@ -4862,9 +4862,11 @@ fn push_passive_next_commands(
             "wheelctl moza descriptor --json-out {}",
             lane_path_arg(lane, "descriptor.json")
         ));
-        commands.push(
-            "powershell -ExecutionPolicy Bypass -File scripts/extract_usbpcap_report_descriptor.ps1 -InputPcapng target/moza-r5-usbpcap-enumeration.pcapng -Output target/moza-r5-report-descriptor.txt -InterfaceNumber 2".to_string()
-        );
+        if usbpcap_descriptor_extractor_next_command_allowed(lane) {
+            commands.push(
+                "powershell -ExecutionPolicy Bypass -File scripts/extract_usbpcap_report_descriptor.ps1 -InputPcapng target/moza-r5-usbpcap-enumeration.pcapng -Output target/moza-r5-report-descriptor.txt -InterfaceNumber 2".to_string()
+            );
+        }
         commands.push(format!(
             "wheelctl moza descriptor --device {r5_selector} --report-descriptor-hex-file target/moza-r5-report-descriptor.txt --json-out {}",
             lane_path_arg(lane, "descriptor.json")
@@ -4946,6 +4948,18 @@ fn push_passive_next_commands(
             lane_path_arg(lane, audit_receipt_path(MozaBundleStage::Passive))
         ));
     }
+}
+
+fn usbpcap_descriptor_extractor_next_command_allowed(lane: &Path) -> bool {
+    let Ok(receipt) = read_json_path(&lane.join("hardware-doctor.json")) else {
+        return true;
+    };
+    receipt
+        .get("tools")
+        .and_then(|tools| tools.get("usbpcap_descriptor_capture"))
+        .and_then(|capture| capture.get("ready_for_usbpcap_descriptor_capture"))
+        .and_then(Value::as_bool)
+        != Some(false)
 }
 
 fn bundle_gate_check_passed(gates: &[BundleGateCheck], name: &str) -> bool {
@@ -25392,6 +25406,51 @@ mod tests {
             !joined.contains("promoted_capture_fixtures_replay_through_moza_parser"),
             "fixture replay test should wait for descriptor metadata trust: {joined}"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_descriptor_next_commands_respect_usbpcap_tooling_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        let mut descriptor = read_json_path(&dir.path().join("descriptor.json"))?;
+        descriptor["devices"][0]["descriptor_source"] = serde_json::json!("unavailable");
+        descriptor["devices"][0]
+            .as_object_mut()
+            .ok_or("descriptor devices[0] should be object")?
+            .remove("report_descriptor_crc32");
+        write_test_json_file(&dir.path().join("descriptor.json"), &descriptor)?;
+        let mut hardware_doctor = read_json_path(&dir.path().join("hardware-doctor.json"))?;
+        hardware_doctor["tools"]["usbpcap_descriptor_capture"] = serde_json::json!({
+            "tshark_present": true,
+            "usbpcap_interfaces_present": false,
+            "usbpcap_interface_count": 0,
+            "ready_for_usbpcap_descriptor_capture": false
+        });
+        write_test_json_file(&dir.path().join("hardware-doctor.json"), &hardware_doctor)?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Passive);
+
+        assert!(!receipt.success);
+        let joined = receipt.next_commands.join("\n");
+        assert!(
+            !joined.contains("scripts/extract_usbpcap_report_descriptor.ps1"),
+            "USBPcap extractor should not be suggested when hardware doctor marks it unavailable: {joined}"
+        );
+        assert!(
+            joined.contains("--report-descriptor-hex-file target/moza-r5-report-descriptor.txt"),
+            "descriptor text import should remain available: {joined}"
+        );
+        assert!(
+            joined.contains("--report-descriptor-bin-file target/moza-r5-report-descriptor.bin"),
+            "descriptor binary import should remain available: {joined}"
+        );
+        for forbidden in ["torque-test", "direct", "high-torque"] {
+            assert!(
+                !joined.contains(forbidden),
+                "passive next_commands must not include {forbidden}: {joined}"
+            );
+        }
         Ok(())
     }
 

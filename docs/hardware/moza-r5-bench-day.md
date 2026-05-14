@@ -177,11 +177,11 @@ USBPcap intentionally, or move the R5 to a machine that can produce the raw HID
 Report Descriptor response. Do not import Windows HidP KDR/preparsed data as a
 substitute.
 
-`wheelctl hardware lane status` reads that same hardware-doctor tooling status
-when it builds descriptor-stage guidance. If the host explicitly lacks USBPcap
-capture interfaces, lane status keeps the descriptor import commands but does
-not present the USBPcap extraction script as an immediately runnable local next
-step.
+`wheelctl hardware lane status` and `wheelctl moza verify-bundle` read that same
+hardware-doctor tooling status when they build descriptor-stage guidance. If the
+host explicitly lacks USBPcap capture interfaces, they keep the descriptor import
+commands but do not present the USBPcap extraction script as an immediately
+runnable local next step.
 
 Use the selected R5 device only for the supplied hex:
 
