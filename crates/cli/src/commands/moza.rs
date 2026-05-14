@@ -14348,6 +14348,10 @@ fn selector_matches(device: &MozaDeviceRecord, selector: Option<&str>) -> bool {
         return true;
     }
 
+    if let Some(identity) = parse_hid_observe_selector(selector) {
+        return hid_observe_selector_matches(device, &identity);
+    }
+
     if let Some((vid, pid)) = parse_vid_pid_selector(selector) {
         return device.vendor_id.eq_ignore_ascii_case(&hex_u16(vid))
             && device.product_id.eq_ignore_ascii_case(&hex_u16(pid));
@@ -14368,6 +14372,49 @@ fn selector_matches(device: &MozaDeviceRecord, selector: Option<&str>) -> bool {
             .as_deref()
             .map(|s| s.to_ascii_lowercase().contains(&selector_lc))
             .unwrap_or(false)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HidObserveSelector {
+    vendor_id: u16,
+    product_id: u16,
+    interface_number: i32,
+    usage_page: u16,
+    usage: u16,
+}
+
+fn parse_hid_observe_selector(selector: &str) -> Option<HidObserveSelector> {
+    let rest = selector.strip_prefix("hid-")?;
+    let mut parts = rest.split('-');
+    let vendor_id = parse_hex_selector(parts.next()?)?;
+    let product_id = parse_hex_selector(parts.next()?)?;
+    let interface_number = parts.next()?.strip_prefix("if")?.parse::<i32>().ok()?;
+    let usage_page = parse_hex_selector(parts.next()?)?;
+    let usage = parse_hex_selector(parts.next()?)?;
+    parts.next().is_none().then_some(HidObserveSelector {
+        vendor_id,
+        product_id,
+        interface_number,
+        usage_page,
+        usage,
+    })
+}
+
+fn hid_observe_selector_matches(device: &MozaDeviceRecord, selector: &HidObserveSelector) -> bool {
+    device
+        .vendor_id
+        .eq_ignore_ascii_case(&hex_u16(selector.vendor_id))
+        && device
+            .product_id
+            .eq_ignore_ascii_case(&hex_u16(selector.product_id))
+        && device.interface_number == Some(selector.interface_number)
+        && device.usage_page.as_deref().is_some_and(|usage_page| {
+            usage_page.eq_ignore_ascii_case(&hex_u16(selector.usage_page))
+        })
+        && device
+            .usage
+            .as_deref()
+            .is_some_and(|usage| usage.eq_ignore_ascii_case(&hex_u16(selector.usage)))
 }
 
 fn parse_vid_pid_selector(selector: &str) -> Option<(u16, u16)> {
@@ -17528,6 +17575,27 @@ mod tests {
         assert!(selector_matches(&device, Some("0x346E:0x0014")));
         assert!(!selector_matches(&device, Some("0x346E:0x0004")));
         assert!(!selector_matches(&device, Some("0x046D:0x0014")));
+    }
+
+    #[test]
+    fn hid_observe_selector_matches_full_endpoint_identity() {
+        let device = sample_device();
+        assert!(selector_matches(
+            &device,
+            Some("hid-0x346E-0x0014-if0-0x0001-0x0004")
+        ));
+        assert!(!selector_matches(
+            &device,
+            Some("hid-0x346E-0x0004-if0-0x0001-0x0004")
+        ));
+        assert!(!selector_matches(
+            &device,
+            Some("hid-0x346E-0x0014-if2-0x0001-0x0004")
+        ));
+        assert!(!selector_matches(
+            &device,
+            Some("hid-0x346E-0x0014-if0-0x0001-0x0005")
+        ));
     }
 
     #[test]
