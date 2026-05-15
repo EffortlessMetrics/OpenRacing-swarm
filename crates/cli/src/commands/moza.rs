@@ -3936,6 +3936,18 @@ fn validate_init_stage_preflight(
     let zero_audit_generated_at =
         require_valid_generated_at(&zero_audit, &zero_audit_path, "zero-stage audit")?;
 
+    if matches!(mode, MozaInitMode::Standard) {
+        let init_off_gate =
+            verify_init_receipt_gate(lane, "init_off_handshake", "init-off.json", "off");
+        if init_off_gate.status != "pass" {
+            return Err(anyhow!(
+                "same-lane init-off receipt '{}' must pass before standard init feature-report writes: {}",
+                lane.join("init-off.json").display(),
+                init_off_gate.details
+            ));
+        }
+    }
+
     Ok(InitStagePreflight {
         lane_display: lane.display().to_string(),
         zero_verification_generated_at: Some(zero_verification_generated_at),
@@ -23056,6 +23068,70 @@ mod tests {
             .ok_or("expected init zero-stage gate error")?;
         assert!(message.contains("zero-stage verification"));
         assert!(!receipt_path.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn init_standard_preflight_requires_same_lane_off_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_test_json_file(
+            &dir.path().join("zero-verification.json"),
+            &stored_verification_receipt(dir.path(), MozaBundleStage::Zero),
+        )?;
+        write_test_json_file(
+            &dir.path().join("lane-audit-zero.json"),
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl moza audit-lane",
+                "generated_at_utc": TEST_GENERATED_AT,
+                "lane": dir.path().display().to_string(),
+                "requested_stage": "zero",
+                "live_verification_success": true,
+                "missing_receipts": 0,
+                "invalid_receipts": 0,
+                "receipt_checks": [
+                    {"path": "passive-verification.json", "status": "pass"},
+                    {"path": "manifest-promotion-passive.json", "status": "pass"},
+                    {"path": "zero-verification.json", "status": "pass"},
+                    {"path": "manifest-promotion-zero.json", "status": "pass"}
+                ],
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true
+            }),
+        )?;
+        let standard_path = dir.path().join("init-standard.json");
+
+        let result = validate_init_stage_preflight(
+            Some(dir.path()),
+            Some(&standard_path),
+            MozaInitMode::Standard,
+            true,
+        );
+
+        let message = result
+            .err()
+            .map(|error| error.to_string())
+            .ok_or("expected standard init to require init-off")?;
+        assert!(
+            message.contains("init-off.json") && message.contains("before standard init"),
+            "standard init should point at the missing same-lane off receipt: {message}"
+        );
+        assert!(!standard_path.exists());
+
+        write_test_json_file(
+            &dir.path().join("init-off.json"),
+            &receipt_with_lane_path(dir.path(), "init-off.json", real_init_receipt("off")),
+        )?;
+
+        validate_init_stage_preflight(
+            Some(dir.path()),
+            Some(&standard_path),
+            MozaInitMode::Standard,
+            true,
+        )?;
+        assert!(!standard_path.exists());
         Ok(())
     }
 
