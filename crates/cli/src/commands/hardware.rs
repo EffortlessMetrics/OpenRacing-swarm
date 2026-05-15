@@ -325,6 +325,10 @@ fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusR
         .map(|stage| {
             let artifacts = stage_expected_artifacts(lane, &stage, &manifest.declared_logical_roles);
             let present = artifacts.iter().filter(|artifact| artifact.present).count();
+            let failed = artifacts
+                .iter()
+                .filter(|artifact| lane_artifact_explicit_failure(lane, artifact))
+                .count();
             let missing = artifacts.len().saturating_sub(present);
             HardwareLaneStageStatus {
                 id: stage.id,
@@ -332,6 +336,7 @@ fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusR
                 purpose: stage.purpose,
                 artifacts_present: present,
                 artifacts_missing: missing,
+                artifacts_failed: failed,
                 expected_artifacts: artifacts,
                 gate_status: "not_validated_by_status",
                 notes: vec![
@@ -355,8 +360,13 @@ fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusR
         .iter()
         .find(|stage| stage.artifacts_missing > 0)
         .map(|stage| (stage.id, stage.order));
+    let first_failed_artifact_stage = stage_status
+        .iter()
+        .find(|stage| stage.artifacts_failed > 0)
+        .map(|stage| (stage.id, stage.order));
     let next_blocked_stage = lane_status_next_blocked_stage(
         first_missing_artifact_stage,
+        first_failed_artifact_stage,
         !missing_role_endpoints.is_empty(),
         verifier_receipt.stage_blocker.as_deref(),
     );
@@ -739,6 +749,16 @@ fn lane_artifact_status(lane: &Path, kind: &str, rel: &str) -> HardwareLaneArtif
     }
 }
 
+fn lane_artifact_explicit_failure(lane: &Path, artifact: &HardwareLaneArtifactStatus) -> bool {
+    if !artifact.present || artifact.kind != "receipt" {
+        return false;
+    }
+    let Ok(value) = read_json_file::<serde_json::Value>(&lane.join(&artifact.relative_path)) else {
+        return false;
+    };
+    value.get("success").and_then(serde_json::Value::as_bool) == Some(false)
+}
+
 fn lane_status_blocking_items(
     stage_status: &[HardwareLaneStageStatus],
     scaffold_required: bool,
@@ -749,6 +769,9 @@ fn lane_status_blocking_items(
     let mut items = Vec::new();
     if scaffold_required && !scaffold_complete {
         items.push("scaffold_files_missing".to_string());
+    }
+    if let Some(stage) = stage_status.iter().find(|stage| stage.artifacts_failed > 0) {
+        items.push(format!("{}:failed_artifacts", stage.id));
     }
     if let Some(stage) = stage_status
         .iter()
@@ -893,10 +916,14 @@ fn required_roles_with_placeholder_endpoints(
 
 fn lane_status_next_blocked_stage(
     first_missing_artifact_stage: Option<(&'static str, u8)>,
+    first_failed_artifact_stage: Option<(&'static str, u8)>,
     missing_required_role_endpoint: bool,
     verifier_stage_blocker: Option<&str>,
 ) -> &'static str {
     let mut earliest = first_missing_artifact_stage;
+    if let Some(stage) = first_failed_artifact_stage {
+        earliest = earlier_stage(earliest, stage);
+    }
     if missing_required_role_endpoint {
         earliest = earlier_stage(earliest, ("passive", 1));
     }
@@ -3172,6 +3199,7 @@ struct HardwareLaneStageStatus {
     purpose: &'static str,
     artifacts_present: usize,
     artifacts_missing: usize,
+    artifacts_failed: usize,
     expected_artifacts: Vec<HardwareLaneArtifactStatus>,
     gate_status: &'static str,
     notes: Vec<String>,
@@ -4712,6 +4740,66 @@ mod tests {
         assert_eq!(status.next_blocked_stage, "zero_torque");
         assert!(status.safe_next_commands.is_empty());
         assert!(!status.evidence_claims_validated);
+        assert!(!status.ready_for_zero_torque);
+        assert!(!status.ready_for_ffb);
+        Ok(())
+    }
+
+    #[test]
+    fn lane_status_blocks_on_failed_zero_receipt_before_watchdog() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("moza-r5-lane");
+        let _receipt =
+            scaffold_hardware_lane(&lane, "moza-r5", "wheelbase-hub", "Steven", false, None)?;
+        for artifact in [
+            "device-list.json",
+            "hardware-doctor.json",
+            "hid-list.json",
+            "moza-probe.json",
+            "lane-capture-analysis.json",
+            "parser-fixture-validation.json",
+            "descriptor.json",
+            "fixture-promotion.json",
+            "passive-verification.json",
+            "lane-audit-passive.json",
+            "pre-output-readiness.json",
+        ] {
+            fs::write(lane.join(artifact), "{}\n")?;
+        }
+        fs::write(
+            lane.join("zero-torque-proof.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "success": false,
+                "command": "wheelctl moza zero"
+            }))?,
+        )?;
+        for role in [
+            "r5-steering-sweep.jsonl",
+            "r5-throttle-only-sweep.jsonl",
+            "r5-brake-only-sweep.jsonl",
+        ] {
+            fs::write(lane.join("captures").join(role), "{}\n")?;
+        }
+        fs::write(
+            lane.join("captures").join("declared-rim-controls.jsonl"),
+            "{}\n",
+        )?;
+
+        let status = build_hardware_lane_status_receipt(&lane)?;
+        let zero_stage = status
+            .stages
+            .iter()
+            .find(|stage| stage.id == "zero_torque")
+            .ok_or("expected zero torque stage")?;
+
+        assert_eq!(status.next_blocked_stage, "zero_torque");
+        assert_eq!(zero_stage.artifacts_failed, 1);
+        assert!(
+            status
+                .blocking_items
+                .contains(&"zero_torque:failed_artifacts".to_string())
+        );
+        assert!(status.safe_next_commands.is_empty());
         assert!(!status.ready_for_zero_torque);
         assert!(!status.ready_for_ffb);
         Ok(())
