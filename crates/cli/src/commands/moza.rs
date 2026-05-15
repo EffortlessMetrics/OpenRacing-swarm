@@ -4626,7 +4626,7 @@ fn topology_endpoint_metadata_matches_device(device: &Value, endpoint: &Value) -
 
 fn operator_actions_for_bundle_stage(
     lane: &Path,
-    _stage: MozaBundleStage,
+    stage: MozaBundleStage,
     gates: &[BundleGateCheck],
 ) -> Vec<String> {
     let mut actions = Vec::new();
@@ -4671,7 +4671,75 @@ fn operator_actions_for_bundle_stage(
         );
     }
 
+    if stage == MozaBundleStage::SmokeReady {
+        push_smoke_ready_frontier_operator_action(lane, gates, &mut actions);
+    }
+
     actions
+}
+
+fn push_smoke_ready_frontier_operator_action(
+    lane: &Path,
+    gates: &[BundleGateCheck],
+    actions: &mut Vec<String>,
+) {
+    if !zero_stage_gates_passed(gates) {
+        return;
+    }
+
+    let r5_selector = next_command_r5_selector(lane);
+    if !bundle_gate_check_passed(gates, "init_off_handshake") {
+        actions.push(format!(
+            "Current smoke-ready frontier: staged init-off. This sends only the bounded Moza init feature reports 0x03 and 0x11, with 0x11 payload 11FF0000, and still sends no output reports or torque. Before running it, confirm the operator is at the bench, the wheel is clear, power cutoff is understood, no game/sim FFB source is active, and Pit House firmware/update flows are closed or not installed. Run only the lane-bound `wheelctl moza init --device {r5_selector} --mode off --confirm-init ...` command; do not run standard init, low torque, simulator FFB, direct mode, serial config, firmware, or DFU until this receipt passes."
+        ));
+        return;
+    }
+
+    if !bundle_gate_check_passed(gates, "init_standard_handshake") {
+        actions.push(format!(
+            "Current smoke-ready frontier: staged init-standard. This sends only the bounded Moza init feature reports 0x03 and 0x11, with 0x11 payload 11000000, after the same-lane init-off receipt has passed; it still must not send output reports or torque. Confirm the operator is at the bench, the wheel is clear, power cutoff is understood, and no game/sim FFB source or firmware/update flow is active. Run only the lane-bound `wheelctl moza init --device {r5_selector} --mode standard --confirm-init ...` command; do not run low torque, simulator FFB, direct mode, serial config, firmware, or DFU until this receipt passes."
+        ));
+        return;
+    }
+
+    if !bundle_gate_check_passed(gates, "service_status_receipts") {
+        actions.push(
+            "Current smoke-ready frontier: refresh service/status/support receipts after staged init. These are diagnostic/no-output receipts only; keep safe_to_send_torque=false, ffb_ready=false, high torque disabled, and no feature/output/serial/firmware actions while collecting moza-status.json, device-status.json, and support-bundle.json."
+                .to_string(),
+        );
+        return;
+    }
+
+    if !bundle_gate_check_passed(gates, "low_torque_bounded") {
+        actions.push(
+            "Current smoke-ready frontier: bounded low-torque proof. This is the first nonzero torque step; run it only with explicit operator confirmation, wheel clear, power cutoff understood, no game/sim FFB source active, no Pit House firmware/update flow active, descriptor trust present, and same-lane zero/off/standard init receipts passing. Keep the cap and duration bounded, and do not proceed to simulator FFB, direct-mode expansion, serial config, firmware, or DFU until low-torque-proof.json passes."
+                .to_string(),
+        );
+        return;
+    }
+
+    if !bundle_gate_check_passed(gates, "simulator_telemetry") {
+        actions.push(
+            "Current smoke-ready frontier: simulator telemetry proof. Capture one real simulator telemetry path only; this step must not send Moza output reports, feature reports, torque, serial config, firmware, or DFU commands."
+                .to_string(),
+        );
+        return;
+    }
+
+    if !bundle_gate_check_passed(gates, "simulator_ffb_bounded") {
+        actions.push(
+            "Current smoke-ready frontier: bounded simulator FFB smoke. Run it only after telemetry passes, with the operator at the bench, wheel clear, power cutoff understood, watchdog enabled, descriptor trusted, low-torque proof passing, and no vendor firmware/update flow active. Keep duration and force bounded, record stop/pause/game-exit final-zero behavior, and do not claim Pit House coexistence until the later Pit House mode-change proof links to this receipt."
+                .to_string(),
+        );
+        return;
+    }
+
+    if !bundle_gate_check_passed(gates, "pit_house_coexistence") {
+        actions.push(
+            "Current smoke-ready frontier: Pit House coexistence proof. If Pit House is not installed or we choose not to use it, leave smoke-ready blocked instead of fabricating coexistence evidence. If it is used, collect the closed, open-standard, direct-blocked, mode-change, and firmware/update-page observations as lane artifacts; firmware/update pages must be refused, and the mode-change case must prove output cleared and final zero was attempted after simulator FFB smoke."
+                .to_string(),
+        );
+    }
 }
 
 fn audit_lane_dir(lane: &Path, stage: MozaBundleStage) -> LaneAuditReceipt {
@@ -28116,6 +28184,109 @@ mod tests {
                 "smoke-ready next_commands should not use stale Pit House artifact name {stale_artifact}: {joined}"
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_smoke_operator_actions_match_current_frontier() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        write_zero_stage_receipts(dir.path())?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let actions = receipt.operator_actions.join("\n");
+        assert!(
+            actions.contains("Current smoke-ready frontier: staged init-off")
+                && actions.contains("feature reports 0x03 and 0x11")
+                && actions.contains("11FF0000")
+                && actions.contains("wheel is clear")
+                && actions.contains("no game/sim FFB source")
+                && actions.contains("do not run standard init, low torque, simulator FFB"),
+            "init-off frontier should explain feature-report safety boundary: {actions}"
+        );
+
+        write_test_json_file(
+            &dir.path().join("init-off.json"),
+            &receipt_with_lane_path(dir.path(), "init-off.json", real_init_receipt("off")),
+        )?;
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let actions = receipt.operator_actions.join("\n");
+        assert!(
+            actions.contains("Current smoke-ready frontier: staged init-standard")
+                && actions.contains("11000000")
+                && actions.contains("same-lane init-off receipt")
+                && actions.contains("do not run low torque, simulator FFB"),
+            "init-standard frontier should explain the standard-mode safety boundary: {actions}"
+        );
+
+        write_test_json_file(
+            &dir.path().join("init-standard.json"),
+            &receipt_with_lane_path(
+                dir.path(),
+                "init-standard.json",
+                real_init_receipt("standard"),
+            ),
+        )?;
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let actions = receipt.operator_actions.join("\n");
+        assert!(
+            actions
+                .contains("Current smoke-ready frontier: refresh service/status/support receipts")
+                && actions.contains("safe_to_send_torque=false")
+                && actions.contains("no feature/output/serial/firmware actions"),
+            "service-status frontier should keep readiness diagnostic-only: {actions}"
+        );
+
+        write_service_status_artifacts(dir.path())?;
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let actions = receipt.operator_actions.join("\n");
+        assert!(
+            actions.contains("Current smoke-ready frontier: bounded low-torque proof")
+                && actions.contains("first nonzero torque step")
+                && actions.contains("explicit operator confirmation")
+                && actions.contains("same-lane zero/off/standard init receipts"),
+            "low-torque frontier should be explicitly operator-gated: {actions}"
+        );
+
+        write_test_json_file(
+            &dir.path().join("low-torque-proof.json"),
+            &real_low_torque_receipt_for_lane(dir.path(), 2.0)?,
+        )?;
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let actions = receipt.operator_actions.join("\n");
+        assert!(
+            actions.contains("Current smoke-ready frontier: simulator telemetry proof")
+                && actions.contains("one real simulator telemetry path only")
+                && actions.contains("must not send Moza output reports"),
+            "telemetry frontier should stay output-free: {actions}"
+        );
+
+        write_simulator_artifacts(dir.path())?;
+        write_service_status_artifacts(dir.path())?;
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let actions = receipt.operator_actions.join("\n");
+        assert!(
+            actions.contains("Current smoke-ready frontier: bounded simulator FFB smoke")
+                && actions.contains("watchdog enabled")
+                && actions.contains("duration and force bounded")
+                && actions.contains("do not claim Pit House coexistence"),
+            "simulator FFB frontier should be bounded and not overclaim Pit House: {actions}"
+        );
+
+        write_test_json_file(
+            &dir.path().join("simulator-ffb-smoke.json"),
+            &simulator_ffb_receipt(),
+        )?;
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let actions = receipt.operator_actions.join("\n");
+        assert!(
+            actions.contains("Current smoke-ready frontier: Pit House coexistence proof")
+                && actions.contains("Pit House is not installed")
+                && actions.contains("leave smoke-ready blocked")
+                && actions.contains("firmware/update pages must be refused")
+                && actions.contains("final zero was attempted"),
+            "Pit House frontier should allow an honest blocked state instead of fabricated evidence: {actions}"
+        );
         Ok(())
     }
 
