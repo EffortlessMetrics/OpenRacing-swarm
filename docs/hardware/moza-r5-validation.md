@@ -139,8 +139,11 @@ R5 V1 descriptor exposes standard PIDFF Device Control report `0x0C`; `wheelctl
 moza zero --strategy pidff-stop-all` may use that report as a zero-output Stop
 All Effects proof when the same lane descriptor metadata is trusted. Direct
 report `0x20` remains required for later direct low-torque tests. `ready_for_ffb`
-must remain false until the later zero, watchdog, disconnect, low-torque, Pit
-House, and simulator telemetry prerequisites are also present.
+must remain false until the later zero, watchdog, disconnect, low-torque, and
+simulator telemetry prerequisites are also present. Pit House coexistence remains
+a separate smoke-ready proof before promotion; it is not used as a prerequisite
+for the first bounded simulator FFB attempt because the mode-change case links
+back to `simulator-ffb-smoke.json`.
 
 If Windows cannot expose the raw HID report descriptor, paste descriptor hex
 from USBTreeView, USBPcap/Wireshark enumeration traffic, or an equivalent

@@ -4940,7 +4940,7 @@ fn pre_output_readiness_dir(lane: &Path) -> PreOutputReadinessReceipt {
         notes: vec![
             "pre-output-readiness reads existing lane receipts only; it opens no HID device and sends no reports".to_string(),
             "ready_for_zero_torque is the first output-adjacent gate and still does not permit nonzero torque or FFB".to_string(),
-            "ready_for_ffb is false until zero, watchdog, disconnect, low-torque, Pit House, and simulator telemetry prerequisites are present".to_string(),
+            "ready_for_ffb is false until zero, watchdog, disconnect, low-torque, and simulator telemetry prerequisites are present; Pit House coexistence remains a separate smoke-ready proof before promotion".to_string(),
         ],
     }
 }
@@ -5264,7 +5264,6 @@ fn pre_output_ffb_blocking_items(
         "init_standard_handshake",
         "service_status_receipts",
         "low_torque_bounded",
-        "pit_house_coexistence",
         "simulator_telemetry",
     ] {
         if !pre_output_gate_passed(smoke_ready, gate) {
@@ -5310,7 +5309,6 @@ fn pre_output_bounded_ffb_prerequisite_gates_passed(
                 "init_standard_handshake",
                 "service_status_receipts",
                 "low_torque_bounded",
-                "pit_house_coexistence",
                 "simulator_telemetry",
             ],
         )
@@ -18504,6 +18502,40 @@ mod tests {
     }
 
     #[test]
+    fn pre_output_readiness_ffb_prerequisites_do_not_require_pit_house_parent_proof() -> TestResult
+    {
+        let zero = pre_output_verification_receipt_for_gates(
+            MozaBundleStage::Zero,
+            &[
+                ("zero_torque_real_hardware", "pass"),
+                ("watchdog_zero_output", "pass"),
+                ("disconnect_final_zero", "pass"),
+            ],
+        );
+        let smoke_ready_gates = pre_output_smoke_ready_gates_for_bounded_ffb_without_pit_house();
+        let smoke_ready = pre_output_verification_receipt_for_gates(
+            MozaBundleStage::SmokeReady,
+            &smoke_ready_gates,
+        );
+
+        assert!(
+            pre_output_bounded_ffb_prerequisite_gates_passed(&smoke_ready),
+            "bounded FFB readiness should not wait for the Pit House parent proof because its mode-change case links back to simulator-ffb-smoke.json"
+        );
+
+        let blockers = pre_output_ffb_blocking_items(&zero, &smoke_ready, true);
+        assert!(
+            !blockers.iter().any(|item| item == "pit_house_coexistence"),
+            "Pit House coexistence remains required for smoke-ready promotion, not for ready_for_ffb"
+        );
+        assert!(
+            !blockers.iter().any(|item| item == "simulator_ffb_bounded"),
+            "ready_for_ffb should be true before the bounded simulator FFB receipt exists"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn zero_output_stage_preflight_accepts_ready_same_lane_receipt() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_pre_output_ready_receipt(dir.path())?;
@@ -19849,6 +19881,55 @@ mod tests {
         write_lane_audit_receipts(root, MozaBundleStage::Passive)?;
         let receipt = serde_json::to_value(pre_output_readiness_dir(root))?;
         write_test_json_file(&root.join("pre-output-readiness.json"), &receipt)
+    }
+
+    fn pre_output_verification_receipt_for_gates(
+        stage: MozaBundleStage,
+        gates: &[(&str, &str)],
+    ) -> PreOutputVerificationReceipt {
+        PreOutputVerificationReceipt {
+            success: gates.iter().all(|(_, status)| *status == "pass"),
+            requested_stage: stage_label(stage).to_string(),
+            missing_artifacts: 0,
+            invalid_artifacts: 0,
+            failed_gates: gates.iter().filter(|(_, status)| *status == "fail").count(),
+            artifacts: Vec::new(),
+            gates: gates
+                .iter()
+                .map(|(name, status)| PreOutputVerificationGate {
+                    name: (*name).to_string(),
+                    status: (*status).to_string(),
+                })
+                .collect(),
+            role_evidence: Vec::new(),
+        }
+    }
+
+    fn pre_output_smoke_ready_gates_for_bounded_ffb_without_pit_house()
+    -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("lane_directory", "pass"),
+            ("manifest_no_overclaim", "pass"),
+            ("manifest_r5_pid_consistency", "pass"),
+            ("moza_r5_observed", "pass"),
+            ("moza_topology_observed", "pass"),
+            ("descriptor_metadata", "pass"),
+            ("passive_receipts_successful", "pass"),
+            ("passive_receipts_no_ffb_writes", "pass"),
+            ("passive_captures_parse", "pass"),
+            ("parser_fixture_validation", "pass"),
+            ("fixture_promotion", "pass"),
+            ("zero_torque_real_hardware", "pass"),
+            ("watchdog_zero_output", "pass"),
+            ("disconnect_final_zero", "pass"),
+            ("init_off_handshake", "pass"),
+            ("init_standard_handshake", "pass"),
+            ("service_status_receipts", "pass"),
+            ("low_torque_bounded", "pass"),
+            ("simulator_telemetry", "pass"),
+            ("simulator_ffb_bounded", "fail"),
+            ("pit_house_coexistence", "fail"),
+        ]
     }
 
     fn init_feature_reports(mode_payload: &str, result: &str) -> Vec<Value> {
