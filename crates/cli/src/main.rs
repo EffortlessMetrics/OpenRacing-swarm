@@ -1906,18 +1906,28 @@ mod tests {
             "0x346E:0x0014",
             "--mode",
             "standard",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
+            "--confirm-init",
             "--json-out",
             "init-standard.json",
         ])?;
         match &cli.command {
             Commands::Moza(MozaCommands::Init {
                 device,
+                lane,
                 mode,
+                confirm_init,
                 json_out,
                 ..
             }) => {
                 assert_eq!(device.as_deref(), Some("0x346E:0x0014"));
+                assert_eq!(
+                    lane.as_ref().and_then(|p| p.to_str()),
+                    Some("ci/hardware/moza-r5/2026-05-13")
+                );
                 assert!(matches!(mode, MozaInitMode::Standard));
+                assert!(*confirm_init);
                 assert_eq!(
                     json_out.as_ref().and_then(|p| p.to_str()),
                     Some("init-standard.json")

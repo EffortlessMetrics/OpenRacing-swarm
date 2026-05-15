@@ -109,6 +109,12 @@ struct ZeroOutputStagePreflight {
     pre_output_readiness_generated_at: Option<String>,
 }
 
+struct InitStagePreflight {
+    lane_display: String,
+    zero_verification_generated_at: Option<String>,
+    zero_audit_generated_at: Option<String>,
+}
+
 struct PitHouseProofRequest<'a> {
     json: bool,
     lane: &'a Path,
@@ -350,17 +356,21 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
         }
         MozaCommands::Init {
             device,
+            lane,
             pid,
             mode,
             dry_run,
+            confirm_init,
             json_out,
         } => {
             init(
                 json,
                 device.as_deref(),
+                lane.as_deref(),
                 pid.as_deref(),
                 *mode,
                 *dry_run,
+                *confirm_init,
                 json_out.as_deref(),
             )
             .await
@@ -1956,9 +1966,11 @@ async fn disconnect_proof(
 async fn init(
     json: bool,
     selector: Option<&str>,
+    lane: Option<&Path>,
     pid_override: Option<&str>,
     mode: MozaInitMode,
     dry_run: bool,
+    confirm_init: bool,
     json_out: Option<&Path>,
 ) -> Result<()> {
     let ffb_mode = init_mode_to_ffb_mode(mode);
@@ -1996,6 +2008,8 @@ async fn init(
         return Ok(());
     }
 
+    let preflight = validate_init_stage_preflight(lane, json_out, mode, confirm_init)?;
+
     let api = HidApi::new().context("failed to initialize HID API")?;
     let (device, snapshot) = open_single_moza_device(&api, selector)?;
     if !snapshot.output_capable {
@@ -2009,6 +2023,12 @@ async fn init(
     let pid = parse_required_hex_u16(&snapshot.product_id)?;
     let protocol = MozaProtocol::new_with_config(pid, ffb_mode, false);
     let mut receipt = MozaInitReceipt::new(selector.map(str::to_string), snapshot, mode, false);
+    receipt.lane = Some(preflight.lane_display);
+    receipt.operator_confirmed = confirm_init;
+    receipt.zero_verification_validated = true;
+    receipt.zero_verification_generated_at = preflight.zero_verification_generated_at;
+    receipt.zero_audit_validated = true;
+    receipt.zero_audit_generated_at = preflight.zero_audit_generated_at;
     {
         let mut writer = RecordingFeatureWriter::new(device, &mut receipt.feature_reports);
         protocol
@@ -3721,6 +3741,96 @@ fn validate_same_lane_zero_proof_for_zero_output(lane: &Path) -> Result<ZeroProo
     validate_zero_proof_for_torque_test(&lane.join("zero-torque-proof.json"))
 }
 
+fn init_receipt_relative_path(mode: MozaInitMode) -> &'static str {
+    match mode {
+        MozaInitMode::Off => "init-off.json",
+        MozaInitMode::Standard => "init-standard.json",
+    }
+}
+
+fn validate_init_stage_preflight(
+    lane: Option<&Path>,
+    json_out: Option<&Path>,
+    mode: MozaInitMode,
+    confirmed: bool,
+) -> Result<InitStagePreflight> {
+    if !confirmed {
+        return Err(anyhow!(
+            "--confirm-init is required before actual init feature-report writes"
+        ));
+    }
+    let lane =
+        lane.ok_or_else(|| anyhow!("--lane is required before actual init feature-report writes"))?;
+    let json_out = json_out.ok_or_else(|| {
+        anyhow!("--json-out is required before actual init feature-report writes")
+    })?;
+    require_lane_artifact_path(
+        lane,
+        json_out,
+        init_receipt_relative_path(mode),
+        "--json-out",
+    )?;
+
+    let zero_verification_relative_path = verification_receipt_path(MozaBundleStage::Zero);
+    let zero_verification_path = lane.join(zero_verification_relative_path);
+    let zero_verification = read_json_value(lane, zero_verification_relative_path).with_context(
+        || {
+            format!(
+                "zero-stage verification receipt '{}' is required before actual init feature-report writes",
+                zero_verification_path.display()
+            )
+        },
+    )?;
+    let zero_verification_ok =
+        lane_path_value_matches(lane, json_string(&zero_verification, "lane"))
+            && promotion_verification_summary_ok(Some(&zero_verification), "zero");
+    if !zero_verification_ok {
+        return Err(anyhow!(
+            "zero-stage verification receipt '{}' is not a passing same-lane zero verification",
+            zero_verification_path.display()
+        ));
+    }
+    let zero_verification_generated_at = require_valid_generated_at(
+        &zero_verification,
+        &zero_verification_path,
+        "zero-stage verification",
+    )?;
+
+    if !stored_lane_audit_receipt_passed(lane, MozaBundleStage::Zero) {
+        let zero_audit_path = lane.join(audit_receipt_path(MozaBundleStage::Zero));
+        return Err(anyhow!(
+            "zero-stage audit receipt '{}' is not a passing same-lane zero audit",
+            zero_audit_path.display()
+        ));
+    }
+    let zero_audit_path = lane.join(audit_receipt_path(MozaBundleStage::Zero));
+    let zero_audit = read_json_value(lane, audit_receipt_path(MozaBundleStage::Zero))?;
+    let zero_audit_generated_at =
+        require_valid_generated_at(&zero_audit, &zero_audit_path, "zero-stage audit")?;
+
+    Ok(InitStagePreflight {
+        lane_display: lane.display().to_string(),
+        zero_verification_generated_at: Some(zero_verification_generated_at),
+        zero_audit_generated_at: Some(zero_audit_generated_at),
+    })
+}
+
+fn require_valid_generated_at(receipt: &Value, path: &Path, label: &str) -> Result<String> {
+    let generated_at = json_string(receipt, "generated_at_utc").ok_or_else(|| {
+        anyhow!(
+            "{label} receipt '{}' is missing generated_at_utc",
+            path.display()
+        )
+    })?;
+    if !utc_timestamp_pair_is_ordered(generated_at, generated_at) {
+        return Err(anyhow!(
+            "{label} receipt '{}' has invalid generated_at_utc",
+            path.display()
+        ));
+    }
+    Ok(generated_at.to_string())
+}
+
 fn low_torque_preflight_target_product_id(
     selector: Option<&str>,
     pid_override: Option<&str>,
@@ -3889,10 +3999,34 @@ fn validate_init_proof_for_torque_test(
         .unwrap_or(0);
     let init_state = json_string(&receipt, "init_state").unwrap_or("unknown");
     let ready = json_bool(&receipt, "ready") == Some(true);
+    let lane_ok = path
+        .parent()
+        .map(|lane| lane_path_value_matches(lane, json_string(&receipt, "lane")))
+        .unwrap_or(false);
+    let zero_verification_ordered = json_string(&receipt, "zero_verification_generated_at")
+        .and_then(|zero_at| {
+            generated_at_utc
+                .as_deref()
+                .map(|init_at| utc_timestamp_pair_is_ordered(zero_at, init_at))
+        })
+        .unwrap_or(false);
+    let zero_audit_ordered = json_string(&receipt, "zero_audit_generated_at")
+        .and_then(|zero_at| {
+            generated_at_utc
+                .as_deref()
+                .map(|init_at| utc_timestamp_pair_is_ordered(zero_at, init_at))
+        })
+        .unwrap_or(false);
     let safe = json_bool(&receipt, "success") == Some(true)
         && json_string(&receipt, "command") == Some("wheelctl moza init")
         && json_bool(&receipt, "dry_run") == Some(false)
         && json_bool(&receipt, "no_hid_device_opened") == Some(false)
+        && json_bool(&receipt, "operator_confirmed") == Some(true)
+        && lane_ok
+        && json_bool(&receipt, "zero_verification_validated") == Some(true)
+        && json_bool(&receipt, "zero_audit_validated") == Some(true)
+        && zero_verification_ordered
+        && zero_audit_ordered
         && json_bool(&receipt, "no_output_reports") == Some(true)
         && json_bool(&receipt, "no_direct_torque_reports") == Some(true)
         && no_out_of_scope_device_commands(&receipt)
@@ -5273,11 +5407,11 @@ fn push_smoke_ready_next_commands(
 ) {
     let lane_arg = command_arg(&lane.display().to_string());
     commands.push(format!(
-        "wheelctl moza init --device <r5> --mode off --json-out {}",
+        "wheelctl moza init --device <r5> --lane {lane_arg} --mode off --confirm-init --json-out {}",
         lane_path_arg(lane, "init-off.json")
     ));
     commands.push(format!(
-        "wheelctl moza init --device <r5> --mode standard --json-out {}",
+        "wheelctl moza init --device <r5> --lane {lane_arg} --mode standard --confirm-init --json-out {}",
         lane_path_arg(lane, "init-standard.json")
     ));
     commands.push(format!("wheeld --hardware-lane {lane_arg}"));
@@ -9086,6 +9220,19 @@ fn verify_init_receipt_gate(
         .unwrap_or(false);
     let dry_run = json_bool(&receipt, "dry_run");
     let no_hid_device_opened = json_bool(&receipt, "no_hid_device_opened");
+    let operator_confirmed = json_bool(&receipt, "operator_confirmed");
+    let lane_ok = lane_path_value_matches(lane, json_string(&receipt, "lane"));
+    let zero_verification_validated = json_bool(&receipt, "zero_verification_validated");
+    let zero_audit_validated = json_bool(&receipt, "zero_audit_validated");
+    let generated_at = json_string(&receipt, "generated_at_utc");
+    let zero_verification_ordered = json_string(&receipt, "zero_verification_generated_at")
+        .zip(generated_at)
+        .map(|(zero_at, init_at)| utc_timestamp_pair_is_ordered(zero_at, init_at))
+        .unwrap_or(false);
+    let zero_audit_ordered = json_string(&receipt, "zero_audit_generated_at")
+        .zip(generated_at)
+        .map(|(zero_at, init_at)| utc_timestamp_pair_is_ordered(zero_at, init_at))
+        .unwrap_or(false);
     let no_output_reports = json_bool(&receipt, "no_output_reports");
     let no_direct_torque_reports = json_bool(&receipt, "no_direct_torque_reports");
     let no_out_of_scope = no_out_of_scope_device_commands(&receipt);
@@ -9108,6 +9255,12 @@ fn verify_init_receipt_gate(
         && generated_at_valid
         && dry_run == Some(false)
         && no_hid_device_opened == Some(false)
+        && operator_confirmed == Some(true)
+        && lane_ok
+        && zero_verification_validated == Some(true)
+        && zero_audit_validated == Some(true)
+        && zero_verification_ordered
+        && zero_audit_ordered
         && no_output_reports == Some(true)
         && no_direct_torque_reports == Some(true)
         && no_out_of_scope
@@ -9132,7 +9285,7 @@ fn verify_init_receipt_gate(
         BundleGateCheck::fail(
             name,
             format!(
-                "success={success}, command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, generated_at_valid={generated_at_valid}, dry_run={dry_run:?}, no_hid_device_opened={no_hid_device_opened:?}, no_output_reports={no_output_reports:?}, no_direct_torque_reports={no_direct_torque_reports:?}, no_out_of_scope={no_out_of_scope}, no_high_torque={no_high_torque:?}, high_torque={high_torque:?}, mode={mode:?}, init_state={init_state:?}, ready={ready:?}, feature_write_errors={feature_write_errors}, output_report_attempts={output_report_attempts}, feature_reports_safe={feature_reports_safe}, r5_output_device={r5_output_device}"
+                "success={success}, command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, generated_at_valid={generated_at_valid}, dry_run={dry_run:?}, no_hid_device_opened={no_hid_device_opened:?}, operator_confirmed={operator_confirmed:?}, lane_ok={lane_ok}, zero_verification_validated={zero_verification_validated:?}, zero_audit_validated={zero_audit_validated:?}, zero_verification_ordered={zero_verification_ordered}, zero_audit_ordered={zero_audit_ordered}, no_output_reports={no_output_reports:?}, no_direct_torque_reports={no_direct_torque_reports:?}, no_out_of_scope={no_out_of_scope}, no_high_torque={no_high_torque:?}, high_torque={high_torque:?}, mode={mode:?}, init_state={init_state:?}, ready={ready:?}, feature_write_errors={feature_write_errors}, output_report_attempts={output_report_attempts}, feature_reports_safe={feature_reports_safe}, r5_output_device={r5_output_device}"
             ),
         )
     }
@@ -14359,6 +14512,15 @@ struct MozaInitReceipt {
     generated_at_utc: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     receipt_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lane: Option<String>,
+    operator_confirmed: bool,
+    zero_verification_validated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    zero_verification_generated_at: Option<String>,
+    zero_audit_validated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    zero_audit_generated_at: Option<String>,
     no_output_reports: bool,
     no_direct_torque_reports: bool,
     no_high_torque: bool,
@@ -14393,6 +14555,12 @@ impl MozaInitReceipt {
             command: "wheelctl moza init",
             generated_at_utc: now_utc(),
             receipt_path: None,
+            lane: None,
+            operator_confirmed: false,
+            zero_verification_validated: false,
+            zero_verification_generated_at: None,
+            zero_audit_validated: false,
+            zero_audit_generated_at: None,
             no_output_reports: true,
             no_direct_torque_reports: true,
             no_high_torque: true,
@@ -16635,10 +16803,17 @@ mod tests {
             &dir.path().join("zero-verification.json"),
             &stored_verification_receipt(dir.path(), MozaBundleStage::Zero),
         )?;
-        write_test_json_file(&dir.path().join("init-off.json"), &real_init_receipt("off"))?;
+        write_test_json_file(
+            &dir.path().join("init-off.json"),
+            &receipt_with_lane_path(dir.path(), "init-off.json", real_init_receipt("off")),
+        )?;
         write_test_json_file(
             &dir.path().join("init-standard.json"),
-            &real_init_receipt("standard"),
+            &receipt_with_lane_path(
+                dir.path(),
+                "init-standard.json",
+                real_init_receipt("standard"),
+            ),
         )?;
         let mut smoke_ready = stored_verification_receipt(dir.path(), MozaBundleStage::SmokeReady);
         smoke_ready["success"] = serde_json::json!(false);
@@ -18126,6 +18301,14 @@ mod tests {
                 receipt["zero_torque_proof_validated"] = serde_json::json!(true);
                 receipt["zero_torque_proof_crc32"] = serde_json::json!("0x12345678");
             }
+            Some("wheelctl moza init") => {
+                receipt["lane"] = serde_json::json!(root.display().to_string());
+                receipt["operator_confirmed"] = serde_json::json!(true);
+                receipt["zero_verification_validated"] = serde_json::json!(true);
+                receipt["zero_verification_generated_at"] = serde_json::json!(TEST_GENERATED_AT);
+                receipt["zero_audit_validated"] = serde_json::json!(true);
+                receipt["zero_audit_generated_at"] = serde_json::json!(TEST_GENERATED_AT);
+            }
             _ => {}
         }
         receipt
@@ -18216,10 +18399,13 @@ mod tests {
             &root.join("zero-torque-proof.json"),
             &receipt_with_lane_path(root, "zero-torque-proof.json", real_zero_receipt(100)),
         )?;
-        write_test_json_file(&root.join("init-off.json"), &real_init_receipt("off"))?;
+        write_test_json_file(
+            &root.join("init-off.json"),
+            &receipt_with_lane_path(root, "init-off.json", real_init_receipt("off")),
+        )?;
         write_test_json_file(
             &root.join("init-standard.json"),
-            &real_init_receipt("standard"),
+            &receipt_with_lane_path(root, "init-standard.json", real_init_receipt("standard")),
         )?;
         Ok(())
     }
@@ -18523,10 +18709,13 @@ mod tests {
 
     fn write_pit_house_artifacts(root: &Path) -> TestResult {
         write_trusted_descriptor_if_missing(root)?;
-        write_test_json_file(&root.join("init-off.json"), &real_init_receipt("off"))?;
+        write_test_json_file(
+            &root.join("init-off.json"),
+            &receipt_with_lane_path(root, "init-off.json", real_init_receipt("off")),
+        )?;
         write_test_json_file(
             &root.join("init-standard.json"),
-            &real_init_receipt("standard"),
+            &receipt_with_lane_path(root, "init-standard.json", real_init_receipt("standard")),
         )?;
         write_zero_stage_receipts(root)?;
         write_test_json_file(
@@ -18692,10 +18881,13 @@ mod tests {
 
     fn write_simulator_artifacts(root: &Path) -> TestResult {
         write_trusted_descriptor_if_missing(root)?;
-        write_test_json_file(&root.join("init-off.json"), &real_init_receipt("off"))?;
+        write_test_json_file(
+            &root.join("init-off.json"),
+            &receipt_with_lane_path(root, "init-off.json", real_init_receipt("off")),
+        )?;
         write_test_json_file(
             &root.join("init-standard.json"),
-            &real_init_receipt("standard"),
+            &receipt_with_lane_path(root, "init-standard.json", real_init_receipt("standard")),
         )?;
         write_zero_stage_receipts(root)?;
         write_test_json_file(
@@ -18840,10 +19032,13 @@ mod tests {
             &sample_lane_manifest("real_hardware_smoke_ready", true, true),
         )?;
         write_zero_stage_receipts(root)?;
-        write_test_json_file(&root.join("init-off.json"), &real_init_receipt("off"))?;
+        write_test_json_file(
+            &root.join("init-off.json"),
+            &receipt_with_lane_path(root, "init-off.json", real_init_receipt("off")),
+        )?;
         write_test_json_file(
             &root.join("init-standard.json"),
-            &real_init_receipt("standard"),
+            &receipt_with_lane_path(root, "init-standard.json", real_init_receipt("standard")),
         )?;
         write_test_json_file(
             &root.join("low-torque-proof.json"),
@@ -20915,10 +21110,17 @@ mod tests {
     #[test]
     fn validate_init_proofs_for_torque_test_accepts_lane_receipts() -> TestResult {
         let dir = tempfile::tempdir()?;
-        write_test_json_file(&dir.path().join("init-off.json"), &real_init_receipt("off"))?;
+        write_test_json_file(
+            &dir.path().join("init-off.json"),
+            &receipt_with_lane_path(dir.path(), "init-off.json", real_init_receipt("off")),
+        )?;
         write_test_json_file(
             &dir.path().join("init-standard.json"),
-            &real_init_receipt("standard"),
+            &receipt_with_lane_path(
+                dir.path(),
+                "init-standard.json",
+                real_init_receipt("standard"),
+            ),
         )?;
 
         let proofs = validate_init_proofs_for_torque_test(Some(dir.path()), None, None, false)?
@@ -20935,10 +21137,17 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let mut off = real_init_receipt("off");
         off["high_torque"] = serde_json::json!(true);
-        write_test_json_file(&dir.path().join("init-off.json"), &off)?;
+        write_test_json_file(
+            &dir.path().join("init-off.json"),
+            &receipt_with_lane_path(dir.path(), "init-off.json", off),
+        )?;
         write_test_json_file(
             &dir.path().join("init-standard.json"),
-            &real_init_receipt("standard"),
+            &receipt_with_lane_path(
+                dir.path(),
+                "init-standard.json",
+                real_init_receipt("standard"),
+            ),
         )?;
 
         let result = validate_init_proofs_for_torque_test(Some(dir.path()), None, None, false);
@@ -21222,8 +21431,10 @@ mod tests {
             true,
             Some("0x346E:0x0014"),
             None,
+            None,
             MozaInitMode::Off,
             true,
+            false,
             Some(&receipt_path),
         )
         .await?;
@@ -21241,6 +21452,58 @@ mod tests {
                 .map(|reports| init_feature_reports_are_safe_value(reports, "off", true))
                 .unwrap_or(false)
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn init_actual_requires_confirmation_before_hid_open() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let receipt_path = dir.path().join("init-off.json");
+
+        let result = init(
+            true,
+            Some("0x346E:0x0014"),
+            Some(dir.path()),
+            None,
+            MozaInitMode::Off,
+            false,
+            false,
+            Some(&receipt_path),
+        )
+        .await;
+
+        let message = result
+            .err()
+            .map(|error| error.to_string())
+            .ok_or("expected init confirmation gate error")?;
+        assert!(message.contains("--confirm-init"));
+        assert!(!receipt_path.exists());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn init_actual_requires_zero_stage_before_hid_open() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let receipt_path = dir.path().join("init-off.json");
+
+        let result = init(
+            true,
+            Some("0x346E:0x0014"),
+            Some(dir.path()),
+            None,
+            MozaInitMode::Off,
+            false,
+            true,
+            Some(&receipt_path),
+        )
+        .await;
+
+        let message = result
+            .err()
+            .map(|error| error.to_string())
+            .ok_or("expected init zero-stage gate error")?;
+        assert!(message.contains("zero-stage verification"));
+        assert!(!receipt_path.exists());
         Ok(())
     }
 
@@ -21470,10 +21733,17 @@ mod tests {
     #[test]
     fn verify_init_receipt_gate_accepts_off_and_standard_receipts() -> TestResult {
         let dir = tempfile::tempdir()?;
-        write_test_json_file(&dir.path().join("init-off.json"), &real_init_receipt("off"))?;
+        write_test_json_file(
+            &dir.path().join("init-off.json"),
+            &receipt_with_lane_path(dir.path(), "init-off.json", real_init_receipt("off")),
+        )?;
         write_test_json_file(
             &dir.path().join("init-standard.json"),
-            &real_init_receipt("standard"),
+            &receipt_with_lane_path(
+                dir.path(),
+                "init-standard.json",
+                real_init_receipt("standard"),
+            ),
         )?;
 
         let off_gate =
@@ -21512,7 +21782,10 @@ mod tests {
                 "bytes_written": 4
             }
         ]);
-        write_test_json_file(&dir.path().join("init-standard.json"), &receipt)?;
+        write_test_json_file(
+            &dir.path().join("init-standard.json"),
+            &receipt_with_lane_path(dir.path(), "init-standard.json", receipt),
+        )?;
 
         let gate = verify_init_receipt_gate(
             dir.path(),
@@ -21537,7 +21810,10 @@ mod tests {
         if let Some(object) = report.as_object_mut() {
             object.remove("bytes_written");
         }
-        write_test_json_file(&dir.path().join("init-standard.json"), &receipt)?;
+        write_test_json_file(
+            &dir.path().join("init-standard.json"),
+            &receipt_with_lane_path(dir.path(), "init-standard.json", receipt),
+        )?;
 
         let gate = verify_init_receipt_gate(
             dir.path(),
@@ -21565,7 +21841,10 @@ mod tests {
             .ok_or("expected feature reports")?;
         let report = reports.get_mut(0).ok_or("expected start report")?;
         report["sequence"] = serde_json::json!(1);
-        write_test_json_file(&dir.path().join("init-standard.json"), &receipt)?;
+        write_test_json_file(
+            &dir.path().join("init-standard.json"),
+            &receipt_with_lane_path(dir.path(), "init-standard.json", receipt),
+        )?;
 
         let gate = verify_init_receipt_gate(
             dir.path(),
@@ -21588,7 +21867,10 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let mut receipt = real_init_receipt("standard");
         receipt["device"]["product_id"] = serde_json::json!("0x0008");
-        write_test_json_file(&dir.path().join("init-standard.json"), &receipt)?;
+        write_test_json_file(
+            &dir.path().join("init-standard.json"),
+            &receipt_with_lane_path(dir.path(), "init-standard.json", receipt),
+        )?;
 
         let gate = verify_init_receipt_gate(
             dir.path(),
@@ -21604,7 +21886,11 @@ mod tests {
     #[test]
     fn verify_init_receipt_gate_rejects_stale_receipt_path() -> TestResult {
         let dir = tempfile::tempdir()?;
-        let mut receipt = real_init_receipt("standard");
+        let mut receipt = receipt_with_lane_path(
+            dir.path(),
+            "init-standard.json",
+            real_init_receipt("standard"),
+        );
         receipt["receipt_path"] = serde_json::json!(
             dir.path()
                 .join("other/init-standard.json")
@@ -26131,6 +26417,17 @@ mod tests {
 
         assert!(!receipt.success);
         let commands = &receipt.next_commands;
+        let init_commands: Vec<_> = commands
+            .iter()
+            .filter(|command| command.contains("wheelctl moza init --device"))
+            .collect();
+        assert_eq!(init_commands.len(), 2);
+        assert!(
+            init_commands
+                .iter()
+                .all(|command| command.contains("--lane ") && command.contains("--confirm-init")),
+            "real init next_commands must be lane-bound and explicitly confirmed: {commands:?}"
+        );
         let index = |needle: &str| -> Result<usize, &'static str> {
             commands
                 .iter()

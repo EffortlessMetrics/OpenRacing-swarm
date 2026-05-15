@@ -290,9 +290,9 @@ Once fixtures are promoted into `crates/hid-moza-protocol/fixtures/`, the parser
 Zero-torque proof is the first output phase. It may send only report `0x20` with raw torque `0`, flags `0`, and motor disabled.
 
 ```powershell
-wheelctl moza zero --device <r5> --repeat 100 --hz 1000 --json-out ci/hardware/moza-r5/<date>/zero-torque-proof.json
-wheelctl moza watchdog-proof --device <r5> --pre-zero-count 3 --watchdog-timeout-ms 100 --json-out ci/hardware/moza-r5/<date>/watchdog-proof.json
-wheelctl moza disconnect-proof --device <r5> --confirm-disconnect-test --max-duration-ms 10000 --json-out ci/hardware/moza-r5/<date>/disconnect-proof.json
+wheelctl moza zero --device <r5> --lane ci/hardware/moza-r5/<date> --confirm-zero-torque --repeat 100 --hz 1000 --json-out ci/hardware/moza-r5/<date>/zero-torque-proof.json
+wheelctl moza watchdog-proof --device <r5> --lane ci/hardware/moza-r5/<date> --confirm-watchdog-test --pre-zero-count 3 --watchdog-timeout-ms 100 --json-out ci/hardware/moza-r5/<date>/watchdog-proof.json
+wheelctl moza disconnect-proof --device <r5> --lane ci/hardware/moza-r5/<date> --confirm-disconnect-test --max-duration-ms 10000 --json-out ci/hardware/moza-r5/<date>/disconnect-proof.json
 wheelctl moza verify-bundle --lane ci/hardware/moza-r5/<date> --stage zero --json-out ci/hardware/moza-r5/<date>/zero-verification.json
 wheelctl moza promote-manifest --lane ci/hardware/moza-r5/<date> --stage zero --json-out ci/hardware/moza-r5/<date>/manifest-promotion-zero.json
 wheelctl moza audit-lane --lane ci/hardware/moza-r5/<date> --stage zero --json-out ci/hardware/moza-r5/<date>/lane-audit-zero.json
@@ -314,11 +314,12 @@ Done when:
 Before low torque, run the staged feature-report handshake in off and standard modes. Do not use direct mode in this phase.
 
 ```powershell
-wheelctl moza init --device <r5> --mode off --json-out ci/hardware/moza-r5/<date>/init-off.json
-wheelctl moza init --device <r5> --mode standard --json-out ci/hardware/moza-r5/<date>/init-standard.json
+wheelctl moza init --device <r5> --lane ci/hardware/moza-r5/<date> --mode off --confirm-init --json-out ci/hardware/moza-r5/<date>/init-off.json
+wheelctl moza init --device <r5> --lane ci/hardware/moza-r5/<date> --mode standard --confirm-init --json-out ci/hardware/moza-r5/<date>/init-standard.json
 ```
 
 The init receipts must show exactly two ordered feature reports: sequence `0` writes feature report `0x03` (`03000000`) to start input reports, and sequence `1` writes feature report `0x11` (`11FF0000` for off, `11000000` for standard) to select the requested mode. Each real init feature report must record a successful 4-byte write. They must not include high-torque report `0x02` or direct torque output report `0x20`.
+Actual init feature-report writes require `--lane <dir>` and `--confirm-init`, and the command validates passing same-lane `zero-verification.json` plus `lane-audit-zero.json` before the HID API is initialized.
 
 Low torque is allowed only after a passing real zero-torque proof, passing off/standard init receipts, a direct-mode trust gate, and explicit operator confirmation. The wheel must be mounted safely with hands clear and the wheel off the ground or otherwise physically safe.
 

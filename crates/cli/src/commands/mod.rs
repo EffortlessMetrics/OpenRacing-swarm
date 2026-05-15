@@ -699,6 +699,9 @@ pub enum MozaCommands {
         /// Device selector: HID path, PID, or VID:PID
         #[arg(long)]
         device: Option<String>,
+        /// Hardware lane directory with passing zero-stage verification and audit receipts
+        #[arg(long)]
+        lane: Option<std::path::PathBuf>,
         /// Moza wheelbase PID for --dry-run (hex, e.g. 0x0014)
         #[arg(long)]
         pid: Option<String>,
@@ -708,6 +711,9 @@ pub enum MozaCommands {
         /// Build the init receipt without opening or writing a HID device
         #[arg(long)]
         dry_run: bool,
+        /// Explicit acknowledgement required before actual init feature-report writes
+        #[arg(long)]
+        confirm_init: bool,
         /// Write the init receipt to this JSON file
         #[arg(long)]
         json_out: Option<std::path::PathBuf>,
