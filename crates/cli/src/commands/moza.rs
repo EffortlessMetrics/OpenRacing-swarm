@@ -4762,10 +4762,18 @@ fn push_smoke_ready_frontier_operator_action(
     }
 
     if !bundle_gate_check_passed(gates, "low_torque_bounded") {
-        actions.push(
-            "Current smoke-ready frontier: bounded low-torque proof. This is the first nonzero torque step; run it only with explicit operator confirmation, wheel clear, power cutoff understood, no game/sim FFB source active, no Pit House firmware/update flow active, descriptor trust present, and same-lane zero/off/standard init receipts passing. Keep the cap and duration bounded, and do not proceed to simulator FFB, direct-mode expansion, serial config, firmware, or DFU until low-torque-proof.json passes."
-                .to_string(),
-        );
+        let blockers = low_torque_frontier_blockers(lane);
+        if blockers.is_empty() {
+            actions.push(
+                "Current smoke-ready frontier: bounded low-torque proof. This is the first nonzero torque step; run it only with explicit operator confirmation, wheel clear, power cutoff understood, no game/sim FFB source active, no Pit House firmware/update flow active, trusted direct report 0x20 metadata, a same-lane direct-report zero proof, and same-lane zero/off/standard init receipts passing. Keep the cap and duration bounded, and do not proceed to simulator FFB, direct-mode expansion, serial config, firmware, or DFU until low-torque-proof.json passes."
+                    .to_string(),
+            );
+        } else {
+            actions.push(format!(
+                "Current smoke-ready frontier: bounded low-torque proof is blocked before any write because {}. Refresh pre-output readiness and resolve the direct report 0x20 path before running `wheelctl moza torque-test`; generated guidance must not add `--explicit-operator-override`. No low torque, simulator FFB, direct-mode expansion, serial config, firmware, or DFU until low-torque-proof.json passes.",
+                blockers.join("; ")
+            ));
+        }
         return;
     }
 
@@ -6025,6 +6033,25 @@ fn next_command_r5_selector(lane: &Path) -> String {
     lane_manifest_r5_hid_observe_selector(lane).unwrap_or_else(|| "<r5>".to_string())
 }
 
+fn low_torque_frontier_blockers(lane: &Path) -> Vec<&'static str> {
+    let mut blockers = Vec::new();
+    if !zero_output_direct_report_metadata_trusted(lane) {
+        blockers.push("descriptor.json does not prove trusted direct report 0x20 metadata");
+    }
+    if !low_torque_direct_zero_proof_ready(lane) {
+        blockers.push("zero-torque-proof.json is not a same-lane direct_report_0x20 proof accepted by torque-test");
+    }
+    blockers
+}
+
+fn low_torque_direct_zero_proof_ready(lane: &Path) -> bool {
+    let proof_path = lane.join("zero-torque-proof.json");
+    read_json_path(&proof_path)
+        .map(|receipt| receipt_path_matches(lane, &receipt, "zero-torque-proof.json"))
+        .unwrap_or(false)
+        && validate_zero_proof_for_torque_test(&proof_path).is_ok()
+}
+
 fn push_smoke_ready_next_commands(
     lane: &Path,
     gates: &[BundleGateCheck],
@@ -6067,12 +6094,19 @@ fn push_smoke_ready_next_commands(
     }
 
     if !bundle_gate_check_passed(gates, "low_torque_bounded") {
-        commands.push(format!(
-            "wheelctl moza torque-test --device {r5_selector} --lane {lane_arg} --zero-proof {} --descriptor {} --max-percent 2 --duration-ms 250 --confirm-low-torque --json-out {}",
-            lane_path_arg(lane, "zero-torque-proof.json"),
-            lane_path_arg(lane, "descriptor.json"),
-            lane_path_arg(lane, "low-torque-proof.json")
-        ));
+        if low_torque_frontier_blockers(lane).is_empty() {
+            commands.push(format!(
+                "wheelctl moza torque-test --device {r5_selector} --lane {lane_arg} --zero-proof {} --descriptor {} --max-percent 2 --duration-ms 250 --confirm-low-torque --json-out {}",
+                lane_path_arg(lane, "zero-torque-proof.json"),
+                lane_path_arg(lane, "descriptor.json"),
+                lane_path_arg(lane, "low-torque-proof.json")
+            ));
+        } else {
+            commands.push(format!(
+                "wheelctl moza pre-output-readiness --lane {lane_arg} --json-out {} --json",
+                lane_path_arg(lane, "pre-output-readiness.json")
+            ));
+        }
         return;
     }
 
@@ -28863,6 +28897,111 @@ mod tests {
     }
 
     #[test]
+    fn smoke_ready_low_torque_frontier_waits_for_direct_report_path() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let mut manifest = sample_lane_manifest("zero_torque_ready", true, false);
+        manifest["hardware"]["wheelbase_pid"] = serde_json::json!("0x0004");
+        manifest["topology"] = moza_lane_manifest_topology_value(product_ids::R5_V1);
+        write_test_json_file(&dir.path().join("manifest.json"), &manifest)?;
+        write_test_json_file(
+            &dir.path().join("descriptor.json"),
+            &serde_json::json!({
+                "success": true,
+                "command": "hid-capture descriptor",
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "devices": [sample_trusted_r5_v1_json_device()]
+            }),
+        )?;
+        write_test_json_file(
+            &dir.path().join("zero-torque-proof.json"),
+            &receipt_with_lane_path(
+                dir.path(),
+                "zero-torque-proof.json",
+                real_pidff_zero_receipt(100),
+            ),
+        )?;
+        let mut gates = [
+            "lane_directory",
+            "manifest_no_overclaim",
+            "manifest_r5_pid_consistency",
+            "moza_r5_observed",
+            "moza_topology_observed",
+            "descriptor_metadata",
+            "passive_receipts_successful",
+            "passive_receipts_no_ffb_writes",
+            "passive_captures_parse",
+            "parser_fixture_validation",
+            "fixture_promotion",
+            "zero_torque_real_hardware",
+            "watchdog_zero_output",
+            "disconnect_final_zero",
+            "init_off_handshake",
+            "init_standard_handshake",
+            "service_status_receipts",
+        ]
+        .into_iter()
+        .map(|name| BundleGateCheck::pass(name, "ok".to_string()))
+        .collect::<Vec<_>>();
+        gates.push(BundleGateCheck::fail(
+            "low_torque_bounded",
+            "missing".to_string(),
+        ));
+
+        let blockers = low_torque_frontier_blockers(dir.path());
+        assert!(
+            blockers
+                .iter()
+                .any(|blocker| blocker.contains("direct report 0x20 metadata")),
+            "R5 V1 descriptor should not satisfy direct report metadata: {blockers:?}"
+        );
+        assert!(
+            blockers
+                .iter()
+                .any(|blocker| blocker.contains("direct_report_0x20 proof")),
+            "PIDFF zero proof should not satisfy direct low-torque preflight: {blockers:?}"
+        );
+
+        let mut commands = Vec::new();
+        push_smoke_ready_next_commands(dir.path(), &gates, &mut commands);
+        let joined = commands.join("\n");
+        assert!(
+            joined.contains("wheelctl moza pre-output-readiness")
+                && joined.contains("--json-out")
+                && joined.contains("pre-output-readiness.json"),
+            "direct-path gap should refresh read-only readiness instead of suggesting torque: {joined}"
+        );
+        assert!(
+            !joined.contains("wheelctl moza torque-test")
+                && !joined.contains("--explicit-operator-override"),
+            "direct-path gap must not emit low-torque or override guidance: {joined}"
+        );
+        for command in commands {
+            let command = command_with_test_placeholders(&command);
+            let args = split_generated_command(&command)?;
+            crate::Cli::try_parse_from(args).map_err(|error| {
+                format!(
+                    "generated direct-path readiness command failed to parse: {command}\n{error}"
+                )
+            })?;
+        }
+
+        let mut actions = Vec::new();
+        push_smoke_ready_frontier_operator_action(dir.path(), &gates, &mut actions);
+        let action_text = actions.join("\n");
+        assert!(
+            action_text.contains("blocked before any write")
+                && action_text.contains("direct report 0x20")
+                && action_text.contains("zero-torque-proof.json")
+                && action_text.contains("must not add `--explicit-operator-override`"),
+            "operator guidance should name the direct-path blockers without suggesting override: {action_text}"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn verify_bundle_smoke_operator_actions_match_current_frontier() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_minimal_passive_bundle(dir.path())?;
@@ -28919,6 +29058,8 @@ mod tests {
             actions.contains("Current smoke-ready frontier: bounded low-torque proof")
                 && actions.contains("first nonzero torque step")
                 && actions.contains("explicit operator confirmation")
+                && actions.contains("trusted direct report 0x20 metadata")
+                && actions.contains("same-lane direct-report zero proof")
                 && actions.contains("same-lane zero/off/standard init receipts"),
             "low-torque frontier should be explicitly operator-gated: {actions}"
         );
