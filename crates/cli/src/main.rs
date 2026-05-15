@@ -2010,6 +2010,7 @@ mod tests {
                 zero_proof,
                 descriptor,
                 lane,
+                strategy,
                 confirm_low_torque,
                 explicit_operator_override,
                 max_percent,
@@ -2031,6 +2032,10 @@ mod tests {
                     lane.as_ref().and_then(|p| p.to_str()),
                     Some("ci/hardware/moza-r5/2026-05-06")
                 );
+                assert_eq!(
+                    *strategy,
+                    crate::commands::MozaLowTorqueStrategy::DirectReport0x20
+                );
                 assert!(*confirm_low_torque);
                 assert!(*explicit_operator_override);
                 assert!((*max_percent - 2.0).abs() < f32::EPSILON);
@@ -2040,6 +2045,43 @@ mod tests {
                     json_out.as_ref().and_then(|p| p.to_str()),
                     Some("low-torque-proof.json")
                 );
+            }
+            _ => return Err("expected Moza TorqueTest command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_moza_torque_test_pidff_strategy() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "moza",
+            "torque-test",
+            "--device",
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
+            "--strategy",
+            "pidff-bounded-effect",
+            "--zero-proof",
+            "ci/hardware/moza-r5/2026-05-13/zero-torque-proof.json",
+            "--init-off",
+            "ci/hardware/moza-r5/2026-05-13/init-off.json",
+            "--init-standard",
+            "ci/hardware/moza-r5/2026-05-13/init-standard.json",
+            "--dry-run",
+            "--json-out",
+            "low-torque-proof.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::TorqueTest {
+                strategy, dry_run, ..
+            }) => {
+                assert_eq!(
+                    *strategy,
+                    crate::commands::MozaLowTorqueStrategy::PidffBoundedEffect
+                );
+                assert!(*dry_run);
             }
             _ => return Err("expected Moza TorqueTest command".into()),
         }

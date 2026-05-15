@@ -751,6 +751,9 @@ pub enum MozaCommands {
         /// Passing standard-mode init receipt from `wheelctl moza init --mode standard`
         #[arg(long)]
         init_standard: Option<std::path::PathBuf>,
+        /// Low-torque output strategy to prove
+        #[arg(long, value_enum, default_value_t = MozaLowTorqueStrategy::DirectReport0x20)]
+        strategy: MozaLowTorqueStrategy,
         /// Build the low-torque receipt without opening or writing a HID device
         #[arg(long)]
         dry_run: bool,
@@ -994,6 +997,15 @@ pub enum MozaZeroOutputStrategy {
     DirectReport0x20,
     /// Standard PIDFF Device Control report 0x0C with Stop All Effects
     PidffStopAll,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MozaLowTorqueStrategy {
+    /// Moza proprietary direct torque report 0x20
+    #[value(name = "direct-report-0x20", alias = "direct-report0x20")]
+    DirectReport0x20,
+    /// Standard HID PIDFF bounded effect path
+    PidffBoundedEffect,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]

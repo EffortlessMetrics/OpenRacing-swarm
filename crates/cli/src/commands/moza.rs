@@ -27,7 +27,7 @@ use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::commands::{
-    MozaBundleStage, MozaCommands, MozaInitMode, MozaPitHouseEvidenceKind,
+    MozaBundleStage, MozaCommands, MozaInitMode, MozaLowTorqueStrategy, MozaPitHouseEvidenceKind,
     MozaPitHouseObservationCase, MozaReceiptTemplateKind, MozaZeroOutputStrategy,
 };
 use crate::error::CliError;
@@ -108,6 +108,7 @@ struct TorqueTestRequest<'a> {
     lane: Option<&'a Path>,
     init_off: Option<&'a Path>,
     init_standard: Option<&'a Path>,
+    strategy: MozaLowTorqueStrategy,
     dry_run: bool,
     confirm_low_torque: bool,
     explicit_operator_override: bool,
@@ -193,6 +194,13 @@ fn zero_output_strategy_name(strategy: MozaZeroOutputStrategy) -> &'static str {
     match strategy {
         MozaZeroOutputStrategy::DirectReport0x20 => "direct_report_0x20",
         MozaZeroOutputStrategy::PidffStopAll => "pidff_device_control_stop_all",
+    }
+}
+
+fn low_torque_strategy_name(strategy: MozaLowTorqueStrategy) -> &'static str {
+    match strategy {
+        MozaLowTorqueStrategy::DirectReport0x20 => "direct_report_0x20",
+        MozaLowTorqueStrategy::PidffBoundedEffect => "pidff_bounded_effect",
     }
 }
 
@@ -476,6 +484,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             lane,
             init_off,
             init_standard,
+            strategy,
             dry_run,
             confirm_low_torque,
             explicit_operator_override,
@@ -493,6 +502,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 lane: lane.as_deref(),
                 init_off: init_off.as_deref(),
                 init_standard: init_standard.as_deref(),
+                strategy: *strategy,
                 dry_run: *dry_run,
                 confirm_low_torque: *confirm_low_torque,
                 explicit_operator_override: *explicit_operator_override,
@@ -2183,6 +2193,7 @@ async fn torque_test(request: TorqueTestRequest<'_>) -> Result<()> {
         lane,
         init_off,
         init_standard,
+        strategy,
         dry_run,
         confirm_low_torque,
         explicit_operator_override,
@@ -2201,7 +2212,7 @@ async fn torque_test(request: TorqueTestRequest<'_>) -> Result<()> {
 
     if dry_run {
         let zero_proof_summary = zero_proof
-            .map(validate_zero_proof_for_torque_test)
+            .map(|path| validate_zero_proof_for_low_torque_strategy(path, strategy))
             .transpose()?;
         let init_proofs =
             validate_init_proofs_for_torque_test(lane, init_off, init_standard, true)?;
@@ -2217,16 +2228,19 @@ async fn torque_test(request: TorqueTestRequest<'_>) -> Result<()> {
             selector.map(str::to_string),
             device,
             zero_proof_summary,
+            strategy,
             max_percent,
             duration_ms,
             hz,
             true,
         );
         receipt.apply_init_proofs(init_proofs);
-        receipt.apply_direct_mode_gate(DirectModeGateSummary::dry_run(
-            descriptor.map(Path::to_path_buf),
-            explicit_operator_override,
-        ));
+        if strategy == MozaLowTorqueStrategy::DirectReport0x20 {
+            receipt.apply_direct_mode_gate(DirectModeGateSummary::dry_run(
+                descriptor.map(Path::to_path_buf),
+                explicit_operator_override,
+            ));
+        }
         receipt.plan_only();
         receipt.success = receipt.no_nonzero_above_limit
             && receipt.final_zero_sent
@@ -2239,6 +2253,24 @@ async fn torque_test(request: TorqueTestRequest<'_>) -> Result<()> {
         write_json_receipt(json_out, &receipt)?;
         print_low_torque_receipt(json, json_out, &receipt)?;
         return Ok(());
+    }
+
+    if strategy == MozaLowTorqueStrategy::PidffBoundedEffect {
+        let preflight = validate_pidff_low_torque_real_hardware_preflight(
+            selector,
+            pid_override,
+            lane,
+            zero_proof,
+            init_off,
+            init_standard,
+        )?;
+        return Err(anyhow!(
+            "pidff-bounded-effect low-torque writes for PID {} are not implemented yet; zero proof strategy {} and init receipts {:?}/{:?} were validated, and no HID device was opened",
+            preflight.target_product_id,
+            preflight.zero_proof.zero_output_strategy,
+            preflight.init_proofs.off.product_id,
+            preflight.init_proofs.standard.product_id
+        ));
     }
 
     let preflight = validate_low_torque_real_hardware_preflight(
@@ -2287,6 +2319,7 @@ async fn torque_test(request: TorqueTestRequest<'_>) -> Result<()> {
         selector.map(str::to_string),
         snapshot,
         Some(preflight.zero_proof),
+        strategy,
         max_percent,
         duration_ms,
         hz,
@@ -3655,6 +3688,12 @@ struct LowTorqueRealHardwarePreflight {
     target_product_id: String,
 }
 
+struct PidffLowTorqueRealHardwarePreflight {
+    zero_proof: ZeroProofSummary,
+    init_proofs: InitProofSet,
+    target_product_id: String,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn validate_low_torque_real_hardware_preflight(
     selector: Option<&str>,
@@ -3768,6 +3807,100 @@ fn validate_low_torque_real_hardware_preflight(
         zero_proof,
         init_proofs,
         direct_mode_gate,
+        target_product_id,
+    })
+}
+
+fn validate_pidff_low_torque_real_hardware_preflight(
+    selector: Option<&str>,
+    pid_override: Option<&str>,
+    lane: Option<&Path>,
+    zero_proof: Option<&Path>,
+    init_off: Option<&Path>,
+    init_standard: Option<&Path>,
+) -> Result<PidffLowTorqueRealHardwarePreflight> {
+    let lane = lane.ok_or_else(|| {
+        anyhow!("--lane is required before actual PIDFF low-torque writes so prerequisites are resolved from the dated hardware lane")
+    })?;
+    let zero_proof_path = zero_proof
+        .ok_or_else(|| anyhow!("--zero-proof is required before actual PIDFF low-torque writes"))?;
+    require_lane_artifact_path(
+        lane,
+        zero_proof_path,
+        "zero-torque-proof.json",
+        "--zero-proof",
+    )?;
+    if let Some(path) = init_off {
+        require_lane_artifact_path(lane, path, "init-off.json", "--init-off")?;
+    }
+    if let Some(path) = init_standard {
+        require_lane_artifact_path(lane, path, "init-standard.json", "--init-standard")?;
+    }
+    validate_lane_manifest_endpoint_selector(lane, selector, "actual PIDFF low-torque writes")?;
+    validate_zero_output_pidff_stop_all_report_metadata(lane)?;
+
+    let preflight_at_utc = now_utc();
+    let zero_receipt = read_json_value(lane, "zero-torque-proof.json")?;
+    if !receipt_path_matches(lane, &zero_receipt, "zero-torque-proof.json") {
+        return Err(anyhow!(
+            "zero proof receipt_path must match lane artifact zero-torque-proof.json"
+        ));
+    }
+    let zero_proof = validate_zero_proof_for_low_torque_strategy(
+        zero_proof_path,
+        MozaLowTorqueStrategy::PidffBoundedEffect,
+    )?;
+    if !utc_timestamp_pair_is_ordered(&zero_proof.generated_at_utc, &preflight_at_utc) {
+        return Err(anyhow!(
+            "zero proof generated_at_utc must be before the PIDFF low-torque preflight timestamp"
+        ));
+    }
+
+    let init_proofs = validate_init_proofs_for_torque_test(
+        Some(lane),
+        init_off,
+        init_standard,
+        false,
+    )?
+    .ok_or_else(|| {
+        anyhow!("--lane or both --init-off and --init-standard are required before actual PIDFF low-torque writes")
+    })?;
+    require_lane_receipt_path(lane, "init-off.json")?;
+    require_lane_receipt_path(lane, "init-standard.json")?;
+    if !utc_timestamp_pair_is_ordered(&init_proofs.off.generated_at_utc, &preflight_at_utc)
+        || !utc_timestamp_pair_is_ordered(&init_proofs.standard.generated_at_utc, &preflight_at_utc)
+    {
+        return Err(anyhow!(
+            "init proof generated_at_utc values must be before the PIDFF low-torque preflight timestamp"
+        ));
+    }
+
+    let target_product_id = low_torque_preflight_target_product_id(
+        selector,
+        pid_override,
+        lane,
+        &zero_proof,
+        &init_proofs,
+    )?;
+    if zero_proof.product_id.as_deref() != Some(target_product_id.as_str()) {
+        return Err(anyhow!(
+            "zero proof PID {:?} does not match PIDFF low-torque preflight target PID {}",
+            zero_proof.product_id,
+            target_product_id
+        ));
+    }
+    if !init_proofs.match_product_id(&target_product_id) {
+        return Err(anyhow!(
+            "init proof PID(s) {:?}/{:?} do not match PIDFF low-torque preflight target PID {}",
+            init_proofs.off.product_id,
+            init_proofs.standard.product_id,
+            target_product_id
+        ));
+    }
+
+    Ok(PidffLowTorqueRealHardwarePreflight {
+        zero_proof,
+        init_proofs,
         target_product_id,
     })
 }
@@ -4056,6 +4189,27 @@ fn validate_zero_proof_for_torque_test(path: &Path) -> Result<ZeroProofSummary> 
         ));
     }
     Ok(summary)
+}
+
+fn validate_zero_proof_for_low_torque_strategy(
+    path: &Path,
+    strategy: MozaLowTorqueStrategy,
+) -> Result<ZeroProofSummary> {
+    match strategy {
+        MozaLowTorqueStrategy::DirectReport0x20 => validate_zero_proof_for_torque_test(path),
+        MozaLowTorqueStrategy::PidffBoundedEffect => {
+            let summary = validate_zero_proof_for_zero_output(path)?;
+            if summary.zero_output_strategy
+                != zero_output_strategy_name(MozaZeroOutputStrategy::PidffStopAll)
+            {
+                return Err(anyhow!(
+                    "zero proof '{}' must use pidff_device_control_stop_all before PIDFF bounded low-torque tests",
+                    path.display()
+                ));
+            }
+            Ok(summary)
+        }
+    }
 }
 
 fn validate_zero_proof_for_zero_output(path: &Path) -> Result<ZeroProofSummary> {
@@ -4790,9 +4944,11 @@ fn push_smoke_ready_frontier_operator_action(
                     .to_string(),
             );
         } else {
+            let pidff_blockers = pidff_low_torque_frontier_blockers(lane);
             actions.push(format!(
-                "Current smoke-ready frontier: bounded low-torque proof is blocked before any write because {}. Refresh pre-output readiness and resolve the direct report 0x20 path before running `wheelctl moza torque-test`; generated guidance must not add `--explicit-operator-override`. No low torque, simulator FFB, direct-mode expansion, serial config, firmware, or DFU until low-torque-proof.json passes.",
-                blockers.join("; ")
+                "Current smoke-ready frontier: bounded low-torque proof is blocked before any write because direct path blockers are [{}] and PIDFF path blockers are [{}]. Resolve the PIDFF bounded-effect software/receipt path or prove the direct report 0x20 path before running `wheelctl moza torque-test`; generated guidance must not add `--explicit-operator-override`. No low torque, simulator FFB, direct-mode expansion, serial config, firmware, or DFU until low-torque-proof.json passes.",
+                blockers.join("; "),
+                pidff_blockers.join("; ")
             ));
         }
         return;
@@ -6074,12 +6230,39 @@ fn low_torque_frontier_blockers(lane: &Path) -> Vec<&'static str> {
     blockers
 }
 
+fn pidff_low_torque_frontier_blockers(lane: &Path) -> Vec<&'static str> {
+    let mut blockers = Vec::new();
+    if validate_zero_output_pidff_stop_all_report_metadata(lane).is_err() {
+        blockers.push(
+            "descriptor.json does not prove trusted PIDFF Device Control report 0x0C metadata",
+        );
+    }
+    if !low_torque_pidff_zero_proof_ready(lane) {
+        blockers
+            .push("zero-torque-proof.json is not a same-lane pidff_device_control_stop_all proof");
+    }
+    blockers.push("pidff bounded-effect writer is not implemented for real hardware yet");
+    blockers
+}
+
 fn low_torque_direct_zero_proof_ready(lane: &Path) -> bool {
     let proof_path = lane.join("zero-torque-proof.json");
     read_json_path(&proof_path)
         .map(|receipt| receipt_path_matches(lane, &receipt, "zero-torque-proof.json"))
         .unwrap_or(false)
         && validate_zero_proof_for_torque_test(&proof_path).is_ok()
+}
+
+fn low_torque_pidff_zero_proof_ready(lane: &Path) -> bool {
+    let proof_path = lane.join("zero-torque-proof.json");
+    read_json_path(&proof_path)
+        .map(|receipt| receipt_path_matches(lane, &receipt, "zero-torque-proof.json"))
+        .unwrap_or(false)
+        && validate_zero_proof_for_low_torque_strategy(
+            &proof_path,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+        )
+        .is_ok()
 }
 
 fn push_smoke_ready_next_commands(
@@ -10859,42 +11042,53 @@ fn verify_low_torque_gate(lane: &Path) -> BundleGateCheck {
         Err(e) => return BundleGateCheck::fail("low_torque_bounded", e.to_string()),
     };
 
-    let success = json_bool(&receipt, "success") == Some(true);
-    let command_ok = json_string(&receipt, "command") == Some("wheelctl moza torque-test");
-    let receipt_path_ok = receipt_path_matches(lane, &receipt, "low-torque-proof.json");
-    let dry_run = json_bool(&receipt, "dry_run");
-    let no_hid_device_opened = json_bool(&receipt, "no_hid_device_opened");
-    let confirmed = json_bool(&receipt, "confirmed");
-    let zero_proof_validated = json_bool(&receipt, "zero_proof_validated");
-    let init_proofs_validated = json_bool(&receipt, "init_proofs_validated");
-    let no_feature_reports = json_bool(&receipt, "no_feature_reports");
-    let no_ffb_writes = json_bool(&receipt, "no_ffb_writes");
-    let no_out_of_scope = no_out_of_scope_device_commands(&receipt);
-    let high_torque = json_bool(&receipt, "high_torque");
-    let no_high_torque = json_bool(&receipt, "no_high_torque");
-    let direct_mode_gate_satisfied = json_bool(&receipt, "direct_mode_gate_satisfied");
-    let descriptor_trusted = json_bool(&receipt, "descriptor_trusted");
-    let explicit_operator_override = json_bool(&receipt, "explicit_operator_override");
-    let no_nonzero_above_limit = json_bool(&receipt, "no_nonzero_above_limit");
-    let final_zero_attempted = json_bool(&receipt, "final_zero_attempted");
-    let final_zero_sent = json_bool(&receipt, "final_zero_sent");
-    let generated_at_utc = json_string(&receipt, "generated_at_utc");
+    if json_string(&receipt, "low_torque_strategy")
+        == Some(low_torque_strategy_name(
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+        ))
+    {
+        return verify_pidff_low_torque_gate(lane, &receipt);
+    }
+    verify_direct_low_torque_gate(lane, &receipt)
+}
+
+fn verify_direct_low_torque_gate(lane: &Path, receipt: &Value) -> BundleGateCheck {
+    let success = json_bool(receipt, "success") == Some(true);
+    let command_ok = json_string(receipt, "command") == Some("wheelctl moza torque-test");
+    let receipt_path_ok = receipt_path_matches(lane, receipt, "low-torque-proof.json");
+    let dry_run = json_bool(receipt, "dry_run");
+    let no_hid_device_opened = json_bool(receipt, "no_hid_device_opened");
+    let confirmed = json_bool(receipt, "confirmed");
+    let zero_proof_validated = json_bool(receipt, "zero_proof_validated");
+    let init_proofs_validated = json_bool(receipt, "init_proofs_validated");
+    let no_feature_reports = json_bool(receipt, "no_feature_reports");
+    let no_ffb_writes = json_bool(receipt, "no_ffb_writes");
+    let no_out_of_scope = no_out_of_scope_device_commands(receipt);
+    let high_torque = json_bool(receipt, "high_torque");
+    let no_high_torque = json_bool(receipt, "no_high_torque");
+    let direct_mode_gate_satisfied = json_bool(receipt, "direct_mode_gate_satisfied");
+    let descriptor_trusted = json_bool(receipt, "descriptor_trusted");
+    let explicit_operator_override = json_bool(receipt, "explicit_operator_override");
+    let no_nonzero_above_limit = json_bool(receipt, "no_nonzero_above_limit");
+    let final_zero_attempted = json_bool(receipt, "final_zero_attempted");
+    let final_zero_sent = json_bool(receipt, "final_zero_sent");
+    let generated_at_utc = json_string(receipt, "generated_at_utc");
     let generated_at_valid = generated_at_utc
         .map(|value| utc_timestamp_pair_is_ordered(value, value))
         .unwrap_or(false);
-    let max_percent = json_f64(&receipt, "max_percent")
-        .or_else(|| json_f64(&receipt, "max_output_percent"))
-        .or_else(|| json_f64(&receipt, "max_command_percent"));
-    let duration_ms = json_u64(&receipt, "duration_ms").unwrap_or(0);
-    let hz = json_u64(&receipt, "hz").unwrap_or(0);
-    let write_attempts = json_u64(&receipt, "write_attempts").unwrap_or(0);
-    let writes_ok = json_u64(&receipt, "writes_ok").unwrap_or(0);
-    let write_errors = json_u64(&receipt, "write_errors").unwrap_or(u64::MAX);
+    let max_percent = json_f64(receipt, "max_percent")
+        .or_else(|| json_f64(receipt, "max_output_percent"))
+        .or_else(|| json_f64(receipt, "max_command_percent"));
+    let duration_ms = json_u64(receipt, "duration_ms").unwrap_or(0);
+    let hz = json_u64(receipt, "hz").unwrap_or(0);
+    let write_attempts = json_u64(receipt, "write_attempts").unwrap_or(0);
+    let writes_ok = json_u64(receipt, "writes_ok").unwrap_or(0);
+    let write_errors = json_u64(receipt, "write_errors").unwrap_or(u64::MAX);
     let device = receipt.get("device");
     let r5_device = device.map(is_r5_device_value).unwrap_or(false);
     let output_capable =
         device.and_then(|device| json_bool(device, "output_capable")) == Some(true);
-    let selector_matches_lane_endpoint = receipt_selector_matches_lane_endpoint(lane, &receipt);
+    let selector_matches_lane_endpoint = receipt_selector_matches_lane_endpoint(lane, receipt);
     let device_pid = device.and_then(|device| json_string(device, "product_id"));
     let device_pid_value = device_pid.and_then(parse_hex_selector);
     let zero_proof_pid = receipt
@@ -10902,7 +11096,7 @@ fn verify_low_torque_gate(lane: &Path) -> BundleGateCheck {
         .and_then(|proof| json_string(proof, "product_id"));
     let zero_proof_pid_matches = zero_proof_pid.is_some() && zero_proof_pid == device_pid;
     let zero_proof_lane_match =
-        low_torque_zero_proof_matches_lane(lane, &receipt, device_pid, generated_at_utc);
+        low_torque_zero_proof_matches_lane(lane, receipt, device_pid, generated_at_utc);
     let descriptor_trust_observed = device_pid
         .map(|pid| lane_descriptor_trusted_for_pid(lane, pid))
         .unwrap_or(false);
@@ -10910,7 +11104,7 @@ fn verify_low_torque_gate(lane: &Path) -> BundleGateCheck {
     let direct_mode_allowed = (descriptor_trusted == Some(true) && descriptor_trust_observed)
         || explicit_operator_override == Some(true);
     let init_proofs_match =
-        low_torque_init_proofs_match(lane, &receipt, device_pid, generated_at_utc);
+        low_torque_init_proofs_match(lane, receipt, device_pid, generated_at_utc);
     let no_abort_reason = receipt
         .get("abort_reason")
         .map(Value::is_null)
@@ -10924,13 +11118,13 @@ fn verify_low_torque_gate(lane: &Path) -> BundleGateCheck {
         .map(|value| value.is_finite() && value > 0.0 && value <= 2.0)
         .unwrap_or(false);
     let expected_low_torque_writes = max_percent.and_then(|limit| {
-        device_pid_value.and_then(|pid| low_torque_ladder_is_safe(&receipt, pid, limit))
+        device_pid_value.and_then(|pid| low_torque_ladder_is_safe(receipt, pid, limit))
     });
     let command_log_safe = max_percent
         .and_then(|limit| {
             device_pid_value.and_then(|pid| {
                 expected_low_torque_writes
-                    .map(|expected| low_torque_command_log_is_safe(&receipt, pid, limit, expected))
+                    .map(|expected| low_torque_command_log_is_safe(receipt, pid, limit, expected))
             })
         })
         .unwrap_or(false);
@@ -10988,6 +11182,133 @@ fn verify_low_torque_gate(lane: &Path) -> BundleGateCheck {
             "low_torque_bounded",
             format!(
                 "success={success}, command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, dry_run={dry_run:?}, no_hid_device_opened={no_hid_device_opened:?}, confirmed={confirmed:?}, zero_proof_validated={zero_proof_validated:?}, zero_proof_pid_matches={zero_proof_pid_matches}, zero_proof_lane_match={zero_proof_lane_match}, init_proofs_validated={init_proofs_validated:?}, init_proofs_match={init_proofs_match}, no_feature_reports={no_feature_reports:?}, no_ffb_writes={no_ffb_writes:?}, no_out_of_scope={no_out_of_scope}, high_torque={high_torque:?}, direct_mode_gate_satisfied={direct_mode_gate_satisfied:?}, descriptor_trusted={descriptor_trusted:?}, descriptor_trust_observed={descriptor_trust_observed}, descriptor_trust_valid={descriptor_trust_valid}, explicit_operator_override={explicit_operator_override:?}, direct_mode_allowed={direct_mode_allowed}, no_high_torque={no_high_torque:?}, no_nonzero_above_limit={no_nonzero_above_limit:?}, final_zero_attempted={final_zero_attempted:?}, final_zero_sent={final_zero_sent:?}, generated_at_valid={generated_at_valid}, max_percent={max_percent:?}, duration_ms={duration_ms}, hz={hz}, write_attempts={write_attempts}, writes_ok={writes_ok}, write_errors={write_errors}, r5_device={r5_device}, output_capable={output_capable}, selector_matches_lane_endpoint={selector_matches_lane_endpoint}, expected_low_torque_writes={expected_low_torque_writes:?}, expected_writes_match={expected_writes_match}, command_log_safe={command_log_safe}, no_abort_reason={no_abort_reason}, no_final_zero_error={no_final_zero_error}"
+            ),
+        )
+    }
+}
+
+fn verify_pidff_low_torque_gate(lane: &Path, receipt: &Value) -> BundleGateCheck {
+    let success = json_bool(receipt, "success") == Some(true);
+    let command_ok = json_string(receipt, "command") == Some("wheelctl moza torque-test");
+    let receipt_path_ok = receipt_path_matches(lane, receipt, "low-torque-proof.json");
+    let dry_run = json_bool(receipt, "dry_run");
+    let no_hid_device_opened = json_bool(receipt, "no_hid_device_opened");
+    let confirmed = json_bool(receipt, "confirmed");
+    let zero_proof_validated = json_bool(receipt, "zero_proof_validated");
+    let init_proofs_validated = json_bool(receipt, "init_proofs_validated");
+    let no_feature_reports = json_bool(receipt, "no_feature_reports");
+    let no_ffb_writes = json_bool(receipt, "no_ffb_writes");
+    let no_direct_torque_reports = json_bool(receipt, "no_direct_torque_reports");
+    let no_out_of_scope = no_out_of_scope_device_commands(receipt);
+    let high_torque = json_bool(receipt, "high_torque");
+    let no_high_torque = json_bool(receipt, "no_high_torque");
+    let no_nonzero_above_limit = json_bool(receipt, "no_nonzero_above_limit");
+    let final_stop_all_attempted = json_bool(receipt, "final_stop_all_attempted");
+    let final_stop_all_sent = json_bool(receipt, "final_stop_all_sent");
+    let generated_at_utc = json_string(receipt, "generated_at_utc");
+    let generated_at_valid = generated_at_utc
+        .map(|value| utc_timestamp_pair_is_ordered(value, value))
+        .unwrap_or(false);
+    let max_percent = json_f64(receipt, "max_percent")
+        .or_else(|| json_f64(receipt, "max_output_percent"))
+        .or_else(|| json_f64(receipt, "max_command_percent"));
+    let duration_ms = json_u64(receipt, "duration_ms").unwrap_or(0);
+    let hz = json_u64(receipt, "hz").unwrap_or(0);
+    let write_attempts = json_u64(receipt, "write_attempts").unwrap_or(0);
+    let writes_ok = json_u64(receipt, "writes_ok").unwrap_or(0);
+    let write_errors = json_u64(receipt, "write_errors").unwrap_or(u64::MAX);
+    let device = receipt.get("device");
+    let r5_device = device.map(is_r5_device_value).unwrap_or(false);
+    let output_capable =
+        device.and_then(|device| json_bool(device, "output_capable")) == Some(true);
+    let selector_matches_lane_endpoint = receipt_selector_matches_lane_endpoint(lane, receipt);
+    let device_pid = device.and_then(|device| json_string(device, "product_id"));
+    let zero_proof_pid = receipt
+        .get("zero_proof")
+        .and_then(|proof| json_string(proof, "product_id"));
+    let zero_proof_pid_matches = zero_proof_pid.is_some() && zero_proof_pid == device_pid;
+    let zero_proof_lane_match =
+        low_torque_zero_proof_matches_lane(lane, receipt, device_pid, generated_at_utc);
+    let zero_proof_strategy_ok = receipt
+        .get("zero_proof")
+        .and_then(|proof| json_string(proof, "zero_output_strategy"))
+        == Some(zero_output_strategy_name(
+            MozaZeroOutputStrategy::PidffStopAll,
+        ));
+    let pidff_descriptor_observed =
+        validate_zero_output_pidff_stop_all_report_metadata(lane).is_ok();
+    let init_proofs_match =
+        low_torque_init_proofs_match(lane, receipt, device_pid, generated_at_utc);
+    let no_abort_reason = receipt
+        .get("abort_reason")
+        .map(Value::is_null)
+        .unwrap_or(true);
+    let no_final_zero_error = receipt
+        .get("final_zero_error")
+        .map(Value::is_null)
+        .unwrap_or(true);
+
+    let bounded = max_percent
+        .map(|value| value.is_finite() && value > 0.0 && value <= 2.0)
+        .unwrap_or(false);
+    let command_log_safe = max_percent
+        .map(|limit| pidff_low_torque_command_log_is_safe(lane, receipt, limit, write_attempts))
+        .unwrap_or(false);
+    let expected_writes_match = write_attempts > 0 && writes_ok == write_attempts.saturating_add(1);
+
+    let safe = success
+        && command_ok
+        && receipt_path_ok
+        && json_string(receipt, "low_torque_strategy")
+            == Some(low_torque_strategy_name(
+                MozaLowTorqueStrategy::PidffBoundedEffect,
+            ))
+        && dry_run == Some(false)
+        && no_hid_device_opened == Some(false)
+        && confirmed == Some(true)
+        && zero_proof_validated == Some(true)
+        && zero_proof_pid_matches
+        && zero_proof_lane_match
+        && zero_proof_strategy_ok
+        && init_proofs_validated == Some(true)
+        && init_proofs_match
+        && no_feature_reports == Some(true)
+        && no_ffb_writes == Some(false)
+        && no_direct_torque_reports == Some(true)
+        && no_out_of_scope
+        && high_torque == Some(false)
+        && no_high_torque == Some(true)
+        && no_nonzero_above_limit == Some(true)
+        && final_stop_all_attempted == Some(true)
+        && final_stop_all_sent == Some(true)
+        && generated_at_valid
+        && bounded
+        && duration_ms > 0
+        && duration_ms <= 1000
+        && hz > 0
+        && hz <= 1000
+        && write_errors == 0
+        && no_abort_reason
+        && no_final_zero_error
+        && r5_device
+        && output_capable
+        && selector_matches_lane_endpoint
+        && pidff_descriptor_observed
+        && expected_writes_match
+        && command_log_safe;
+
+    if safe {
+        BundleGateCheck::pass(
+            "low_torque_bounded",
+            format!(
+                "real PIDFF low-torque proof logged {write_attempts} bounded command(s) plus final Stop All"
+            ),
+        )
+    } else {
+        BundleGateCheck::fail(
+            "low_torque_bounded",
+            format!(
+                "success={success}, command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, dry_run={dry_run:?}, no_hid_device_opened={no_hid_device_opened:?}, confirmed={confirmed:?}, zero_proof_validated={zero_proof_validated:?}, zero_proof_pid_matches={zero_proof_pid_matches}, zero_proof_lane_match={zero_proof_lane_match}, zero_proof_strategy_ok={zero_proof_strategy_ok}, init_proofs_validated={init_proofs_validated:?}, init_proofs_match={init_proofs_match}, no_feature_reports={no_feature_reports:?}, no_ffb_writes={no_ffb_writes:?}, no_direct_torque_reports={no_direct_torque_reports:?}, no_out_of_scope={no_out_of_scope}, high_torque={high_torque:?}, no_high_torque={no_high_torque:?}, no_nonzero_above_limit={no_nonzero_above_limit:?}, final_stop_all_attempted={final_stop_all_attempted:?}, final_stop_all_sent={final_stop_all_sent:?}, generated_at_valid={generated_at_valid}, max_percent={max_percent:?}, duration_ms={duration_ms}, hz={hz}, write_attempts={write_attempts}, writes_ok={writes_ok}, write_errors={write_errors}, r5_device={r5_device}, output_capable={output_capable}, selector_matches_lane_endpoint={selector_matches_lane_endpoint}, pidff_descriptor_observed={pidff_descriptor_observed}, expected_writes_match={expected_writes_match}, command_log_safe={command_log_safe}, no_abort_reason={no_abort_reason}, no_final_zero_error={no_final_zero_error}"
             ),
         )
     }
@@ -11101,7 +11422,9 @@ fn init_proof_summary_matches(
         && json_string(proof, "mode") == Some(expected_mode)
         && json_string(proof, "init_state") == Some("ready")
         && json_bool(proof, "ready") == Some(true)
-        && json_u64(proof, "feature_report_count") == Some(2)
+        && json_u64(proof, "feature_report_count")
+            .map(|count| count > 0)
+            .unwrap_or(false)
         && proof_generated_at == actual_generated_at
         && proof_generated_at
             .map(|value| utc_timestamp_pair_is_ordered(value, low_torque_generated_at))
@@ -11248,6 +11571,122 @@ fn low_torque_command_log_is_safe(
     }
 
     low_torque_ok == expected_writes
+}
+
+fn pidff_low_torque_command_log_is_safe(
+    lane: &Path,
+    receipt: &Value,
+    max_percent: f64,
+    expected_writes: u64,
+) -> bool {
+    let Some(records) = receipt.get("command_log").and_then(Value::as_array) else {
+        return false;
+    };
+    let Ok(expected_len) = usize::try_from(expected_writes.saturating_add(1)) else {
+        return false;
+    };
+    if records.len() != expected_len {
+        return false;
+    }
+
+    let mut bounded_writes = 0u64;
+    for (index, record) in records.iter().enumerate() {
+        if json_string(record, "result") != Some("ok")
+            || json_string(record, "low_torque_strategy")
+                != Some(low_torque_strategy_name(
+                    MozaLowTorqueStrategy::PidffBoundedEffect,
+                ))
+            || !record_sequence_matches_index(record, index)
+        {
+            return false;
+        }
+
+        match json_string(record, "kind") {
+            Some("pidff_bounded_effect") => {
+                if index + 1 == records.len() {
+                    return false;
+                }
+                let Some(percent) = json_f64(record, "effect_magnitude_percent")
+                    .or_else(|| json_f64(record, "percent"))
+                else {
+                    return false;
+                };
+                let Some(report_id) = json_string(record, "report_id") else {
+                    return false;
+                };
+                let Some(report_len) =
+                    json_u64(record, "report_len").and_then(|value| usize::try_from(value).ok())
+                else {
+                    return false;
+                };
+                let Some(bytes_written) = json_u64(record, "bytes_written") else {
+                    return false;
+                };
+                let Some(payload_hex) = json_string(record, "payload_hex") else {
+                    return false;
+                };
+                let record_safe = percent.is_finite()
+                    && percent > 0.0
+                    && percent <= max_percent
+                    && json_string(record, "safety_classification")
+                        == Some("bounded_low_torque_pidff")
+                    && report_id != DIRECT_TORQUE_REPORT_ID
+                    && payload_hex.len() == report_len.saturating_mul(2)
+                    && bytes_written >= report_len as u64
+                    && lane_descriptor_has_output_report(lane, report_id, report_len);
+                if !record_safe {
+                    return false;
+                }
+                bounded_writes += 1;
+            }
+            Some("final_stop_all" | "final_zero") => {
+                if index + 1 != records.len() {
+                    return false;
+                }
+                let final_stop_all_safe = json_string(record, "payload_hex") == Some("0C04")
+                    && json_string(record, "report_id") == Some(PIDFF_DEVICE_CONTROL_REPORT_ID)
+                    && json_u64(record, "report_len")
+                        == Some(PIDFF_DEVICE_CONTROL_REPORT_LEN as u64)
+                    && json_u64(record, "bytes_written")
+                        .map(|bytes| bytes >= PIDFF_DEVICE_CONTROL_REPORT_LEN as u64)
+                        .unwrap_or(false)
+                    && json_f64(record, "percent") == Some(0.0)
+                    && json_f64(record, "effect_magnitude_percent") == Some(0.0)
+                    && json_i64(record, "torque_raw") == Some(0)
+                    && json_u64(record, "flags") == Some(0)
+                    && json_bool(record, "motor_enabled") == Some(false)
+                    && json_string(record, "pidff_device_control_command") == Some("0x04")
+                    && json_string(record, "pidff_device_control_command_name")
+                        == Some(PIDFF_STOP_ALL_EFFECTS_COMMAND_NAME)
+                    && json_string(record, "safety_classification")
+                        == Some("pidff_stop_all_cleanup");
+                if !final_stop_all_safe {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
+
+    bounded_writes == expected_writes && bounded_writes > 0
+}
+
+fn lane_descriptor_has_output_report(lane: &Path, report_id: &str, report_len: usize) -> bool {
+    let Ok(receipt) = read_json_value(lane, "descriptor.json") else {
+        return false;
+    };
+    let Some(devices) = receipt.get("devices").and_then(Value::as_array) else {
+        return false;
+    };
+    let Some(pid) = lane_manifest_r5_pid(lane).map(hex_u16) else {
+        return false;
+    };
+    devices.iter().any(|device| {
+        is_r5_device_value(device)
+            && json_string(device, "product_id") == Some(pid.as_str())
+            && r5_descriptor_metadata_trusted(device)
+            && json_report_record_contains(device, "output_reports", report_id, report_len)
+    })
 }
 
 struct ExpectedLowTorquePayload {
@@ -15241,10 +15680,12 @@ struct LowTorqueProofReceipt {
     generated_at_utc: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     receipt_path: Option<String>,
+    low_torque_strategy: &'static str,
     no_feature_reports: bool,
     no_high_torque: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     high_torque: Option<bool>,
+    no_direct_torque_reports: bool,
     no_nonzero_above_limit: bool,
     no_ffb_writes: bool,
     no_serial_config_commands: bool,
@@ -15279,6 +15720,8 @@ struct LowTorqueProofReceipt {
     bytes_written_total: usize,
     final_zero_attempted: bool,
     final_zero_sent: bool,
+    final_stop_all_attempted: bool,
+    final_stop_all_sent: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     final_zero_error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -15292,6 +15735,7 @@ impl LowTorqueProofReceipt {
         selector: Option<String>,
         device: MozaDeviceRecord,
         zero_proof: Option<ZeroProofSummary>,
+        strategy: MozaLowTorqueStrategy,
         max_percent: f32,
         duration_ms: u64,
         hz: u32,
@@ -15303,9 +15747,11 @@ impl LowTorqueProofReceipt {
             command: "wheelctl moza torque-test",
             generated_at_utc: now_utc(),
             receipt_path: None,
+            low_torque_strategy: low_torque_strategy_name(strategy),
             no_feature_reports: true,
             no_high_torque: true,
             high_torque: Some(false),
+            no_direct_torque_reports: strategy == MozaLowTorqueStrategy::PidffBoundedEffect,
             no_nonzero_above_limit: true,
             no_ffb_writes: dry_run,
             no_serial_config_commands: true,
@@ -15328,19 +15774,28 @@ impl LowTorqueProofReceipt {
             duration_ms,
             hz,
             device,
-            ladder: low_torque_ladder_for_pid(pid, max_percent, duration_ms, hz),
+            ladder: if strategy == MozaLowTorqueStrategy::DirectReport0x20 {
+                low_torque_ladder_for_pid(pid, max_percent, duration_ms, hz)
+            } else {
+                Vec::new()
+            },
             write_attempts: 0,
             writes_ok: 0,
             write_errors: 0,
             bytes_written_total: 0,
             final_zero_attempted: false,
             final_zero_sent: false,
+            final_stop_all_attempted: false,
+            final_stop_all_sent: false,
             final_zero_error: None,
             abort_reason: None,
             command_log: Vec::new(),
             notes: vec![
                 "torque-test is gated by a passing real zero-torque proof before any actual HID write".to_string(),
-                "this command sends only Moza direct torque report 0x20 and never sends high-torque or feature reports".to_string(),
+                match strategy {
+                    MozaLowTorqueStrategy::DirectReport0x20 => "this command sends only Moza direct torque report 0x20 and never sends high-torque or feature reports".to_string(),
+                    MozaLowTorqueStrategy::PidffBoundedEffect => "pidff-bounded-effect is a separate strategy from direct report 0x20 and requires a future effect encoder before real writes".to_string(),
+                },
             ],
         }
     }
@@ -15381,6 +15836,20 @@ impl LowTorqueProofReceipt {
     fn plan_only(&mut self) {
         let started_at = Instant::now();
         let mut sequence = 0u32;
+        if self.low_torque_strategy
+            == low_torque_strategy_name(MozaLowTorqueStrategy::PidffBoundedEffect)
+        {
+            self.final_zero_attempted = true;
+            self.final_zero_sent = true;
+            self.final_stop_all_attempted = true;
+            self.final_stop_all_sent = true;
+            self.record_command(LowTorqueCommandRecord::planned_pidff_stop_all(
+                sequence,
+                "final_stop_all",
+                started_at,
+            ));
+            return;
+        }
         for stage in self.ladder.clone() {
             self.record_command(LowTorqueCommandRecord::planned(
                 sequence,
@@ -15404,7 +15873,19 @@ impl LowTorqueProofReceipt {
     }
 
     fn record_command(&mut self, record: LowTorqueCommandRecord) {
-        let low_torque_ok = if record.kind == "final_zero" {
+        let low_torque_ok = if self.low_torque_strategy
+            == low_torque_strategy_name(MozaLowTorqueStrategy::PidffBoundedEffect)
+        {
+            record.report_id != DIRECT_TORQUE_REPORT_ID
+                && record
+                    .safety_classification
+                    .map(|classification| {
+                        classification == "planned_pidff_stop_all"
+                            || classification == "bounded_low_torque_pidff"
+                    })
+                    .unwrap_or(false)
+                && record.percent <= self.max_percent
+        } else if record.kind == "final_zero" {
             record.torque_raw == 0 && record.flags == 0 && !record.motor_enabled
         } else {
             record.percent <= self.max_percent
@@ -15456,12 +15937,23 @@ struct LowTorqueCommandRecord {
     sequence: u32,
     kind: &'static str,
     elapsed_us: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    low_torque_strategy: Option<&'static str>,
     percent: f32,
     payload_hex: String,
     report_id: String,
+    report_len: usize,
     torque_raw: i16,
     flags: u8,
     motor_enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effect_magnitude_percent: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pidff_device_control_command: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pidff_device_control_command_name: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    safety_classification: Option<&'static str>,
     result: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     bytes_written: Option<usize>,
@@ -15543,6 +16035,42 @@ impl LowTorqueCommandRecord {
         )
     }
 
+    fn planned_pidff_stop_all(sequence: u32, kind: &'static str, started_at: Instant) -> Self {
+        Self::pidff_stop_all(sequence, kind, started_at, "planned", None, None)
+    }
+
+    fn pidff_stop_all(
+        sequence: u32,
+        kind: &'static str,
+        started_at: Instant,
+        result: &'static str,
+        bytes_written: Option<usize>,
+        error: Option<String>,
+    ) -> Self {
+        Self {
+            sequence,
+            kind,
+            elapsed_us: started_at.elapsed().as_micros() as u64,
+            low_torque_strategy: Some(low_torque_strategy_name(
+                MozaLowTorqueStrategy::PidffBoundedEffect,
+            )),
+            percent: 0.0,
+            payload_hex: "0C04".to_string(),
+            report_id: PIDFF_DEVICE_CONTROL_REPORT_ID.to_string(),
+            report_len: PIDFF_DEVICE_CONTROL_REPORT_LEN,
+            torque_raw: 0,
+            flags: 0,
+            motor_enabled: false,
+            effect_magnitude_percent: Some(0.0),
+            pidff_device_control_command: Some(hex_u8(PIDFF_STOP_ALL_EFFECTS_COMMAND)),
+            pidff_device_control_command_name: Some(PIDFF_STOP_ALL_EFFECTS_COMMAND_NAME),
+            safety_classification: Some("planned_pidff_stop_all"),
+            result,
+            bytes_written,
+            error,
+        }
+    }
+
     fn new(
         sequence: u32,
         kind: &'static str,
@@ -15559,12 +16087,20 @@ impl LowTorqueCommandRecord {
             sequence,
             kind,
             elapsed_us: started_at.elapsed().as_micros() as u64,
+            low_torque_strategy: Some(low_torque_strategy_name(
+                MozaLowTorqueStrategy::DirectReport0x20,
+            )),
             percent,
             payload_hex: bytes_hex_compact(&payload),
             report_id: hex_u8(payload[0]),
+            report_len: REPORT_LEN,
             torque_raw,
             flags,
             motor_enabled: flags & 0x01 != 0,
+            effect_magnitude_percent: Some(percent),
+            pidff_device_control_command: None,
+            pidff_device_control_command_name: None,
+            safety_classification: Some("bounded_low_torque_direct_report"),
             result,
             bytes_written,
             error,
@@ -20235,6 +20771,7 @@ mod tests {
             Some("hid-0x346E-0x0014-if2-0x0001-0x0004".to_string()),
             sample_device(),
             Some(zero_proof),
+            MozaLowTorqueStrategy::DirectReport0x20,
             max_percent,
             1,
             1000,
@@ -20289,6 +20826,133 @@ mod tests {
             && receipt.final_zero_sent;
 
         Ok(serde_json::to_value(receipt)?)
+    }
+
+    fn write_pidff_low_torque_prerequisite_receipts(root: &Path) -> TestResult {
+        write_zero_torque_ready_r5_v1_manifest(root)?;
+        write_test_json_file(
+            &root.join("descriptor.json"),
+            &serde_json::json!({
+                "success": true,
+                "command": "hid-capture descriptor",
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "devices": [sample_trusted_r5_v1_json_device()]
+            }),
+        )?;
+        write_test_json_file(
+            &root.join("zero-torque-proof.json"),
+            &receipt_with_lane_path(root, "zero-torque-proof.json", real_pidff_zero_receipt(100)),
+        )?;
+        write_test_json_file(
+            &root.join("init-off.json"),
+            &receipt_with_lane_path(root, "init-off.json", real_r5_v1_init_receipt("off")),
+        )?;
+        write_test_json_file(
+            &root.join("init-standard.json"),
+            &receipt_with_lane_path(
+                root,
+                "init-standard.json",
+                real_r5_v1_init_receipt("standard"),
+            ),
+        )?;
+        Ok(())
+    }
+
+    fn pidff_bounded_command_log() -> Vec<Value> {
+        vec![
+            serde_json::json!({
+                "sequence": 0,
+                "kind": "pidff_bounded_effect",
+                "elapsed_us": 10,
+                "low_torque_strategy": "pidff_bounded_effect",
+                "percent": 1.0,
+                "effect_magnitude_percent": 1.0,
+                "payload_hex": "05010001",
+                "report_id": "0x05",
+                "report_len": 4,
+                "torque_raw": 1,
+                "flags": 0,
+                "motor_enabled": true,
+                "safety_classification": "bounded_low_torque_pidff",
+                "result": "ok",
+                "bytes_written": 4
+            }),
+            serde_json::json!({
+                "sequence": 1,
+                "kind": "final_stop_all",
+                "elapsed_us": 200,
+                "low_torque_strategy": "pidff_bounded_effect",
+                "percent": 0.0,
+                "effect_magnitude_percent": 0.0,
+                "payload_hex": "0C04",
+                "report_id": "0x0C",
+                "report_len": 2,
+                "torque_raw": 0,
+                "flags": 0,
+                "motor_enabled": false,
+                "pidff_device_control_command": "0x04",
+                "pidff_device_control_command_name": "stop_all_effects",
+                "safety_classification": "pidff_stop_all_cleanup",
+                "result": "ok",
+                "bytes_written": 51
+            }),
+        ]
+    }
+
+    fn real_pidff_low_torque_receipt_for_lane(root: &Path) -> TestResult<Value> {
+        let zero_proof = validate_zero_proof_for_low_torque_strategy(
+            &root.join("zero-torque-proof.json"),
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+        )?;
+        let init_proofs = validate_init_proofs_for_torque_test(Some(root), None, None, false)?
+            .ok_or("expected init proofs")?;
+        Ok(serde_json::json!({
+            "success": true,
+            "command": "wheelctl moza torque-test",
+            "generated_at_utc": TEST_LOW_TORQUE_GENERATED_AT,
+            "receipt_path": root.join("low-torque-proof.json").display().to_string(),
+            "low_torque_strategy": "pidff_bounded_effect",
+            "no_feature_reports": true,
+            "no_high_torque": true,
+            "high_torque": false,
+            "no_direct_torque_reports": true,
+            "no_nonzero_above_limit": true,
+            "no_ffb_writes": false,
+            "no_serial_config_commands": true,
+            "no_firmware_or_dfu_commands": true,
+            "dry_run": false,
+            "no_hid_device_opened": false,
+            "confirmed": true,
+            "zero_proof_validated": true,
+            "init_proofs_validated": true,
+            "selector": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            "max_percent": 1.0,
+            "duration_ms": 150,
+            "hz": 1000,
+            "device": {
+                "vendor_id": "0x346E",
+                "product_id": "0x0004",
+                "product_name": "Moza R5",
+                "output_capable": true
+            },
+            "zero_proof": zero_proof,
+            "init_proofs": init_proofs,
+            "write_attempts": 1,
+            "writes_ok": 2,
+            "write_errors": 0,
+            "bytes_written_total": 55,
+            "final_zero_attempted": true,
+            "final_zero_sent": true,
+            "final_stop_all_attempted": true,
+            "final_stop_all_sent": true,
+            "abort_reason": null,
+            "final_zero_error": null,
+            "command_log": pidff_bounded_command_log(),
+            "notes": ["synthetic verifier fixture for PIDFF bounded-effect receipt shape"]
+        }))
     }
 
     fn pit_house_receipt() -> Value {
@@ -22927,6 +23591,7 @@ mod tests {
             lane: None,
             init_off: None,
             init_standard: None,
+            strategy: MozaLowTorqueStrategy::DirectReport0x20,
             dry_run: true,
             confirm_low_torque: false,
             explicit_operator_override: false,
@@ -22965,6 +23630,7 @@ mod tests {
             lane: None,
             init_off: None,
             init_standard: None,
+            strategy: MozaLowTorqueStrategy::DirectReport0x20,
             dry_run: false,
             confirm_low_torque: false,
             explicit_operator_override: false,
@@ -22994,6 +23660,7 @@ mod tests {
             lane: Some(dir.path()),
             init_off: None,
             init_standard: None,
+            strategy: MozaLowTorqueStrategy::DirectReport0x20,
             dry_run: false,
             confirm_low_torque: true,
             explicit_operator_override: false,
@@ -23035,6 +23702,7 @@ mod tests {
             lane: Some(dir.path()),
             init_off: None,
             init_standard: None,
+            strategy: MozaLowTorqueStrategy::DirectReport0x20,
             dry_run: false,
             confirm_low_torque: true,
             explicit_operator_override: true,
@@ -24047,6 +24715,231 @@ mod tests {
         assert!(
             gate.details.contains("zero_proof_lane_match=false"),
             "expected newer prerequisite failure, got {}",
+            gate.details
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn validate_pidff_low_torque_preflight_accepts_same_lane_r5_v1_prerequisites() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_pidff_low_torque_prerequisite_receipts(dir.path())?;
+
+        let preflight = validate_pidff_low_torque_real_hardware_preflight(
+            Some("hid-0x346E-0x0004-if2-0x0001-0x0004"),
+            None,
+            Some(dir.path()),
+            Some(&dir.path().join("zero-torque-proof.json")),
+            None,
+            None,
+        )?;
+
+        assert_eq!(preflight.target_product_id, "0x0004");
+        assert_eq!(
+            preflight.zero_proof.zero_output_strategy,
+            "pidff_device_control_stop_all"
+        );
+        assert!(preflight.init_proofs.match_product_id("0x0004"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn torque_test_pidff_actual_fails_closed_before_hid_open() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_pidff_low_torque_prerequisite_receipts(dir.path())?;
+
+        let result = torque_test(TorqueTestRequest {
+            json: false,
+            selector: Some("hid-0x346E-0x0004-if2-0x0001-0x0004"),
+            pid_override: None,
+            zero_proof: Some(&dir.path().join("zero-torque-proof.json")),
+            descriptor: None,
+            lane: Some(dir.path()),
+            init_off: None,
+            init_standard: None,
+            strategy: MozaLowTorqueStrategy::PidffBoundedEffect,
+            dry_run: false,
+            confirm_low_torque: true,
+            explicit_operator_override: false,
+            max_percent: 1.0,
+            duration_ms: 150,
+            hz: 1000,
+            json_out: Some(&dir.path().join("low-torque-proof.json")),
+        })
+        .await;
+
+        let message = result
+            .err()
+            .map(|error| error.to_string())
+            .ok_or("expected PIDFF not-implemented gate")?;
+        assert!(message.contains("not implemented"));
+        assert!(message.contains("no HID device was opened"));
+        assert!(!dir.path().join("low-torque-proof.json").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn verify_low_torque_gate_accepts_pidff_bounded_receipt_shape() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_pidff_low_torque_prerequisite_receipts(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("low-torque-proof.json"),
+            &real_pidff_low_torque_receipt_for_lane(dir.path())?,
+        )?;
+
+        let gate = verify_low_torque_gate(dir.path());
+
+        assert_eq!(gate.status, "pass", "{}", gate.details);
+        Ok(())
+    }
+
+    #[test]
+    fn verify_low_torque_gate_rejects_pidff_receipt_with_direct_report() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_pidff_low_torque_prerequisite_receipts(dir.path())?;
+        let mut receipt = real_pidff_low_torque_receipt_for_lane(dir.path())?;
+        let command_log = receipt
+            .get_mut("command_log")
+            .and_then(Value::as_array_mut)
+            .ok_or("expected command log")?;
+        let first = command_log.first_mut().ok_or("expected first command")?;
+        first["report_id"] = serde_json::json!("0x20");
+        first["report_len"] = serde_json::json!(8);
+        first["payload_hex"] = serde_json::json!("2001000000000000");
+        first["bytes_written"] = serde_json::json!(8);
+        write_test_json_file(&dir.path().join("low-torque-proof.json"), &receipt)?;
+
+        let gate = verify_low_torque_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details.contains("command_log_safe=false"),
+            "expected PIDFF verifier to reject direct report payloads: {}",
+            gate.details
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_low_torque_gate_rejects_pidff_receipt_with_direct_strategy_label() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_pidff_low_torque_prerequisite_receipts(dir.path())?;
+        let mut receipt = real_pidff_low_torque_receipt_for_lane(dir.path())?;
+        receipt["low_torque_strategy"] = serde_json::json!("direct_report_0x20");
+        write_test_json_file(&dir.path().join("low-torque-proof.json"), &receipt)?;
+
+        let gate = verify_low_torque_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details.contains("command_log_safe=false")
+                || gate.details.contains("direct_mode_gate_satisfied"),
+            "expected direct verifier to reject PIDFF-shaped receipt: {}",
+            gate.details
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_low_torque_gate_rejects_pidff_receipt_with_loose_selector() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_pidff_low_torque_prerequisite_receipts(dir.path())?;
+        let mut receipt = real_pidff_low_torque_receipt_for_lane(dir.path())?;
+        receipt["selector"] = serde_json::json!("0x346E:0x0004");
+        write_test_json_file(&dir.path().join("low-torque-proof.json"), &receipt)?;
+
+        let gate = verify_low_torque_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details
+                .contains("selector_matches_lane_endpoint=false"),
+            "expected loose selector failure: {}",
+            gate.details
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_low_torque_gate_rejects_pidff_receipt_with_wrong_interface() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_pidff_low_torque_prerequisite_receipts(dir.path())?;
+        let mut receipt = real_pidff_low_torque_receipt_for_lane(dir.path())?;
+        receipt["selector"] = serde_json::json!("hid-0x346E-0x0004-if1-0x0001-0x0004");
+        write_test_json_file(&dir.path().join("low-torque-proof.json"), &receipt)?;
+
+        let gate = verify_low_torque_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details
+                .contains("selector_matches_lane_endpoint=false"),
+            "expected wrong interface selector failure: {}",
+            gate.details
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_low_torque_gate_rejects_pidff_receipt_without_final_stop_all() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_pidff_low_torque_prerequisite_receipts(dir.path())?;
+        let mut receipt = real_pidff_low_torque_receipt_for_lane(dir.path())?;
+        receipt["final_stop_all_sent"] = serde_json::json!(false);
+        let command_log = receipt
+            .get_mut("command_log")
+            .and_then(Value::as_array_mut)
+            .ok_or("expected command log")?;
+        let _ = command_log.pop();
+        receipt["writes_ok"] = serde_json::json!(1);
+        write_test_json_file(&dir.path().join("low-torque-proof.json"), &receipt)?;
+
+        let gate = verify_low_torque_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details.contains("final_stop_all_sent=Some(false)")
+                || gate.details.contains("command_log_safe=false"),
+            "expected missing final Stop All failure: {}",
+            gate.details
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_low_torque_gate_rejects_pidff_receipt_with_high_torque_flag() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_pidff_low_torque_prerequisite_receipts(dir.path())?;
+        let mut receipt = real_pidff_low_torque_receipt_for_lane(dir.path())?;
+        receipt["high_torque"] = serde_json::json!(true);
+        write_test_json_file(&dir.path().join("low-torque-proof.json"), &receipt)?;
+
+        let gate = verify_low_torque_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details.contains("high_torque=Some(true)"),
+            "expected high torque flag failure: {}",
+            gate.details
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_low_torque_gate_rejects_pidff_receipt_with_serial_or_firmware_flags() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_pidff_low_torque_prerequisite_receipts(dir.path())?;
+        let mut receipt = real_pidff_low_torque_receipt_for_lane(dir.path())?;
+        receipt["no_serial_config_commands"] = serde_json::json!(false);
+        receipt["no_firmware_or_dfu_commands"] = serde_json::json!(false);
+        write_test_json_file(&dir.path().join("low-torque-proof.json"), &receipt)?;
+
+        let gate = verify_low_torque_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details.contains("no_out_of_scope=false"),
+            "expected serial/firmware safety flag failure: {}",
             gate.details
         );
         Ok(())
