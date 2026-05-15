@@ -39,7 +39,8 @@ Before bounded FFB smoke:
 - `disconnect-proof.json` passed
 - `low-torque-proof.json` passed
 - Pit House coexistence receipts needed before smoke are present
-- descriptor trust is established or an explicit operator override is recorded
+- direct report `0x20` descriptor trust is established or a deliberate explicit
+  operator override is recorded
 - high torque is disabled
 - wheel is mounted safely
 - e-stop / stop path is available

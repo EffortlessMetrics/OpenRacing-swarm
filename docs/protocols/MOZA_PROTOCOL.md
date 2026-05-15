@@ -382,20 +382,22 @@ export OPENRACING_MOZA_HIGH_TORQUE=1
 **Warning:** the lower-level escape hatch sends high torque to any Moza
 wheelbase regardless of identity. It is not passive evidence, and it is not a
 substitute for the hardware-lane descriptor receipt. The receipt-backed
-low-torque and simulator-smoke gates instead require either descriptor trust
-from the same dated lane or an explicit operator override recorded in the output
-receipt. High torque remains out of scope for the Steven R5 bring-up lane.
+low-torque and simulator-smoke gates instead require direct report `0x20`
+descriptor trust from the same dated lane or a deliberate explicit operator
+override recorded in the output receipt. High torque remains out of scope for
+the Steven R5 bring-up lane.
 
 ### Windows parity note
 
 Windows hidapi enumeration currently gets `report_descriptor_crc32=None`, which
 means `signature_is_trusted(None)` returns `false` by default. A Windows lane can
 still become descriptor-trusted when the operator imports raw descriptor bytes
-from USBTreeView or an equivalent tool and the verifier can recompute the stored
-CRC and parsed report metadata. If no trusted descriptor receipt exists, any
-future bounded output proof must record an explicit operator override and keep
-high torque disabled. This is a deliberate safe-default: do not assume Windows is
-silently working in an untrusted state.
+from USBTreeView, USBPcap/Wireshark, or an equivalent tool and the verifier can
+recompute the stored CRC and parsed report metadata. If direct report `0x20`
+remains unproven, generated guidance must stay read-only; any future bounded
+output proof that bypasses that gap must record a deliberate explicit operator
+override and keep high torque disabled. This is a deliberate safe-default: do
+not assume Windows is silently working in an untrusted state.
 
 ### Environment variable reference
 

@@ -280,7 +280,9 @@ The first output test must be zero output only:
 The first non-zero output test must be bounded low torque only:
 
 - same-lane passive and zero receipts already present
-- descriptor trusted or explicit operator override recorded
+- descriptor-trusted direct report `0x20` metadata present
+- same-lane `direct_report_0x20` zero proof accepted by `torque-test`
+- no generated `--explicit-operator-override`; any override is a separate manual operator decision
 - hard output cap
 - final-zero proof
 - no high torque
