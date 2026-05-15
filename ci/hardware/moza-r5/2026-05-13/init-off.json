@@ -1,0 +1,78 @@
+{
+  "success": true,
+  "command": "wheelctl moza init",
+  "generated_at_utc": "2026-05-15T16:58:15Z",
+  "receipt_path": "ci\\hardware\\moza-r5\\2026-05-13\\init-off.json",
+  "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+  "operator_confirmed": true,
+  "zero_verification_validated": true,
+  "zero_verification_generated_at": "2026-05-15T10:53:12Z",
+  "zero_audit_validated": true,
+  "zero_audit_generated_at": "2026-05-15T10:54:24Z",
+  "no_output_reports": true,
+  "no_direct_torque_reports": true,
+  "no_high_torque": true,
+  "high_torque": false,
+  "no_serial_config_commands": true,
+  "no_firmware_or_dfu_commands": true,
+  "dry_run": false,
+  "no_hid_device_opened": false,
+  "selector": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+  "mode": "off",
+  "mode_wire_value": "0xFF",
+  "init_state": "ready",
+  "ready": true,
+  "device": {
+    "vendor_id": "0x346E",
+    "product_id": "0x0004",
+    "product_name": "Moza R5",
+    "product_category": "wheelbase",
+    "topology_hint": "wheelbase_aggregated",
+    "output_capable": true,
+    "r5_wheelbase_pid": true,
+    "manufacturer": "Gudsen",
+    "product_string": "MOZA R5 Base",
+    "serial_number_present": true,
+    "interface_number": 2,
+    "usage_page": "0x0001",
+    "usage": "0x0004",
+    "path": "\\\\?\\HID#VID_346E&PID_0004&MI_02#8&6c29b84&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}",
+    "descriptor_source": "unavailable",
+    "report_metadata_source": "protocol_expected",
+    "input_report_lengths": [
+      42
+    ],
+    "output_report_ids": [
+      "0x20"
+    ],
+    "output_reports": [
+      {
+        "report_id": "0x20",
+        "report_len": 8
+      }
+    ],
+    "feature_report_ids": [
+      "0x11",
+      "0x12",
+      "0x13",
+      "0xAF"
+    ]
+  },
+  "feature_report_count": 1,
+  "feature_write_errors": 0,
+  "output_report_attempts": 0,
+  "feature_reports": [
+    {
+      "sequence": 0,
+      "kind": "ffb_mode",
+      "payload_hex": "11FF0000",
+      "report_id": "0x11",
+      "result": "ok",
+      "bytes_written": 4
+    }
+  ],
+  "notes": [
+    "init sends only the Moza staged handshake feature reports for off or standard mode",
+    "init never sends direct torque report 0x20 and never sends high-torque report 0x02"
+  ]
+}

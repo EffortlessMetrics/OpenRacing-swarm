@@ -1,19 +1,14 @@
 {
   "success": true,
   "command": "wheelctl moza pre-output-readiness",
-  "generated_at_utc": "2026-05-15T10:54:49Z",
+  "generated_at_utc": "2026-05-15T17:42:14Z",
   "lane": "ci\\hardware\\moza-r5\\2026-05-13",
   "stage": "pre_output_readiness",
   "ready_for_zero_torque": true,
   "ready_for_ffb": false,
   "blocking_items": [],
   "ffb_blocking_items": [
-    "init_off_handshake",
-    "init_standard_handshake",
-    "low_torque_bounded",
-    "pit_house_coexistence",
-    "service_status_receipts",
-    "simulator_telemetry"
+    "smoke-ready-verification.json"
   ],
   "zero_output_strategies": [
     {
@@ -142,6 +137,6 @@
   "notes": [
     "pre-output-readiness reads existing lane receipts only; it opens no HID device and sends no reports",
     "ready_for_zero_torque is the first output-adjacent gate and still does not permit nonzero torque or FFB",
-    "ready_for_ffb is false until zero, watchdog, disconnect, low-torque, Pit House, and simulator telemetry prerequisites are present"
+    "ready_for_ffb is false until zero, watchdog, disconnect, low-torque, and simulator telemetry prerequisites are present; Pit House coexistence remains a separate smoke-ready proof before promotion"
   ]
 }
