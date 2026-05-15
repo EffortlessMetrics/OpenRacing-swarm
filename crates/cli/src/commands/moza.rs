@@ -103,6 +103,12 @@ struct TorqueTestRequest<'a> {
     json_out: Option<&'a Path>,
 }
 
+struct ZeroOutputStagePreflight {
+    lane: PathBuf,
+    lane_display: String,
+    pre_output_readiness_generated_at: Option<String>,
+}
+
 struct PitHouseProofRequest<'a> {
     json: bool,
     lane: &'a Path,
@@ -271,8 +277,10 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
         }
         MozaCommands::Zero {
             device,
+            lane,
             pid,
             dry_run,
+            confirm_zero_torque,
             repeat,
             hz,
             watchdog_timeout_ms,
@@ -281,8 +289,10 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             zero_torque(
                 json,
                 device.as_deref(),
+                lane.as_deref(),
                 pid.as_deref(),
                 *dry_run,
+                *confirm_zero_torque,
                 *repeat,
                 *hz,
                 *watchdog_timeout_ms,
@@ -292,8 +302,10 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
         }
         MozaCommands::WatchdogProof {
             device,
+            lane,
             pid,
             dry_run,
+            confirm_watchdog_test,
             pre_zero_count,
             hz,
             watchdog_timeout_ms,
@@ -302,8 +314,10 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             watchdog_proof(
                 json,
                 device.as_deref(),
+                lane.as_deref(),
                 pid.as_deref(),
                 *dry_run,
+                *confirm_watchdog_test,
                 *pre_zero_count,
                 *hz,
                 *watchdog_timeout_ms,
@@ -313,6 +327,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
         }
         MozaCommands::DisconnectProof {
             device,
+            lane,
             pid,
             dry_run,
             confirm_disconnect_test,
@@ -323,6 +338,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             disconnect_proof(
                 json,
                 device.as_deref(),
+                lane.as_deref(),
                 pid.as_deref(),
                 *dry_run,
                 *confirm_disconnect_test,
@@ -1308,11 +1324,14 @@ fn validate_required_passive_captures_for_fixture_promotion(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn zero_torque(
     json: bool,
     selector: Option<&str>,
+    lane: Option<&Path>,
     pid_override: Option<&str>,
     dry_run: bool,
+    confirm_zero_torque: bool,
     repeat: u32,
     hz: u32,
     watchdog_timeout_ms: u64,
@@ -1355,6 +1374,14 @@ async fn zero_torque(
         return Ok(());
     }
 
+    let preflight = validate_zero_output_stage_preflight(
+        lane,
+        json_out,
+        "zero-torque-proof.json",
+        confirm_zero_torque,
+        "--confirm-zero-torque",
+    )?;
+
     let api = HidApi::new().context("failed to initialize HID API")?;
     let (device, snapshot) = open_single_moza_device(&api, selector)?;
     if !snapshot.output_capable {
@@ -1377,6 +1404,10 @@ async fn zero_torque(
         payload,
         false,
     );
+    receipt.lane = Some(preflight.lane_display.clone());
+    receipt.pre_output_readiness_validated = true;
+    receipt.pre_output_readiness_generated_at = preflight.pre_output_readiness_generated_at;
+    receipt.operator_confirmed = confirm_zero_torque;
 
     let period = Duration::from_micros(1_000_000 / u64::from(hz));
     let watchdog_timeout = Duration::from_millis(watchdog_timeout_ms);
@@ -1502,11 +1533,14 @@ async fn zero_torque(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn watchdog_proof(
     json: bool,
     selector: Option<&str>,
+    lane: Option<&Path>,
     pid_override: Option<&str>,
     dry_run: bool,
+    confirm_watchdog_test: bool,
     pre_zero_count: u32,
     hz: u32,
     watchdog_timeout_ms: u64,
@@ -1548,6 +1582,15 @@ async fn watchdog_proof(
         return Ok(());
     }
 
+    let preflight = validate_zero_output_stage_preflight(
+        lane,
+        json_out,
+        "watchdog-proof.json",
+        confirm_watchdog_test,
+        "--confirm-watchdog-test",
+    )?;
+    let zero_proof = validate_same_lane_zero_proof_for_zero_output(&preflight.lane)?;
+
     let api = HidApi::new().context("failed to initialize HID API")?;
     let (device, snapshot) = open_single_moza_device(&api, selector)?;
     if !snapshot.output_capable {
@@ -1570,6 +1613,12 @@ async fn watchdog_proof(
         payload,
         false,
     );
+    receipt.lane = Some(preflight.lane_display.clone());
+    receipt.pre_output_readiness_validated = true;
+    receipt.pre_output_readiness_generated_at = preflight.pre_output_readiness_generated_at;
+    receipt.zero_torque_proof_validated = true;
+    receipt.zero_torque_proof_crc32 = Some(zero_proof.receipt_crc32);
+    receipt.operator_confirmed = confirm_watchdog_test;
     receipt.fault_injected = Some("watchdog_timeout");
     receipt.notes.push(
         "watchdog-proof intentionally waits past the watchdog timeout, then sends final zero"
@@ -1691,9 +1740,11 @@ async fn watchdog_proof(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn disconnect_proof(
     json: bool,
     selector: Option<&str>,
+    lane: Option<&Path>,
     pid_override: Option<&str>,
     dry_run: bool,
     confirm_disconnect_test: bool,
@@ -1742,6 +1793,15 @@ async fn disconnect_proof(
         return Ok(());
     }
 
+    let preflight = validate_zero_output_stage_preflight(
+        lane,
+        json_out,
+        "disconnect-proof.json",
+        confirm_disconnect_test,
+        "--confirm-disconnect-test",
+    )?;
+    let zero_proof = validate_same_lane_zero_proof_for_zero_output(&preflight.lane)?;
+
     let api = HidApi::new().context("failed to initialize HID API")?;
     let (device, snapshot) = open_single_moza_device(&api, selector)?;
     if !snapshot.output_capable {
@@ -1765,6 +1825,11 @@ async fn disconnect_proof(
         payload,
         false,
     );
+    receipt.lane = Some(preflight.lane_display.clone());
+    receipt.pre_output_readiness_validated = true;
+    receipt.pre_output_readiness_generated_at = preflight.pre_output_readiness_generated_at;
+    receipt.zero_torque_proof_validated = true;
+    receipt.zero_torque_proof_crc32 = Some(zero_proof.receipt_crc32);
     receipt.operator_confirmed = confirm_disconnect_test;
     receipt.max_duration_ms = Some(max_duration_ms);
     receipt.fault_injected = Some("operator_disconnect");
@@ -3583,6 +3648,79 @@ fn require_lane_receipt_path(lane: &Path, relative_path: &str) -> Result<()> {
     }
 }
 
+fn validate_zero_output_stage_preflight(
+    lane: Option<&Path>,
+    json_out: Option<&Path>,
+    relative_path: &str,
+    confirmed: bool,
+    confirmation_arg: &'static str,
+) -> Result<ZeroOutputStagePreflight> {
+    if !confirmed {
+        return Err(anyhow!(
+            "{confirmation_arg} is required before actual zero-output proof writes"
+        ));
+    }
+    let lane =
+        lane.ok_or_else(|| anyhow!("--lane is required before actual zero-output proof writes"))?;
+    let json_out = json_out
+        .ok_or_else(|| anyhow!("--json-out is required before actual zero-output proof writes"))?;
+    require_lane_artifact_path(lane, json_out, relative_path, "--json-out")?;
+
+    let receipt = read_json_value(lane, "pre-output-readiness.json")?;
+    let command_ok = json_string(&receipt, "command") == Some("wheelctl moza pre-output-readiness");
+    let lane_ok = lane_path_value_matches(lane, json_string(&receipt, "lane"));
+    let success = json_bool(&receipt, "success") == Some(true);
+    let ready_for_zero_torque = json_bool(&receipt, "ready_for_zero_torque") == Some(true);
+    let ready_for_ffb = json_bool(&receipt, "ready_for_ffb") == Some(false);
+    let blocking_items_empty = receipt
+        .get("blocking_items")
+        .and_then(Value::as_array)
+        .map(Vec::is_empty)
+        == Some(true);
+    let status_receipts_ok = receipt
+        .get("status_receipts")
+        .and_then(Value::as_array)
+        .map(|checks| {
+            !checks.is_empty()
+                && checks
+                    .iter()
+                    .all(|check| json_string(check, "status") == Some("pass"))
+        })
+        == Some(true);
+    let no_output_receipt = json_bool(&receipt, "no_hid_device_opened") == Some(true)
+        && json_bool(&receipt, "no_ffb_writes") == Some(true)
+        && json_bool(&receipt, "no_output_reports") == Some(true)
+        && json_bool(&receipt, "no_feature_reports") == Some(true)
+        && no_out_of_scope_device_commands(&receipt);
+
+    if command_ok
+        && lane_ok
+        && success
+        && ready_for_zero_torque
+        && ready_for_ffb
+        && blocking_items_empty
+        && status_receipts_ok
+        && no_output_receipt
+    {
+        Ok(ZeroOutputStagePreflight {
+            lane: lane.to_path_buf(),
+            lane_display: lane.display().to_string(),
+            pre_output_readiness_generated_at: json_string(&receipt, "generated_at_utc")
+                .map(str::to_string),
+        })
+    } else {
+        Err(anyhow!(
+            "pre-output readiness receipt '{}' is not ready for zero-output writes: command_ok={command_ok}, lane_ok={lane_ok}, success={success}, ready_for_zero_torque={ready_for_zero_torque}, ready_for_ffb_false={ready_for_ffb}, blocking_items_empty={blocking_items_empty}, status_receipts_ok={status_receipts_ok}, no_output_receipt={no_output_receipt}",
+            lane.join("pre-output-readiness.json").display()
+        ))
+    }
+}
+
+fn validate_same_lane_zero_proof_for_zero_output(lane: &Path) -> Result<ZeroProofSummary> {
+    require_lane_receipt_path(lane, "zero-torque-proof.json")?;
+    validate_zero_proof_for_torque_test(&lane.join("zero-torque-proof.json"))
+}
+
 fn low_torque_preflight_target_product_id(
     selector: Option<&str>,
     pid_override: Option<&str>,
@@ -5077,19 +5215,19 @@ fn push_zero_next_commands(lane: &Path, gates: &[BundleGateCheck], commands: &mu
     let lane_arg = command_arg(&lane.display().to_string());
     if !bundle_gate_check_passed(gates, "zero_torque_real_hardware") {
         commands.push(format!(
-            "wheelctl moza zero --device <r5> --repeat 100 --hz 1000 --json-out {}",
+            "wheelctl moza zero --device <r5> --lane {lane_arg} --confirm-zero-torque --repeat 100 --hz 1000 --json-out {}",
             lane_path_arg(lane, "zero-torque-proof.json")
         ));
     }
     if !bundle_gate_check_passed(gates, "watchdog_zero_output") {
         commands.push(format!(
-            "wheelctl moza watchdog-proof --device <r5> --pre-zero-count 3 --watchdog-timeout-ms 100 --json-out {}",
+            "wheelctl moza watchdog-proof --device <r5> --lane {lane_arg} --confirm-watchdog-test --pre-zero-count 3 --watchdog-timeout-ms 100 --json-out {}",
             lane_path_arg(lane, "watchdog-proof.json")
         ));
     }
     if !bundle_gate_check_passed(gates, "disconnect_final_zero") {
         commands.push(format!(
-            "wheelctl moza disconnect-proof --device <r5> --confirm-disconnect-test --max-duration-ms 10000 --json-out {}",
+            "wheelctl moza disconnect-proof --device <r5> --lane {lane_arg} --confirm-disconnect-test --max-duration-ms 10000 --json-out {}",
             lane_path_arg(lane, "disconnect-proof.json")
         ));
     }
@@ -8493,6 +8631,10 @@ fn verify_zero_torque_gate(lane: &Path) -> BundleGateCheck {
     let no_feature_reports = json_bool(&receipt, "no_feature_reports") == Some(true);
     let no_out_of_scope = no_out_of_scope_device_commands(&receipt);
     let no_hid_device_opened = json_bool(&receipt, "no_hid_device_opened");
+    let operator_confirmed = json_bool(&receipt, "operator_confirmed");
+    let lane_ok = lane_path_value_matches(lane, json_string(&receipt, "lane"));
+    let pre_output_readiness_validated =
+        json_bool(&receipt, "pre_output_readiness_validated") == Some(true);
     let repeat = json_u64(&receipt, "repeat").unwrap_or(0);
     let hz = json_u64(&receipt, "hz").unwrap_or(0);
     let write_attempts = json_u64(&receipt, "write_attempts").unwrap_or(0);
@@ -8509,6 +8651,9 @@ fn verify_zero_torque_gate(lane: &Path) -> BundleGateCheck {
         && generated_at_valid
         && dry_run == Some(false)
         && no_hid_device_opened == Some(false)
+        && operator_confirmed == Some(true)
+        && lane_ok
+        && pre_output_readiness_validated
         && no_feature_reports
         && no_out_of_scope
         && no_high_torque
@@ -8539,7 +8684,7 @@ fn verify_zero_torque_gate(lane: &Path) -> BundleGateCheck {
         BundleGateCheck::fail(
             "zero_torque_real_hardware",
             format!(
-                "success={success}, command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, generated_at_valid={generated_at_valid}, dry_run={dry_run:?}, no_hid_device_opened={no_hid_device_opened:?}, no_feature_reports={no_feature_reports}, no_out_of_scope={no_out_of_scope}, no_high_torque={no_high_torque}, no_nonzero_torque={no_nonzero_torque}, report_id={report_id:?}, torque_raw={torque_raw:?}, flags={flags:?}, motor_enabled={motor_enabled:?}, final_zero_sent={final_zero_sent:?}, repeat={repeat}, hz={hz}, write_attempts={write_attempts}, writes_ok={writes_ok}, writes_ok_exact={writes_ok_exact}, write_errors={write_errors}, watchdog_faults={watchdog_faults}, command_log_safe={command_log_safe}, r5_output_device={r5_output_device}"
+                "success={success}, command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, generated_at_valid={generated_at_valid}, dry_run={dry_run:?}, no_hid_device_opened={no_hid_device_opened:?}, operator_confirmed={operator_confirmed:?}, lane_ok={lane_ok}, pre_output_readiness_validated={pre_output_readiness_validated}, no_feature_reports={no_feature_reports}, no_out_of_scope={no_out_of_scope}, no_high_torque={no_high_torque}, no_nonzero_torque={no_nonzero_torque}, report_id={report_id:?}, torque_raw={torque_raw:?}, flags={flags:?}, motor_enabled={motor_enabled:?}, final_zero_sent={final_zero_sent:?}, repeat={repeat}, hz={hz}, write_attempts={write_attempts}, writes_ok={writes_ok}, writes_ok_exact={writes_ok_exact}, write_errors={write_errors}, watchdog_faults={watchdog_faults}, command_log_safe={command_log_safe}, r5_output_device={r5_output_device}"
             ),
         )
     }
@@ -8621,6 +8766,10 @@ fn verify_watchdog_proof_gate(lane: &Path) -> BundleGateCheck {
         .unwrap_or(false);
     let dry_run = json_bool(&receipt, "dry_run");
     let no_hid_device_opened = json_bool(&receipt, "no_hid_device_opened");
+    let operator_confirmed = json_bool(&receipt, "operator_confirmed");
+    let lane_ok = lane_path_value_matches(lane, json_string(&receipt, "lane"));
+    let pre_output_readiness_validated = json_bool(&receipt, "pre_output_readiness_validated");
+    let zero_torque_proof_validated = json_bool(&receipt, "zero_torque_proof_validated");
     let no_feature_reports = json_bool(&receipt, "no_feature_reports");
     let no_out_of_scope = no_out_of_scope_device_commands(&receipt);
     let no_high_torque = json_bool(&receipt, "no_high_torque");
@@ -8645,6 +8794,10 @@ fn verify_watchdog_proof_gate(lane: &Path) -> BundleGateCheck {
         && generated_at_valid
         && dry_run == Some(false)
         && no_hid_device_opened == Some(false)
+        && operator_confirmed == Some(true)
+        && lane_ok
+        && pre_output_readiness_validated == Some(true)
+        && zero_torque_proof_validated == Some(true)
         && no_feature_reports == Some(true)
         && no_out_of_scope
         && no_high_torque == Some(true)
@@ -8674,7 +8827,7 @@ fn verify_watchdog_proof_gate(lane: &Path) -> BundleGateCheck {
         BundleGateCheck::fail(
             "watchdog_zero_output",
             format!(
-                "success={success}, command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, generated_at_valid={generated_at_valid}, dry_run={dry_run:?}, no_hid_device_opened={no_hid_device_opened:?}, no_feature_reports={no_feature_reports:?}, no_out_of_scope={no_out_of_scope}, no_high_torque={no_high_torque:?}, no_nonzero_torque={no_nonzero_torque:?}, watchdog_faults={watchdog_faults}, watchdog_triggered={watchdog_triggered:?}, final_zero_attempted={final_zero_attempted:?}, final_zero_sent={final_zero_sent:?}, write_attempts={write_attempts}, writes_ok={writes_ok}, writes_ok_exact={writes_ok_exact}, write_errors={write_errors}, repeat={repeat}, hz={hz}, watchdog_timeout_ms={watchdog_timeout_ms}, command_log_safe={command_log_safe}, r5_output_device={r5_output_device}"
+                "success={success}, command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, generated_at_valid={generated_at_valid}, dry_run={dry_run:?}, no_hid_device_opened={no_hid_device_opened:?}, operator_confirmed={operator_confirmed:?}, lane_ok={lane_ok}, pre_output_readiness_validated={pre_output_readiness_validated:?}, zero_torque_proof_validated={zero_torque_proof_validated:?}, no_feature_reports={no_feature_reports:?}, no_out_of_scope={no_out_of_scope}, no_high_torque={no_high_torque:?}, no_nonzero_torque={no_nonzero_torque:?}, watchdog_faults={watchdog_faults}, watchdog_triggered={watchdog_triggered:?}, final_zero_attempted={final_zero_attempted:?}, final_zero_sent={final_zero_sent:?}, write_attempts={write_attempts}, writes_ok={writes_ok}, writes_ok_exact={writes_ok_exact}, write_errors={write_errors}, repeat={repeat}, hz={hz}, watchdog_timeout_ms={watchdog_timeout_ms}, command_log_safe={command_log_safe}, r5_output_device={r5_output_device}"
             ),
         )
     }
@@ -8734,6 +8887,9 @@ fn verify_disconnect_proof_gate(lane: &Path) -> BundleGateCheck {
     let dry_run = json_bool(&receipt, "dry_run");
     let no_hid_device_opened = json_bool(&receipt, "no_hid_device_opened");
     let operator_confirmed = json_bool(&receipt, "operator_confirmed");
+    let lane_ok = lane_path_value_matches(lane, json_string(&receipt, "lane"));
+    let pre_output_readiness_validated = json_bool(&receipt, "pre_output_readiness_validated");
+    let zero_torque_proof_validated = json_bool(&receipt, "zero_torque_proof_validated");
     let no_feature_reports = json_bool(&receipt, "no_feature_reports");
     let no_out_of_scope = no_out_of_scope_device_commands(&receipt);
     let no_high_torque = json_bool(&receipt, "no_high_torque");
@@ -8776,6 +8932,9 @@ fn verify_disconnect_proof_gate(lane: &Path) -> BundleGateCheck {
         && dry_run == Some(false)
         && no_hid_device_opened == Some(false)
         && operator_confirmed == Some(true)
+        && lane_ok
+        && pre_output_readiness_validated == Some(true)
+        && zero_torque_proof_validated == Some(true)
         && no_feature_reports == Some(true)
         && no_out_of_scope
         && no_high_torque == Some(true)
@@ -8802,7 +8961,7 @@ fn verify_disconnect_proof_gate(lane: &Path) -> BundleGateCheck {
         BundleGateCheck::fail(
             "disconnect_final_zero",
             format!(
-                "success={success}, command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, generated_at_valid={generated_at_valid}, dry_run={dry_run:?}, no_hid_device_opened={no_hid_device_opened:?}, operator_confirmed={operator_confirmed:?}, no_feature_reports={no_feature_reports:?}, no_out_of_scope={no_out_of_scope}, no_high_torque={no_high_torque:?}, no_nonzero_torque={no_nonzero_torque:?}, disconnect_observed={disconnect_observed:?}, final_zero_attempted={final_zero_attempted:?}, final_zero_sent={final_zero_sent:?}, final_zero_log_sent={final_zero_log_sent}, final_zero_log_error={final_zero_log_error}, final_zero_sent_match={final_zero_sent_match}, write_errors={write_errors}, expected_write_errors={expected_write_errors}, write_errors_match={write_errors_match}, write_attempts={write_attempts}, expected_write_attempts={expected_write_attempts}, write_attempts_match={write_attempts_match}, writes_ok={writes_ok}, expected_writes_ok={expected_writes_ok}, writes_ok_match={writes_ok_match}, hz={hz}, max_duration_ms={max_duration_ms}, command_log_safe={command_log_safe}, r5_output_device={r5_output_device}"
+                "success={success}, command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, generated_at_valid={generated_at_valid}, dry_run={dry_run:?}, no_hid_device_opened={no_hid_device_opened:?}, operator_confirmed={operator_confirmed:?}, lane_ok={lane_ok}, pre_output_readiness_validated={pre_output_readiness_validated:?}, zero_torque_proof_validated={zero_torque_proof_validated:?}, no_feature_reports={no_feature_reports:?}, no_out_of_scope={no_out_of_scope}, no_high_torque={no_high_torque:?}, no_nonzero_torque={no_nonzero_torque:?}, disconnect_observed={disconnect_observed:?}, final_zero_attempted={final_zero_attempted:?}, final_zero_sent={final_zero_sent:?}, final_zero_log_sent={final_zero_log_sent}, final_zero_log_error={final_zero_log_error}, final_zero_sent_match={final_zero_sent_match}, write_errors={write_errors}, expected_write_errors={expected_write_errors}, write_errors_match={write_errors_match}, write_attempts={write_attempts}, expected_write_attempts={expected_write_attempts}, write_attempts_match={write_attempts_match}, writes_ok={writes_ok}, expected_writes_ok={expected_writes_ok}, writes_ok_match={writes_ok_match}, hz={hz}, max_duration_ms={max_duration_ms}, command_log_safe={command_log_safe}, r5_output_device={r5_output_device}"
             ),
         )
     }
@@ -14387,6 +14546,14 @@ struct ZeroTorqueProofReceipt {
     generated_at_utc: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     receipt_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lane: Option<String>,
+    pre_output_readiness_validated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pre_output_readiness_generated_at: Option<String>,
+    zero_torque_proof_validated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    zero_torque_proof_crc32: Option<String>,
     no_feature_reports: bool,
     no_high_torque: bool,
     no_nonzero_torque: bool,
@@ -14893,6 +15060,11 @@ impl ZeroTorqueProofReceipt {
             test_kind,
             generated_at_utc: now_utc(),
             receipt_path: None,
+            lane: None,
+            pre_output_readiness_validated: false,
+            pre_output_readiness_generated_at: None,
+            zero_torque_proof_validated: false,
+            zero_torque_proof_crc32: None,
             no_feature_reports: true,
             no_high_torque: true,
             no_nonzero_torque: non_zero_payloads == 0,
@@ -14901,7 +15073,7 @@ impl ZeroTorqueProofReceipt {
             no_firmware_or_dfu_commands: true,
             dry_run,
             no_hid_device_opened: dry_run,
-            operator_confirmed: !dry_run,
+            operator_confirmed: false,
             selector,
             repeat,
             hz,
@@ -16667,15 +16839,19 @@ mod tests {
         write_minimal_passive_bundle(dir.path())?;
         write_test_json_file(
             &dir.path().join("zero-torque-proof.json"),
-            &real_zero_receipt(100),
+            &receipt_with_lane_path(dir.path(), "zero-torque-proof.json", real_zero_receipt(100)),
         )?;
         write_test_json_file(
             &dir.path().join("watchdog-proof.json"),
-            &real_watchdog_receipt(3),
+            &receipt_with_lane_path(dir.path(), "watchdog-proof.json", real_watchdog_receipt(3)),
         )?;
         write_test_json_file(
             &dir.path().join("disconnect-proof.json"),
-            &real_disconnect_receipt(),
+            &receipt_with_lane_path(
+                dir.path(),
+                "disconnect-proof.json",
+                real_disconnect_receipt(),
+            ),
         )?;
 
         let status = support_bundle_status(dir.path());
@@ -16899,6 +17075,115 @@ mod tests {
             !dir.path().join("manifest.json").exists(),
             "pre-output-readiness should trust stored verification receipts instead of requiring raw lane artifacts"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn zero_output_stage_preflight_accepts_ready_same_lane_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_pre_output_ready_receipt(dir.path())?;
+        let json_out = dir.path().join("zero-torque-proof.json");
+
+        let preflight = validate_zero_output_stage_preflight(
+            Some(dir.path()),
+            Some(&json_out),
+            "zero-torque-proof.json",
+            true,
+            "--confirm-zero-torque",
+        )?;
+
+        assert_eq!(preflight.lane, dir.path());
+        assert!(preflight.pre_output_readiness_generated_at.is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn zero_output_stage_preflight_rejects_unconfirmed_real_writes() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_pre_output_ready_receipt(dir.path())?;
+
+        let result = validate_zero_output_stage_preflight(
+            Some(dir.path()),
+            Some(&dir.path().join("zero-torque-proof.json")),
+            "zero-torque-proof.json",
+            false,
+            "--confirm-zero-torque",
+        );
+
+        let message = match result {
+            Ok(_) => return Err("expected confirmation preflight error".into()),
+            Err(error) => error.to_string(),
+        };
+        assert!(message.contains("--confirm-zero-torque"));
+        Ok(())
+    }
+
+    #[test]
+    fn zero_output_stage_preflight_rejects_blocked_readiness_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_pre_output_ready_receipt(dir.path())?;
+        let mut receipt = read_json_path(&dir.path().join("pre-output-readiness.json"))?;
+        receipt["ready_for_zero_torque"] = serde_json::json!(false);
+        receipt["blocking_items"] = serde_json::json!(["descriptor_metadata"]);
+        write_test_json_file(&dir.path().join("pre-output-readiness.json"), &receipt)?;
+
+        let result = validate_zero_output_stage_preflight(
+            Some(dir.path()),
+            Some(&dir.path().join("zero-torque-proof.json")),
+            "zero-torque-proof.json",
+            true,
+            "--confirm-zero-torque",
+        );
+
+        let message = match result {
+            Ok(_) => return Err("expected readiness preflight error".into()),
+            Err(error) => error.to_string(),
+        };
+        assert!(message.contains("ready_for_zero_torque=false"));
+        Ok(())
+    }
+
+    #[test]
+    fn zero_output_stage_preflight_rejects_off_lane_receipt_path() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let other = tempfile::tempdir()?;
+        write_pre_output_ready_receipt(dir.path())?;
+
+        let result = validate_zero_output_stage_preflight(
+            Some(dir.path()),
+            Some(&other.path().join("zero-torque-proof.json")),
+            "zero-torque-proof.json",
+            true,
+            "--confirm-zero-torque",
+        );
+
+        let message = match result {
+            Ok(_) => return Err("expected same-lane json-out preflight error".into()),
+            Err(error) => error.to_string(),
+        };
+        assert!(message.contains("same-lane artifact"));
+        Ok(())
+    }
+
+    #[test]
+    fn same_lane_zero_proof_preflight_rejects_stale_receipt_path() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let mut receipt = real_zero_receipt(100);
+        receipt["receipt_path"] = serde_json::json!(
+            dir.path()
+                .join("other/zero-torque-proof.json")
+                .display()
+                .to_string()
+        );
+        write_test_json_file(&dir.path().join("zero-torque-proof.json"), &receipt)?;
+
+        let result = validate_same_lane_zero_proof_for_zero_output(dir.path());
+
+        let message = match result {
+            Ok(_) => return Err("expected same-lane zero proof preflight error".into()),
+            Err(error) => error.to_string(),
+        };
+        assert!(message.contains("receipt_path"));
         Ok(())
     }
 
@@ -17808,6 +18093,22 @@ mod tests {
 
     fn receipt_with_lane_path(root: &Path, relative_path: &str, mut receipt: Value) -> Value {
         receipt["receipt_path"] = serde_json::json!(root.join(relative_path).display().to_string());
+        match json_string(&receipt, "command") {
+            Some("wheelctl moza zero") => {
+                receipt["lane"] = serde_json::json!(root.display().to_string());
+                receipt["operator_confirmed"] = serde_json::json!(true);
+                receipt["pre_output_readiness_validated"] = serde_json::json!(true);
+                receipt["pre_output_readiness_generated_at"] = serde_json::json!(TEST_GENERATED_AT);
+            }
+            Some("wheelctl moza watchdog-proof" | "wheelctl moza disconnect-proof") => {
+                receipt["lane"] = serde_json::json!(root.display().to_string());
+                receipt["pre_output_readiness_validated"] = serde_json::json!(true);
+                receipt["pre_output_readiness_generated_at"] = serde_json::json!(TEST_GENERATED_AT);
+                receipt["zero_torque_proof_validated"] = serde_json::json!(true);
+                receipt["zero_torque_proof_crc32"] = serde_json::json!("0x12345678");
+            }
+            _ => {}
+        }
         receipt
     }
 
@@ -17824,6 +18125,14 @@ mod tests {
             &root.join("disconnect-proof.json"),
             &receipt_with_lane_path(root, "disconnect-proof.json", real_disconnect_receipt()),
         )
+    }
+
+    fn write_pre_output_ready_receipt(root: &Path) -> TestResult {
+        write_minimal_passive_bundle(root)?;
+        write_service_status_artifacts(root)?;
+        write_lane_audit_receipts(root, MozaBundleStage::Passive)?;
+        let receipt = serde_json::to_value(pre_output_readiness_dir(root))?;
+        write_test_json_file(&root.join("pre-output-readiness.json"), &receipt)
     }
 
     fn init_feature_reports(mode_payload: &str, result: &str) -> Vec<Value> {
@@ -17886,7 +18195,7 @@ mod tests {
     fn write_low_torque_prerequisite_receipts(root: &Path) -> TestResult {
         write_test_json_file(
             &root.join("zero-torque-proof.json"),
-            &real_zero_receipt(100),
+            &receipt_with_lane_path(root, "zero-torque-proof.json", real_zero_receipt(100)),
         )?;
         write_test_json_file(&root.join("init-off.json"), &real_init_receipt("off"))?;
         write_test_json_file(
@@ -18200,11 +18509,7 @@ mod tests {
             &root.join("init-standard.json"),
             &real_init_receipt("standard"),
         )?;
-        write_test_json_file(
-            &root.join("zero-torque-proof.json"),
-            &real_zero_receipt(100),
-        )?;
-        write_test_json_file(&root.join("watchdog-proof.json"), &real_watchdog_receipt(3))?;
+        write_zero_stage_receipts(root)?;
         write_test_json_file(
             &root.join("low-torque-proof.json"),
             &real_low_torque_receipt_for_lane(root, 2.0)?,
@@ -18373,15 +18678,7 @@ mod tests {
             &root.join("init-standard.json"),
             &real_init_receipt("standard"),
         )?;
-        write_test_json_file(
-            &root.join("zero-torque-proof.json"),
-            &real_zero_receipt(100),
-        )?;
-        write_test_json_file(&root.join("watchdog-proof.json"), &real_watchdog_receipt(3))?;
-        write_test_json_file(
-            &root.join("disconnect-proof.json"),
-            &real_disconnect_receipt(),
-        )?;
+        write_zero_stage_receipts(root)?;
         write_test_json_file(
             &root.join("low-torque-proof.json"),
             &real_low_torque_receipt_for_lane(root, 2.0)?,
@@ -18523,15 +18820,7 @@ mod tests {
             &root.join("manifest.json"),
             &sample_lane_manifest("real_hardware_smoke_ready", true, true),
         )?;
-        write_test_json_file(
-            &root.join("zero-torque-proof.json"),
-            &real_zero_receipt(100),
-        )?;
-        write_test_json_file(&root.join("watchdog-proof.json"), &real_watchdog_receipt(3))?;
-        write_test_json_file(
-            &root.join("disconnect-proof.json"),
-            &real_disconnect_receipt(),
-        )?;
+        write_zero_stage_receipts(root)?;
         write_test_json_file(&root.join("init-off.json"), &real_init_receipt("off"))?;
         write_test_json_file(
             &root.join("init-standard.json"),
@@ -20738,7 +21027,9 @@ mod tests {
             true,
             Some("0x346E:0x0014"),
             None,
+            None,
             true,
+            false,
             3,
             1000,
             100,
@@ -20759,10 +21050,89 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn zero_torque_actual_requires_lane_readiness_before_hid() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let result = zero_torque(
+            false,
+            Some("0x346E:0x0014"),
+            None,
+            None,
+            false,
+            true,
+            100,
+            1000,
+            100,
+            Some(&dir.path().join("zero-torque-proof.json")),
+        )
+        .await;
+
+        let message = match result {
+            Ok(_) => return Err("expected missing lane preflight error".into()),
+            Err(error) => error.to_string(),
+        };
+        assert!(message.contains("--lane"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn watchdog_proof_actual_requires_same_lane_zero_proof_before_hid() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_pre_output_ready_receipt(dir.path())?;
+
+        let result = watchdog_proof(
+            false,
+            Some("0x346E:0x0014"),
+            Some(dir.path()),
+            None,
+            false,
+            true,
+            3,
+            1000,
+            100,
+            Some(&dir.path().join("watchdog-proof.json")),
+        )
+        .await;
+
+        let message = match result {
+            Ok(_) => return Err("expected missing zero proof preflight error".into()),
+            Err(error) => error.to_string(),
+        };
+        assert!(message.contains("zero-torque-proof.json"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn disconnect_proof_actual_requires_same_lane_zero_proof_before_hid() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_pre_output_ready_receipt(dir.path())?;
+
+        let result = disconnect_proof(
+            false,
+            Some("0x346E:0x0014"),
+            Some(dir.path()),
+            None,
+            false,
+            true,
+            1000,
+            1000,
+            Some(&dir.path().join("disconnect-proof.json")),
+        )
+        .await;
+
+        let message = match result {
+            Ok(_) => return Err("expected missing zero proof preflight error".into()),
+            Err(error) => error.to_string(),
+        };
+        assert!(message.contains("zero-torque-proof.json"));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn disconnect_proof_actual_requires_confirmation() -> TestResult {
         let result = disconnect_proof(
             false,
             Some("0x346E:0x0014"),
+            None,
             None,
             false,
             false,
@@ -20784,6 +21154,7 @@ mod tests {
         disconnect_proof(
             true,
             Some("0x346E:0x0014"),
+            None,
             None,
             true,
             false,
@@ -20848,7 +21219,7 @@ mod tests {
 
         let gate = verify_low_torque_gate(dir.path());
 
-        assert_eq!(gate.status, "pass");
+        assert_eq!(gate.status, "pass", "{}", gate.details);
         Ok(())
     }
 
@@ -21226,12 +21597,12 @@ mod tests {
         let dir = tempfile::tempdir()?;
         write_test_json_file(
             &dir.path().join("watchdog-proof.json"),
-            &real_watchdog_receipt(3),
+            &receipt_with_lane_path(dir.path(), "watchdog-proof.json", real_watchdog_receipt(3)),
         )?;
 
         let gate = verify_watchdog_proof_gate(dir.path());
 
-        assert_eq!(gate.status, "pass");
+        assert_eq!(gate.status, "pass", "{}", gate.details);
         Ok(())
     }
 
@@ -21414,7 +21785,11 @@ mod tests {
         let dir = tempfile::tempdir()?;
         write_test_json_file(
             &dir.path().join("disconnect-proof.json"),
-            &real_disconnect_receipt(),
+            &receipt_with_lane_path(
+                dir.path(),
+                "disconnect-proof.json",
+                real_disconnect_receipt(),
+            ),
         )?;
 
         let gate = verify_disconnect_proof_gate(dir.path());
@@ -26964,11 +27339,15 @@ mod tests {
         )?;
         write_test_json_file(
             &dir.path().join("watchdog-proof.json"),
-            &real_watchdog_receipt(3),
+            &receipt_with_lane_path(dir.path(), "watchdog-proof.json", real_watchdog_receipt(3)),
         )?;
         write_test_json_file(
             &dir.path().join("disconnect-proof.json"),
-            &real_disconnect_receipt(),
+            &receipt_with_lane_path(
+                dir.path(),
+                "disconnect-proof.json",
+                real_disconnect_receipt(),
+            ),
         )?;
 
         let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Zero);
@@ -26987,18 +27366,7 @@ mod tests {
     fn verify_bundle_zero_accepts_logged_real_zero_proof() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_minimal_passive_bundle(dir.path())?;
-        write_test_json_file(
-            &dir.path().join("zero-torque-proof.json"),
-            &real_zero_receipt(100),
-        )?;
-        write_test_json_file(
-            &dir.path().join("watchdog-proof.json"),
-            &real_watchdog_receipt(3),
-        )?;
-        write_test_json_file(
-            &dir.path().join("disconnect-proof.json"),
-            &real_disconnect_receipt(),
-        )?;
+        write_zero_stage_receipts(dir.path())?;
 
         let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Zero);
 
@@ -27018,15 +27386,19 @@ mod tests {
         write_minimal_passive_bundle(dir.path())?;
         write_test_json_file(
             &dir.path().join("zero-torque-proof.json"),
-            &real_zero_receipt(99),
+            &receipt_with_lane_path(dir.path(), "zero-torque-proof.json", real_zero_receipt(99)),
         )?;
         write_test_json_file(
             &dir.path().join("watchdog-proof.json"),
-            &real_watchdog_receipt(3),
+            &receipt_with_lane_path(dir.path(), "watchdog-proof.json", real_watchdog_receipt(3)),
         )?;
         write_test_json_file(
             &dir.path().join("disconnect-proof.json"),
-            &real_disconnect_receipt(),
+            &receipt_with_lane_path(
+                dir.path(),
+                "disconnect-proof.json",
+                real_disconnect_receipt(),
+            ),
         )?;
 
         let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::Zero);

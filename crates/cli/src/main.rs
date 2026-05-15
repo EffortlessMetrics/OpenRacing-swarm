@@ -1752,9 +1752,12 @@ mod tests {
             "zero",
             "--device",
             "0x346E:0x0014",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
             "--pid",
             "0x0014",
             "--dry-run",
+            "--confirm-zero-torque",
             "--repeat",
             "250",
             "--hz",
@@ -1767,16 +1770,23 @@ mod tests {
         match &cli.command {
             Commands::Moza(MozaCommands::Zero {
                 device,
+                lane,
                 pid,
                 dry_run,
+                confirm_zero_torque,
                 repeat,
                 hz,
                 watchdog_timeout_ms,
                 json_out,
             }) => {
                 assert_eq!(device.as_deref(), Some("0x346E:0x0014"));
+                assert_eq!(
+                    lane.as_ref().and_then(|p| p.to_str()),
+                    Some("ci/hardware/moza-r5/2026-05-13")
+                );
                 assert_eq!(pid.as_deref(), Some("0x0014"));
                 assert!(*dry_run);
+                assert!(*confirm_zero_torque);
                 assert_eq!(*repeat, 250);
                 assert_eq!(*hz, 1000);
                 assert_eq!(*watchdog_timeout_ms, 50);
@@ -1798,6 +1808,9 @@ mod tests {
             "watchdog-proof",
             "--device",
             "0x346E:0x0014",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
+            "--confirm-watchdog-test",
             "--pre-zero-count",
             "5",
             "--hz",
@@ -1810,6 +1823,8 @@ mod tests {
         match &cli.command {
             Commands::Moza(MozaCommands::WatchdogProof {
                 device,
+                lane,
+                confirm_watchdog_test,
                 pre_zero_count,
                 hz,
                 watchdog_timeout_ms,
@@ -1817,6 +1832,11 @@ mod tests {
                 ..
             }) => {
                 assert_eq!(device.as_deref(), Some("0x346E:0x0014"));
+                assert_eq!(
+                    lane.as_ref().and_then(|p| p.to_str()),
+                    Some("ci/hardware/moza-r5/2026-05-13")
+                );
+                assert!(*confirm_watchdog_test);
                 assert_eq!(*pre_zero_count, 5);
                 assert_eq!(*hz, 1000);
                 assert_eq!(*watchdog_timeout_ms, 100);
@@ -1838,6 +1858,8 @@ mod tests {
             "disconnect-proof",
             "--device",
             "0x346E:0x0014",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
             "--confirm-disconnect-test",
             "--max-duration-ms",
             "5000",
@@ -1849,6 +1871,7 @@ mod tests {
         match &cli.command {
             Commands::Moza(MozaCommands::DisconnectProof {
                 device,
+                lane,
                 confirm_disconnect_test,
                 max_duration_ms,
                 hz,
@@ -1856,6 +1879,10 @@ mod tests {
                 ..
             }) => {
                 assert_eq!(device.as_deref(), Some("0x346E:0x0014"));
+                assert_eq!(
+                    lane.as_ref().and_then(|p| p.to_str()),
+                    Some("ci/hardware/moza-r5/2026-05-13")
+                );
                 assert!(*confirm_disconnect_test);
                 assert_eq!(*max_duration_ms, 5000);
                 assert_eq!(*hz, 1000);

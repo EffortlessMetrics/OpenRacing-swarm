@@ -609,12 +609,18 @@ pub enum MozaCommands {
         /// Device selector: HID path, PID, or VID:PID
         #[arg(long)]
         device: Option<String>,
+        /// Hardware lane directory with a passing pre-output-readiness receipt
+        #[arg(long)]
+        lane: Option<std::path::PathBuf>,
         /// Moza wheelbase PID for --dry-run (hex, e.g. 0x0014)
         #[arg(long)]
         pid: Option<String>,
         /// Build the zero-torque receipt without opening or writing a HID device
         #[arg(long)]
         dry_run: bool,
+        /// Explicit acknowledgement required before actual zero-torque writes
+        #[arg(long)]
+        confirm_zero_torque: bool,
         /// Number of zero reports to send before the final-zero attempt
         #[arg(long, default_value = "100")]
         repeat: u32,
@@ -634,12 +640,18 @@ pub enum MozaCommands {
         /// Device selector: HID path, PID, or VID:PID
         #[arg(long)]
         device: Option<String>,
+        /// Hardware lane directory with passing pre-output and zero-torque receipts
+        #[arg(long)]
+        lane: Option<std::path::PathBuf>,
         /// Moza wheelbase PID for --dry-run (hex, e.g. 0x0014)
         #[arg(long)]
         pid: Option<String>,
         /// Build the watchdog proof receipt without opening or writing a HID device
         #[arg(long)]
         dry_run: bool,
+        /// Explicit acknowledgement required before the watchdog timeout test
+        #[arg(long)]
+        confirm_watchdog_test: bool,
         /// Number of zero reports to send before the injected watchdog timeout
         #[arg(long, default_value = "3")]
         pre_zero_count: u32,
@@ -659,6 +671,9 @@ pub enum MozaCommands {
         /// Device selector: HID path, PID, or VID:PID
         #[arg(long)]
         device: Option<String>,
+        /// Hardware lane directory with passing pre-output and zero-torque receipts
+        #[arg(long)]
+        lane: Option<std::path::PathBuf>,
         /// Moza wheelbase PID for --dry-run (hex, e.g. 0x0014)
         #[arg(long)]
         pid: Option<String>,
