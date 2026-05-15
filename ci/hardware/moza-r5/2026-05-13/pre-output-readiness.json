@@ -1,7 +1,7 @@
 {
   "success": false,
   "command": "wheelctl moza pre-output-readiness",
-  "generated_at_utc": "2026-05-15T03:58:55Z",
+  "generated_at_utc": "2026-05-15T04:43:06Z",
   "lane": "ci\\hardware\\moza-r5\\2026-05-13",
   "stage": "pre_output_readiness",
   "ready_for_zero_torque": false,
@@ -18,6 +18,50 @@
     "simulator_telemetry",
     "zero-verification.json",
     "zero_audit"
+  ],
+  "zero_output_strategies": [
+    {
+      "name": "direct_report_0x20",
+      "description": "Moza proprietary direct zero-torque report",
+      "implemented": true,
+      "descriptor_report_observed": false,
+      "descriptor_metadata_trusted": true,
+      "ready": false,
+      "required_output_reports": [
+        {
+          "report_id": "0x20",
+          "report_len": 8
+        }
+      ],
+      "blocking_items": [
+        "direct_zero_report_metadata"
+      ],
+      "notes": [
+        "implemented by wheelctl moza zero",
+        "requires descriptor-derived output report 0x20 with the expected 8-byte shape"
+      ]
+    },
+    {
+      "name": "pidff_device_control_stop_all",
+      "description": "standard HID PIDFF Device Control Stop All Effects zero-output candidate",
+      "implemented": false,
+      "descriptor_report_observed": true,
+      "descriptor_metadata_trusted": true,
+      "ready": false,
+      "required_output_reports": [
+        {
+          "report_id": "0x0C",
+          "report_len": 2
+        }
+      ],
+      "blocking_items": [
+        "pidff_zero_strategy_not_implemented"
+      ],
+      "notes": [
+        "read-only inventory only; no PIDFF zero-output command is implemented yet",
+        "the candidate report carries a stop-all-effects command, not a force magnitude"
+      ]
+    }
   ],
   "passed_items": [
     "r5_endpoint_observed",

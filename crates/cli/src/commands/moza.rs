@@ -39,6 +39,8 @@ const MOZA_VENDOR_HEX: &str = "0x346E";
 const HIGH_TORQUE_FEATURE_REPORT_ID: &str = "0x02";
 const START_REPORTING_FEATURE_REPORT_ID: &str = "0x03";
 const FFB_MODE_FEATURE_REPORT_ID: &str = "0x11";
+const PIDFF_DEVICE_CONTROL_REPORT_ID: &str = "0x0C";
+const PIDFF_DEVICE_CONTROL_REPORT_LEN: usize = 2;
 const R5_V1_LIVE_OUTPUT_REPORTS: &[(&str, usize)] = &[
     ("0x01", 22),
     ("0x02", 14),
@@ -4592,6 +4594,7 @@ fn pre_output_readiness_dir(lane: &Path) -> PreOutputReadinessReceipt {
 
     let role_evidence_complete = required_role_evidence_complete(&passive);
     let direct_zero_report_metadata = zero_output_direct_report_metadata_trusted(lane);
+    let zero_output_strategies = zero_output_strategy_candidates(lane, direct_zero_report_metadata);
     let ready_for_zero_torque = passive.success
         && passive_audit_passed
         && status_receipts_no_output
@@ -4628,6 +4631,7 @@ fn pre_output_readiness_dir(lane: &Path) -> PreOutputReadinessReceipt {
         ready_for_ffb,
         blocking_items,
         ffb_blocking_items,
+        zero_output_strategies,
         passed_items,
         status_receipts,
         passive_verification: pre_output_verification_summary(&passive),
@@ -4753,6 +4757,168 @@ fn validate_zero_output_direct_report_metadata(lane: &Path) -> Result<()> {
                 descriptor_path.display()
             )
         })
+}
+
+fn zero_output_strategy_candidates(
+    lane: &Path,
+    direct_zero_report_metadata: bool,
+) -> Vec<ZeroOutputStrategyCandidate> {
+    let descriptor_metadata_trusted =
+        zero_output_r5_descriptor_metadata_trusted(lane).unwrap_or(false);
+    let direct_report_observed = zero_output_direct_report_observed(lane).unwrap_or(false);
+    let pidff_stop_all_report_observed =
+        zero_output_pidff_stop_all_report_observed(lane).unwrap_or(false);
+
+    vec![
+        zero_output_direct_strategy_candidate(
+            direct_report_observed,
+            descriptor_metadata_trusted,
+            direct_zero_report_metadata,
+        ),
+        zero_output_pidff_stop_all_strategy_candidate(
+            pidff_stop_all_report_observed,
+            descriptor_metadata_trusted,
+        ),
+    ]
+}
+
+fn zero_output_direct_strategy_candidate(
+    descriptor_report_observed: bool,
+    descriptor_metadata_trusted: bool,
+    ready: bool,
+) -> ZeroOutputStrategyCandidate {
+    let mut blocking_items = Vec::new();
+    if !descriptor_metadata_trusted {
+        blocking_items.push("direct_zero_descriptor_trust");
+    }
+    if !descriptor_report_observed {
+        blocking_items.push("direct_zero_report_metadata");
+    }
+
+    ZeroOutputStrategyCandidate {
+        name: "direct_report_0x20",
+        description: "Moza proprietary direct zero-torque report",
+        implemented: true,
+        descriptor_report_observed,
+        descriptor_metadata_trusted,
+        ready,
+        required_output_reports: vec![HidReportRecord {
+            report_id: DIRECT_TORQUE_REPORT_ID.to_string(),
+            report_len: REPORT_LEN,
+        }],
+        blocking_items,
+        notes: vec![
+            "implemented by wheelctl moza zero".to_string(),
+            "requires descriptor-derived output report 0x20 with the expected 8-byte shape"
+                .to_string(),
+        ],
+    }
+}
+
+fn zero_output_pidff_stop_all_strategy_candidate(
+    descriptor_report_observed: bool,
+    descriptor_metadata_trusted: bool,
+) -> ZeroOutputStrategyCandidate {
+    let mut blocking_items = Vec::new();
+    if !descriptor_report_observed {
+        blocking_items.push("pidff_device_control_report_metadata");
+    }
+    if !descriptor_metadata_trusted {
+        blocking_items.push("pidff_device_control_descriptor_trust");
+    }
+    blocking_items.push("pidff_zero_strategy_not_implemented");
+
+    ZeroOutputStrategyCandidate {
+        name: "pidff_device_control_stop_all",
+        description: "standard HID PIDFF Device Control Stop All Effects zero-output candidate",
+        implemented: false,
+        descriptor_report_observed,
+        descriptor_metadata_trusted,
+        ready: false,
+        required_output_reports: vec![HidReportRecord {
+            report_id: PIDFF_DEVICE_CONTROL_REPORT_ID.to_string(),
+            report_len: PIDFF_DEVICE_CONTROL_REPORT_LEN,
+        }],
+        blocking_items,
+        notes: vec![
+            "read-only inventory only; no PIDFF zero-output command is implemented yet".to_string(),
+            "the candidate report carries a stop-all-effects command, not a force magnitude"
+                .to_string(),
+        ],
+    }
+}
+
+fn zero_output_r5_descriptor_metadata_trusted(lane: &Path) -> Result<bool> {
+    let pid = lane_manifest_r5_pid(lane).ok_or_else(|| {
+        anyhow!("zero-output inventory requires a lane manifest with a supported R5 PID")
+    })?;
+    let target_product_id = hex_u16(pid);
+    let descriptor_path = lane.join("descriptor.json");
+    let receipt = read_json_path(&descriptor_path)?;
+    let Some(devices) = receipt.get("devices").and_then(Value::as_array) else {
+        return Err(anyhow!(
+            "descriptor receipt '{}' is missing devices[]",
+            descriptor_path.display()
+        ));
+    };
+
+    Ok(devices.iter().any(|device| {
+        is_r5_device_value(device)
+            && json_string(device, "product_id") == Some(target_product_id.as_str())
+            && r5_descriptor_metadata_trusted(device)
+    }))
+}
+
+fn zero_output_direct_report_observed(lane: &Path) -> Result<bool> {
+    let pid = lane_manifest_r5_pid(lane).ok_or_else(|| {
+        anyhow!("direct zero-output inventory requires a lane manifest with a supported R5 PID")
+    })?;
+    let target_product_id = hex_u16(pid);
+    let descriptor_path = lane.join("descriptor.json");
+    let receipt = read_json_path(&descriptor_path)?;
+    let Some(devices) = receipt.get("devices").and_then(Value::as_array) else {
+        return Err(anyhow!(
+            "descriptor receipt '{}' is missing devices[]",
+            descriptor_path.display()
+        ));
+    };
+
+    Ok(devices.iter().any(|device| {
+        is_r5_device_value(device)
+            && json_string(device, "product_id") == Some(target_product_id.as_str())
+            && json_report_record_contains(
+                device,
+                "output_reports",
+                DIRECT_TORQUE_REPORT_ID,
+                REPORT_LEN,
+            )
+    }))
+}
+
+fn zero_output_pidff_stop_all_report_observed(lane: &Path) -> Result<bool> {
+    let pid = lane_manifest_r5_pid(lane).ok_or_else(|| {
+        anyhow!("PIDFF zero-output inventory requires a lane manifest with a supported R5 PID")
+    })?;
+    let target_product_id = hex_u16(pid);
+    let descriptor_path = lane.join("descriptor.json");
+    let receipt = read_json_path(&descriptor_path)?;
+    let Some(devices) = receipt.get("devices").and_then(Value::as_array) else {
+        return Err(anyhow!(
+            "descriptor receipt '{}' is missing devices[]",
+            descriptor_path.display()
+        ));
+    };
+
+    Ok(devices.iter().any(|device| {
+        is_r5_device_value(device)
+            && json_string(device, "product_id") == Some(target_product_id.as_str())
+            && json_report_record_contains(
+                device,
+                "output_reports",
+                PIDFF_DEVICE_CONTROL_REPORT_ID,
+                PIDFF_DEVICE_CONTROL_REPORT_LEN,
+            )
+    }))
 }
 
 fn pre_output_ffb_blocking_items(
@@ -7230,65 +7396,66 @@ fn r5_descriptor_metadata_missing_requirements(device: &Value) -> Vec<&'static s
 }
 
 fn r5_descriptor_trusted_for_direct_mode(device: &Value) -> bool {
+    r5_descriptor_metadata_trusted(device)
+        && report_descriptor_hex_matches_r5_metadata(device)
+            .map(|metadata| {
+                metadata
+                    .output_reports
+                    .iter()
+                    .any(|report| report.report_id == 0x20 && report.report_len == REPORT_LEN)
+            })
+            .unwrap_or(false)
+}
+
+fn r5_descriptor_metadata_trusted(device: &Value) -> bool {
     r5_descriptor_metadata_is_complete(device)
         && matches!(
             json_string(device, "report_metadata_source"),
             Some("report_descriptor_parsed" | "descriptor_parsed")
         )
-        && report_descriptor_hex_proves_r5_metadata(device)
+        && report_descriptor_hex_matches_r5_metadata(device).is_some()
 }
 
-fn report_descriptor_hex_proves_r5_metadata(device: &Value) -> bool {
-    let Some(hex) = json_string(device, "report_descriptor_hex") else {
-        return false;
-    };
+fn report_descriptor_hex_matches_r5_metadata(
+    device: &Value,
+) -> Option<HidReportDescriptorMetadata> {
+    let hex = json_string(device, "report_descriptor_hex")?;
     let Ok(bytes) = parse_hex_bytes(hex) else {
-        return false;
+        return None;
     };
     if bytes.is_empty() {
-        return false;
+        return None;
     }
     if json_u64(device, "report_descriptor_len") != Some(bytes.len() as u64) {
-        return false;
+        return None;
     }
 
     let mut hasher = crc32fast::Hasher::new();
     hasher.update(&bytes);
     let expected_crc = format!("0x{:08X}", hasher.finalize());
     if json_string(device, "report_descriptor_crc32") != Some(expected_crc.as_str()) {
-        return false;
+        return None;
     }
 
-    parse_hid_report_descriptor_metadata(&bytes)
-        .map(|metadata| {
-            let direct_output_report_shape_ok = metadata
-                .output_reports
-                .iter()
-                .any(|report| report.report_id == 0x20 && report.report_len == REPORT_LEN);
-            r5_input_report_lengths_supported(device, &metadata.input_report_lengths)
-                && direct_output_report_shape_ok
-                && json_usize_array_equals(
-                    device,
-                    "input_report_lengths",
-                    &metadata.input_report_lengths,
-                )
-                && json_string_array_equals_u8_hex(
-                    device,
-                    "output_report_ids",
-                    &metadata.output_report_ids,
-                )
-                && json_report_records_equal_u8_hex(
-                    device,
-                    "output_reports",
-                    &metadata.output_reports,
-                )
-                && json_string_array_equals_u8_hex(
-                    device,
-                    "feature_report_ids",
-                    &metadata.feature_report_ids,
-                )
-        })
-        .unwrap_or(false)
+    parse_hid_report_descriptor_metadata(&bytes).filter(|metadata| {
+        r5_input_report_lengths_supported(device, &metadata.input_report_lengths)
+            && json_usize_array_equals(
+                device,
+                "input_report_lengths",
+                &metadata.input_report_lengths,
+            )
+            && json_string_array_equals_u8_hex(
+                device,
+                "output_report_ids",
+                &metadata.output_report_ids,
+            )
+            && json_report_records_equal_u8_hex(device, "output_reports", &metadata.output_reports)
+            && json_string_array_equals_u8_hex(
+                device,
+                "feature_report_ids",
+                &metadata.feature_report_ids,
+            )
+    })
 }
 
 fn r5_input_report_lengths_supported(device: &Value, lengths: &[usize]) -> bool {
@@ -14961,6 +15128,7 @@ struct PreOutputReadinessReceipt {
     ready_for_ffb: bool,
     blocking_items: Vec<String>,
     ffb_blocking_items: Vec<String>,
+    zero_output_strategies: Vec<ZeroOutputStrategyCandidate>,
     passed_items: Vec<String>,
     status_receipts: Vec<PreOutputReadinessCheck>,
     passive_verification: Value,
@@ -14976,6 +15144,19 @@ struct PreOutputReadinessReceipt {
     no_serial_config_commands: bool,
     no_firmware_or_dfu_commands: bool,
     hard_forbidden_until_ready: Vec<&'static str>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ZeroOutputStrategyCandidate {
+    name: &'static str,
+    description: &'static str,
+    implemented: bool,
+    descriptor_report_observed: bool,
+    descriptor_metadata_trusted: bool,
+    ready: bool,
+    required_output_reports: Vec<HidReportRecord>,
+    blocking_items: Vec<&'static str>,
     notes: Vec<String>,
 }
 
@@ -17311,6 +17492,33 @@ mod tests {
                 .passed_items
                 .iter()
                 .any(|item| item == "ready_for_zero_torque")
+        );
+        let direct = receipt
+            .zero_output_strategies
+            .iter()
+            .find(|strategy| strategy.name == "direct_report_0x20")
+            .ok_or("expected direct zero-output strategy")?;
+        assert!(direct.implemented);
+        assert!(!direct.ready);
+        assert!(!direct.descriptor_report_observed);
+        assert!(
+            direct
+                .blocking_items
+                .contains(&"direct_zero_report_metadata")
+        );
+        let pidff = receipt
+            .zero_output_strategies
+            .iter()
+            .find(|strategy| strategy.name == "pidff_device_control_stop_all")
+            .ok_or("expected PIDFF stop-all zero-output candidate")?;
+        assert!(!pidff.implemented);
+        assert!(pidff.descriptor_report_observed);
+        assert!(!pidff.descriptor_metadata_trusted);
+        assert!(!pidff.ready);
+        assert!(
+            pidff
+                .blocking_items
+                .contains(&"pidff_zero_strategy_not_implemented")
         );
         Ok(())
     }

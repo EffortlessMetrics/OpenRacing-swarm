@@ -133,9 +133,13 @@ This command opens no HID device and sends no reports. It reports
 `ready_for_zero_torque` separately from `ready_for_ffb`; `ready_for_zero_torque`
 must remain false until passive verification, passive audit, fixture promotion,
 descriptor trust, trusted direct zero-output report metadata, and status/support
-no-output receipts all pass. `ready_for_ffb`
-must remain false until the later zero, watchdog, disconnect, low-torque, Pit
-House, and simulator telemetry prerequisites are also present.
+no-output receipts all pass. It also inventories zero-output strategy
+candidates from the trusted descriptor without executing them. The live R5 V1
+descriptor currently exposes standard PIDFF Device Control report `0x0C` as a
+possible stop-all-effects zero-output strategy, but that strategy is not
+implemented and does not make `ready_for_zero_torque` true. `ready_for_ffb` must
+remain false until the later zero, watchdog, disconnect, low-torque, Pit House,
+and simulator telemetry prerequisites are also present.
 
 If Windows cannot expose the raw HID report descriptor, paste descriptor hex
 from USBTreeView, USBPcap/Wireshark enumeration traffic, or an equivalent
@@ -288,7 +292,7 @@ Once fixtures are promoted into `crates/hid-moza-protocol/fixtures/`, the parser
 
 ## Phase 4: Zero-Torque Proof
 
-Zero-torque proof is the first output phase. It may send only report `0x20` with raw torque `0`, flags `0`, and motor disabled. The command must refuse before HID initialization unless `pre-output-readiness.json` is passing and the lane descriptor proves direct output report `0x20` with the expected 8-byte report shape; the observed live R5 V1 descriptor currently does not prove that shape.
+Zero-torque proof is the first output phase. The currently implemented zero command may send only report `0x20` with raw torque `0`, flags `0`, and motor disabled. It must refuse before HID initialization unless `pre-output-readiness.json` is passing and the lane descriptor proves direct output report `0x20` with the expected 8-byte report shape; the observed live R5 V1 descriptor currently does not prove that shape. `pre-output-readiness.json` also inventories descriptor-observed alternate zero-output candidates, including the live R5 V1 PIDFF Device Control `0x0C` stop-all-effects report, but that PIDFF strategy is read-only inventory until a separate implementation and verifier gate exist.
 
 ```powershell
 wheelctl moza zero --device <r5> --lane ci/hardware/moza-r5/<date> --confirm-zero-torque --repeat 100 --hz 1000 --json-out ci/hardware/moza-r5/<date>/zero-torque-proof.json

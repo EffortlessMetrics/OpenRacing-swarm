@@ -287,7 +287,7 @@ wheelctl moza promote-manifest --lane ci/hardware/moza-r5/YYYY-MM-DD --stage zer
 wheelctl moza audit-lane --lane ci/hardware/moza-r5/YYYY-MM-DD --stage zero --json-out ci/hardware/moza-r5/YYYY-MM-DD/lane-audit-zero.json
 ```
 
-Zero proof uses only direct torque report `0x20` with the zero payload. The zero command must refuse before HID initialization unless the lane descriptor proves report `0x20` with the expected 8-byte shape; the observed live R5 V1 descriptor currently does not prove that direct report. Watchdog and disconnect proofs intentionally exercise fault paths but still require no non-zero payloads and final-zero evidence.
+The currently implemented zero proof uses only direct torque report `0x20` with the zero payload. The zero command must refuse before HID initialization unless the lane descriptor proves report `0x20` with the expected 8-byte shape; the observed live R5 V1 descriptor currently does not prove that direct report. `pre-output-readiness.json` inventories descriptor-observed zero-output strategy candidates so the lane can distinguish an unsupported direct `0x20` path from a trusted but unimplemented PIDFF Device Control `0x0C` stop-all-effects candidate. The PIDFF candidate is read-only inventory only until a later command and verifier gate implement it. Watchdog and disconnect proofs intentionally exercise fault paths but still require no non-zero payloads and final-zero evidence.
 
 Full real-hardware smoke evidence:
 
