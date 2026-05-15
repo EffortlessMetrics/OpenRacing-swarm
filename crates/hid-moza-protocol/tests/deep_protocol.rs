@@ -51,6 +51,35 @@ impl DeviceWriter for AlwaysFailWriter {
     }
 }
 
+struct FailOnFeatureReportWriter {
+    fail_report_id: u8,
+    feature_reports: Vec<Vec<u8>>,
+}
+
+impl FailOnFeatureReportWriter {
+    fn new(fail_report_id: u8) -> Self {
+        Self {
+            fail_report_id,
+            feature_reports: Vec::new(),
+        }
+    }
+}
+
+impl DeviceWriter for FailOnFeatureReportWriter {
+    fn write_feature_report(&mut self, data: &[u8]) -> Result<usize, Box<dyn std::error::Error>> {
+        self.feature_reports.push(data.to_vec());
+        if data.first().copied() == Some(self.fail_report_id) {
+            Err("simulated feature write failure".into())
+        } else {
+            Ok(data.len())
+        }
+    }
+
+    fn write_output_report(&mut self, data: &[u8]) -> Result<usize, Box<dyn std::error::Error>> {
+        Ok(data.len())
+    }
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /// Decode raw i16 from encoded torque bytes back to Nm.
@@ -257,6 +286,20 @@ fn handshake_standard_mode_sends_two_reports() -> Result<(), Box<dyn std::error:
 }
 
 #[test]
+fn handshake_r5_v1_standard_mode_skips_start_input_feature_report()
+-> Result<(), Box<dyn std::error::Error>> {
+    let protocol = MozaProtocol::new_with_config(product_ids::R5_V1, FfbMode::Standard, false);
+    let mut writer = RecordingWriter::new();
+
+    protocol.initialize_device(&mut writer)?;
+
+    assert_eq!(writer.feature_reports.len(), 1);
+    assert_eq!(writer.feature_reports[0][0], report_ids::FFB_MODE);
+    assert_eq!(writer.feature_reports[0][1], FfbMode::Standard as u8);
+    Ok(())
+}
+
+#[test]
 fn handshake_direct_mode_with_high_torque_sends_three_reports()
 -> Result<(), Box<dyn std::error::Error>> {
     let protocol = MozaProtocol::new_with_config(product_ids::R12_V1, FfbMode::Direct, true);
@@ -278,7 +321,7 @@ fn handshake_failure_transitions_to_failed() -> Result<(), Box<dyn std::error::E
     let protocol = MozaProtocol::new_with_ffb_mode(product_ids::R5_V2, FfbMode::Standard);
     let mut writer = AlwaysFailWriter;
 
-    protocol.initialize_device(&mut writer)?;
+    assert!(protocol.initialize_device(&mut writer).is_err());
 
     assert_eq!(protocol.init_state(), MozaInitState::Failed);
     assert!(!protocol.is_ffb_ready());
@@ -293,7 +336,7 @@ fn handshake_exhausts_retries_to_permanent_failure() -> Result<(), Box<dyn std::
     let mut writer = AlwaysFailWriter;
 
     for attempt in 1..=DEFAULT_MAX_RETRIES {
-        protocol.initialize_device(&mut writer)?;
+        assert!(protocol.initialize_device(&mut writer).is_err());
 
         if attempt < DEFAULT_MAX_RETRIES {
             assert_eq!(
@@ -324,7 +367,7 @@ fn handshake_permanent_failure_blocks_further_init() -> Result<(), Box<dyn std::
     let mut fail_writer = AlwaysFailWriter;
 
     for _ in 0..DEFAULT_MAX_RETRIES {
-        protocol.initialize_device(&mut fail_writer)?;
+        assert!(protocol.initialize_device(&mut fail_writer).is_err());
     }
     assert_eq!(protocol.init_state(), MozaInitState::PermanentFailure);
 
@@ -344,7 +387,7 @@ fn handshake_reset_clears_state_and_allows_reinit() -> Result<(), Box<dyn std::e
     let protocol = MozaProtocol::new_with_ffb_mode(product_ids::R9_V2, FfbMode::Standard);
     let mut fail_writer = AlwaysFailWriter;
 
-    protocol.initialize_device(&mut fail_writer)?;
+    assert!(protocol.initialize_device(&mut fail_writer).is_err());
     assert_eq!(protocol.init_state(), MozaInitState::Failed);
     assert_eq!(protocol.retry_count(), 1);
 
@@ -355,6 +398,27 @@ fn handshake_reset_clears_state_and_allows_reinit() -> Result<(), Box<dyn std::e
     let mut good_writer = RecordingWriter::new();
     protocol.initialize_device(&mut good_writer)?;
     assert_eq!(protocol.init_state(), MozaInitState::Ready);
+    Ok(())
+}
+
+#[test]
+fn handshake_start_failure_does_not_set_ffb_mode() -> Result<(), Box<dyn std::error::Error>> {
+    let protocol = MozaProtocol::new_with_config(product_ids::R9_V2, FfbMode::Standard, false);
+    let mut writer = FailOnFeatureReportWriter::new(report_ids::START_REPORTS);
+
+    let result = protocol.initialize_device(&mut writer);
+
+    assert!(result.is_err());
+    assert_eq!(protocol.init_state(), MozaInitState::Failed);
+    assert_eq!(writer.feature_reports.len(), 1);
+    assert_eq!(writer.feature_reports[0][0], report_ids::START_REPORTS);
+    assert!(
+        !writer
+            .feature_reports
+            .iter()
+            .any(|report| report.first().copied() == Some(report_ids::FFB_MODE)),
+        "FFB mode report must not be sent after start-input failure"
+    );
     Ok(())
 }
 

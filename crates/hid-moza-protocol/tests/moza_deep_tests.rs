@@ -615,7 +615,7 @@ fn error_recovery_reset_cycle() -> Result<(), Box<dyn std::error::Error>> {
 
     // Phase 1: fail once
     let mut failing_writer = FailNTimesWriter::new(100);
-    protocol.initialize_device(&mut failing_writer)?;
+    assert!(protocol.initialize_device(&mut failing_writer).is_err());
     assert_eq!(protocol.init_state(), MozaInitState::Failed);
     assert_eq!(protocol.retry_count(), 1);
 

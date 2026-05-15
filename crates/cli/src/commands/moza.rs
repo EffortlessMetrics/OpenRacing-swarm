@@ -2108,9 +2108,11 @@ async fn init(
         );
         {
             let mut writer = RecordingFeatureWriter::dry_run(&mut receipt.feature_reports);
-            protocol
-                .initialize_device(&mut writer)
-                .map_err(|e| anyhow!("Moza dry-run init failed: {e}"))?;
+            if let Err(error) = protocol.initialize_device(&mut writer) {
+                receipt
+                    .notes
+                    .push(format!("dry-run init protocol returned error: {error}"));
+            }
             receipt.output_report_attempts = writer.output_report_attempts;
         }
         receipt.finish_from_protocol(&protocol);
@@ -2147,9 +2149,11 @@ async fn init(
     receipt.zero_audit_generated_at = preflight.zero_audit_generated_at;
     {
         let mut writer = RecordingFeatureWriter::new(device, &mut receipt.feature_reports);
-        protocol
-            .initialize_device(&mut writer)
-            .map_err(|e| anyhow!("Moza init failed: {e}"))?;
+        if let Err(error) = protocol.initialize_device(&mut writer) {
+            receipt
+                .notes
+                .push(format!("init protocol returned error: {error}"));
+        }
         receipt.output_report_attempts = writer.output_report_attempts;
     }
     receipt.finish_from_protocol(&protocol);
@@ -4231,7 +4235,14 @@ fn validate_init_proof_for_torque_test(
         && json_u64(&receipt, "output_report_attempts").unwrap_or(u64::MAX) == 0
         && receipt
             .get("feature_reports")
-            .map(|reports| init_feature_reports_are_safe_value(reports, expected_mode, false))
+            .map(|reports| {
+                init_feature_reports_are_safe_value(
+                    reports,
+                    expected_mode,
+                    false,
+                    product_id.as_deref(),
+                )
+            })
             .unwrap_or(false)
         && generated_at_utc
             .as_deref()
@@ -4337,7 +4348,7 @@ fn synthetic_moza_device_record(pid: u16) -> MozaDeviceRecord {
         input_report_lengths: expected_input_report_lengths(pid),
         output_report_ids: expected_output_report_ids(output_capable),
         output_reports: expected_output_reports(output_capable),
-        feature_report_ids: expected_feature_report_ids(output_capable),
+        feature_report_ids: expected_feature_report_ids(pid, output_capable),
     }
 }
 
@@ -4739,16 +4750,26 @@ fn push_smoke_ready_frontier_operator_action(
     }
 
     let r5_selector = next_command_r5_selector(lane);
+    let init_off_report_text = if lane_manifest_r5_pid(lane) == Some(product_ids::R5_V1) {
+        "the bounded Moza init feature report 0x11, with payload 11FF0000"
+    } else {
+        "the bounded Moza init feature reports 0x03 and 0x11, with 0x11 payload 11FF0000"
+    };
     if !bundle_gate_check_passed(gates, "init_off_handshake") {
         actions.push(format!(
-            "Current smoke-ready frontier: staged init-off. This sends only the bounded Moza init feature reports 0x03 and 0x11, with 0x11 payload 11FF0000, and still sends no output reports or torque. Before running it, confirm the operator is at the bench, the wheel is clear, power cutoff is understood, no game/sim FFB source is active, and Pit House firmware/update flows are closed or not installed. Run only the lane-bound `wheelctl moza init --device {r5_selector} --mode off --confirm-init ...` command; do not run standard init, low torque, simulator FFB, direct mode, serial config, firmware, or DFU until this receipt passes."
+            "Current smoke-ready frontier: staged init-off. This sends only {init_off_report_text}, and still sends no output reports or torque. Before running it, confirm the operator is at the bench, the wheel is clear, power cutoff is understood, no game/sim FFB source is active, and Pit House firmware/update flows are closed or not installed. Run only the lane-bound `wheelctl moza init --device {r5_selector} --mode off --confirm-init ...` command; do not run standard init, low torque, simulator FFB, direct mode, serial config, firmware, or DFU until this receipt passes."
         ));
         return;
     }
 
+    let init_standard_report_text = if lane_manifest_r5_pid(lane) == Some(product_ids::R5_V1) {
+        "the bounded Moza init feature report 0x11, with payload 11000000"
+    } else {
+        "the bounded Moza init feature reports 0x03 and 0x11, with 0x11 payload 11000000"
+    };
     if !bundle_gate_check_passed(gates, "init_standard_handshake") {
         actions.push(format!(
-            "Current smoke-ready frontier: staged init-standard. This sends only the bounded Moza init feature reports 0x03 and 0x11, with 0x11 payload 11000000, after the same-lane init-off receipt has passed; it still must not send output reports or torque. Confirm the operator is at the bench, the wheel is clear, power cutoff is understood, and no game/sim FFB source or firmware/update flow is active. Run only the lane-bound `wheelctl moza init --device {r5_selector} --mode standard --confirm-init ...` command; do not run low torque, simulator FFB, direct mode, serial config, firmware, or DFU until this receipt passes."
+            "Current smoke-ready frontier: staged init-standard. This sends only {init_standard_report_text}, after the same-lane init-off receipt has passed; it still must not send output reports or torque. Confirm the operator is at the bench, the wheel is clear, power cutoff is understood, and no game/sim FFB source or firmware/update flow is active. Run only the lane-bound `wheelctl moza init --device {r5_selector} --mode standard --confirm-init ...` command; do not run low torque, simulator FFB, direct mode, serial config, firmware, or DFU until this receipt passes."
         ));
         return;
     }
@@ -10106,13 +10127,18 @@ fn verify_init_receipt_gate(
     let no_high_torque = json_bool(&receipt, "no_high_torque");
     let high_torque = json_bool(&receipt, "high_torque");
     let mode = json_string(&receipt, "mode");
+    let product_id = receipt
+        .get("device")
+        .and_then(|device| json_string(device, "product_id"));
     let init_state = json_string(&receipt, "init_state");
     let ready = json_bool(&receipt, "ready");
     let feature_write_errors = json_u64(&receipt, "feature_write_errors").unwrap_or(u64::MAX);
     let output_report_attempts = json_u64(&receipt, "output_report_attempts").unwrap_or(u64::MAX);
     let feature_reports_safe = receipt
         .get("feature_reports")
-        .map(|reports| init_feature_reports_are_safe_value(reports, expected_mode, false))
+        .map(|reports| {
+            init_feature_reports_are_safe_value(reports, expected_mode, false, product_id)
+        })
         .unwrap_or(false);
     let r5_output_device = receipt_targets_r5_output_device(&receipt);
     let selector_matches_lane_endpoint = receipt_selector_matches_lane_endpoint(lane, &receipt);
@@ -10164,13 +10190,11 @@ fn init_feature_reports_are_safe_value(
     reports: &Value,
     expected_mode: &str,
     allow_planned: bool,
+    product_id: Option<&str>,
 ) -> bool {
     let Some(records) = reports.as_array() else {
         return false;
     };
-    if records.len() != 2 {
-        return false;
-    }
 
     let expected_mode_payload = match expected_mode {
         "off" => "11FF0000",
@@ -10178,21 +10202,35 @@ fn init_feature_reports_are_safe_value(
         _ => return false,
     };
 
-    init_feature_report_record_is_safe(
-        &records[0],
-        0,
-        "start_input_reports",
-        START_REPORTING_FEATURE_REPORT_ID,
-        "03000000",
-        allow_planned,
-    ) && init_feature_report_record_is_safe(
-        &records[1],
-        1,
-        "ffb_mode",
-        FFB_MODE_FEATURE_REPORT_ID,
-        expected_mode_payload,
-        allow_planned,
-    )
+    if product_id.and_then(parse_hex_selector) == Some(product_ids::R5_V1) {
+        return records.len() == 1
+            && init_feature_report_record_is_safe(
+                &records[0],
+                0,
+                "ffb_mode",
+                FFB_MODE_FEATURE_REPORT_ID,
+                expected_mode_payload,
+                allow_planned,
+            );
+    }
+
+    records.len() == 2
+        && init_feature_report_record_is_safe(
+            &records[0],
+            0,
+            "start_input_reports",
+            START_REPORTING_FEATURE_REPORT_ID,
+            "03000000",
+            allow_planned,
+        )
+        && init_feature_report_record_is_safe(
+            &records[1],
+            1,
+            "ffb_mode",
+            FFB_MODE_FEATURE_REPORT_ID,
+            expected_mode_payload,
+            allow_planned,
+        )
 }
 
 fn init_feature_report_record_is_safe(
@@ -15598,6 +15636,7 @@ impl MozaInitReceipt {
                 &serde_json::to_value(&self.feature_reports).unwrap_or(Value::Null),
                 self.mode,
                 true,
+                Some(&self.device.product_id),
             );
     }
 
@@ -16501,7 +16540,7 @@ impl MozaDeviceRecord {
             input_report_lengths: expected_input_report_lengths(info.product_id()),
             output_report_ids: expected_output_report_ids(output_capable),
             output_reports: expected_output_reports(output_capable),
-            feature_report_ids: expected_feature_report_ids(output_capable),
+            feature_report_ids: expected_feature_report_ids(info.product_id(), output_capable),
         };
         if let Some(descriptor) = report_descriptor {
             record.apply_report_descriptor(descriptor, &descriptor_source);
@@ -16641,15 +16680,20 @@ fn expected_output_reports(output_capable: bool) -> Vec<HidReportRecord> {
     }
 }
 
-fn expected_feature_report_ids(output_capable: bool) -> Vec<String> {
-    if output_capable {
+fn expected_feature_report_ids(pid: u16, output_capable: bool) -> Vec<String> {
+    if !output_capable {
+        Vec::new()
+    } else if pid == product_ids::R5_V1 {
+        R5_V1_LIVE_FEATURE_REPORT_IDS
+            .iter()
+            .map(|id| (*id).to_string())
+            .collect()
+    } else {
         vec![
             HIGH_TORQUE_FEATURE_REPORT_ID.to_string(),
             START_REPORTING_FEATURE_REPORT_ID.to_string(),
             FFB_MODE_FEATURE_REPORT_ID.to_string(),
         ]
-    } else {
-        Vec::new()
     }
 }
 
@@ -19828,6 +19872,17 @@ mod tests {
         ]
     }
 
+    fn r5_v1_mode_only_init_feature_reports(mode_payload: &str, result: &str) -> Vec<Value> {
+        vec![serde_json::json!({
+            "sequence": 0,
+            "kind": "ffb_mode",
+            "payload_hex": mode_payload,
+            "report_id": "0x11",
+            "result": result,
+            "bytes_written": 4
+        })]
+    }
+
     fn real_init_receipt(mode: &str) -> Value {
         let mode_payload = if mode == "off" {
             "11FF0000"
@@ -19863,6 +19918,50 @@ mod tests {
             "output_report_attempts": 0,
             "feature_reports": init_feature_reports(mode_payload, "ok")
         })
+    }
+
+    fn real_r5_v1_init_receipt(mode: &str) -> Value {
+        let mode_payload = if mode == "off" {
+            "11FF0000"
+        } else {
+            "11000000"
+        };
+        let mode_wire_value = if mode == "off" { "0xFF" } else { "0x00" };
+        serde_json::json!({
+            "success": true,
+            "command": "wheelctl moza init",
+            "selector": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            "generated_at_utc": TEST_GENERATED_AT,
+            "no_output_reports": true,
+            "no_direct_torque_reports": true,
+            "no_high_torque": true,
+            "high_torque": false,
+            "no_serial_config_commands": true,
+            "no_firmware_or_dfu_commands": true,
+            "dry_run": false,
+            "no_hid_device_opened": false,
+            "device": {
+                "vendor_id": "0x346E",
+                "product_id": "0x0004",
+                "product_name": "Moza R5",
+                "output_capable": true
+            },
+            "mode": mode,
+            "mode_wire_value": mode_wire_value,
+            "init_state": "ready",
+            "ready": true,
+            "feature_report_count": 1,
+            "feature_write_errors": 0,
+            "output_report_attempts": 0,
+            "feature_reports": r5_v1_mode_only_init_feature_reports(mode_payload, "ok")
+        })
+    }
+
+    fn write_zero_torque_ready_r5_v1_manifest(root: &Path) -> TestResult {
+        let mut manifest = sample_lane_manifest("zero_torque_ready", true, false);
+        manifest["hardware"]["wheelbase_pid"] = serde_json::json!("0x0004");
+        manifest["topology"] = moza_lane_manifest_topology_value(product_ids::R5_V1);
+        write_test_json_file(&root.join("manifest.json"), &manifest)
     }
 
     fn write_low_torque_prerequisite_receipts(root: &Path) -> TestResult {
@@ -20712,12 +20811,19 @@ mod tests {
             vec![DIRECT_TORQUE_REPORT_ID.to_string()]
         );
         assert_eq!(
-            expected_feature_report_ids(true),
+            expected_feature_report_ids(product_ids::R5_V2, true),
             vec![
                 HIGH_TORQUE_FEATURE_REPORT_ID.to_string(),
                 START_REPORTING_FEATURE_REPORT_ID.to_string(),
                 FFB_MODE_FEATURE_REPORT_ID.to_string(),
             ]
+        );
+        assert_eq!(
+            expected_feature_report_ids(product_ids::R5_V1, true),
+            R5_V1_LIVE_FEATURE_REPORT_IDS
+                .iter()
+                .map(|id| (*id).to_string())
+                .collect::<Vec<_>>()
         );
     }
 
@@ -23250,7 +23356,9 @@ mod tests {
         assert!(
             receipt
                 .get("feature_reports")
-                .map(|reports| init_feature_reports_are_safe_value(reports, "off", true))
+                .map(|reports| {
+                    init_feature_reports_are_safe_value(reports, "off", true, Some("0x0014"))
+                })
                 .unwrap_or(false)
         );
         Ok(())
@@ -23729,6 +23837,22 @@ mod tests {
 
         assert_eq!(off_gate.status, "pass");
         assert_eq!(standard_gate.status, "pass");
+        Ok(())
+    }
+
+    #[test]
+    fn verify_init_receipt_gate_accepts_r5_v1_mode_only_receipts() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_zero_torque_ready_r5_v1_manifest(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("init-off.json"),
+            &receipt_with_lane_path(dir.path(), "init-off.json", real_r5_v1_init_receipt("off")),
+        )?;
+
+        let off_gate =
+            verify_init_receipt_gate(dir.path(), "init_off_handshake", "init-off.json", "off");
+
+        assert_eq!(off_gate.status, "pass");
         Ok(())
     }
 
@@ -29102,6 +29226,42 @@ mod tests {
                 && actions.contains("firmware/update pages must be refused")
                 && actions.contains("final zero was attempted"),
             "Pit House frontier should allow an honest blocked state instead of fabricated evidence: {actions}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn smoke_operator_actions_describe_r5_v1_mode_only_init() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_zero_torque_ready_r5_v1_manifest(dir.path())?;
+        let gates = vec![
+            BundleGateCheck::pass("lane_directory", "lane".to_string()),
+            BundleGateCheck::pass("manifest_no_overclaim", "manifest".to_string()),
+            BundleGateCheck::pass("manifest_r5_pid_consistency", "pid".to_string()),
+            BundleGateCheck::pass("moza_r5_observed", "r5".to_string()),
+            BundleGateCheck::pass("moza_topology_observed", "topology".to_string()),
+            BundleGateCheck::pass("topology_required_evidence_supported", "roles".to_string()),
+            BundleGateCheck::pass("descriptor_metadata", "descriptor".to_string()),
+            BundleGateCheck::pass("passive_receipts_successful", "receipts".to_string()),
+            BundleGateCheck::pass("passive_receipts_no_ffb_writes", "no ffb".to_string()),
+            BundleGateCheck::pass("passive_captures_parse", "captures".to_string()),
+            BundleGateCheck::pass("parser_fixture_validation", "parser".to_string()),
+            BundleGateCheck::pass("fixture_promotion", "fixtures".to_string()),
+            BundleGateCheck::pass("zero_torque_real_hardware", "zero".to_string()),
+            BundleGateCheck::pass("watchdog_zero_output", "watchdog".to_string()),
+            BundleGateCheck::pass("disconnect_final_zero", "disconnect".to_string()),
+            BundleGateCheck::fail("init_off_handshake", "missing".to_string()),
+        ];
+        let mut actions = Vec::new();
+
+        push_smoke_ready_frontier_operator_action(dir.path(), &gates, &mut actions);
+
+        let actions = actions.join("\n");
+        assert!(
+            actions.contains("feature report 0x11")
+                && actions.contains("11FF0000")
+                && !actions.contains("feature reports 0x03 and 0x11"),
+            "R5 V1 init frontier should describe mode-only feature report: {actions}"
         );
         Ok(())
     }

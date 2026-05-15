@@ -31,7 +31,7 @@
 #![deny(static_mut_refs)]
 
 use crate::direct::REPORT_LEN;
-use crate::ids::rim_ids;
+use crate::ids::{product_ids, rim_ids};
 use crate::report::{
     RawWheelbaseReport, input_report, looks_like_live_r5_v1_extended_report,
     parse_wheelbase_input_report, parse_wheelbase_pedal_axes, parse_wheelbase_report, report_ids,
@@ -513,6 +513,13 @@ impl MozaProtocol {
         Ok(())
     }
 
+    fn uses_start_input_feature_report(&self) -> bool {
+        // The live R5 V1 descriptor exposes report 0x03 as an output report,
+        // not as a feature report. Passive input reports are already emitted
+        // without this handshake step on the captured R5 V1 lane.
+        self.product_id != product_ids::R5_V1
+    }
+
     /// Set rotation range in degrees.
     pub fn set_rotation_range(
         &self,
@@ -675,8 +682,6 @@ impl VendorProtocol for MozaProtocol {
             if self.is_v2 { 2 } else { 1 }
         );
 
-        let mut success = true;
-
         match self.es_compatibility() {
             crate::types::MozaEsCompatibility::UnsupportedHardwareRevision => warn!(
                 "Moza PID 0x{:04X} is R9 V1; ES wheel compatibility is not supported",
@@ -694,8 +699,10 @@ impl VendorProtocol for MozaProtocol {
         // Off by default — requires explicit opt-in via config or environment variable.
         if self.high_torque_enabled {
             if let Err(e) = self.enable_high_torque(writer) {
-                warn!("Failed to enable high torque: {}", e);
-                success = false;
+                self.finalize_initialization(false);
+                let message = format!("failed to enable high torque: {e}");
+                warn!("{message}");
+                return Err(message.into());
             }
         } else {
             debug!(
@@ -704,27 +711,33 @@ impl VendorProtocol for MozaProtocol {
             );
         }
 
-        // Step 2: Start input reports
-        if let Err(e) = self.start_input_reports(writer) {
-            warn!("Failed to start input reports: {}", e);
-            success = false;
+        // Step 2: Start input reports when this product exposes report 0x03
+        // as a feature report. R5 V1 does not; sending it via HidD_SetFeature
+        // fails with ERROR_INVALID_PARAMETER on Windows.
+        if self.uses_start_input_feature_report() {
+            if let Err(e) = self.start_input_reports(writer) {
+                self.finalize_initialization(false);
+                let message = format!("failed to start input reports: {e}");
+                warn!("{message}");
+                return Err(message.into());
+            }
+        } else {
+            debug!(
+                "Skipping start-input feature report for Moza {:?} PID 0x{:04X}",
+                self.model, self.product_id
+            );
         }
 
         // Step 3: Set FFB to the configured mode.
         if let Err(e) = self.set_ffb_mode(writer, self.ffb_mode) {
-            warn!("Failed to set FFB mode: {}", e);
-            success = false;
+            self.finalize_initialization(false);
+            let message = format!("failed to set FFB mode: {e}");
+            warn!("{message}");
+            return Err(message.into());
         }
 
-        self.finalize_initialization(success);
-        if success {
-            info!("Moza {:?} initialization complete", self.model);
-        } else {
-            warn!(
-                "Moza {:?} initialization incomplete; device not ready for native output",
-                self.model
-            );
-        }
+        self.finalize_initialization(true);
+        info!("Moza {:?} initialization complete", self.model);
         Ok(())
     }
 

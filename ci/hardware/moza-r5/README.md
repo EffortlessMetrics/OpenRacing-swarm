@@ -315,7 +315,7 @@ wheelctl moza promote-manifest --lane ci/hardware/moza-r5/YYYY-MM-DD --stage smo
 wheelctl moza audit-lane --lane ci/hardware/moza-r5/YYYY-MM-DD --stage smoke-ready --json-out ci/hardware/moza-r5/YYYY-MM-DD/lane-audit-smoke-ready.json
 ```
 
-The init verifier requires exactly two successful 4-byte feature writes in order: `0x03` (`03000000`) to start input reports, then `0x11` (`11FF0000` for off or `11000000` for standard). Any high-torque feature report or direct torque output report fails the stage.
+For the live R5 V1 lane, the trusted descriptor exposes feature report `0x11` but not feature report `0x03`; `0x03` is an output report in this descriptor and must not be sent by the init stage. The init verifier therefore accepts the R5 V1 mode-only feature write: `0x11` (`11FF0000` for off or `11000000` for standard). Other wheelbase lanes may still require the ordered `0x03` start-input feature write followed by `0x11` when their trusted descriptor and adapter prove that shape. Any high-torque feature report or direct torque output report fails the stage.
 
 Do not run the low-torque command merely because zero-stage verification passed. Generated smoke-ready guidance may suggest `wheelctl moza torque-test` only when `descriptor.json` proves trusted direct report `0x20` metadata and `zero-torque-proof.json` is a same-lane `direct_report_0x20` proof accepted by the torque-test preflight. If the lane only proves PIDFF Stop All zero output, as the live R5 V1 lane currently does, the verifier must fall back to read-only `pre-output-readiness` guidance and must not generate `--explicit-operator-override`.
 
