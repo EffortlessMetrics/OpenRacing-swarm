@@ -3712,6 +3712,8 @@ fn validate_zero_output_stage_preflight(
         && json_bool(&receipt, "no_output_reports") == Some(true)
         && json_bool(&receipt, "no_feature_reports") == Some(true)
         && no_out_of_scope_device_commands(&receipt);
+    let direct_zero_report_metadata = validate_zero_output_direct_report_metadata(lane);
+    let direct_zero_report_metadata_ok = direct_zero_report_metadata.is_ok();
 
     if command_ok
         && lane_ok
@@ -3721,6 +3723,7 @@ fn validate_zero_output_stage_preflight(
         && blocking_items_empty
         && status_receipts_ok
         && no_output_receipt
+        && direct_zero_report_metadata_ok
     {
         Ok(ZeroOutputStagePreflight {
             lane: lane.to_path_buf(),
@@ -3729,8 +3732,12 @@ fn validate_zero_output_stage_preflight(
                 .map(str::to_string),
         })
     } else {
+        let direct_zero_report_metadata_error = direct_zero_report_metadata
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_else(|| "ok".to_string());
         Err(anyhow!(
-            "pre-output readiness receipt '{}' is not ready for zero-output writes: command_ok={command_ok}, lane_ok={lane_ok}, success={success}, ready_for_zero_torque={ready_for_zero_torque}, ready_for_ffb_false={ready_for_ffb}, blocking_items_empty={blocking_items_empty}, status_receipts_ok={status_receipts_ok}, no_output_receipt={no_output_receipt}",
+            "pre-output readiness receipt '{}' is not ready for zero-output writes: command_ok={command_ok}, lane_ok={lane_ok}, success={success}, ready_for_zero_torque={ready_for_zero_torque}, ready_for_ffb_false={ready_for_ffb}, blocking_items_empty={blocking_items_empty}, status_receipts_ok={status_receipts_ok}, no_output_receipt={no_output_receipt}, direct_zero_report_metadata={direct_zero_report_metadata_ok}; direct_zero_report_metadata_error={direct_zero_report_metadata_error}",
             lane.join("pre-output-readiness.json").display()
         ))
     }
@@ -4584,21 +4591,29 @@ fn pre_output_readiness_dir(lane: &Path) -> PreOutputReadinessReceipt {
     let status_receipts_no_output = status_receipts.iter().all(|check| check.status == "pass");
 
     let role_evidence_complete = required_role_evidence_complete(&passive);
-    let ready_for_zero_torque =
-        passive.success && passive_audit_passed && status_receipts_no_output;
+    let direct_zero_report_metadata = zero_output_direct_report_metadata_trusted(lane);
+    let ready_for_zero_torque = passive.success
+        && passive_audit_passed
+        && status_receipts_no_output
+        && direct_zero_report_metadata;
     let ready_for_ffb = ready_for_zero_torque
         && zero.success
         && zero_audit_passed
         && pre_output_bounded_ffb_prerequisite_gates_passed(&smoke_ready);
 
-    let blocking_items =
-        pre_output_zero_blocking_items(&passive, passive_audit_passed, status_receipts_no_output);
+    let blocking_items = pre_output_zero_blocking_items(
+        &passive,
+        passive_audit_passed,
+        status_receipts_no_output,
+        direct_zero_report_metadata,
+    );
     let ffb_blocking_items = pre_output_ffb_blocking_items(&zero, &smoke_ready, zero_audit_passed);
     let passed_items = pre_output_passed_items(
         &passive,
         role_evidence_complete,
         passive_audit_passed,
         status_receipts_no_output,
+        direct_zero_report_metadata,
         ready_for_zero_torque,
         ready_for_ffb,
     );
@@ -4649,6 +4664,7 @@ fn pre_output_passed_items(
     role_evidence_complete: bool,
     passive_audit_passed: bool,
     status_receipts_no_output: bool,
+    direct_zero_report_metadata: bool,
     ready_for_zero_torque: bool,
     ready_for_ffb: bool,
 ) -> Vec<String> {
@@ -4678,6 +4694,9 @@ fn pre_output_passed_items(
         passed.push("status_receipts_no_output".to_string());
         passed.push("support_bundle_no_output".to_string());
     }
+    if direct_zero_report_metadata {
+        passed.push("direct_zero_report_metadata".to_string());
+    }
     if passive.success {
         passed.push("passive_verification".to_string());
     }
@@ -4697,6 +4716,7 @@ fn pre_output_zero_blocking_items(
     passive: &PreOutputVerificationReceipt,
     passive_audit_passed: bool,
     status_receipts_no_output: bool,
+    direct_zero_report_metadata: bool,
 ) -> Vec<String> {
     let mut blockers = Vec::new();
     append_verification_blocking_items(&mut blockers, passive);
@@ -4706,9 +4726,33 @@ fn pre_output_zero_blocking_items(
     if !status_receipts_no_output {
         blockers.push("status_receipts_no_output".to_string());
     }
+    if !direct_zero_report_metadata {
+        blockers.push("direct_zero_report_metadata".to_string());
+    }
     blockers.sort();
     blockers.dedup();
     blockers
+}
+
+fn zero_output_direct_report_metadata_trusted(lane: &Path) -> bool {
+    validate_zero_output_direct_report_metadata(lane).is_ok()
+}
+
+fn validate_zero_output_direct_report_metadata(lane: &Path) -> Result<()> {
+    let pid = lane_manifest_r5_pid(lane).ok_or_else(|| {
+        anyhow!("zero-output writes require a lane manifest with a supported R5 wheelbase PID")
+    })?;
+    let target_product_id = hex_u16(pid);
+    let descriptor_path = lane.join("descriptor.json");
+    validate_direct_mode_gate_for_torque_test(Some(&descriptor_path), &target_product_id, false)
+        .map(|_| ())
+        .with_context(|| {
+            format!(
+                "zero-output writes require trusted descriptor-derived direct output report metadata for PID {} in '{}'",
+                target_product_id,
+                descriptor_path.display()
+            )
+        })
 }
 
 fn pre_output_ffb_blocking_items(
@@ -17229,8 +17273,59 @@ mod tests {
     }
 
     #[test]
+    fn pre_output_readiness_blocks_zero_torque_when_descriptor_lacks_direct_report() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        write_service_status_artifacts(dir.path())?;
+        write_lane_audit_receipts(dir.path(), MozaBundleStage::Passive)?;
+        let mut manifest = sample_lane_manifest("passive_capture_ready", false, false);
+        manifest["hardware"]["wheelbase_pid"] = serde_json::json!("0x0004");
+        manifest["topology"] = moza_lane_manifest_topology_value(product_ids::R5_V1);
+        write_test_json_file(&dir.path().join("manifest.json"), &manifest)?;
+        write_test_json_file(
+            &dir.path().join("descriptor.json"),
+            &serde_json::json!({
+                "success": true,
+                "command": "hid-capture descriptor",
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "devices": [sample_trusted_r5_v1_json_device()]
+            }),
+        )?;
+
+        let receipt = pre_output_readiness_dir(dir.path());
+
+        assert!(!receipt.success);
+        assert!(!receipt.ready_for_zero_torque);
+        assert!(!receipt.ready_for_ffb);
+        assert!(
+            receipt
+                .blocking_items
+                .iter()
+                .any(|item| item == "direct_zero_report_metadata")
+        );
+        assert!(
+            !receipt
+                .passed_items
+                .iter()
+                .any(|item| item == "ready_for_zero_torque")
+        );
+        Ok(())
+    }
+
+    #[test]
     fn pre_output_readiness_uses_stored_receipts_without_replaying_captures() -> TestResult {
         let dir = tempfile::tempdir()?;
+        write_test_json_file(
+            &dir.path().join("manifest.json"),
+            &sample_lane_manifest("passive_capture_ready", false, false),
+        )?;
+        write_test_json_file(
+            &dir.path().join("descriptor.json"),
+            &trusted_r5_descriptor_receipt(),
+        )?;
         write_service_status_artifacts(dir.path())?;
         write_stage_audit_receipts(dir.path(), MozaBundleStage::Passive)?;
         write_test_json_file(
@@ -17266,8 +17361,8 @@ mod tests {
                 .any(|item| item == "zero-verification.json")
         );
         assert!(
-            !dir.path().join("manifest.json").exists(),
-            "pre-output-readiness should trust stored verification receipts instead of requiring raw lane artifacts"
+            !dir.path().join("captures").exists(),
+            "pre-output-readiness should trust stored verification receipts instead of requiring raw capture artifacts"
         );
         Ok(())
     }
@@ -17334,6 +17429,44 @@ mod tests {
             Err(error) => error.to_string(),
         };
         assert!(message.contains("ready_for_zero_torque=false"));
+        Ok(())
+    }
+
+    #[test]
+    fn zero_output_stage_preflight_rejects_descriptor_without_direct_report() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_pre_output_ready_receipt(dir.path())?;
+        let mut manifest = sample_lane_manifest("passive_capture_ready", false, false);
+        manifest["hardware"]["wheelbase_pid"] = serde_json::json!("0x0004");
+        manifest["topology"] = moza_lane_manifest_topology_value(product_ids::R5_V1);
+        write_test_json_file(&dir.path().join("manifest.json"), &manifest)?;
+        write_test_json_file(
+            &dir.path().join("descriptor.json"),
+            &serde_json::json!({
+                "success": true,
+                "command": "hid-capture descriptor",
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "devices": [sample_trusted_r5_v1_json_device()]
+            }),
+        )?;
+
+        let result = validate_zero_output_stage_preflight(
+            Some(dir.path()),
+            Some(&dir.path().join("zero-torque-proof.json")),
+            "zero-torque-proof.json",
+            true,
+            "--confirm-zero-torque",
+        );
+
+        let message = match result {
+            Ok(_) => return Err("expected direct report metadata preflight error".into()),
+            Err(error) => error.to_string(),
+        };
+        assert!(message.contains("direct_zero_report_metadata=false"));
+        assert!(message.contains("trusted descriptor-derived direct output report metadata"));
         Ok(())
     }
 

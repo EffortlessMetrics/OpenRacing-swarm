@@ -1,12 +1,14 @@
 {
-  "success": true,
+  "success": false,
   "command": "wheelctl moza pre-output-readiness",
-  "generated_at_utc": "2026-05-15T02:07:26Z",
+  "generated_at_utc": "2026-05-15T03:58:55Z",
   "lane": "ci\\hardware\\moza-r5\\2026-05-13",
   "stage": "pre_output_readiness",
-  "ready_for_zero_torque": true,
+  "ready_for_zero_torque": false,
   "ready_for_ffb": false,
-  "blocking_items": [],
+  "blocking_items": [
+    "direct_zero_report_metadata"
+  ],
   "ffb_blocking_items": [
     "init_off_handshake",
     "init_standard_handshake",
@@ -28,8 +30,7 @@
     "status_receipts_no_output",
     "support_bundle_no_output",
     "passive_verification",
-    "passive_audit",
-    "ready_for_zero_torque"
+    "passive_audit"
   ],
   "status_receipts": [
     {
