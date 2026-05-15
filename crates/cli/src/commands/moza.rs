@@ -39,6 +39,22 @@ const MOZA_VENDOR_HEX: &str = "0x346E";
 const HIGH_TORQUE_FEATURE_REPORT_ID: &str = "0x02";
 const START_REPORTING_FEATURE_REPORT_ID: &str = "0x03";
 const FFB_MODE_FEATURE_REPORT_ID: &str = "0x11";
+const R5_V1_LIVE_OUTPUT_REPORTS: &[(&str, usize)] = &[
+    ("0x01", 22),
+    ("0x02", 14),
+    ("0x03", 15),
+    ("0x04", 12),
+    ("0x05", 4),
+    ("0x06", 6),
+    ("0x0A", 4),
+    ("0x0B", 2),
+    ("0x0C", 2),
+    ("0x0D", 2),
+    ("0x14", 51),
+    ("0x15", 21),
+    ("0xAF", 18),
+];
+const R5_V1_LIVE_FEATURE_REPORT_IDS: &[&str] = &["0x11", "0x12", "0x13", "0xAF"];
 const MOZA_R5_MANIFEST_SCHEMA_JSON: &str =
     include_str!("../../../../ci/hardware/moza-r5/manifest.schema.json");
 const SIMULATOR_FFB_PREREQUISITE_ARTIFACTS: [(&str, &str); 6] = [
@@ -1207,8 +1223,10 @@ async fn promote_fixtures(
     for requirement in &requirements {
         let capture = lane.join(requirement.relative_path);
         let fixture_out = fixture_dir.join(format!("{}.json", requirement.fixture_id));
-        let fixture = build_capture_fixture(&capture, requirement.fixture_id, None, max_reports)
-            .with_context(|| format!("failed to promote {}", capture.display()))?;
+        let mut fixture =
+            build_capture_fixture(&capture, requirement.fixture_id, None, max_reports)
+                .with_context(|| format!("failed to promote {}", capture.display()))?;
+        fixture.source_capture = requirement.relative_path.to_string();
 
         if fixture_out.exists() && !overwrite {
             return Err(anyhow!(
@@ -1219,8 +1237,8 @@ async fn promote_fixtures(
 
         write_json_file(&fixture_out, &fixture)?;
         fixtures.push(FixturePromotionEntry {
-            capture: capture.display().to_string(),
-            fixture_out: fixture_out.display().to_string(),
+            capture: requirement.relative_path.to_string(),
+            fixture_out: receipt_path_string(&fixture_out),
             fixture_id: requirement.fixture_id.to_string(),
             report_count: fixture.reports.len(),
             product_ids: fixture.product_ids,
@@ -1235,7 +1253,7 @@ async fn promote_fixtures(
         command: "wheelctl moza promote-fixtures",
         generated_at_utc: now_utc(),
         lane: lane.display().to_string(),
-        fixture_dir: fixture_dir.display().to_string(),
+        fixture_dir: receipt_path_string(fixture_dir),
         no_ffb_writes: true,
         no_serial_config_commands: true,
         no_firmware_or_dfu_commands: true,
@@ -6867,13 +6885,11 @@ fn r5_descriptor_metadata_missing_requirements(device: &Value) -> Vec<&'static s
     if !input_ok {
         missing.push("input_report_lengths");
     }
-    let output_ok = json_string_array_contains_all(device, "output_report_ids", &["0x20"])
-        && json_report_record_contains(device, "output_reports", "0x20", REPORT_LEN);
-    if !output_ok {
-        missing.push("output_report_0x20_len_8");
+    if !r5_output_report_metadata_supported(device) {
+        missing.push(r5_output_report_metadata_missing_label(device));
     }
-    if !json_string_array_contains_all(device, "feature_report_ids", &["0x03", "0x11"]) {
-        missing.push("feature_report_ids_0x03_0x11");
+    if !r5_feature_report_metadata_supported(device) {
+        missing.push(r5_feature_report_metadata_missing_label(device));
     }
     missing
 }
@@ -6947,9 +6963,55 @@ fn r5_input_report_lengths_supported(device: &Value, lengths: &[usize]) -> bool 
 
 fn r5_supported_input_report_length_sets(product_id: Option<u16>) -> &'static [&'static [usize]] {
     match product_id {
-        Some(product_ids::R5_V1) => &[&[42], &[7, 31], &[7, 31, 42]],
+        Some(product_ids::R5_V1) => &[&[42], &[3, 18, 42], &[7, 31], &[7, 31, 42]],
         Some(product_ids::R5_V2) => &[&[7, 31]],
-        _ => &[&[7, 31], &[42], &[7, 31, 42]],
+        _ => &[&[7, 31], &[42], &[3, 18, 42], &[7, 31, 42]],
+    }
+}
+
+fn r5_output_report_metadata_supported(device: &Value) -> bool {
+    let product_id = json_string(device, "product_id").and_then(parse_hex_selector);
+    match product_id {
+        Some(product_ids::R5_V1) => R5_V1_LIVE_OUTPUT_REPORTS.iter().all(|(report_id, len)| {
+            json_string_array_contains_all(device, "output_report_ids", &[*report_id])
+                && json_report_record_contains(device, "output_reports", report_id, *len)
+        }),
+        Some(product_ids::R5_V2) => {
+            json_string_array_contains_all(device, "output_report_ids", &["0x20"])
+                && json_report_record_contains(device, "output_reports", "0x20", REPORT_LEN)
+        }
+        _ => {
+            json_string_array_contains_all(device, "output_report_ids", &["0x20"])
+                && json_report_record_contains(device, "output_reports", "0x20", REPORT_LEN)
+        }
+    }
+}
+
+fn r5_output_report_metadata_missing_label(device: &Value) -> &'static str {
+    let product_id = json_string(device, "product_id").and_then(parse_hex_selector);
+    match product_id {
+        Some(product_ids::R5_V1) => "live_r5_v1_output_reports",
+        _ => "output_report_0x20_len_8",
+    }
+}
+
+fn r5_feature_report_metadata_supported(device: &Value) -> bool {
+    let product_id = json_string(device, "product_id").and_then(parse_hex_selector);
+    match product_id {
+        Some(product_ids::R5_V1) => json_string_array_contains_all(
+            device,
+            "feature_report_ids",
+            R5_V1_LIVE_FEATURE_REPORT_IDS,
+        ),
+        _ => json_string_array_contains_all(device, "feature_report_ids", &["0x03", "0x11"]),
+    }
+}
+
+fn r5_feature_report_metadata_missing_label(device: &Value) -> &'static str {
+    let product_id = json_string(device, "product_id").and_then(parse_hex_selector);
+    match product_id {
+        Some(product_ids::R5_V1) => "live_r5_v1_feature_report_ids",
+        _ => "feature_report_ids_0x03_0x11",
     }
 }
 
@@ -11548,6 +11610,15 @@ fn receipt_file_crc32(path: &Path) -> Result<String> {
     let mut hasher = crc32fast::Hasher::new();
     hasher.update(&bytes);
     Ok(format!("0x{:08X}", hasher.finalize()))
+}
+
+fn receipt_path_string(path: &Path) -> String {
+    if let Ok(cwd) = std::env::current_dir()
+        && let Ok(relative) = path.strip_prefix(&cwd)
+    {
+        return relative.display().to_string();
+    }
+    path.display().to_string()
 }
 
 fn resolve_receipt_path(lane: &Path, path: &str) -> Option<PathBuf> {
@@ -16201,11 +16272,32 @@ mod tests {
         let mut device = sample_trusted_r5_json_device();
         device["product_id"] = serde_json::json!("0x0004");
         device["product_name"] = serde_json::json!("Moza R5 V1");
-        device["report_descriptor_len"] = serde_json::json!(32);
-        device["report_descriptor_crc32"] = serde_json::json!("0x1C8EF640");
-        device["report_descriptor_hex"] =
-            serde_json::json!("85017508952981028520750895079102850375089503B102851175089503B102");
-        device["input_report_lengths"] = serde_json::json!([42]);
+        device["report_descriptor_len"] = serde_json::json!(1315);
+        device["report_descriptor_crc32"] = serde_json::json!("0x25345E0C");
+        if let Some(object) = device.as_object_mut() {
+            object.remove("report_descriptor_hex");
+        }
+        device["input_report_lengths"] = serde_json::json!([3, 18, 42]);
+        device["output_report_ids"] = serde_json::json!([
+            "0x01", "0x02", "0x03", "0x04", "0x05", "0x06", "0x0A", "0x0B", "0x0C", "0x0D", "0x14",
+            "0x15", "0xAF"
+        ]);
+        device["output_reports"] = serde_json::json!([
+            {"report_id": "0x01", "report_len": 22},
+            {"report_id": "0x02", "report_len": 14},
+            {"report_id": "0x03", "report_len": 15},
+            {"report_id": "0x04", "report_len": 12},
+            {"report_id": "0x05", "report_len": 4},
+            {"report_id": "0x06", "report_len": 6},
+            {"report_id": "0x0A", "report_len": 4},
+            {"report_id": "0x0B", "report_len": 2},
+            {"report_id": "0x0C", "report_len": 2},
+            {"report_id": "0x0D", "report_len": 2},
+            {"report_id": "0x14", "report_len": 51},
+            {"report_id": "0x15", "report_len": 21},
+            {"report_id": "0xAF", "report_len": 18}
+        ]);
+        device["feature_report_ids"] = serde_json::json!(["0x11", "0x12", "0x13", "0xAF"]);
         device
     }
 
@@ -18856,10 +18948,12 @@ mod tests {
             Some(passive_capture_requirements_for_lane(dir.path()).len() as u64)
         );
         for requirement in passive_capture_requirements_for_lane(dir.path()) {
-            assert!(
-                fixture_dir
-                    .join(format!("{}.json", requirement.fixture_id))
-                    .is_file()
+            let fixture_path = fixture_dir.join(format!("{}.json", requirement.fixture_id));
+            assert!(fixture_path.is_file());
+            let fixture = read_json_path(&fixture_path)?;
+            assert_eq!(
+                json_string(&fixture, "source_capture"),
+                Some(requirement.relative_path)
             );
         }
         Ok(())
@@ -19721,7 +19815,8 @@ mod tests {
     }
 
     #[test]
-    fn validate_direct_mode_gate_accepts_live_r5_v1_extended_descriptor() -> TestResult {
+    fn validate_direct_mode_gate_rejects_live_r5_v1_descriptor_without_direct_report() -> TestResult
+    {
         let dir = tempfile::tempdir()?;
         let descriptor = dir.path().join("descriptor.json");
         write_test_json_file(
@@ -19733,11 +19828,9 @@ mod tests {
             }),
         )?;
 
-        let gate = validate_direct_mode_gate_for_torque_test(Some(&descriptor), "0x0004", false)?;
+        let result = validate_direct_mode_gate_for_torque_test(Some(&descriptor), "0x0004", false);
 
-        assert!(gate.satisfied);
-        assert!(gate.descriptor_trusted);
-        assert!(!gate.explicit_operator_override);
+        assert!(result.is_err());
         Ok(())
     }
 

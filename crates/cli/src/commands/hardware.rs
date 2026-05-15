@@ -1990,6 +1990,7 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
     let usbpcap_extcap_path = find_usbpcap_extcap_path().map(|path| path.display().to_string());
     let usbpcap_extcap_present = usbpcap_extcap_path.is_some();
     let usbpcap_driver_installed = usbpcap_driver_installed();
+    let usbpcap_driver_service_state = usbpcap_driver_service_state();
     let Some(tshark_path) = find_tshark_path() else {
         return UsbPcapDescriptorCaptureChecks {
             tshark_present: false,
@@ -1997,6 +1998,7 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
             usbpcap_extcap_present,
             usbpcap_extcap_path: usbpcap_extcap_path.clone(),
             usbpcap_driver_installed,
+            usbpcap_driver_service_state: usbpcap_driver_service_state.clone(),
             interface_scan_attempted: false,
             usbpcap_interfaces_present: false,
             usbpcap_interface_count: 0,
@@ -2007,6 +2009,7 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
                 false,
                 usbpcap_extcap_present,
                 usbpcap_driver_installed,
+                usbpcap_driver_service_state.as_deref(),
             ),
             error: Some(
                 "tshark was not found; install Wireshark or set WIRESHARK_TSHARK".to_string(),
@@ -2022,6 +2025,7 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
             usbpcap_extcap_present,
             usbpcap_extcap_path: usbpcap_extcap_path.clone(),
             usbpcap_driver_installed,
+            usbpcap_driver_service_state: usbpcap_driver_service_state.clone(),
             interface_scan_attempted: true,
             usbpcap_interfaces_present: false,
             usbpcap_interface_count: 0,
@@ -2032,6 +2036,7 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
                 false,
                 usbpcap_extcap_present,
                 usbpcap_driver_installed,
+                usbpcap_driver_service_state.as_deref(),
             ),
             error: Some("failed to run tshark -D".to_string()),
         };
@@ -2044,6 +2049,7 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
             usbpcap_extcap_present,
             usbpcap_extcap_path: usbpcap_extcap_path.clone(),
             usbpcap_driver_installed,
+            usbpcap_driver_service_state: usbpcap_driver_service_state.clone(),
             interface_scan_attempted: true,
             usbpcap_interfaces_present: false,
             usbpcap_interface_count: 0,
@@ -2054,6 +2060,7 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
                 false,
                 usbpcap_extcap_present,
                 usbpcap_driver_installed,
+                usbpcap_driver_service_state.as_deref(),
             ),
             error: Some(format!(
                 "tshark -D failed: {}",
@@ -2071,6 +2078,7 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
         usbpcap_extcap_present,
         usbpcap_extcap_path,
         usbpcap_driver_installed,
+        usbpcap_driver_service_state: usbpcap_driver_service_state.clone(),
         interface_scan_attempted: true,
         usbpcap_interfaces_present: ready_for_usbpcap_descriptor_capture,
         usbpcap_interface_count: interfaces.len(),
@@ -2081,6 +2089,7 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
             ready_for_usbpcap_descriptor_capture,
             usbpcap_extcap_present,
             usbpcap_driver_installed,
+            usbpcap_driver_service_state.as_deref(),
         ),
         error: None,
     }
@@ -2119,11 +2128,39 @@ fn usbpcap_driver_installed() -> bool {
         .any(|path| path.is_file())
 }
 
+fn usbpcap_driver_service_state() -> Option<String> {
+    if !cfg!(windows) {
+        return None;
+    }
+
+    let output = Command::new("sc.exe")
+        .args(["query", "USBPcap"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    usbpcap_service_state_from_sc_query(&stdout)
+}
+
+fn usbpcap_service_state_from_sc_query(output: &str) -> Option<String> {
+    output.lines().find_map(|line| {
+        let (_, value) = line.split_once("STATE")?;
+        value
+            .split_whitespace()
+            .find(|token| token.chars().any(|ch| ch.is_ascii_alphabetic()))
+            .map(|state| state.to_ascii_lowercase())
+    })
+}
+
 fn usbpcap_descriptor_capture_guidance(
     tshark_present: bool,
     usbpcap_interfaces_present: bool,
     usbpcap_extcap_present: bool,
     usbpcap_driver_installed: bool,
+    usbpcap_driver_service_state: Option<&str>,
 ) -> String {
     match (
         tshark_present,
@@ -2136,7 +2173,17 @@ fn usbpcap_descriptor_capture_guidance(
                 .to_string()
         }
         (true, false, true, true) => {
-            "USBPcap is installed, but Wireshark/tshark exposes no USBPcap interfaces; run the descriptor capture from an elevated shell or elevated Wireshark, reboot after driver installation if needed, then rerun hardware doctor".to_string()
+            match usbpcap_driver_service_state {
+                Some("stopped") => {
+                    "USBPcap is installed, but its driver service is stopped; run `sc start USBPcap` from an elevated shell or reboot after driver installation, then rerun hardware doctor".to_string()
+                }
+                Some("running") => {
+                    "USBPcap is installed and its driver service is running, but Wireshark/tshark exposes no USBPcap interfaces; reboot after driver installation or run the descriptor capture from elevated Wireshark, then rerun hardware doctor".to_string()
+                }
+                _ => {
+                    "USBPcap is installed, but Wireshark/tshark exposes no USBPcap interfaces; run the descriptor capture from an elevated shell or elevated Wireshark, reboot after driver installation if needed, then rerun hardware doctor".to_string()
+                }
+            }
         }
         (true, false, true, false) => {
             "USBPcap extcap is installed, but the USBPcap driver is not visible; repair the USBPcap install or reboot, then rerun hardware doctor".to_string()
@@ -2774,6 +2821,8 @@ struct UsbPcapDescriptorCaptureChecks {
     #[serde(skip_serializing_if = "Option::is_none")]
     usbpcap_extcap_path: Option<String>,
     usbpcap_driver_installed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    usbpcap_driver_service_state: Option<String>,
     interface_scan_attempted: bool,
     usbpcap_interfaces_present: bool,
     usbpcap_interface_count: usize,
@@ -3146,12 +3195,15 @@ mod tests {
                     usbpcap_extcap_present: false,
                     usbpcap_extcap_path: None,
                     usbpcap_driver_installed: false,
+                    usbpcap_driver_service_state: None,
                     interface_scan_attempted: true,
                     usbpcap_interfaces_present: false,
                     usbpcap_interface_count: 0,
                     usbpcap_interfaces: Vec::new(),
                     ready_for_usbpcap_descriptor_capture: false,
-                    access_guidance: usbpcap_descriptor_capture_guidance(true, false, false, false),
+                    access_guidance: usbpcap_descriptor_capture_guidance(
+                        true, false, false, false, None,
+                    ),
                     error: None,
                 },
             },
@@ -3340,11 +3392,33 @@ mod tests {
 
     #[test]
     fn usbpcap_guidance_reports_installed_but_inaccessible_capture_driver() {
-        let guidance = usbpcap_descriptor_capture_guidance(true, false, true, true);
+        let guidance =
+            usbpcap_descriptor_capture_guidance(true, false, true, true, Some("stopped"));
 
         assert!(guidance.contains("USBPcap is installed"));
-        assert!(guidance.contains("elevated"));
+        assert!(guidance.contains("driver service is stopped"));
+        assert!(guidance.contains("sc start USBPcap"));
         assert!(guidance.contains("rerun hardware doctor"));
+    }
+
+    #[test]
+    fn usbpcap_guidance_reports_running_service_without_interfaces() {
+        let guidance =
+            usbpcap_descriptor_capture_guidance(true, false, true, true, Some("running"));
+
+        assert!(guidance.contains("driver service is running"));
+        assert!(guidance.contains("reboot after driver installation"));
+        assert!(guidance.contains("rerun hardware doctor"));
+    }
+
+    #[test]
+    fn usbpcap_service_state_parser_reads_sc_query_state() {
+        let output = "\r\nSERVICE_NAME: USBPcap\r\n        TYPE               : 1  KERNEL_DRIVER\r\n        STATE              : 4  RUNNING\r\n";
+
+        assert_eq!(
+            usbpcap_service_state_from_sc_query(output),
+            Some("running".to_string())
+        );
     }
 
     #[test]
