@@ -148,6 +148,7 @@ The output log must prove:
 - final zero attempted and sent
 - the final record is zero output
 - output records link back to telemetry sequences and `ffb_scalar`
+- writer provenance includes the exact lane manifest HID endpoint selector
 
 ## Final Smoke-Ready Verification
 

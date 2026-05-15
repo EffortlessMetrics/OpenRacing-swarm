@@ -2909,6 +2909,9 @@ async fn simulator_ffb_smoke(request: SimulatorFfbSmokeRequest<'_>) -> Result<()
     let writer_product_id = output_provenance
         .as_ref()
         .map(|provenance| provenance.product_id.as_str());
+    let writer_endpoint_selector = output_provenance
+        .as_ref()
+        .map(|provenance| provenance.endpoint_selector.as_str());
     let writer_hardware_lane = output_provenance
         .as_ref()
         .map(|provenance| provenance.hardware_lane.as_str());
@@ -3023,6 +3026,12 @@ async fn simulator_ffb_smoke(request: SimulatorFfbSmokeRequest<'_>) -> Result<()
     receipt.insert(
         "writer_product_id".to_string(),
         writer_product_id.map(Value::from).unwrap_or(Value::Null),
+    );
+    receipt.insert(
+        "writer_endpoint_selector".to_string(),
+        writer_endpoint_selector
+            .map(Value::from)
+            .unwrap_or(Value::Null),
     );
     receipt.insert(
         "writer_hardware_lane".to_string(),
@@ -11871,6 +11880,8 @@ fn verify_simulator_ffb_gate(lane: &Path) -> BundleGateCheck {
         .map(Vec::is_empty)
         .unwrap_or(false);
     let r5_output_device = receipt_targets_r5_output_device(&receipt);
+    let writer_selector_matches_lane_endpoint =
+        simulator_ffb_receipt_writer_selector_matches_lane_endpoint(lane, &receipt);
 
     let safe = success
         && command_ok
@@ -11905,6 +11916,7 @@ fn verify_simulator_ffb_gate(lane: &Path) -> BundleGateCheck {
         && output_log_artifact_valid
         && faults_empty
         && r5_output_device
+        && writer_selector_matches_lane_endpoint
         && max_percent
             .map(|value| value.is_finite() && value > 0.0 && value <= 5.0)
             .unwrap_or(false)
@@ -11921,11 +11933,23 @@ fn verify_simulator_ffb_gate(lane: &Path) -> BundleGateCheck {
         BundleGateCheck::fail(
             "simulator_ffb_bounded",
             format!(
-                "success={success}, command_ok={command_ok}, game_present={}, telemetry_source={source:?}, hardware={hardware:?}, ffb_mode={ffb_mode:?}, descriptor_trusted={descriptor_trusted:?}, descriptor_trust_observed={descriptor_trust_observed}, descriptor_trust_valid={descriptor_trust_valid}, explicit_operator_override={explicit_operator_override:?}, direct_mode_allowed={direct_mode_allowed}, high_torque={high_torque:?}, no_high_torque={no_high_torque:?}, no_out_of_scope={no_out_of_scope}, no_hid_device_opened={no_hid_device_opened:?}, no_ffb_writes={no_ffb_writes:?}, hardware_prerequisites_validated={hardware_prerequisites_validated:?}, prerequisite_gates_valid={prerequisite_gates_valid}, prerequisite_artifacts_valid={prerequisite_artifacts_valid}, hardware_output_enabled={hardware_output_enabled:?}, watchdog_active={watchdog_active:?}, watchdog_timeout_ms={watchdog_timeout_ms}, final_zero_attempted={final_zero_attempted:?}, final_zero_sent={final_zero_sent:?}, final_zero_payload_safe={final_zero_payload_safe}, stop_cleared_output={stop_cleared_output:?}, pause_cleared_output={pause_cleared_output:?}, game_exit_cleared_output={game_exit_cleared_output:?}, mode_mismatch_cleared_output={mode_mismatch_cleared_output:?}, output_report_count={output_report_count}, nonzero_output_count={nonzero_output_count}, zero_output_count={zero_output_count}, simulator_telemetry_gate_valid={simulator_telemetry_gate_valid}, linked_telemetry_snapshot_count={linked_telemetry_snapshot_count:?}, output_log_provenance_valid={output_log_provenance_valid}, output_log_artifact_valid={output_log_artifact_valid}, faults_empty={faults_empty}, r5_output_device={r5_output_device}, max_output_percent={max_percent:?}, max_abs_output_percent={max_abs_output_percent:?}",
+                "success={success}, command_ok={command_ok}, game_present={}, telemetry_source={source:?}, hardware={hardware:?}, ffb_mode={ffb_mode:?}, descriptor_trusted={descriptor_trusted:?}, descriptor_trust_observed={descriptor_trust_observed}, descriptor_trust_valid={descriptor_trust_valid}, explicit_operator_override={explicit_operator_override:?}, direct_mode_allowed={direct_mode_allowed}, high_torque={high_torque:?}, no_high_torque={no_high_torque:?}, no_out_of_scope={no_out_of_scope}, no_hid_device_opened={no_hid_device_opened:?}, no_ffb_writes={no_ffb_writes:?}, hardware_prerequisites_validated={hardware_prerequisites_validated:?}, prerequisite_gates_valid={prerequisite_gates_valid}, prerequisite_artifacts_valid={prerequisite_artifacts_valid}, hardware_output_enabled={hardware_output_enabled:?}, watchdog_active={watchdog_active:?}, watchdog_timeout_ms={watchdog_timeout_ms}, final_zero_attempted={final_zero_attempted:?}, final_zero_sent={final_zero_sent:?}, final_zero_payload_safe={final_zero_payload_safe}, stop_cleared_output={stop_cleared_output:?}, pause_cleared_output={pause_cleared_output:?}, game_exit_cleared_output={game_exit_cleared_output:?}, mode_mismatch_cleared_output={mode_mismatch_cleared_output:?}, output_report_count={output_report_count}, nonzero_output_count={nonzero_output_count}, zero_output_count={zero_output_count}, simulator_telemetry_gate_valid={simulator_telemetry_gate_valid}, linked_telemetry_snapshot_count={linked_telemetry_snapshot_count:?}, output_log_provenance_valid={output_log_provenance_valid}, output_log_artifact_valid={output_log_artifact_valid}, faults_empty={faults_empty}, r5_output_device={r5_output_device}, writer_selector_matches_lane_endpoint={writer_selector_matches_lane_endpoint}, max_output_percent={max_percent:?}, max_abs_output_percent={max_abs_output_percent:?}",
                 !game.trim().is_empty()
             ),
         )
     }
+}
+
+fn simulator_ffb_receipt_writer_selector_matches_lane_endpoint(
+    lane: &Path,
+    receipt: &Value,
+) -> bool {
+    let Some(expected) = lane_manifest_r5_hid_observe_selector(lane) else {
+        return false;
+    };
+    json_string(receipt, "writer_endpoint_selector")
+        .map(|selector| selector.eq_ignore_ascii_case(&expected))
+        .unwrap_or(false)
 }
 
 fn simulator_ffb_prerequisite_gates(lane: &Path) -> Vec<BundleGateCheck> {
@@ -12444,6 +12468,7 @@ struct SimulatorFfbOutputProvenance {
     writer_session_id: String,
     device_path: String,
     product_id: String,
+    endpoint_selector: String,
     hardware_lane: String,
     writer_started_at_utc: String,
     writer_completed_at_utc: String,
@@ -12477,6 +12502,8 @@ fn simulator_ffb_output_artifact_provenance_matches(
         && json_string(receipt, "writer_session_id") == Some(provenance.writer_session_id.as_str())
         && json_string(receipt, "writer_device_path") == Some(provenance.device_path.as_str())
         && json_string(receipt, "writer_product_id") == Some(provenance.product_id.as_str())
+        && json_string(receipt, "writer_endpoint_selector")
+            == Some(provenance.endpoint_selector.as_str())
         && json_string(receipt, "writer_hardware_lane") == Some(provenance.hardware_lane.as_str())
         && json_string(receipt, "writer_started_at_utc")
             == Some(provenance.writer_started_at_utc.as_str())
@@ -12511,6 +12538,13 @@ fn simulator_ffb_output_provenance_for_records(
                     .get("device")
                     .and_then(|device| json_string(device, "product_id"))
             })?;
+        let endpoint_selector = json_string(record, "writer_endpoint_selector")
+            .or_else(|| json_string(record, "selector"))
+            .or_else(|| {
+                record
+                    .get("device")
+                    .and_then(|device| json_string(device, "selector"))
+            })?;
         let writer_started_at_utc = json_string(record, "writer_started_at_utc")?;
         let writer_completed_at_utc = json_string(record, "writer_completed_at_utc")?;
         let vendor_id = json_string(record, "vendor_id").or_else(|| {
@@ -12523,6 +12557,9 @@ fn simulator_ffb_output_provenance_for_records(
                 .get("device")
                 .and_then(|device| json_bool(device, "output_capable"))
         });
+        let endpoint_matches_lane = lane_manifest_r5_hid_observe_selector(lane)
+            .map(|expected| endpoint_selector.eq_ignore_ascii_case(&expected))
+            .unwrap_or(false);
 
         let record_safe = simulator_ffb_writer_command_is_safe(writer_command)
             && !writer_session_id.trim().is_empty()
@@ -12530,6 +12567,7 @@ fn simulator_ffb_output_provenance_for_records(
             && !device_path.trim().is_empty()
             && vendor_id == Some(MOZA_VENDOR_HEX)
             && parse_hex_selector(product_id) == Some(pid)
+            && endpoint_matches_lane
             && utc_timestamp_pair_is_ordered(writer_started_at_utc, writer_completed_at_utc)
             && output_capable == Some(true)
             && json_bool(record, "hardware_output_enabled") == Some(true)
@@ -12547,6 +12585,7 @@ fn simulator_ffb_output_provenance_for_records(
             writer_session_id: writer_session_id.to_string(),
             device_path: device_path.to_string(),
             product_id: product_id.to_string(),
+            endpoint_selector: endpoint_selector.to_string(),
             hardware_lane: hardware_lane.to_string(),
             writer_started_at_utc: writer_started_at_utc.to_string(),
             writer_completed_at_utc: writer_completed_at_utc.to_string(),
@@ -12556,6 +12595,7 @@ fn simulator_ffb_output_provenance_for_records(
                 || previous.writer_session_id != next.writer_session_id
                 || previous.device_path != next.device_path
                 || previous.product_id != next.product_id
+                || previous.endpoint_selector != next.endpoint_selector
                 || previous.hardware_lane != next.hardware_lane
                 || previous.writer_started_at_utc != next.writer_started_at_utc
                 || previous.writer_completed_at_utc != next.writer_completed_at_utc
@@ -13290,6 +13330,10 @@ fn simulator_ffb_receipt_template_value() -> Value {
     receipt.insert(
         "writer_product_id".to_string(),
         Value::String("0x0014".to_string()),
+    );
+    receipt.insert(
+        "writer_endpoint_selector".to_string(),
+        Value::String(String::new()),
     );
     receipt.insert("final_zero_attempted".to_string(), Value::Bool(false));
     receipt.insert("final_zero_sent".to_string(), Value::Bool(false));
@@ -17388,6 +17432,7 @@ mod tests {
             "writer_completed_at_utc": "2026-05-06T00:00:03Z",
             "writer_device_path": "\\\\?\\hid#vid_346e&pid_0014&mi_00",
             "writer_product_id": "0x0014",
+            "writer_endpoint_selector": "hid-0x346E-0x0014-if2-0x0001-0x0004",
             "writer_hardware_lane": writer_hardware_lane.display().to_string(),
             "vendor_id": "0x346E",
             "product_id": "0x0014",
@@ -20039,6 +20084,10 @@ mod tests {
             object.insert(
                 "writer_completed_at_utc".to_string(),
                 serde_json::json!("2026-05-06T00:00:03Z"),
+            );
+            object.insert(
+                "writer_endpoint_selector".to_string(),
+                serde_json::json!("hid-0x346E-0x0014-if2-0x0001-0x0004"),
             );
             object.insert("writer_hardware_lane".to_string(), Value::Null);
         }
@@ -25374,6 +25423,7 @@ mod tests {
             Some(SIMULATOR_FFB_WRITER_COMMAND)
         );
         assert_eq!(json_string(&ffb, "writer_started_at_utc"), Some(""));
+        assert_eq!(json_string(&ffb, "writer_endpoint_selector"), Some(""));
         assert_eq!(
             json_string(&ffb, "input_telemetry_recorder_session_id"),
             Some("")
@@ -25456,6 +25506,10 @@ mod tests {
         assert_eq!(
             json_string(&receipt, "writer_command"),
             Some(SIMULATOR_FFB_WRITER_COMMAND)
+        );
+        assert_eq!(
+            json_string(&receipt, "writer_endpoint_selector"),
+            Some("hid-0x346E-0x0014-if2-0x0001-0x0004")
         );
         assert!(path_value_matches(
             dir.path(),
@@ -25597,6 +25651,136 @@ mod tests {
         assert!(
             gate.details.contains("output_log_provenance_valid=false"),
             "expected stale writer lane provenance failure, got {}",
+            gate.details
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_simulator_ffb_gate_requires_writer_endpoint_selector() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_simulator_artifacts(dir.path())?;
+
+        write_simulator_ffb_output_jsonl_mutated(
+            &dir.path().join("simulator-ffb-output.jsonl"),
+            240,
+            180,
+            60,
+            |_, record| {
+                if let Some(object) = record.as_object_mut() {
+                    object.remove("writer_endpoint_selector");
+                }
+            },
+        )?;
+        write_test_json_file(
+            &dir.path().join("simulator-ffb-smoke.json"),
+            &simulator_ffb_receipt(),
+        )?;
+
+        let gate = verify_simulator_ffb_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details.contains("output_log_provenance_valid=false"),
+            "expected missing writer endpoint selector to fail output provenance, got {}",
+            gate.details
+        );
+
+        write_simulator_ffb_output_jsonl_mutated(
+            &dir.path().join("simulator-ffb-output.jsonl"),
+            240,
+            180,
+            60,
+            |_, record| {
+                record["writer_endpoint_selector"] = serde_json::json!("0x346E:0x0014");
+            },
+        )?;
+        write_test_json_file(
+            &dir.path().join("simulator-ffb-smoke.json"),
+            &simulator_ffb_receipt(),
+        )?;
+
+        let gate = verify_simulator_ffb_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details.contains("output_log_provenance_valid=false"),
+            "expected loose writer endpoint selector to fail output provenance, got {}",
+            gate.details
+        );
+
+        write_simulator_ffb_output_jsonl_mutated(
+            &dir.path().join("simulator-ffb-output.jsonl"),
+            240,
+            180,
+            60,
+            |_, record| {
+                record["writer_endpoint_selector"] =
+                    serde_json::json!("hid-0x346E-0x0014-if1-0x0001-0x0004");
+            },
+        )?;
+        write_test_json_file(
+            &dir.path().join("simulator-ffb-smoke.json"),
+            &simulator_ffb_receipt(),
+        )?;
+
+        let gate = verify_simulator_ffb_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details.contains("output_log_provenance_valid=false"),
+            "expected wrong-interface writer endpoint selector to fail output provenance, got {}",
+            gate.details
+        );
+
+        write_simulator_ffb_output_jsonl(
+            &dir.path().join("simulator-ffb-output.jsonl"),
+            240,
+            180,
+            60,
+        )?;
+        let mut receipt = simulator_ffb_receipt();
+        if let Some(object) = receipt.as_object_mut() {
+            object.remove("writer_endpoint_selector");
+        }
+        write_test_json_file(&dir.path().join("simulator-ffb-smoke.json"), &receipt)?;
+
+        let gate = verify_simulator_ffb_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details
+                .contains("writer_selector_matches_lane_endpoint=false"),
+            "expected missing parent writer endpoint selector to fail lane matching, got {}",
+            gate.details
+        );
+
+        let mut receipt = simulator_ffb_receipt();
+        receipt["writer_endpoint_selector"] = serde_json::json!("0x346E:0x0014");
+        write_test_json_file(&dir.path().join("simulator-ffb-smoke.json"), &receipt)?;
+
+        let gate = verify_simulator_ffb_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details
+                .contains("writer_selector_matches_lane_endpoint=false"),
+            "expected loose parent writer endpoint selector to fail lane matching, got {}",
+            gate.details
+        );
+
+        let mut receipt = simulator_ffb_receipt();
+        receipt["writer_endpoint_selector"] =
+            serde_json::json!("hid-0x346E-0x0014-if1-0x0001-0x0004");
+        write_test_json_file(&dir.path().join("simulator-ffb-smoke.json"), &receipt)?;
+
+        let gate = verify_simulator_ffb_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details
+                .contains("writer_selector_matches_lane_endpoint=false"),
+            "expected wrong-interface parent writer endpoint selector to fail lane matching, got {}",
             gate.details
         );
         Ok(())
