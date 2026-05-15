@@ -5622,10 +5622,12 @@ fn push_passive_next_commands(
                 .to_string(),
         );
     }
-    commands.push(format!(
-        "wheelctl moza verify-bundle --lane {lane_arg} --stage passive --json-out {}",
-        lane_path_arg(lane, verification_receipt_path(MozaBundleStage::Passive))
-    ));
+    if !stored_verification_receipt_success(lane, MozaBundleStage::Passive) {
+        commands.push(format!(
+            "wheelctl moza verify-bundle --lane {lane_arg} --stage passive --json-out {}",
+            lane_path_arg(lane, verification_receipt_path(MozaBundleStage::Passive))
+        ));
+    }
     if bundle_gate_checks_passed(
         gates,
         &[
@@ -5641,14 +5643,18 @@ fn push_passive_next_commands(
             "fixture_promotion",
         ],
     ) {
-        commands.push(format!(
-            "wheelctl moza promote-manifest --lane {lane_arg} --stage passive --json-out {}",
-            lane_path_arg(lane, promotion_receipt_path(MozaBundleStage::Passive))
-        ));
-        commands.push(format!(
-            "wheelctl moza audit-lane --lane {lane_arg} --stage passive --json-out {}",
-            lane_path_arg(lane, audit_receipt_path(MozaBundleStage::Passive))
-        ));
+        if !stored_manifest_promotion_receipt_success(lane, MozaBundleStage::Passive) {
+            commands.push(format!(
+                "wheelctl moza promote-manifest --lane {lane_arg} --stage passive --json-out {}",
+                lane_path_arg(lane, promotion_receipt_path(MozaBundleStage::Passive))
+            ));
+        }
+        if !stored_lane_audit_receipt_success(lane, MozaBundleStage::Passive) {
+            commands.push(format!(
+                "wheelctl moza audit-lane --lane {lane_arg} --stage passive --json-out {}",
+                lane_path_arg(lane, audit_receipt_path(MozaBundleStage::Passive))
+            ));
+        }
     }
 }
 
@@ -5674,6 +5680,73 @@ fn bundle_gate_checks_passed(gates: &[BundleGateCheck], names: &[&str]) -> bool 
     names
         .iter()
         .all(|name| bundle_gate_check_passed(gates, name))
+}
+
+fn stored_verification_receipt_success(lane: &Path, stage: MozaBundleStage) -> bool {
+    let Ok(receipt) = read_json_value(lane, verification_receipt_path(stage)) else {
+        return false;
+    };
+
+    json_bool(&receipt, "success") == Some(true)
+        && json_string(&receipt, "command") == Some("wheelctl moza verify-bundle")
+        && json_string(&receipt, "requested_stage") == Some(stage_label(stage))
+        && json_u64(&receipt, "missing_artifacts") == Some(0)
+        && json_u64(&receipt, "invalid_artifacts") == Some(0)
+        && json_u64(&receipt, "failed_gates") == Some(0)
+        && json_bool(&receipt, "no_hid_device_opened") == Some(true)
+        && json_bool(&receipt, "no_ffb_writes") == Some(true)
+        && no_out_of_scope_device_commands(&receipt)
+}
+
+fn stored_manifest_promotion_receipt_success(lane: &Path, stage: MozaBundleStage) -> bool {
+    let Ok(receipt) = read_json_value(lane, promotion_receipt_path(stage)) else {
+        return false;
+    };
+
+    let (completion_state, hardware_validated, simulator_validated) =
+        manifest_promotion_values(stage);
+    json_bool(&receipt, "success") == Some(true)
+        && json_string(&receipt, "command") == Some("wheelctl moza promote-manifest")
+        && json_string(&receipt, "stage") == Some(stage_label(stage))
+        && json_string(&receipt, "completion_state") == Some(completion_state)
+        && json_bool(&receipt, "hardware_validated") == Some(hardware_validated)
+        && json_bool(&receipt, "simulator_validated") == Some(simulator_validated)
+        && json_bool(&receipt, "high_torque_validated") == Some(false)
+        && json_bool(&receipt, "release_ready") == Some(false)
+        && json_bool(&receipt, "no_hid_device_opened") == Some(true)
+        && json_bool(&receipt, "no_ffb_writes") == Some(true)
+        && no_out_of_scope_device_commands(&receipt)
+        && promotion_verification_summary_ok(receipt.get("verification_before"), stage_label(stage))
+        && promotion_verification_summary_ok(receipt.get("verification_after"), stage_label(stage))
+}
+
+fn stored_lane_audit_receipt_success(lane: &Path, stage: MozaBundleStage) -> bool {
+    let Ok(receipt) = read_json_value(lane, audit_receipt_path(stage)) else {
+        return false;
+    };
+
+    let receipt_checks_ok = receipt
+        .get("receipt_checks")
+        .and_then(Value::as_array)
+        .map(|checks| {
+            let expected_check_count = audit_stages_through(stage).len() * 2;
+            checks.len() == expected_check_count
+                && checks
+                    .iter()
+                    .all(|check| json_string(check, "status") == Some("pass"))
+        })
+        .unwrap_or(false);
+
+    json_bool(&receipt, "success") == Some(true)
+        && json_string(&receipt, "command") == Some("wheelctl moza audit-lane")
+        && json_string(&receipt, "requested_stage") == Some(stage_label(stage))
+        && json_bool(&receipt, "live_verification_success") == Some(true)
+        && json_u64(&receipt, "missing_receipts") == Some(0)
+        && json_u64(&receipt, "invalid_receipts") == Some(0)
+        && receipt_checks_ok
+        && json_bool(&receipt, "no_hid_device_opened") == Some(true)
+        && json_bool(&receipt, "no_ffb_writes") == Some(true)
+        && no_out_of_scope_device_commands(&receipt)
 }
 
 fn passive_stage_gates_passed(gates: &[BundleGateCheck]) -> bool {
@@ -27390,6 +27463,16 @@ mod tests {
             !joined.contains("--strategy direct-report0x20"),
             "live R5 V1 descriptor does not expose direct report 0x20, so next_commands must not suggest the direct strategy: {joined}"
         );
+        for stale in [
+            "--stage passive",
+            "manifest-promotion-passive.json",
+            "lane-audit-passive.json",
+        ] {
+            assert!(
+                !joined.contains(stale),
+                "live R5 V1 zero-stage next_commands should not repeat completed passive-stage guidance {stale}: {joined}"
+            );
+        }
         Ok(())
     }
 
