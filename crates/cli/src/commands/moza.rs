@@ -5750,21 +5750,23 @@ fn passive_capture_next_command_hint(relative_path: &str) -> (&'static str, u64)
 
 fn push_zero_next_commands(lane: &Path, gates: &[BundleGateCheck], commands: &mut Vec<String>) {
     let lane_arg = command_arg(&lane.display().to_string());
+    let strategy = zero_next_command_strategy(lane);
+    let strategy_arg = zero_output_strategy_command_arg(strategy);
     if !bundle_gate_check_passed(gates, "zero_torque_real_hardware") {
         commands.push(format!(
-            "wheelctl moza zero --device <r5> --lane {lane_arg} --confirm-zero-torque --repeat 100 --hz 1000 --json-out {}",
+            "wheelctl moza zero --device <r5> --lane {lane_arg} --strategy {strategy_arg} --confirm-zero-torque --repeat 100 --hz 1000 --json-out {}",
             lane_path_arg(lane, "zero-torque-proof.json")
         ));
     }
     if !bundle_gate_check_passed(gates, "watchdog_zero_output") {
         commands.push(format!(
-            "wheelctl moza watchdog-proof --device <r5> --lane {lane_arg} --confirm-watchdog-test --pre-zero-count 3 --watchdog-timeout-ms 100 --json-out {}",
+            "wheelctl moza watchdog-proof --device <r5> --lane {lane_arg} --strategy {strategy_arg} --confirm-watchdog-test --pre-zero-count 3 --watchdog-timeout-ms 100 --json-out {}",
             lane_path_arg(lane, "watchdog-proof.json")
         ));
     }
     if !bundle_gate_check_passed(gates, "disconnect_final_zero") {
         commands.push(format!(
-            "wheelctl moza disconnect-proof --device <r5> --lane {lane_arg} --confirm-disconnect-test --max-duration-ms 10000 --json-out {}",
+            "wheelctl moza disconnect-proof --device <r5> --lane {lane_arg} --strategy {strategy_arg} --confirm-disconnect-test --max-duration-ms 10000 --json-out {}",
             lane_path_arg(lane, "disconnect-proof.json")
         ));
     }
@@ -5781,6 +5783,39 @@ fn push_zero_next_commands(lane: &Path, gates: &[BundleGateCheck], commands: &mu
             "wheelctl moza audit-lane --lane {lane_arg} --stage zero --json-out {}",
             lane_path_arg(lane, audit_receipt_path(MozaBundleStage::Zero))
         ));
+    }
+}
+
+fn zero_next_command_strategy(lane: &Path) -> MozaZeroOutputStrategy {
+    if let Ok(summary) = validate_zero_proof_for_zero_output(&lane.join("zero-torque-proof.json")) {
+        match summary.zero_output_strategy.as_str() {
+            "pidff_device_control_stop_all" => {
+                return MozaZeroOutputStrategy::PidffStopAll;
+            }
+            "direct_report_0x20" => {
+                return MozaZeroOutputStrategy::DirectReport0x20;
+            }
+            _ => {}
+        }
+    }
+
+    if validate_zero_output_strategy_metadata(lane, MozaZeroOutputStrategy::DirectReport0x20)
+        .is_ok()
+    {
+        MozaZeroOutputStrategy::DirectReport0x20
+    } else if validate_zero_output_strategy_metadata(lane, MozaZeroOutputStrategy::PidffStopAll)
+        .is_ok()
+    {
+        MozaZeroOutputStrategy::PidffStopAll
+    } else {
+        MozaZeroOutputStrategy::DirectReport0x20
+    }
+}
+
+fn zero_output_strategy_command_arg(strategy: MozaZeroOutputStrategy) -> &'static str {
+    match strategy {
+        MozaZeroOutputStrategy::DirectReport0x20 => "direct-report0x20",
+        MozaZeroOutputStrategy::PidffStopAll => "pidff-stop-all",
     }
 }
 
@@ -27155,6 +27190,7 @@ mod tests {
         let joined = receipt.next_commands.join("\n");
         for expected in [
             "wheelctl moza zero --device",
+            "--strategy direct-report0x20",
             "wheelctl moza watchdog-proof",
             "wheelctl moza disconnect-proof",
             "--stage zero",
@@ -27174,6 +27210,34 @@ mod tests {
                 "zero-stage next_commands must not include {forbidden} before zero gates pass: {joined}"
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_zero_next_commands_use_pidff_when_direct_report_is_unavailable() -> TestResult
+    {
+        let lane =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ci/hardware/moza-r5/2026-05-13");
+
+        let receipt = verify_bundle_dir(&lane, MozaBundleStage::Zero);
+
+        assert!(!receipt.success);
+        let joined = receipt.next_commands.join("\n");
+        for expected in [
+            "wheelctl moza zero --device",
+            "wheelctl moza watchdog-proof",
+            "wheelctl moza disconnect-proof",
+            "--strategy pidff-stop-all",
+        ] {
+            assert!(
+                joined.contains(expected),
+                "live R5 V1 zero-stage next_commands should include {expected}: {joined}"
+            );
+        }
+        assert!(
+            !joined.contains("--strategy direct-report0x20"),
+            "live R5 V1 descriptor does not expose direct report 0x20, so next_commands must not suggest the direct strategy: {joined}"
+        );
         Ok(())
     }
 
