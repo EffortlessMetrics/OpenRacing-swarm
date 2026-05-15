@@ -40,7 +40,11 @@ const HIGH_TORQUE_FEATURE_REPORT_ID: &str = "0x02";
 const START_REPORTING_FEATURE_REPORT_ID: &str = "0x03";
 const FFB_MODE_FEATURE_REPORT_ID: &str = "0x11";
 const PIDFF_SET_EFFECT_REPORT_ID: &str = "0x01";
+const PIDFF_SET_EFFECT_REPORT_ID_BYTE: u8 = 0x01;
 const PIDFF_SET_EFFECT_GENERIC_REPORT_LEN: usize = 14;
+const PIDFF_SET_EFFECT_R5_V1_REPORT_LEN: usize = 22;
+const PIDFF_EFFECT_TYPE_CONSTANT_FORCE: u8 = 0x01;
+const PIDFF_TRIGGER_BUTTON_NONE: u8 = 0xFF;
 const PIDFF_SET_CONSTANT_FORCE_REPORT_ID: &str = "0x05";
 const PIDFF_SET_CONSTANT_FORCE_REPORT_LEN: usize = 4;
 const PIDFF_EFFECT_OPERATION_REPORT_ID: &str = "0x0A";
@@ -3660,6 +3664,34 @@ fn low_torque_payload_for_pid_percent(pid: u16, percent: f32) -> ([u8; REPORT_LE
     (payload, torque_nm)
 }
 
+fn r5_v1_pidff_set_effect_payload(
+    block_index: u8,
+    effect_type: u8,
+    duration_ms: u16,
+    gain: u8,
+    direction_x: u16,
+    direction_y: u16,
+) -> [u8; PIDFF_SET_EFFECT_R5_V1_REPORT_LEN] {
+    let mut payload = [0_u8; PIDFF_SET_EFFECT_R5_V1_REPORT_LEN];
+    payload[0] = PIDFF_SET_EFFECT_REPORT_ID_BYTE;
+    payload[1] = block_index;
+    payload[2] = effect_type;
+    payload[3..5].copy_from_slice(&duration_ms.to_le_bytes());
+    payload[11] = gain;
+    payload[12] = PIDFF_TRIGGER_BUTTON_NONE;
+    payload[13] = 0b0000_0101; // X axis enabled and direction enabled; other bits are padding.
+    payload[14..16].copy_from_slice(&direction_x.to_le_bytes());
+    payload[16..18].copy_from_slice(&direction_y.to_le_bytes());
+    payload
+}
+
+fn r5_v1_pidff_set_effect_encoder_available() -> bool {
+    let payload = r5_v1_pidff_set_effect_payload(1, PIDFF_EFFECT_TYPE_CONSTANT_FORCE, 150, 1, 0, 0);
+    payload.len() == PIDFF_SET_EFFECT_R5_V1_REPORT_LEN
+        && payload[0] == PIDFF_SET_EFFECT_REPORT_ID_BYTE
+        && payload[12] == PIDFF_TRIGGER_BUTTON_NONE
+}
+
 fn low_torque_ladder_for_pid(
     pid: u16,
     max_percent: f32,
@@ -6282,12 +6314,8 @@ fn pidff_bounded_effect_descriptor_blockers(lane: &Path) -> Vec<&'static str> {
     ) {
         blockers.push("descriptor.json does not prove PIDFF Block Free report 0x0B metadata");
     }
-    if !lane_descriptor_has_output_report(
-        lane,
-        PIDFF_SET_EFFECT_REPORT_ID,
-        PIDFF_SET_EFFECT_GENERIC_REPORT_LEN,
-    ) {
-        blockers.push("descriptor.json does not prove a descriptor-compatible PIDFF Set Effect encoder; live R5 V1 report 0x01 uses a non-generic length and needs an R5-shaped encoder before nonzero PIDFF writes");
+    if !lane_descriptor_has_pidff_set_effect_encoder(lane) {
+        blockers.push("descriptor.json does not prove a descriptor-compatible PIDFF Set Effect encoder; expected generic report 0x01 len 14 or live R5 V1 report 0x01 len 22 metadata");
     }
     for (report_id, label) in [
         (
@@ -11753,6 +11781,20 @@ fn pidff_low_torque_command_log_is_safe(
 
 fn lane_descriptor_has_output_report(lane: &Path, report_id: &str, report_len: usize) -> bool {
     lane_descriptor_has_report_record(lane, "output_reports", report_id, report_len)
+}
+
+fn lane_descriptor_has_pidff_set_effect_encoder(lane: &Path) -> bool {
+    lane_descriptor_has_output_report(
+        lane,
+        PIDFF_SET_EFFECT_REPORT_ID,
+        PIDFF_SET_EFFECT_GENERIC_REPORT_LEN,
+    ) || (lane_manifest_r5_pid(lane) == Some(product_ids::R5_V1)
+        && r5_v1_pidff_set_effect_encoder_available()
+        && lane_descriptor_has_output_report(
+            lane,
+            PIDFF_SET_EFFECT_REPORT_ID,
+            PIDFF_SET_EFFECT_R5_V1_REPORT_LEN,
+        ))
 }
 
 fn lane_descriptor_has_feature_report_metadata(lane: &Path, report_id: &str) -> bool {
@@ -21090,6 +21132,42 @@ mod tests {
         }))
     }
 
+    #[test]
+    fn r5_v1_pidff_set_effect_payload_matches_live_descriptor_layout() -> TestResult {
+        let payload =
+            r5_v1_pidff_set_effect_payload(1, PIDFF_EFFECT_TYPE_CONSTANT_FORCE, 150, 3, 9000, 0);
+
+        assert_eq!(payload.len(), PIDFF_SET_EFFECT_R5_V1_REPORT_LEN);
+        assert_eq!(
+            bytes_hex_compact(&payload),
+            "010101960000000000000003FF052823000000000000"
+        );
+        assert_eq!(payload[0], PIDFF_SET_EFFECT_REPORT_ID_BYTE);
+        assert_eq!(payload[1], 1);
+        assert_eq!(payload[2], PIDFF_EFFECT_TYPE_CONSTANT_FORCE);
+        assert_eq!(&payload[3..5], &150_u16.to_le_bytes());
+        assert_eq!(payload[11], 3);
+        assert_eq!(payload[12], PIDFF_TRIGGER_BUTTON_NONE);
+        assert_eq!(payload[13], 0b0000_0101);
+        assert_eq!(&payload[14..16], &9000_u16.to_le_bytes());
+        assert_eq!(&payload[18..22], &[0, 0, 0, 0]);
+        Ok(())
+    }
+
+    #[test]
+    fn pidff_descriptor_blockers_accept_live_r5_v1_set_effect_shape() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_pidff_low_torque_prerequisite_receipts(dir.path())?;
+
+        let blockers = pidff_low_torque_frontier_blockers(dir.path());
+
+        assert_eq!(
+            blockers,
+            vec!["pidff bounded-effect writer is not implemented for real hardware yet"]
+        );
+        Ok(())
+    }
+
     fn pit_house_receipt() -> Value {
         serde_json::json!({
             "success": true,
@@ -24940,8 +25018,8 @@ mod tests {
         assert_eq!(gate.status, "fail");
         assert!(
             gate.details.contains("pidff_effect_setup_proven")
-                && gate.details.contains("pidff_effect_frontier_clear=false"),
-            "PIDFF low-torque receipts must not pass until effect setup/allocation proof is explicit: {}",
+                && gate.details.contains("pidff_effect_frontier_clear=true"),
+            "PIDFF low-torque receipts must not pass until effect setup/allocation proof is explicit, even after descriptor encoder metadata is clear: {}",
             gate.details
         );
         Ok(())
@@ -30381,8 +30459,8 @@ mod tests {
         assert!(
             pidff_blockers
                 .iter()
-                .any(|blocker| blocker.contains("Set Effect encoder")),
-            "live R5 V1 PIDFF low-torque frontier should require an R5-shaped Set Effect encoder: {pidff_blockers:?}"
+                .all(|blocker| !blocker.contains("Set Effect encoder")),
+            "live R5 V1 descriptor should now satisfy the R5-shaped Set Effect encoder: {pidff_blockers:?}"
         );
         assert!(
             pidff_blockers
