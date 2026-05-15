@@ -306,6 +306,8 @@ wheelctl moza audit-lane --lane ci/hardware/moza-r5/<date> --stage zero --json-o
 
 The zero-stage verifier requires detailed `watchdog-proof.json` and `disconnect-proof.json` receipts. These must come from `wheelctl moza watchdog-proof` and `wheelctl moza disconnect-proof`, not placeholders. Zero, watchdog, and disconnect receipts must include a `receipt_path` that resolves to the exact dated-lane artifact being verified plus a valid UTC `generated_at_utc`, so copied receipts from another dated lane are rejected.
 
+The disconnect proof is an operator-coordinated bench action. Before starting it, confirm the wheel is clear, the power cutoff is understood, no simulator or vendor FFB source is active, and the selected R5 endpoint is connected. After `wheelctl moza disconnect-proof` starts, unplug the R5 USB during the `--max-duration-ms` window and leave it unplugged until the command exits. Do not reconnect during the proof window; re-enumerate the R5 with observe-only tooling before any later staged init, low-torque, or simulator work.
+
 Done when:
 
 - At least 100 scheduled zero reports are logged.
