@@ -1978,7 +1978,7 @@ async fn disconnect_proof(
                 if let Some(error) = short_zero_output_write_error(zero_payload.report_len, n) {
                     receipt.write_errors += 1;
                     receipt.abort_reason = Some(error.clone());
-                    receipt.record_command(ZeroTorqueCommandRecord::partial(
+                    receipt.record_disconnect_command(ZeroTorqueCommandRecord::partial(
                         sequence,
                         "scheduled_zero",
                         started_at,
@@ -1989,7 +1989,7 @@ async fn disconnect_proof(
                     break;
                 }
                 receipt.writes_ok += 1;
-                receipt.record_command(ZeroTorqueCommandRecord::ok(
+                receipt.record_disconnect_command(ZeroTorqueCommandRecord::ok(
                     sequence,
                     "scheduled_zero",
                     started_at,
@@ -2002,7 +2002,7 @@ async fn disconnect_proof(
                 receipt.disconnect_observed = true;
                 let error = e.to_string();
                 receipt.abort_reason = Some(format!("hid_write_error_disconnect_observed: {e}"));
-                receipt.record_command(ZeroTorqueCommandRecord::error(
+                receipt.record_disconnect_command(ZeroTorqueCommandRecord::error(
                     sequence,
                     "disconnect_probe",
                     started_at,
@@ -2028,7 +2028,7 @@ async fn disconnect_proof(
             if let Some(error) = short_zero_output_write_error(zero_payload.report_len, n) {
                 receipt.write_errors += 1;
                 receipt.final_zero_error = Some(error.clone());
-                receipt.record_command(ZeroTorqueCommandRecord::partial(
+                receipt.record_disconnect_command(ZeroTorqueCommandRecord::partial(
                     receipt.write_attempts,
                     "final_zero",
                     started_at,
@@ -2039,7 +2039,7 @@ async fn disconnect_proof(
             } else {
                 receipt.final_zero_sent = true;
                 receipt.writes_ok += 1;
-                receipt.record_command(ZeroTorqueCommandRecord::ok(
+                receipt.record_disconnect_command(ZeroTorqueCommandRecord::ok(
                     receipt.write_attempts,
                     "final_zero",
                     started_at,
@@ -2052,7 +2052,7 @@ async fn disconnect_proof(
             receipt.write_errors += 1;
             let error = e.to_string();
             receipt.final_zero_error = Some(error.clone());
-            receipt.record_command(ZeroTorqueCommandRecord::error(
+            receipt.record_disconnect_command(ZeroTorqueCommandRecord::error(
                 receipt.write_attempts,
                 "final_zero",
                 started_at,
@@ -9707,6 +9707,10 @@ struct DisconnectCommandLogSummary {
 }
 
 fn disconnect_command_log_summary(receipt: &Value) -> Option<DisconnectCommandLogSummary> {
+    if receipt.get("command_log_summary").is_some() {
+        return bounded_disconnect_command_log_summary(receipt);
+    }
+
     let records = receipt.get("command_log").and_then(Value::as_array)?;
     if records.len() < 2 {
         return None;
@@ -9771,6 +9775,105 @@ fn disconnect_command_log_summary(receipt: &Value) -> Option<DisconnectCommandLo
     }
 
     if disconnect_error_seen && final_zero_seen {
+        Some(DisconnectCommandLogSummary {
+            scheduled_zero_writes,
+            final_zero_sent,
+            final_zero_error,
+        })
+    } else {
+        None
+    }
+}
+
+fn bounded_disconnect_command_log_summary(receipt: &Value) -> Option<DisconnectCommandLogSummary> {
+    let summary = receipt.get("command_log_summary")?;
+    let total_records = json_u64(summary, "total_records")?;
+    let logged_records = json_u64(summary, "logged_records")?;
+    let omitted_records = json_u64(summary, "omitted_records")?;
+    let scheduled_zero_writes = json_u64(summary, "scheduled_zero_writes")?;
+    let disconnect_probe_seen = json_bool(summary, "disconnect_probe_seen")?;
+    let final_zero_seen = json_bool(summary, "final_zero_seen")?;
+    let final_zero_sent = json_bool(summary, "final_zero_sent")?;
+    let final_zero_error = json_bool(summary, "final_zero_error")?;
+    let records = receipt.get("command_log").and_then(Value::as_array)?;
+
+    let logged_records_len = u64::try_from(records.len()).ok()?;
+    if logged_records != logged_records_len
+        || total_records != logged_records.saturating_add(omitted_records)
+        || total_records != scheduled_zero_writes.saturating_add(2)
+        || !disconnect_probe_seen
+        || !final_zero_seen
+        || final_zero_sent == final_zero_error
+    {
+        return None;
+    }
+
+    let mut disconnect_error_seen = false;
+    let mut final_zero_log_seen = false;
+    let mut final_zero_log_sent = false;
+    let mut final_zero_log_error = false;
+    let mut previous_sequence = None;
+    let mut logged_scheduled_zero_writes = 0u64;
+    for (index, record) in records.iter().enumerate() {
+        if !zero_payload_record_is_safe(record) {
+            return None;
+        }
+        let sequence = json_u64(record, "sequence")?;
+        if previous_sequence.is_some_and(|previous| sequence <= previous) {
+            return None;
+        }
+        previous_sequence = Some(sequence);
+
+        match json_string(record, "kind") {
+            Some("scheduled_zero") => {
+                if json_string(record, "result") != Some("ok")
+                    || !zero_payload_write_len_is_accepted(record)
+                    || disconnect_error_seen
+                    || final_zero_log_seen
+                    || logged_scheduled_zero_writes >= scheduled_zero_writes
+                {
+                    return None;
+                }
+                logged_scheduled_zero_writes = logged_scheduled_zero_writes.saturating_add(1);
+            }
+            Some("disconnect_probe") => {
+                if json_string(record, "result") != Some("error")
+                    || record.get("error").and_then(Value::as_str).is_none()
+                    || disconnect_error_seen
+                    || final_zero_log_seen
+                {
+                    return None;
+                }
+                disconnect_error_seen = true;
+            }
+            Some("final_zero") => {
+                if index + 1 != records.len() || !disconnect_error_seen || final_zero_log_seen {
+                    return None;
+                }
+                match json_string(record, "result") {
+                    Some("ok") => {
+                        if !zero_payload_write_len_is_accepted(record) {
+                            return None;
+                        }
+                        final_zero_log_sent = true;
+                    }
+                    Some("error") => {
+                        record.get("error").and_then(Value::as_str)?;
+                        final_zero_log_error = true;
+                    }
+                    _ => return None,
+                }
+                final_zero_log_seen = true;
+            }
+            _ => return None,
+        }
+    }
+
+    if disconnect_error_seen
+        && final_zero_log_seen
+        && final_zero_log_sent == final_zero_sent
+        && final_zero_log_error == final_zero_error
+    {
         Some(DisconnectCommandLogSummary {
             scheduled_zero_writes,
             final_zero_sent,
@@ -15364,10 +15467,46 @@ struct ZeroTorqueProofReceipt {
     final_zero_error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     abort_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    command_log_summary: Option<ZeroTorqueCommandLogSummaryReceipt>,
     command_log: Vec<ZeroTorqueCommandRecord>,
     notes: Vec<String>,
     #[serde(skip)]
     zero_payload: ZeroOutputPayload,
+}
+
+const DISCONNECT_COMMAND_LOG_HEAD_RECORDS: u32 = 3;
+
+#[derive(Debug, Default, Serialize)]
+struct ZeroTorqueCommandLogSummaryReceipt {
+    total_records: u32,
+    logged_records: u32,
+    omitted_records: u32,
+    scheduled_zero_writes: u32,
+    disconnect_probe_seen: bool,
+    final_zero_seen: bool,
+    final_zero_sent: bool,
+    final_zero_error: bool,
+}
+
+impl ZeroTorqueCommandLogSummaryReceipt {
+    fn observe(&mut self, record: &ZeroTorqueCommandRecord) {
+        self.total_records = self.total_records.saturating_add(1);
+        match record.kind {
+            "scheduled_zero" if record.result == "ok" => {
+                self.scheduled_zero_writes = self.scheduled_zero_writes.saturating_add(1);
+            }
+            "disconnect_probe" => {
+                self.disconnect_probe_seen = true;
+            }
+            "final_zero" => {
+                self.final_zero_seen = true;
+                self.final_zero_sent = record.result == "ok";
+                self.final_zero_error = record.result == "error";
+            }
+            _ => {}
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -15903,6 +16042,7 @@ impl ZeroTorqueProofReceipt {
             final_zero_sent: false,
             final_zero_error: None,
             abort_reason: None,
+            command_log_summary: None,
             command_log: Vec::new(),
             notes: vec![
                 note.to_string(),
@@ -15913,11 +16053,31 @@ impl ZeroTorqueProofReceipt {
     }
 
     fn record_command(&mut self, record: ZeroTorqueCommandRecord) {
+        self.account_command_record(&record);
+        self.command_log.push(record);
+    }
+
+    fn record_disconnect_command(&mut self, record: ZeroTorqueCommandRecord) {
+        self.account_command_record(&record);
+        let summary = self
+            .command_log_summary
+            .get_or_insert_with(Default::default);
+        summary.observe(&record);
+        let keep_record = record.kind != "scheduled_zero"
+            || summary.scheduled_zero_writes <= DISCONNECT_COMMAND_LOG_HEAD_RECORDS;
+        if keep_record {
+            summary.logged_records = summary.logged_records.saturating_add(1);
+            self.command_log.push(record);
+        } else {
+            summary.omitted_records = summary.omitted_records.saturating_add(1);
+        }
+    }
+
+    fn account_command_record(&mut self, record: &ZeroTorqueCommandRecord) {
         if record.torque_raw != 0 || record.flags != 0 || record.motor_enabled {
             self.non_zero_payloads += 1;
             self.no_nonzero_torque = false;
         }
-        self.command_log.push(record);
     }
 
     fn set_receipt_path(&mut self, path: Option<&Path>) {
@@ -19245,6 +19405,40 @@ mod tests {
         })
     }
 
+    fn bounded_disconnect_receipt() -> TestResult<Value> {
+        let scheduled_count = 10u32;
+        let full_log = disconnect_command_log(scheduled_count);
+        let mut bounded_log = Vec::new();
+        bounded_log.extend(full_log.iter().take(3).cloned());
+        let disconnect_record = full_log
+            .get(scheduled_count as usize)
+            .ok_or("missing disconnect record")?
+            .clone();
+        let final_zero_record = full_log
+            .get(scheduled_count as usize + 1)
+            .ok_or("missing final zero record")?
+            .clone();
+        bounded_log.push(disconnect_record);
+        bounded_log.push(final_zero_record);
+
+        let mut receipt = real_disconnect_receipt();
+        receipt["write_attempts"] = serde_json::json!(scheduled_count + 1);
+        receipt["writes_ok"] = serde_json::json!(scheduled_count);
+        receipt["write_errors"] = serde_json::json!(2);
+        receipt["command_log"] = serde_json::json!(bounded_log);
+        receipt["command_log_summary"] = serde_json::json!({
+            "total_records": scheduled_count + 2,
+            "logged_records": 5,
+            "omitted_records": scheduled_count - 3,
+            "scheduled_zero_writes": scheduled_count,
+            "disconnect_probe_seen": true,
+            "final_zero_seen": true,
+            "final_zero_sent": false,
+            "final_zero_error": true
+        });
+        Ok(receipt)
+    }
+
     fn receipt_with_lane_path(root: &Path, relative_path: &str, mut receipt: Value) -> Value {
         receipt["receipt_path"] = serde_json::json!(root.join(relative_path).display().to_string());
         match json_string(&receipt, "command") {
@@ -20802,11 +20996,13 @@ mod tests {
         assert!(matrix.contains("moza-r5-artifact-checklist.md"));
         assert!(ci_readme.contains("docs/hardware/moza-r5-artifact-checklist.md"));
 
-        assert!(matrix.contains("| `moza-r5-windows-usb` | R5 + KS/ES + SR-P + HBP | Windows | HID only | Not started | No | No | No | No |"));
+        assert!(matrix.contains("| `moza-r5-windows-usb` | R5 + KS/ES + SR-P + HBP | Windows | HID only | Passive capture ready; zero proof blocked on disconnect | Passive input only | No | No | No |"));
         for non_claim in [
-            "Moza R5 compatibility on Steven's hardware",
+            "Zero-stage completion",
+            "Staged init or direct mode readiness",
+            "Low-torque or nonzero force output safety",
             "Pit House coexistence safety",
-            "Direct/high-torque readiness",
+            "Simulator-to-Moza FFB smoke coverage",
             "Release readiness",
         ] {
             assert!(
@@ -20815,7 +21011,7 @@ mod tests {
             );
         }
 
-        assert!(checklist.contains("It does not contain a dated real-hardware lane"));
+        assert!(checklist.contains("not zero-stage complete"));
         assert!(
             checklist.contains("release_ready` and `high_torque_validated` must remain `false`")
         );
@@ -23322,6 +23518,45 @@ mod tests {
         let gate = verify_disconnect_proof_gate(dir.path());
 
         assert_eq!(gate.status, "pass");
+        Ok(())
+    }
+
+    #[test]
+    fn verify_disconnect_proof_gate_accepts_bounded_command_log_summary() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_test_json_file(
+            &dir.path().join("disconnect-proof.json"),
+            &receipt_with_lane_path(
+                dir.path(),
+                "disconnect-proof.json",
+                bounded_disconnect_receipt()?,
+            ),
+        )?;
+
+        let gate = verify_disconnect_proof_gate(dir.path());
+
+        assert_eq!(gate.status, "pass");
+        Ok(())
+    }
+
+    #[test]
+    fn verify_disconnect_proof_gate_rejects_mismatched_bounded_summary() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let mut receipt = bounded_disconnect_receipt()?;
+        receipt["command_log_summary"]["scheduled_zero_writes"] = serde_json::json!(9);
+        write_test_json_file(
+            &dir.path().join("disconnect-proof.json"),
+            &receipt_with_lane_path(dir.path(), "disconnect-proof.json", receipt),
+        )?;
+
+        let gate = verify_disconnect_proof_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details.contains("command_log_safe=false"),
+            "expected command log summary failure, got {}",
+            gate.details
+        );
         Ok(())
     }
 
