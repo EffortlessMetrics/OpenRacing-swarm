@@ -1,0 +1,465 @@
+{
+  "success": false,
+  "command": "wheelctl moza verify-bundle",
+  "generated_at_utc": "2026-05-15T09:28:45Z",
+  "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+  "requested_stage": "zero",
+  "missing_artifacts": 1,
+  "invalid_artifacts": 0,
+  "failed_gates": 1,
+  "artifacts": [
+    {
+      "path": "manifest.json",
+      "kind": "json",
+      "required_stage": "passive",
+      "exists": true,
+      "valid": true,
+      "status": "pass",
+      "notes": []
+    },
+    {
+      "path": "device-list.json",
+      "kind": "json",
+      "required_stage": "passive",
+      "exists": true,
+      "valid": true,
+      "status": "pass",
+      "notes": []
+    },
+    {
+      "path": "moza-probe.json",
+      "kind": "json",
+      "required_stage": "passive",
+      "exists": true,
+      "valid": true,
+      "status": "pass",
+      "notes": []
+    },
+    {
+      "path": "hid-list.json",
+      "kind": "json",
+      "required_stage": "passive",
+      "exists": true,
+      "valid": true,
+      "status": "pass",
+      "notes": []
+    },
+    {
+      "path": "hardware-doctor.json",
+      "kind": "json",
+      "required_stage": "passive",
+      "exists": true,
+      "valid": true,
+      "status": "pass",
+      "notes": []
+    },
+    {
+      "path": "descriptor.json",
+      "kind": "json",
+      "required_stage": "passive",
+      "exists": true,
+      "valid": true,
+      "status": "pass",
+      "notes": []
+    },
+    {
+      "path": "captures/r5-idle.jsonl",
+      "kind": "jsonl",
+      "required_stage": "passive",
+      "exists": true,
+      "valid": true,
+      "line_count": 1688,
+      "status": "pass",
+      "notes": []
+    },
+    {
+      "path": "captures/r5-steering-sweep.jsonl",
+      "kind": "jsonl",
+      "required_stage": "passive",
+      "exists": true,
+      "valid": true,
+      "line_count": 4110,
+      "status": "pass",
+      "notes": []
+    },
+    {
+      "path": "captures/r5-throttle-only-sweep.jsonl",
+      "kind": "jsonl",
+      "required_stage": "passive",
+      "exists": true,
+      "valid": true,
+      "line_count": 22387,
+      "status": "pass",
+      "notes": []
+    },
+    {
+      "path": "captures/r5-brake-only-sweep.jsonl",
+      "kind": "jsonl",
+      "required_stage": "passive",
+      "exists": true,
+      "valid": true,
+      "line_count": 22854,
+      "status": "pass",
+      "notes": []
+    },
+    {
+      "path": "captures/r5-clutch-only-sweep.jsonl",
+      "kind": "jsonl",
+      "required_stage": "passive",
+      "exists": true,
+      "valid": true,
+      "line_count": 22907,
+      "status": "pass",
+      "notes": []
+    },
+    {
+      "path": "captures/r5-handbrake-only-sweep.jsonl",
+      "kind": "jsonl",
+      "required_stage": "passive",
+      "exists": true,
+      "valid": true,
+      "line_count": 23491,
+      "status": "pass",
+      "notes": []
+    },
+    {
+      "path": "captures/r5-aggregated-idle-after-controls.jsonl",
+      "kind": "jsonl",
+      "required_stage": "passive",
+      "exists": true,
+      "valid": true,
+      "line_count": 2375,
+      "status": "pass",
+      "notes": []
+    },
+    {
+      "path": "captures/ks-controls.jsonl",
+      "kind": "jsonl",
+      "required_stage": "passive",
+      "exists": true,
+      "valid": true,
+      "line_count": 22889,
+      "status": "pass",
+      "notes": []
+    },
+    {
+      "path": "captures/es-controls.jsonl",
+      "kind": "jsonl",
+      "required_stage": "passive",
+      "exists": true,
+      "valid": true,
+      "line_count": 5514,
+      "status": "pass",
+      "notes": []
+    },
+    {
+      "path": "parser-fixture-validation.json",
+      "kind": "json",
+      "required_stage": "passive",
+      "exists": true,
+      "valid": true,
+      "status": "pass",
+      "notes": []
+    },
+    {
+      "path": "fixture-promotion.json",
+      "kind": "json",
+      "required_stage": "passive",
+      "exists": true,
+      "valid": true,
+      "status": "pass",
+      "notes": []
+    },
+    {
+      "path": "zero-torque-proof.json",
+      "kind": "json",
+      "required_stage": "zero",
+      "exists": true,
+      "valid": true,
+      "status": "pass",
+      "notes": []
+    },
+    {
+      "path": "watchdog-proof.json",
+      "kind": "json",
+      "required_stage": "zero",
+      "exists": true,
+      "valid": true,
+      "status": "pass",
+      "notes": []
+    },
+    {
+      "path": "disconnect-proof.json",
+      "kind": "json",
+      "required_stage": "zero",
+      "exists": false,
+      "valid": false,
+      "status": "missing",
+      "notes": [
+        "expected ci\\hardware\\moza-r5\\2026-05-13\\disconnect-proof.json"
+      ]
+    }
+  ],
+  "gates": [
+    {
+      "name": "lane_directory",
+      "status": "pass",
+      "details": "found ci\\hardware\\moza-r5\\2026-05-13"
+    },
+    {
+      "name": "manifest_no_overclaim",
+      "status": "pass",
+      "details": "manifest validates against manifest.schema.json and is scoped to zero"
+    },
+    {
+      "name": "manifest_r5_pid_consistency",
+      "status": "pass",
+      "details": "manifest hardware.wheelbase_pid 0x0004 matches available lane R5 receipts: device-list.json:0x0004=1, moza-probe.json:0x0004=1, hid-list.json:0x0004=1, descriptor.json:0x0004=1, captures/r5-idle.jsonl:0x0004=1688, captures/r5-steering-sweep.jsonl:0x0004=4110, captures/r5-throttle-only-sweep.jsonl:0x0004=22387, captures/r5-brake-only-sweep.jsonl:0x0004=22854, captures/r5-clutch-only-sweep.jsonl:0x0004=22907, captures/r5-handbrake-only-sweep.jsonl:0x0004=23491, captures/r5-aggregated-idle-after-controls.jsonl:0x0004=2375, captures/ks-controls.jsonl:0x0004=22889, captures/es-controls.jsonl:0x0004=5514, fixture:r5_idle:0x0004=3632, fixture:r5_steering_sweep:0x0004=8476, fixture:r5_throttle_only_sweep:0x0004=45030, fixture:r5_brake_only_sweep:0x0004=45964, fixture:r5_clutch_only_sweep:0x0004=46070, fixture:r5_handbrake_only_sweep:0x0004=47238, fixture:r5_aggregated_idle_after_controls:0x0004=5006, fixture:ks_controls:0x0004=46034, fixture:es_controls:0x0004=11284, zero-torque-proof.json:0x0004, watchdog-proof.json:0x0004; unavailable PID evidence is covered by stage artifact gates: [\"disconnect-proof.json:failed to read 'ci\\\\hardware\\\\moza-r5\\\\2026-05-13\\\\disconnect-proof.json'\"]"
+    },
+    {
+      "name": "moza_r5_observed",
+      "status": "pass",
+      "details": "found R5 VID/PID records in device-list.json:1, moza-probe.json:1, hid-list.json:1, descriptor.json:1"
+    },
+    {
+      "name": "moza_topology_observed",
+      "status": "pass",
+      "details": "found declared topology endpoint VID/PID records in device-list.json:moza-r5-if2:0x346E:0x0004:1, moza-probe.json:moza-r5-if2:0x346E:0x0004:1, hid-list.json:moza-r5-if2:0x346E:0x0004:1, descriptor.json:moza-r5-if2:0x346E:0x0004:1"
+    },
+    {
+      "name": "topology_required_evidence_supported",
+      "status": "pass",
+      "details": "every required topology evidence capture is covered by passive verifier requirements"
+    },
+    {
+      "name": "descriptor_metadata",
+      "status": "pass",
+      "details": "found complete descriptor metadata on 1 R5 record(s)"
+    },
+    {
+      "name": "passive_receipts_successful",
+      "status": "pass",
+      "details": "passive receipts come from expected successful observe-only commands"
+    },
+    {
+      "name": "passive_receipts_no_ffb_writes",
+      "status": "pass",
+      "details": "passive receipts come from expected observe-only commands, declare no_ffb_writes=true, keep pure observation receipts no_hid_device_opened=true, and declare no serial/firmware/DFU commands"
+    },
+    {
+      "name": "passive_captures_parse",
+      "status": "pass",
+      "details": "replayed 128215 passive capture report(s) through Moza parsers"
+    },
+    {
+      "name": "parser_fixture_validation",
+      "status": "pass",
+      "details": "validated 9 required parser capture(s), 128215 report(s)"
+    },
+    {
+      "name": "fixture_promotion",
+      "status": "pass",
+      "details": "promoted 2304 report(s) across 9 required fixture(s)"
+    },
+    {
+      "name": "zero_torque_real_hardware",
+      "status": "pass",
+      "details": "real zero-torque proof logged 100 scheduled zero write(s) plus final zero"
+    },
+    {
+      "name": "watchdog_zero_output",
+      "status": "pass",
+      "details": "watchdog proof injected timeout after 3 zero write(s) and sent final zero"
+    },
+    {
+      "name": "disconnect_final_zero",
+      "status": "fail",
+      "details": "failed to read 'ci\\hardware\\moza-r5\\2026-05-13\\disconnect-proof.json'"
+    }
+  ],
+  "endpoint_observations": [
+    {
+      "id": "moza-r5-if2",
+      "kind": "wheelbase_hub",
+      "vendor_id": "0x346E",
+      "product_id": "0x0004",
+      "interface_number": 2,
+      "usage_page": "0x0001",
+      "usage": "0x0004",
+      "output_capable": true,
+      "required_logical_controls": [
+        "brake",
+        "clutch",
+        "es_rim_controls",
+        "handbrake",
+        "ks_rim_controls",
+        "steering",
+        "throttle"
+      ],
+      "optional_logical_controls": [],
+      "observed_artifact_count": 4,
+      "metadata_match_artifact_count": 4,
+      "artifacts": [
+        {
+          "path": "device-list.json",
+          "status": "read",
+          "vid_pid_count": 1,
+          "metadata_match_count": 1
+        },
+        {
+          "path": "moza-probe.json",
+          "status": "read",
+          "vid_pid_count": 1,
+          "metadata_match_count": 1
+        },
+        {
+          "path": "hid-list.json",
+          "status": "read",
+          "vid_pid_count": 1,
+          "metadata_match_count": 1
+        },
+        {
+          "path": "descriptor.json",
+          "status": "read",
+          "vid_pid_count": 1,
+          "metadata_match_count": 1
+        }
+      ]
+    }
+  ],
+  "role_evidence": [
+    {
+      "control": "brake",
+      "role": "brake",
+      "required": true,
+      "source_endpoint": "moza-r5-if2",
+      "connection": "wheelbase_hub",
+      "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
+      "semantic_status": "generic_aux",
+      "parser_visible": true,
+      "moving_required_axes": [
+        "r5_v1_extended_axis0_u16"
+      ],
+      "missing_requirements": [],
+      "notes": [
+        "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
+      ]
+    },
+    {
+      "control": "clutch",
+      "role": "clutch",
+      "required": true,
+      "source_endpoint": "moza-r5-if2",
+      "connection": "wheelbase_hub",
+      "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
+      "semantic_status": "generic_aux",
+      "parser_visible": true,
+      "moving_required_axes": [
+        "r5_v1_extended_aux0_u16",
+        "r5_v1_extended_aux1_u16"
+      ],
+      "missing_requirements": [],
+      "notes": [
+        "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
+      ]
+    },
+    {
+      "control": "es_rim_controls",
+      "role": "rim_controls",
+      "required": true,
+      "rim": "ES",
+      "source_endpoint": "moza-r5-if2",
+      "connection": "wheelbase_hub",
+      "evidence_capture": "captures/es-controls.jsonl",
+      "semantic_status": "proven",
+      "parser_visible": true,
+      "moving_required_axes": [
+        "buttons_any_u8"
+      ],
+      "missing_requirements": [],
+      "notes": []
+    },
+    {
+      "control": "handbrake",
+      "role": "handbrake",
+      "required": true,
+      "source_endpoint": "moza-r5-if2",
+      "connection": "wheelbase_hub",
+      "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
+      "semantic_status": "generic_aux",
+      "parser_visible": true,
+      "moving_required_axes": [
+        "r5_v1_extended_aux0_u16",
+        "r5_v1_extended_aux1_u16",
+        "r5_v1_extended_axis1_u16"
+      ],
+      "missing_requirements": [],
+      "notes": [
+        "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
+      ]
+    },
+    {
+      "control": "ks_rim_controls",
+      "role": "rim_controls",
+      "required": true,
+      "rim": "KS",
+      "source_endpoint": "moza-r5-if2",
+      "connection": "wheelbase_hub",
+      "evidence_capture": "captures/ks-controls.jsonl",
+      "semantic_status": "proven",
+      "parser_visible": true,
+      "moving_required_axes": [
+        "buttons_any_u8",
+        "hat_u8",
+        "ks_buttons_any_u8",
+        "ks_hat_u8"
+      ],
+      "missing_requirements": [],
+      "notes": []
+    },
+    {
+      "control": "steering",
+      "role": "steering",
+      "required": true,
+      "source_endpoint": "moza-r5-if2",
+      "connection": "wheelbase_hub",
+      "evidence_capture": "captures/r5-steering-sweep.jsonl",
+      "semantic_status": "proven",
+      "parser_visible": true,
+      "moving_required_axes": [
+        "steering_u16"
+      ],
+      "missing_requirements": [],
+      "notes": []
+    },
+    {
+      "control": "throttle",
+      "role": "throttle",
+      "required": true,
+      "source_endpoint": "moza-r5-if2",
+      "connection": "wheelbase_hub",
+      "evidence_capture": "captures/r5-throttle-only-sweep.jsonl",
+      "semantic_status": "proven",
+      "parser_visible": true,
+      "moving_required_axes": [
+        "throttle_u16"
+      ],
+      "missing_requirements": [],
+      "notes": []
+    }
+  ],
+  "operator_actions": [],
+  "next_commands": [
+    "wheelctl moza disconnect-proof --device hid-0x346E-0x0004-if2-0x0001-0x0004 --lane ci\\hardware\\moza-r5\\2026-05-13 --strategy pidff-stop-all --confirm-disconnect-test --max-duration-ms 10000 --json-out ci\\hardware\\moza-r5\\2026-05-13\\disconnect-proof.json",
+    "wheelctl moza verify-bundle --lane ci\\hardware\\moza-r5\\2026-05-13 --stage zero --json-out ci\\hardware\\moza-r5\\2026-05-13\\zero-verification.json"
+  ],
+  "no_hid_device_opened": true,
+  "no_ffb_writes": true,
+  "no_serial_config_commands": true,
+  "no_firmware_or_dfu_commands": true,
+  "notes": [
+    "verify-bundle reads existing receipts only; it opens no HID device and sends no reports",
+    "a passing bundle is evidence for the requested lane stage only, not release readiness",
+    "role_evidence is derived from stored capture analysis and does not promote lane receipts"
+  ]
+}
