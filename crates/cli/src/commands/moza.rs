@@ -3764,6 +3764,14 @@ fn validate_zero_proof_for_torque_test(path: &Path) -> Result<ZeroProofSummary> 
     let repeat = json_u64(&receipt, "repeat").unwrap_or(0);
     let dry_run = json_bool(&receipt, "dry_run");
     let no_out_of_scope = no_out_of_scope_device_commands(&receipt);
+    let operator_confirmed = json_bool(&receipt, "operator_confirmed");
+    let lane_ok = path
+        .parent()
+        .map(|lane| lane_path_value_matches(lane, json_string(&receipt, "lane")))
+        .unwrap_or(false);
+    let pre_output_readiness_validated = json_bool(&receipt, "pre_output_readiness_validated");
+    let pre_output_readiness_generated_at =
+        json_string(&receipt, "pre_output_readiness_generated_at");
     let hz = json_u64(&receipt, "hz").unwrap_or(0);
     let write_attempts = json_u64(&receipt, "write_attempts").unwrap_or(0);
     let writes_ok = json_u64(&receipt, "writes_ok").unwrap_or(0);
@@ -3784,6 +3792,17 @@ fn validate_zero_proof_for_torque_test(path: &Path) -> Result<ZeroProofSummary> 
         && json_bool(&receipt, "no_feature_reports") == Some(true)
         && no_out_of_scope
         && json_bool(&receipt, "no_hid_device_opened") == Some(false)
+        && operator_confirmed == Some(true)
+        && lane_ok
+        && pre_output_readiness_validated == Some(true)
+        && pre_output_readiness_generated_at
+            .map(|value| {
+                generated_at_utc
+                    .as_deref()
+                    .map(|generated_at| utc_timestamp_pair_is_ordered(value, generated_at))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false)
         && json_string(&receipt, "report_id") == Some(DIRECT_TORQUE_REPORT_ID)
         && json_i64(&receipt, "torque_raw") == Some(0)
         && json_u64(&receipt, "flags") == Some(0)
@@ -19984,8 +20003,11 @@ mod tests {
     #[test]
     fn validate_zero_proof_for_torque_test_accepts_real_zero_receipt() -> TestResult {
         let dir = tempfile::tempdir()?;
-        let proof = dir.path().join("zero.json");
-        write_test_json_file(&proof, &real_zero_receipt(100))?;
+        let proof = dir.path().join("zero-torque-proof.json");
+        write_test_json_file(
+            &proof,
+            &receipt_with_lane_path(dir.path(), "zero-torque-proof.json", real_zero_receipt(100)),
+        )?;
 
         let summary = validate_zero_proof_for_torque_test(&proof)?;
 
@@ -19998,7 +20020,7 @@ mod tests {
     #[test]
     fn validate_zero_proof_for_torque_test_rejects_dry_run_receipt() -> TestResult {
         let dir = tempfile::tempdir()?;
-        let proof = dir.path().join("zero.json");
+        let proof = dir.path().join("zero-torque-proof.json");
         write_test_json_file(
             &proof,
             &serde_json::json!({
@@ -20019,12 +20041,15 @@ mod tests {
     #[test]
     fn validate_zero_proof_for_torque_test_requires_out_of_scope_assertions() -> TestResult {
         let dir = tempfile::tempdir()?;
-        let proof = dir.path().join("zero.json");
+        let proof = dir.path().join("zero-torque-proof.json");
         let mut receipt = real_zero_receipt(100);
         if let Some(map) = receipt.as_object_mut() {
             map.remove("no_firmware_or_dfu_commands");
         }
-        write_test_json_file(&proof, &receipt)?;
+        write_test_json_file(
+            &proof,
+            &receipt_with_lane_path(dir.path(), "zero-torque-proof.json", receipt),
+        )?;
 
         let result = validate_zero_proof_for_torque_test(&proof);
 
@@ -20035,10 +20060,13 @@ mod tests {
     #[test]
     fn validate_zero_proof_for_torque_test_requires_exact_write_accounting() -> TestResult {
         let dir = tempfile::tempdir()?;
-        let proof = dir.path().join("zero.json");
+        let proof = dir.path().join("zero-torque-proof.json");
         let mut receipt = real_zero_receipt(100);
         receipt["writes_ok"] = serde_json::json!(100);
-        write_test_json_file(&proof, &receipt)?;
+        write_test_json_file(
+            &proof,
+            &receipt_with_lane_path(dir.path(), "zero-torque-proof.json", receipt),
+        )?;
 
         let result = validate_zero_proof_for_torque_test(&proof);
 
@@ -20049,7 +20077,7 @@ mod tests {
     #[test]
     fn validate_zero_proof_for_torque_test_requires_final_zero_last() -> TestResult {
         let dir = tempfile::tempdir()?;
-        let proof = dir.path().join("zero.json");
+        let proof = dir.path().join("zero-torque-proof.json");
         let mut receipt = real_zero_receipt(100);
         let command_log = receipt
             .get_mut("command_log")
@@ -20060,7 +20088,10 @@ mod tests {
         for (index, record) in command_log.iter_mut().enumerate() {
             record["sequence"] = serde_json::json!(index);
         }
-        write_test_json_file(&proof, &receipt)?;
+        write_test_json_file(
+            &proof,
+            &receipt_with_lane_path(dir.path(), "zero-torque-proof.json", receipt),
+        )?;
 
         let result = validate_zero_proof_for_torque_test(&proof);
 
@@ -20071,10 +20102,13 @@ mod tests {
     #[test]
     fn validate_zero_proof_for_torque_test_requires_r5_output_device() -> TestResult {
         let dir = tempfile::tempdir()?;
-        let proof = dir.path().join("zero.json");
+        let proof = dir.path().join("zero-torque-proof.json");
         let mut receipt = real_zero_receipt(100);
         receipt["device"]["output_capable"] = serde_json::json!(false);
-        write_test_json_file(&proof, &receipt)?;
+        write_test_json_file(
+            &proof,
+            &receipt_with_lane_path(dir.path(), "zero-torque-proof.json", receipt),
+        )?;
 
         let result = validate_zero_proof_for_torque_test(&proof);
 
@@ -20846,7 +20880,10 @@ mod tests {
     async fn torque_test_actual_requires_init_proofs_before_hid_open() -> TestResult {
         let dir = tempfile::tempdir()?;
         let zero_proof = dir.path().join("zero-torque-proof.json");
-        write_test_json_file(&zero_proof, &real_zero_receipt(100))?;
+        write_test_json_file(
+            &zero_proof,
+            &receipt_with_lane_path(dir.path(), "zero-torque-proof.json", real_zero_receipt(100)),
+        )?;
 
         let result = torque_test(TorqueTestRequest {
             json: false,
