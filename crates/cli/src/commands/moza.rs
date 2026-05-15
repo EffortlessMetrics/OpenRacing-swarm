@@ -3573,6 +3573,9 @@ fn zero_torque_dry_run_pid(selector: Option<&str>, pid_override: Option<&str>) -
         if let Some((_vid, pid)) = parse_vid_pid_selector(selector) {
             return Ok(pid);
         }
+        if let Some(identity) = parse_hid_observe_selector(selector) {
+            return Ok(identity.product_id);
+        }
         if let Some(pid) = parse_hex_selector(selector) {
             return Ok(pid);
         }
@@ -22148,6 +22151,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn watchdog_proof_dry_run_accepts_hid_observe_selector_without_hid() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let receipt_path = dir.path().join("watchdog-proof.json");
+
+        watchdog_proof(
+            true,
+            Some("hid-0x346E-0x0004-if2-0x0001-0x0004"),
+            None,
+            None,
+            MozaZeroOutputStrategy::PidffStopAll,
+            true,
+            true,
+            3,
+            1000,
+            100,
+            Some(&receipt_path),
+        )
+        .await?;
+
+        let receipt = read_json_path(&receipt_path)?;
+        assert_eq!(json_bool(&receipt, "success"), Some(true));
+        assert_eq!(json_bool(&receipt, "dry_run"), Some(true));
+        assert_eq!(json_bool(&receipt, "no_hid_device_opened"), Some(true));
+        assert_eq!(
+            json_string(&receipt, "selector"),
+            Some("hid-0x346E-0x0004-if2-0x0001-0x0004")
+        );
+        assert_eq!(json_string(&receipt, "payload_hex"), Some("0C04"));
+        assert_eq!(
+            json_string(&receipt, "pidff_device_control_command_name"),
+            Some("stop_all_effects")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn zero_torque_pidff_stop_all_dry_run_writes_receipt_without_hid() -> TestResult {
         let dir = tempfile::tempdir()?;
         let receipt_path = dir.path().join("zero-torque-proof.json");
@@ -22177,6 +22216,43 @@ mod tests {
         );
         assert_eq!(json_string(&receipt, "payload_hex"), Some("0C04"));
         assert_eq!(json_string(&receipt, "report_id"), Some("0x0C"));
+        assert_eq!(json_u64(&receipt, "report_len"), Some(2));
+        assert_eq!(
+            json_string(&receipt, "pidff_device_control_command_name"),
+            Some("stop_all_effects")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn zero_torque_dry_run_accepts_hid_observe_selector_without_hid() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let receipt_path = dir.path().join("zero-torque-proof.json");
+
+        zero_torque(
+            true,
+            Some("hid-0x346E-0x0004-if2-0x0001-0x0004"),
+            None,
+            None,
+            MozaZeroOutputStrategy::PidffStopAll,
+            true,
+            true,
+            3,
+            1000,
+            100,
+            Some(&receipt_path),
+        )
+        .await?;
+
+        let receipt = read_json_path(&receipt_path)?;
+        assert_eq!(json_bool(&receipt, "success"), Some(true));
+        assert_eq!(json_bool(&receipt, "dry_run"), Some(true));
+        assert_eq!(json_bool(&receipt, "no_hid_device_opened"), Some(true));
+        assert_eq!(
+            json_string(&receipt, "selector"),
+            Some("hid-0x346E-0x0004-if2-0x0001-0x0004")
+        );
+        assert_eq!(json_string(&receipt, "payload_hex"), Some("0C04"));
         assert_eq!(json_u64(&receipt, "report_len"), Some(2));
         assert_eq!(
             json_string(&receipt, "pidff_device_control_command_name"),
@@ -22314,6 +22390,42 @@ mod tests {
         assert_eq!(json_bool(&receipt, "dry_run"), Some(true));
         assert_eq!(json_bool(&receipt, "no_hid_device_opened"), Some(true));
         assert_eq!(json_bool(&receipt, "disconnect_observed"), Some(true));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn disconnect_proof_dry_run_accepts_hid_observe_selector_without_hid() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let receipt_path = dir.path().join("disconnect-proof.json");
+
+        disconnect_proof(
+            true,
+            Some("hid-0x346E-0x0004-if2-0x0001-0x0004"),
+            None,
+            None,
+            MozaZeroOutputStrategy::PidffStopAll,
+            true,
+            true,
+            1000,
+            1000,
+            Some(&receipt_path),
+        )
+        .await?;
+
+        let receipt = read_json_path(&receipt_path)?;
+        assert_eq!(json_bool(&receipt, "success"), Some(true));
+        assert_eq!(json_bool(&receipt, "dry_run"), Some(true));
+        assert_eq!(json_bool(&receipt, "no_hid_device_opened"), Some(true));
+        assert_eq!(
+            json_string(&receipt, "selector"),
+            Some("hid-0x346E-0x0004-if2-0x0001-0x0004")
+        );
+        assert_eq!(json_string(&receipt, "payload_hex"), Some("0C04"));
+        assert_eq!(json_bool(&receipt, "disconnect_observed"), Some(true));
+        assert_eq!(
+            json_string(&receipt, "pidff_device_control_command_name"),
+            Some("stop_all_effects")
+        );
         Ok(())
     }
 
