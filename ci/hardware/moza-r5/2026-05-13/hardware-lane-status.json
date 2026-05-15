@@ -1,7 +1,7 @@
 {
   "success": true,
   "command": "wheelctl hardware lane status",
-  "generated_at_utc": "2026-05-15T01:56:02Z",
+  "generated_at_utc": "2026-05-15T10:54:48Z",
   "no_hid_device_opened": true,
   "no_ffb_writes": true,
   "no_output_reports": true,
@@ -12,16 +12,16 @@
   "manifest_source": "manifest.json",
   "family": "moza-r5",
   "topology": "wheelbase_hub",
-  "completion_state": "passive_capture_ready",
+  "completion_state": "zero_torque_ready",
   "scaffold_required": false,
   "scaffold_complete": false,
   "evidence_claims_validated": false,
   "ready_for_zero_torque": false,
   "ready_for_ffb": false,
-  "next_blocked_stage": "zero_torque",
+  "next_blocked_stage": "bounded_ffb",
   "safe_next_commands": [],
   "blocking_items": [
-    "zero_torque:missing_artifacts",
+    "bounded_ffb:missing_artifacts",
     "verifier_receipts_not_evaluated_by_status"
   ],
   "verifier_receipt": {
@@ -152,6 +152,7 @@
       "purpose": "observe attached endpoints and stable identity before any device-specific claim",
       "artifacts_present": 4,
       "artifacts_missing": 0,
+      "artifacts_failed": 0,
       "expected_artifacts": [
         {
           "kind": "receipt",
@@ -185,6 +186,7 @@
       "purpose": "prove declared logical controls with observe-only captures",
       "artifacts_present": 9,
       "artifacts_missing": 0,
+      "artifacts_failed": 0,
       "expected_artifacts": [
         {
           "kind": "capture",
@@ -243,6 +245,7 @@
       "purpose": "trust raw HID report descriptor bytes and report metadata before output-adjacent work",
       "artifacts_present": 1,
       "artifacts_missing": 0,
+      "artifacts_failed": 0,
       "expected_artifacts": [
         {
           "kind": "receipt",
@@ -261,6 +264,7 @@
       "purpose": "freeze known-good passive evidence as parser fixtures after descriptor trust",
       "artifacts_present": 1,
       "artifacts_missing": 0,
+      "artifacts_failed": 0,
       "expected_artifacts": [
         {
           "kind": "receipt",
@@ -279,6 +283,7 @@
       "purpose": "collate passive, descriptor, fixtures, status, support, and audit state before any output-adjacent stage",
       "artifacts_present": 3,
       "artifacts_missing": 0,
+      "artifacts_failed": 0,
       "expected_artifacts": [
         {
           "kind": "receipt",
@@ -305,13 +310,14 @@
       "id": "zero_torque",
       "order": 5,
       "purpose": "prove output plumbing with zero torque only",
-      "artifacts_present": 0,
-      "artifacts_missing": 1,
+      "artifacts_present": 1,
+      "artifacts_missing": 0,
+      "artifacts_failed": 0,
       "expected_artifacts": [
         {
           "kind": "receipt",
           "relative_path": "zero-torque-proof.json",
-          "present": false
+          "present": true
         }
       ],
       "gate_status": "not_validated_by_status",
@@ -323,13 +329,14 @@
       "id": "watchdog",
       "order": 6,
       "purpose": "prove timeout/fail-closed behavior for the zero-output path",
-      "artifacts_present": 0,
-      "artifacts_missing": 1,
+      "artifacts_present": 1,
+      "artifacts_missing": 0,
+      "artifacts_failed": 0,
       "expected_artifacts": [
         {
           "kind": "receipt",
           "relative_path": "watchdog-proof.json",
-          "present": false
+          "present": true
         }
       ],
       "gate_status": "not_validated_by_status",
@@ -341,13 +348,14 @@
       "id": "disconnect",
       "order": 7,
       "purpose": "prove device-loss behavior cannot leave stale output state",
-      "artifacts_present": 0,
-      "artifacts_missing": 1,
+      "artifacts_present": 1,
+      "artifacts_missing": 0,
+      "artifacts_failed": 0,
       "expected_artifacts": [
         {
           "kind": "receipt",
           "relative_path": "disconnect-proof.json",
-          "present": false
+          "present": true
         }
       ],
       "gate_status": "not_validated_by_status",
@@ -361,6 +369,7 @@
       "purpose": "first real-force smoke under explicit force and duration caps",
       "artifacts_present": 0,
       "artifacts_missing": 4,
+      "artifacts_failed": 0,
       "expected_artifacts": [
         {
           "kind": "receipt",
@@ -394,6 +403,7 @@
       "purpose": "expand from smoke to longer simulator and effect coverage",
       "artifacts_present": 0,
       "artifacts_missing": 2,
+      "artifacts_failed": 0,
       "expected_artifacts": [
         {
           "kind": "artifact",

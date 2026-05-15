@@ -8,7 +8,7 @@ Use [moza-r5-artifact-checklist.md](moza-r5-artifact-checklist.md) before changi
 
 | Lane | Stack | Platform | Transport | Evidence stage | Steven hardware validated | Simulator validated | High torque validated | Release ready |
 |------|-------|----------|-----------|----------------|---------------------------|---------------------|-----------------------|---------------|
-| `moza-r5-windows-usb` | R5 + KS/ES + SR-P + HBP | Windows | HID only | Passive capture ready; zero proof blocked on disconnect | Passive input only | No | No | No |
+| `moza-r5-windows-usb` | R5 + KS/ES + SR-P + HBP | Windows | HID only | Zero proof ready; bounded FFB blocked | Zero-output only | No | No | No |
 
 ## Lane Detail: `moza-r5-windows-usb`
 
@@ -24,7 +24,7 @@ Use [moza-r5-artifact-checklist.md](moza-r5-artifact-checklist.md) before changi
 | Serial config | Out of scope |
 | FFB mode | Staged: off, standard, then gated direct/low torque |
 | High torque | False by default; not part of first smoke |
-| Pit House | Separate coexistence receipts required |
+| Pit House | Not installed on current bench; separate coexistence receipts required before smoke-ready claims |
 
 ## Current Validated Claims
 
@@ -35,7 +35,8 @@ The checked-in `ci/hardware/moza-r5/2026-05-13/` lane currently supports only th
 - Brake, clutch, and handbrake have parser-visible generic auxiliary evidence through the R5 hub.
 - Parser fixture validation, fixture promotion, passive verification, passive manifest promotion, and passive audit pass.
 - PIDFF Device Control Stop All Effects `0x0C` is descriptor-trusted as a zero-output strategy; the direct Moza report `0x20` remains unavailable from descriptor metadata.
-- Zero-torque and watchdog receipts exist, but zero-stage verification is red until `disconnect-proof.json` exists and `disconnect_final_zero` passes.
+- Zero-torque, watchdog, and bounded disconnect receipts exist; zero-stage verification, zero manifest promotion, and zero audit pass.
+- Output claims are zero-output only. No nonzero force, direct mode, FFB, simulator output, Pit House coexistence, or release readiness is claimed.
 
 ## Research Coverage Already Present
 
@@ -60,7 +61,6 @@ The checked-in `ci/hardware/moza-r5/2026-05-13/` lane currently supports only th
 
 Until the later receipts exist, this matrix does not claim:
 
-- Zero-stage completion.
 - Staged init or direct mode readiness.
 - Low-torque or nonzero force output safety.
 - Pit House coexistence safety.

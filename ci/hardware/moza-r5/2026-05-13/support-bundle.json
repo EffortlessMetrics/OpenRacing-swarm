@@ -32,7 +32,7 @@
           "usage_page": "0x0001",
           "vendor_id": "0x346E"
         },
-        "last_seen": "2026-05-15T01:57:33.413706900Z",
+        "last_seen": "2026-05-15T10:55:11.248354500Z",
         "moza": {
           "category": "wheelbase",
           "descriptor_crc32": "0x25345E0C",
@@ -47,8 +47,8 @@
           "output_capable": true,
           "product_id": "0x0004",
           "safe_to_send_torque": false,
-          "safety_reason": "stored Moza lane verification receipts report highest_passing_stage=passive, next_required_stage=zero; CLI status remains observe-only and torque output stays disabled until explicit service initialization is implemented",
-          "safety_state": "lane_passive_verified"
+          "safety_reason": "stored Moza lane verification receipts report highest_passing_stage=zero, next_required_stage=smoke_ready; CLI status remains observe-only and torque output stays disabled until explicit service initialization is implemented",
+          "safety_state": "lane_zero_torque_verified"
         },
         "telemetry": {
           "fault_flags": 0,
@@ -306,37 +306,31 @@
         "valid": true
       },
       {
-        "exists": false,
+        "exists": true,
         "kind": "json",
-        "notes": [
-          "expected ci\\hardware\\moza-r5\\2026-05-13\\zero-torque-proof.json"
-        ],
+        "notes": [],
         "path": "zero-torque-proof.json",
         "required_stage": "zero",
-        "status": "missing",
-        "valid": false
+        "status": "pass",
+        "valid": true
       },
       {
-        "exists": false,
+        "exists": true,
         "kind": "json",
-        "notes": [
-          "expected ci\\hardware\\moza-r5\\2026-05-13\\watchdog-proof.json"
-        ],
+        "notes": [],
         "path": "watchdog-proof.json",
         "required_stage": "zero",
-        "status": "missing",
-        "valid": false
+        "status": "pass",
+        "valid": true
       },
       {
-        "exists": false,
+        "exists": true,
         "kind": "json",
-        "notes": [
-          "expected ci\\hardware\\moza-r5\\2026-05-13\\disconnect-proof.json"
-        ],
+        "notes": [],
         "path": "disconnect-proof.json",
         "required_stage": "zero",
-        "status": "missing",
-        "valid": false
+        "status": "pass",
+        "valid": true
       },
       {
         "exists": false,
@@ -410,37 +404,31 @@
         "valid": true
       },
       {
-        "exists": false,
+        "exists": true,
         "kind": "json",
-        "notes": [
-          "expected ci\\hardware\\moza-r5\\2026-05-13\\zero-verification.json"
-        ],
+        "notes": [],
         "path": "zero-verification.json",
         "required_stage": "zero",
-        "status": "missing",
-        "valid": false
+        "status": "pass",
+        "valid": true
       },
       {
-        "exists": false,
+        "exists": true,
         "kind": "json",
-        "notes": [
-          "expected ci\\hardware\\moza-r5\\2026-05-13\\manifest-promotion-zero.json"
-        ],
+        "notes": [],
         "path": "manifest-promotion-zero.json",
         "required_stage": "zero",
-        "status": "missing",
-        "valid": false
+        "status": "pass",
+        "valid": true
       },
       {
-        "exists": false,
+        "exists": true,
         "kind": "json",
-        "notes": [
-          "expected ci\\hardware\\moza-r5\\2026-05-13\\lane-audit-zero.json"
-        ],
+        "notes": [],
         "path": "lane-audit-zero.json",
         "required_stage": "zero",
-        "status": "missing",
-        "valid": false
+        "status": "pass",
+        "valid": true
       },
       {
         "exists": false,
@@ -476,11 +464,11 @@
         "valid": false
       }
     ],
-    "generated_at_utc": "2026-05-15T01:58:55Z",
+    "generated_at_utc": "2026-05-15T10:56:17Z",
     "lane": "ci\\hardware\\moza-r5\\2026-05-13",
     "lane_directory_present": true,
     "manifest": {
-      "completion_state": "passive_capture_ready",
+      "completion_state": "zero_torque_ready",
       "hardware_validated": false,
       "high_torque_validated": false,
       "present": true,
@@ -495,31 +483,37 @@
       "claim_scope": "diagnostic_context_only",
       "first_blocking_stage": {
         "failed_gate_names": [
-          "zero_torque_real_hardware",
-          "watchdog_zero_output",
-          "disconnect_final_zero"
+          "init_off_handshake",
+          "init_standard_handshake",
+          "low_torque_bounded",
+          "pit_house_coexistence",
+          "simulator_telemetry",
+          "simulator_ffb_bounded"
         ],
-        "failed_gates": 3,
+        "failed_gates": 6,
         "invalid_artifact_paths": [],
         "invalid_artifacts": 0,
         "missing_artifact_paths": [
-          "zero-torque-proof.json",
-          "watchdog-proof.json",
-          "disconnect-proof.json"
+          "init-off.json",
+          "init-standard.json",
+          "low-torque-proof.json",
+          "pit-house-coexistence.json",
+          "simulator-telemetry-proof.json",
+          "simulator-ffb-smoke.json"
         ],
-        "missing_artifacts": 3,
-        "requested_stage": "zero",
+        "missing_artifacts": 6,
+        "requested_stage": "smoke_ready",
         "success": false
       },
-      "highest_passing_stage": "passive",
-      "next_required_stage": "zero",
+      "highest_passing_stage": "zero",
+      "next_required_stage": "smoke_ready",
       "passive_lane_audit_passed": true,
       "ready_for_low_torque": false,
       "ready_for_real_hardware_smoke": false,
       "ready_for_zero_torque": true,
       "release_ready": false,
       "smoke_ready_lane_audit_passed": false,
-      "zero_lane_audit_passed": false
+      "zero_lane_audit_passed": true
     },
     "verifications": {
       "passive": {
@@ -534,52 +528,37 @@
       },
       "smoke_ready": {
         "failed_gate_names": [
-          "zero_torque_real_hardware",
-          "watchdog_zero_output",
-          "disconnect_final_zero",
           "init_off_handshake",
           "init_standard_handshake",
-          "service_status_receipts",
           "low_torque_bounded",
           "pit_house_coexistence",
           "simulator_telemetry",
           "simulator_ffb_bounded"
         ],
-        "failed_gates": 10,
+        "failed_gates": 6,
         "invalid_artifact_paths": [],
         "invalid_artifacts": 0,
         "missing_artifact_paths": [
           "init-off.json",
           "init-standard.json",
-          "zero-torque-proof.json",
-          "watchdog-proof.json",
-          "disconnect-proof.json",
           "low-torque-proof.json",
           "pit-house-coexistence.json",
           "simulator-telemetry-proof.json",
           "simulator-ffb-smoke.json"
         ],
-        "missing_artifacts": 9,
+        "missing_artifacts": 6,
         "requested_stage": "smoke_ready",
         "success": false
       },
       "zero": {
-        "failed_gate_names": [
-          "zero_torque_real_hardware",
-          "watchdog_zero_output",
-          "disconnect_final_zero"
-        ],
-        "failed_gates": 3,
+        "failed_gate_names": [],
+        "failed_gates": 0,
         "invalid_artifact_paths": [],
         "invalid_artifacts": 0,
-        "missing_artifact_paths": [
-          "zero-torque-proof.json",
-          "watchdog-proof.json",
-          "disconnect-proof.json"
-        ],
-        "missing_artifacts": 3,
+        "missing_artifact_paths": [],
+        "missing_artifacts": 0,
         "requested_stage": "zero",
-        "success": false
+        "success": true
       }
     }
   },
@@ -595,5 +574,5 @@
     "os": "windows",
     "version": "0.1.0"
   },
-  "timestamp": "2026-05-15T01:58:55.074265600Z"
+  "timestamp": "2026-05-15T10:56:17.789308700Z"
 }

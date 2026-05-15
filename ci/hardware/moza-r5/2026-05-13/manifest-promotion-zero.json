@@ -1,0 +1,46 @@
+{
+  "command": "wheelctl moza promote-manifest",
+  "completion_state": "zero_torque_ready",
+  "generated_at_utc": "2026-05-15T10:54:02Z",
+  "hardware_validated": false,
+  "high_torque_validated": false,
+  "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+  "manifest": "ci\\hardware\\moza-r5\\2026-05-13\\manifest.json",
+  "no_ffb_writes": true,
+  "no_firmware_or_dfu_commands": true,
+  "no_hid_device_opened": true,
+  "no_serial_config_commands": true,
+  "notes": [
+    "promote-manifest runs live bundle verification before changing manifest claims",
+    "release_ready and high_torque_validated remain false"
+  ],
+  "previous_completion_state": "passive_capture_ready",
+  "previous_hardware_validated": false,
+  "previous_simulator_validated": false,
+  "release_ready": false,
+  "simulator_validated": false,
+  "stage": "zero",
+  "success": true,
+  "verification_after": {
+    "failed_gates": 0,
+    "invalid_artifacts": 0,
+    "missing_artifacts": 0,
+    "no_ffb_writes": true,
+    "no_firmware_or_dfu_commands": true,
+    "no_hid_device_opened": true,
+    "no_serial_config_commands": true,
+    "requested_stage": "zero",
+    "success": true
+  },
+  "verification_before": {
+    "failed_gates": 0,
+    "invalid_artifacts": 0,
+    "missing_artifacts": 0,
+    "no_ffb_writes": true,
+    "no_firmware_or_dfu_commands": true,
+    "no_hid_device_opened": true,
+    "no_serial_config_commands": true,
+    "requested_stage": "zero",
+    "success": true
+  }
+}

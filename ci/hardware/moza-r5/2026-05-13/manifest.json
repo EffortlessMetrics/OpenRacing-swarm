@@ -45,7 +45,7 @@
     "high_torque": false,
     "pit_house_coexistence": "tested_separately"
   },
-  "completion_state": "passive_capture_ready",
+  "completion_state": "zero_torque_ready",
   "generated_at_utc": "2026-05-13T16:02:09Z",
   "hardware": {
     "handbrake": "HBP",

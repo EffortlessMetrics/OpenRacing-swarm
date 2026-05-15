@@ -1,22 +1,19 @@
 {
   "success": true,
   "command": "wheelctl moza pre-output-readiness",
-  "generated_at_utc": "2026-05-15T09:28:46Z",
+  "generated_at_utc": "2026-05-15T10:54:49Z",
   "lane": "ci\\hardware\\moza-r5\\2026-05-13",
   "stage": "pre_output_readiness",
   "ready_for_zero_torque": true,
   "ready_for_ffb": false,
   "blocking_items": [],
   "ffb_blocking_items": [
-    "disconnect-proof.json",
-    "disconnect_final_zero",
     "init_off_handshake",
     "init_standard_handshake",
     "low_torque_bounded",
     "pit_house_coexistence",
     "service_status_receipts",
-    "simulator_telemetry",
-    "zero_audit"
+    "simulator_telemetry"
   ],
   "zero_output_strategies": [
     {
@@ -103,18 +100,14 @@
     "success": true
   },
   "zero_verification": {
-    "failed_gate_names": [
-      "disconnect_final_zero"
-    ],
-    "failed_gates": 1,
+    "failed_gate_names": [],
+    "failed_gates": 0,
     "invalid_artifact_paths": [],
     "invalid_artifacts": 0,
-    "missing_artifact_paths": [
-      "disconnect-proof.json"
-    ],
-    "missing_artifacts": 1,
+    "missing_artifact_paths": [],
+    "missing_artifacts": 0,
     "requested_stage": "zero",
-    "success": false
+    "success": true
   },
   "smoke_ready_verification": {
     "failed_gate_names": [],
@@ -129,7 +122,7 @@
     "success": false
   },
   "passive_audit_passed": true,
-  "zero_audit_passed": false,
+  "zero_audit_passed": true,
   "smoke_ready_audit_passed": false,
   "no_hid_device_opened": true,
   "no_ffb_writes": true,

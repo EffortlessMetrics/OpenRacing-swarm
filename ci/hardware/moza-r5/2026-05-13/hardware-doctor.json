@@ -1,7 +1,7 @@
 {
   "success": true,
   "command": "wheelctl hardware doctor",
-  "generated_at": "2026-05-15T01:56:01Z",
+  "generated_at": "2026-05-15T10:51:21Z",
   "no_hid_device_opened": true,
   "no_ffb_writes": true,
   "no_output_reports": true,
@@ -32,8 +32,8 @@
       "usbpcap_interfaces_present": true,
       "usbpcap_interface_count": 2,
       "usbpcap_interfaces": [
-        "9. \\\\.\\USBPcap1 (USBPcap1)",
-        "10. \\\\.\\USBPcap2 (USBPcap2)"
+        "10. \\\\.\\USBPcap1 (USBPcap1)",
+        "11. \\\\.\\USBPcap2 (USBPcap2)"
       ],
       "ready_for_usbpcap_descriptor_capture": true,
       "access_guidance": "USBPcap/Wireshark capture interfaces are available for descriptor enumeration capture"

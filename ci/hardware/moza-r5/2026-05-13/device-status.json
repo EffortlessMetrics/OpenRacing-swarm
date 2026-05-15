@@ -39,7 +39,7 @@
       "usage_page": "0x0001",
       "vendor_id": "0x346E"
     },
-    "last_seen": "2026-05-15T01:57:30.299348900Z",
+    "last_seen": "2026-05-15T10:55:10.527275700Z",
     "moza": {
       "category": "wheelbase",
       "descriptor_crc32": "0x25345E0C",
@@ -54,8 +54,8 @@
       "output_capable": true,
       "product_id": "0x0004",
       "safe_to_send_torque": false,
-      "safety_reason": "stored Moza lane verification receipts report highest_passing_stage=passive, next_required_stage=zero; CLI status remains observe-only and torque output stays disabled until explicit service initialization is implemented",
-      "safety_state": "lane_passive_verified"
+      "safety_reason": "stored Moza lane verification receipts report highest_passing_stage=zero, next_required_stage=smoke_ready; CLI status remains observe-only and torque output stays disabled until explicit service initialization is implemented",
+      "safety_state": "lane_zero_torque_verified"
     },
     "telemetry": {
       "fault_flags": 0,

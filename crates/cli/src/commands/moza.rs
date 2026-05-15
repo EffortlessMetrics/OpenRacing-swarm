@@ -20996,9 +20996,8 @@ mod tests {
         assert!(matrix.contains("moza-r5-artifact-checklist.md"));
         assert!(ci_readme.contains("docs/hardware/moza-r5-artifact-checklist.md"));
 
-        assert!(matrix.contains("| `moza-r5-windows-usb` | R5 + KS/ES + SR-P + HBP | Windows | HID only | Passive capture ready; zero proof blocked on disconnect | Passive input only | No | No | No |"));
+        assert!(matrix.contains("| `moza-r5-windows-usb` | R5 + KS/ES + SR-P + HBP | Windows | HID only | Zero proof ready; bounded FFB blocked | Zero-output only | No | No | No |"));
         for non_claim in [
-            "Zero-stage completion",
             "Staged init or direct mode readiness",
             "Low-torque or nonzero force output safety",
             "Pit House coexistence safety",
@@ -21011,7 +21010,7 @@ mod tests {
             );
         }
 
-        assert!(checklist.contains("not zero-stage complete"));
+        assert!(checklist.contains("not smoke-ready complete"));
         assert!(
             checklist.contains("release_ready` and `high_torque_validated` must remain `false`")
         );
@@ -27756,30 +27755,43 @@ mod tests {
     }
 
     #[test]
-    fn verify_bundle_zero_next_commands_advance_after_zero_and_watchdog_receipts() -> TestResult {
+    fn verify_bundle_zero_live_lane_passes_after_disconnect_receipt() -> TestResult {
         let lane =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ci/hardware/moza-r5/2026-05-13");
 
         let receipt = verify_bundle_dir(&lane, MozaBundleStage::Zero);
 
-        assert!(!receipt.success);
+        assert!(receipt.success);
+        assert_eq!(receipt.missing_artifacts, 0);
+        assert_eq!(receipt.invalid_artifacts, 0);
+        assert_eq!(receipt.failed_gates, 0);
+        assert!(
+            receipt.next_commands.is_empty(),
+            "passing zero-stage receipt should not suggest more commands: {:?}",
+            receipt.next_commands
+        );
         let joined = receipt.next_commands.join("\n");
-        for expected in [
-            "wheelctl moza disconnect-proof --device hid-0x346E-0x0004-if2-0x0001-0x0004",
-            "--strategy pidff-stop-all",
+        for gate in [
+            "zero_torque_real_hardware",
+            "watchdog_zero_output",
+            "disconnect_final_zero",
         ] {
             assert!(
-                joined.contains(expected),
-                "live R5 V1 zero-stage next_commands should include {expected}: {joined}"
+                receipt
+                    .gates
+                    .iter()
+                    .any(|check| check.name == gate && check.status == "pass"),
+                "live R5 V1 zero-stage gate {gate} should pass"
             );
         }
         for completed in [
             "wheelctl moza zero --device hid-0x346E-0x0004-if2-0x0001-0x0004",
             "wheelctl moza watchdog-proof --device hid-0x346E-0x0004-if2-0x0001-0x0004",
+            "wheelctl moza disconnect-proof --device hid-0x346E-0x0004-if2-0x0001-0x0004",
         ] {
             assert!(
                 !joined.contains(completed),
-                "live R5 V1 zero-stage next_commands should not repeat completed zero/watchdog proof {completed}: {joined}"
+                "live R5 V1 zero-stage next_commands should not repeat completed proof {completed}: {joined}"
             );
         }
         assert!(

@@ -1,7 +1,7 @@
 {
   "success": true,
   "command": "wheelctl moza probe",
-  "generated_at_utc": "2026-05-15T01:55:55Z",
+  "generated_at_utc": "2026-05-15T10:51:18Z",
   "vendor_id": "0x346E",
   "no_hid_device_opened": true,
   "no_ffb_writes": true,

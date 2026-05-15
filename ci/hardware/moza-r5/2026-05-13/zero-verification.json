@@ -1,12 +1,12 @@
 {
-  "success": false,
+  "success": true,
   "command": "wheelctl moza verify-bundle",
-  "generated_at_utc": "2026-05-15T09:28:45Z",
+  "generated_at_utc": "2026-05-15T10:53:12Z",
   "lane": "ci\\hardware\\moza-r5\\2026-05-13",
   "requested_stage": "zero",
-  "missing_artifacts": 1,
+  "missing_artifacts": 0,
   "invalid_artifacts": 0,
-  "failed_gates": 1,
+  "failed_gates": 0,
   "artifacts": [
     {
       "path": "manifest.json",
@@ -192,12 +192,10 @@
       "path": "disconnect-proof.json",
       "kind": "json",
       "required_stage": "zero",
-      "exists": false,
-      "valid": false,
-      "status": "missing",
-      "notes": [
-        "expected ci\\hardware\\moza-r5\\2026-05-13\\disconnect-proof.json"
-      ]
+      "exists": true,
+      "valid": true,
+      "status": "pass",
+      "notes": []
     }
   ],
   "gates": [
@@ -214,7 +212,7 @@
     {
       "name": "manifest_r5_pid_consistency",
       "status": "pass",
-      "details": "manifest hardware.wheelbase_pid 0x0004 matches available lane R5 receipts: device-list.json:0x0004=1, moza-probe.json:0x0004=1, hid-list.json:0x0004=1, descriptor.json:0x0004=1, captures/r5-idle.jsonl:0x0004=1688, captures/r5-steering-sweep.jsonl:0x0004=4110, captures/r5-throttle-only-sweep.jsonl:0x0004=22387, captures/r5-brake-only-sweep.jsonl:0x0004=22854, captures/r5-clutch-only-sweep.jsonl:0x0004=22907, captures/r5-handbrake-only-sweep.jsonl:0x0004=23491, captures/r5-aggregated-idle-after-controls.jsonl:0x0004=2375, captures/ks-controls.jsonl:0x0004=22889, captures/es-controls.jsonl:0x0004=5514, fixture:r5_idle:0x0004=3632, fixture:r5_steering_sweep:0x0004=8476, fixture:r5_throttle_only_sweep:0x0004=45030, fixture:r5_brake_only_sweep:0x0004=45964, fixture:r5_clutch_only_sweep:0x0004=46070, fixture:r5_handbrake_only_sweep:0x0004=47238, fixture:r5_aggregated_idle_after_controls:0x0004=5006, fixture:ks_controls:0x0004=46034, fixture:es_controls:0x0004=11284, zero-torque-proof.json:0x0004, watchdog-proof.json:0x0004; unavailable PID evidence is covered by stage artifact gates: [\"disconnect-proof.json:failed to read 'ci\\\\hardware\\\\moza-r5\\\\2026-05-13\\\\disconnect-proof.json'\"]"
+      "details": "manifest hardware.wheelbase_pid 0x0004 matches available lane R5 receipts: device-list.json:0x0004=1, moza-probe.json:0x0004=1, hid-list.json:0x0004=1, descriptor.json:0x0004=1, captures/r5-idle.jsonl:0x0004=1688, captures/r5-steering-sweep.jsonl:0x0004=4110, captures/r5-throttle-only-sweep.jsonl:0x0004=22387, captures/r5-brake-only-sweep.jsonl:0x0004=22854, captures/r5-clutch-only-sweep.jsonl:0x0004=22907, captures/r5-handbrake-only-sweep.jsonl:0x0004=23491, captures/r5-aggregated-idle-after-controls.jsonl:0x0004=2375, captures/ks-controls.jsonl:0x0004=22889, captures/es-controls.jsonl:0x0004=5514, fixture:r5_idle:0x0004=3632, fixture:r5_steering_sweep:0x0004=8476, fixture:r5_throttle_only_sweep:0x0004=45030, fixture:r5_brake_only_sweep:0x0004=45964, fixture:r5_clutch_only_sweep:0x0004=46070, fixture:r5_handbrake_only_sweep:0x0004=47238, fixture:r5_aggregated_idle_after_controls:0x0004=5006, fixture:ks_controls:0x0004=46034, fixture:es_controls:0x0004=11284, zero-torque-proof.json:0x0004, watchdog-proof.json:0x0004, disconnect-proof.json:0x0004"
     },
     {
       "name": "moza_r5_observed",
@@ -273,8 +271,8 @@
     },
     {
       "name": "disconnect_final_zero",
-      "status": "fail",
-      "details": "failed to read 'ci\\hardware\\moza-r5\\2026-05-13\\disconnect-proof.json'"
+      "status": "pass",
+      "details": "disconnect proof observed HID write failure and attempted final zero with zero-only payloads"
     }
   ],
   "endpoint_observations": [
@@ -449,10 +447,7 @@
     }
   ],
   "operator_actions": [],
-  "next_commands": [
-    "wheelctl moza disconnect-proof --device hid-0x346E-0x0004-if2-0x0001-0x0004 --lane ci\\hardware\\moza-r5\\2026-05-13 --strategy pidff-stop-all --confirm-disconnect-test --max-duration-ms 10000 --json-out ci\\hardware\\moza-r5\\2026-05-13\\disconnect-proof.json",
-    "wheelctl moza verify-bundle --lane ci\\hardware\\moza-r5\\2026-05-13 --stage zero --json-out ci\\hardware\\moza-r5\\2026-05-13\\zero-verification.json"
-  ],
+  "next_commands": [],
   "no_hid_device_opened": true,
   "no_ffb_writes": true,
   "no_serial_config_commands": true,
