@@ -34,6 +34,8 @@ pub struct HidReportDescriptorMetadata {
     pub output_report_ids: Vec<u8>,
     pub output_reports: Vec<HidReportDescriptorReport>,
     pub feature_report_ids: Vec<u8>,
+    #[serde(default)]
+    pub feature_reports: Vec<HidReportDescriptorReport>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -48,6 +50,7 @@ impl HidReportDescriptorMetadata {
             && self.output_report_ids.is_empty()
             && self.output_reports.is_empty()
             && self.feature_report_ids.is_empty()
+            && self.feature_reports.is_empty()
     }
 }
 
@@ -124,6 +127,7 @@ pub fn parse_hid_report_descriptor_metadata(bytes: &[u8]) -> Option<HidReportDes
         output_report_ids: report_ids_from_bits(&output_bits),
         output_reports: report_metadata_from_bits(&output_bits),
         feature_report_ids: report_ids_from_bits(&feature_bits),
+        feature_reports: report_metadata_from_bits(&feature_bits),
     };
     (!metadata.is_empty()).then_some(metadata)
 }
@@ -486,6 +490,19 @@ mod tests {
             }]
         );
         assert_eq!(metadata.feature_report_ids, vec![0x03, 0x11]);
+        assert_eq!(
+            metadata.feature_reports,
+            vec![
+                HidReportDescriptorReport {
+                    report_id: 0x03,
+                    report_len: 4,
+                },
+                HidReportDescriptorReport {
+                    report_id: 0x11,
+                    report_len: 4,
+                },
+            ]
+        );
         Ok(())
     }
 
@@ -525,6 +542,13 @@ mod tests {
             }]
         );
         assert_eq!(metadata.feature_report_ids, vec![0x01]);
+        assert_eq!(
+            metadata.feature_reports,
+            vec![HidReportDescriptorReport {
+                report_id: 0x01,
+                report_len: 2,
+            }]
+        );
         Ok(())
     }
 
@@ -573,6 +597,7 @@ mod tests {
         assert_eq!(metadata.input_report_lengths, vec![2]);
         assert!(metadata.output_report_ids.is_empty());
         assert!(metadata.feature_report_ids.is_empty());
+        assert!(metadata.feature_reports.is_empty());
         Ok(())
     }
 

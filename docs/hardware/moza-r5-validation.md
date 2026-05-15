@@ -348,7 +348,7 @@ The PIDFF low-torque strategy is explicit and verifier-distinct. Its current sof
 wheelctl moza torque-test --device <r5> --lane ci/hardware/moza-r5/<date> --strategy pidff-bounded-effect --zero-proof ci/hardware/moza-r5/<date>/zero-torque-proof.json --init-off ci/hardware/moza-r5/<date>/init-off.json --init-standard ci/hardware/moza-r5/<date>/init-standard.json --confirm-low-torque --max-percent 1 --duration-ms 150 --json-out ci/hardware/moza-r5/<date>/low-torque-proof.json
 ```
 
-Until a bounded PIDFF effect encoder exists, this command is a preflight/frontier check only. A future PIDFF receipt must declare `low_torque_strategy: "pidff_bounded_effect"`, bind the exact lane endpoint, record bounded nonzero PIDFF writes, avoid direct report `0x20`, and end with a successful PIDFF Stop All cleanup. It cannot satisfy the direct-report verifier path.
+Until a bounded PIDFF effect encoder exists, this command is a preflight/frontier check only. The PIDFF frontier must also prove descriptor-derived feature report length metadata for effect allocation (`0x11`/`0x12`/`0x13`) and an R5-shaped Set Effect encoder; the live R5 V1 descriptor exposes report `0x01` with a non-generic length, so the generic PIDFF encoder layout is not enough for hardware writes. A future PIDFF receipt must declare `low_torque_strategy: "pidff_bounded_effect"`, bind the exact lane endpoint, prove effect setup/allocation explicitly, record bounded nonzero PIDFF writes, avoid direct report `0x20`, and end with a successful PIDFF Stop All cleanup. It cannot satisfy the direct-report verifier path.
 
 Required behavior:
 

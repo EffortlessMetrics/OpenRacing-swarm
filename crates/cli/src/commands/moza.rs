@@ -39,6 +39,17 @@ const MOZA_VENDOR_HEX: &str = "0x346E";
 const HIGH_TORQUE_FEATURE_REPORT_ID: &str = "0x02";
 const START_REPORTING_FEATURE_REPORT_ID: &str = "0x03";
 const FFB_MODE_FEATURE_REPORT_ID: &str = "0x11";
+const PIDFF_SET_EFFECT_REPORT_ID: &str = "0x01";
+const PIDFF_SET_EFFECT_GENERIC_REPORT_LEN: usize = 14;
+const PIDFF_SET_CONSTANT_FORCE_REPORT_ID: &str = "0x05";
+const PIDFF_SET_CONSTANT_FORCE_REPORT_LEN: usize = 4;
+const PIDFF_EFFECT_OPERATION_REPORT_ID: &str = "0x0A";
+const PIDFF_EFFECT_OPERATION_REPORT_LEN: usize = 4;
+const PIDFF_BLOCK_FREE_REPORT_ID: &str = "0x0B";
+const PIDFF_BLOCK_FREE_REPORT_LEN: usize = 2;
+const PIDFF_CREATE_NEW_EFFECT_FEATURE_REPORT_ID: &str = "0x11";
+const PIDFF_BLOCK_LOAD_FEATURE_REPORT_ID: &str = "0x12";
+const PIDFF_PID_POOL_FEATURE_REPORT_ID: &str = "0x13";
 const PIDFF_DEVICE_CONTROL_REPORT_ID: &str = "0x0C";
 const PIDFF_DEVICE_CONTROL_REPORT_LEN: usize = 2;
 const PIDFF_STOP_ALL_EFFECTS_COMMAND: u8 = 0x04;
@@ -4503,6 +4514,7 @@ fn synthetic_moza_device_record(pid: u16) -> MozaDeviceRecord {
         output_report_ids: expected_output_report_ids(output_capable),
         output_reports: expected_output_reports(output_capable),
         feature_report_ids: expected_feature_report_ids(pid, output_capable),
+        feature_reports: Vec::new(),
     }
 }
 
@@ -6241,7 +6253,71 @@ fn pidff_low_torque_frontier_blockers(lane: &Path) -> Vec<&'static str> {
         blockers
             .push("zero-torque-proof.json is not a same-lane pidff_device_control_stop_all proof");
     }
+    blockers.extend(pidff_bounded_effect_descriptor_blockers(lane));
     blockers.push("pidff bounded-effect writer is not implemented for real hardware yet");
+    blockers
+}
+
+fn pidff_bounded_effect_descriptor_blockers(lane: &Path) -> Vec<&'static str> {
+    let mut blockers = Vec::new();
+    if !lane_descriptor_has_output_report(
+        lane,
+        PIDFF_SET_CONSTANT_FORCE_REPORT_ID,
+        PIDFF_SET_CONSTANT_FORCE_REPORT_LEN,
+    ) {
+        blockers
+            .push("descriptor.json does not prove PIDFF Set Constant Force report 0x05 metadata");
+    }
+    if !lane_descriptor_has_output_report(
+        lane,
+        PIDFF_EFFECT_OPERATION_REPORT_ID,
+        PIDFF_EFFECT_OPERATION_REPORT_LEN,
+    ) {
+        blockers.push("descriptor.json does not prove PIDFF Effect Operation report 0x0A metadata");
+    }
+    if !lane_descriptor_has_output_report(
+        lane,
+        PIDFF_BLOCK_FREE_REPORT_ID,
+        PIDFF_BLOCK_FREE_REPORT_LEN,
+    ) {
+        blockers.push("descriptor.json does not prove PIDFF Block Free report 0x0B metadata");
+    }
+    if !lane_descriptor_has_output_report(
+        lane,
+        PIDFF_SET_EFFECT_REPORT_ID,
+        PIDFF_SET_EFFECT_GENERIC_REPORT_LEN,
+    ) {
+        blockers.push("descriptor.json does not prove a descriptor-compatible PIDFF Set Effect encoder; live R5 V1 report 0x01 uses a non-generic length and needs an R5-shaped encoder before nonzero PIDFF writes");
+    }
+    for (report_id, label) in [
+        (
+            PIDFF_CREATE_NEW_EFFECT_FEATURE_REPORT_ID,
+            "PIDFF Create New Effect feature report 0x11 length metadata",
+        ),
+        (
+            PIDFF_BLOCK_LOAD_FEATURE_REPORT_ID,
+            "PIDFF Block Load feature report 0x12 length metadata",
+        ),
+        (
+            PIDFF_PID_POOL_FEATURE_REPORT_ID,
+            "PIDFF PID Pool feature report 0x13 length metadata",
+        ),
+    ] {
+        if !lane_descriptor_has_feature_report_metadata(lane, report_id) {
+            blockers.push(match report_id {
+                PIDFF_CREATE_NEW_EFFECT_FEATURE_REPORT_ID => {
+                    "descriptor.json does not include PIDFF Create New Effect feature report 0x11 length metadata"
+                }
+                PIDFF_BLOCK_LOAD_FEATURE_REPORT_ID => {
+                    "descriptor.json does not include PIDFF Block Load feature report 0x12 length metadata"
+                }
+                PIDFF_PID_POOL_FEATURE_REPORT_ID => {
+                    "descriptor.json does not include PIDFF PID Pool feature report 0x13 length metadata"
+                }
+                _ => label,
+            });
+        }
+    }
     blockers
 }
 
@@ -11237,6 +11313,8 @@ fn verify_pidff_low_torque_gate(lane: &Path, receipt: &Value) -> BundleGateCheck
         ));
     let pidff_descriptor_observed =
         validate_zero_output_pidff_stop_all_report_metadata(lane).is_ok();
+    let pidff_effect_setup_proven = json_bool(receipt, "pidff_effect_setup_proven");
+    let pidff_effect_frontier_clear = pidff_bounded_effect_descriptor_blockers(lane).is_empty();
     let init_proofs_match =
         low_torque_init_proofs_match(lane, receipt, device_pid, generated_at_utc);
     let no_abort_reason = receipt
@@ -11294,6 +11372,8 @@ fn verify_pidff_low_torque_gate(lane: &Path, receipt: &Value) -> BundleGateCheck
         && output_capable
         && selector_matches_lane_endpoint
         && pidff_descriptor_observed
+        && pidff_effect_setup_proven == Some(true)
+        && pidff_effect_frontier_clear
         && expected_writes_match
         && command_log_safe;
 
@@ -11308,7 +11388,7 @@ fn verify_pidff_low_torque_gate(lane: &Path, receipt: &Value) -> BundleGateCheck
         BundleGateCheck::fail(
             "low_torque_bounded",
             format!(
-                "success={success}, command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, dry_run={dry_run:?}, no_hid_device_opened={no_hid_device_opened:?}, confirmed={confirmed:?}, zero_proof_validated={zero_proof_validated:?}, zero_proof_pid_matches={zero_proof_pid_matches}, zero_proof_lane_match={zero_proof_lane_match}, zero_proof_strategy_ok={zero_proof_strategy_ok}, init_proofs_validated={init_proofs_validated:?}, init_proofs_match={init_proofs_match}, no_feature_reports={no_feature_reports:?}, no_ffb_writes={no_ffb_writes:?}, no_direct_torque_reports={no_direct_torque_reports:?}, no_out_of_scope={no_out_of_scope}, high_torque={high_torque:?}, no_high_torque={no_high_torque:?}, no_nonzero_above_limit={no_nonzero_above_limit:?}, final_stop_all_attempted={final_stop_all_attempted:?}, final_stop_all_sent={final_stop_all_sent:?}, generated_at_valid={generated_at_valid}, max_percent={max_percent:?}, duration_ms={duration_ms}, hz={hz}, write_attempts={write_attempts}, writes_ok={writes_ok}, write_errors={write_errors}, r5_device={r5_device}, output_capable={output_capable}, selector_matches_lane_endpoint={selector_matches_lane_endpoint}, pidff_descriptor_observed={pidff_descriptor_observed}, expected_writes_match={expected_writes_match}, command_log_safe={command_log_safe}, no_abort_reason={no_abort_reason}, no_final_zero_error={no_final_zero_error}"
+                "success={success}, command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, dry_run={dry_run:?}, no_hid_device_opened={no_hid_device_opened:?}, confirmed={confirmed:?}, zero_proof_validated={zero_proof_validated:?}, zero_proof_pid_matches={zero_proof_pid_matches}, zero_proof_lane_match={zero_proof_lane_match}, zero_proof_strategy_ok={zero_proof_strategy_ok}, init_proofs_validated={init_proofs_validated:?}, init_proofs_match={init_proofs_match}, no_feature_reports={no_feature_reports:?}, no_ffb_writes={no_ffb_writes:?}, no_direct_torque_reports={no_direct_torque_reports:?}, no_out_of_scope={no_out_of_scope}, high_torque={high_torque:?}, no_high_torque={no_high_torque:?}, no_nonzero_above_limit={no_nonzero_above_limit:?}, final_stop_all_attempted={final_stop_all_attempted:?}, final_stop_all_sent={final_stop_all_sent:?}, generated_at_valid={generated_at_valid}, max_percent={max_percent:?}, duration_ms={duration_ms}, hz={hz}, write_attempts={write_attempts}, writes_ok={writes_ok}, write_errors={write_errors}, r5_device={r5_device}, output_capable={output_capable}, selector_matches_lane_endpoint={selector_matches_lane_endpoint}, pidff_descriptor_observed={pidff_descriptor_observed}, pidff_effect_setup_proven={pidff_effect_setup_proven:?}, pidff_effect_frontier_clear={pidff_effect_frontier_clear}, expected_writes_match={expected_writes_match}, command_log_safe={command_log_safe}, no_abort_reason={no_abort_reason}, no_final_zero_error={no_final_zero_error}"
             ),
         )
     }
@@ -11672,6 +11752,10 @@ fn pidff_low_torque_command_log_is_safe(
 }
 
 fn lane_descriptor_has_output_report(lane: &Path, report_id: &str, report_len: usize) -> bool {
+    lane_descriptor_has_report_record(lane, "output_reports", report_id, report_len)
+}
+
+fn lane_descriptor_has_feature_report_metadata(lane: &Path, report_id: &str) -> bool {
     let Ok(receipt) = read_json_value(lane, "descriptor.json") else {
         return false;
     };
@@ -11685,7 +11769,43 @@ fn lane_descriptor_has_output_report(lane: &Path, report_id: &str, report_len: u
         is_r5_device_value(device)
             && json_string(device, "product_id") == Some(pid.as_str())
             && r5_descriptor_metadata_trusted(device)
-            && json_report_record_contains(device, "output_reports", report_id, report_len)
+            && device
+                .get("feature_reports")
+                .and_then(Value::as_array)
+                .map(|records| {
+                    records.iter().any(|record| {
+                        json_string(record, "report_id")
+                            .map(|value| value.eq_ignore_ascii_case(report_id))
+                            .unwrap_or(false)
+                            && json_u64(record, "report_len")
+                                .map(|len| len > 0)
+                                .unwrap_or(false)
+                    })
+                })
+                .unwrap_or(false)
+    })
+}
+
+fn lane_descriptor_has_report_record(
+    lane: &Path,
+    record_key: &str,
+    report_id: &str,
+    report_len: usize,
+) -> bool {
+    let Ok(receipt) = read_json_value(lane, "descriptor.json") else {
+        return false;
+    };
+    let Some(devices) = receipt.get("devices").and_then(Value::as_array) else {
+        return false;
+    };
+    let Some(pid) = lane_manifest_r5_pid(lane).map(hex_u16) else {
+        return false;
+    };
+    devices.iter().any(|device| {
+        is_r5_device_value(device)
+            && json_string(device, "product_id") == Some(pid.as_str())
+            && r5_descriptor_metadata_trusted(device)
+            && json_report_record_contains(device, record_key, report_id, report_len)
     })
 }
 
@@ -17070,6 +17190,7 @@ struct MozaDeviceRecord {
     output_report_ids: Vec<String>,
     output_reports: Vec<HidReportRecord>,
     feature_report_ids: Vec<String>,
+    feature_reports: Vec<HidReportRecord>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -17117,6 +17238,7 @@ impl MozaDeviceRecord {
             output_report_ids: expected_output_report_ids(output_capable),
             output_reports: expected_output_reports(output_capable),
             feature_report_ids: expected_feature_report_ids(info.product_id(), output_capable),
+            feature_reports: Vec::new(),
         };
         if let Some(descriptor) = report_descriptor {
             record.apply_report_descriptor(descriptor, &descriptor_source);
@@ -17145,6 +17267,14 @@ impl MozaDeviceRecord {
                 .feature_report_ids
                 .into_iter()
                 .map(hex_u8)
+                .collect();
+            self.feature_reports = metadata
+                .feature_reports
+                .into_iter()
+                .map(|report| HidReportRecord {
+                    report_id: hex_u8(report.report_id),
+                    report_len: report.report_len,
+                })
                 .collect();
         }
     }
@@ -18256,6 +18386,7 @@ mod tests {
                 report_len: REPORT_LEN,
             }],
             feature_report_ids: vec!["0x02".to_string(), "0x03".to_string(), "0x11".to_string()],
+            feature_reports: Vec::new(),
         }
     }
 
@@ -18331,6 +18462,10 @@ mod tests {
         device["output_report_ids"] = serde_json::json!(["0x20"]);
         device["output_reports"] = serde_json::json!([{"report_id": "0x20", "report_len": 8}]);
         device["feature_report_ids"] = serde_json::json!(["0x03", "0x11"]);
+        device["feature_reports"] = serde_json::json!([
+            {"report_id": "0x03", "report_len": 4},
+            {"report_id": "0x11", "report_len": 4}
+        ]);
         device
     }
 
@@ -23574,6 +23709,19 @@ mod tests {
                 FFB_MODE_FEATURE_REPORT_ID.to_string(),
             ]
         );
+        assert_eq!(
+            device.feature_reports,
+            vec![
+                HidReportRecord {
+                    report_id: START_REPORTING_FEATURE_REPORT_ID.to_string(),
+                    report_len: 4,
+                },
+                HidReportRecord {
+                    report_id: FFB_MODE_FEATURE_REPORT_ID.to_string(),
+                    report_len: 4,
+                },
+            ]
+        );
         Ok(())
     }
 
@@ -24779,7 +24927,7 @@ mod tests {
     }
 
     #[test]
-    fn verify_low_torque_gate_accepts_pidff_bounded_receipt_shape() -> TestResult {
+    fn verify_low_torque_gate_rejects_pidff_receipt_without_effect_setup_proof() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_pidff_low_torque_prerequisite_receipts(dir.path())?;
         write_test_json_file(
@@ -24789,7 +24937,13 @@ mod tests {
 
         let gate = verify_low_torque_gate(dir.path());
 
-        assert_eq!(gate.status, "pass", "{}", gate.details);
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details.contains("pidff_effect_setup_proven")
+                && gate.details.contains("pidff_effect_frontier_clear=false"),
+            "PIDFF low-torque receipts must not pass until effect setup/allocation proof is explicit: {}",
+            gate.details
+        );
         Ok(())
     }
 
@@ -30222,6 +30376,25 @@ mod tests {
                 .iter()
                 .any(|blocker| blocker.contains("direct_report_0x20 proof")),
             "PIDFF zero proof should not satisfy direct low-torque preflight: {blockers:?}"
+        );
+        let pidff_blockers = pidff_low_torque_frontier_blockers(dir.path());
+        assert!(
+            pidff_blockers
+                .iter()
+                .any(|blocker| blocker.contains("Set Effect encoder")),
+            "live R5 V1 PIDFF low-torque frontier should require an R5-shaped Set Effect encoder: {pidff_blockers:?}"
+        );
+        assert!(
+            pidff_blockers
+                .iter()
+                .any(|blocker| blocker.contains("feature report 0x11 length metadata")),
+            "PIDFF effect allocation should require descriptor-derived feature report lengths: {pidff_blockers:?}"
+        );
+        assert!(
+            pidff_blockers
+                .iter()
+                .any(|blocker| blocker.contains("writer is not implemented")),
+            "PIDFF frontier should still block the real writer until implemented: {pidff_blockers:?}"
         );
 
         let mut commands = Vec::new();
