@@ -71,11 +71,17 @@ const SIMULATOR_FFB_PREREQUISITE_ARTIFACTS: [(&str, &str); 6] = [
 ];
 
 fn short_hid_write_error(bytes_written: usize) -> Option<String> {
-    short_zero_output_write_error(REPORT_LEN, bytes_written)
+    if bytes_written == REPORT_LEN {
+        None
+    } else {
+        Some(format!(
+            "short_hid_write: expected {REPORT_LEN} bytes, wrote {bytes_written}"
+        ))
+    }
 }
 
 fn short_zero_output_write_error(expected_len: usize, bytes_written: usize) -> Option<String> {
-    if bytes_written == expected_len {
+    if bytes_written >= expected_len {
         None
     } else {
         Some(format!(
@@ -9279,10 +9285,9 @@ fn zero_command_log_is_safe(receipt: &Value, repeat: u64) -> bool {
     let mut scheduled_ok = 0u64;
     let mut final_zero_ok = false;
     for (index, record) in records.iter().enumerate() {
-        let expected_len = zero_payload_report_len(record).unwrap_or(0);
         let safe_zero = zero_payload_record_is_safe(record)
             && json_string(record, "result") == Some("ok")
-            && json_u64(record, "bytes_written") == Some(expected_len)
+            && zero_payload_write_len_is_accepted(record)
             && record_sequence_matches_index(record, index);
         if !safe_zero {
             return false;
@@ -9306,6 +9311,16 @@ fn zero_command_log_is_safe(receipt: &Value, repeat: u64) -> bool {
     }
 
     scheduled_ok == repeat && final_zero_ok
+}
+
+fn zero_payload_write_len_is_accepted(value: &Value) -> bool {
+    let Some(bytes_written) = json_u64(value, "bytes_written") else {
+        return false;
+    };
+    let Some(report_len) = zero_payload_report_len(value) else {
+        return false;
+    };
+    bytes_written >= report_len
 }
 
 fn zero_payload_report_len(value: &Value) -> Option<u64> {
@@ -9471,7 +9486,7 @@ fn watchdog_command_log_is_safe(receipt: &Value, repeat: u64) -> bool {
     for (index, record) in records.iter().enumerate() {
         if !zero_payload_record_is_safe(record)
             || json_string(record, "result") != Some("ok")
-            || json_u64(record, "bytes_written") != zero_payload_report_len(record)
+            || !zero_payload_write_len_is_accepted(record)
             || !record_sequence_matches_index(record, index)
         {
             return false;
@@ -9618,7 +9633,7 @@ fn disconnect_command_log_summary(receipt: &Value) -> Option<DisconnectCommandLo
         match json_string(record, "kind") {
             Some("scheduled_zero") => {
                 if json_string(record, "result") != Some("ok")
-                    || json_u64(record, "bytes_written") != zero_payload_report_len(record)
+                    || !zero_payload_write_len_is_accepted(record)
                     || disconnect_error_seen
                     || final_zero_seen
                 {
@@ -9644,7 +9659,7 @@ fn disconnect_command_log_summary(receipt: &Value) -> Option<DisconnectCommandLo
                 }
                 match json_string(record, "result") {
                     Some("ok") => {
-                        if json_u64(record, "bytes_written") != zero_payload_report_len(record) {
+                        if !zero_payload_write_len_is_accepted(record) {
                             return None;
                         }
                         final_zero_sent = true;
@@ -18809,7 +18824,7 @@ mod tests {
                 "pidff_device_control_command": "0x04",
                 "pidff_device_control_command_name": "stop_all_effects",
                 "result": "ok",
-                "bytes_written": 2
+                "bytes_written": 51
             }));
         }
         records.push(serde_json::json!({
@@ -18826,7 +18841,7 @@ mod tests {
             "pidff_device_control_command": "0x04",
             "pidff_device_control_command_name": "stop_all_effects",
             "result": "ok",
-            "bytes_written": 2
+            "bytes_written": 51
         }));
         records
     }
@@ -20867,10 +20882,11 @@ mod tests {
     }
 
     #[test]
-    fn short_hid_write_error_requires_full_report_length() {
+    fn zero_output_write_error_allows_host_padded_writes() {
         assert!(short_hid_write_error(REPORT_LEN).is_none());
         assert!(short_hid_write_error(REPORT_LEN - 1).is_some());
         assert!(short_hid_write_error(REPORT_LEN + 1).is_some());
+        assert!(short_zero_output_write_error(PIDFF_DEVICE_CONTROL_REPORT_LEN, 51).is_none());
     }
 
     #[test]
@@ -22887,7 +22903,7 @@ mod tests {
     }
 
     #[test]
-    fn verify_zero_torque_gate_accepts_pidff_stop_all_receipt() -> TestResult {
+    fn verify_zero_torque_gate_accepts_pidff_stop_all_padded_write_receipt() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_test_json_file(
             &dir.path().join("zero-torque-proof.json"),
@@ -22901,6 +22917,30 @@ mod tests {
         let gate = verify_zero_torque_gate(dir.path());
 
         assert_eq!(gate.status, "pass");
+        Ok(())
+    }
+
+    #[test]
+    fn verify_zero_torque_gate_rejects_short_pidff_stop_all_write_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let mut receipt = receipt_with_lane_path(
+            dir.path(),
+            "zero-torque-proof.json",
+            real_pidff_zero_receipt(100),
+        );
+        let records = receipt
+            .get_mut("command_log")
+            .and_then(Value::as_array_mut)
+            .ok_or("expected command log")?;
+        let first = records
+            .first_mut()
+            .ok_or("expected scheduled zero record")?;
+        first["bytes_written"] = serde_json::json!(1);
+        write_test_json_file(&dir.path().join("zero-torque-proof.json"), &receipt)?;
+
+        let gate = verify_zero_torque_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
         Ok(())
     }
 
