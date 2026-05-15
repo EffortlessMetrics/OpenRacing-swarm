@@ -5832,23 +5832,24 @@ fn passive_capture_next_command_hint(relative_path: &str) -> (&'static str, u64)
 
 fn push_zero_next_commands(lane: &Path, gates: &[BundleGateCheck], commands: &mut Vec<String>) {
     let lane_arg = command_arg(&lane.display().to_string());
+    let r5_selector = next_command_r5_selector(lane);
     let strategy = zero_next_command_strategy(lane);
     let strategy_arg = zero_output_strategy_command_arg(strategy);
     if !bundle_gate_check_passed(gates, "zero_torque_real_hardware") {
         commands.push(format!(
-            "wheelctl moza zero --device <r5> --lane {lane_arg} --strategy {strategy_arg} --confirm-zero-torque --repeat 100 --hz 1000 --json-out {}",
+            "wheelctl moza zero --device {r5_selector} --lane {lane_arg} --strategy {strategy_arg} --confirm-zero-torque --repeat 100 --hz 1000 --json-out {}",
             lane_path_arg(lane, "zero-torque-proof.json")
         ));
     }
     if !bundle_gate_check_passed(gates, "watchdog_zero_output") {
         commands.push(format!(
-            "wheelctl moza watchdog-proof --device <r5> --lane {lane_arg} --strategy {strategy_arg} --confirm-watchdog-test --pre-zero-count 3 --watchdog-timeout-ms 100 --json-out {}",
+            "wheelctl moza watchdog-proof --device {r5_selector} --lane {lane_arg} --strategy {strategy_arg} --confirm-watchdog-test --pre-zero-count 3 --watchdog-timeout-ms 100 --json-out {}",
             lane_path_arg(lane, "watchdog-proof.json")
         ));
     }
     if !bundle_gate_check_passed(gates, "disconnect_final_zero") {
         commands.push(format!(
-            "wheelctl moza disconnect-proof --device <r5> --lane {lane_arg} --strategy {strategy_arg} --confirm-disconnect-test --max-duration-ms 10000 --json-out {}",
+            "wheelctl moza disconnect-proof --device {r5_selector} --lane {lane_arg} --strategy {strategy_arg} --confirm-disconnect-test --max-duration-ms 10000 --json-out {}",
             lane_path_arg(lane, "disconnect-proof.json")
         ));
     }
@@ -5901,35 +5902,40 @@ fn zero_output_strategy_command_arg(strategy: MozaZeroOutputStrategy) -> &'stati
     }
 }
 
+fn next_command_r5_selector(lane: &Path) -> String {
+    lane_manifest_r5_hid_observe_selector(lane).unwrap_or_else(|| "<r5>".to_string())
+}
+
 fn push_smoke_ready_next_commands(
     lane: &Path,
     gates: &[BundleGateCheck],
     commands: &mut Vec<String>,
 ) {
     let lane_arg = command_arg(&lane.display().to_string());
+    let r5_selector = next_command_r5_selector(lane);
     commands.push(format!(
-        "wheelctl moza init --device <r5> --lane {lane_arg} --mode off --confirm-init --json-out {}",
+        "wheelctl moza init --device {r5_selector} --lane {lane_arg} --mode off --confirm-init --json-out {}",
         lane_path_arg(lane, "init-off.json")
     ));
     commands.push(format!(
-        "wheelctl moza init --device <r5> --lane {lane_arg} --mode standard --confirm-init --json-out {}",
+        "wheelctl moza init --device {r5_selector} --lane {lane_arg} --mode standard --confirm-init --json-out {}",
         lane_path_arg(lane, "init-standard.json")
     ));
     commands.push(format!("wheeld --hardware-lane {lane_arg}"));
     commands.push(format!(
-        "wheelctl moza status --device <r5> --lane {lane_arg} --json-out {}",
+        "wheelctl moza status --device {r5_selector} --lane {lane_arg} --json-out {}",
         lane_path_arg(lane, "moza-status.json")
     ));
     commands.push(format!(
-        "wheelctl device status <r5> --moza-lane {lane_arg} --json-out {} --json",
+        "wheelctl device status {r5_selector} --moza-lane {lane_arg} --json-out {} --json",
         lane_path_arg(lane, "device-status.json")
     ));
     commands.push(format!(
-        "wheelctl --json support-bundle --device <r5> --moza-lane {lane_arg} --output {}",
+        "wheelctl --json support-bundle --device {r5_selector} --moza-lane {lane_arg} --output {}",
         lane_path_arg(lane, "support-bundle.json")
     ));
     commands.push(format!(
-        "wheelctl moza torque-test --device <r5> --lane {lane_arg} --zero-proof {} --descriptor {} --max-percent 2 --duration-ms 250 --confirm-low-torque --json-out {}",
+        "wheelctl moza torque-test --device {r5_selector} --lane {lane_arg} --zero-proof {} --descriptor {} --max-percent 2 --duration-ms 250 --confirm-low-torque --json-out {}",
         lane_path_arg(lane, "zero-torque-proof.json"),
         lane_path_arg(lane, "descriptor.json"),
         lane_path_arg(lane, "low-torque-proof.json")
@@ -6254,6 +6260,10 @@ fn lane_path_value_matches(expected: &Path, recorded: Option<&str>) -> bool {
         return true;
     }
 
+    relative_path_value_matches(expected, recorded)
+}
+
+fn relative_path_value_matches(expected: &Path, recorded: &str) -> bool {
     let recorded_path = Path::new(recorded);
     if recorded_path.is_absolute() || recorded.contains(':') {
         return false;
@@ -6269,10 +6279,12 @@ fn normalized_path_string(path: &str) -> String {
 }
 
 fn receipt_path_matches(lane: &Path, receipt: &Value, relative_path: &str) -> bool {
-    path_value_matches(
-        &lane.join(relative_path),
-        json_string(receipt, "receipt_path"),
-    )
+    let expected = lane.join(relative_path);
+    let Some(recorded) = json_string(receipt, "receipt_path") else {
+        return false;
+    };
+    path_value_matches(&expected, Some(recorded))
+        || relative_path_value_matches(&expected, recorded)
 }
 
 fn verification_receipt_path(stage: MozaBundleStage) -> &'static str {
@@ -18178,6 +18190,48 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn receipt_path_binding_accepts_repo_relative_lane_artifact_path() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir
+            .path()
+            .join("ci")
+            .join("hardware")
+            .join("moza-r5")
+            .join("2026-05-13");
+        let receipt = serde_json::json!({
+            "receipt_path": "ci\\hardware\\moza-r5\\2026-05-13\\zero-torque-proof.json"
+        });
+
+        assert!(receipt_path_matches(
+            &lane,
+            &receipt,
+            "zero-torque-proof.json"
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn receipt_path_binding_rejects_stale_relative_lane_artifact_path() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir
+            .path()
+            .join("ci")
+            .join("hardware")
+            .join("moza-r5")
+            .join("2026-05-13");
+        let receipt = serde_json::json!({
+            "receipt_path": "ci\\hardware\\moza-r5\\2026-05-14\\zero-torque-proof.json"
+        });
+
+        assert!(!receipt_path_matches(
+            &lane,
+            &receipt,
+            "zero-torque-proof.json"
+        ));
+        Ok(())
+    }
+
     fn sample_lane_manifest(
         completion_state: &str,
         hardware_validated: bool,
@@ -27449,9 +27503,9 @@ mod tests {
         assert!(!receipt.success);
         let joined = receipt.next_commands.join("\n");
         for expected in [
-            "wheelctl moza zero --device",
-            "wheelctl moza watchdog-proof",
-            "wheelctl moza disconnect-proof",
+            "wheelctl moza zero --device hid-0x346E-0x0004-if2-0x0001-0x0004",
+            "wheelctl moza watchdog-proof --device hid-0x346E-0x0004-if2-0x0001-0x0004",
+            "wheelctl moza disconnect-proof --device hid-0x346E-0x0004-if2-0x0001-0x0004",
             "--strategy pidff-stop-all",
         ] {
             assert!(
@@ -27462,6 +27516,10 @@ mod tests {
         assert!(
             !joined.contains("--strategy direct-report0x20"),
             "live R5 V1 descriptor does not expose direct report 0x20, so next_commands must not suggest the direct strategy: {joined}"
+        );
+        assert!(
+            !joined.contains("--device <r5>"),
+            "live R5 V1 zero-stage next_commands should use the manifest topology HID selector instead of <r5>: {joined}"
         );
         for stale in [
             "--stage passive",
@@ -27586,8 +27644,26 @@ mod tests {
         assert!(
             init_commands
                 .iter()
-                .all(|command| command.contains("--lane ") && command.contains("--confirm-init")),
+                .all(|command| command.contains("--lane ")
+                    && command.contains("--confirm-init")
+                    && command.contains("--device hid-0x346E-0x0014-if2-0x0001-0x0004")),
             "real init next_commands must be lane-bound and explicitly confirmed: {commands:?}"
+        );
+        assert!(
+            commands
+                .iter()
+                .filter(|command| {
+                    command.contains("wheelctl moza init --device")
+                        || command.contains("wheelctl moza status --device")
+                        || command.contains("wheelctl device status ")
+                        || command.contains("wheelctl --json support-bundle --device")
+                        || command.contains("wheelctl moza torque-test --device")
+                })
+                .all(
+                    |command| command.contains("hid-0x346E-0x0014-if2-0x0001-0x0004")
+                        && !command.contains("<r5>")
+                ),
+            "smoke-ready device next_commands should use the manifest topology HID selector: {commands:?}"
         );
         let index = |needle: &str| -> Result<usize, &'static str> {
             commands
