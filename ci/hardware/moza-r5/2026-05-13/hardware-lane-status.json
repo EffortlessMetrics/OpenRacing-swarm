@@ -1,7 +1,7 @@
 {
   "success": true,
   "command": "wheelctl hardware lane status",
-  "generated_at_utc": "2026-05-15T10:54:48Z",
+  "generated_at_utc": "2026-05-15T18:28:39Z",
   "no_hid_device_opened": true,
   "no_ffb_writes": true,
   "no_output_reports": true,
