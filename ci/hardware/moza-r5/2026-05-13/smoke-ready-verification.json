@@ -1,12 +1,12 @@
 {
   "success": false,
   "command": "wheelctl moza verify-bundle",
-  "generated_at_utc": "2026-05-15T18:28:37Z",
+  "generated_at_utc": "2026-05-15T23:23:22Z",
   "lane": "ci\\hardware\\moza-r5\\2026-05-13",
   "requested_stage": "smoke_ready",
-  "missing_artifacts": 4,
+  "missing_artifacts": 3,
   "invalid_artifacts": 0,
-  "failed_gates": 4,
+  "failed_gates": 3,
   "artifacts": [
     {
       "path": "manifest.json",
@@ -246,12 +246,10 @@
       "path": "low-torque-proof.json",
       "kind": "json",
       "required_stage": "smoke_ready",
-      "exists": false,
-      "valid": false,
-      "status": "missing",
-      "notes": [
-        "expected ci\\hardware\\moza-r5\\2026-05-13\\low-torque-proof.json"
-      ]
+      "exists": true,
+      "valid": true,
+      "status": "pass",
+      "notes": []
     },
     {
       "path": "pit-house-coexistence.json",
@@ -301,7 +299,7 @@
     {
       "name": "manifest_r5_pid_consistency",
       "status": "pass",
-      "details": "manifest hardware.wheelbase_pid 0x0004 matches available lane R5 receipts: device-list.json:0x0004=1, moza-probe.json:0x0004=1, hid-list.json:0x0004=1, descriptor.json:0x0004=1, captures/r5-idle.jsonl:0x0004=1688, captures/r5-steering-sweep.jsonl:0x0004=4110, captures/r5-throttle-only-sweep.jsonl:0x0004=22387, captures/r5-brake-only-sweep.jsonl:0x0004=22854, captures/r5-clutch-only-sweep.jsonl:0x0004=22907, captures/r5-handbrake-only-sweep.jsonl:0x0004=23491, captures/r5-aggregated-idle-after-controls.jsonl:0x0004=2375, captures/ks-controls.jsonl:0x0004=22889, captures/es-controls.jsonl:0x0004=5514, fixture:r5_idle:0x0004=3632, fixture:r5_steering_sweep:0x0004=8476, fixture:r5_throttle_only_sweep:0x0004=45030, fixture:r5_brake_only_sweep:0x0004=45964, fixture:r5_clutch_only_sweep:0x0004=46070, fixture:r5_handbrake_only_sweep:0x0004=47238, fixture:r5_aggregated_idle_after_controls:0x0004=5006, fixture:ks_controls:0x0004=46034, fixture:es_controls:0x0004=11284, zero-torque-proof.json:0x0004, watchdog-proof.json:0x0004, disconnect-proof.json:0x0004, init-off.json:0x0004, init-standard.json:0x0004, service-status:0x0004,0x0004,0x0004,0x0004; unavailable PID evidence is covered by stage artifact gates: [\"low-torque-proof.json:failed to read 'ci\\\\hardware\\\\moza-r5\\\\2026-05-13\\\\low-torque-proof.json'\", \"simulator-ffb-smoke.json:failed to read 'ci\\\\hardware\\\\moza-r5\\\\2026-05-13\\\\simulator-ffb-smoke.json'\", \"simulator-ffb-writer:failed to read 'ci\\\\hardware\\\\moza-r5\\\\2026-05-13\\\\simulator-ffb-smoke.json'\"]"
+      "details": "manifest hardware.wheelbase_pid 0x0004 matches available lane R5 receipts: device-list.json:0x0004=1, moza-probe.json:0x0004=1, hid-list.json:0x0004=1, descriptor.json:0x0004=1, captures/r5-idle.jsonl:0x0004=1688, captures/r5-steering-sweep.jsonl:0x0004=4110, captures/r5-throttle-only-sweep.jsonl:0x0004=22387, captures/r5-brake-only-sweep.jsonl:0x0004=22854, captures/r5-clutch-only-sweep.jsonl:0x0004=22907, captures/r5-handbrake-only-sweep.jsonl:0x0004=23491, captures/r5-aggregated-idle-after-controls.jsonl:0x0004=2375, captures/ks-controls.jsonl:0x0004=22889, captures/es-controls.jsonl:0x0004=5514, fixture:r5_idle:0x0004=3632, fixture:r5_steering_sweep:0x0004=8476, fixture:r5_throttle_only_sweep:0x0004=45030, fixture:r5_brake_only_sweep:0x0004=45964, fixture:r5_clutch_only_sweep:0x0004=46070, fixture:r5_handbrake_only_sweep:0x0004=47238, fixture:r5_aggregated_idle_after_controls:0x0004=5006, fixture:ks_controls:0x0004=46034, fixture:es_controls:0x0004=11284, zero-torque-proof.json:0x0004, watchdog-proof.json:0x0004, disconnect-proof.json:0x0004, init-off.json:0x0004, init-standard.json:0x0004, low-torque-proof.json:0x0004, service-status:0x0004,0x0004,0x0004,0x0004; unavailable PID evidence is covered by stage artifact gates: [\"simulator-ffb-smoke.json:failed to read 'ci\\\\hardware\\\\moza-r5\\\\2026-05-13\\\\simulator-ffb-smoke.json'\", \"simulator-ffb-writer:failed to read 'ci\\\\hardware\\\\moza-r5\\\\2026-05-13\\\\simulator-ffb-smoke.json'\"]"
     },
     {
       "name": "moza_r5_observed",
@@ -380,8 +378,8 @@
     },
     {
       "name": "low_torque_bounded",
-      "status": "fail",
-      "details": "failed to read 'ci\\hardware\\moza-r5\\2026-05-13\\low-torque-proof.json'"
+      "status": "pass",
+      "details": "real PIDFF low-torque proof logged 3 bounded command(s) plus final Stop All"
     },
     {
       "name": "pit_house_coexistence",
@@ -571,10 +569,11 @@
     }
   ],
   "operator_actions": [
-    "Current smoke-ready frontier: bounded low-torque proof is blocked before any write because descriptor.json does not prove trusted direct report 0x20 metadata; zero-torque-proof.json is not a same-lane direct_report_0x20 proof accepted by torque-test. Refresh pre-output readiness and resolve the direct report 0x20 path before running `wheelctl moza torque-test`; generated guidance must not add `--explicit-operator-override`. No low torque, simulator FFB, direct-mode expansion, serial config, firmware, or DFU until low-torque-proof.json passes."
+    "Current smoke-ready frontier: simulator telemetry proof. Capture one real simulator telemetry path only; this step must not send Moza output reports, feature reports, torque, serial config, firmware, or DFU commands."
   ],
   "next_commands": [
-    "wheelctl moza pre-output-readiness --lane ci\\hardware\\moza-r5\\2026-05-13 --json-out ci\\hardware\\moza-r5\\2026-05-13\\pre-output-readiness.json --json"
+    "wheelctl telemetry record --game <sim> --telemetry-source real_game --input <normalized-telemetry-source.jsonl> --out ci\\hardware\\moza-r5\\2026-05-13\\simulator-telemetry-recording.jsonl --duration-ms 30000",
+    "wheelctl moza simulator-telemetry-proof --lane ci\\hardware\\moza-r5\\2026-05-13 --game <sim> --telemetry-source real_game --recorder-artifact simulator-telemetry-recording.jsonl --duration-ms 30000 --json-out ci\\hardware\\moza-r5\\2026-05-13\\simulator-telemetry-proof.json"
   ],
   "no_hid_device_opened": true,
   "no_ffb_writes": true,

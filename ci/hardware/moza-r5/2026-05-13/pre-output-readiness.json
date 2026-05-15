@@ -1,14 +1,13 @@
 {
   "success": true,
   "command": "wheelctl moza pre-output-readiness",
-  "generated_at_utc": "2026-05-15T20:12:36Z",
+  "generated_at_utc": "2026-05-15T23:23:23Z",
   "lane": "ci\\hardware\\moza-r5\\2026-05-13",
   "stage": "pre_output_readiness",
   "ready_for_zero_torque": true,
   "ready_for_ffb": false,
   "blocking_items": [],
   "ffb_blocking_items": [
-    "low_torque_bounded",
     "simulator_telemetry"
   ],
   "zero_output_strategies": [
@@ -107,21 +106,19 @@
   },
   "smoke_ready_verification": {
     "failed_gate_names": [
-      "low_torque_bounded",
       "pit_house_coexistence",
       "simulator_telemetry",
       "simulator_ffb_bounded"
     ],
-    "failed_gates": 4,
+    "failed_gates": 3,
     "invalid_artifact_paths": [],
     "invalid_artifacts": 0,
     "missing_artifact_paths": [
-      "low-torque-proof.json",
       "pit-house-coexistence.json",
       "simulator-telemetry-proof.json",
       "simulator-ffb-smoke.json"
     ],
-    "missing_artifacts": 4,
+    "missing_artifacts": 3,
     "requested_stage": "smoke_ready",
     "success": false
   },
