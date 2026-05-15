@@ -5913,33 +5913,88 @@ fn push_smoke_ready_next_commands(
 ) {
     let lane_arg = command_arg(&lane.display().to_string());
     let r5_selector = next_command_r5_selector(lane);
-    commands.push(format!(
-        "wheelctl moza init --device {r5_selector} --lane {lane_arg} --mode off --confirm-init --json-out {}",
-        lane_path_arg(lane, "init-off.json")
-    ));
-    commands.push(format!(
-        "wheelctl moza init --device {r5_selector} --lane {lane_arg} --mode standard --confirm-init --json-out {}",
-        lane_path_arg(lane, "init-standard.json")
-    ));
-    commands.push(format!("wheeld --hardware-lane {lane_arg}"));
-    commands.push(format!(
-        "wheelctl moza status --device {r5_selector} --lane {lane_arg} --json-out {}",
-        lane_path_arg(lane, "moza-status.json")
-    ));
-    commands.push(format!(
-        "wheelctl device status {r5_selector} --moza-lane {lane_arg} --json-out {} --json",
-        lane_path_arg(lane, "device-status.json")
-    ));
-    commands.push(format!(
-        "wheelctl --json support-bundle --device {r5_selector} --moza-lane {lane_arg} --output {}",
-        lane_path_arg(lane, "support-bundle.json")
-    ));
-    commands.push(format!(
-        "wheelctl moza torque-test --device {r5_selector} --lane {lane_arg} --zero-proof {} --descriptor {} --max-percent 2 --duration-ms 250 --confirm-low-torque --json-out {}",
-        lane_path_arg(lane, "zero-torque-proof.json"),
-        lane_path_arg(lane, "descriptor.json"),
-        lane_path_arg(lane, "low-torque-proof.json")
-    ));
+
+    if !bundle_gate_check_passed(gates, "init_off_handshake") {
+        commands.push(format!(
+            "wheelctl moza init --device {r5_selector} --lane {lane_arg} --mode off --confirm-init --json-out {}",
+            lane_path_arg(lane, "init-off.json")
+        ));
+        return;
+    }
+
+    if !bundle_gate_check_passed(gates, "init_standard_handshake") {
+        commands.push(format!(
+            "wheelctl moza init --device {r5_selector} --lane {lane_arg} --mode standard --confirm-init --json-out {}",
+            lane_path_arg(lane, "init-standard.json")
+        ));
+        return;
+    }
+
+    if !bundle_gate_check_passed(gates, "service_status_receipts") {
+        commands.push(format!("wheeld --hardware-lane {lane_arg}"));
+        commands.push(format!(
+            "wheelctl moza status --device {r5_selector} --lane {lane_arg} --json-out {}",
+            lane_path_arg(lane, "moza-status.json")
+        ));
+        commands.push(format!(
+            "wheelctl device status {r5_selector} --moza-lane {lane_arg} --json-out {} --json",
+            lane_path_arg(lane, "device-status.json")
+        ));
+        commands.push(format!(
+            "wheelctl --json support-bundle --device {r5_selector} --moza-lane {lane_arg} --output {}",
+            lane_path_arg(lane, "support-bundle.json")
+        ));
+        return;
+    }
+
+    if !bundle_gate_check_passed(gates, "low_torque_bounded") {
+        commands.push(format!(
+            "wheelctl moza torque-test --device {r5_selector} --lane {lane_arg} --zero-proof {} --descriptor {} --max-percent 2 --duration-ms 250 --confirm-low-torque --json-out {}",
+            lane_path_arg(lane, "zero-torque-proof.json"),
+            lane_path_arg(lane, "descriptor.json"),
+            lane_path_arg(lane, "low-torque-proof.json")
+        ));
+        return;
+    }
+
+    if !bundle_gate_check_passed(gates, "simulator_telemetry") {
+        commands.push(format!(
+            "wheelctl telemetry record --game <sim> --telemetry-source real_game --input <normalized-telemetry-source.jsonl> --out {} --duration-ms 30000",
+            lane_path_arg(lane, "simulator-telemetry-recording.jsonl")
+        ));
+        commands.push(format!(
+            "wheelctl moza simulator-telemetry-proof --lane {lane_arg} --game <sim> --telemetry-source real_game --recorder-artifact simulator-telemetry-recording.jsonl --duration-ms 30000 --json-out {}",
+            lane_path_arg(lane, "simulator-telemetry-proof.json")
+        ));
+        return;
+    }
+
+    if !bundle_gate_check_passed(gates, "simulator_ffb_bounded") {
+        commands.push(format!("wheeld --hardware-lane {lane_arg}"));
+        commands.push(format!(
+            "wheelctl moza simulator-ffb-smoke --lane {lane_arg} --game <sim> --telemetry-source real_game --output-log-artifact simulator-ffb-output.jsonl --descriptor-trusted --watchdog-timeout-ms 100 --stop-cleared-output --pause-cleared-output --game-exit-cleared-output --json-out {}",
+            lane_path_arg(lane, "simulator-ffb-smoke.json")
+        ));
+        return;
+    }
+
+    if bundle_gate_check_passed(gates, "pit_house_coexistence") {
+        commands.push(format!(
+            "wheelctl moza verify-bundle --lane {lane_arg} --stage smoke-ready --json-out {}",
+            lane_path_arg(lane, verification_receipt_path(MozaBundleStage::SmokeReady))
+        ));
+        if smoke_ready_stage_gates_passed(gates) {
+            commands.push(format!(
+                "wheelctl moza promote-manifest --lane {lane_arg} --stage smoke-ready --json-out {}",
+                lane_path_arg(lane, promotion_receipt_path(MozaBundleStage::SmokeReady))
+            ));
+            commands.push(format!(
+                "wheelctl moza audit-lane --lane {lane_arg} --stage smoke-ready --json-out {}",
+                lane_path_arg(lane, audit_receipt_path(MozaBundleStage::SmokeReady))
+            ));
+        }
+        return;
+    }
 
     for (case, evidence_artifact, artifact, evidence) in [
         (
@@ -6005,20 +6060,6 @@ fn push_smoke_ready_next_commands(
     ] {
         push_pit_house_case_next_command(lane, commands, case, observation, artifact, evidence);
     }
-
-    commands.push(format!(
-        "wheelctl telemetry record --game <sim> --telemetry-source real_game --input <normalized-telemetry-source.jsonl> --out {} --duration-ms 30000",
-        lane_path_arg(lane, "simulator-telemetry-recording.jsonl")
-    ));
-    commands.push(format!(
-        "wheelctl moza simulator-telemetry-proof --lane {lane_arg} --game <sim> --telemetry-source real_game --recorder-artifact simulator-telemetry-recording.jsonl --duration-ms 30000 --json-out {}",
-        lane_path_arg(lane, "simulator-telemetry-proof.json")
-    ));
-    commands.push(format!("wheeld --hardware-lane {lane_arg}"));
-    commands.push(format!(
-        "wheelctl moza simulator-ffb-smoke --lane {lane_arg} --game <sim> --telemetry-source real_game --output-log-artifact simulator-ffb-output.jsonl --descriptor-trusted --watchdog-timeout-ms 100 --stop-cleared-output --pause-cleared-output --game-exit-cleared-output --json-out {}",
-        lane_path_arg(lane, "simulator-ffb-smoke.json")
-    ));
     push_pit_house_observation_next_command(
         lane,
         commands,
@@ -6043,16 +6084,6 @@ fn push_smoke_ready_next_commands(
         "wheelctl moza verify-bundle --lane {lane_arg} --stage smoke-ready --json-out {}",
         lane_path_arg(lane, verification_receipt_path(MozaBundleStage::SmokeReady))
     ));
-    if smoke_ready_stage_gates_passed(gates) {
-        commands.push(format!(
-            "wheelctl moza promote-manifest --lane {lane_arg} --stage smoke-ready --json-out {}",
-            lane_path_arg(lane, promotion_receipt_path(MozaBundleStage::SmokeReady))
-        ));
-        commands.push(format!(
-            "wheelctl moza audit-lane --lane {lane_arg} --stage smoke-ready --json-out {}",
-            lane_path_arg(lane, audit_receipt_path(MozaBundleStage::SmokeReady))
-        ));
-    }
 }
 
 fn push_pit_house_observation_next_command(
@@ -27908,63 +27939,115 @@ mod tests {
     }
 
     #[test]
-    fn verify_bundle_smoke_next_commands_match_dependency_order() -> TestResult {
+    fn verify_bundle_smoke_next_commands_stop_at_current_frontier() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_minimal_passive_bundle(dir.path())?;
         write_zero_stage_receipts(dir.path())?;
 
         let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let commands = receipt.next_commands.join("\n");
+        assert!(
+            commands.contains("wheelctl moza init --device")
+                && commands.contains("--mode off")
+                && commands.contains("--confirm-init")
+                && commands.contains("--device hid-0x346E-0x0014-if2-0x0001-0x0004"),
+            "zero-ready smoke guidance should first suggest only the off init receipt: {commands}"
+        );
+        for forbidden in [
+            "--mode standard",
+            "wheelctl moza torque-test",
+            "wheelctl telemetry record",
+            "wheelctl moza simulator-ffb-smoke",
+            "wheelctl moza pit-house-proof",
+        ] {
+            assert!(
+                !commands.contains(forbidden),
+                "smoke-ready guidance must not include {forbidden} before off init passes: {commands}"
+            );
+        }
 
-        assert!(!receipt.success);
-        let commands = &receipt.next_commands;
-        let init_commands: Vec<_> = commands
+        write_test_json_file(
+            &dir.path().join("init-off.json"),
+            &receipt_with_lane_path(dir.path(), "init-off.json", real_init_receipt("off")),
+        )?;
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let commands = receipt.next_commands.join("\n");
+        assert!(
+            commands.contains("--mode standard") && !commands.contains("wheelctl moza torque-test"),
+            "after off init passes, guidance should advance only to standard init: {commands}"
+        );
+
+        write_test_json_file(
+            &dir.path().join("init-standard.json"),
+            &receipt_with_lane_path(
+                dir.path(),
+                "init-standard.json",
+                real_init_receipt("standard"),
+            ),
+        )?;
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let commands = receipt.next_commands.join("\n");
+        assert!(
+            commands.contains("wheelctl moza status --device")
+                && commands.contains("wheelctl device status")
+                && commands.contains("wheelctl --json support-bundle")
+                && !commands.contains("wheelctl moza torque-test"),
+            "after both init receipts pass, guidance should refresh service/status receipts before low torque: {commands}"
+        );
+
+        write_service_status_artifacts(dir.path())?;
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let commands = receipt.next_commands.join("\n");
+        assert!(
+            commands.contains("wheelctl moza torque-test --device")
+                && commands.contains("--confirm-low-torque")
+                && !commands.contains("wheelctl moza simulator-ffb-smoke"),
+            "after service/status receipts pass, guidance should advance only to low torque: {commands}"
+        );
+
+        write_test_json_file(
+            &dir.path().join("low-torque-proof.json"),
+            &real_low_torque_receipt_for_lane(dir.path(), 2.0)?,
+        )?;
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let commands = receipt.next_commands.join("\n");
+        assert!(
+            commands.contains("wheelctl telemetry record")
+                && commands.contains("wheelctl moza simulator-telemetry-proof")
+                && !commands.contains("wheelctl moza simulator-ffb-smoke"),
+            "after low torque passes, guidance should advance only to telemetry: {commands}"
+        );
+
+        write_simulator_artifacts(dir.path())?;
+        write_service_status_artifacts(dir.path())?;
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let commands_vec = receipt.next_commands;
+        let commands = commands_vec.join("\n");
+        let canonical_writer = commands_vec
             .iter()
-            .filter(|command| command.contains("wheelctl moza init --device"))
-            .collect();
-        assert_eq!(init_commands.len(), 2);
+            .position(|command| command.starts_with("wheeld --hardware-lane "))
+            .ok_or("expected lane-bound simulator writer command")?;
+        let ffb_smoke = commands_vec
+            .iter()
+            .position(|command| command.contains("wheelctl moza simulator-ffb-smoke"))
+            .ok_or("expected simulator FFB smoke command")?;
         assert!(
-            init_commands
-                .iter()
-                .all(|command| command.contains("--lane ")
-                    && command.contains("--confirm-init")
-                    && command.contains("--device hid-0x346E-0x0014-if2-0x0001-0x0004")),
-            "real init next_commands must be lane-bound and explicitly confirmed: {commands:?}"
+            canonical_writer < ffb_smoke && !commands.contains("wheelctl moza pit-house-proof"),
+            "after telemetry passes, guidance should advance only to simulator FFB smoke: {commands}"
         );
-        assert!(
-            commands
-                .iter()
-                .filter(|command| {
-                    command.contains("wheelctl moza init --device")
-                        || command.contains("wheelctl moza status --device")
-                        || command.contains("wheelctl device status ")
-                        || command.contains("wheelctl --json support-bundle --device")
-                        || command.contains("wheelctl moza torque-test --device")
-                })
-                .all(
-                    |command| command.contains("hid-0x346E-0x0014-if2-0x0001-0x0004")
-                        && !command.contains("<r5>")
-                ),
-            "smoke-ready device next_commands should use the manifest topology HID selector: {commands:?}"
-        );
+
+        write_test_json_file(
+            &dir.path().join("simulator-ffb-smoke.json"),
+            &simulator_ffb_receipt(),
+        )?;
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let commands = &receipt.next_commands;
         let index = |needle: &str| -> Result<usize, &'static str> {
             commands
                 .iter()
                 .position(|command| command.contains(needle))
                 .ok_or("expected command not found")
         };
-
-        let telemetry_proof = index("wheelctl moza simulator-telemetry-proof")?;
-        let canonical_writer = commands
-            .iter()
-            .enumerate()
-            .skip(telemetry_proof.saturating_add(1))
-            .find_map(|(index, command)| {
-                command
-                    .starts_with("wheeld --hardware-lane ")
-                    .then_some(index)
-            })
-            .ok_or("expected lane-bound simulator writer command")?;
-        let ffb_smoke = index("wheelctl moza simulator-ffb-smoke")?;
         let mode_change_observation =
             index("wheelctl moza pit-house-observation --case mode-change")?;
         let mode_change_case = commands
@@ -27976,19 +28059,6 @@ mod tests {
             .ok_or("expected mode-change Pit House case command")?;
         let pit_house_proof = index("wheelctl moza pit-house-proof")?;
         let smoke_verification = index("--stage smoke-ready")?;
-
-        assert!(
-            telemetry_proof < ffb_smoke,
-            "simulator FFB smoke must run after telemetry proof"
-        );
-        assert!(
-            telemetry_proof < canonical_writer && canonical_writer < ffb_smoke,
-            "lane-bound simulator writer command must run between telemetry proof and simulator FFB smoke"
-        );
-        assert!(
-            ffb_smoke < mode_change_observation,
-            "mode-change Pit House observation must run after simulator FFB smoke"
-        );
         assert!(
             mode_change_observation < mode_change_case,
             "mode-change Pit House case must run after its observation"
@@ -28000,6 +28070,13 @@ mod tests {
         assert!(
             pit_house_proof < smoke_verification,
             "smoke-ready verification must run after Pit House proof"
+        );
+        assert!(
+            commands
+                .iter()
+                .all(|command| !command.contains("wheelctl moza torque-test")
+                    && !command.contains("wheelctl moza simulator-ffb-smoke")),
+            "Pit House frontier guidance must not repeat completed low-torque or simulator FFB commands: {commands:?}"
         );
 
         let observation_commands = commands
@@ -28050,11 +28127,59 @@ mod tests {
         write_minimal_passive_bundle(staged.path())?;
         write_zero_stage_receipts(staged.path())?;
         let smoke_ready_receipt = verify_bundle_dir(staged.path(), MozaBundleStage::SmokeReady);
+        let service_frontier = tempfile::tempdir()?;
+        write_minimal_passive_bundle(service_frontier.path())?;
+        write_zero_stage_receipts(service_frontier.path())?;
+        write_test_json_file(
+            &service_frontier.path().join("init-off.json"),
+            &receipt_with_lane_path(
+                service_frontier.path(),
+                "init-off.json",
+                real_init_receipt("off"),
+            ),
+        )?;
+        write_test_json_file(
+            &service_frontier.path().join("init-standard.json"),
+            &receipt_with_lane_path(
+                service_frontier.path(),
+                "init-standard.json",
+                real_init_receipt("standard"),
+            ),
+        )?;
+        let service_frontier_receipt =
+            verify_bundle_dir(service_frontier.path(), MozaBundleStage::SmokeReady);
+        let ffb_frontier = tempfile::tempdir()?;
+        write_minimal_passive_bundle(ffb_frontier.path())?;
+        write_zero_stage_receipts(ffb_frontier.path())?;
+        write_simulator_artifacts(ffb_frontier.path())?;
+        write_service_status_artifacts(ffb_frontier.path())?;
+        let ffb_frontier_receipt =
+            verify_bundle_dir(ffb_frontier.path(), MozaBundleStage::SmokeReady);
+        let pit_house_frontier = tempfile::tempdir()?;
+        write_minimal_passive_bundle(pit_house_frontier.path())?;
+        write_zero_stage_receipts(pit_house_frontier.path())?;
+        write_simulator_artifacts(pit_house_frontier.path())?;
+        write_service_status_artifacts(pit_house_frontier.path())?;
+        write_test_json_file(
+            &pit_house_frontier.path().join("simulator-ffb-smoke.json"),
+            &simulator_ffb_receipt(),
+        )?;
+        let pit_house_frontier_receipt =
+            verify_bundle_dir(pit_house_frontier.path(), MozaBundleStage::SmokeReady);
 
         assert!(!blocked_root_receipt.success);
         assert!(!smoke_ready_receipt.success);
+        assert!(!service_frontier_receipt.success);
+        assert!(!ffb_frontier_receipt.success);
+        assert!(!pit_house_frontier_receipt.success);
         let mut checked = 0usize;
-        for receipt in [&blocked_root_receipt, &smoke_ready_receipt] {
+        for receipt in [
+            &blocked_root_receipt,
+            &smoke_ready_receipt,
+            &service_frontier_receipt,
+            &ffb_frontier_receipt,
+            &pit_house_frontier_receipt,
+        ] {
             for command in receipt
                 .next_commands
                 .iter()
@@ -28070,7 +28195,7 @@ mod tests {
         }
 
         assert!(
-            checked >= 40,
+            checked >= 20,
             "expected to parse the generated wheelctl bring-up commands, checked {checked}"
         );
         Ok(())
@@ -28084,11 +28209,46 @@ mod tests {
         write_minimal_passive_bundle(staged.path())?;
         write_zero_stage_receipts(staged.path())?;
         let smoke_ready_receipt = verify_bundle_dir(staged.path(), MozaBundleStage::SmokeReady);
+        let service_frontier = tempfile::tempdir()?;
+        write_minimal_passive_bundle(service_frontier.path())?;
+        write_zero_stage_receipts(service_frontier.path())?;
+        write_test_json_file(
+            &service_frontier.path().join("init-off.json"),
+            &receipt_with_lane_path(
+                service_frontier.path(),
+                "init-off.json",
+                real_init_receipt("off"),
+            ),
+        )?;
+        write_test_json_file(
+            &service_frontier.path().join("init-standard.json"),
+            &receipt_with_lane_path(
+                service_frontier.path(),
+                "init-standard.json",
+                real_init_receipt("standard"),
+            ),
+        )?;
+        let service_frontier_receipt =
+            verify_bundle_dir(service_frontier.path(), MozaBundleStage::SmokeReady);
+        let ffb_frontier = tempfile::tempdir()?;
+        write_minimal_passive_bundle(ffb_frontier.path())?;
+        write_zero_stage_receipts(ffb_frontier.path())?;
+        write_simulator_artifacts(ffb_frontier.path())?;
+        write_service_status_artifacts(ffb_frontier.path())?;
+        let ffb_frontier_receipt =
+            verify_bundle_dir(ffb_frontier.path(), MozaBundleStage::SmokeReady);
 
         assert!(!blocked_root_receipt.success);
         assert!(!smoke_ready_receipt.success);
+        assert!(!service_frontier_receipt.success);
+        assert!(!ffb_frontier_receipt.success);
         let mut checked = 0usize;
-        for receipt in [&blocked_root_receipt, &smoke_ready_receipt] {
+        for receipt in [
+            &blocked_root_receipt,
+            &smoke_ready_receipt,
+            &service_frontier_receipt,
+            &ffb_frontier_receipt,
+        ] {
             for command in receipt
                 .next_commands
                 .iter()
@@ -28116,6 +28276,8 @@ mod tests {
                     ["wheeld", "--hardware-lane", lane] => {
                         assert!(
                             Path::new(lane).ends_with(staged.path())
+                                || Path::new(lane).ends_with(service_frontier.path())
+                                || Path::new(lane).ends_with(ffb_frontier.path())
                                 || lane.replace('\\', "/").contains("ci/hardware/moza-r5/"),
                             "generated wheeld next_command should target the staged or dated Moza lane: {command}"
                         );
