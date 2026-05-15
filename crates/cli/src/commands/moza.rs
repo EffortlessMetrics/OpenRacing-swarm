@@ -28,7 +28,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::commands::{
     MozaBundleStage, MozaCommands, MozaInitMode, MozaPitHouseEvidenceKind,
-    MozaPitHouseObservationCase, MozaReceiptTemplateKind,
+    MozaPitHouseObservationCase, MozaReceiptTemplateKind, MozaZeroOutputStrategy,
 };
 use crate::error::CliError;
 
@@ -41,6 +41,8 @@ const START_REPORTING_FEATURE_REPORT_ID: &str = "0x03";
 const FFB_MODE_FEATURE_REPORT_ID: &str = "0x11";
 const PIDFF_DEVICE_CONTROL_REPORT_ID: &str = "0x0C";
 const PIDFF_DEVICE_CONTROL_REPORT_LEN: usize = 2;
+const PIDFF_STOP_ALL_EFFECTS_COMMAND: u8 = 0x04;
+const PIDFF_STOP_ALL_EFFECTS_COMMAND_NAME: &str = "stop_all_effects";
 const R5_V1_LIVE_OUTPUT_REPORTS: &[(&str, usize)] = &[
     ("0x01", 22),
     ("0x02", 14),
@@ -69,11 +71,15 @@ const SIMULATOR_FFB_PREREQUISITE_ARTIFACTS: [(&str, &str); 6] = [
 ];
 
 fn short_hid_write_error(bytes_written: usize) -> Option<String> {
-    if bytes_written == REPORT_LEN {
+    short_zero_output_write_error(REPORT_LEN, bytes_written)
+}
+
+fn short_zero_output_write_error(expected_len: usize, bytes_written: usize) -> Option<String> {
+    if bytes_written == expected_len {
         None
     } else {
         Some(format!(
-            "short_hid_write: expected {REPORT_LEN} bytes, wrote {bytes_written}"
+            "short_hid_write: expected {expected_len} bytes, wrote {bytes_written}"
         ))
     }
 }
@@ -109,6 +115,79 @@ struct ZeroOutputStagePreflight {
     lane: PathBuf,
     lane_display: String,
     pre_output_readiness_generated_at: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct ZeroOutputPayload {
+    strategy: MozaZeroOutputStrategy,
+    bytes: Vec<u8>,
+    report_id: String,
+    report_len: usize,
+    torque_raw: i16,
+    flags: u8,
+    motor_enabled: bool,
+    pidff_device_control_command: Option<u8>,
+    pidff_device_control_command_name: Option<&'static str>,
+}
+
+impl ZeroOutputPayload {
+    fn direct(pid: u16) -> Self {
+        let bytes = zero_torque_payload_for_pid(pid).to_vec();
+        let torque_raw = i16::from_le_bytes([bytes[1], bytes[2]]);
+        let flags = bytes[3];
+        Self {
+            strategy: MozaZeroOutputStrategy::DirectReport0x20,
+            report_id: hex_u8(bytes[0]),
+            report_len: bytes.len(),
+            torque_raw,
+            flags,
+            motor_enabled: flags & 0x01 != 0,
+            bytes,
+            pidff_device_control_command: None,
+            pidff_device_control_command_name: None,
+        }
+    }
+
+    fn pidff_stop_all() -> Self {
+        let bytes = vec![0x0C, PIDFF_STOP_ALL_EFFECTS_COMMAND];
+        Self {
+            strategy: MozaZeroOutputStrategy::PidffStopAll,
+            report_id: PIDFF_DEVICE_CONTROL_REPORT_ID.to_string(),
+            report_len: bytes.len(),
+            torque_raw: 0,
+            flags: 0,
+            motor_enabled: false,
+            bytes,
+            pidff_device_control_command: Some(PIDFF_STOP_ALL_EFFECTS_COMMAND),
+            pidff_device_control_command_name: Some(PIDFF_STOP_ALL_EFFECTS_COMMAND_NAME),
+        }
+    }
+
+    fn for_strategy(strategy: MozaZeroOutputStrategy, pid: u16) -> Self {
+        match strategy {
+            MozaZeroOutputStrategy::DirectReport0x20 => Self::direct(pid),
+            MozaZeroOutputStrategy::PidffStopAll => Self::pidff_stop_all(),
+        }
+    }
+
+    fn strategy_name(&self) -> &'static str {
+        zero_output_strategy_name(self.strategy)
+    }
+
+    fn payload_hex(&self) -> String {
+        bytes_hex_compact(&self.bytes)
+    }
+
+    fn no_nonzero_torque(&self) -> bool {
+        !self.motor_enabled && self.torque_raw == 0 && self.flags == 0
+    }
+}
+
+fn zero_output_strategy_name(strategy: MozaZeroOutputStrategy) -> &'static str {
+    match strategy {
+        MozaZeroOutputStrategy::DirectReport0x20 => "direct_report_0x20",
+        MozaZeroOutputStrategy::PidffStopAll => "pidff_device_control_stop_all",
+    }
 }
 
 struct InitStagePreflight {
@@ -287,6 +366,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             device,
             lane,
             pid,
+            strategy,
             dry_run,
             confirm_zero_torque,
             repeat,
@@ -299,6 +379,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 device.as_deref(),
                 lane.as_deref(),
                 pid.as_deref(),
+                *strategy,
                 *dry_run,
                 *confirm_zero_torque,
                 *repeat,
@@ -312,6 +393,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             device,
             lane,
             pid,
+            strategy,
             dry_run,
             confirm_watchdog_test,
             pre_zero_count,
@@ -324,6 +406,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 device.as_deref(),
                 lane.as_deref(),
                 pid.as_deref(),
+                *strategy,
                 *dry_run,
                 *confirm_watchdog_test,
                 *pre_zero_count,
@@ -337,6 +420,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             device,
             lane,
             pid,
+            strategy,
             dry_run,
             confirm_disconnect_test,
             max_duration_ms,
@@ -348,6 +432,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 device.as_deref(),
                 lane.as_deref(),
                 pid.as_deref(),
+                *strategy,
                 *dry_run,
                 *confirm_disconnect_test,
                 *max_duration_ms,
@@ -1342,6 +1427,7 @@ async fn zero_torque(
     selector: Option<&str>,
     lane: Option<&Path>,
     pid_override: Option<&str>,
+    strategy: MozaZeroOutputStrategy,
     dry_run: bool,
     confirm_zero_torque: bool,
     repeat: u32,
@@ -1359,7 +1445,7 @@ async fn zero_torque(
                 hex_u16(pid)
             ));
         }
-        let payload = zero_torque_payload_for_pid(pid);
+        let payload = ZeroOutputPayload::for_strategy(strategy, pid);
         let mut receipt = ZeroTorqueProofReceipt::new(
             "wheelctl moza zero",
             selector.map(str::to_string),
@@ -1390,6 +1476,7 @@ async fn zero_torque(
         lane,
         json_out,
         "zero-torque-proof.json",
+        strategy,
         confirm_zero_torque,
         "--confirm-zero-torque",
     )?;
@@ -1405,7 +1492,7 @@ async fn zero_torque(
     }
 
     let pid = parse_required_hex_u16(&snapshot.product_id)?;
-    let payload = zero_torque_payload_for_pid(pid);
+    let payload = ZeroOutputPayload::for_strategy(strategy, pid);
     let mut receipt = ZeroTorqueProofReceipt::new(
         "wheelctl moza zero",
         selector.map(str::to_string),
@@ -1420,6 +1507,7 @@ async fn zero_torque(
     receipt.pre_output_readiness_validated = true;
     receipt.pre_output_readiness_generated_at = preflight.pre_output_readiness_generated_at;
     receipt.operator_confirmed = confirm_zero_torque;
+    let zero_payload = receipt.zero_payload.clone();
 
     let period = Duration::from_micros(1_000_000 / u64::from(hz));
     let watchdog_timeout = Duration::from_millis(watchdog_timeout_ms);
@@ -1442,17 +1530,17 @@ async fn zero_torque(
         }
 
         receipt.write_attempts += 1;
-        match device.write(&payload) {
+        match device.write(&zero_payload.bytes) {
             Ok(n) => {
                 receipt.bytes_written_total += n;
-                if let Some(error) = short_hid_write_error(n) {
+                if let Some(error) = short_zero_output_write_error(zero_payload.report_len, n) {
                     receipt.write_errors += 1;
                     receipt.abort_reason = Some(error.clone());
                     receipt.record_command(ZeroTorqueCommandRecord::partial(
                         sequence,
                         "scheduled_zero",
                         started_at,
-                        payload,
+                        &zero_payload,
                         n,
                         error,
                     ));
@@ -1463,7 +1551,7 @@ async fn zero_torque(
                     sequence,
                     "scheduled_zero",
                     started_at,
-                    payload,
+                    &zero_payload,
                     n,
                 ));
             }
@@ -1475,7 +1563,7 @@ async fn zero_torque(
                     sequence,
                     "scheduled_zero",
                     started_at,
-                    payload,
+                    &zero_payload,
                     error,
                 ));
                 break;
@@ -1487,17 +1575,17 @@ async fn zero_torque(
     }
 
     receipt.final_zero_attempted = true;
-    match device.write(&payload) {
+    match device.write(&zero_payload.bytes) {
         Ok(n) => {
             receipt.bytes_written_total += n;
-            if let Some(error) = short_hid_write_error(n) {
+            if let Some(error) = short_zero_output_write_error(zero_payload.report_len, n) {
                 receipt.write_errors += 1;
                 receipt.final_zero_error = Some(error.clone());
                 receipt.record_command(ZeroTorqueCommandRecord::partial(
                     repeat,
                     "final_zero",
                     started_at,
-                    payload,
+                    &zero_payload,
                     n,
                     error,
                 ));
@@ -1508,7 +1596,7 @@ async fn zero_torque(
                     repeat,
                     "final_zero",
                     started_at,
-                    payload,
+                    &zero_payload,
                     n,
                 ));
             }
@@ -1521,7 +1609,7 @@ async fn zero_torque(
                 repeat,
                 "final_zero",
                 started_at,
-                payload,
+                &zero_payload,
                 error,
             ));
         }
@@ -1551,6 +1639,7 @@ async fn watchdog_proof(
     selector: Option<&str>,
     lane: Option<&Path>,
     pid_override: Option<&str>,
+    strategy: MozaZeroOutputStrategy,
     dry_run: bool,
     confirm_watchdog_test: bool,
     pre_zero_count: u32,
@@ -1568,7 +1657,7 @@ async fn watchdog_proof(
                 hex_u16(pid)
             ));
         }
-        let payload = zero_torque_payload_for_pid(pid);
+        let payload = ZeroOutputPayload::for_strategy(strategy, pid);
         let mut receipt = ZeroTorqueProofReceipt::new(
             "wheelctl moza watchdog-proof",
             selector.map(str::to_string),
@@ -1598,10 +1687,18 @@ async fn watchdog_proof(
         lane,
         json_out,
         "watchdog-proof.json",
+        strategy,
         confirm_watchdog_test,
         "--confirm-watchdog-test",
     )?;
     let zero_proof = validate_same_lane_zero_proof_for_zero_output(&preflight.lane)?;
+    if zero_proof.zero_output_strategy != zero_output_strategy_name(strategy) {
+        return Err(anyhow!(
+            "watchdog strategy {} must match same-lane zero proof strategy {}",
+            zero_output_strategy_name(strategy),
+            zero_proof.zero_output_strategy
+        ));
+    }
 
     let api = HidApi::new().context("failed to initialize HID API")?;
     let (device, snapshot) = open_single_moza_device(&api, selector)?;
@@ -1614,7 +1711,7 @@ async fn watchdog_proof(
     }
 
     let pid = parse_required_hex_u16(&snapshot.product_id)?;
-    let payload = zero_torque_payload_for_pid(pid);
+    let payload = ZeroOutputPayload::for_strategy(strategy, pid);
     let mut receipt = ZeroTorqueProofReceipt::new(
         "wheelctl moza watchdog-proof",
         selector.map(str::to_string),
@@ -1636,15 +1733,16 @@ async fn watchdog_proof(
         "watchdog-proof intentionally waits past the watchdog timeout, then sends final zero"
             .to_string(),
     );
+    let zero_payload = receipt.zero_payload.clone();
 
     let period = Duration::from_micros(1_000_000 / u64::from(hz));
     let started_at = Instant::now();
     for sequence in 0..pre_zero_count {
         receipt.write_attempts += 1;
-        match device.write(&payload) {
+        match device.write(&zero_payload.bytes) {
             Ok(n) => {
                 receipt.bytes_written_total += n;
-                if let Some(error) = short_hid_write_error(n) {
+                if let Some(error) = short_zero_output_write_error(zero_payload.report_len, n) {
                     receipt.write_errors += 1;
                     receipt.abort_reason =
                         Some(format!("hid_write_error_before_watchdog: {error}"));
@@ -1652,7 +1750,7 @@ async fn watchdog_proof(
                         sequence,
                         "scheduled_zero",
                         started_at,
-                        payload,
+                        &zero_payload,
                         n,
                         error,
                     ));
@@ -1663,7 +1761,7 @@ async fn watchdog_proof(
                     sequence,
                     "scheduled_zero",
                     started_at,
-                    payload,
+                    &zero_payload,
                     n,
                 ));
             }
@@ -1675,7 +1773,7 @@ async fn watchdog_proof(
                     sequence,
                     "scheduled_zero",
                     started_at,
-                    payload,
+                    &zero_payload,
                     error,
                 ));
                 break;
@@ -1694,17 +1792,17 @@ async fn watchdog_proof(
     }
 
     receipt.final_zero_attempted = true;
-    match device.write(&payload) {
+    match device.write(&zero_payload.bytes) {
         Ok(n) => {
             receipt.bytes_written_total += n;
-            if let Some(error) = short_hid_write_error(n) {
+            if let Some(error) = short_zero_output_write_error(zero_payload.report_len, n) {
                 receipt.write_errors += 1;
                 receipt.final_zero_error = Some(error.clone());
                 receipt.record_command(ZeroTorqueCommandRecord::partial(
                     pre_zero_count,
                     "final_zero",
                     started_at,
-                    payload,
+                    &zero_payload,
                     n,
                     error,
                 ));
@@ -1715,7 +1813,7 @@ async fn watchdog_proof(
                     pre_zero_count,
                     "final_zero",
                     started_at,
-                    payload,
+                    &zero_payload,
                     n,
                 ));
             }
@@ -1728,7 +1826,7 @@ async fn watchdog_proof(
                 pre_zero_count,
                 "final_zero",
                 started_at,
-                payload,
+                &zero_payload,
                 error,
             ));
         }
@@ -1758,6 +1856,7 @@ async fn disconnect_proof(
     selector: Option<&str>,
     lane: Option<&Path>,
     pid_override: Option<&str>,
+    strategy: MozaZeroOutputStrategy,
     dry_run: bool,
     confirm_disconnect_test: bool,
     max_duration_ms: u64,
@@ -1779,7 +1878,7 @@ async fn disconnect_proof(
                 hex_u16(pid)
             ));
         }
-        let payload = zero_torque_payload_for_pid(pid);
+        let payload = ZeroOutputPayload::for_strategy(strategy, pid);
         let mut receipt = ZeroTorqueProofReceipt::new(
             "wheelctl moza disconnect-proof",
             selector.map(str::to_string),
@@ -1809,10 +1908,18 @@ async fn disconnect_proof(
         lane,
         json_out,
         "disconnect-proof.json",
+        strategy,
         confirm_disconnect_test,
         "--confirm-disconnect-test",
     )?;
     let zero_proof = validate_same_lane_zero_proof_for_zero_output(&preflight.lane)?;
+    if zero_proof.zero_output_strategy != zero_output_strategy_name(strategy) {
+        return Err(anyhow!(
+            "disconnect strategy {} must match same-lane zero proof strategy {}",
+            zero_output_strategy_name(strategy),
+            zero_proof.zero_output_strategy
+        ));
+    }
 
     let api = HidApi::new().context("failed to initialize HID API")?;
     let (device, snapshot) = open_single_moza_device(&api, selector)?;
@@ -1825,7 +1932,7 @@ async fn disconnect_proof(
     }
 
     let pid = parse_required_hex_u16(&snapshot.product_id)?;
-    let payload = zero_torque_payload_for_pid(pid);
+    let payload = ZeroOutputPayload::for_strategy(strategy, pid);
     let max_writes = disconnect_max_writes(max_duration_ms, hz);
     let mut receipt = ZeroTorqueProofReceipt::new(
         "wheelctl moza disconnect-proof",
@@ -1853,22 +1960,23 @@ async fn disconnect_proof(
         "final zero is attempted after disconnect; it may fail if the HID handle is already gone"
             .to_string(),
     );
+    let zero_payload = receipt.zero_payload.clone();
 
     let period = Duration::from_micros(1_000_000 / u64::from(hz));
     let started_at = Instant::now();
     for sequence in 0..max_writes {
         receipt.write_attempts += 1;
-        match device.write(&payload) {
+        match device.write(&zero_payload.bytes) {
             Ok(n) => {
                 receipt.bytes_written_total += n;
-                if let Some(error) = short_hid_write_error(n) {
+                if let Some(error) = short_zero_output_write_error(zero_payload.report_len, n) {
                     receipt.write_errors += 1;
                     receipt.abort_reason = Some(error.clone());
                     receipt.record_command(ZeroTorqueCommandRecord::partial(
                         sequence,
                         "scheduled_zero",
                         started_at,
-                        payload,
+                        &zero_payload,
                         n,
                         error,
                     ));
@@ -1879,7 +1987,7 @@ async fn disconnect_proof(
                     sequence,
                     "scheduled_zero",
                     started_at,
-                    payload,
+                    &zero_payload,
                     n,
                 ));
             }
@@ -1892,7 +2000,7 @@ async fn disconnect_proof(
                     sequence,
                     "disconnect_probe",
                     started_at,
-                    payload,
+                    &zero_payload,
                     error,
                 ));
                 break;
@@ -1908,17 +2016,17 @@ async fn disconnect_proof(
     }
 
     receipt.final_zero_attempted = true;
-    match device.write(&payload) {
+    match device.write(&zero_payload.bytes) {
         Ok(n) => {
             receipt.bytes_written_total += n;
-            if let Some(error) = short_hid_write_error(n) {
+            if let Some(error) = short_zero_output_write_error(zero_payload.report_len, n) {
                 receipt.write_errors += 1;
                 receipt.final_zero_error = Some(error.clone());
                 receipt.record_command(ZeroTorqueCommandRecord::partial(
                     receipt.write_attempts,
                     "final_zero",
                     started_at,
-                    payload,
+                    &zero_payload,
                     n,
                     error,
                 ));
@@ -1929,7 +2037,7 @@ async fn disconnect_proof(
                     receipt.write_attempts,
                     "final_zero",
                     started_at,
-                    payload,
+                    &zero_payload,
                     n,
                 ));
             }
@@ -1942,7 +2050,7 @@ async fn disconnect_proof(
                 receipt.write_attempts,
                 "final_zero",
                 started_at,
-                payload,
+                &zero_payload,
                 error,
             ));
         }
@@ -3674,6 +3782,7 @@ fn validate_zero_output_stage_preflight(
     lane: Option<&Path>,
     json_out: Option<&Path>,
     relative_path: &str,
+    strategy: MozaZeroOutputStrategy,
     confirmed: bool,
     confirmation_arg: &'static str,
 ) -> Result<ZeroOutputStagePreflight> {
@@ -3714,8 +3823,8 @@ fn validate_zero_output_stage_preflight(
         && json_bool(&receipt, "no_output_reports") == Some(true)
         && json_bool(&receipt, "no_feature_reports") == Some(true)
         && no_out_of_scope_device_commands(&receipt);
-    let direct_zero_report_metadata = validate_zero_output_direct_report_metadata(lane);
-    let direct_zero_report_metadata_ok = direct_zero_report_metadata.is_ok();
+    let strategy_metadata = validate_zero_output_strategy_metadata(lane, strategy);
+    let strategy_metadata_ok = strategy_metadata.is_ok();
 
     if command_ok
         && lane_ok
@@ -3725,7 +3834,7 @@ fn validate_zero_output_stage_preflight(
         && blocking_items_empty
         && status_receipts_ok
         && no_output_receipt
-        && direct_zero_report_metadata_ok
+        && strategy_metadata_ok
     {
         Ok(ZeroOutputStagePreflight {
             lane: lane.to_path_buf(),
@@ -3734,20 +3843,21 @@ fn validate_zero_output_stage_preflight(
                 .map(str::to_string),
         })
     } else {
-        let direct_zero_report_metadata_error = direct_zero_report_metadata
+        let strategy_metadata_error = strategy_metadata
             .err()
             .map(|error| error.to_string())
             .unwrap_or_else(|| "ok".to_string());
         Err(anyhow!(
-            "pre-output readiness receipt '{}' is not ready for zero-output writes: command_ok={command_ok}, lane_ok={lane_ok}, success={success}, ready_for_zero_torque={ready_for_zero_torque}, ready_for_ffb_false={ready_for_ffb}, blocking_items_empty={blocking_items_empty}, status_receipts_ok={status_receipts_ok}, no_output_receipt={no_output_receipt}, direct_zero_report_metadata={direct_zero_report_metadata_ok}; direct_zero_report_metadata_error={direct_zero_report_metadata_error}",
-            lane.join("pre-output-readiness.json").display()
+            "pre-output readiness receipt '{}' is not ready for zero-output writes with strategy {}: command_ok={command_ok}, lane_ok={lane_ok}, success={success}, ready_for_zero_torque={ready_for_zero_torque}, ready_for_ffb_false={ready_for_ffb}, blocking_items_empty={blocking_items_empty}, status_receipts_ok={status_receipts_ok}, no_output_receipt={no_output_receipt}, strategy_metadata={strategy_metadata_ok}; strategy_metadata_error={strategy_metadata_error}",
+            lane.join("pre-output-readiness.json").display(),
+            zero_output_strategy_name(strategy)
         ))
     }
 }
 
 fn validate_same_lane_zero_proof_for_zero_output(lane: &Path) -> Result<ZeroProofSummary> {
     require_lane_receipt_path(lane, "zero-torque-proof.json")?;
-    validate_zero_proof_for_torque_test(&lane.join("zero-torque-proof.json"))
+    validate_zero_proof_for_zero_output(&lane.join("zero-torque-proof.json"))
 }
 
 fn init_receipt_relative_path(mode: MozaInitMode) -> &'static str {
@@ -3877,6 +3987,19 @@ fn low_torque_preflight_target_product_id(
 }
 
 fn validate_zero_proof_for_torque_test(path: &Path) -> Result<ZeroProofSummary> {
+    let summary = validate_zero_proof_for_zero_output(path)?;
+    if summary.zero_output_strategy
+        != zero_output_strategy_name(MozaZeroOutputStrategy::DirectReport0x20)
+    {
+        return Err(anyhow!(
+            "zero proof '{}' must use direct_report_0x20 before direct low-torque tests",
+            path.display()
+        ));
+    }
+    Ok(summary)
+}
+
+fn validate_zero_proof_for_zero_output(path: &Path) -> Result<ZeroProofSummary> {
     let receipt = read_json_path(path)?;
     let receipt_crc32 = receipt_file_crc32(path)?;
     let generated_at_utc = json_string(&receipt, "generated_at_utc").map(str::to_string);
@@ -3897,6 +4020,9 @@ fn validate_zero_proof_for_torque_test(path: &Path) -> Result<ZeroProofSummary> 
     let write_errors = json_u64(&receipt, "write_errors").unwrap_or(u64::MAX);
     let watchdog_faults = json_u64(&receipt, "watchdog_faults").unwrap_or(u64::MAX);
     let writes_ok_exact = repeat.checked_add(1) == Some(writes_ok);
+    let zero_output_strategy = json_string(&receipt, "zero_output_strategy").unwrap_or(
+        zero_output_strategy_name(MozaZeroOutputStrategy::DirectReport0x20),
+    );
     let device = receipt.get("device");
     let product_id = device
         .and_then(|device| json_string(device, "product_id"))
@@ -3922,10 +4048,7 @@ fn validate_zero_proof_for_torque_test(path: &Path) -> Result<ZeroProofSummary> 
                     .unwrap_or(false)
             })
             .unwrap_or(false)
-        && json_string(&receipt, "report_id") == Some(DIRECT_TORQUE_REPORT_ID)
-        && json_i64(&receipt, "torque_raw") == Some(0)
-        && json_u64(&receipt, "flags") == Some(0)
-        && json_bool(&receipt, "motor_enabled") == Some(false)
+        && zero_receipt_payload_is_safe(&receipt)
         && json_bool(&receipt, "final_zero_sent") == Some(true)
         && repeat >= 100
         && hz > 0
@@ -3959,6 +4082,7 @@ fn validate_zero_proof_for_torque_test(path: &Path) -> Result<ZeroProofSummary> 
         })?,
         receipt_crc32,
         product_id,
+        zero_output_strategy: zero_output_strategy.to_string(),
         repeat,
         writes_ok,
         final_zero_sent: true,
@@ -4595,10 +4719,11 @@ fn pre_output_readiness_dir(lane: &Path) -> PreOutputReadinessReceipt {
     let role_evidence_complete = required_role_evidence_complete(&passive);
     let direct_zero_report_metadata = zero_output_direct_report_metadata_trusted(lane);
     let zero_output_strategies = zero_output_strategy_candidates(lane, direct_zero_report_metadata);
+    let zero_output_strategy_ready = zero_output_strategies.iter().any(|strategy| strategy.ready);
     let ready_for_zero_torque = passive.success
         && passive_audit_passed
         && status_receipts_no_output
-        && direct_zero_report_metadata;
+        && zero_output_strategy_ready;
     let ready_for_ffb = ready_for_zero_torque
         && zero.success
         && zero_audit_passed
@@ -4608,7 +4733,7 @@ fn pre_output_readiness_dir(lane: &Path) -> PreOutputReadinessReceipt {
         &passive,
         passive_audit_passed,
         status_receipts_no_output,
-        direct_zero_report_metadata,
+        zero_output_strategy_ready,
     );
     let ffb_blocking_items = pre_output_ffb_blocking_items(&zero, &smoke_ready, zero_audit_passed);
     let passed_items = pre_output_passed_items(
@@ -4616,7 +4741,7 @@ fn pre_output_readiness_dir(lane: &Path) -> PreOutputReadinessReceipt {
         role_evidence_complete,
         passive_audit_passed,
         status_receipts_no_output,
-        direct_zero_report_metadata,
+        zero_output_strategy_ready,
         ready_for_zero_torque,
         ready_for_ffb,
     );
@@ -4668,7 +4793,7 @@ fn pre_output_passed_items(
     role_evidence_complete: bool,
     passive_audit_passed: bool,
     status_receipts_no_output: bool,
-    direct_zero_report_metadata: bool,
+    zero_output_strategy_ready: bool,
     ready_for_zero_torque: bool,
     ready_for_ffb: bool,
 ) -> Vec<String> {
@@ -4698,8 +4823,8 @@ fn pre_output_passed_items(
         passed.push("status_receipts_no_output".to_string());
         passed.push("support_bundle_no_output".to_string());
     }
-    if direct_zero_report_metadata {
-        passed.push("direct_zero_report_metadata".to_string());
+    if zero_output_strategy_ready {
+        passed.push("zero_output_strategy_ready".to_string());
     }
     if passive.success {
         passed.push("passive_verification".to_string());
@@ -4720,7 +4845,7 @@ fn pre_output_zero_blocking_items(
     passive: &PreOutputVerificationReceipt,
     passive_audit_passed: bool,
     status_receipts_no_output: bool,
-    direct_zero_report_metadata: bool,
+    zero_output_strategy_ready: bool,
 ) -> Vec<String> {
     let mut blockers = Vec::new();
     append_verification_blocking_items(&mut blockers, passive);
@@ -4730,8 +4855,8 @@ fn pre_output_zero_blocking_items(
     if !status_receipts_no_output {
         blockers.push("status_receipts_no_output".to_string());
     }
-    if !direct_zero_report_metadata {
-        blockers.push("direct_zero_report_metadata".to_string());
+    if !zero_output_strategy_ready {
+        blockers.push("zero_output_strategy_ready".to_string());
     }
     blockers.sort();
     blockers.dedup();
@@ -4740,6 +4865,20 @@ fn pre_output_zero_blocking_items(
 
 fn zero_output_direct_report_metadata_trusted(lane: &Path) -> bool {
     validate_zero_output_direct_report_metadata(lane).is_ok()
+}
+
+fn validate_zero_output_strategy_metadata(
+    lane: &Path,
+    strategy: MozaZeroOutputStrategy,
+) -> Result<()> {
+    match strategy {
+        MozaZeroOutputStrategy::DirectReport0x20 => {
+            validate_zero_output_direct_report_metadata(lane)
+        }
+        MozaZeroOutputStrategy::PidffStopAll => {
+            validate_zero_output_pidff_stop_all_report_metadata(lane)
+        }
+    }
 }
 
 fn validate_zero_output_direct_report_metadata(lane: &Path) -> Result<()> {
@@ -4757,6 +4896,41 @@ fn validate_zero_output_direct_report_metadata(lane: &Path) -> Result<()> {
                 descriptor_path.display()
             )
         })
+}
+
+fn validate_zero_output_pidff_stop_all_report_metadata(lane: &Path) -> Result<()> {
+    let pid = lane_manifest_r5_pid(lane).ok_or_else(|| {
+        anyhow!("PIDFF stop-all zero-output writes require a lane manifest with a supported R5 wheelbase PID")
+    })?;
+    let target_product_id = hex_u16(pid);
+    let descriptor_path = lane.join("descriptor.json");
+    let receipt = read_json_path(&descriptor_path)?;
+    let Some(devices) = receipt.get("devices").and_then(Value::as_array) else {
+        return Err(anyhow!(
+            "descriptor receipt '{}' is missing devices[]",
+            descriptor_path.display()
+        ));
+    };
+
+    if devices.iter().any(|device| {
+        is_r5_device_value(device)
+            && json_string(device, "product_id") == Some(target_product_id.as_str())
+            && r5_descriptor_metadata_trusted(device)
+            && json_report_record_contains(
+                device,
+                "output_reports",
+                PIDFF_DEVICE_CONTROL_REPORT_ID,
+                PIDFF_DEVICE_CONTROL_REPORT_LEN,
+            )
+    }) {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "PIDFF stop-all zero-output writes require trusted descriptor-derived Device Control output report metadata for PID {} in '{}'",
+            target_product_id,
+            descriptor_path.display()
+        ))
+    }
 }
 
 fn zero_output_strategy_candidates(
@@ -4826,22 +5000,22 @@ fn zero_output_pidff_stop_all_strategy_candidate(
     if !descriptor_metadata_trusted {
         blocking_items.push("pidff_device_control_descriptor_trust");
     }
-    blocking_items.push("pidff_zero_strategy_not_implemented");
+    let ready = descriptor_report_observed && descriptor_metadata_trusted;
 
     ZeroOutputStrategyCandidate {
         name: "pidff_device_control_stop_all",
         description: "standard HID PIDFF Device Control Stop All Effects zero-output candidate",
-        implemented: false,
+        implemented: true,
         descriptor_report_observed,
         descriptor_metadata_trusted,
-        ready: false,
+        ready,
         required_output_reports: vec![HidReportRecord {
             report_id: PIDFF_DEVICE_CONTROL_REPORT_ID.to_string(),
             report_len: PIDFF_DEVICE_CONTROL_REPORT_LEN,
         }],
         blocking_items,
         notes: vec![
-            "read-only inventory only; no PIDFF zero-output command is implemented yet".to_string(),
+            "implemented by wheelctl moza zero --strategy pidff-stop-all".to_string(),
             "the candidate report carries a stop-all-effects command, not a force magnitude"
                 .to_string(),
         ],
@@ -8987,10 +9161,7 @@ fn verify_zero_torque_gate(lane: &Path) -> BundleGateCheck {
     let dry_run = json_bool(&receipt, "dry_run");
     let no_high_torque = json_bool(&receipt, "no_high_torque") == Some(true);
     let no_nonzero_torque = json_bool(&receipt, "no_nonzero_torque") == Some(true);
-    let report_id = json_string(&receipt, "report_id");
-    let torque_raw = json_i64(&receipt, "torque_raw");
-    let flags = json_u64(&receipt, "flags");
-    let motor_enabled = json_bool(&receipt, "motor_enabled");
+    let zero_payload_safe = zero_receipt_payload_is_safe(&receipt);
     let final_zero_sent = json_bool(&receipt, "final_zero_sent");
     let no_feature_reports = json_bool(&receipt, "no_feature_reports") == Some(true);
     let no_out_of_scope = no_out_of_scope_device_commands(&receipt);
@@ -9022,10 +9193,7 @@ fn verify_zero_torque_gate(lane: &Path) -> BundleGateCheck {
         && no_out_of_scope
         && no_high_torque
         && no_nonzero_torque
-        && report_id == Some(DIRECT_TORQUE_REPORT_ID)
-        && torque_raw == Some(0)
-        && flags == Some(0)
-        && motor_enabled == Some(false)
+        && zero_payload_safe
         && final_zero_sent == Some(true)
         && repeat >= 100
         && hz > 0
@@ -9048,7 +9216,7 @@ fn verify_zero_torque_gate(lane: &Path) -> BundleGateCheck {
         BundleGateCheck::fail(
             "zero_torque_real_hardware",
             format!(
-                "success={success}, command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, generated_at_valid={generated_at_valid}, dry_run={dry_run:?}, no_hid_device_opened={no_hid_device_opened:?}, operator_confirmed={operator_confirmed:?}, lane_ok={lane_ok}, pre_output_readiness_validated={pre_output_readiness_validated}, no_feature_reports={no_feature_reports}, no_out_of_scope={no_out_of_scope}, no_high_torque={no_high_torque}, no_nonzero_torque={no_nonzero_torque}, report_id={report_id:?}, torque_raw={torque_raw:?}, flags={flags:?}, motor_enabled={motor_enabled:?}, final_zero_sent={final_zero_sent:?}, repeat={repeat}, hz={hz}, write_attempts={write_attempts}, writes_ok={writes_ok}, writes_ok_exact={writes_ok_exact}, write_errors={write_errors}, watchdog_faults={watchdog_faults}, command_log_safe={command_log_safe}, r5_output_device={r5_output_device}"
+                "success={success}, command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, generated_at_valid={generated_at_valid}, dry_run={dry_run:?}, no_hid_device_opened={no_hid_device_opened:?}, operator_confirmed={operator_confirmed:?}, lane_ok={lane_ok}, pre_output_readiness_validated={pre_output_readiness_validated}, no_feature_reports={no_feature_reports}, no_out_of_scope={no_out_of_scope}, no_high_torque={no_high_torque}, no_nonzero_torque={no_nonzero_torque}, zero_payload_safe={zero_payload_safe}, final_zero_sent={final_zero_sent:?}, repeat={repeat}, hz={hz}, write_attempts={write_attempts}, writes_ok={writes_ok}, writes_ok_exact={writes_ok_exact}, write_errors={write_errors}, watchdog_faults={watchdog_faults}, command_log_safe={command_log_safe}, r5_output_device={r5_output_device}"
             ),
         )
     }
@@ -9076,13 +9244,10 @@ fn zero_command_log_is_safe(receipt: &Value, repeat: u64) -> bool {
     let mut scheduled_ok = 0u64;
     let mut final_zero_ok = false;
     for (index, record) in records.iter().enumerate() {
-        let safe_zero = json_string(record, "payload_hex") == Some("2000000000000000")
-            && json_string(record, "report_id") == Some(DIRECT_TORQUE_REPORT_ID)
-            && json_i64(record, "torque_raw") == Some(0)
-            && json_u64(record, "flags") == Some(0)
-            && json_bool(record, "motor_enabled") == Some(false)
+        let expected_len = zero_payload_report_len(record).unwrap_or(0);
+        let safe_zero = zero_payload_record_is_safe(record)
             && json_string(record, "result") == Some("ok")
-            && json_u64(record, "bytes_written") == Some(REPORT_LEN as u64)
+            && json_u64(record, "bytes_written") == Some(expected_len)
             && record_sequence_matches_index(record, index);
         if !safe_zero {
             return false;
@@ -9108,12 +9273,72 @@ fn zero_command_log_is_safe(receipt: &Value, repeat: u64) -> bool {
     scheduled_ok == repeat && final_zero_ok
 }
 
+fn zero_payload_report_len(value: &Value) -> Option<u64> {
+    json_u64(value, "report_len").or_else(|| {
+        let strategy = json_string(value, "zero_output_strategy").unwrap_or(
+            zero_output_strategy_name(MozaZeroOutputStrategy::DirectReport0x20),
+        );
+        match strategy {
+            "direct_report_0x20" => Some(REPORT_LEN as u64),
+            _ => None,
+        }
+    })
+}
+
+fn zero_receipt_payload_is_safe(receipt: &Value) -> bool {
+    let strategy = json_string(receipt, "zero_output_strategy").unwrap_or(
+        zero_output_strategy_name(MozaZeroOutputStrategy::DirectReport0x20),
+    );
+    match strategy {
+        "direct_report_0x20" => {
+            json_string(receipt, "payload_hex") == Some("2000000000000000")
+                && json_string(receipt, "report_id") == Some(DIRECT_TORQUE_REPORT_ID)
+                && zero_payload_report_len(receipt) == Some(REPORT_LEN as u64)
+                && json_i64(receipt, "torque_raw") == Some(0)
+                && json_u64(receipt, "flags") == Some(0)
+                && json_bool(receipt, "motor_enabled") == Some(false)
+        }
+        "pidff_device_control_stop_all" => {
+            json_string(receipt, "payload_hex") == Some("0C04")
+                && json_string(receipt, "report_id") == Some(PIDFF_DEVICE_CONTROL_REPORT_ID)
+                && json_u64(receipt, "report_len") == Some(PIDFF_DEVICE_CONTROL_REPORT_LEN as u64)
+                && json_i64(receipt, "torque_raw") == Some(0)
+                && json_u64(receipt, "flags") == Some(0)
+                && json_bool(receipt, "motor_enabled") == Some(false)
+                && json_string(receipt, "pidff_device_control_command") == Some("0x04")
+                && json_string(receipt, "pidff_device_control_command_name")
+                    == Some(PIDFF_STOP_ALL_EFFECTS_COMMAND_NAME)
+        }
+        _ => false,
+    }
+}
+
 fn zero_payload_record_is_safe(record: &Value) -> bool {
-    json_string(record, "payload_hex") == Some("2000000000000000")
-        && json_string(record, "report_id") == Some(DIRECT_TORQUE_REPORT_ID)
-        && json_i64(record, "torque_raw") == Some(0)
-        && json_u64(record, "flags") == Some(0)
-        && json_bool(record, "motor_enabled") == Some(false)
+    let strategy = json_string(record, "zero_output_strategy").unwrap_or(
+        zero_output_strategy_name(MozaZeroOutputStrategy::DirectReport0x20),
+    );
+    match strategy {
+        "direct_report_0x20" => {
+            json_string(record, "payload_hex") == Some("2000000000000000")
+                && json_string(record, "report_id") == Some(DIRECT_TORQUE_REPORT_ID)
+                && zero_payload_report_len(record) == Some(REPORT_LEN as u64)
+                && json_i64(record, "torque_raw") == Some(0)
+                && json_u64(record, "flags") == Some(0)
+                && json_bool(record, "motor_enabled") == Some(false)
+        }
+        "pidff_device_control_stop_all" => {
+            json_string(record, "payload_hex") == Some("0C04")
+                && json_string(record, "report_id") == Some(PIDFF_DEVICE_CONTROL_REPORT_ID)
+                && json_u64(record, "report_len") == Some(PIDFF_DEVICE_CONTROL_REPORT_LEN as u64)
+                && json_i64(record, "torque_raw") == Some(0)
+                && json_u64(record, "flags") == Some(0)
+                && json_bool(record, "motor_enabled") == Some(false)
+                && json_string(record, "pidff_device_control_command") == Some("0x04")
+                && json_string(record, "pidff_device_control_command_name")
+                    == Some(PIDFF_STOP_ALL_EFFECTS_COMMAND_NAME)
+        }
+        _ => false,
+    }
 }
 
 fn verify_watchdog_proof_gate(lane: &Path) -> BundleGateCheck {
@@ -9211,7 +9436,7 @@ fn watchdog_command_log_is_safe(receipt: &Value, repeat: u64) -> bool {
     for (index, record) in records.iter().enumerate() {
         if !zero_payload_record_is_safe(record)
             || json_string(record, "result") != Some("ok")
-            || json_u64(record, "bytes_written") != Some(REPORT_LEN as u64)
+            || json_u64(record, "bytes_written") != zero_payload_report_len(record)
             || !record_sequence_matches_index(record, index)
         {
             return false;
@@ -9358,7 +9583,7 @@ fn disconnect_command_log_summary(receipt: &Value) -> Option<DisconnectCommandLo
         match json_string(record, "kind") {
             Some("scheduled_zero") => {
                 if json_string(record, "result") != Some("ok")
-                    || json_u64(record, "bytes_written") != Some(REPORT_LEN as u64)
+                    || json_u64(record, "bytes_written") != zero_payload_report_len(record)
                     || disconnect_error_seen
                     || final_zero_seen
                 {
@@ -9384,7 +9609,7 @@ fn disconnect_command_log_summary(receipt: &Value) -> Option<DisconnectCommandLo
                 }
                 match json_string(record, "result") {
                     Some("ok") => {
-                        if json_u64(record, "bytes_written") != Some(REPORT_LEN as u64) {
+                        if json_u64(record, "bytes_written") != zero_payload_report_len(record) {
                             return None;
                         }
                         final_zero_sent = true;
@@ -14300,6 +14525,7 @@ struct ZeroProofSummary {
     receipt_crc32: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     product_id: Option<String>,
+    zero_output_strategy: String,
     repeat: u64,
     writes_ok: u64,
     final_zero_sent: bool,
@@ -14971,11 +15197,17 @@ struct ZeroTorqueProofReceipt {
     watchdog_triggered: bool,
     disconnect_observed: bool,
     device: MozaDeviceRecord,
+    zero_output_strategy: &'static str,
     payload_hex: String,
     report_id: String,
+    report_len: usize,
     torque_raw: i16,
     flags: u8,
     motor_enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pidff_device_control_command: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pidff_device_control_command_name: Option<&'static str>,
     non_zero_payloads: usize,
     write_attempts: u32,
     writes_ok: u32,
@@ -14990,6 +15222,8 @@ struct ZeroTorqueProofReceipt {
     abort_reason: Option<String>,
     command_log: Vec<ZeroTorqueCommandRecord>,
     notes: Vec<String>,
+    #[serde(skip)]
+    zero_payload: ZeroOutputPayload,
 }
 
 #[derive(Debug, Serialize)]
@@ -14997,11 +15231,17 @@ struct ZeroTorqueCommandRecord {
     sequence: u32,
     kind: &'static str,
     elapsed_us: u64,
+    zero_output_strategy: &'static str,
     payload_hex: String,
     report_id: String,
+    report_len: usize,
     torque_raw: i16,
     flags: u8,
     motor_enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pidff_device_control_command: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pidff_device_control_command_name: Option<&'static str>,
     result: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     bytes_written: Option<usize>,
@@ -15014,7 +15254,7 @@ impl ZeroTorqueCommandRecord {
         sequence: u32,
         kind: &'static str,
         started_at: Instant,
-        payload: [u8; REPORT_LEN],
+        payload: &ZeroOutputPayload,
         bytes_written: usize,
     ) -> Self {
         Self::new(
@@ -15032,7 +15272,7 @@ impl ZeroTorqueCommandRecord {
         sequence: u32,
         kind: &'static str,
         started_at: Instant,
-        payload: [u8; REPORT_LEN],
+        payload: &ZeroOutputPayload,
         error: String,
     ) -> Self {
         Self::new(
@@ -15050,7 +15290,7 @@ impl ZeroTorqueCommandRecord {
         sequence: u32,
         kind: &'static str,
         started_at: Instant,
-        payload: [u8; REPORT_LEN],
+        payload: &ZeroOutputPayload,
         bytes_written: usize,
         error: String,
     ) -> Self {
@@ -15069,22 +15309,24 @@ impl ZeroTorqueCommandRecord {
         sequence: u32,
         kind: &'static str,
         started_at: Instant,
-        payload: [u8; REPORT_LEN],
+        payload: &ZeroOutputPayload,
         result: &'static str,
         bytes_written: Option<usize>,
         error: Option<String>,
     ) -> Self {
-        let torque_raw = i16::from_le_bytes([payload[1], payload[2]]);
-        let flags = payload[3];
         Self {
             sequence,
             kind,
             elapsed_us: started_at.elapsed().as_micros() as u64,
-            payload_hex: bytes_hex_compact(&payload),
-            report_id: hex_u8(payload[0]),
-            torque_raw,
-            flags,
-            motor_enabled: flags & 0x01 != 0,
+            zero_output_strategy: payload.strategy_name(),
+            payload_hex: payload.payload_hex(),
+            report_id: payload.report_id.clone(),
+            report_len: payload.report_len,
+            torque_raw: payload.torque_raw,
+            flags: payload.flags,
+            motor_enabled: payload.motor_enabled,
+            pidff_device_control_command: payload.pidff_device_control_command.map(hex_u8),
+            pidff_device_control_command_name: payload.pidff_device_control_command_name,
             result,
             bytes_written,
             error,
@@ -15451,17 +15693,22 @@ impl ZeroTorqueProofReceipt {
         hz: u32,
         watchdog_timeout_ms: u64,
         device: MozaDeviceRecord,
-        payload: [u8; REPORT_LEN],
+        payload: ZeroOutputPayload,
         dry_run: bool,
     ) -> Self {
-        let torque_raw = i16::from_le_bytes([payload[1], payload[2]]);
-        let flags = payload[3];
-        let motor_enabled = flags & 0x01 != 0;
-        let non_zero_payloads = usize::from(torque_raw != 0 || flags != 0);
+        let non_zero_payloads = usize::from(!payload.no_nonzero_torque());
         let test_kind = match command {
             "wheelctl moza watchdog-proof" => "watchdog_proof",
             "wheelctl moza disconnect-proof" => "disconnect_proof",
             _ => "zero_torque",
+        };
+        let note = match payload.strategy {
+            MozaZeroOutputStrategy::DirectReport0x20 => {
+                "zero sends only Moza direct torque report 0x20 encoded with raw torque 0 and flags 0"
+            }
+            MozaZeroOutputStrategy::PidffStopAll => {
+                "zero sends only standard PIDFF Device Control report 0x0C with Stop All Effects"
+            }
         };
 
         Self {
@@ -15493,11 +15740,15 @@ impl ZeroTorqueProofReceipt {
             watchdog_triggered: false,
             disconnect_observed: false,
             device,
-            payload_hex: bytes_hex_compact(&payload),
-            report_id: hex_u8(payload[0]),
-            torque_raw,
-            flags,
-            motor_enabled,
+            zero_output_strategy: payload.strategy_name(),
+            payload_hex: payload.payload_hex(),
+            report_id: payload.report_id.clone(),
+            report_len: payload.report_len,
+            torque_raw: payload.torque_raw,
+            flags: payload.flags,
+            motor_enabled: payload.motor_enabled,
+            pidff_device_control_command: payload.pidff_device_control_command.map(hex_u8),
+            pidff_device_control_command_name: payload.pidff_device_control_command_name,
             non_zero_payloads,
             write_attempts: 0,
             writes_ok: 0,
@@ -15510,9 +15761,10 @@ impl ZeroTorqueProofReceipt {
             abort_reason: None,
             command_log: Vec::new(),
             notes: vec![
-                "zero sends only Moza direct torque report 0x20 encoded with raw torque 0 and flags 0".to_string(),
+                note.to_string(),
                 "this command does not send Moza feature reports, FFB mode reports, high-torque reports, or non-zero torque".to_string(),
             ],
+            zero_payload: payload,
         }
     }
 
@@ -16851,6 +17103,10 @@ mod tests {
     }
 
     fn sample_trusted_r5_v1_json_device() -> Value {
+        if let Some(device) = live_r5_v1_descriptor_device() {
+            return device;
+        }
+
         let mut device = sample_trusted_r5_json_device();
         device["product_id"] = serde_json::json!("0x0004");
         device["product_name"] = serde_json::json!("Moza R5 V1");
@@ -16881,6 +17137,23 @@ mod tests {
         ]);
         device["feature_report_ids"] = serde_json::json!(["0x11", "0x12", "0x13", "0xAF"]);
         device
+    }
+
+    fn live_r5_v1_descriptor_device() -> Option<Value> {
+        let descriptor: Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../ci/hardware/moza-r5/2026-05-13/descriptor.json"
+        )))
+        .ok()?;
+        descriptor
+            .get("devices")?
+            .as_array()?
+            .iter()
+            .find(|device| {
+                json_string(device, "vendor_id") == Some("0x346E")
+                    && json_string(device, "product_id") == Some("0x0004")
+            })
+            .cloned()
     }
 
     fn sample_mixed_vendor_pedals_json_device() -> Value {
@@ -17452,7 +17725,7 @@ mod tests {
     }
 
     #[test]
-    fn pre_output_readiness_blocks_zero_torque_when_descriptor_lacks_direct_report() -> TestResult {
+    fn pre_output_readiness_allows_pidff_zero_when_descriptor_lacks_direct_report() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_minimal_passive_bundle(dir.path())?;
         write_service_status_artifacts(dir.path())?;
@@ -17476,17 +17749,21 @@ mod tests {
 
         let receipt = pre_output_readiness_dir(dir.path());
 
-        assert!(!receipt.success);
-        assert!(!receipt.ready_for_zero_torque);
+        assert!(receipt.success);
+        assert!(receipt.ready_for_zero_torque);
         assert!(!receipt.ready_for_ffb);
         assert!(
-            receipt
-                .blocking_items
-                .iter()
-                .any(|item| item == "direct_zero_report_metadata")
+            receipt.blocking_items.is_empty(),
+            "PIDFF stop-all should satisfy zero-output readiness when descriptor metadata is trusted"
         );
         assert!(
-            !receipt
+            receipt
+                .passed_items
+                .iter()
+                .any(|item| item == "zero_output_strategy_ready")
+        );
+        assert!(
+            receipt
                 .passed_items
                 .iter()
                 .any(|item| item == "ready_for_zero_torque")
@@ -17509,15 +17786,11 @@ mod tests {
             .iter()
             .find(|strategy| strategy.name == "pidff_device_control_stop_all")
             .ok_or("expected PIDFF stop-all zero-output candidate")?;
-        assert!(!pidff.implemented);
+        assert!(pidff.implemented);
         assert!(pidff.descriptor_report_observed);
-        assert!(!pidff.descriptor_metadata_trusted);
-        assert!(!pidff.ready);
-        assert!(
-            pidff
-                .blocking_items
-                .contains(&"pidff_zero_strategy_not_implemented")
-        );
+        assert!(pidff.descriptor_metadata_trusted);
+        assert!(pidff.ready);
+        assert!(pidff.blocking_items.is_empty());
         Ok(())
     }
 
@@ -17583,6 +17856,7 @@ mod tests {
             Some(dir.path()),
             Some(&json_out),
             "zero-torque-proof.json",
+            MozaZeroOutputStrategy::DirectReport0x20,
             true,
             "--confirm-zero-torque",
         )?;
@@ -17601,6 +17875,7 @@ mod tests {
             Some(dir.path()),
             Some(&dir.path().join("zero-torque-proof.json")),
             "zero-torque-proof.json",
+            MozaZeroOutputStrategy::DirectReport0x20,
             false,
             "--confirm-zero-torque",
         );
@@ -17626,6 +17901,7 @@ mod tests {
             Some(dir.path()),
             Some(&dir.path().join("zero-torque-proof.json")),
             "zero-torque-proof.json",
+            MozaZeroOutputStrategy::DirectReport0x20,
             true,
             "--confirm-zero-torque",
         );
@@ -17663,6 +17939,7 @@ mod tests {
             Some(dir.path()),
             Some(&dir.path().join("zero-torque-proof.json")),
             "zero-torque-proof.json",
+            MozaZeroOutputStrategy::DirectReport0x20,
             true,
             "--confirm-zero-torque",
         );
@@ -17671,8 +17948,41 @@ mod tests {
             Ok(_) => return Err("expected direct report metadata preflight error".into()),
             Err(error) => error.to_string(),
         };
-        assert!(message.contains("direct_zero_report_metadata=false"));
+        assert!(message.contains("strategy_metadata=false"));
         assert!(message.contains("trusted descriptor-derived direct output report metadata"));
+        Ok(())
+    }
+
+    #[test]
+    fn zero_output_stage_preflight_accepts_pidff_stop_all_strategy() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_pre_output_ready_receipt(dir.path())?;
+        let mut manifest = sample_lane_manifest("passive_capture_ready", false, false);
+        manifest["hardware"]["wheelbase_pid"] = serde_json::json!("0x0004");
+        manifest["topology"] = moza_lane_manifest_topology_value(product_ids::R5_V1);
+        write_test_json_file(&dir.path().join("manifest.json"), &manifest)?;
+        write_test_json_file(
+            &dir.path().join("descriptor.json"),
+            &serde_json::json!({
+                "success": true,
+                "command": "hid-capture descriptor",
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "devices": [sample_trusted_r5_v1_json_device()]
+            }),
+        )?;
+
+        validate_zero_output_stage_preflight(
+            Some(dir.path()),
+            Some(&dir.path().join("zero-torque-proof.json")),
+            "zero-torque-proof.json",
+            MozaZeroOutputStrategy::PidffStopAll,
+            true,
+            "--confirm-zero-torque",
+        )?;
+
         Ok(())
     }
 
@@ -17686,6 +17996,7 @@ mod tests {
             Some(dir.path()),
             Some(&other.path().join("zero-torque-proof.json")),
             "zero-torque-proof.json",
+            MozaZeroOutputStrategy::DirectReport0x20,
             true,
             "--confirm-zero-torque",
         );
@@ -18419,7 +18730,9 @@ mod tests {
                 "kind": "scheduled_zero",
                 "elapsed_us": u64::from(sequence),
                 "payload_hex": "2000000000000000",
+                "zero_output_strategy": "direct_report_0x20",
                 "report_id": "0x20",
+                "report_len": 8,
                 "torque_raw": 0,
                 "flags": 0,
                 "motor_enabled": false,
@@ -18432,12 +18745,53 @@ mod tests {
             "kind": "final_zero",
             "elapsed_us": u64::from(repeat),
             "payload_hex": "2000000000000000",
+            "zero_output_strategy": "direct_report_0x20",
             "report_id": "0x20",
+            "report_len": 8,
             "torque_raw": 0,
             "flags": 0,
             "motor_enabled": false,
             "result": "ok",
             "bytes_written": 8
+        }));
+        records
+    }
+
+    fn pidff_zero_command_log(repeat: u32) -> Vec<Value> {
+        let mut records = Vec::new();
+        for sequence in 0..repeat {
+            records.push(serde_json::json!({
+                "sequence": sequence,
+                "kind": "scheduled_zero",
+                "elapsed_us": u64::from(sequence),
+                "payload_hex": "0C04",
+                "zero_output_strategy": "pidff_device_control_stop_all",
+                "report_id": "0x0C",
+                "report_len": 2,
+                "torque_raw": 0,
+                "flags": 0,
+                "motor_enabled": false,
+                "pidff_device_control_command": "0x04",
+                "pidff_device_control_command_name": "stop_all_effects",
+                "result": "ok",
+                "bytes_written": 2
+            }));
+        }
+        records.push(serde_json::json!({
+            "sequence": repeat,
+            "kind": "final_zero",
+            "elapsed_us": u64::from(repeat),
+            "payload_hex": "0C04",
+            "zero_output_strategy": "pidff_device_control_stop_all",
+            "report_id": "0x0C",
+            "report_len": 2,
+            "torque_raw": 0,
+            "flags": 0,
+            "motor_enabled": false,
+            "pidff_device_control_command": "0x04",
+            "pidff_device_control_command_name": "stop_all_effects",
+            "result": "ok",
+            "bytes_written": 2
         }));
         records
     }
@@ -18462,7 +18816,10 @@ mod tests {
             },
             "repeat": repeat,
             "hz": 1000,
+            "zero_output_strategy": "direct_report_0x20",
+            "payload_hex": "2000000000000000",
             "report_id": "0x20",
+            "report_len": 8,
             "torque_raw": 0,
             "flags": 0,
             "motor_enabled": false,
@@ -18476,6 +18833,45 @@ mod tests {
         })
     }
 
+    fn real_pidff_zero_receipt(repeat: u32) -> Value {
+        serde_json::json!({
+            "success": true,
+            "command": "wheelctl moza zero",
+            "generated_at_utc": TEST_GENERATED_AT,
+            "no_feature_reports": true,
+            "no_high_torque": true,
+            "no_nonzero_torque": true,
+            "no_serial_config_commands": true,
+            "no_firmware_or_dfu_commands": true,
+            "dry_run": false,
+            "no_hid_device_opened": false,
+            "device": {
+                "vendor_id": "0x346E",
+                "product_id": "0x0004",
+                "product_name": "Moza R5 V1",
+                "output_capable": true
+            },
+            "repeat": repeat,
+            "hz": 1000,
+            "zero_output_strategy": "pidff_device_control_stop_all",
+            "payload_hex": "0C04",
+            "report_id": "0x0C",
+            "report_len": 2,
+            "torque_raw": 0,
+            "flags": 0,
+            "motor_enabled": false,
+            "pidff_device_control_command": "0x04",
+            "pidff_device_control_command_name": "stop_all_effects",
+            "write_attempts": repeat,
+            "writes_ok": repeat + 1,
+            "write_errors": 0,
+            "watchdog_faults": 0,
+            "final_zero_attempted": true,
+            "final_zero_sent": true,
+            "command_log": pidff_zero_command_log(repeat)
+        })
+    }
+
     fn watchdog_command_log(pre_zero_count: u32) -> Vec<Value> {
         let mut records = Vec::new();
         for sequence in 0..pre_zero_count {
@@ -18484,7 +18880,9 @@ mod tests {
                 "kind": "scheduled_zero",
                 "elapsed_us": u64::from(sequence),
                 "payload_hex": "2000000000000000",
+                "zero_output_strategy": "direct_report_0x20",
                 "report_id": "0x20",
+                "report_len": 8,
                 "torque_raw": 0,
                 "flags": 0,
                 "motor_enabled": false,
@@ -18497,7 +18895,9 @@ mod tests {
             "kind": "final_zero",
             "elapsed_us": u64::from(pre_zero_count),
             "payload_hex": "2000000000000000",
+            "zero_output_strategy": "direct_report_0x20",
             "report_id": "0x20",
+            "report_len": 8,
             "torque_raw": 0,
             "flags": 0,
             "motor_enabled": false,
@@ -18551,7 +18951,9 @@ mod tests {
                 "kind": "scheduled_zero",
                 "elapsed_us": u64::from(sequence),
                 "payload_hex": "2000000000000000",
+                "zero_output_strategy": "direct_report_0x20",
                 "report_id": "0x20",
+                "report_len": 8,
                 "torque_raw": 0,
                 "flags": 0,
                 "motor_enabled": false,
@@ -18564,7 +18966,9 @@ mod tests {
             "kind": "disconnect_probe",
             "elapsed_us": u64::from(scheduled_count),
             "payload_hex": "2000000000000000",
+            "zero_output_strategy": "direct_report_0x20",
             "report_id": "0x20",
+            "report_len": 8,
             "torque_raw": 0,
             "flags": 0,
             "motor_enabled": false,
@@ -18576,7 +18980,9 @@ mod tests {
             "kind": "final_zero",
             "elapsed_us": u64::from(scheduled_count + 1),
             "payload_hex": "2000000000000000",
+            "zero_output_strategy": "direct_report_0x20",
             "report_id": "0x20",
+            "report_len": 8,
             "torque_raw": 0,
             "flags": 0,
             "motor_enabled": false,
@@ -18608,6 +19014,13 @@ mod tests {
             },
             "repeat": 10000,
             "hz": 1000,
+            "zero_output_strategy": "direct_report_0x20",
+            "payload_hex": "2000000000000000",
+            "report_id": "0x20",
+            "report_len": 8,
+            "torque_raw": 0,
+            "flags": 0,
+            "motor_enabled": false,
             "watchdog_timeout_ms": 100,
             "max_duration_ms": 10000,
             "fault_injected": "operator_disconnect",
@@ -20427,12 +20840,12 @@ mod tests {
 
     #[test]
     fn partial_zero_command_record_keeps_bytes_written() -> TestResult {
-        let payload = zero_torque_payload_for_pid(product_ids::R5_V2);
+        let payload = ZeroOutputPayload::direct(product_ids::R5_V2);
         let record = ZeroTorqueCommandRecord::partial(
             0,
             "scheduled_zero",
             Instant::now(),
-            payload,
+            &payload,
             REPORT_LEN - 1,
             "short_hid_write: expected 8 bytes, wrote 7".to_string(),
         );
@@ -20466,7 +20879,7 @@ mod tests {
 
     #[test]
     fn zero_torque_receipt_proves_no_nonzero_payload() {
-        let payload = zero_torque_payload_for_pid(product_ids::R5_V2);
+        let payload = ZeroOutputPayload::direct(product_ids::R5_V2);
         let receipt = ZeroTorqueProofReceipt::new(
             "wheelctl moza zero",
             None,
@@ -20493,7 +20906,7 @@ mod tests {
     #[test]
     fn zero_torque_dry_run_receipt_proves_no_hid_open() -> TestResult {
         let pid = zero_torque_dry_run_pid(Some("0x346E:0x0014"), None)?;
-        let payload = zero_torque_payload_for_pid(pid);
+        let payload = ZeroOutputPayload::direct(pid);
         let receipt = ZeroTorqueProofReceipt::new(
             "wheelctl moza zero",
             Some("0x346E:0x0014".to_string()),
@@ -20548,6 +20961,54 @@ mod tests {
         assert_eq!(summary.product_id.as_deref(), Some("0x0014"));
         assert_eq!(summary.repeat, 100);
         assert!(summary.final_zero_sent);
+        Ok(())
+    }
+
+    #[test]
+    fn validate_zero_proof_for_zero_output_accepts_pidff_stop_all_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let proof = dir.path().join("zero-torque-proof.json");
+        write_test_json_file(
+            &proof,
+            &receipt_with_lane_path(
+                dir.path(),
+                "zero-torque-proof.json",
+                real_pidff_zero_receipt(100),
+            ),
+        )?;
+
+        let summary = validate_zero_proof_for_zero_output(&proof)?;
+
+        assert_eq!(summary.product_id.as_deref(), Some("0x0004"));
+        assert_eq!(
+            summary.zero_output_strategy,
+            "pidff_device_control_stop_all"
+        );
+        assert_eq!(summary.repeat, 100);
+        assert!(summary.final_zero_sent);
+        Ok(())
+    }
+
+    #[test]
+    fn validate_zero_proof_for_torque_test_rejects_pidff_stop_all_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let proof = dir.path().join("zero-torque-proof.json");
+        write_test_json_file(
+            &proof,
+            &receipt_with_lane_path(
+                dir.path(),
+                "zero-torque-proof.json",
+                real_pidff_zero_receipt(100),
+            ),
+        )?;
+
+        let result = validate_zero_proof_for_torque_test(&proof);
+
+        let message = match result {
+            Ok(_) => return Err("expected PIDFF zero proof to fail direct torque preflight".into()),
+            Err(error) => error.to_string(),
+        };
+        assert!(message.contains("direct_report_0x20"));
         Ok(())
     }
 
@@ -21613,6 +22074,7 @@ mod tests {
             Some("0x346E:0x0014"),
             None,
             None,
+            MozaZeroOutputStrategy::DirectReport0x20,
             true,
             false,
             3,
@@ -21635,6 +22097,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn zero_torque_pidff_stop_all_dry_run_writes_receipt_without_hid() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let receipt_path = dir.path().join("zero-torque-proof.json");
+
+        zero_torque(
+            false,
+            Some("0x346E:0x0004"),
+            None,
+            None,
+            MozaZeroOutputStrategy::PidffStopAll,
+            true,
+            false,
+            3,
+            1000,
+            100,
+            Some(&receipt_path),
+        )
+        .await?;
+
+        let receipt = read_json_path(&receipt_path)?;
+        assert_eq!(json_bool(&receipt, "success"), Some(true));
+        assert_eq!(json_bool(&receipt, "dry_run"), Some(true));
+        assert_eq!(json_bool(&receipt, "no_hid_device_opened"), Some(true));
+        assert_eq!(
+            json_string(&receipt, "zero_output_strategy"),
+            Some("pidff_device_control_stop_all")
+        );
+        assert_eq!(json_string(&receipt, "payload_hex"), Some("0C04"));
+        assert_eq!(json_string(&receipt, "report_id"), Some("0x0C"));
+        assert_eq!(json_u64(&receipt, "report_len"), Some(2));
+        assert_eq!(
+            json_string(&receipt, "pidff_device_control_command_name"),
+            Some("stop_all_effects")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn zero_torque_actual_requires_lane_readiness_before_hid() -> TestResult {
         let dir = tempfile::tempdir()?;
         let result = zero_torque(
@@ -21642,6 +22142,7 @@ mod tests {
             Some("0x346E:0x0014"),
             None,
             None,
+            MozaZeroOutputStrategy::DirectReport0x20,
             false,
             true,
             100,
@@ -21669,6 +22170,7 @@ mod tests {
             Some("0x346E:0x0014"),
             Some(dir.path()),
             None,
+            MozaZeroOutputStrategy::DirectReport0x20,
             false,
             true,
             3,
@@ -21696,6 +22198,7 @@ mod tests {
             Some("0x346E:0x0014"),
             Some(dir.path()),
             None,
+            MozaZeroOutputStrategy::DirectReport0x20,
             false,
             true,
             1000,
@@ -21719,6 +22222,7 @@ mod tests {
             Some("0x346E:0x0014"),
             None,
             None,
+            MozaZeroOutputStrategy::DirectReport0x20,
             false,
             false,
             1000,
@@ -21741,6 +22245,7 @@ mod tests {
             Some("0x346E:0x0014"),
             None,
             None,
+            MozaZeroOutputStrategy::DirectReport0x20,
             true,
             false,
             1000,
@@ -22343,6 +22848,24 @@ mod tests {
         let gate = verify_zero_torque_gate(dir.path());
 
         assert_eq!(gate.status, "fail");
+        Ok(())
+    }
+
+    #[test]
+    fn verify_zero_torque_gate_accepts_pidff_stop_all_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_test_json_file(
+            &dir.path().join("zero-torque-proof.json"),
+            &receipt_with_lane_path(
+                dir.path(),
+                "zero-torque-proof.json",
+                real_pidff_zero_receipt(100),
+            ),
+        )?;
+
+        let gate = verify_zero_torque_gate(dir.path());
+
+        assert_eq!(gate.status, "pass");
         Ok(())
     }
 

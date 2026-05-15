@@ -615,6 +615,9 @@ pub enum MozaCommands {
         /// Moza wheelbase PID for --dry-run (hex, e.g. 0x0014)
         #[arg(long)]
         pid: Option<String>,
+        /// Zero-output report strategy to use
+        #[arg(long, value_enum, default_value_t = MozaZeroOutputStrategy::DirectReport0x20)]
+        strategy: MozaZeroOutputStrategy,
         /// Build the zero-torque receipt without opening or writing a HID device
         #[arg(long)]
         dry_run: bool,
@@ -646,6 +649,9 @@ pub enum MozaCommands {
         /// Moza wheelbase PID for --dry-run (hex, e.g. 0x0014)
         #[arg(long)]
         pid: Option<String>,
+        /// Zero-output report strategy to use
+        #[arg(long, value_enum, default_value_t = MozaZeroOutputStrategy::DirectReport0x20)]
+        strategy: MozaZeroOutputStrategy,
         /// Build the watchdog proof receipt without opening or writing a HID device
         #[arg(long)]
         dry_run: bool,
@@ -677,6 +683,9 @@ pub enum MozaCommands {
         /// Moza wheelbase PID for --dry-run (hex, e.g. 0x0014)
         #[arg(long)]
         pid: Option<String>,
+        /// Zero-output report strategy to use
+        #[arg(long, value_enum, default_value_t = MozaZeroOutputStrategy::DirectReport0x20)]
+        strategy: MozaZeroOutputStrategy,
         /// Build the disconnect proof receipt without opening or writing a HID device
         #[arg(long)]
         dry_run: bool,
@@ -977,6 +986,14 @@ pub enum MozaBundleStage {
     Zero,
     /// Complete real hardware plus simulator smoke evidence
     SmokeReady,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MozaZeroOutputStrategy {
+    /// Moza proprietary direct torque report 0x20 encoded as zero torque
+    DirectReport0x20,
+    /// Standard PIDFF Device Control report 0x0C with Stop All Effects
+    PidffStopAll,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]

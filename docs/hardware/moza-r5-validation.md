@@ -132,14 +132,15 @@ wheelctl moza pre-output-readiness --lane ci/hardware/moza-r5/<date> --json-out 
 This command opens no HID device and sends no reports. It reports
 `ready_for_zero_torque` separately from `ready_for_ffb`; `ready_for_zero_torque`
 must remain false until passive verification, passive audit, fixture promotion,
-descriptor trust, trusted direct zero-output report metadata, and status/support
-no-output receipts all pass. It also inventories zero-output strategy
-candidates from the trusted descriptor without executing them. The live R5 V1
-descriptor currently exposes standard PIDFF Device Control report `0x0C` as a
-possible stop-all-effects zero-output strategy, but that strategy is not
-implemented and does not make `ready_for_zero_torque` true. `ready_for_ffb` must
-remain false until the later zero, watchdog, disconnect, low-torque, Pit House,
-and simulator telemetry prerequisites are also present.
+descriptor trust, at least one implemented trusted zero-output strategy, and
+status/support no-output receipts all pass. It also inventories zero-output
+strategy candidates from the trusted descriptor without executing them. The live
+R5 V1 descriptor exposes standard PIDFF Device Control report `0x0C`; `wheelctl
+moza zero --strategy pidff-stop-all` may use that report as a zero-output Stop
+All Effects proof when the same lane descriptor metadata is trusted. Direct
+report `0x20` remains required for later direct low-torque tests. `ready_for_ffb`
+must remain false until the later zero, watchdog, disconnect, low-torque, Pit
+House, and simulator telemetry prerequisites are also present.
 
 If Windows cannot expose the raw HID report descriptor, paste descriptor hex
 from USBTreeView, USBPcap/Wireshark enumeration traffic, or an equivalent
@@ -292,12 +293,12 @@ Once fixtures are promoted into `crates/hid-moza-protocol/fixtures/`, the parser
 
 ## Phase 4: Zero-Torque Proof
 
-Zero-torque proof is the first output phase. The currently implemented zero command may send only report `0x20` with raw torque `0`, flags `0`, and motor disabled. It must refuse before HID initialization unless `pre-output-readiness.json` is passing and the lane descriptor proves direct output report `0x20` with the expected 8-byte report shape; the observed live R5 V1 descriptor currently does not prove that shape. `pre-output-readiness.json` also inventories descriptor-observed alternate zero-output candidates, including the live R5 V1 PIDFF Device Control `0x0C` stop-all-effects report, but that PIDFF strategy is read-only inventory until a separate implementation and verifier gate exist.
+Zero-torque proof is the first output phase. The zero command requires an explicit descriptor-trusted strategy. `--strategy direct-report-0x20` sends only report `0x20` with raw torque `0`, flags `0`, and motor disabled, and remains the required zero proof before later direct low-torque tests. `--strategy pidff-stop-all` sends only standard PIDFF Device Control report `0x0C` with Stop All Effects, which the live R5 V1 descriptor exposes as a 2-byte output report. Both strategies must refuse before HID initialization unless `pre-output-readiness.json` is passing and the same lane descriptor proves the selected report shape. `ready_for_ffb` remains false after this stage.
 
 ```powershell
-wheelctl moza zero --device <r5> --lane ci/hardware/moza-r5/<date> --confirm-zero-torque --repeat 100 --hz 1000 --json-out ci/hardware/moza-r5/<date>/zero-torque-proof.json
-wheelctl moza watchdog-proof --device <r5> --lane ci/hardware/moza-r5/<date> --confirm-watchdog-test --pre-zero-count 3 --watchdog-timeout-ms 100 --json-out ci/hardware/moza-r5/<date>/watchdog-proof.json
-wheelctl moza disconnect-proof --device <r5> --lane ci/hardware/moza-r5/<date> --confirm-disconnect-test --max-duration-ms 10000 --json-out ci/hardware/moza-r5/<date>/disconnect-proof.json
+wheelctl moza zero --device <r5> --lane ci/hardware/moza-r5/<date> --strategy pidff-stop-all --confirm-zero-torque --repeat 100 --hz 1000 --json-out ci/hardware/moza-r5/<date>/zero-torque-proof.json
+wheelctl moza watchdog-proof --device <r5> --lane ci/hardware/moza-r5/<date> --strategy pidff-stop-all --confirm-watchdog-test --pre-zero-count 3 --watchdog-timeout-ms 100 --json-out ci/hardware/moza-r5/<date>/watchdog-proof.json
+wheelctl moza disconnect-proof --device <r5> --lane ci/hardware/moza-r5/<date> --strategy pidff-stop-all --confirm-disconnect-test --max-duration-ms 10000 --json-out ci/hardware/moza-r5/<date>/disconnect-proof.json
 wheelctl moza verify-bundle --lane ci/hardware/moza-r5/<date> --stage zero --json-out ci/hardware/moza-r5/<date>/zero-verification.json
 wheelctl moza promote-manifest --lane ci/hardware/moza-r5/<date> --stage zero --json-out ci/hardware/moza-r5/<date>/manifest-promotion-zero.json
 wheelctl moza audit-lane --lane ci/hardware/moza-r5/<date> --stage zero --json-out ci/hardware/moza-r5/<date>/lane-audit-zero.json
@@ -474,7 +475,7 @@ Use the top-level `wheelctl support-bundle --device <r5>` form for the lane arti
 
 The smoke-ready verifier requires `moza-status.json`, `device-status.json`, and `support-bundle.json`. These receipts must all identify the same R5 PID, including the support bundle's top-level `devices[]` entry and service-facing `device_statuses[]` snapshot. They must keep `ffb_ready`, direct mode, high torque, and `safe_to_send_torque` false, include descriptor CRC/source where service status is involved, declare no FFB/serial/firmware/DFU commands, and keep support-bundle readiness as diagnostic context with `release_ready: false`. During service-status verification, the Moza support-bundle section is checked against a fresh lane read on a no-overclaim basis: a bundle may conservatively show an earlier stage or a missing artifact from when it was generated, but it cannot claim a passing readiness flag, lane-audit flag, highest stage, or artifact `pass` state that the current lane cannot prove.
 
-The support bundle includes service-facing `device_statuses` snapshots plus a Moza section with an `artifact_index` for every required lane receipt/capture, including stored verification, manifest-promotion, and lane-audit receipts even when they are still missing, and a diagnostic `readiness` summary with `highest_passing_stage`, `next_required_stage`, `first_blocking_stage`, `ready_for_zero_torque`, `ready_for_low_torque`, `ready_for_real_hardware_smoke`, lane-audit booleans, and `release_ready: false`. Each artifact-index entry must record the path, kind, required stage, existence/validity booleans, and a consistent `pass`, `missing`, or `invalid` status. `ready_for_zero_torque` requires the passive verifier, `lane-audit-passive.json`, and direct zero-output report metadata; `ready_for_low_torque` requires the zero verifier, `lane-audit-zero.json`, and passing off/standard init gates; `ready_for_real_hardware_smoke` requires the smoke-ready verifier plus `lane-audit-smoke-ready.json`. This summary helps triage missing receipts and failed gates, but it is not a readiness promotion by itself.
+The support bundle includes service-facing `device_statuses` snapshots plus a Moza section with an `artifact_index` for every required lane receipt/capture, including stored verification, manifest-promotion, and lane-audit receipts even when they are still missing, and a diagnostic `readiness` summary with `highest_passing_stage`, `next_required_stage`, `first_blocking_stage`, `ready_for_zero_torque`, `ready_for_low_torque`, `ready_for_real_hardware_smoke`, lane-audit booleans, and `release_ready: false`. Each artifact-index entry must record the path, kind, required stage, existence/validity booleans, and a consistent `pass`, `missing`, or `invalid` status. `ready_for_zero_torque` requires the passive verifier, `lane-audit-passive.json`, and at least one implemented descriptor-trusted zero-output strategy; `ready_for_low_torque` requires the zero verifier, `lane-audit-zero.json`, a direct-report zero proof, and passing off/standard init gates; `ready_for_real_hardware_smoke` requires the smoke-ready verifier plus `lane-audit-smoke-ready.json`. This summary helps triage missing receipts and failed gates, but it is not a readiness promotion by itself.
 
 This command reads lane receipts only; it opens no HID device and sends no reports. The Moza section is diagnostic context for missing artifacts and failed gates, not a manifest promotion or compatibility claim.
 

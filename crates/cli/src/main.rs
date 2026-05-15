@@ -1772,6 +1772,7 @@ mod tests {
                 device,
                 lane,
                 pid,
+                strategy,
                 dry_run,
                 confirm_zero_torque,
                 repeat,
@@ -1785,6 +1786,10 @@ mod tests {
                     Some("ci/hardware/moza-r5/2026-05-13")
                 );
                 assert_eq!(pid.as_deref(), Some("0x0014"));
+                assert_eq!(
+                    *strategy,
+                    crate::commands::MozaZeroOutputStrategy::DirectReport0x20
+                );
                 assert!(*dry_run);
                 assert!(*confirm_zero_torque);
                 assert_eq!(*repeat, 250);
@@ -1793,6 +1798,32 @@ mod tests {
                 assert_eq!(
                     json_out.as_ref().and_then(|p| p.to_str()),
                     Some("zero-torque-proof.json")
+                );
+            }
+            _ => return Err("expected Moza Zero command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_moza_zero_pidff_stop_all_strategy() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "moza",
+            "zero",
+            "--device",
+            "0x346E:0x0004",
+            "--strategy",
+            "pidff-stop-all",
+            "--dry-run",
+            "--json-out",
+            "zero-torque-proof.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::Zero { strategy, .. }) => {
+                assert_eq!(
+                    *strategy,
+                    crate::commands::MozaZeroOutputStrategy::PidffStopAll
                 );
             }
             _ => return Err("expected Moza Zero command".into()),
@@ -1824,6 +1855,7 @@ mod tests {
             Commands::Moza(MozaCommands::WatchdogProof {
                 device,
                 lane,
+                strategy,
                 confirm_watchdog_test,
                 pre_zero_count,
                 hz,
@@ -1835,6 +1867,10 @@ mod tests {
                 assert_eq!(
                     lane.as_ref().and_then(|p| p.to_str()),
                     Some("ci/hardware/moza-r5/2026-05-13")
+                );
+                assert_eq!(
+                    *strategy,
+                    crate::commands::MozaZeroOutputStrategy::DirectReport0x20
                 );
                 assert!(*confirm_watchdog_test);
                 assert_eq!(*pre_zero_count, 5);
@@ -1872,6 +1908,7 @@ mod tests {
             Commands::Moza(MozaCommands::DisconnectProof {
                 device,
                 lane,
+                strategy,
                 confirm_disconnect_test,
                 max_duration_ms,
                 hz,
@@ -1882,6 +1919,10 @@ mod tests {
                 assert_eq!(
                     lane.as_ref().and_then(|p| p.to_str()),
                     Some("ci/hardware/moza-r5/2026-05-13")
+                );
+                assert_eq!(
+                    *strategy,
+                    crate::commands::MozaZeroOutputStrategy::DirectReport0x20
                 );
                 assert!(*confirm_disconnect_test);
                 assert_eq!(*max_duration_ms, 5000);
