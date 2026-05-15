@@ -12164,29 +12164,31 @@ fn receipt_path_string(path: &Path) -> String {
 }
 
 fn resolve_receipt_path(lane: &Path, path: &str) -> Option<PathBuf> {
-    let trimmed = path.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
+    let candidate = normalized_receipt_relative_path(path)?;
+    Some(lane.join(candidate))
+}
 
-    let candidate = Path::new(trimmed);
-    if candidate
-        .components()
-        .any(|component| !matches!(component, Component::Normal(_)))
-    {
-        return None;
+fn resolve_fixture_out_path(lane: &Path, path: &str) -> Option<PathBuf> {
+    let candidate = normalized_receipt_relative_path(path)?;
+
+    if repo_relative_moza_fixture_path(&candidate) {
+        return fixture_repo_root_for_lane(lane).map(|root| root.join(candidate));
     }
 
     Some(lane.join(candidate))
 }
 
-fn resolve_fixture_out_path(lane: &Path, path: &str) -> Option<PathBuf> {
+fn normalized_receipt_relative_path(path: &str) -> Option<PathBuf> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
         return None;
     }
+    if trimmed.contains(':') {
+        return None;
+    }
 
-    let candidate = Path::new(trimmed);
+    let normalized = trimmed.replace('\\', "/");
+    let candidate = Path::new(&normalized);
     if candidate
         .components()
         .any(|component| !matches!(component, Component::Normal(_)))
@@ -12194,11 +12196,7 @@ fn resolve_fixture_out_path(lane: &Path, path: &str) -> Option<PathBuf> {
         return None;
     }
 
-    if repo_relative_moza_fixture_path(candidate) {
-        return fixture_repo_root_for_lane(lane).map(|root| root.join(candidate));
-    }
-
-    Some(lane.join(candidate))
+    Some(candidate.to_path_buf())
 }
 
 fn repo_relative_moza_fixture_path(path: &Path) -> bool {
@@ -27252,6 +27250,47 @@ mod tests {
         assert!(
             verify.success,
             "expected documented repo fixture paths to verify: {:?}",
+            verify.gates
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_passive_accepts_windows_separator_repo_fixture_paths() -> TestResult {
+        let repo = tempfile::tempdir()?;
+        let lane = repo.path().join("ci/hardware/moza-r5/2026-05-06");
+        write_minimal_passive_bundle(&lane)?;
+
+        let mut receipt = read_json_path(&lane.join("fixture-promotion.json"))?;
+        let fixtures = receipt
+            .get_mut("fixtures")
+            .and_then(Value::as_array_mut)
+            .ok_or("expected fixture entries")?;
+        for entry in fixtures {
+            let fixture_id = json_string(entry, "fixture_id")
+                .ok_or("expected fixture id")?
+                .to_string();
+            let current_fixture_out = json_string(entry, "fixture_out")
+                .ok_or("expected fixture out")?
+                .to_string();
+            let repo_relative =
+                format!("crates/hid-moza-protocol/fixtures/moza-r5-2026-05-06/{fixture_id}.json");
+            let source = lane.join(current_fixture_out);
+            let target = repo.path().join(&repo_relative);
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(&source, &target)?;
+            entry["fixture_out"] = serde_json::json!(repo_relative.replace('/', "\\"));
+        }
+        fs::remove_dir_all(lane.join("fixtures"))?;
+        write_test_json_file(&lane.join("fixture-promotion.json"), &receipt)?;
+
+        let verify = verify_bundle_dir(&lane, MozaBundleStage::Passive);
+
+        assert!(
+            verify.success,
+            "expected Windows-separator repo fixture paths to verify on every platform: {:?}",
             verify.gates
         );
         Ok(())
