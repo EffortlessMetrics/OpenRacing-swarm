@@ -5259,6 +5259,20 @@ fn pre_output_ffb_blocking_items(
 ) -> Vec<String> {
     let mut blockers = Vec::new();
     append_verification_blocking_items(&mut blockers, zero);
+    if !zero.success || !zero_audit_passed {
+        if !zero_audit_passed {
+            blockers.push("zero_audit".to_string());
+        }
+        blockers.sort();
+        blockers.dedup();
+        return blockers;
+    }
+    if smoke_ready.gates.is_empty() {
+        append_verification_blocking_items(&mut blockers, smoke_ready);
+        blockers.sort();
+        blockers.dedup();
+        return blockers;
+    }
     for gate in [
         "init_off_handshake",
         "init_standard_handshake",
@@ -5269,9 +5283,6 @@ fn pre_output_ffb_blocking_items(
         if !pre_output_gate_passed(smoke_ready, gate) {
             blockers.push(gate.to_string());
         }
-    }
-    if !zero_audit_passed {
-        blockers.push("zero_audit".to_string());
     }
     blockers.sort();
     blockers.dedup();
@@ -18532,6 +18543,77 @@ mod tests {
             !blockers.iter().any(|item| item == "simulator_ffb_bounded"),
             "ready_for_ffb should be true before the bounded simulator FFB receipt exists"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn pre_output_readiness_reports_smoke_verification_missing_without_guessing_gates() -> TestResult
+    {
+        let zero = pre_output_verification_receipt_for_gates(
+            MozaBundleStage::Zero,
+            &[
+                ("zero_torque_real_hardware", "pass"),
+                ("watchdog_zero_output", "pass"),
+                ("disconnect_final_zero", "pass"),
+            ],
+        );
+        let smoke_ready = PreOutputVerificationReceipt::missing(
+            MozaBundleStage::SmokeReady,
+            "smoke-ready-verification.json",
+            "smoke-ready verification has not been generated".to_string(),
+        );
+
+        let blockers = pre_output_ffb_blocking_items(&zero, &smoke_ready, true);
+
+        assert_eq!(blockers, vec!["smoke-ready-verification.json".to_string()]);
+        for guessed_gate in [
+            "init_off_handshake",
+            "init_standard_handshake",
+            "service_status_receipts",
+            "low_torque_bounded",
+            "simulator_telemetry",
+        ] {
+            assert!(
+                !blockers.iter().any(|item| item == guessed_gate),
+                "{guessed_gate} should not be reported when the smoke-ready receipt is unavailable"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn pre_output_readiness_reports_zero_verification_before_later_smoke_gates() -> TestResult {
+        let zero = PreOutputVerificationReceipt::missing(
+            MozaBundleStage::Zero,
+            "zero-verification.json",
+            "zero verification has not been generated".to_string(),
+        );
+        let smoke_ready = pre_output_verification_receipt_for_gates(
+            MozaBundleStage::SmokeReady,
+            &[
+                ("init_off_handshake", "fail"),
+                ("init_standard_handshake", "fail"),
+                ("service_status_receipts", "fail"),
+                ("low_torque_bounded", "fail"),
+                ("simulator_telemetry", "fail"),
+            ],
+        );
+
+        let blockers = pre_output_ffb_blocking_items(&zero, &smoke_ready, true);
+
+        assert_eq!(blockers, vec!["zero-verification.json".to_string()]);
+        for later_gate in [
+            "init_off_handshake",
+            "init_standard_handshake",
+            "service_status_receipts",
+            "low_torque_bounded",
+            "simulator_telemetry",
+        ] {
+            assert!(
+                !blockers.iter().any(|item| item == later_gate),
+                "{later_gate} should wait until zero verification is available"
+            );
+        }
         Ok(())
     }
 
