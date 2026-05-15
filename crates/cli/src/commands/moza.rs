@@ -6592,6 +6592,7 @@ fn support_bundle_status_with_support_validation(
     let smoke_ready_audit_passed =
         stored_lane_audit_receipt_passed(lane, MozaBundleStage::SmokeReady);
     let readiness = support_readiness_summary(
+        lane,
         &passive,
         &zero,
         &smoke_ready,
@@ -6623,6 +6624,7 @@ fn support_bundle_status_with_support_validation(
 }
 
 fn support_readiness_summary(
+    lane: &Path,
     passive: &BundleVerificationReceipt,
     zero: &BundleVerificationReceipt,
     smoke_ready: &BundleVerificationReceipt,
@@ -6656,7 +6658,7 @@ fn support_readiness_summary(
         "highest_passing_stage": highest_passing_stage,
         "next_required_stage": next_required_stage,
         "ready_for_zero_torque": passive.success && passive_audit_passed,
-        "ready_for_low_torque": zero.success && zero_audit_passed && init_handshakes_pass,
+        "ready_for_low_torque": support_ready_for_low_torque(lane, zero.success, zero_audit_passed, init_handshakes_pass),
         "ready_for_real_hardware_smoke": smoke_ready.success && smoke_ready_audit_passed,
         "passive_lane_audit_passed": passive_audit_passed,
         "zero_lane_audit_passed": zero_audit_passed,
@@ -6665,6 +6667,18 @@ fn support_readiness_summary(
         "first_blocking_stage": first_blocking,
         "claim_scope": "diagnostic_context_only"
     })
+}
+
+fn support_ready_for_low_torque(
+    lane: &Path,
+    zero_success: bool,
+    zero_audit_passed: bool,
+    init_handshakes_pass: bool,
+) -> bool {
+    zero_success
+        && zero_audit_passed
+        && init_handshakes_pass
+        && low_torque_frontier_blockers(lane).is_empty()
 }
 
 fn stored_lane_audit_receipt_passed(lane: &Path, stage: MozaBundleStage) -> bool {
@@ -8185,6 +8199,7 @@ struct StoredLaneVerificationStage {
     smoke_ready_success: bool,
     init_off_success: bool,
     init_standard_success: bool,
+    low_torque_ready: bool,
 }
 
 impl StoredLaneVerificationStage {
@@ -8215,8 +8230,10 @@ impl StoredLaneVerificationStage {
     fn safety_state(&self) -> &'static str {
         if self.smoke_ready_success {
             "lane_smoke_ready_receipts_observed"
-        } else if self.zero_success && self.init_off_success && self.init_standard_success {
+        } else if self.low_torque_ready {
             "lane_low_torque_gate_receipts_observed"
+        } else if self.zero_success && self.init_off_success && self.init_standard_success {
+            "lane_init_handshakes_observed"
         } else if self.zero_success {
             "lane_zero_torque_verified"
         } else if self.passive_success {
@@ -8242,30 +8259,42 @@ fn stored_lane_verification_stage(lane: &Path) -> StoredLaneVerificationStage {
     )
     .status
         == "pass";
+    let passive_success = passive
+        .as_ref()
+        .map(|receipt| receipt.success)
+        .unwrap_or(false);
+    let zero_success = zero
+        .as_ref()
+        .map(|receipt| receipt.success)
+        .unwrap_or(false);
+    let smoke_ready_success = smoke_ready
+        .as_ref()
+        .map(|receipt| receipt.success)
+        .unwrap_or(false);
+    let init_off_success = init_off_observed
+        || smoke_ready
+            .as_ref()
+            .map(|receipt| receipt.gate_passed("init_off_handshake"))
+            .unwrap_or(false);
+    let init_standard_success = init_standard_observed
+        || smoke_ready
+            .as_ref()
+            .map(|receipt| receipt.gate_passed("init_standard_handshake"))
+            .unwrap_or(false);
+    let low_torque_ready = support_ready_for_low_torque(
+        lane,
+        zero_success,
+        stored_lane_audit_receipt_passed(lane, MozaBundleStage::Zero),
+        init_off_success && init_standard_success,
+    );
 
     StoredLaneVerificationStage {
-        passive_success: passive
-            .as_ref()
-            .map(|receipt| receipt.success)
-            .unwrap_or(false),
-        zero_success: zero
-            .as_ref()
-            .map(|receipt| receipt.success)
-            .unwrap_or(false),
-        smoke_ready_success: smoke_ready
-            .as_ref()
-            .map(|receipt| receipt.success)
-            .unwrap_or(false),
-        init_off_success: init_off_observed
-            || smoke_ready
-                .as_ref()
-                .map(|receipt| receipt.gate_passed("init_off_handshake"))
-                .unwrap_or(false),
-        init_standard_success: init_standard_observed
-            || smoke_ready
-                .as_ref()
-                .map(|receipt| receipt.gate_passed("init_standard_handshake"))
-                .unwrap_or(false),
+        passive_success,
+        zero_success,
+        smoke_ready_success,
+        init_off_success,
+        init_standard_success,
+        low_torque_ready,
     }
 }
 
@@ -10359,14 +10388,14 @@ fn service_status_post_init_context(
     let device_status_ready = device_status
         .get("status")
         .and_then(|status| status.get("moza"))
-        .map(moza_status_reports_low_torque_gate_ready)
+        .map(moza_status_reports_post_init_safe_state)
         .unwrap_or(false);
     let support_status_ready = lane_status_reflects_init_receipts(support_bundle.get("moza_lane"));
     ServiceReceiptSummary {
         ok: moza_status_ready && device_status_ready && support_status_ready,
         product_id: None,
         details: format!(
-            "post-init status refresh required after off/standard init receipts; moza_status_init_receipts={moza_status_ready}, device_status_low_torque_gate={device_status_ready}, support_bundle_init_receipts={support_status_ready}"
+            "post-init status refresh required after off/standard init receipts; moza_status_init_receipts={moza_status_ready}, device_status_post_init_safe_state={device_status_ready}, support_bundle_init_receipts={support_status_ready}"
         ),
     }
 }
@@ -10392,9 +10421,11 @@ fn artifact_index_has_pass(artifacts: &[Value], path: &str) -> bool {
     })
 }
 
-fn moza_status_reports_low_torque_gate_ready(moza: &Value) -> bool {
-    json_string(moza, "safety_state") == Some("lane_low_torque_gate_receipts_observed")
-        && json_bool(moza, "ffb_ready") == Some(false)
+fn moza_status_reports_post_init_safe_state(moza: &Value) -> bool {
+    matches!(
+        json_string(moza, "safety_state"),
+        Some("lane_init_handshakes_observed" | "lane_low_torque_gate_receipts_observed")
+    ) && json_bool(moza, "ffb_ready") == Some(false)
         && json_bool(moza, "safe_to_send_torque") == Some(false)
         && json_bool(moza, "direct_mode_allowed") == Some(false)
         && json_bool(moza, "high_torque_allowed") == Some(false)
@@ -18017,10 +18048,7 @@ mod tests {
         apply_lane_readiness_to_device_status(&mut status, dir.path());
 
         let readiness = status.moza.as_ref().ok_or("missing readiness")?;
-        assert_eq!(
-            readiness.safety_state,
-            "lane_low_torque_gate_receipts_observed"
-        );
+        assert_eq!(readiness.safety_state, "lane_init_handshakes_observed");
         assert!(
             readiness
                 .safety_reason
@@ -18227,6 +18255,58 @@ mod tests {
                 .get("ready_for_low_torque")
                 .and_then(Value::as_bool),
             Some(false)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn support_status_keeps_low_torque_unready_without_direct_report_path() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_zero_torque_ready_r5_v1_manifest(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("descriptor.json"),
+            &serde_json::json!({
+                "success": true,
+                "command": "hid-capture descriptor",
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "devices": [sample_trusted_r5_v1_json_device()]
+            }),
+        )?;
+        write_test_json_file(
+            &dir.path().join("zero-torque-proof.json"),
+            &receipt_with_lane_path(
+                dir.path(),
+                "zero-torque-proof.json",
+                real_pidff_zero_receipt(100),
+            ),
+        )?;
+        write_test_json_file(
+            &dir.path().join("init-off.json"),
+            &receipt_with_lane_path(dir.path(), "init-off.json", real_init_receipt("off")),
+        )?;
+        write_test_json_file(
+            &dir.path().join("init-standard.json"),
+            &receipt_with_lane_path(
+                dir.path(),
+                "init-standard.json",
+                real_init_receipt("standard"),
+            ),
+        )?;
+
+        assert!(
+            !support_ready_for_low_torque(dir.path(), true, true, true),
+            "R5 V1 PIDFF zero proof and descriptor without direct report 0x20 must not report low-torque readiness"
+        );
+
+        let direct = tempfile::tempdir()?;
+        write_minimal_passive_bundle(direct.path())?;
+        write_low_torque_prerequisite_receipts(direct.path())?;
+        assert!(
+            support_ready_for_low_torque(direct.path(), true, true, true),
+            "direct report 0x20 descriptor metadata plus same-lane direct zero proof should remain low-torque ready"
         );
         Ok(())
     }
