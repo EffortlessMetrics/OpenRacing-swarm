@@ -9,6 +9,7 @@ use anyhow::{Context, Result, anyhow};
 use chrono::{SecondsFormat, Utc};
 use hidapi::{DeviceInfo, HidApi};
 use jsonschema::Validator;
+use openracing_pidff_common::{self as pidff, EffectOp, EffectType};
 use racing_wheel_hid_capture::{
     HidReportDescriptorMetadata, HidReportDescriptorReport, parse_hid_report_descriptor_metadata,
 };
@@ -58,6 +59,14 @@ const PIDFF_DEVICE_CONTROL_REPORT_ID: &str = "0x0C";
 const PIDFF_DEVICE_CONTROL_REPORT_LEN: usize = 2;
 const PIDFF_STOP_ALL_EFFECTS_COMMAND: u8 = 0x04;
 const PIDFF_STOP_ALL_EFFECTS_COMMAND_NAME: &str = "stop_all_effects";
+const PIDFF_LOW_TORQUE_EFFECT_BLOCK_INDEX: u8 = 1;
+const PIDFF_LOW_TORQUE_LOOP_COUNT: u8 = 1;
+const PIDFF_LOW_TORQUE_DIRECTION_X: u16 = 9000;
+const PIDFF_LOW_TORQUE_DIRECTION_Y: u16 = 0;
+const PIDFF_EFFECT_SETUP_CLASSIFICATION: &str = "pidff_effect_setup";
+const PIDFF_BOUNDED_EFFECT_CLASSIFICATION: &str = "bounded_low_torque_pidff";
+const PIDFF_STOP_ALL_CLEANUP_CLASSIFICATION: &str = "pidff_stop_all_cleanup";
+const PIDFF_PLANNED_STOP_ALL_CLASSIFICATION: &str = "planned_pidff_stop_all";
 const R5_V1_LIVE_OUTPUT_REPORTS: &[(&str, usize)] = &[
     ("0x01", 22),
     ("0x02", 14),
@@ -2279,13 +2288,80 @@ async fn torque_test(request: TorqueTestRequest<'_>) -> Result<()> {
             init_off,
             init_standard,
         )?;
-        return Err(anyhow!(
-            "pidff-bounded-effect low-torque writes for PID {} are not implemented yet; zero proof strategy {} and init receipts {:?}/{:?} were validated, and no HID device was opened",
-            preflight.target_product_id,
-            preflight.zero_proof.zero_output_strategy,
-            preflight.init_proofs.off.product_id,
-            preflight.init_proofs.standard.product_id
-        ));
+        let api = HidApi::new().context("failed to initialize HID API")?;
+        let (device, snapshot) = open_single_moza_device(&api, selector)?;
+        if !snapshot.output_capable {
+            return Err(anyhow!(
+                "selected Moza device is not an output-capable wheelbase: {} {}",
+                snapshot.product_name,
+                snapshot.product_id
+            ));
+        }
+        if preflight.target_product_id != snapshot.product_id {
+            return Err(anyhow!(
+                "PIDFF preflight target PID {} does not match selected device PID {}",
+                preflight.target_product_id,
+                snapshot.product_id
+            ));
+        }
+        if preflight.zero_proof.product_id.as_deref() != Some(snapshot.product_id.as_str()) {
+            return Err(anyhow!(
+                "PIDFF zero proof PID {:?} does not match selected device PID {}",
+                preflight.zero_proof.product_id,
+                snapshot.product_id
+            ));
+        }
+        if !preflight.init_proofs.match_product_id(&snapshot.product_id) {
+            return Err(anyhow!(
+                "PIDFF init proof PID(s) {:?}/{:?} do not match selected device PID {}",
+                preflight.init_proofs.off.product_id,
+                preflight.init_proofs.standard.product_id,
+                snapshot.product_id
+            ));
+        }
+
+        let mut receipt = LowTorqueProofReceipt::new(
+            selector.map(str::to_string),
+            snapshot,
+            Some(preflight.zero_proof),
+            strategy,
+            max_percent,
+            duration_ms,
+            hz,
+            false,
+        );
+        receipt.apply_init_proofs(Some(preflight.init_proofs));
+        receipt.notes.push(
+            "pidff-bounded-effect writes descriptor-proven PIDFF output reports only and uses PIDFF Stop All as the final cleanup".to_string(),
+        );
+        let started_at = Instant::now();
+        execute_pidff_bounded_low_torque_sequence(&mut receipt, started_at, true, |payload| {
+            device.write(payload).map_err(|error| error.to_string())
+        });
+        receipt.success = receipt.zero_proof_validated
+            && receipt.confirmed
+            && receipt.init_proofs_validated
+            && receipt.no_high_torque
+            && receipt.high_torque == Some(false)
+            && receipt.no_direct_torque_reports
+            && receipt.pidff_effect_setup_proven
+            && receipt.no_nonzero_above_limit
+            && receipt.write_errors == 0
+            && receipt.final_stop_all_sent;
+        receipt.set_receipt_path(json_out);
+
+        write_json_receipt(json_out, &receipt)?;
+        print_low_torque_receipt(json, json_out, &receipt)?;
+        if !receipt.success {
+            return Err(receipt_failure(format!(
+                "Moza PIDFF low-torque proof failed: {} writes ok, {} write errors, effect_setup_proven={}, final_stop_all_sent={}",
+                receipt.writes_ok,
+                receipt.write_errors,
+                receipt.pidff_effect_setup_proven,
+                receipt.final_stop_all_sent
+            )));
+        }
+        return Ok(());
     }
 
     let preflight = validate_low_torque_real_hardware_preflight(
@@ -2464,6 +2540,106 @@ async fn torque_test(request: TorqueTestRequest<'_>) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+fn execute_pidff_bounded_low_torque_sequence<F>(
+    receipt: &mut LowTorqueProofReceipt,
+    started_at: Instant,
+    sleep_before_cleanup: bool,
+    mut write: F,
+) where
+    F: FnMut(&[u8]) -> std::result::Result<usize, String>,
+{
+    let mut sequence = receipt.command_log.len().min(u32::MAX as usize) as u32;
+    let mut setup_ok = true;
+    for report in pidff_low_torque_reports(receipt.max_percent, receipt.duration_ms) {
+        receipt.write_attempts = receipt.write_attempts.saturating_add(1);
+        match write(&report.payload) {
+            Ok(bytes_written) => {
+                receipt.bytes_written_total =
+                    receipt.bytes_written_total.saturating_add(bytes_written);
+                if let Some(error) = short_zero_output_write_error(report.report_len, bytes_written)
+                {
+                    setup_ok = false;
+                    receipt.write_errors = receipt.write_errors.saturating_add(1);
+                    receipt.abort_reason = Some(error.clone());
+                    receipt.record_command(LowTorqueCommandRecord::partial_pidff_output(
+                        sequence,
+                        &report,
+                        started_at,
+                        bytes_written,
+                        error,
+                    ));
+                    break;
+                }
+                receipt.writes_ok = receipt.writes_ok.saturating_add(1);
+                receipt.record_command(LowTorqueCommandRecord::ok_pidff_output(
+                    sequence,
+                    &report,
+                    started_at,
+                    bytes_written,
+                ));
+            }
+            Err(error) => {
+                setup_ok = false;
+                receipt.write_errors = receipt.write_errors.saturating_add(1);
+                receipt.abort_reason = Some(format!("hid_write_error: {error}"));
+                receipt.record_command(LowTorqueCommandRecord::error_pidff_output(
+                    sequence, &report, started_at, error,
+                ));
+                break;
+            }
+        }
+        sequence = sequence.saturating_add(1);
+    }
+
+    receipt.pidff_effect_setup_proven = setup_ok && receipt.write_errors == 0;
+    if receipt.pidff_effect_setup_proven {
+        receipt.pidff_effect_block_index = Some(PIDFF_LOW_TORQUE_EFFECT_BLOCK_INDEX);
+        if sleep_before_cleanup {
+            std::thread::sleep(Duration::from_millis(receipt.duration_ms.min(1000)));
+        }
+    }
+
+    let stop_all = ZeroOutputPayload::pidff_stop_all();
+    receipt.final_zero_attempted = true;
+    receipt.final_stop_all_attempted = true;
+    match write(&stop_all.bytes) {
+        Ok(bytes_written) => {
+            receipt.bytes_written_total = receipt.bytes_written_total.saturating_add(bytes_written);
+            if let Some(error) = short_zero_output_write_error(stop_all.report_len, bytes_written) {
+                receipt.write_errors = receipt.write_errors.saturating_add(1);
+                receipt.final_zero_error = Some(error.clone());
+                receipt.record_command(LowTorqueCommandRecord::partial_pidff_stop_all(
+                    sequence,
+                    "final_stop_all",
+                    started_at,
+                    bytes_written,
+                    error,
+                ));
+            } else {
+                receipt.writes_ok = receipt.writes_ok.saturating_add(1);
+                receipt.final_zero_sent = true;
+                receipt.final_stop_all_sent = true;
+                receipt.record_command(LowTorqueCommandRecord::ok_pidff_stop_all(
+                    sequence,
+                    "final_stop_all",
+                    started_at,
+                    bytes_written,
+                ));
+            }
+        }
+        Err(error) => {
+            receipt.write_errors = receipt.write_errors.saturating_add(1);
+            receipt.final_zero_error = Some(error.clone());
+            receipt.record_command(LowTorqueCommandRecord::error_pidff_stop_all(
+                sequence,
+                "final_stop_all",
+                started_at,
+                error,
+            ));
+        }
+    }
 }
 
 async fn verify_bundle(
@@ -3692,6 +3868,60 @@ fn r5_v1_pidff_set_effect_encoder_available() -> bool {
         && payload[12] == PIDFF_TRIGGER_BUTTON_NONE
 }
 
+fn pidff_gain_for_percent(percent: f32) -> u8 {
+    ((255.0 * (percent / 100.0)).round() as u16).clamp(1, u16::from(u8::MAX)) as u8
+}
+
+fn pidff_constant_force_for_percent(percent: f32) -> i16 {
+    ((f32::from(i16::MAX) * (percent / 100.0)).round() as i32).clamp(1, i32::from(i16::MAX)) as i16
+}
+
+fn pidff_low_torque_reports(max_percent: f32, duration_ms: u64) -> Vec<PidffLowTorqueReport> {
+    let duration = duration_ms.min(u64::from(u16::MAX)) as u16;
+    let gain = pidff_gain_for_percent(max_percent);
+    let magnitude = pidff_constant_force_for_percent(max_percent);
+    vec![
+        PidffLowTorqueReport::new(
+            "pidff_set_effect",
+            max_percent,
+            r5_v1_pidff_set_effect_payload(
+                PIDFF_LOW_TORQUE_EFFECT_BLOCK_INDEX,
+                EffectType::Constant as u8,
+                duration,
+                gain,
+                PIDFF_LOW_TORQUE_DIRECTION_X,
+                PIDFF_LOW_TORQUE_DIRECTION_Y,
+            )
+            .to_vec(),
+            0,
+            false,
+            PIDFF_EFFECT_SETUP_CLASSIFICATION,
+        ),
+        PidffLowTorqueReport::new(
+            "pidff_set_constant_force",
+            max_percent,
+            pidff::encode_set_constant_force(PIDFF_LOW_TORQUE_EFFECT_BLOCK_INDEX, magnitude)
+                .to_vec(),
+            magnitude,
+            true,
+            PIDFF_BOUNDED_EFFECT_CLASSIFICATION,
+        ),
+        PidffLowTorqueReport::new(
+            "pidff_effect_start",
+            max_percent,
+            pidff::encode_effect_operation(
+                PIDFF_LOW_TORQUE_EFFECT_BLOCK_INDEX,
+                EffectOp::Start,
+                PIDFF_LOW_TORQUE_LOOP_COUNT,
+            )
+            .to_vec(),
+            0,
+            true,
+            PIDFF_BOUNDED_EFFECT_CLASSIFICATION,
+        ),
+    ]
+}
+
 fn low_torque_ladder_for_pid(
     pid: u16,
     max_percent: f32,
@@ -3881,6 +4111,13 @@ fn validate_pidff_low_torque_real_hardware_preflight(
     }
     validate_lane_manifest_endpoint_selector(lane, selector, "actual PIDFF low-torque writes")?;
     validate_zero_output_pidff_stop_all_report_metadata(lane)?;
+    let descriptor_blockers = pidff_bounded_effect_descriptor_blockers(lane);
+    if !descriptor_blockers.is_empty() {
+        return Err(anyhow!(
+            "actual PIDFF low-torque writes require descriptor-proven bounded-effect reports: {}",
+            descriptor_blockers.join("; ")
+        ));
+    }
 
     let preflight_at_utc = now_utc();
     let zero_receipt = read_json_value(lane, "zero-torque-proof.json")?;
@@ -4989,11 +5226,18 @@ fn push_smoke_ready_frontier_operator_action(
             );
         } else {
             let pidff_blockers = pidff_low_torque_frontier_blockers(lane);
-            actions.push(format!(
-                "Current smoke-ready frontier: bounded low-torque proof is blocked before any write because direct path blockers are [{}] and PIDFF path blockers are [{}]. Resolve the PIDFF bounded-effect software/receipt path or prove the direct report 0x20 path before running `wheelctl moza torque-test`; generated guidance must not add `--explicit-operator-override`. No low torque, simulator FFB, direct-mode expansion, serial config, firmware, or DFU until low-torque-proof.json passes.",
-                blockers.join("; "),
-                pidff_blockers.join("; ")
-            ));
+            if pidff_blockers.is_empty() {
+                actions.push(
+                    "Current smoke-ready frontier: bounded PIDFF low-torque proof. This is the first nonzero torque step for the live R5 V1 lane; run it only with explicit operator confirmation, wheel clear, power cutoff understood, no game/sim FFB source active, no Pit House firmware/update flow active, same-lane PIDFF Stop All zero proof, same-lane off/standard init receipts, and descriptor-proven PIDFF output reports. Keep the cap at 1% and duration at 150 ms for the first receipt, require final PIDFF Stop All cleanup, and do not proceed to simulator FFB, direct-mode expansion, serial config, firmware, or DFU until low-torque-proof.json passes."
+                        .to_string(),
+                );
+            } else {
+                actions.push(format!(
+                    "Current smoke-ready frontier: bounded low-torque proof is blocked before any write because direct path blockers are [{}] and PIDFF path blockers are [{}]. Resolve the PIDFF bounded-effect software/receipt path or prove the direct report 0x20 path before running `wheelctl moza torque-test`; generated guidance must not add `--explicit-operator-override`. No low torque, simulator FFB, direct-mode expansion, serial config, firmware, or DFU until low-torque-proof.json passes.",
+                    blockers.join("; "),
+                    pidff_blockers.join("; ")
+                ));
+            }
         }
         return;
     }
@@ -6286,7 +6530,6 @@ fn pidff_low_torque_frontier_blockers(lane: &Path) -> Vec<&'static str> {
             .push("zero-torque-proof.json is not a same-lane pidff_device_control_stop_all proof");
     }
     blockers.extend(pidff_bounded_effect_descriptor_blockers(lane));
-    blockers.push("pidff bounded-effect writer is not implemented for real hardware yet");
     blockers
 }
 
@@ -6416,6 +6659,14 @@ fn push_smoke_ready_next_commands(
                 "wheelctl moza torque-test --device {r5_selector} --lane {lane_arg} --zero-proof {} --descriptor {} --max-percent 2 --duration-ms 250 --confirm-low-torque --json-out {}",
                 lane_path_arg(lane, "zero-torque-proof.json"),
                 lane_path_arg(lane, "descriptor.json"),
+                lane_path_arg(lane, "low-torque-proof.json")
+            ));
+        } else if pidff_low_torque_frontier_blockers(lane).is_empty() {
+            commands.push(format!(
+                "wheelctl moza torque-test --device {r5_selector} --lane {lane_arg} --strategy pidff-bounded-effect --zero-proof {} --init-off {} --init-standard {} --max-percent 1 --duration-ms 150 --confirm-low-torque --json-out {} --json",
+                lane_path_arg(lane, "zero-torque-proof.json"),
+                lane_path_arg(lane, "init-off.json"),
+                lane_path_arg(lane, "init-standard.json"),
                 lane_path_arg(lane, "low-torque-proof.json")
             ));
         } else {
@@ -6965,7 +7216,8 @@ fn support_ready_for_low_torque(
     zero_success
         && zero_audit_passed
         && init_handshakes_pass
-        && low_torque_frontier_blockers(lane).is_empty()
+        && (low_torque_frontier_blockers(lane).is_empty()
+            || pidff_low_torque_frontier_blockers(lane).is_empty())
 }
 
 fn stored_lane_audit_receipt_passed(lane: &Path, stage: MozaBundleStage) -> bool {
@@ -11697,7 +11949,10 @@ fn pidff_low_torque_command_log_is_safe(
         return false;
     }
 
-    let mut bounded_writes = 0u64;
+    let mut pidff_writes = 0u64;
+    let mut set_effect_seen = false;
+    let mut constant_force_seen = false;
+    let mut effect_start_seen = false;
     for (index, record) in records.iter().enumerate() {
         if json_string(record, "result") != Some("ok")
             || json_string(record, "low_torque_strategy")
@@ -11710,7 +11965,9 @@ fn pidff_low_torque_command_log_is_safe(
         }
 
         match json_string(record, "kind") {
-            Some("pidff_bounded_effect") => {
+            Some(
+                kind @ ("pidff_set_effect" | "pidff_set_constant_force" | "pidff_effect_start"),
+            ) => {
                 if index + 1 == records.len() {
                     return false;
                 }
@@ -11733,19 +11990,40 @@ fn pidff_low_torque_command_log_is_safe(
                 let Some(payload_hex) = json_string(record, "payload_hex") else {
                     return false;
                 };
+                let safety_classification = json_string(record, "safety_classification");
+                let report_shape_safe = match kind {
+                    "pidff_set_effect" => {
+                        set_effect_seen = true;
+                        report_id == PIDFF_SET_EFFECT_REPORT_ID
+                            && safety_classification == Some(PIDFF_EFFECT_SETUP_CLASSIFICATION)
+                    }
+                    "pidff_set_constant_force" => {
+                        constant_force_seen = true;
+                        report_id == PIDFF_SET_CONSTANT_FORCE_REPORT_ID
+                            && safety_classification == Some(PIDFF_BOUNDED_EFFECT_CLASSIFICATION)
+                            && json_i64(record, "torque_raw")
+                                .map(|value| value > 0)
+                                .unwrap_or(false)
+                    }
+                    "pidff_effect_start" => {
+                        effect_start_seen = true;
+                        report_id == PIDFF_EFFECT_OPERATION_REPORT_ID
+                            && safety_classification == Some(PIDFF_BOUNDED_EFFECT_CLASSIFICATION)
+                    }
+                    _ => false,
+                };
                 let record_safe = percent.is_finite()
                     && percent > 0.0
                     && percent <= max_percent
-                    && json_string(record, "safety_classification")
-                        == Some("bounded_low_torque_pidff")
                     && report_id != DIRECT_TORQUE_REPORT_ID
                     && payload_hex.len() == report_len.saturating_mul(2)
                     && bytes_written >= report_len as u64
+                    && report_shape_safe
                     && lane_descriptor_has_output_report(lane, report_id, report_len);
                 if !record_safe {
                     return false;
                 }
-                bounded_writes += 1;
+                pidff_writes += 1;
             }
             Some("final_stop_all" | "final_zero") => {
                 if index + 1 != records.len() {
@@ -11767,7 +12045,7 @@ fn pidff_low_torque_command_log_is_safe(
                     && json_string(record, "pidff_device_control_command_name")
                         == Some(PIDFF_STOP_ALL_EFFECTS_COMMAND_NAME)
                     && json_string(record, "safety_classification")
-                        == Some("pidff_stop_all_cleanup");
+                        == Some(PIDFF_STOP_ALL_CLEANUP_CLASSIFICATION);
                 if !final_stop_all_safe {
                     return false;
                 }
@@ -11776,7 +12054,7 @@ fn pidff_low_torque_command_log_is_safe(
         }
     }
 
-    bounded_writes == expected_writes && bounded_writes > 0
+    pidff_writes == expected_writes && set_effect_seen && constant_force_seen && effect_start_seen
 }
 
 fn lane_descriptor_has_output_report(lane: &Path, report_id: &str, report_len: usize) -> bool {
@@ -15860,6 +16138,9 @@ struct LowTorqueProofReceipt {
     direct_mode_gate_satisfied: bool,
     descriptor_trusted: bool,
     explicit_operator_override: bool,
+    pidff_effect_setup_proven: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pidff_effect_block_index: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     descriptor_proof: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -15926,6 +16207,8 @@ impl LowTorqueProofReceipt {
             direct_mode_gate_satisfied: false,
             descriptor_trusted: false,
             explicit_operator_override: false,
+            pidff_effect_setup_proven: false,
+            pidff_effect_block_index: None,
             descriptor_proof: None,
             matched_product_id: None,
             direct_mode_gate_reason: "not_evaluated".to_string(),
@@ -15956,7 +16239,7 @@ impl LowTorqueProofReceipt {
                 "torque-test is gated by a passing real zero-torque proof before any actual HID write".to_string(),
                 match strategy {
                     MozaLowTorqueStrategy::DirectReport0x20 => "this command sends only Moza direct torque report 0x20 and never sends high-torque or feature reports".to_string(),
-                    MozaLowTorqueStrategy::PidffBoundedEffect => "pidff-bounded-effect is a separate strategy from direct report 0x20 and requires a future effect encoder before real writes".to_string(),
+                    MozaLowTorqueStrategy::PidffBoundedEffect => "pidff-bounded-effect is a separate strategy from direct report 0x20, uses descriptor-proven PIDFF output reports, and must end with PIDFF Stop All cleanup".to_string(),
                 },
             ],
         }
@@ -16001,6 +16284,14 @@ impl LowTorqueProofReceipt {
         if self.low_torque_strategy
             == low_torque_strategy_name(MozaLowTorqueStrategy::PidffBoundedEffect)
         {
+            for report in pidff_low_torque_reports(self.max_percent, self.duration_ms) {
+                self.record_command(LowTorqueCommandRecord::planned_pidff_output(
+                    sequence, &report, started_at,
+                ));
+                sequence += 1;
+            }
+            self.pidff_effect_setup_proven = true;
+            self.pidff_effect_block_index = Some(PIDFF_LOW_TORQUE_EFFECT_BLOCK_INDEX);
             self.final_zero_attempted = true;
             self.final_zero_sent = true;
             self.final_stop_all_attempted = true;
@@ -16042,8 +16333,10 @@ impl LowTorqueProofReceipt {
                 && record
                     .safety_classification
                     .map(|classification| {
-                        classification == "planned_pidff_stop_all"
-                            || classification == "bounded_low_torque_pidff"
+                        classification == PIDFF_PLANNED_STOP_ALL_CLASSIFICATION
+                            || classification == PIDFF_EFFECT_SETUP_CLASSIFICATION
+                            || classification == PIDFF_BOUNDED_EFFECT_CLASSIFICATION
+                            || classification == PIDFF_STOP_ALL_CLEANUP_CLASSIFICATION
                     })
                     .unwrap_or(false)
                 && record.percent <= self.max_percent
@@ -16090,6 +16383,45 @@ impl LowTorqueStage {
             flags,
             motor_enabled: flags & 0x01 != 0,
             payload,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PidffLowTorqueReport {
+    kind: &'static str,
+    percent: f32,
+    effect_magnitude_percent: f32,
+    payload: Vec<u8>,
+    report_id: String,
+    report_len: usize,
+    torque_raw: i16,
+    flags: u8,
+    motor_enabled: bool,
+    safety_classification: &'static str,
+}
+
+impl PidffLowTorqueReport {
+    fn new(
+        kind: &'static str,
+        percent: f32,
+        payload: Vec<u8>,
+        torque_raw: i16,
+        motor_enabled: bool,
+        safety_classification: &'static str,
+    ) -> Self {
+        let report_id = payload.first().copied().map(hex_u8).unwrap_or_default();
+        Self {
+            kind,
+            percent,
+            effect_magnitude_percent: percent,
+            report_len: payload.len(),
+            report_id,
+            payload,
+            torque_raw,
+            flags: 0,
+            motor_enabled,
+            safety_classification,
         }
     }
 }
@@ -16198,7 +16530,117 @@ impl LowTorqueCommandRecord {
     }
 
     fn planned_pidff_stop_all(sequence: u32, kind: &'static str, started_at: Instant) -> Self {
-        Self::pidff_stop_all(sequence, kind, started_at, "planned", None, None)
+        Self::pidff_stop_all(
+            sequence,
+            kind,
+            started_at,
+            "planned",
+            None,
+            None,
+            PIDFF_PLANNED_STOP_ALL_CLASSIFICATION,
+        )
+    }
+
+    fn ok_pidff_stop_all(
+        sequence: u32,
+        kind: &'static str,
+        started_at: Instant,
+        bytes_written: usize,
+    ) -> Self {
+        Self::pidff_stop_all(
+            sequence,
+            kind,
+            started_at,
+            "ok",
+            Some(bytes_written),
+            None,
+            PIDFF_STOP_ALL_CLEANUP_CLASSIFICATION,
+        )
+    }
+
+    fn partial_pidff_stop_all(
+        sequence: u32,
+        kind: &'static str,
+        started_at: Instant,
+        bytes_written: usize,
+        error: String,
+    ) -> Self {
+        Self::pidff_stop_all(
+            sequence,
+            kind,
+            started_at,
+            "partial",
+            Some(bytes_written),
+            Some(error),
+            PIDFF_STOP_ALL_CLEANUP_CLASSIFICATION,
+        )
+    }
+
+    fn error_pidff_stop_all(
+        sequence: u32,
+        kind: &'static str,
+        started_at: Instant,
+        error: String,
+    ) -> Self {
+        Self::pidff_stop_all(
+            sequence,
+            kind,
+            started_at,
+            "error",
+            None,
+            Some(error),
+            PIDFF_STOP_ALL_CLEANUP_CLASSIFICATION,
+        )
+    }
+
+    fn planned_pidff_output(
+        sequence: u32,
+        report: &PidffLowTorqueReport,
+        started_at: Instant,
+    ) -> Self {
+        Self::pidff_output(sequence, report, started_at, "planned", None, None)
+    }
+
+    fn ok_pidff_output(
+        sequence: u32,
+        report: &PidffLowTorqueReport,
+        started_at: Instant,
+        bytes_written: usize,
+    ) -> Self {
+        Self::pidff_output(
+            sequence,
+            report,
+            started_at,
+            "ok",
+            Some(bytes_written),
+            None,
+        )
+    }
+
+    fn partial_pidff_output(
+        sequence: u32,
+        report: &PidffLowTorqueReport,
+        started_at: Instant,
+        bytes_written: usize,
+        error: String,
+    ) -> Self {
+        Self::pidff_output(
+            sequence,
+            report,
+            started_at,
+            "partial",
+            Some(bytes_written),
+            Some(error),
+        )
+    }
+
+    fn error_pidff_output(
+        sequence: u32,
+        report: &PidffLowTorqueReport,
+        started_at: Instant,
+        error: String,
+    ) -> Self {
+        Self::pidff_output(sequence, report, started_at, "error", None, Some(error))
     }
 
     fn pidff_stop_all(
@@ -16208,6 +16650,7 @@ impl LowTorqueCommandRecord {
         result: &'static str,
         bytes_written: Option<usize>,
         error: Option<String>,
+        safety_classification: &'static str,
     ) -> Self {
         Self {
             sequence,
@@ -16226,7 +16669,39 @@ impl LowTorqueCommandRecord {
             effect_magnitude_percent: Some(0.0),
             pidff_device_control_command: Some(hex_u8(PIDFF_STOP_ALL_EFFECTS_COMMAND)),
             pidff_device_control_command_name: Some(PIDFF_STOP_ALL_EFFECTS_COMMAND_NAME),
-            safety_classification: Some("planned_pidff_stop_all"),
+            safety_classification: Some(safety_classification),
+            result,
+            bytes_written,
+            error,
+        }
+    }
+
+    fn pidff_output(
+        sequence: u32,
+        report: &PidffLowTorqueReport,
+        started_at: Instant,
+        result: &'static str,
+        bytes_written: Option<usize>,
+        error: Option<String>,
+    ) -> Self {
+        Self {
+            sequence,
+            kind: report.kind,
+            elapsed_us: started_at.elapsed().as_micros() as u64,
+            low_torque_strategy: Some(low_torque_strategy_name(
+                MozaLowTorqueStrategy::PidffBoundedEffect,
+            )),
+            percent: report.percent,
+            payload_hex: bytes_hex_compact(&report.payload),
+            report_id: report.report_id.clone(),
+            report_len: report.report_len,
+            torque_raw: report.torque_raw,
+            flags: report.flags,
+            motor_enabled: report.motor_enabled,
+            effect_magnitude_percent: Some(report.effect_magnitude_percent),
+            pidff_device_control_command: None,
+            pidff_device_control_command_name: None,
+            safety_classification: Some(report.safety_classification),
             result,
             bytes_written,
             error,
@@ -18973,7 +19448,7 @@ mod tests {
     }
 
     #[test]
-    fn support_status_keeps_low_torque_unready_without_direct_report_path() -> TestResult {
+    fn support_status_allows_low_torque_ready_through_pidff_path() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_zero_torque_ready_r5_v1_manifest(dir.path())?;
         write_test_json_file(
@@ -19010,8 +19485,8 @@ mod tests {
         )?;
 
         assert!(
-            !support_ready_for_low_torque(dir.path(), true, true, true),
-            "R5 V1 PIDFF zero proof and descriptor without direct report 0x20 must not report low-torque readiness"
+            support_ready_for_low_torque(dir.path(), true, true, true),
+            "R5 V1 PIDFF zero proof and descriptor-proven bounded-effect reports should report low-torque readiness without direct report 0x20"
         );
 
         let direct = tempfile::tempdir()?;
@@ -21042,15 +21517,32 @@ mod tests {
         vec![
             serde_json::json!({
                 "sequence": 0,
-                "kind": "pidff_bounded_effect",
+                "kind": "pidff_set_effect",
                 "elapsed_us": 10,
                 "low_torque_strategy": "pidff_bounded_effect",
                 "percent": 1.0,
                 "effect_magnitude_percent": 1.0,
-                "payload_hex": "05010001",
+                "payload_hex": "010101960000000000000003FF052823000000000000",
+                "report_id": "0x01",
+                "report_len": 22,
+                "torque_raw": 0,
+                "flags": 0,
+                "motor_enabled": false,
+                "safety_classification": "pidff_effect_setup",
+                "result": "ok",
+                "bytes_written": 22
+            }),
+            serde_json::json!({
+                "sequence": 1,
+                "kind": "pidff_set_constant_force",
+                "elapsed_us": 100,
+                "low_torque_strategy": "pidff_bounded_effect",
+                "percent": 1.0,
+                "effect_magnitude_percent": 1.0,
+                "payload_hex": "05014801",
                 "report_id": "0x05",
                 "report_len": 4,
-                "torque_raw": 1,
+                "torque_raw": 328,
                 "flags": 0,
                 "motor_enabled": true,
                 "safety_classification": "bounded_low_torque_pidff",
@@ -21058,7 +21550,24 @@ mod tests {
                 "bytes_written": 4
             }),
             serde_json::json!({
-                "sequence": 1,
+                "sequence": 2,
+                "kind": "pidff_effect_start",
+                "elapsed_us": 150,
+                "low_torque_strategy": "pidff_bounded_effect",
+                "percent": 1.0,
+                "effect_magnitude_percent": 1.0,
+                "payload_hex": "0A010101",
+                "report_id": "0x0A",
+                "report_len": 4,
+                "torque_raw": 0,
+                "flags": 0,
+                "motor_enabled": true,
+                "safety_classification": "bounded_low_torque_pidff",
+                "result": "ok",
+                "bytes_written": 4
+            }),
+            serde_json::json!({
+                "sequence": 3,
                 "kind": "final_stop_all",
                 "elapsed_us": 200,
                 "low_torque_strategy": "pidff_bounded_effect",
@@ -21117,10 +21626,12 @@ mod tests {
             },
             "zero_proof": zero_proof,
             "init_proofs": init_proofs,
-            "write_attempts": 1,
-            "writes_ok": 2,
+            "pidff_effect_setup_proven": true,
+            "pidff_effect_block_index": 1,
+            "write_attempts": 3,
+            "writes_ok": 4,
             "write_errors": 0,
-            "bytes_written_total": 55,
+            "bytes_written_total": 81,
             "final_zero_attempted": true,
             "final_zero_sent": true,
             "final_stop_all_attempted": true,
@@ -21161,9 +21672,9 @@ mod tests {
 
         let blockers = pidff_low_torque_frontier_blockers(dir.path());
 
-        assert_eq!(
-            blockers,
-            vec!["pidff bounded-effect writer is not implemented for real hardware yet"]
+        assert!(
+            blockers.is_empty(),
+            "unexpected PIDFF blockers: {blockers:?}"
         );
         Ok(())
     }
@@ -24745,7 +25256,10 @@ mod tests {
         write_low_torque_prerequisite_receipts(dir.path())?;
         let mut receipt = real_low_torque_receipt_for_lane(dir.path(), 2.0)?;
         receipt["selector"] = serde_json::json!("0x346E:0x0014");
-        write_test_json_file(&dir.path().join("low-torque-proof.json"), &receipt)?;
+        write_test_json_file(
+            &dir.path().join("low-torque-proof.json"),
+            &serde_json::to_value(&receipt)?,
+        )?;
 
         let gate = verify_low_torque_gate(dir.path());
 
@@ -24768,7 +25282,10 @@ mod tests {
         receipt["dry_run"] = serde_json::json!(true);
         receipt["no_hid_device_opened"] = serde_json::json!(true);
         receipt["no_ffb_writes"] = serde_json::json!(true);
-        write_test_json_file(&dir.path().join("low-torque-proof.json"), &receipt)?;
+        write_test_json_file(
+            &dir.path().join("low-torque-proof.json"),
+            &serde_json::to_value(&receipt)?,
+        )?;
 
         let gate = verify_low_torque_gate(dir.path());
 
@@ -24970,13 +25487,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn torque_test_pidff_actual_fails_closed_before_hid_open() -> TestResult {
+    async fn torque_test_pidff_actual_requires_exact_endpoint_before_hid_open() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_pidff_low_torque_prerequisite_receipts(dir.path())?;
 
         let result = torque_test(TorqueTestRequest {
             json: false,
-            selector: Some("hid-0x346E-0x0004-if2-0x0001-0x0004"),
+            selector: Some("0x346E:0x0004"),
             pid_override: None,
             zero_proof: Some(&dir.path().join("zero-torque-proof.json")),
             descriptor: None,
@@ -24997,10 +25514,70 @@ mod tests {
         let message = result
             .err()
             .map(|error| error.to_string())
-            .ok_or("expected PIDFF not-implemented gate")?;
-        assert!(message.contains("not implemented"));
-        assert!(message.contains("no HID device was opened"));
+            .ok_or("expected PIDFF endpoint preflight failure")?;
+        assert!(message.contains("lane manifest wheelbase endpoint selector"));
+        assert!(message.contains("actual PIDFF low-torque writes"));
         assert!(!dir.path().join("low-torque-proof.json").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn execute_pidff_low_torque_sequence_records_setup_and_cleanup() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_pidff_low_torque_prerequisite_receipts(dir.path())?;
+        let zero_proof = validate_zero_proof_for_low_torque_strategy(
+            &dir.path().join("zero-torque-proof.json"),
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+        )?;
+        let init_proofs =
+            validate_init_proofs_for_torque_test(Some(dir.path()), None, None, false)?
+                .ok_or("expected init proofs")?;
+        let mut receipt = LowTorqueProofReceipt::new(
+            Some("hid-0x346E-0x0004-if2-0x0001-0x0004".to_string()),
+            synthetic_moza_device_record(product_ids::R5_V1),
+            Some(zero_proof),
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            1.0,
+            150,
+            1000,
+            false,
+        );
+        receipt.apply_init_proofs(Some(init_proofs));
+
+        execute_pidff_bounded_low_torque_sequence(&mut receipt, Instant::now(), false, |payload| {
+            Ok(payload.len())
+        });
+        receipt.success = receipt.zero_proof_validated
+            && receipt.confirmed
+            && receipt.init_proofs_validated
+            && receipt.no_high_torque
+            && receipt.high_torque == Some(false)
+            && receipt.no_direct_torque_reports
+            && receipt.pidff_effect_setup_proven
+            && receipt.no_nonzero_above_limit
+            && receipt.write_errors == 0
+            && receipt.final_stop_all_sent;
+        receipt.set_receipt_path(Some(&dir.path().join("low-torque-proof.json")));
+
+        assert!(receipt.success);
+        assert!(receipt.pidff_effect_setup_proven);
+        assert_eq!(
+            receipt.pidff_effect_block_index,
+            Some(PIDFF_LOW_TORQUE_EFFECT_BLOCK_INDEX)
+        );
+        assert_eq!(receipt.write_attempts, 3);
+        assert_eq!(receipt.writes_ok, 4);
+        assert_eq!(receipt.command_log.len(), 4);
+        let receipt_value = serde_json::to_value(&receipt)?;
+        write_test_json_file(&dir.path().join("low-torque-proof.json"), &receipt_value)?;
+
+        let gate = verify_low_torque_gate(dir.path());
+
+        assert_eq!(
+            gate.status, "pass",
+            "expected PIDFF gate pass: {}",
+            gate.details
+        );
         Ok(())
     }
 
@@ -25008,10 +25585,9 @@ mod tests {
     fn verify_low_torque_gate_rejects_pidff_receipt_without_effect_setup_proof() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_pidff_low_torque_prerequisite_receipts(dir.path())?;
-        write_test_json_file(
-            &dir.path().join("low-torque-proof.json"),
-            &real_pidff_low_torque_receipt_for_lane(dir.path())?,
-        )?;
+        let mut receipt = real_pidff_low_torque_receipt_for_lane(dir.path())?;
+        receipt["pidff_effect_setup_proven"] = serde_json::json!(false);
+        write_test_json_file(&dir.path().join("low-torque-proof.json"), &receipt)?;
 
         let gate = verify_low_torque_gate(dir.path());
 
@@ -30389,7 +30965,7 @@ mod tests {
     }
 
     #[test]
-    fn smoke_ready_low_torque_frontier_waits_for_direct_report_path() -> TestResult {
+    fn smoke_ready_low_torque_frontier_suggests_pidff_when_direct_path_is_blocked() -> TestResult {
         let dir = tempfile::tempdir()?;
         let mut manifest = sample_lane_manifest("zero_torque_ready", true, false);
         manifest["hardware"]["wheelbase_pid"] = serde_json::json!("0x0004");
@@ -30457,37 +31033,24 @@ mod tests {
         );
         let pidff_blockers = pidff_low_torque_frontier_blockers(dir.path());
         assert!(
-            pidff_blockers
-                .iter()
-                .all(|blocker| !blocker.contains("Set Effect encoder")),
-            "live R5 V1 descriptor should now satisfy the R5-shaped Set Effect encoder: {pidff_blockers:?}"
-        );
-        assert!(
-            pidff_blockers
-                .iter()
-                .all(|blocker| !blocker.contains("feature report 0x11 length metadata")),
-            "refreshed live R5 V1 descriptor should now provide descriptor-derived feature report lengths: {pidff_blockers:?}"
-        );
-        assert!(
-            pidff_blockers
-                .iter()
-                .any(|blocker| blocker.contains("writer is not implemented")),
-            "PIDFF frontier should still block the real writer until implemented: {pidff_blockers:?}"
+            pidff_blockers.is_empty(),
+            "live R5 V1 descriptor and PIDFF zero proof should clear the PIDFF frontier: {pidff_blockers:?}"
         );
 
         let mut commands = Vec::new();
         push_smoke_ready_next_commands(dir.path(), &gates, &mut commands);
         let joined = commands.join("\n");
         assert!(
-            joined.contains("wheelctl moza pre-output-readiness")
-                && joined.contains("--json-out")
-                && joined.contains("pre-output-readiness.json"),
-            "direct-path gap should refresh read-only readiness instead of suggesting torque: {joined}"
+            joined.contains("wheelctl moza torque-test")
+                && joined.contains("--strategy pidff-bounded-effect")
+                && joined.contains("--max-percent 1")
+                && joined.contains("--duration-ms 150")
+                && joined.contains("--confirm-low-torque"),
+            "direct-path gap with clear PIDFF frontier should suggest the bounded PIDFF command: {joined}"
         );
         assert!(
-            !joined.contains("wheelctl moza torque-test")
-                && !joined.contains("--explicit-operator-override"),
-            "direct-path gap must not emit low-torque or override guidance: {joined}"
+            !joined.contains("--explicit-operator-override"),
+            "PIDFF guidance must not emit direct-path override guidance: {joined}"
         );
         for command in commands {
             let command = command_with_test_placeholders(&command);
@@ -30503,11 +31066,12 @@ mod tests {
         push_smoke_ready_frontier_operator_action(dir.path(), &gates, &mut actions);
         let action_text = actions.join("\n");
         assert!(
-            action_text.contains("blocked before any write")
-                && action_text.contains("direct report 0x20")
-                && action_text.contains("zero-torque-proof.json")
-                && action_text.contains("must not add `--explicit-operator-override`"),
-            "operator guidance should name the direct-path blockers without suggesting override: {action_text}"
+            action_text.contains("bounded PIDFF low-torque proof")
+                && action_text.contains("same-lane PIDFF Stop All zero proof")
+                && action_text.contains("final PIDFF Stop All cleanup")
+                && action_text.contains("1%")
+                && action_text.contains("150 ms"),
+            "operator guidance should route the live R5 V1 lane through PIDFF: {action_text}"
         );
         Ok(())
     }

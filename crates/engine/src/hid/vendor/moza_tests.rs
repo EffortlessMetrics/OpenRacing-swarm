@@ -584,13 +584,12 @@ fn test_moza_handbrake_skip_initialization() -> Result<(), Box<dyn std::error::E
 }
 
 #[test]
-fn test_moza_initialization_continues_on_failure() -> Result<(), Box<dyn std::error::Error>> {
+fn test_moza_initialization_records_failure_state() -> Result<(), Box<dyn std::error::Error>> {
     let protocol = MozaProtocol::new(0x0002); // R9
     let mut writer = MockDeviceWriter::with_failure();
 
-    // Should not return error, just warn
     let result = protocol.initialize_device(&mut writer);
-    assert!(result.is_ok());
+    assert!(result.is_err());
     assert_eq!(protocol.init_state(), MozaInitState::Failed);
 
     Ok(())
@@ -751,7 +750,8 @@ fn test_moza_retries_bounded_by_max_retries() -> Result<(), Box<dyn std::error::
         MozaInitState::PermanentFailure, // retry_count = 3 >= max_retries
     ] {
         let mut writer = MockDeviceWriter::with_failure();
-        protocol.initialize_device(&mut writer)?;
+        let result = protocol.initialize_device(&mut writer);
+        assert!(result.is_err());
         assert_eq!(
             protocol.init_state(),
             expected_state,
@@ -796,7 +796,8 @@ fn test_moza_can_retry_state() -> Result<(), Box<dyn std::error::Error>> {
     assert!(!protocol.can_retry(), "cannot retry from Uninitialized");
 
     let mut writer = MockDeviceWriter::with_failure();
-    protocol.initialize_device(&mut writer)?;
+    let result = protocol.initialize_device(&mut writer);
+    assert!(result.is_err());
     assert_eq!(protocol.init_state(), MozaInitState::Failed);
     assert!(protocol.can_retry(), "can retry after first failure");
 

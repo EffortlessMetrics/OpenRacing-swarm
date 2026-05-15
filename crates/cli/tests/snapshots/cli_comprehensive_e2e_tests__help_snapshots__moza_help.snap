@@ -18,6 +18,7 @@ Commands:
   analyze-lane               Compare required passive lane captures against idle without hardware writes
   sync-role-status           Sync manifest logical-control semantic_status fields from stored captures
   validate-captures          Validate every required Moza lane capture through the parser without hardware writes
+  pre-output-readiness       Summarize whether a Moza lane is ready for zero-torque or FFB output
   promote-fixture            Promote a validated Moza capture JSONL into a parser fixture file
   promote-fixtures           Promote every required Moza lane capture into parser fixture files
   zero                       Send bounded zero-torque output reports to a Moza wheelbase
