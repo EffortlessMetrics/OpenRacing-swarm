@@ -6130,7 +6130,7 @@ fn audit_stored_verification_receipt(lane: &Path, stage: MozaBundleStage) -> Lan
 
     let success = json_bool(&receipt, "success") == Some(true);
     let command_ok = json_string(&receipt, "command") == Some("wheelctl moza verify-bundle");
-    let lane_ok = path_value_matches(lane, json_string(&receipt, "lane"));
+    let lane_ok = lane_path_value_matches(lane, json_string(&receipt, "lane"));
     let stage_ok = json_string(&receipt, "requested_stage") == Some(stage_label);
     let missing_artifacts = json_u64(&receipt, "missing_artifacts").unwrap_or(u64::MAX);
     let invalid_artifacts = json_u64(&receipt, "invalid_artifacts").unwrap_or(u64::MAX);
@@ -6182,8 +6182,8 @@ fn audit_manifest_promotion_receipt(lane: &Path, stage: MozaBundleStage) -> Lane
         manifest_promotion_values(stage);
     let success = json_bool(&receipt, "success") == Some(true);
     let command_ok = json_string(&receipt, "command") == Some("wheelctl moza promote-manifest");
-    let lane_ok = path_value_matches(lane, json_string(&receipt, "lane"));
-    let manifest_ok = path_value_matches(
+    let lane_ok = lane_path_value_matches(lane, json_string(&receipt, "lane"));
+    let manifest_ok = artifact_path_value_matches(
         &lane.join("manifest.json"),
         json_string(&receipt, "manifest"),
     );
@@ -6263,6 +6263,13 @@ fn lane_path_value_matches(expected: &Path, recorded: Option<&str>) -> bool {
     relative_path_value_matches(expected, recorded)
 }
 
+fn artifact_path_value_matches(expected: &Path, recorded: Option<&str>) -> bool {
+    let Some(recorded) = recorded.map(str::trim).filter(|value| !value.is_empty()) else {
+        return false;
+    };
+    path_value_matches(expected, Some(recorded)) || relative_path_value_matches(expected, recorded)
+}
+
 fn relative_path_value_matches(expected: &Path, recorded: &str) -> bool {
     let recorded_path = Path::new(recorded);
     if recorded_path.is_absolute() || recorded.contains(':') {
@@ -6283,8 +6290,7 @@ fn receipt_path_matches(lane: &Path, receipt: &Value, relative_path: &str) -> bo
     let Some(recorded) = json_string(receipt, "receipt_path") else {
         return false;
     };
-    path_value_matches(&expected, Some(recorded))
-        || relative_path_value_matches(&expected, recorded)
+    artifact_path_value_matches(&expected, Some(recorded))
 }
 
 fn verification_receipt_path(stage: MozaBundleStage) -> &'static str {
@@ -18212,6 +18218,28 @@ mod tests {
     }
 
     #[test]
+    fn artifact_path_binding_accepts_repo_relative_manifest_path() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let manifest = dir
+            .path()
+            .join("ci")
+            .join("hardware")
+            .join("moza-r5")
+            .join("2026-05-13")
+            .join("manifest.json");
+
+        assert!(artifact_path_value_matches(
+            &manifest,
+            Some("ci\\hardware\\moza-r5\\2026-05-13\\manifest.json")
+        ));
+        assert!(!artifact_path_value_matches(
+            &manifest,
+            Some("ci\\hardware\\moza-r5\\2026-05-14\\manifest.json")
+        ));
+        Ok(())
+    }
+
+    #[test]
     fn receipt_path_binding_rejects_stale_relative_lane_artifact_path() -> TestResult {
         let dir = tempfile::tempdir()?;
         let lane = dir
@@ -29151,6 +29179,41 @@ mod tests {
         assert_eq!(receipt.missing_receipts, 0);
         assert_eq!(receipt.invalid_receipts, 0);
         assert_eq!(receipt.receipt_checks.len(), 6);
+        Ok(())
+    }
+
+    #[test]
+    fn audit_lane_accepts_repo_relative_windows_style_stored_receipt_paths() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir
+            .path()
+            .join("ci")
+            .join("hardware")
+            .join("moza-r5")
+            .join("2026-05-13");
+        write_minimal_passive_bundle(&lane)?;
+        write_stage_audit_receipts(&lane, MozaBundleStage::Passive)?;
+
+        let relative_lane = "ci\\hardware\\moza-r5\\2026-05-13";
+        let mut verification = stored_verification_receipt(&lane, MozaBundleStage::Passive);
+        verification["lane"] = serde_json::json!(relative_lane);
+        write_test_json_file(&lane.join("passive-verification.json"), &verification)?;
+
+        let mut promotion = stored_promotion_receipt(&lane, MozaBundleStage::Passive);
+        promotion["lane"] = serde_json::json!(relative_lane);
+        promotion["manifest"] = serde_json::json!(format!("{relative_lane}\\manifest.json"));
+        write_test_json_file(&lane.join("manifest-promotion-passive.json"), &promotion)?;
+
+        let receipt = audit_lane_dir(&lane, MozaBundleStage::Passive);
+
+        if !receipt.success {
+            return Err(format!(
+                "expected backslash-style repo-relative stored receipt paths to audit successfully: {}",
+                serde_json::to_string_pretty(&receipt)?
+            )
+            .into());
+        }
+        assert_eq!(receipt.invalid_receipts, 0);
         Ok(())
     }
 
