@@ -21029,6 +21029,35 @@ mod tests {
     }
 
     #[test]
+    fn ci_lane_readme_init_commands_are_lane_bound_and_confirmed() -> TestResult {
+        let readme_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ci/hardware/moza-r5/README.md");
+        let readme = fs::read_to_string(&readme_path)?;
+
+        for mode in ["off", "standard"] {
+            let expected = format!(
+                "wheelctl moza init --device <r5> --lane ci/hardware/moza-r5/YYYY-MM-DD --mode {mode} --confirm-init"
+            );
+            assert!(
+                readme.contains(&expected),
+                "expected {} to document lane-bound confirmed {mode} init: {expected}",
+                readme_path.display()
+            );
+        }
+        for stale in [
+            "wheelctl moza init --device <r5> --mode off --json-out",
+            "wheelctl moza init --device <r5> --mode standard --json-out",
+        ] {
+            assert!(
+                !readme.contains(stale),
+                "README must not document unconfirmed or lane-less init command: {stale}"
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
     fn ci_lane_docs_use_wheelctl_descriptor_receipt_producer() -> TestResult {
         let readme_path =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ci/hardware/moza-r5/README.md");

@@ -292,8 +292,8 @@ Zero proof requires an explicit descriptor-trusted zero-output strategy. `wheelc
 Full real-hardware smoke evidence:
 
 ```powershell
-wheelctl moza init --device <r5> --mode off --json-out ci/hardware/moza-r5/YYYY-MM-DD/init-off.json
-wheelctl moza init --device <r5> --mode standard --json-out ci/hardware/moza-r5/YYYY-MM-DD/init-standard.json
+wheelctl moza init --device <r5> --lane ci/hardware/moza-r5/YYYY-MM-DD --mode off --confirm-init --json-out ci/hardware/moza-r5/YYYY-MM-DD/init-off.json
+wheelctl moza init --device <r5> --lane ci/hardware/moza-r5/YYYY-MM-DD --mode standard --confirm-init --json-out ci/hardware/moza-r5/YYYY-MM-DD/init-standard.json
 wheelctl moza torque-test --device <r5> --lane ci/hardware/moza-r5/YYYY-MM-DD --zero-proof ci/hardware/moza-r5/YYYY-MM-DD/zero-torque-proof.json --descriptor ci/hardware/moza-r5/YYYY-MM-DD/descriptor.json --confirm-low-torque --max-percent 2 --duration-ms 250 --json-out ci/hardware/moza-r5/YYYY-MM-DD/low-torque-proof.json
 wheelctl telemetry record --game simhub-bridge --telemetry-source simhub_bridge --input ci/hardware/moza-r5/YYYY-MM-DD/normalized-snapshots.jsonl --out ci/hardware/moza-r5/YYYY-MM-DD/simulator-telemetry-recording.jsonl --session-id simhub-bridge-YYYY-MM-DD --duration-ms 5000
 wheelctl moza simulator-telemetry-proof --lane ci/hardware/moza-r5/YYYY-MM-DD --game simhub-bridge --telemetry-source simhub_bridge --recorder-artifact simulator-telemetry-recording.jsonl --duration-ms 5000 --json-out ci/hardware/moza-r5/YYYY-MM-DD/simulator-telemetry-proof.json
