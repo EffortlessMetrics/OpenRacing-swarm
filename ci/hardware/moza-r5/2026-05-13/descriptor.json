@@ -1,7 +1,7 @@
 {
   "success": true,
   "command": "wheelctl moza descriptor",
-  "generated_at_utc": "2026-05-15T00:25:00Z",
+  "generated_at_utc": "2026-05-15T20:09:28Z",
   "vendor_id": "0x346E",
   "selector": "hid-0x346E-0x0004-if2-0x0001-0x0004",
   "no_hid_device_opened": true,
@@ -113,6 +113,24 @@
         "0x12",
         "0x13",
         "0xAF"
+      ],
+      "feature_reports": [
+        {
+          "report_id": "0x11",
+          "report_len": 4
+        },
+        {
+          "report_id": "0x12",
+          "report_len": 5
+        },
+        {
+          "report_id": "0x13",
+          "report_len": 5
+        },
+        {
+          "report_id": "0xAF",
+          "report_len": 18
+        }
       ]
     }
   ],

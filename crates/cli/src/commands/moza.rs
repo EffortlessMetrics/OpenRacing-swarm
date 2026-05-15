@@ -30387,8 +30387,8 @@ mod tests {
         assert!(
             pidff_blockers
                 .iter()
-                .any(|blocker| blocker.contains("feature report 0x11 length metadata")),
-            "PIDFF effect allocation should require descriptor-derived feature report lengths: {pidff_blockers:?}"
+                .all(|blocker| !blocker.contains("feature report 0x11 length metadata")),
+            "refreshed live R5 V1 descriptor should now provide descriptor-derived feature report lengths: {pidff_blockers:?}"
         );
         assert!(
             pidff_blockers
