@@ -2124,7 +2124,7 @@ async fn init(
         return Ok(());
     }
 
-    let preflight = validate_init_stage_preflight(lane, json_out, mode, confirm_init)?;
+    let preflight = validate_init_stage_preflight(lane, json_out, selector, mode, confirm_init)?;
 
     let api = HidApi::new().context("failed to initialize HID API")?;
     let (device, snapshot) = open_single_moza_device(&api, selector)?;
@@ -3879,6 +3879,7 @@ fn init_receipt_relative_path(mode: MozaInitMode) -> &'static str {
 fn validate_init_stage_preflight(
     lane: Option<&Path>,
     json_out: Option<&Path>,
+    selector: Option<&str>,
     mode: MozaInitMode,
     confirmed: bool,
 ) -> Result<InitStagePreflight> {
@@ -3936,6 +3937,8 @@ fn validate_init_stage_preflight(
     let zero_audit_generated_at =
         require_valid_generated_at(&zero_audit, &zero_audit_path, "zero-stage audit")?;
 
+    validate_init_stage_endpoint_selector(lane, selector)?;
+
     if matches!(mode, MozaInitMode::Standard) {
         let init_off_gate =
             verify_init_receipt_gate(lane, "init_off_handshake", "init-off.json", "off");
@@ -3953,6 +3956,25 @@ fn validate_init_stage_preflight(
         zero_verification_generated_at: Some(zero_verification_generated_at),
         zero_audit_generated_at: Some(zero_audit_generated_at),
     })
+}
+
+fn validate_init_stage_endpoint_selector(lane: &Path, selector: Option<&str>) -> Result<String> {
+    let expected = lane_manifest_r5_hid_observe_selector(lane).ok_or_else(|| {
+        anyhow!(
+            "manifest.json must declare an exact R5 wheelbase HID endpoint before actual init feature-report writes"
+        )
+    })?;
+    let selector = selector.map(str::trim).filter(|selector| !selector.is_empty()).ok_or_else(|| {
+        anyhow!(
+            "--device must be the lane manifest wheelbase endpoint selector before actual init feature-report writes: {expected}"
+        )
+    })?;
+    if !selector.eq_ignore_ascii_case(&expected) {
+        return Err(anyhow!(
+            "--device must match the lane manifest wheelbase endpoint selector before actual init feature-report writes: expected {expected}, got {selector}"
+        ));
+    }
+    Ok(expected)
 }
 
 fn require_valid_generated_at(receipt: &Value, path: &Path, label: &str) -> Result<String> {
@@ -23072,8 +23094,91 @@ mod tests {
     }
 
     #[test]
+    fn init_preflight_requires_lane_endpoint_selector() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_test_json_file(
+            &dir.path().join("manifest.json"),
+            &sample_lane_manifest("zero_torque_ready", false, false),
+        )?;
+        write_test_json_file(
+            &dir.path().join("zero-verification.json"),
+            &stored_verification_receipt(dir.path(), MozaBundleStage::Zero),
+        )?;
+        write_test_json_file(
+            &dir.path().join("lane-audit-zero.json"),
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl moza audit-lane",
+                "generated_at_utc": TEST_GENERATED_AT,
+                "lane": dir.path().display().to_string(),
+                "requested_stage": "zero",
+                "live_verification_success": true,
+                "missing_receipts": 0,
+                "invalid_receipts": 0,
+                "receipt_checks": [
+                    {"path": "passive-verification.json", "status": "pass"},
+                    {"path": "manifest-promotion-passive.json", "status": "pass"},
+                    {"path": "zero-verification.json", "status": "pass"},
+                    {"path": "manifest-promotion-zero.json", "status": "pass"}
+                ],
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true
+            }),
+        )?;
+        let off_path = dir.path().join("init-off.json");
+
+        let result = validate_init_stage_preflight(
+            Some(dir.path()),
+            Some(&off_path),
+            None,
+            MozaInitMode::Off,
+            true,
+        );
+        let message = result
+            .err()
+            .map(|error| error.to_string())
+            .ok_or("expected init preflight to require --device")?;
+        assert!(
+            message.contains("--device") && message.contains("hid-0x346E-0x0014-if2-0x0001-0x0004"),
+            "init preflight should require the exact lane endpoint selector: {message}"
+        );
+
+        let result = validate_init_stage_preflight(
+            Some(dir.path()),
+            Some(&off_path),
+            Some("0x346E:0x0014"),
+            MozaInitMode::Off,
+            true,
+        );
+        let message = result
+            .err()
+            .map(|error| error.to_string())
+            .ok_or("expected init preflight to reject loose VID/PID selector")?;
+        assert!(
+            message.contains("must match the lane manifest wheelbase endpoint selector"),
+            "init preflight should reject loose selectors before HID open: {message}"
+        );
+
+        validate_init_stage_preflight(
+            Some(dir.path()),
+            Some(&off_path),
+            Some("hid-0x346E-0x0014-if2-0x0001-0x0004"),
+            MozaInitMode::Off,
+            true,
+        )?;
+        assert!(!off_path.exists());
+        Ok(())
+    }
+
+    #[test]
     fn init_standard_preflight_requires_same_lane_off_receipt() -> TestResult {
         let dir = tempfile::tempdir()?;
+        write_test_json_file(
+            &dir.path().join("manifest.json"),
+            &sample_lane_manifest("zero_torque_ready", false, false),
+        )?;
         write_test_json_file(
             &dir.path().join("zero-verification.json"),
             &stored_verification_receipt(dir.path(), MozaBundleStage::Zero),
@@ -23106,6 +23211,7 @@ mod tests {
         let result = validate_init_stage_preflight(
             Some(dir.path()),
             Some(&standard_path),
+            Some("hid-0x346E-0x0014-if2-0x0001-0x0004"),
             MozaInitMode::Standard,
             true,
         );
@@ -23128,6 +23234,7 @@ mod tests {
         validate_init_stage_preflight(
             Some(dir.path()),
             Some(&standard_path),
+            Some("hid-0x346E-0x0014-if2-0x0001-0x0004"),
             MozaInitMode::Standard,
             true,
         )?;
