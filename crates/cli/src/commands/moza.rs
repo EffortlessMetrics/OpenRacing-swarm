@@ -3673,6 +3673,7 @@ fn validate_low_torque_real_hardware_preflight(
     if let Some(path) = descriptor {
         require_lane_artifact_path(lane, path, "descriptor.json", "--descriptor")?;
     }
+    validate_lane_manifest_endpoint_selector(lane, selector, "actual low-torque writes")?;
 
     let preflight_at_utc = now_utc();
     let zero_receipt = read_json_value(lane, "zero-torque-proof.json")?;
@@ -3937,7 +3938,7 @@ fn validate_init_stage_preflight(
     let zero_audit_generated_at =
         require_valid_generated_at(&zero_audit, &zero_audit_path, "zero-stage audit")?;
 
-    validate_init_stage_endpoint_selector(lane, selector)?;
+    validate_lane_manifest_endpoint_selector(lane, selector, "actual init feature-report writes")?;
 
     if matches!(mode, MozaInitMode::Standard) {
         let init_off_gate =
@@ -3958,20 +3959,22 @@ fn validate_init_stage_preflight(
     })
 }
 
-fn validate_init_stage_endpoint_selector(lane: &Path, selector: Option<&str>) -> Result<String> {
+fn validate_lane_manifest_endpoint_selector(
+    lane: &Path,
+    selector: Option<&str>,
+    operation: &str,
+) -> Result<String> {
     let expected = lane_manifest_r5_hid_observe_selector(lane).ok_or_else(|| {
-        anyhow!(
-            "manifest.json must declare an exact R5 wheelbase HID endpoint before actual init feature-report writes"
-        )
+        anyhow!("manifest.json must declare an exact R5 wheelbase HID endpoint before {operation}")
     })?;
     let selector = selector.map(str::trim).filter(|selector| !selector.is_empty()).ok_or_else(|| {
         anyhow!(
-            "--device must be the lane manifest wheelbase endpoint selector before actual init feature-report writes: {expected}"
+            "--device must be the lane manifest wheelbase endpoint selector before {operation}: {expected}"
         )
     })?;
     if !selector.eq_ignore_ascii_case(&expected) {
         return Err(anyhow!(
-            "--device must match the lane manifest wheelbase endpoint selector before actual init feature-report writes: expected {expected}, got {selector}"
+            "--device must match the lane manifest wheelbase endpoint selector before {operation}: expected {expected}, got {selector}"
         ));
     }
     Ok(expected)
@@ -10763,6 +10766,7 @@ fn verify_low_torque_gate(lane: &Path) -> BundleGateCheck {
     let r5_device = device.map(is_r5_device_value).unwrap_or(false);
     let output_capable =
         device.and_then(|device| json_bool(device, "output_capable")) == Some(true);
+    let selector_matches_lane_endpoint = receipt_selector_matches_lane_endpoint(lane, &receipt);
     let device_pid = device.and_then(|device| json_string(device, "product_id"));
     let device_pid_value = device_pid.and_then(parse_hex_selector);
     let zero_proof_pid = receipt
@@ -10839,6 +10843,7 @@ fn verify_low_torque_gate(lane: &Path) -> BundleGateCheck {
         && no_final_zero_error
         && r5_device
         && output_capable
+        && selector_matches_lane_endpoint
         && expected_writes_match
         && command_log_safe;
 
@@ -10854,10 +10859,19 @@ fn verify_low_torque_gate(lane: &Path) -> BundleGateCheck {
         BundleGateCheck::fail(
             "low_torque_bounded",
             format!(
-                "success={success}, command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, dry_run={dry_run:?}, no_hid_device_opened={no_hid_device_opened:?}, confirmed={confirmed:?}, zero_proof_validated={zero_proof_validated:?}, zero_proof_pid_matches={zero_proof_pid_matches}, zero_proof_lane_match={zero_proof_lane_match}, init_proofs_validated={init_proofs_validated:?}, init_proofs_match={init_proofs_match}, no_feature_reports={no_feature_reports:?}, no_ffb_writes={no_ffb_writes:?}, no_out_of_scope={no_out_of_scope}, high_torque={high_torque:?}, direct_mode_gate_satisfied={direct_mode_gate_satisfied:?}, descriptor_trusted={descriptor_trusted:?}, descriptor_trust_observed={descriptor_trust_observed}, descriptor_trust_valid={descriptor_trust_valid}, explicit_operator_override={explicit_operator_override:?}, direct_mode_allowed={direct_mode_allowed}, no_high_torque={no_high_torque:?}, no_nonzero_above_limit={no_nonzero_above_limit:?}, final_zero_attempted={final_zero_attempted:?}, final_zero_sent={final_zero_sent:?}, generated_at_valid={generated_at_valid}, max_percent={max_percent:?}, duration_ms={duration_ms}, hz={hz}, write_attempts={write_attempts}, writes_ok={writes_ok}, write_errors={write_errors}, r5_device={r5_device}, output_capable={output_capable}, expected_low_torque_writes={expected_low_torque_writes:?}, expected_writes_match={expected_writes_match}, command_log_safe={command_log_safe}, no_abort_reason={no_abort_reason}, no_final_zero_error={no_final_zero_error}"
+                "success={success}, command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, dry_run={dry_run:?}, no_hid_device_opened={no_hid_device_opened:?}, confirmed={confirmed:?}, zero_proof_validated={zero_proof_validated:?}, zero_proof_pid_matches={zero_proof_pid_matches}, zero_proof_lane_match={zero_proof_lane_match}, init_proofs_validated={init_proofs_validated:?}, init_proofs_match={init_proofs_match}, no_feature_reports={no_feature_reports:?}, no_ffb_writes={no_ffb_writes:?}, no_out_of_scope={no_out_of_scope}, high_torque={high_torque:?}, direct_mode_gate_satisfied={direct_mode_gate_satisfied:?}, descriptor_trusted={descriptor_trusted:?}, descriptor_trust_observed={descriptor_trust_observed}, descriptor_trust_valid={descriptor_trust_valid}, explicit_operator_override={explicit_operator_override:?}, direct_mode_allowed={direct_mode_allowed}, no_high_torque={no_high_torque:?}, no_nonzero_above_limit={no_nonzero_above_limit:?}, final_zero_attempted={final_zero_attempted:?}, final_zero_sent={final_zero_sent:?}, generated_at_valid={generated_at_valid}, max_percent={max_percent:?}, duration_ms={duration_ms}, hz={hz}, write_attempts={write_attempts}, writes_ok={writes_ok}, write_errors={write_errors}, r5_device={r5_device}, output_capable={output_capable}, selector_matches_lane_endpoint={selector_matches_lane_endpoint}, expected_low_torque_writes={expected_low_torque_writes:?}, expected_writes_match={expected_writes_match}, command_log_safe={command_log_safe}, no_abort_reason={no_abort_reason}, no_final_zero_error={no_final_zero_error}"
             ),
         )
     }
+}
+
+fn receipt_selector_matches_lane_endpoint(lane: &Path, receipt: &Value) -> bool {
+    let Some(expected) = lane_manifest_r5_hid_observe_selector(lane) else {
+        return false;
+    };
+    json_string(receipt, "selector")
+        .map(|selector| selector.eq_ignore_ascii_case(&expected))
+        .unwrap_or(false)
 }
 
 fn low_torque_zero_proof_matches_lane(
@@ -19757,6 +19771,13 @@ mod tests {
     }
 
     fn write_low_torque_prerequisite_receipts(root: &Path) -> TestResult {
+        let manifest_path = root.join("manifest.json");
+        if !manifest_path.exists() {
+            write_test_json_file(
+                &manifest_path,
+                &sample_lane_manifest("zero_torque_ready", true, false),
+            )?;
+        }
         write_test_json_file(
             &root.join("zero-torque-proof.json"),
             &receipt_with_lane_path(root, "zero-torque-proof.json", real_zero_receipt(100)),
@@ -19777,7 +19798,7 @@ mod tests {
         let init_proofs = validate_init_proofs_for_torque_test(Some(root), None, None, false)?
             .ok_or("expected init proofs")?;
         let mut receipt = LowTorqueProofReceipt::new(
-            Some("0x346E:0x0014".to_string()),
+            Some("hid-0x346E-0x0014-if2-0x0001-0x0004".to_string()),
             sample_device(),
             Some(zero_proof),
             max_percent,
@@ -20070,6 +20091,13 @@ mod tests {
     }
 
     fn write_pit_house_artifacts(root: &Path) -> TestResult {
+        let manifest_path = root.join("manifest.json");
+        if !manifest_path.exists() {
+            write_test_json_file(
+                &manifest_path,
+                &sample_lane_manifest("real_hardware_smoke_ready", true, true),
+            )?;
+        }
         write_trusted_descriptor_if_missing(root)?;
         write_test_json_file(
             &root.join("init-off.json"),
@@ -20242,6 +20270,13 @@ mod tests {
     }
 
     fn write_simulator_artifacts(root: &Path) -> TestResult {
+        let manifest_path = root.join("manifest.json");
+        if !manifest_path.exists() {
+            write_test_json_file(
+                &manifest_path,
+                &sample_lane_manifest("real_hardware_smoke_ready", true, true),
+            )?;
+        }
         write_trusted_descriptor_if_missing(root)?;
         write_test_json_file(
             &root.join("init-off.json"),
@@ -22478,7 +22513,7 @@ mod tests {
 
         let result = torque_test(TorqueTestRequest {
             json: false,
-            selector: Some("0x346E:0x0014"),
+            selector: Some("hid-0x346E-0x0014-if2-0x0001-0x0004"),
             pid_override: None,
             zero_proof: Some(&zero_proof),
             descriptor: None,
@@ -22512,10 +22547,14 @@ mod tests {
             &zero_proof,
             &receipt_with_lane_path(dir.path(), "zero-torque-proof.json", real_zero_receipt(100)),
         )?;
+        write_test_json_file(
+            &dir.path().join("manifest.json"),
+            &sample_lane_manifest("zero_torque_ready", true, false),
+        )?;
 
         let result = torque_test(TorqueTestRequest {
             json: false,
-            selector: Some("0x346E:0x0014"),
+            selector: Some("hid-0x346E-0x0014-if2-0x0001-0x0004"),
             pid_override: None,
             zero_proof: Some(&zero_proof),
             descriptor: None,
@@ -22596,7 +22635,7 @@ mod tests {
         write_trusted_descriptor_if_missing(dir.path())?;
 
         let preflight = validate_low_torque_real_hardware_preflight(
-            Some("0x0014"),
+            Some("hid-0x346E-0x0014-if2-0x0001-0x0004"),
             None,
             Some(dir.path()),
             Some(&dir.path().join("zero-torque-proof.json")),
@@ -22614,6 +22653,55 @@ mod tests {
     }
 
     #[test]
+    fn validate_low_torque_preflight_requires_lane_endpoint_selector() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_low_torque_prerequisite_receipts(dir.path())?;
+        write_trusted_descriptor_if_missing(dir.path())?;
+
+        let result = validate_low_torque_real_hardware_preflight(
+            None,
+            None,
+            Some(dir.path()),
+            Some(&dir.path().join("zero-torque-proof.json")),
+            None,
+            None,
+            Some(&dir.path().join("descriptor.json")),
+            false,
+        );
+        let message = result
+            .err()
+            .map(|error| error.to_string())
+            .ok_or("expected missing selector preflight error")?;
+        assert!(
+            message.contains("--device")
+                && message.contains("actual low-torque writes")
+                && message.contains("hid-0x346E-0x0014-if2-0x0001-0x0004"),
+            "low-torque preflight should require the exact lane endpoint selector: {message}"
+        );
+
+        let result = validate_low_torque_real_hardware_preflight(
+            Some("0x346E:0x0014"),
+            None,
+            Some(dir.path()),
+            Some(&dir.path().join("zero-torque-proof.json")),
+            None,
+            None,
+            Some(&dir.path().join("descriptor.json")),
+            false,
+        );
+        let message = result
+            .err()
+            .map(|error| error.to_string())
+            .ok_or("expected loose selector preflight error")?;
+        assert!(
+            message.contains("expected hid-0x346E-0x0014-if2-0x0001-0x0004")
+                && message.contains("got 0x346E:0x0014"),
+            "low-torque preflight should reject loose VID/PID selectors: {message}"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn validate_low_torque_preflight_rejects_off_lane_zero_proof() -> TestResult {
         let dir = tempfile::tempdir()?;
         let stale = tempfile::tempdir()?;
@@ -22622,7 +22710,7 @@ mod tests {
         write_trusted_descriptor_if_missing(dir.path())?;
 
         let result = validate_low_torque_real_hardware_preflight(
-            Some("0x0014"),
+            Some("hid-0x346E-0x0014-if2-0x0001-0x0004"),
             None,
             Some(dir.path()),
             Some(&stale.path().join("zero-torque-proof.json")),
@@ -22650,7 +22738,7 @@ mod tests {
         write_trusted_descriptor_if_missing(dir.path())?;
 
         let result = validate_low_torque_real_hardware_preflight(
-            Some("0x0014"),
+            Some("hid-0x346E-0x0014-if2-0x0001-0x0004"),
             None,
             Some(dir.path()),
             Some(&dir.path().join("zero-torque-proof.json")),
@@ -22678,7 +22766,7 @@ mod tests {
         write_trusted_descriptor_if_missing(stale.path())?;
 
         let result = validate_low_torque_real_hardware_preflight(
-            Some("0x0014"),
+            Some("hid-0x346E-0x0014-if2-0x0001-0x0004"),
             None,
             Some(dir.path()),
             Some(&dir.path().join("zero-torque-proof.json")),
@@ -23273,6 +23361,27 @@ mod tests {
         assert!(
             gate.details.contains("descriptor_trust_observed=false"),
             "expected descriptor trust cross-check failure, got {}",
+            gate.details
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_low_torque_gate_requires_lane_endpoint_selector() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_trusted_descriptor_if_missing(dir.path())?;
+        write_low_torque_prerequisite_receipts(dir.path())?;
+        let mut receipt = real_low_torque_receipt_for_lane(dir.path(), 2.0)?;
+        receipt["selector"] = serde_json::json!("0x346E:0x0014");
+        write_test_json_file(&dir.path().join("low-torque-proof.json"), &receipt)?;
+
+        let gate = verify_low_torque_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details
+                .contains("selector_matches_lane_endpoint=false"),
+            "expected lane endpoint selector failure, got {}",
             gate.details
         );
         Ok(())
