@@ -10163,22 +10163,24 @@ fn verify_service_status_gate_with_support_validation(
         device.product_id.as_deref(),
         support.product_id.as_deref(),
     ]);
-    let safe = moza.ok && device.ok && support.ok && same_pid;
+    let post_init_context =
+        service_status_post_init_context(lane, &moza_status, &device_status, &support_bundle);
+    let safe = moza.ok && device.ok && support.ok && same_pid && post_init_context.ok;
 
     if safe {
         BundleGateCheck::pass(
             "service_status_receipts",
             format!(
-                "moza-status.json, device-status.json, and support-bundle.json all report the same observe-only R5 service lane PID {:?}",
-                device.product_id
+                "moza-status.json, device-status.json, and support-bundle.json all report the same observe-only R5 service lane PID {:?}; {}",
+                device.product_id, post_init_context.details
             ),
         )
     } else {
         BundleGateCheck::fail(
             "service_status_receipts",
             format!(
-                "moza_status=({}), device_status=({}), support_bundle=({}), same_pid={same_pid}",
-                moza.details, device.details, support.details
+                "moza_status=({}), device_status=({}), support_bundle=({}), same_pid={same_pid}, post_init_context=({})",
+                moza.details, device.details, support.details, post_init_context.details
             ),
         )
     }
@@ -10189,6 +10191,79 @@ struct ServiceReceiptSummary {
     ok: bool,
     product_id: Option<String>,
     details: String,
+}
+
+fn service_status_post_init_context(
+    lane: &Path,
+    moza_status: &Value,
+    device_status: &Value,
+    support_bundle: &Value,
+) -> ServiceReceiptSummary {
+    let init_off_passed =
+        verify_init_receipt_gate(lane, "init_off_handshake", "init-off.json", "off").status
+            == "pass";
+    let init_standard_passed = verify_init_receipt_gate(
+        lane,
+        "init_standard_handshake",
+        "init-standard.json",
+        "standard",
+    )
+    .status
+        == "pass";
+    let requires_post_init = init_off_passed && init_standard_passed;
+    if !requires_post_init {
+        return ServiceReceiptSummary {
+            ok: true,
+            product_id: None,
+            details: format!(
+                "post-init status refresh not required yet; init_off_passed={init_off_passed}, init_standard_passed={init_standard_passed}"
+            ),
+        };
+    }
+
+    let moza_status_ready = lane_status_reflects_init_receipts(moza_status.get("lane_status"));
+    let device_status_ready = device_status
+        .get("status")
+        .and_then(|status| status.get("moza"))
+        .map(moza_status_reports_low_torque_gate_ready)
+        .unwrap_or(false);
+    let support_status_ready = lane_status_reflects_init_receipts(support_bundle.get("moza_lane"));
+    ServiceReceiptSummary {
+        ok: moza_status_ready && device_status_ready && support_status_ready,
+        product_id: None,
+        details: format!(
+            "post-init status refresh required after off/standard init receipts; moza_status_init_receipts={moza_status_ready}, device_status_low_torque_gate={device_status_ready}, support_bundle_init_receipts={support_status_ready}"
+        ),
+    }
+}
+
+fn lane_status_reflects_init_receipts(status: Option<&Value>) -> bool {
+    let Some(artifacts) = status
+        .and_then(|status| status.get("artifact_index"))
+        .and_then(Value::as_array)
+    else {
+        return false;
+    };
+
+    artifact_index_has_pass(artifacts, "init-off.json")
+        && artifact_index_has_pass(artifacts, "init-standard.json")
+}
+
+fn artifact_index_has_pass(artifacts: &[Value], path: &str) -> bool {
+    artifacts.iter().any(|artifact| {
+        json_string(artifact, "path") == Some(path)
+            && json_bool(artifact, "exists") == Some(true)
+            && json_bool(artifact, "valid") == Some(true)
+            && json_string(artifact, "status") == Some("pass")
+    })
+}
+
+fn moza_status_reports_low_torque_gate_ready(moza: &Value) -> bool {
+    json_string(moza, "safety_state") == Some("lane_low_torque_gate_receipts_observed")
+        && json_bool(moza, "ffb_ready") == Some(false)
+        && json_bool(moza, "safe_to_send_torque") == Some(false)
+        && json_bool(moza, "direct_mode_allowed") == Some(false)
+        && json_bool(moza, "high_torque_allowed") == Some(false)
 }
 
 fn moza_status_receipt_summary(receipt: &Value, lane: &Path) -> ServiceReceiptSummary {
@@ -20157,6 +20232,27 @@ mod tests {
     }
 
     fn service_device_status_value(root: &Path) -> Value {
+        let init_receipts_pass =
+            verify_init_receipt_gate(root, "init_off_handshake", "init-off.json", "off").status
+                == "pass"
+                && verify_init_receipt_gate(
+                    root,
+                    "init_standard_handshake",
+                    "init-standard.json",
+                    "standard",
+                )
+                .status
+                    == "pass";
+        let safety_state = if init_receipts_pass {
+            "lane_low_torque_gate_receipts_observed"
+        } else {
+            "lane_zero_torque_verified"
+        };
+        let safety_reason = if init_receipts_pass {
+            "stored Moza lane verification receipts report highest_passing_stage=zero, next_required_stage=smoke_ready, and staged init receipts are present; service status remains observe-only"
+        } else {
+            "stored Moza lane verification receipts report highest_passing_stage=zero, next_required_stage=smoke_ready; service status remains observe-only"
+        };
         serde_json::json!({
             "device": {
                 "id": "moza-r5",
@@ -20197,8 +20293,8 @@ mod tests {
                 "direct_mode_allowed": false,
                 "high_torque_allowed": false,
                 "safe_to_send_torque": false,
-                "safety_state": "lane_zero_torque_verified",
-                "safety_reason": "stored Moza lane verification receipts report highest_passing_stage=zero, next_required_stage=smoke_ready; service status remains observe-only"
+                "safety_state": safety_state,
+                "safety_reason": safety_reason
             }
         })
     }
@@ -28286,6 +28382,73 @@ mod tests {
                 && actions.contains("firmware/update pages must be refused")
                 && actions.contains("final zero was attempted"),
             "Pit House frontier should allow an honest blocked state instead of fabricated evidence: {actions}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_smoke_requires_service_status_refresh_after_init() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        write_zero_stage_receipts(dir.path())?;
+        write_service_status_artifacts(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("init-off.json"),
+            &receipt_with_lane_path(dir.path(), "init-off.json", real_init_receipt("off")),
+        )?;
+        write_test_json_file(
+            &dir.path().join("init-standard.json"),
+            &receipt_with_lane_path(
+                dir.path(),
+                "init-standard.json",
+                real_init_receipt("standard"),
+            ),
+        )?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let service_gate = receipt
+            .gates
+            .iter()
+            .find(|gate| gate.name == "service_status_receipts")
+            .ok_or("missing service status gate")?;
+        assert_eq!(service_gate.status, "fail");
+        assert!(
+            service_gate
+                .details
+                .contains("post-init status refresh required")
+                && service_gate
+                    .details
+                    .contains("moza_status_init_receipts=false")
+                && service_gate
+                    .details
+                    .contains("support_bundle_init_receipts=false"),
+            "stale pre-init service receipts should fail after init receipts pass: {}",
+            service_gate.details
+        );
+        let commands = receipt.next_commands.join("\n");
+        assert!(
+            commands.contains("wheelctl moza status --device")
+                && commands.contains("wheelctl device status")
+                && commands.contains("wheelctl --json support-bundle"),
+            "post-init stale status receipts should suggest a service/status refresh: {commands}"
+        );
+        assert!(
+            !commands.contains("wheelctl moza torque-test"),
+            "low torque must stay blocked until service/status receipts are refreshed after init: {commands}"
+        );
+
+        write_service_status_artifacts(dir.path())?;
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let service_gate = receipt
+            .gates
+            .iter()
+            .find(|gate| gate.name == "service_status_receipts")
+            .ok_or("missing refreshed service status gate")?;
+        assert_eq!(service_gate.status, "pass");
+        let commands = receipt.next_commands.join("\n");
+        assert!(
+            commands.contains("wheelctl moza torque-test --device"),
+            "fresh post-init service receipts should allow the verifier to advance to low torque: {commands}"
         );
         Ok(())
     }
