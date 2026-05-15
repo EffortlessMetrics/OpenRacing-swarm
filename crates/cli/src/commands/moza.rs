@@ -27493,8 +27493,7 @@ mod tests {
     }
 
     #[test]
-    fn verify_bundle_zero_next_commands_use_pidff_when_direct_report_is_unavailable() -> TestResult
-    {
+    fn verify_bundle_zero_next_commands_advance_after_zero_and_watchdog_receipts() -> TestResult {
         let lane =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ci/hardware/moza-r5/2026-05-13");
 
@@ -27503,14 +27502,21 @@ mod tests {
         assert!(!receipt.success);
         let joined = receipt.next_commands.join("\n");
         for expected in [
-            "wheelctl moza zero --device hid-0x346E-0x0004-if2-0x0001-0x0004",
-            "wheelctl moza watchdog-proof --device hid-0x346E-0x0004-if2-0x0001-0x0004",
             "wheelctl moza disconnect-proof --device hid-0x346E-0x0004-if2-0x0001-0x0004",
             "--strategy pidff-stop-all",
         ] {
             assert!(
                 joined.contains(expected),
                 "live R5 V1 zero-stage next_commands should include {expected}: {joined}"
+            );
+        }
+        for completed in [
+            "wheelctl moza zero --device hid-0x346E-0x0004-if2-0x0001-0x0004",
+            "wheelctl moza watchdog-proof --device hid-0x346E-0x0004-if2-0x0001-0x0004",
+        ] {
+            assert!(
+                !joined.contains(completed),
+                "live R5 V1 zero-stage next_commands should not repeat completed zero/watchdog proof {completed}: {joined}"
             );
         }
         assert!(
