@@ -1,0 +1,599 @@
+{
+  "blackbox_included": false,
+  "command": "wheelctl support-bundle",
+  "device_filter": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+  "device_statuses": [
+    {
+      "device_id": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+      "device_status": {
+        "active_faults": [],
+        "device": {
+          "capabilities": {
+            "encoder_cpr": 0,
+            "max_torque_nm": 0.0,
+            "min_report_period_us": 0,
+            "supports_health_stream": true,
+            "supports_led_bus": false,
+            "supports_pid": false,
+            "supports_raw_torque_1khz": false
+          },
+          "device_type": "WheelBase",
+          "hid_path_present": true,
+          "id": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+          "interface_number": 2,
+          "manufacturer": "Gudsen",
+          "name": "MOZA R5 Base",
+          "product_id": "0x0004",
+          "product_string": "MOZA R5 Base",
+          "serial_number_present": true,
+          "source": "hid-observe",
+          "state": "Connected",
+          "usage": "0x0004",
+          "usage_page": "0x0001",
+          "vendor_id": "0x346E"
+        },
+        "last_seen": "2026-05-15T01:57:33.413706900Z",
+        "moza": {
+          "category": "wheelbase",
+          "descriptor_crc32": "0x25345E0C",
+          "descriptor_source": "operator_supplied_hex",
+          "descriptor_trusted": false,
+          "direct_mode_allowed": false,
+          "ffb_ready": false,
+          "high_torque_allowed": false,
+          "init_state": "uninitialized",
+          "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+          "model": "Moza R5",
+          "output_capable": true,
+          "product_id": "0x0004",
+          "safe_to_send_torque": false,
+          "safety_reason": "stored Moza lane verification receipts report highest_passing_stage=passive, next_required_stage=zero; CLI status remains observe-only and torque output stays disabled until explicit service initialization is implemented",
+          "safety_state": "lane_passive_verified"
+        },
+        "telemetry": {
+          "fault_flags": 0,
+          "hands_on": false,
+          "temperature_c": 0,
+          "wheel_angle_deg": 0.0,
+          "wheel_speed_rad_s": 0.0
+        }
+      },
+      "notes": [
+        "HID-observed device status is synthesized from observe-only enumeration because the service has no live device status row"
+      ],
+      "status": "ok",
+      "status_source": "hid-observe"
+    }
+  ],
+  "devices": [
+    {
+      "capabilities": {
+        "encoder_cpr": 0,
+        "max_torque_nm": 0.0,
+        "min_report_period_us": 0,
+        "supports_health_stream": true,
+        "supports_led_bus": false,
+        "supports_pid": false,
+        "supports_raw_torque_1khz": false
+      },
+      "device_type": "WheelBase",
+      "hid_path_present": true,
+      "id": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+      "interface_number": 2,
+      "manufacturer": "Gudsen",
+      "name": "MOZA R5 Base",
+      "product_id": "0x0004",
+      "product_string": "MOZA R5 Base",
+      "serial_number_present": true,
+      "source": "hid-observe",
+      "state": "Connected",
+      "usage": "0x0004",
+      "usage_page": "0x0001",
+      "vendor_id": "0x346E"
+    }
+  ],
+  "moza_lane": {
+    "artifact_index": [
+      {
+        "exists": true,
+        "kind": "json",
+        "notes": [],
+        "path": "manifest.json",
+        "required_stage": "passive",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "json",
+        "notes": [],
+        "path": "device-list.json",
+        "required_stage": "passive",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "json",
+        "notes": [],
+        "path": "moza-probe.json",
+        "required_stage": "passive",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "json",
+        "notes": [],
+        "path": "hid-list.json",
+        "required_stage": "passive",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "json",
+        "notes": [],
+        "path": "hardware-doctor.json",
+        "required_stage": "passive",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "json",
+        "notes": [],
+        "path": "descriptor.json",
+        "required_stage": "passive",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "jsonl",
+        "line_count": 1688,
+        "notes": [],
+        "path": "captures/r5-idle.jsonl",
+        "required_stage": "passive",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "jsonl",
+        "line_count": 4110,
+        "notes": [],
+        "path": "captures/r5-steering-sweep.jsonl",
+        "required_stage": "passive",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "jsonl",
+        "line_count": 22387,
+        "notes": [],
+        "path": "captures/r5-throttle-only-sweep.jsonl",
+        "required_stage": "passive",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "jsonl",
+        "line_count": 22854,
+        "notes": [],
+        "path": "captures/r5-brake-only-sweep.jsonl",
+        "required_stage": "passive",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "jsonl",
+        "line_count": 22907,
+        "notes": [],
+        "path": "captures/r5-clutch-only-sweep.jsonl",
+        "required_stage": "passive",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "jsonl",
+        "line_count": 23491,
+        "notes": [],
+        "path": "captures/r5-handbrake-only-sweep.jsonl",
+        "required_stage": "passive",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "jsonl",
+        "line_count": 2375,
+        "notes": [],
+        "path": "captures/r5-aggregated-idle-after-controls.jsonl",
+        "required_stage": "passive",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "jsonl",
+        "line_count": 22889,
+        "notes": [],
+        "path": "captures/ks-controls.jsonl",
+        "required_stage": "passive",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "jsonl",
+        "line_count": 5514,
+        "notes": [],
+        "path": "captures/es-controls.jsonl",
+        "required_stage": "passive",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "json",
+        "notes": [],
+        "path": "parser-fixture-validation.json",
+        "required_stage": "passive",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "json",
+        "notes": [],
+        "path": "fixture-promotion.json",
+        "required_stage": "passive",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": false,
+        "kind": "json",
+        "notes": [
+          "expected ci\\hardware\\moza-r5\\2026-05-13\\init-off.json"
+        ],
+        "path": "init-off.json",
+        "required_stage": "smoke_ready",
+        "status": "missing",
+        "valid": false
+      },
+      {
+        "exists": false,
+        "kind": "json",
+        "notes": [
+          "expected ci\\hardware\\moza-r5\\2026-05-13\\init-standard.json"
+        ],
+        "path": "init-standard.json",
+        "required_stage": "smoke_ready",
+        "status": "missing",
+        "valid": false
+      },
+      {
+        "exists": true,
+        "kind": "json",
+        "notes": [],
+        "path": "moza-status.json",
+        "required_stage": "smoke_ready",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "json",
+        "notes": [],
+        "path": "device-status.json",
+        "required_stage": "smoke_ready",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "json",
+        "notes": [],
+        "path": "support-bundle.json",
+        "required_stage": "smoke_ready",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": false,
+        "kind": "json",
+        "notes": [
+          "expected ci\\hardware\\moza-r5\\2026-05-13\\zero-torque-proof.json"
+        ],
+        "path": "zero-torque-proof.json",
+        "required_stage": "zero",
+        "status": "missing",
+        "valid": false
+      },
+      {
+        "exists": false,
+        "kind": "json",
+        "notes": [
+          "expected ci\\hardware\\moza-r5\\2026-05-13\\watchdog-proof.json"
+        ],
+        "path": "watchdog-proof.json",
+        "required_stage": "zero",
+        "status": "missing",
+        "valid": false
+      },
+      {
+        "exists": false,
+        "kind": "json",
+        "notes": [
+          "expected ci\\hardware\\moza-r5\\2026-05-13\\disconnect-proof.json"
+        ],
+        "path": "disconnect-proof.json",
+        "required_stage": "zero",
+        "status": "missing",
+        "valid": false
+      },
+      {
+        "exists": false,
+        "kind": "json",
+        "notes": [
+          "expected ci\\hardware\\moza-r5\\2026-05-13\\low-torque-proof.json"
+        ],
+        "path": "low-torque-proof.json",
+        "required_stage": "smoke_ready",
+        "status": "missing",
+        "valid": false
+      },
+      {
+        "exists": false,
+        "kind": "json",
+        "notes": [
+          "expected ci\\hardware\\moza-r5\\2026-05-13\\pit-house-coexistence.json"
+        ],
+        "path": "pit-house-coexistence.json",
+        "required_stage": "smoke_ready",
+        "status": "missing",
+        "valid": false
+      },
+      {
+        "exists": false,
+        "kind": "json",
+        "notes": [
+          "expected ci\\hardware\\moza-r5\\2026-05-13\\simulator-telemetry-proof.json"
+        ],
+        "path": "simulator-telemetry-proof.json",
+        "required_stage": "smoke_ready",
+        "status": "missing",
+        "valid": false
+      },
+      {
+        "exists": false,
+        "kind": "json",
+        "notes": [
+          "expected ci\\hardware\\moza-r5\\2026-05-13\\simulator-ffb-smoke.json"
+        ],
+        "path": "simulator-ffb-smoke.json",
+        "required_stage": "smoke_ready",
+        "status": "missing",
+        "valid": false
+      },
+      {
+        "exists": true,
+        "kind": "json",
+        "notes": [],
+        "path": "passive-verification.json",
+        "required_stage": "passive",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "json",
+        "notes": [],
+        "path": "manifest-promotion-passive.json",
+        "required_stage": "passive",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "json",
+        "notes": [],
+        "path": "lane-audit-passive.json",
+        "required_stage": "passive",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": false,
+        "kind": "json",
+        "notes": [
+          "expected ci\\hardware\\moza-r5\\2026-05-13\\zero-verification.json"
+        ],
+        "path": "zero-verification.json",
+        "required_stage": "zero",
+        "status": "missing",
+        "valid": false
+      },
+      {
+        "exists": false,
+        "kind": "json",
+        "notes": [
+          "expected ci\\hardware\\moza-r5\\2026-05-13\\manifest-promotion-zero.json"
+        ],
+        "path": "manifest-promotion-zero.json",
+        "required_stage": "zero",
+        "status": "missing",
+        "valid": false
+      },
+      {
+        "exists": false,
+        "kind": "json",
+        "notes": [
+          "expected ci\\hardware\\moza-r5\\2026-05-13\\lane-audit-zero.json"
+        ],
+        "path": "lane-audit-zero.json",
+        "required_stage": "zero",
+        "status": "missing",
+        "valid": false
+      },
+      {
+        "exists": false,
+        "kind": "json",
+        "notes": [
+          "expected ci\\hardware\\moza-r5\\2026-05-13\\smoke-ready-verification.json"
+        ],
+        "path": "smoke-ready-verification.json",
+        "required_stage": "smoke_ready",
+        "status": "missing",
+        "valid": false
+      },
+      {
+        "exists": false,
+        "kind": "json",
+        "notes": [
+          "expected ci\\hardware\\moza-r5\\2026-05-13\\manifest-promotion-smoke-ready.json"
+        ],
+        "path": "manifest-promotion-smoke-ready.json",
+        "required_stage": "smoke_ready",
+        "status": "missing",
+        "valid": false
+      },
+      {
+        "exists": false,
+        "kind": "json",
+        "notes": [
+          "expected ci\\hardware\\moza-r5\\2026-05-13\\lane-audit-smoke-ready.json"
+        ],
+        "path": "lane-audit-smoke-ready.json",
+        "required_stage": "smoke_ready",
+        "status": "missing",
+        "valid": false
+      }
+    ],
+    "generated_at_utc": "2026-05-15T01:58:55Z",
+    "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+    "lane_directory_present": true,
+    "manifest": {
+      "completion_state": "passive_capture_ready",
+      "hardware_validated": false,
+      "high_torque_validated": false,
+      "present": true,
+      "release_ready": false,
+      "simulator_validated": false
+    },
+    "notes": [
+      "support bundle status reads Moza lane receipts only; it opens no HID device and sends no reports",
+      "support bundle status is diagnostic context, not a readiness promotion or release claim"
+    ],
+    "readiness": {
+      "claim_scope": "diagnostic_context_only",
+      "first_blocking_stage": {
+        "failed_gate_names": [
+          "zero_torque_real_hardware",
+          "watchdog_zero_output",
+          "disconnect_final_zero"
+        ],
+        "failed_gates": 3,
+        "invalid_artifact_paths": [],
+        "invalid_artifacts": 0,
+        "missing_artifact_paths": [
+          "zero-torque-proof.json",
+          "watchdog-proof.json",
+          "disconnect-proof.json"
+        ],
+        "missing_artifacts": 3,
+        "requested_stage": "zero",
+        "success": false
+      },
+      "highest_passing_stage": "passive",
+      "next_required_stage": "zero",
+      "passive_lane_audit_passed": true,
+      "ready_for_low_torque": false,
+      "ready_for_real_hardware_smoke": false,
+      "ready_for_zero_torque": true,
+      "release_ready": false,
+      "smoke_ready_lane_audit_passed": false,
+      "zero_lane_audit_passed": false
+    },
+    "verifications": {
+      "passive": {
+        "failed_gate_names": [],
+        "failed_gates": 0,
+        "invalid_artifact_paths": [],
+        "invalid_artifacts": 0,
+        "missing_artifact_paths": [],
+        "missing_artifacts": 0,
+        "requested_stage": "passive",
+        "success": true
+      },
+      "smoke_ready": {
+        "failed_gate_names": [
+          "zero_torque_real_hardware",
+          "watchdog_zero_output",
+          "disconnect_final_zero",
+          "init_off_handshake",
+          "init_standard_handshake",
+          "service_status_receipts",
+          "low_torque_bounded",
+          "pit_house_coexistence",
+          "simulator_telemetry",
+          "simulator_ffb_bounded"
+        ],
+        "failed_gates": 10,
+        "invalid_artifact_paths": [],
+        "invalid_artifacts": 0,
+        "missing_artifact_paths": [
+          "init-off.json",
+          "init-standard.json",
+          "zero-torque-proof.json",
+          "watchdog-proof.json",
+          "disconnect-proof.json",
+          "low-torque-proof.json",
+          "pit-house-coexistence.json",
+          "simulator-telemetry-proof.json",
+          "simulator-ffb-smoke.json"
+        ],
+        "missing_artifacts": 9,
+        "requested_stage": "smoke_ready",
+        "success": false
+      },
+      "zero": {
+        "failed_gate_names": [
+          "zero_torque_real_hardware",
+          "watchdog_zero_output",
+          "disconnect_final_zero"
+        ],
+        "failed_gates": 3,
+        "invalid_artifact_paths": [],
+        "invalid_artifacts": 0,
+        "missing_artifact_paths": [
+          "zero-torque-proof.json",
+          "watchdog-proof.json",
+          "disconnect-proof.json"
+        ],
+        "missing_artifacts": 3,
+        "requested_stage": "zero",
+        "success": false
+      }
+    }
+  },
+  "no_feature_reports": true,
+  "no_ffb_writes": true,
+  "no_firmware_or_dfu_commands": true,
+  "no_hid_device_opened": true,
+  "no_output_reports": true,
+  "no_serial_config_commands": true,
+  "success": true,
+  "system_info": {
+    "arch": "x86_64",
+    "os": "windows",
+    "version": "0.1.0"
+  },
+  "timestamp": "2026-05-15T01:58:55.074265600Z"
+}

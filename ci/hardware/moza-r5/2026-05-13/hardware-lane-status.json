@@ -1,0 +1,421 @@
+{
+  "success": true,
+  "command": "wheelctl hardware lane status",
+  "generated_at_utc": "2026-05-15T01:56:02Z",
+  "no_hid_device_opened": true,
+  "no_ffb_writes": true,
+  "no_output_reports": true,
+  "no_feature_reports": true,
+  "no_serial_config_commands": true,
+  "no_firmware_or_dfu_commands": true,
+  "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+  "manifest_source": "manifest.json",
+  "family": "moza-r5",
+  "topology": "wheelbase_hub",
+  "completion_state": "passive_capture_ready",
+  "scaffold_required": false,
+  "scaffold_complete": false,
+  "evidence_claims_validated": false,
+  "ready_for_zero_torque": false,
+  "ready_for_ffb": false,
+  "next_blocked_stage": "zero_torque",
+  "safe_next_commands": [],
+  "blocking_items": [
+    "zero_torque:missing_artifacts",
+    "verifier_receipts_not_evaluated_by_status"
+  ],
+  "verifier_receipt": {
+    "path": "passive-verification.json",
+    "present": true,
+    "parseable": true,
+    "success": true,
+    "failed_gates": [],
+    "guidance": "passive verifier receipt reports success; lane status still inventories artifacts only"
+  },
+  "descriptor_capture_tooling": {
+    "hardware_doctor_present": true,
+    "hardware_doctor_parseable": true,
+    "tshark_present": true,
+    "usbpcap_interfaces_present": true,
+    "usbpcap_interface_count": 2,
+    "ready_for_usbpcap_descriptor_capture": true,
+    "guidance": "USBPcap/Wireshark capture interfaces are available for descriptor enumeration capture"
+  },
+  "scaffold_files": [
+    {
+      "kind": "manifest",
+      "relative_path": "hardware-lane-manifest.json",
+      "present": false
+    },
+    {
+      "kind": "stage_gates",
+      "relative_path": "stage-gates.json",
+      "present": false
+    },
+    {
+      "kind": "artifact_checklist",
+      "relative_path": "artifact-checklist.md",
+      "present": false
+    },
+    {
+      "kind": "capture_plan",
+      "relative_path": "capture-plan.md",
+      "present": false
+    },
+    {
+      "kind": "lane_init_receipt",
+      "relative_path": "lane-init.json",
+      "present": false
+    },
+    {
+      "kind": "captures_dir",
+      "relative_path": "captures",
+      "present": true
+    }
+  ],
+  "role_evidence": [
+    {
+      "id": "brake",
+      "required": true,
+      "connection_path": "wheelbase_hub",
+      "expected_endpoint": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+      "evidence_artifact": "captures/r5-brake-only-sweep.jsonl",
+      "artifact_present": true,
+      "semantic_status": "generic_aux",
+      "validation_status": "not_validated_by_status"
+    },
+    {
+      "id": "clutch",
+      "required": true,
+      "connection_path": "wheelbase_hub",
+      "expected_endpoint": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+      "evidence_artifact": "captures/r5-clutch-only-sweep.jsonl",
+      "artifact_present": true,
+      "semantic_status": "generic_aux",
+      "validation_status": "not_validated_by_status"
+    },
+    {
+      "id": "es_rim_controls",
+      "required": true,
+      "connection_path": "wheelbase_hub",
+      "expected_endpoint": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+      "evidence_artifact": "captures/es-controls.jsonl",
+      "artifact_present": true,
+      "semantic_status": "proven",
+      "validation_status": "not_validated_by_status"
+    },
+    {
+      "id": "handbrake",
+      "required": true,
+      "connection_path": "wheelbase_hub",
+      "expected_endpoint": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+      "evidence_artifact": "captures/r5-handbrake-only-sweep.jsonl",
+      "artifact_present": true,
+      "semantic_status": "generic_aux",
+      "validation_status": "not_validated_by_status"
+    },
+    {
+      "id": "ks_rim_controls",
+      "required": true,
+      "connection_path": "wheelbase_hub",
+      "expected_endpoint": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+      "evidence_artifact": "captures/ks-controls.jsonl",
+      "artifact_present": true,
+      "semantic_status": "proven",
+      "validation_status": "not_validated_by_status"
+    },
+    {
+      "id": "steering",
+      "required": true,
+      "connection_path": "wheelbase_hub",
+      "expected_endpoint": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+      "evidence_artifact": "captures/r5-steering-sweep.jsonl",
+      "artifact_present": true,
+      "semantic_status": "proven",
+      "validation_status": "not_validated_by_status"
+    },
+    {
+      "id": "throttle",
+      "required": true,
+      "connection_path": "wheelbase_hub",
+      "expected_endpoint": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+      "evidence_artifact": "captures/r5-throttle-only-sweep.jsonl",
+      "artifact_present": true,
+      "semantic_status": "proven",
+      "validation_status": "not_validated_by_status"
+    }
+  ],
+  "stages": [
+    {
+      "id": "discovery",
+      "order": 0,
+      "purpose": "observe attached endpoints and stable identity before any device-specific claim",
+      "artifacts_present": 4,
+      "artifacts_missing": 0,
+      "expected_artifacts": [
+        {
+          "kind": "receipt",
+          "relative_path": "device-list.json",
+          "present": true
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "hardware-doctor.json",
+          "present": true
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "hid-list.json",
+          "present": true
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "moza-probe.json",
+          "present": true
+        }
+      ],
+      "gate_status": "not_validated_by_status",
+      "notes": [
+        "status inventories artifact presence only; run the family verifier for evidence claims"
+      ]
+    },
+    {
+      "id": "passive",
+      "order": 1,
+      "purpose": "prove declared logical controls with observe-only captures",
+      "artifacts_present": 9,
+      "artifacts_missing": 0,
+      "expected_artifacts": [
+        {
+          "kind": "capture",
+          "relative_path": "captures/es-controls.jsonl",
+          "present": true
+        },
+        {
+          "kind": "capture",
+          "relative_path": "captures/ks-controls.jsonl",
+          "present": true
+        },
+        {
+          "kind": "capture",
+          "relative_path": "captures/r5-brake-only-sweep.jsonl",
+          "present": true
+        },
+        {
+          "kind": "capture",
+          "relative_path": "captures/r5-clutch-only-sweep.jsonl",
+          "present": true
+        },
+        {
+          "kind": "capture",
+          "relative_path": "captures/r5-handbrake-only-sweep.jsonl",
+          "present": true
+        },
+        {
+          "kind": "capture",
+          "relative_path": "captures/r5-steering-sweep.jsonl",
+          "present": true
+        },
+        {
+          "kind": "capture",
+          "relative_path": "captures/r5-throttle-only-sweep.jsonl",
+          "present": true
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "lane-capture-analysis.json",
+          "present": true
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "parser-fixture-validation.json",
+          "present": true
+        }
+      ],
+      "gate_status": "not_validated_by_status",
+      "notes": [
+        "status inventories artifact presence only; run the family verifier for evidence claims"
+      ]
+    },
+    {
+      "id": "descriptor_trust",
+      "order": 2,
+      "purpose": "trust raw HID report descriptor bytes and report metadata before output-adjacent work",
+      "artifacts_present": 1,
+      "artifacts_missing": 0,
+      "expected_artifacts": [
+        {
+          "kind": "receipt",
+          "relative_path": "descriptor.json",
+          "present": true
+        }
+      ],
+      "gate_status": "not_validated_by_status",
+      "notes": [
+        "status inventories artifact presence only; run the family verifier for evidence claims"
+      ]
+    },
+    {
+      "id": "fixture_promotion",
+      "order": 3,
+      "purpose": "freeze known-good passive evidence as parser fixtures after descriptor trust",
+      "artifacts_present": 1,
+      "artifacts_missing": 0,
+      "expected_artifacts": [
+        {
+          "kind": "receipt",
+          "relative_path": "fixture-promotion.json",
+          "present": true
+        }
+      ],
+      "gate_status": "not_validated_by_status",
+      "notes": [
+        "status inventories artifact presence only; run the family verifier for evidence claims"
+      ]
+    },
+    {
+      "id": "pre_output_readiness",
+      "order": 4,
+      "purpose": "collate passive, descriptor, fixtures, status, support, and audit state before any output-adjacent stage",
+      "artifacts_present": 3,
+      "artifacts_missing": 0,
+      "expected_artifacts": [
+        {
+          "kind": "receipt",
+          "relative_path": "lane-audit-passive.json",
+          "present": true
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "passive-verification.json",
+          "present": true
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "pre-output-readiness.json",
+          "present": true
+        }
+      ],
+      "gate_status": "not_validated_by_status",
+      "notes": [
+        "status inventories artifact presence only; run the family verifier for evidence claims"
+      ]
+    },
+    {
+      "id": "zero_torque",
+      "order": 5,
+      "purpose": "prove output plumbing with zero torque only",
+      "artifacts_present": 0,
+      "artifacts_missing": 1,
+      "expected_artifacts": [
+        {
+          "kind": "receipt",
+          "relative_path": "zero-torque-proof.json",
+          "present": false
+        }
+      ],
+      "gate_status": "not_validated_by_status",
+      "notes": [
+        "status inventories artifact presence only; run the family verifier for evidence claims"
+      ]
+    },
+    {
+      "id": "watchdog",
+      "order": 6,
+      "purpose": "prove timeout/fail-closed behavior for the zero-output path",
+      "artifacts_present": 0,
+      "artifacts_missing": 1,
+      "expected_artifacts": [
+        {
+          "kind": "receipt",
+          "relative_path": "watchdog-proof.json",
+          "present": false
+        }
+      ],
+      "gate_status": "not_validated_by_status",
+      "notes": [
+        "status inventories artifact presence only; run the family verifier for evidence claims"
+      ]
+    },
+    {
+      "id": "disconnect",
+      "order": 7,
+      "purpose": "prove device-loss behavior cannot leave stale output state",
+      "artifacts_present": 0,
+      "artifacts_missing": 1,
+      "expected_artifacts": [
+        {
+          "kind": "receipt",
+          "relative_path": "disconnect-proof.json",
+          "present": false
+        }
+      ],
+      "gate_status": "not_validated_by_status",
+      "notes": [
+        "status inventories artifact presence only; run the family verifier for evidence claims"
+      ]
+    },
+    {
+      "id": "bounded_ffb",
+      "order": 8,
+      "purpose": "first real-force smoke under explicit force and duration caps",
+      "artifacts_present": 0,
+      "artifacts_missing": 4,
+      "expected_artifacts": [
+        {
+          "kind": "receipt",
+          "relative_path": "low-torque-proof.json",
+          "present": false
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "pit-house-coexistence.json",
+          "present": false
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "simulator-ffb-smoke.json",
+          "present": false
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "simulator-telemetry-proof.json",
+          "present": false
+        }
+      ],
+      "gate_status": "not_validated_by_status",
+      "notes": [
+        "status inventories artifact presence only; run the family verifier for evidence claims"
+      ]
+    },
+    {
+      "id": "ffb_extended",
+      "order": 9,
+      "purpose": "expand from smoke to longer simulator and effect coverage",
+      "artifacts_present": 0,
+      "artifacts_missing": 2,
+      "expected_artifacts": [
+        {
+          "kind": "artifact",
+          "relative_path": "regression-fixtures",
+          "present": false
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "simulator-ffb-smoke.json",
+          "present": false
+        }
+      ],
+      "gate_status": "not_validated_by_status",
+      "notes": [
+        "status inventories artifact presence only; run the family verifier for evidence claims"
+      ]
+    }
+  ],
+  "notes": [
+    "lane status is read-only and validates no hardware claims",
+    "artifact presence is not proof; verifier receipts remain authoritative",
+    "legacy manifest lanes are adapted for status; missing scaffold files are inventoried, not blockers",
+    "ready_for_zero_torque and ready_for_ffb stay false in this inventory receipt"
+  ]
+}

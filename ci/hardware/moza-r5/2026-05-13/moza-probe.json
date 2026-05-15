@@ -1,0 +1,52 @@
+{
+  "success": true,
+  "command": "wheelctl moza probe",
+  "generated_at_utc": "2026-05-15T01:55:55Z",
+  "vendor_id": "0x346E",
+  "no_hid_device_opened": true,
+  "no_ffb_writes": true,
+  "no_output_reports": true,
+  "no_feature_reports": true,
+  "no_serial_config_commands": true,
+  "no_firmware_or_dfu_commands": true,
+  "devices": [
+    {
+      "vendor_id": "0x346E",
+      "product_id": "0x0004",
+      "product_name": "Moza R5",
+      "product_category": "wheelbase",
+      "topology_hint": "wheelbase_aggregated",
+      "output_capable": true,
+      "r5_wheelbase_pid": true,
+      "manufacturer": "Gudsen",
+      "product_string": "MOZA R5 Base",
+      "serial_number_present": true,
+      "interface_number": 2,
+      "usage_page": "0x0001",
+      "usage": "0x0004",
+      "path": "\\\\?\\HID#VID_346E&PID_0004&MI_02#8&6c29b84&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}",
+      "descriptor_source": "unavailable",
+      "report_metadata_source": "protocol_expected",
+      "input_report_lengths": [
+        42
+      ],
+      "output_report_ids": [
+        "0x20"
+      ],
+      "output_reports": [
+        {
+          "report_id": "0x20",
+          "report_len": 8
+        }
+      ],
+      "feature_report_ids": [
+        "0x02",
+        "0x03",
+        "0x11"
+      ]
+    }
+  ],
+  "notes": [
+    "probe enumerates HID metadata only; no device writes are sent"
+  ]
+}

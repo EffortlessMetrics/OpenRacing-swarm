@@ -1,0 +1,44 @@
+{
+  "command": "wheelctl device list",
+  "devices": [
+    {
+      "capabilities": {
+        "encoder_cpr": 0,
+        "max_torque_nm": 0.0,
+        "min_report_period_us": 0,
+        "supports_health_stream": true,
+        "supports_led_bus": false,
+        "supports_pid": false,
+        "supports_raw_torque_1khz": false
+      },
+      "device_type": "WheelBase",
+      "hid_path_present": true,
+      "id": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+      "interface_number": 2,
+      "manufacturer": "Gudsen",
+      "name": "MOZA R5 Base",
+      "product_id": "0x0004",
+      "product_string": "MOZA R5 Base",
+      "serial_number_present": true,
+      "source": "hid-observe",
+      "state": "Connected",
+      "usage": "0x0004",
+      "usage_page": "0x0001",
+      "vendor_id": "0x346E"
+    }
+  ],
+  "hid_enumeration": {
+    "api_available": true,
+    "enumeration_available": true,
+    "error": null,
+    "known_device_count": 1
+  },
+  "hid_observe_only": true,
+  "no_feature_reports": true,
+  "no_ffb_writes": true,
+  "no_firmware_or_dfu_commands": true,
+  "no_hid_device_opened": true,
+  "no_output_reports": true,
+  "no_serial_config_commands": true,
+  "success": true
+}

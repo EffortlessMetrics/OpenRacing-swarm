@@ -1,0 +1,69 @@
+{
+  "command": "wheelctl device status",
+  "device_selector": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+  "moza_lane": "ci\\hardware\\moza-r5\\2026-05-13",
+  "no_feature_reports": true,
+  "no_ffb_writes": true,
+  "no_firmware_or_dfu_commands": true,
+  "no_hid_device_opened": true,
+  "no_output_reports": true,
+  "no_serial_config_commands": true,
+  "notes": [
+    "device status queries wheeld and does not send FFB output, serial configuration, firmware, or DFU commands",
+    "Moza readiness remains observe-only; torque output requires explicit init, zero, and low-torque receipts"
+  ],
+  "status": {
+    "active_faults": [],
+    "device": {
+      "capabilities": {
+        "encoder_cpr": 0,
+        "max_torque_nm": 0.0,
+        "min_report_period_us": 0,
+        "supports_health_stream": true,
+        "supports_led_bus": false,
+        "supports_pid": false,
+        "supports_raw_torque_1khz": false
+      },
+      "device_type": "WheelBase",
+      "hid_path_present": true,
+      "id": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+      "interface_number": 2,
+      "manufacturer": "Gudsen",
+      "name": "MOZA R5 Base",
+      "product_id": "0x0004",
+      "product_string": "MOZA R5 Base",
+      "serial_number_present": true,
+      "source": "hid-observe",
+      "state": "Connected",
+      "usage": "0x0004",
+      "usage_page": "0x0001",
+      "vendor_id": "0x346E"
+    },
+    "last_seen": "2026-05-15T01:57:30.299348900Z",
+    "moza": {
+      "category": "wheelbase",
+      "descriptor_crc32": "0x25345E0C",
+      "descriptor_source": "operator_supplied_hex",
+      "descriptor_trusted": false,
+      "direct_mode_allowed": false,
+      "ffb_ready": false,
+      "high_torque_allowed": false,
+      "init_state": "uninitialized",
+      "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+      "model": "Moza R5",
+      "output_capable": true,
+      "product_id": "0x0004",
+      "safe_to_send_torque": false,
+      "safety_reason": "stored Moza lane verification receipts report highest_passing_stage=passive, next_required_stage=zero; CLI status remains observe-only and torque output stays disabled until explicit service initialization is implemented",
+      "safety_state": "lane_passive_verified"
+    },
+    "telemetry": {
+      "fault_flags": 0,
+      "hands_on": false,
+      "temperature_c": 0,
+      "wheel_angle_deg": 0.0,
+      "wheel_speed_rad_s": 0.0
+    }
+  },
+  "success": true
+}

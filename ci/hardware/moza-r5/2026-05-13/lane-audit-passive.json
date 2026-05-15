@@ -1,0 +1,47 @@
+{
+  "success": true,
+  "command": "wheelctl moza audit-lane",
+  "generated_at_utc": "2026-05-15T02:07:25Z",
+  "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+  "requested_stage": "passive",
+  "live_verification_success": true,
+  "live_verification": {
+    "failed_gates": 0,
+    "invalid_artifacts": 0,
+    "missing_artifacts": 0,
+    "no_ffb_writes": true,
+    "no_firmware_or_dfu_commands": true,
+    "no_hid_device_opened": true,
+    "no_serial_config_commands": true,
+    "requested_stage": "passive",
+    "success": true
+  },
+  "missing_receipts": 0,
+  "invalid_receipts": 0,
+  "receipt_checks": [
+    {
+      "stage": "passive",
+      "kind": "verification",
+      "path": "passive-verification.json",
+      "exists": true,
+      "status": "pass",
+      "details": "stored verify-bundle receipt passed with no missing artifacts, invalid artifacts, failed gates, HID opens, FFB writes, serial config, firmware, or DFU commands"
+    },
+    {
+      "stage": "passive",
+      "kind": "promotion",
+      "path": "manifest-promotion-passive.json",
+      "exists": true,
+      "status": "pass",
+      "details": "stored promote-manifest receipt passed, records before/after live verification, and declares no HID opens, FFB writes, serial config, firmware, or DFU commands"
+    }
+  ],
+  "no_hid_device_opened": true,
+  "no_ffb_writes": true,
+  "no_serial_config_commands": true,
+  "no_firmware_or_dfu_commands": true,
+  "notes": [
+    "audit-lane reads existing verification and promotion receipts only; it opens no HID device and sends no reports",
+    "audit-lane is a post-promotion completeness audit, not a release-readiness claim"
+  ]
+}

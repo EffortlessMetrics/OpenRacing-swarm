@@ -1,0 +1,108 @@
+{
+  "success": true,
+  "command": "wheelctl moza pre-output-readiness",
+  "generated_at_utc": "2026-05-15T02:07:26Z",
+  "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+  "stage": "pre_output_readiness",
+  "ready_for_zero_torque": true,
+  "ready_for_ffb": false,
+  "blocking_items": [],
+  "ffb_blocking_items": [
+    "init_off_handshake",
+    "init_standard_handshake",
+    "low_torque_bounded",
+    "pit_house_coexistence",
+    "service_status_receipts",
+    "simulator_telemetry",
+    "zero-verification.json",
+    "zero_audit"
+  ],
+  "passed_items": [
+    "r5_endpoint_observed",
+    "topology_endpoint_observed",
+    "role_evidence_complete",
+    "passive_captures_parse",
+    "parser_fixture_validation",
+    "descriptor_metadata",
+    "fixture_promotion",
+    "status_receipts_no_output",
+    "support_bundle_no_output",
+    "passive_verification",
+    "passive_audit",
+    "ready_for_zero_torque"
+  ],
+  "status_receipts": [
+    {
+      "name": "moza_status",
+      "status": "pass",
+      "details": "moza-status.json is observe-only and bound to ci\\hardware\\moza-r5\\2026-05-13"
+    },
+    {
+      "name": "device_status",
+      "status": "pass",
+      "details": "device-status.json is observe-only and bound to ci\\hardware\\moza-r5\\2026-05-13"
+    },
+    {
+      "name": "support_bundle",
+      "status": "pass",
+      "details": "support-bundle.json is observe-only and bound to ci\\hardware\\moza-r5\\2026-05-13"
+    }
+  ],
+  "passive_verification": {
+    "failed_gate_names": [],
+    "failed_gates": 0,
+    "invalid_artifact_paths": [],
+    "invalid_artifacts": 0,
+    "missing_artifact_paths": [],
+    "missing_artifacts": 0,
+    "requested_stage": "passive",
+    "success": true
+  },
+  "zero_verification": {
+    "failed_gate_names": [],
+    "failed_gates": 0,
+    "invalid_artifact_paths": [],
+    "invalid_artifacts": 0,
+    "missing_artifact_paths": [
+      "zero-verification.json"
+    ],
+    "missing_artifacts": 1,
+    "requested_stage": "zero",
+    "success": false
+  },
+  "smoke_ready_verification": {
+    "failed_gate_names": [],
+    "failed_gates": 0,
+    "invalid_artifact_paths": [],
+    "invalid_artifacts": 0,
+    "missing_artifact_paths": [
+      "smoke-ready-verification.json"
+    ],
+    "missing_artifacts": 1,
+    "requested_stage": "smoke_ready",
+    "success": false
+  },
+  "passive_audit_passed": true,
+  "zero_audit_passed": false,
+  "smoke_ready_audit_passed": false,
+  "no_hid_device_opened": true,
+  "no_ffb_writes": true,
+  "no_output_reports": true,
+  "no_feature_reports": true,
+  "no_serial_config_commands": true,
+  "no_firmware_or_dfu_commands": true,
+  "hard_forbidden_until_ready": [
+    "ffb",
+    "direct_mode",
+    "nonzero_torque",
+    "output_reports",
+    "feature_reports",
+    "serial_config",
+    "firmware_dfu"
+  ],
+  "notes": [
+    "pre-output-readiness reads existing lane receipts only; it opens no HID device and sends no reports",
+    "ready_for_zero_torque is the first output-adjacent gate and still does not permit nonzero torque or FFB",
+    "ready_for_ffb is false until zero, watchdog, disconnect, low-torque, Pit House, and simulator telemetry prerequisites are present"
+  ]
+}

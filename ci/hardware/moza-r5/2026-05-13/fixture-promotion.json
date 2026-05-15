@@ -1,0 +1,182 @@
+{
+  "success": true,
+  "command": "wheelctl moza promote-fixtures",
+  "generated_at_utc": "2026-05-15T02:03:47Z",
+  "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+  "fixture_dir": "crates\\hid-moza-protocol\\fixtures\\moza-r5-2026-05-13",
+  "no_ffb_writes": true,
+  "no_serial_config_commands": true,
+  "no_firmware_or_dfu_commands": true,
+  "no_hid_device_opened": true,
+  "overwritten_existing": true,
+  "required_fixture_count": 9,
+  "fixture_count": 9,
+  "fixtures": [
+    {
+      "capture": "captures/r5-idle.jsonl",
+      "fixture_out": "crates\\hid-moza-protocol\\fixtures\\moza-r5-2026-05-13\\r5_idle.json",
+      "fixture_id": "r5_idle",
+      "report_count": 256,
+      "product_ids": {
+        "0x0004": 1688
+      },
+      "parsed_by_category": {
+        "wheelbase": 1688
+      },
+      "report_ids": {
+        "0x01": 1688
+      },
+      "report_lengths": {
+        "42": 1688
+      }
+    },
+    {
+      "capture": "captures/r5-steering-sweep.jsonl",
+      "fixture_out": "crates\\hid-moza-protocol\\fixtures\\moza-r5-2026-05-13\\r5_steering_sweep.json",
+      "fixture_id": "r5_steering_sweep",
+      "report_count": 256,
+      "product_ids": {
+        "0x0004": 4110
+      },
+      "parsed_by_category": {
+        "wheelbase": 4110
+      },
+      "report_ids": {
+        "0x01": 4110
+      },
+      "report_lengths": {
+        "42": 4110
+      }
+    },
+    {
+      "capture": "captures/r5-throttle-only-sweep.jsonl",
+      "fixture_out": "crates\\hid-moza-protocol\\fixtures\\moza-r5-2026-05-13\\r5_throttle_only_sweep.json",
+      "fixture_id": "r5_throttle_only_sweep",
+      "report_count": 256,
+      "product_ids": {
+        "0x0004": 22387
+      },
+      "parsed_by_category": {
+        "wheelbase": 22387
+      },
+      "report_ids": {
+        "0x01": 22387
+      },
+      "report_lengths": {
+        "42": 22387
+      }
+    },
+    {
+      "capture": "captures/r5-brake-only-sweep.jsonl",
+      "fixture_out": "crates\\hid-moza-protocol\\fixtures\\moza-r5-2026-05-13\\r5_brake_only_sweep.json",
+      "fixture_id": "r5_brake_only_sweep",
+      "report_count": 256,
+      "product_ids": {
+        "0x0004": 22854
+      },
+      "parsed_by_category": {
+        "wheelbase": 22854
+      },
+      "report_ids": {
+        "0x01": 22854
+      },
+      "report_lengths": {
+        "42": 22854
+      }
+    },
+    {
+      "capture": "captures/r5-clutch-only-sweep.jsonl",
+      "fixture_out": "crates\\hid-moza-protocol\\fixtures\\moza-r5-2026-05-13\\r5_clutch_only_sweep.json",
+      "fixture_id": "r5_clutch_only_sweep",
+      "report_count": 256,
+      "product_ids": {
+        "0x0004": 22907
+      },
+      "parsed_by_category": {
+        "wheelbase": 22907
+      },
+      "report_ids": {
+        "0x01": 22907
+      },
+      "report_lengths": {
+        "42": 22907
+      }
+    },
+    {
+      "capture": "captures/r5-handbrake-only-sweep.jsonl",
+      "fixture_out": "crates\\hid-moza-protocol\\fixtures\\moza-r5-2026-05-13\\r5_handbrake_only_sweep.json",
+      "fixture_id": "r5_handbrake_only_sweep",
+      "report_count": 256,
+      "product_ids": {
+        "0x0004": 23491
+      },
+      "parsed_by_category": {
+        "wheelbase": 23491
+      },
+      "report_ids": {
+        "0x01": 23491
+      },
+      "report_lengths": {
+        "42": 23491
+      }
+    },
+    {
+      "capture": "captures/r5-aggregated-idle-after-controls.jsonl",
+      "fixture_out": "crates\\hid-moza-protocol\\fixtures\\moza-r5-2026-05-13\\r5_aggregated_idle_after_controls.json",
+      "fixture_id": "r5_aggregated_idle_after_controls",
+      "report_count": 256,
+      "product_ids": {
+        "0x0004": 2375
+      },
+      "parsed_by_category": {
+        "wheelbase": 2375
+      },
+      "report_ids": {
+        "0x01": 2375
+      },
+      "report_lengths": {
+        "42": 2375
+      }
+    },
+    {
+      "capture": "captures/ks-controls.jsonl",
+      "fixture_out": "crates\\hid-moza-protocol\\fixtures\\moza-r5-2026-05-13\\ks_controls.json",
+      "fixture_id": "ks_controls",
+      "report_count": 256,
+      "product_ids": {
+        "0x0004": 22889
+      },
+      "parsed_by_category": {
+        "wheelbase": 22889
+      },
+      "report_ids": {
+        "0x01": 22889
+      },
+      "report_lengths": {
+        "42": 22889
+      }
+    },
+    {
+      "capture": "captures/es-controls.jsonl",
+      "fixture_out": "crates\\hid-moza-protocol\\fixtures\\moza-r5-2026-05-13\\es_controls.json",
+      "fixture_id": "es_controls",
+      "report_count": 256,
+      "product_ids": {
+        "0x0004": 5514
+      },
+      "parsed_by_category": {
+        "wheelbase": 5514
+      },
+      "report_ids": {
+        "0x01": 5514
+      },
+      "report_lengths": {
+        "42": 5514
+      }
+    }
+  ],
+  "notes": [
+    "promote-fixtures replays every required passive lane capture through Moza parsers only; no HID device is opened",
+    "fixture outputs intentionally store sanitized report bytes and parse summaries, not HID paths or serial numbers"
+  ]
+}

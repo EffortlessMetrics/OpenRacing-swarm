@@ -1,0 +1,159 @@
+{
+  "artifacts": {
+    "capture_es_controls": "captures/es-controls.jsonl",
+    "capture_ks_controls": "captures/ks-controls.jsonl",
+    "capture_r5_aggregated_idle_after_controls": "captures/r5-aggregated-idle-after-controls.jsonl",
+    "capture_r5_brake_only_sweep": "captures/r5-brake-only-sweep.jsonl",
+    "capture_r5_clutch_only_sweep": "captures/r5-clutch-only-sweep.jsonl",
+    "capture_r5_handbrake_only_sweep": "captures/r5-handbrake-only-sweep.jsonl",
+    "capture_r5_idle": "captures/r5-idle.jsonl",
+    "capture_r5_steering_sweep": "captures/r5-steering-sweep.jsonl",
+    "capture_r5_throttle_only_sweep": "captures/r5-throttle-only-sweep.jsonl",
+    "captures_dir": "captures",
+    "descriptor": "descriptor.json",
+    "device_list": "device-list.json",
+    "device_status": "device-status.json",
+    "disconnect_proof": "disconnect-proof.json",
+    "fixture_promotion": "fixture-promotion.json",
+    "hardware_doctor": "hardware-doctor.json",
+    "hid_list": "hid-list.json",
+    "init_off": "init-off.json",
+    "init_standard": "init-standard.json",
+    "low_torque_proof": "low-torque-proof.json",
+    "manifest": "manifest.json",
+    "moza_probe": "moza-probe.json",
+    "moza_status": "moza-status.json",
+    "parser_fixture_validation": "parser-fixture-validation.json",
+    "passive_lane_audit": "lane-audit-passive.json",
+    "passive_manifest_promotion": "manifest-promotion-passive.json",
+    "passive_verification": "passive-verification.json",
+    "pit_house_coexistence": "pit-house-coexistence.json",
+    "simulator_ffb_smoke": "simulator-ffb-smoke.json",
+    "simulator_telemetry_proof": "simulator-telemetry-proof.json",
+    "smoke_ready_lane_audit": "lane-audit-smoke-ready.json",
+    "smoke_ready_manifest_promotion": "manifest-promotion-smoke-ready.json",
+    "smoke_ready_verification": "smoke-ready-verification.json",
+    "support_bundle": "support-bundle.json",
+    "watchdog_proof": "watchdog-proof.json",
+    "zero_lane_audit": "lane-audit-zero.json",
+    "zero_manifest_promotion": "manifest-promotion-zero.json",
+    "zero_torque_proof": "zero-torque-proof.json",
+    "zero_verification": "zero-verification.json"
+  },
+  "claims": {
+    "ffb": "staged",
+    "high_torque": false,
+    "pit_house_coexistence": "tested_separately"
+  },
+  "completion_state": "passive_capture_ready",
+  "generated_at_utc": "2026-05-13T16:02:09Z",
+  "hardware": {
+    "handbrake": "HBP",
+    "pedals": [
+      "SR-P"
+    ],
+    "rims": [
+      "KS",
+      "ES"
+    ],
+    "wheelbase": "Moza R5",
+    "wheelbase_pid": "0x0004"
+  },
+  "hardware_validated": false,
+  "high_torque_validated": false,
+  "lane": "moza-r5-windows-usb",
+  "notes": [
+    "No compatibility claim is made until receipts exist and the verifier passes.",
+    "No serial configuration, firmware update, or DFU command is in scope."
+  ],
+  "operator": "Steven",
+  "platform": {
+    "os": "Windows",
+    "transport": {
+      "hid": true,
+      "serial_config": false
+    }
+  },
+  "release_ready": false,
+  "schema_version": 1,
+  "simulator_validated": false,
+  "topology": {
+    "endpoints": [
+      {
+        "id": "moza-r5-if2",
+        "interface_number": 2,
+        "kind": "wheelbase_hub",
+        "output_capable": true,
+        "product_id": "0x0004",
+        "usage": "0x0004",
+        "usage_page": "0x0001",
+        "vendor_id": "0x346E"
+      }
+    ],
+    "logical_controls": {
+      "brake": {
+        "connection": "wheelbase_hub",
+        "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
+        "required": true,
+        "role": "brake",
+        "semantic_status": "generic_aux",
+        "source_endpoint": "moza-r5-if2"
+      },
+      "clutch": {
+        "connection": "wheelbase_hub",
+        "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
+        "required": true,
+        "role": "clutch",
+        "semantic_status": "generic_aux",
+        "source_endpoint": "moza-r5-if2"
+      },
+      "es_rim_controls": {
+        "connection": "wheelbase_hub",
+        "evidence_capture": "captures/es-controls.jsonl",
+        "required": true,
+        "rim": "ES",
+        "role": "rim_controls",
+        "semantic_status": "proven",
+        "source_endpoint": "moza-r5-if2"
+      },
+      "handbrake": {
+        "connection": "wheelbase_hub",
+        "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
+        "required": true,
+        "role": "handbrake",
+        "semantic_status": "generic_aux",
+        "source_endpoint": "moza-r5-if2"
+      },
+      "ks_rim_controls": {
+        "connection": "wheelbase_hub",
+        "evidence_capture": "captures/ks-controls.jsonl",
+        "required": true,
+        "rim": "KS",
+        "role": "rim_controls",
+        "semantic_status": "proven",
+        "source_endpoint": "moza-r5-if2"
+      },
+      "steering": {
+        "connection": "wheelbase_hub",
+        "evidence_capture": "captures/r5-steering-sweep.jsonl",
+        "required": true,
+        "role": "steering",
+        "semantic_status": "proven",
+        "source_endpoint": "moza-r5-if2"
+      },
+      "throttle": {
+        "connection": "wheelbase_hub",
+        "evidence_capture": "captures/r5-throttle-only-sweep.jsonl",
+        "required": true,
+        "role": "throttle",
+        "semantic_status": "proven",
+        "source_endpoint": "moza-r5-if2"
+      }
+    },
+    "notes": [
+      "Primary Moza input evidence is captured through the R5 wheelbase hub aggregated HID endpoint.",
+      "Standalone SR-P or HBP USB endpoints are optional direct-plug evidence only when declared in topology."
+    ],
+    "primary_input_path": "wheelbase_hub"
+  }
+}

@@ -1,0 +1,127 @@
+{
+  "success": true,
+  "command": "wheelctl hardware doctor",
+  "generated_at": "2026-05-15T01:56:01Z",
+  "no_hid_device_opened": true,
+  "no_ffb_writes": true,
+  "no_output_reports": true,
+  "no_feature_reports": true,
+  "no_serial_config_commands": true,
+  "no_firmware_or_dfu_commands": true,
+  "os": {
+    "family": "windows",
+    "os": "windows",
+    "arch": "x86_64",
+    "raw_report_descriptor_capture": {
+      "supported": false,
+      "fallback_supported": true,
+      "note": "Windows HID APIs may not expose raw report descriptor bytes; use descriptor hex fallback when needed"
+    }
+  },
+  "tools": {
+    "hid_capture_on_path": true,
+    "wheelctl_self_check": true,
+    "usbpcap_descriptor_capture": {
+      "tshark_present": true,
+      "tshark_path": "C:\\Program Files\\Wireshark\\tshark.exe",
+      "usbpcap_extcap_present": true,
+      "usbpcap_extcap_path": "C:\\Program Files\\Wireshark\\extcap\\USBPcapCMD.exe",
+      "usbpcap_driver_installed": true,
+      "usbpcap_driver_service_state": "running",
+      "interface_scan_attempted": true,
+      "usbpcap_interfaces_present": true,
+      "usbpcap_interface_count": 2,
+      "usbpcap_interfaces": [
+        "9. \\\\.\\USBPcap1 (USBPcap1)",
+        "10. \\\\.\\USBPcap2 (USBPcap2)"
+      ],
+      "ready_for_usbpcap_descriptor_capture": true,
+      "access_guidance": "USBPcap/Wireshark capture interfaces are available for descriptor enumeration capture"
+    }
+  },
+  "hid": {
+    "api_available": true,
+    "enumeration_available": true,
+    "all_device_count": 20,
+    "known_devices_visible": [
+      {
+        "vendor_id": "0x346E",
+        "product_id": "0x0004",
+        "family": "Moza",
+        "model": "Moza R5 V1",
+        "kind": "Wheelbase",
+        "input": true,
+        "ffb_output": true,
+        "serial_config": false,
+        "firmware_dfu": false,
+        "high_torque": false,
+        "validated_stages": [],
+        "manufacturer": "Gudsen",
+        "product_string": "MOZA R5 Base",
+        "serial_number_present": true,
+        "interface_number": 2,
+        "usage_page": "0x0001",
+        "usage": "0x0004",
+        "hid_path_present": true
+      }
+    ],
+    "moza_vid_visible": true
+  },
+  "windows_pnp": {
+    "scan_attempted": true,
+    "tool": "Get-PnpDevice",
+    "moza_vid_visible": true,
+    "hid_interface_count": 1,
+    "hid_pnp_device_count": 2,
+    "serial_interface_count": 1,
+    "devices": [
+      {
+        "status": "OK",
+        "class": "HIDClass",
+        "friendly_name": "HID-compliant game controller",
+        "vendor_id": "0x346E",
+        "product_id": "0x0004",
+        "interface_number": 2,
+        "instance_id_present": true
+      },
+      {
+        "status": "OK",
+        "class": "Ports",
+        "friendly_name": "USB Serial Device (COM4)",
+        "vendor_id": "0x346E",
+        "product_id": "0x0004",
+        "interface_number": 0,
+        "instance_id_present": true
+      },
+      {
+        "status": "OK",
+        "class": "USB",
+        "friendly_name": "USB Composite Device",
+        "vendor_id": "0x346E",
+        "product_id": "0x0004",
+        "instance_id_present": true
+      },
+      {
+        "status": "OK",
+        "class": "HIDClass",
+        "friendly_name": "USB Input Device",
+        "vendor_id": "0x346E",
+        "product_id": "0x0004",
+        "interface_number": 2,
+        "instance_id_present": true
+      }
+    ]
+  },
+  "vendor_apps": {
+    "process_scan_attempted": true,
+    "pit_house_running": false,
+    "matched_processes": []
+  },
+  "warnings": [],
+  "notes": [
+    "hardware doctor is observe-only and does not open HID device handles",
+    "missing hardware is diagnostic information, not hardware validation evidence",
+    "virtual or synthetic evidence must not satisfy real hardware receipt gates",
+    "Windows PnP inspection records redacted interface topology only; it does not open or configure serial devices"
+  ]
+}

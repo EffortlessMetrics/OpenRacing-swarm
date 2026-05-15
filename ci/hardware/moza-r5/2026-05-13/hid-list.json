@@ -1,0 +1,42 @@
+{
+  "success": true,
+  "command": "hid-capture list",
+  "generated_at_utc": "2026-05-15T01:55:57Z",
+  "vendor_filter": "0x346E",
+  "no_hid_device_opened": true,
+  "no_ffb_writes": true,
+  "no_serial_config_commands": true,
+  "no_firmware_or_dfu_commands": true,
+  "devices": [
+    {
+      "vendor_id": "0x346E",
+      "product_id": "0x0004",
+      "product_name": "MOZA R5 Base",
+      "serial_number_present": true,
+      "manufacturer": "Gudsen",
+      "interface_number": 2,
+      "usage_page": "0x0001",
+      "usage": "0x0004",
+      "path": "\\\\?\\HID#VID_346E&PID_0004&MI_02#8&6c29b84&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}",
+      "descriptor_source": "unavailable",
+      "report_metadata_source": "moza_protocol_expected",
+      "input_report_lengths": [
+        42
+      ],
+      "output_report_ids": [
+        "0x20"
+      ],
+      "output_reports": [
+        {
+          "report_id": "0x20",
+          "report_len": 8
+        }
+      ],
+      "feature_report_ids": [
+        "0x02",
+        "0x03",
+        "0x11"
+      ]
+    }
+  ]
+}

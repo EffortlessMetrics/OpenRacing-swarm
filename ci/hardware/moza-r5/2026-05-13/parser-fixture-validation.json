@@ -1,0 +1,1079 @@
+{
+  "success": true,
+  "command": "wheelctl moza validate-captures",
+  "generated_at_utc": "2026-05-15T01:59:11Z",
+  "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+  "no_ffb_writes": true,
+  "no_serial_config_commands": true,
+  "no_firmware_or_dfu_commands": true,
+  "no_hid_device_opened": true,
+  "required_capture_count": 9,
+  "validated_capture_count": 9,
+  "total_reports": 128215,
+  "parsed_reports": 128215,
+  "rejected_reports": 0,
+  "captures": [
+    {
+      "capture": "captures/r5-idle.jsonl",
+      "fixture_id": "r5_idle",
+      "required_category": "wheelbase",
+      "required_product_ids": [
+        "0x0004"
+      ],
+      "required_axis_variation": [],
+      "required_axis_values": [],
+      "required_any_axis_variation": [],
+      "success": true,
+      "missing_requirements": [],
+      "total_reports": 1688,
+      "parsed_reports": 1688,
+      "rejected_reports": 0,
+      "capture_input_format_reports": 1688,
+      "all_reports_have_capture_input_metadata": true,
+      "product_ids": {
+        "0x0004": 1688
+      },
+      "parsed_by_category": {
+        "wheelbase": 1688
+      },
+      "report_ids": {
+        "0x01": 1688
+      },
+      "report_lengths": {
+        "42": 1688
+      },
+      "axis_ranges": {
+        "brake_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "buttons0_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "buttons_any_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "clutch_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "funky_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "handbrake_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "hat_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "ks_buttons_any_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "ks_hat_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "r5_v1_extended_aux0_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "r5_v1_extended_aux1_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "r5_v1_extended_axis0_u16": {
+          "min": 32768,
+          "max": 32768
+        },
+        "r5_v1_extended_axis1_u16": {
+          "min": 32769,
+          "max": 32769
+        },
+        "r5_v1_extended_axis2_u16": {
+          "min": 32768,
+          "max": 32768
+        },
+        "r5_v1_extended_ks_axis0_u16": {
+          "min": 32769,
+          "max": 32769
+        },
+        "rotary0_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "rotary1_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "steering_u16": {
+          "min": 32938,
+          "max": 32948
+        },
+        "throttle_u16": {
+          "min": 32768,
+          "max": 32768
+        }
+      }
+    },
+    {
+      "capture": "captures/r5-steering-sweep.jsonl",
+      "fixture_id": "r5_steering_sweep",
+      "required_category": "wheelbase",
+      "required_product_ids": [
+        "0x0004"
+      ],
+      "required_axis_variation": [
+        "steering_u16"
+      ],
+      "required_axis_values": [],
+      "required_any_axis_variation": [],
+      "success": true,
+      "missing_requirements": [],
+      "total_reports": 4110,
+      "parsed_reports": 4110,
+      "rejected_reports": 0,
+      "capture_input_format_reports": 4110,
+      "all_reports_have_capture_input_metadata": true,
+      "product_ids": {
+        "0x0004": 4110
+      },
+      "parsed_by_category": {
+        "wheelbase": 4110
+      },
+      "report_ids": {
+        "0x01": 4110
+      },
+      "report_lengths": {
+        "42": 4110
+      },
+      "axis_ranges": {
+        "brake_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "buttons0_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "buttons_any_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "clutch_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "funky_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "handbrake_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "hat_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "ks_buttons_any_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "ks_hat_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "r5_v1_extended_aux0_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "r5_v1_extended_aux1_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "r5_v1_extended_axis0_u16": {
+          "min": 32768,
+          "max": 32768
+        },
+        "r5_v1_extended_axis1_u16": {
+          "min": 32769,
+          "max": 32769
+        },
+        "r5_v1_extended_axis2_u16": {
+          "min": 32768,
+          "max": 32768
+        },
+        "r5_v1_extended_ks_axis0_u16": {
+          "min": 32769,
+          "max": 32769
+        },
+        "rotary0_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "rotary1_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "steering_u16": {
+          "min": 32935,
+          "max": 32948
+        },
+        "throttle_u16": {
+          "min": 32768,
+          "max": 32768
+        }
+      }
+    },
+    {
+      "capture": "captures/r5-throttle-only-sweep.jsonl",
+      "fixture_id": "r5_throttle_only_sweep",
+      "required_category": "wheelbase",
+      "required_product_ids": [
+        "0x0004"
+      ],
+      "required_axis_variation": [],
+      "required_axis_values": [],
+      "required_any_axis_variation": [
+        {
+          "group": "hub_control_axis",
+          "axes": [
+            "throttle_u16",
+            "brake_u16",
+            "clutch_u16",
+            "handbrake_u16",
+            "r5_v1_extended_axis0_u16",
+            "r5_v1_extended_axis1_u16",
+            "r5_v1_extended_axis2_u16",
+            "r5_v1_extended_aux0_u16",
+            "r5_v1_extended_aux1_u16"
+          ]
+        }
+      ],
+      "success": true,
+      "missing_requirements": [],
+      "total_reports": 22387,
+      "parsed_reports": 22387,
+      "rejected_reports": 0,
+      "capture_input_format_reports": 22387,
+      "all_reports_have_capture_input_metadata": true,
+      "product_ids": {
+        "0x0004": 22387
+      },
+      "parsed_by_category": {
+        "wheelbase": 22387
+      },
+      "report_ids": {
+        "0x01": 22387
+      },
+      "report_lengths": {
+        "42": 22387
+      },
+      "axis_ranges": {
+        "brake_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "buttons0_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "buttons_any_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "clutch_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "funky_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "handbrake_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "hat_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "ks_buttons_any_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "ks_hat_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "r5_v1_extended_aux0_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "r5_v1_extended_aux1_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "r5_v1_extended_axis0_u16": {
+          "min": 32768,
+          "max": 32768
+        },
+        "r5_v1_extended_axis1_u16": {
+          "min": 32769,
+          "max": 32769
+        },
+        "r5_v1_extended_axis2_u16": {
+          "min": 32768,
+          "max": 32768
+        },
+        "r5_v1_extended_ks_axis0_u16": {
+          "min": 32769,
+          "max": 32769
+        },
+        "rotary0_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "rotary1_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "steering_u16": {
+          "min": 31100,
+          "max": 31111
+        },
+        "throttle_u16": {
+          "min": 17,
+          "max": 65430
+        }
+      }
+    },
+    {
+      "capture": "captures/r5-brake-only-sweep.jsonl",
+      "fixture_id": "r5_brake_only_sweep",
+      "required_category": "wheelbase",
+      "required_product_ids": [
+        "0x0004"
+      ],
+      "required_axis_variation": [],
+      "required_axis_values": [],
+      "required_any_axis_variation": [
+        {
+          "group": "hub_control_axis",
+          "axes": [
+            "throttle_u16",
+            "brake_u16",
+            "clutch_u16",
+            "handbrake_u16",
+            "r5_v1_extended_axis0_u16",
+            "r5_v1_extended_axis1_u16",
+            "r5_v1_extended_axis2_u16",
+            "r5_v1_extended_aux0_u16",
+            "r5_v1_extended_aux1_u16"
+          ]
+        }
+      ],
+      "success": true,
+      "missing_requirements": [],
+      "total_reports": 22854,
+      "parsed_reports": 22854,
+      "rejected_reports": 0,
+      "capture_input_format_reports": 22854,
+      "all_reports_have_capture_input_metadata": true,
+      "product_ids": {
+        "0x0004": 22854
+      },
+      "parsed_by_category": {
+        "wheelbase": 22854
+      },
+      "report_ids": {
+        "0x01": 22854
+      },
+      "report_lengths": {
+        "42": 22854
+      },
+      "axis_ranges": {
+        "brake_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "buttons0_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "buttons_any_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "clutch_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "funky_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "handbrake_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "hat_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "ks_buttons_any_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "ks_hat_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "r5_v1_extended_aux0_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "r5_v1_extended_aux1_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "r5_v1_extended_axis0_u16": {
+          "min": 33,
+          "max": 65435
+        },
+        "r5_v1_extended_axis1_u16": {
+          "min": 32769,
+          "max": 32769
+        },
+        "r5_v1_extended_axis2_u16": {
+          "min": 32768,
+          "max": 32768
+        },
+        "r5_v1_extended_ks_axis0_u16": {
+          "min": 32769,
+          "max": 32769
+        },
+        "rotary0_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "rotary1_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "steering_u16": {
+          "min": 33922,
+          "max": 33935
+        },
+        "throttle_u16": {
+          "min": 32768,
+          "max": 32768
+        }
+      }
+    },
+    {
+      "capture": "captures/r5-clutch-only-sweep.jsonl",
+      "fixture_id": "r5_clutch_only_sweep",
+      "required_category": "wheelbase",
+      "required_product_ids": [
+        "0x0004"
+      ],
+      "required_axis_variation": [],
+      "required_axis_values": [],
+      "required_any_axis_variation": [
+        {
+          "group": "hub_control_axis",
+          "axes": [
+            "throttle_u16",
+            "brake_u16",
+            "clutch_u16",
+            "handbrake_u16",
+            "r5_v1_extended_axis0_u16",
+            "r5_v1_extended_axis1_u16",
+            "r5_v1_extended_axis2_u16",
+            "r5_v1_extended_aux0_u16",
+            "r5_v1_extended_aux1_u16"
+          ]
+        }
+      ],
+      "success": true,
+      "missing_requirements": [],
+      "total_reports": 22907,
+      "parsed_reports": 22907,
+      "rejected_reports": 0,
+      "capture_input_format_reports": 22907,
+      "all_reports_have_capture_input_metadata": true,
+      "product_ids": {
+        "0x0004": 22907
+      },
+      "parsed_by_category": {
+        "wheelbase": 22907
+      },
+      "report_ids": {
+        "0x01": 22907
+      },
+      "report_lengths": {
+        "42": 22907
+      },
+      "axis_ranges": {
+        "brake_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "buttons0_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "buttons_any_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "clutch_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "funky_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "handbrake_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "hat_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "ks_buttons_any_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "ks_hat_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "r5_v1_extended_aux0_u16": {
+          "min": 0,
+          "max": 62092
+        },
+        "r5_v1_extended_aux1_u16": {
+          "min": 0,
+          "max": 48959
+        },
+        "r5_v1_extended_axis0_u16": {
+          "min": 32768,
+          "max": 32768
+        },
+        "r5_v1_extended_axis1_u16": {
+          "min": 32769,
+          "max": 32769
+        },
+        "r5_v1_extended_axis2_u16": {
+          "min": 32768,
+          "max": 32768
+        },
+        "r5_v1_extended_ks_axis0_u16": {
+          "min": 32769,
+          "max": 32769
+        },
+        "rotary0_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "rotary1_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "steering_u16": {
+          "min": 33919,
+          "max": 33935
+        },
+        "throttle_u16": {
+          "min": 32768,
+          "max": 32768
+        }
+      }
+    },
+    {
+      "capture": "captures/r5-handbrake-only-sweep.jsonl",
+      "fixture_id": "r5_handbrake_only_sweep",
+      "required_category": "wheelbase",
+      "required_product_ids": [
+        "0x0004"
+      ],
+      "required_axis_variation": [],
+      "required_axis_values": [],
+      "required_any_axis_variation": [
+        {
+          "group": "hub_control_axis",
+          "axes": [
+            "throttle_u16",
+            "brake_u16",
+            "clutch_u16",
+            "handbrake_u16",
+            "r5_v1_extended_axis0_u16",
+            "r5_v1_extended_axis1_u16",
+            "r5_v1_extended_axis2_u16",
+            "r5_v1_extended_aux0_u16",
+            "r5_v1_extended_aux1_u16"
+          ]
+        }
+      ],
+      "success": true,
+      "missing_requirements": [],
+      "total_reports": 23491,
+      "parsed_reports": 23491,
+      "rejected_reports": 0,
+      "capture_input_format_reports": 23491,
+      "all_reports_have_capture_input_metadata": true,
+      "product_ids": {
+        "0x0004": 23491
+      },
+      "parsed_by_category": {
+        "wheelbase": 23491
+      },
+      "report_ids": {
+        "0x01": 23491
+      },
+      "report_lengths": {
+        "42": 23491
+      },
+      "axis_ranges": {
+        "brake_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "buttons0_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "buttons_any_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "clutch_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "funky_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "handbrake_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "hat_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "ks_buttons_any_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "ks_hat_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "r5_v1_extended_aux0_u16": {
+          "min": 0,
+          "max": 65358
+        },
+        "r5_v1_extended_aux1_u16": {
+          "min": 0,
+          "max": 49057
+        },
+        "r5_v1_extended_axis0_u16": {
+          "min": 32768,
+          "max": 32768
+        },
+        "r5_v1_extended_axis1_u16": {
+          "min": 191,
+          "max": 65232
+        },
+        "r5_v1_extended_axis2_u16": {
+          "min": 32768,
+          "max": 32768
+        },
+        "r5_v1_extended_ks_axis0_u16": {
+          "min": 32769,
+          "max": 32769
+        },
+        "rotary0_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "rotary1_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "steering_u16": {
+          "min": 33916,
+          "max": 33940
+        },
+        "throttle_u16": {
+          "min": 32768,
+          "max": 32768
+        }
+      }
+    },
+    {
+      "capture": "captures/r5-aggregated-idle-after-controls.jsonl",
+      "fixture_id": "r5_aggregated_idle_after_controls",
+      "required_category": "wheelbase",
+      "required_product_ids": [
+        "0x0004"
+      ],
+      "required_axis_variation": [],
+      "required_axis_values": [],
+      "required_any_axis_variation": [],
+      "success": true,
+      "missing_requirements": [],
+      "total_reports": 2375,
+      "parsed_reports": 2375,
+      "rejected_reports": 0,
+      "capture_input_format_reports": 2375,
+      "all_reports_have_capture_input_metadata": true,
+      "product_ids": {
+        "0x0004": 2375
+      },
+      "parsed_by_category": {
+        "wheelbase": 2375
+      },
+      "report_ids": {
+        "0x01": 2375
+      },
+      "report_lengths": {
+        "42": 2375
+      },
+      "axis_ranges": {
+        "brake_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "buttons0_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "buttons_any_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "clutch_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "funky_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "handbrake_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "hat_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "ks_buttons_any_u8": {
+          "min": 8,
+          "max": 8
+        },
+        "ks_hat_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "r5_v1_extended_aux0_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "r5_v1_extended_aux1_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "r5_v1_extended_axis0_u16": {
+          "min": 32768,
+          "max": 32768
+        },
+        "r5_v1_extended_axis1_u16": {
+          "min": 32769,
+          "max": 32769
+        },
+        "r5_v1_extended_axis2_u16": {
+          "min": 32768,
+          "max": 32768
+        },
+        "r5_v1_extended_ks_axis0_u16": {
+          "min": 32769,
+          "max": 32769
+        },
+        "rotary0_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "rotary1_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "steering_u16": {
+          "min": 33922,
+          "max": 33932
+        },
+        "throttle_u16": {
+          "min": 32768,
+          "max": 32768
+        }
+      }
+    },
+    {
+      "capture": "captures/ks-controls.jsonl",
+      "fixture_id": "ks_controls",
+      "required_category": "wheelbase",
+      "required_product_ids": [
+        "0x0004"
+      ],
+      "required_axis_variation": [],
+      "required_axis_values": [],
+      "required_any_axis_variation": [
+        {
+          "group": "buttons",
+          "axes": [
+            "ks_buttons_any_u8",
+            "buttons_any_u8"
+          ]
+        },
+        {
+          "group": "direction",
+          "axes": [
+            "ks_hat_u8",
+            "hat_u8"
+          ]
+        }
+      ],
+      "required_min_report_len": 31,
+      "success": true,
+      "missing_requirements": [],
+      "total_reports": 22889,
+      "parsed_reports": 22889,
+      "rejected_reports": 0,
+      "capture_input_format_reports": 22889,
+      "all_reports_have_capture_input_metadata": true,
+      "product_ids": {
+        "0x0004": 22889
+      },
+      "parsed_by_category": {
+        "wheelbase": 22889
+      },
+      "report_ids": {
+        "0x01": 22889
+      },
+      "report_lengths": {
+        "42": 22889
+      },
+      "axis_ranges": {
+        "brake_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "buttons0_u8": {
+          "min": 8,
+          "max": 40
+        },
+        "buttons_any_u8": {
+          "min": 8,
+          "max": 200
+        },
+        "clutch_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "funky_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "handbrake_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "hat_u8": {
+          "min": 0,
+          "max": 4
+        },
+        "ks_buttons_any_u8": {
+          "min": 8,
+          "max": 200
+        },
+        "ks_hat_u8": {
+          "min": 0,
+          "max": 4
+        },
+        "r5_v1_extended_aux0_u16": {
+          "min": 0,
+          "max": 65533
+        },
+        "r5_v1_extended_aux1_u16": {
+          "min": 0,
+          "max": 49706
+        },
+        "r5_v1_extended_axis0_u16": {
+          "min": 32768,
+          "max": 32768
+        },
+        "r5_v1_extended_axis1_u16": {
+          "min": 32769,
+          "max": 32769
+        },
+        "r5_v1_extended_axis2_u16": {
+          "min": 32768,
+          "max": 32768
+        },
+        "r5_v1_extended_ks_axis0_u16": {
+          "min": 0,
+          "max": 65113
+        },
+        "rotary0_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "rotary1_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "steering_u16": {
+          "min": 29626,
+          "max": 33711
+        },
+        "throttle_u16": {
+          "min": 32768,
+          "max": 32768
+        }
+      }
+    },
+    {
+      "capture": "captures/es-controls.jsonl",
+      "fixture_id": "es_controls",
+      "required_category": "wheelbase",
+      "required_product_ids": [
+        "0x0004"
+      ],
+      "required_axis_variation": [],
+      "required_axis_values": [],
+      "required_any_axis_variation": [
+        {
+          "group": "buttons",
+          "axes": [
+            "buttons_any_u8"
+          ]
+        }
+      ],
+      "required_min_report_len": 31,
+      "success": true,
+      "missing_requirements": [],
+      "total_reports": 5514,
+      "parsed_reports": 5514,
+      "rejected_reports": 0,
+      "capture_input_format_reports": 5514,
+      "all_reports_have_capture_input_metadata": true,
+      "product_ids": {
+        "0x0004": 5514
+      },
+      "parsed_by_category": {
+        "wheelbase": 5514
+      },
+      "report_ids": {
+        "0x01": 5514
+      },
+      "report_lengths": {
+        "42": 5514
+      },
+      "axis_ranges": {
+        "brake_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "buttons0_u8": {
+          "min": 8,
+          "max": 136
+        },
+        "buttons_any_u8": {
+          "min": 8,
+          "max": 136
+        },
+        "clutch_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "funky_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "handbrake_u16": {
+          "min": 0,
+          "max": 0
+        },
+        "hat_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "ks_buttons_any_u8": {
+          "min": 8,
+          "max": 136
+        },
+        "ks_hat_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "r5_v1_extended_aux0_u16": {
+          "min": 0,
+          "max": 65527
+        },
+        "r5_v1_extended_aux1_u16": {
+          "min": 0,
+          "max": 49576
+        },
+        "r5_v1_extended_axis0_u16": {
+          "min": 32768,
+          "max": 32768
+        },
+        "r5_v1_extended_axis1_u16": {
+          "min": 32769,
+          "max": 32769
+        },
+        "r5_v1_extended_axis2_u16": {
+          "min": 32768,
+          "max": 32768
+        },
+        "r5_v1_extended_ks_axis0_u16": {
+          "min": 32769,
+          "max": 32769
+        },
+        "rotary0_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "rotary1_u8": {
+          "min": 0,
+          "max": 0
+        },
+        "steering_u16": {
+          "min": 31868,
+          "max": 32759
+        },
+        "throttle_u16": {
+          "min": 32768,
+          "max": 32768
+        }
+      }
+    }
+  ],
+  "notes": [
+    "validate-captures replays every required passive lane capture through Moza parsers only; no HID device is opened",
+    "success requires steering, pedal, handbrake, KS, and ES capture coverage, not a single idle capture"
+  ]
+}
