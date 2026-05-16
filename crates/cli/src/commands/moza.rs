@@ -8144,9 +8144,11 @@ fn push_smoke_ready_next_commands(
     }
 
     if !bundle_gate_check_passed(gates, "simulator_telemetry") {
+        let session_id = simulator_telemetry_session_id(lane);
         commands.push(format!(
-            "wheelctl telemetry record --game simhub-bridge --telemetry-source simhub_bridge --live-simhub --port 5555 --out {} --duration-ms 30000",
-            lane_path_arg(lane, "simulator-telemetry-recording.jsonl")
+            "wheelctl telemetry record --game simhub-bridge --telemetry-source simhub_bridge --live-simhub --port 5555 --out {} --session-id {} --duration-ms 30000",
+            lane_path_arg(lane, "simulator-telemetry-recording.jsonl"),
+            command_arg(&session_id)
         ));
         commands.push(format!(
             "wheelctl moza simulator-telemetry-proof --lane {lane_arg} --game simhub-bridge --telemetry-source simhub_bridge --recorder-artifact simulator-telemetry-recording.jsonl --duration-ms 30000 --json-out {}",
@@ -8297,6 +8299,30 @@ fn push_smoke_ready_next_commands(
         "wheelctl moza verify-bundle --lane {lane_arg} --stage smoke-ready --json-out {}",
         lane_path_arg(lane, verification_receipt_path(MozaBundleStage::SmokeReady))
     ));
+}
+
+fn simulator_telemetry_session_id(lane: &Path) -> String {
+    let suffix = lane
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .map(sanitize_session_id_component)
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "manual".to_string());
+    format!("simhub-bridge-{suffix}")
+}
+
+fn sanitize_session_id_component(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect()
 }
 
 fn pit_house_observation_receipt_is_safe(
@@ -35319,6 +35345,8 @@ mod tests {
         let commands = receipt.next_commands.join("\n");
         assert!(
             commands.contains("wheelctl telemetry record")
+                && commands.contains("--session-id")
+                && commands.contains("simhub-bridge-")
                 && commands.contains("wheelctl moza simulator-telemetry-proof")
                 && !commands.contains("wheelctl moza simulator-ffb-smoke"),
             "after visible-motion proof passes, guidance should advance only to telemetry: {commands}"
@@ -35483,6 +35511,16 @@ mod tests {
             .count();
         assert_eq!(observation_commands, 4);
         Ok(())
+    }
+
+    #[test]
+    fn simulator_telemetry_session_id_uses_lane_date() {
+        let lane = Path::new("ci/hardware/moza-r5/2026-05-13");
+
+        assert_eq!(
+            simulator_telemetry_session_id(lane),
+            "simhub-bridge-2026-05-13"
+        );
     }
 
     #[test]

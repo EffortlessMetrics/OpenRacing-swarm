@@ -76,6 +76,7 @@ wheelctl telemetry record `
   --live-simhub `
   --port 5555 `
   --out "$LANE/simulator-telemetry-recording.jsonl" `
+  --session-id "simhub-bridge-$DATE" `
   --duration-ms 30000
 ```
 
