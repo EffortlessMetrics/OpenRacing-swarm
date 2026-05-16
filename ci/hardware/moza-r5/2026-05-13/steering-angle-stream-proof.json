@@ -1,0 +1,74 @@
+{
+  "angle_degrees_max": 357.6186770428016,
+  "angle_degrees_min": -329.4218356603342,
+  "angle_units": "degrees",
+  "center_baseline_degrees": -0.8870737010757579,
+  "command": "wheelctl moza steering-stream-proof",
+  "degrees_of_rotation_assumption": 1080.0,
+  "device": {
+    "descriptor_source": "unavailable",
+    "feature_report_ids": [
+      "0x11",
+      "0x12",
+      "0x13",
+      "0xAF"
+    ],
+    "feature_reports": [],
+    "input_report_lengths": [
+      42
+    ],
+    "interface_number": 2,
+    "manufacturer": "Gudsen",
+    "output_capable": true,
+    "output_report_ids": [
+      "0x20"
+    ],
+    "output_reports": [
+      {
+        "report_id": "0x20",
+        "report_len": 8
+      }
+    ],
+    "path": "\\\\?\\HID#VID_346E&PID_0004&MI_02#8&6c29b84&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}",
+    "product_category": "wheelbase",
+    "product_id": "0x0004",
+    "product_name": "Moza R5",
+    "product_string": "MOZA R5 Base",
+    "r5_wheelbase_pid": true,
+    "report_metadata_source": "protocol_expected",
+    "serial_number_present": true,
+    "topology_hint": "wheelbase_aggregated",
+    "usage": "0x0004",
+    "usage_page": "0x0001",
+    "vendor_id": "0x346E"
+  },
+  "duration_ms": 10000,
+  "generated_at_utc": "2026-05-16T04:52:56Z",
+  "hardware_output_enabled": false,
+  "movement_observed": true,
+  "no_feature_reports": true,
+  "no_ffb_writes": true,
+  "no_firmware_or_dfu_commands": true,
+  "no_hid_device_opened": false,
+  "no_output_reports": true,
+  "no_serial_config_commands": true,
+  "notes": [
+    "steering-stream-proof opens the selected HID endpoint for input reads only",
+    "the command sends no output reports, feature reports, FFB writes, serial config, firmware, or DFU commands",
+    "degrees are scaled from the parsed steering_u16 range using the declared degrees_of_rotation assumption"
+  ],
+  "parsed_reports": 3555,
+  "read_timeout_ms": 20,
+  "receipt_path": "ci\\hardware\\moza-r5\\2026-05-13\\steering-angle-stream-proof.json",
+  "rejected_reports": 0,
+  "sample_artifact": "ci\\hardware\\moza-r5\\2026-05-13\\steering-angle-stream.jsonl",
+  "sample_artifact_records": 3555,
+  "sample_count": 3555,
+  "sample_rate_hz": 355.5,
+  "selector": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+  "sequence_monotonic": true,
+  "steering_u16_max": 54468,
+  "steering_u16_min": 12778,
+  "success": true,
+  "timestamps_monotonic": true
+}

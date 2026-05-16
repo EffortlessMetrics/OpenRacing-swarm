@@ -1,7 +1,7 @@
 {
   "success": true,
   "command": "wheelctl moza pre-output-readiness",
-  "generated_at_utc": "2026-05-16T03:14:26Z",
+  "generated_at_utc": "2026-05-16T04:54:34Z",
   "lane": "ci\\hardware\\moza-r5\\2026-05-13",
   "stage": "pre_output_readiness",
   "ready_for_zero_torque": true,
@@ -13,8 +13,7 @@
     "simulator_telemetry"
   ],
   "native_control_blocking_items": [
-    "native_actuator_profile_smoke",
-    "steering_angle_stream_proof"
+    "native_actuator_profile_smoke"
   ],
   "external_compatibility_blocking_items": [
     "pit_house_coexistence",
@@ -117,39 +116,35 @@
   },
   "openracing_control_verification": {
     "failed_gate_names": [
-      "steering_angle_stream_proof",
       "native_actuator_profile_smoke"
     ],
-    "failed_gates": 2,
+    "failed_gates": 1,
     "invalid_artifact_paths": [],
     "invalid_artifacts": 0,
     "missing_artifact_paths": [
-      "steering-angle-stream-proof.json",
       "native-actuator-profile-smoke.json"
     ],
-    "missing_artifacts": 2,
+    "missing_artifacts": 1,
     "requested_stage": "openracing_control_ready",
     "success": false
   },
   "smoke_ready_verification": {
     "failed_gate_names": [
-      "steering_angle_stream_proof",
       "native_actuator_profile_smoke",
       "pit_house_coexistence",
       "simulator_telemetry",
       "simulator_ffb_bounded"
     ],
-    "failed_gates": 5,
+    "failed_gates": 4,
     "invalid_artifact_paths": [],
     "invalid_artifacts": 0,
     "missing_artifact_paths": [
-      "steering-angle-stream-proof.json",
       "native-actuator-profile-smoke.json",
       "pit-house-coexistence.json",
       "simulator-telemetry-proof.json",
       "simulator-ffb-smoke.json"
     ],
-    "missing_artifacts": 5,
+    "missing_artifacts": 4,
     "requested_stage": "smoke_ready",
     "success": false
   },

@@ -1,12 +1,12 @@
 {
   "success": false,
   "command": "wheelctl moza verify-bundle",
-  "generated_at_utc": "2026-05-16T03:14:22Z",
+  "generated_at_utc": "2026-05-16T04:54:26Z",
   "lane": "ci\\hardware\\moza-r5\\2026-05-13",
   "requested_stage": "smoke_ready",
-  "missing_artifacts": 5,
+  "missing_artifacts": 4,
   "invalid_artifacts": 0,
-  "failed_gates": 5,
+  "failed_gates": 4,
   "artifacts": [
     {
       "path": "manifest.json",
@@ -255,12 +255,10 @@
       "path": "steering-angle-stream-proof.json",
       "kind": "json",
       "required_stage": "openracing_control_ready",
-      "exists": false,
-      "valid": false,
-      "status": "missing",
-      "notes": [
-        "expected ci\\hardware\\moza-r5\\2026-05-13\\steering-angle-stream-proof.json"
-      ]
+      "exists": true,
+      "valid": true,
+      "status": "pass",
+      "notes": []
     },
     {
       "path": "native-actuator-profile-smoke.json",
@@ -405,8 +403,8 @@
     },
     {
       "name": "steering_angle_stream_proof",
-      "status": "fail",
-      "details": "failed to read 'ci\\hardware\\moza-r5\\2026-05-13\\steering-angle-stream-proof.json'"
+      "status": "pass",
+      "details": "native steering angle stream recorded 3555 sample(s) with no output"
     },
     {
       "name": "native_actuator_profile_smoke",
@@ -601,7 +599,7 @@
     }
   ],
   "operator_actions": [
-    "Current OpenRacing-control frontier: native steering angle stream proof. Record same-endpoint steering feedback with no output reports, no FFB writes, no feature reports, no serial config, and no firmware/DFU before any native movement-control claim."
+    "Current OpenRacing-control frontier: native PIDFF actuator-profile smoke. Run only after steering feedback is proven, keep the force profile bounded, require final PIDFF Stop All cleanup, and keep SimHub and Pit House out of this native-control claim."
   ],
   "next_commands": [
     "wheelctl moza pre-output-readiness --lane ci\\hardware\\moza-r5\\2026-05-13 --json-out ci\\hardware\\moza-r5\\2026-05-13\\pre-output-readiness.json --json"
