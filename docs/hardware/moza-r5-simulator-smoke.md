@@ -65,6 +65,14 @@ wheelctl telemetry record `
   --duration-ms 30000
 ```
 
+If the live recorder reports `0 packet(s)`, no UDP traffic reached
+OpenRacing. Confirm the SimHub bridge/export is running and sending JSON UDP to
+this host on port `5555` before retrying. If packets arrive but the recorder
+reports parse errors, verify that the sender is emitting SimHub JSON fields such
+as `SpeedMs`, `Rpms`, `Gear`, `Throttle`, `Brake`, `Steer`, and `FFBValue`.
+The recorder intentionally writes no lane artifact until at least one valid
+normalized snapshot is captured.
+
 If live SimHub is not available, `wheelctl telemetry record` can also stamp an
 existing JSON/JSONL file containing normalized telemetry snapshots by using
 `--input <normalized-telemetry-source.jsonl>` instead of `--live-simhub`.

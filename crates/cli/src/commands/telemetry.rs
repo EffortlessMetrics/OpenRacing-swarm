@@ -618,9 +618,13 @@ async fn record_live_simhub_snapshots_from_socket(
     }
 
     if snapshots.is_empty() {
-        return Err(anyhow!(
-            "live SimHub recording received {packets_received} packet(s) but no valid normalized snapshots"
-        ));
+        return Err(anyhow!(live_simhub_empty_recording_message(
+            input_label,
+            output_path,
+            packets_received,
+            bytes_received,
+            parse_errors
+        )));
     }
     write_jsonl_values(output_path, &snapshots)?;
 
@@ -673,6 +677,32 @@ fn validate_record_metadata(game_id: &str, telemetry_source: &str) -> Result<()>
         .into());
     }
     Ok(())
+}
+
+fn live_simhub_empty_recording_message(
+    input_label: &str,
+    output_path: &str,
+    packets_received: u64,
+    bytes_received: u64,
+    parse_errors: u64,
+) -> String {
+    let mut message = format!(
+        "live SimHub recording listened on {input_label}, received {packets_received} packet(s), \
+         {bytes_received} byte(s), {parse_errors} parse error(s), and produced no valid \
+         normalized snapshots; no telemetry artifact was written to {output_path}"
+    );
+    if packets_received == 0 {
+        message.push_str(
+            "; start the SimHub bridge/export and configure it to send JSON UDP to this host on \
+             the selected port before retrying",
+        );
+    } else {
+        message.push_str(
+            "; UDP packets arrived, but none parsed as SimHub JSON; verify the sender emits fields \
+             such as SpeedMs, Rpms, Gear, Throttle, Brake, Steer, and FFBValue",
+        );
+    }
+    message
 }
 
 fn stamp_record_provenance(
@@ -2073,6 +2103,85 @@ mod tests {
             previous_timestamp = Some(timestamp);
             assert!(normalized_telemetry_payload_is_valid(record));
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn record_live_simhub_snapshots_explains_empty_udp_capture() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let output = dir.path().join("recording.jsonl");
+        let listener =
+            UdpSocket::bind(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))).await?;
+        let listen_addr = listener.local_addr()?;
+        let input_label = format!("udp://{listen_addr}");
+
+        let result = record_live_simhub_snapshots_from_socket(
+            listener,
+            &input_label,
+            "simhub-bridge",
+            "simhub_bridge",
+            output.to_str().ok_or("output path not UTF-8")?,
+            Some("live-session-001"),
+            25,
+            false,
+        )
+        .await;
+
+        let error = match result {
+            Ok(()) => return Err("record unexpectedly accepted empty live SimHub capture".into()),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains(&input_label));
+        assert!(error.contains("received 0 packet(s)"));
+        assert!(error.contains("0 parse error(s)"));
+        assert!(error.contains("no telemetry artifact was written"));
+        assert!(error.contains("configure it to send JSON UDP"));
+        assert!(!output.exists());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn record_live_simhub_snapshots_explains_invalid_udp_packets() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let output = dir.path().join("recording.jsonl");
+        let listener =
+            UdpSocket::bind(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))).await?;
+        let listen_addr = listener.local_addr()?;
+        let output_for_task = output.clone();
+        let input_label = format!("udp://{listen_addr}");
+
+        let task = tokio::spawn(async move {
+            record_live_simhub_snapshots_from_socket(
+                listener,
+                &input_label,
+                "simhub-bridge",
+                "simhub_bridge",
+                output_for_task
+                    .to_str()
+                    .ok_or_else(|| anyhow!("output path not UTF-8"))?,
+                Some("live-session-001"),
+                75,
+                false,
+            )
+            .await
+        });
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let sender =
+            UdpSocket::bind(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))).await?;
+        sender.send_to(b"not-json", listen_addr).await?;
+
+        let result = task.await?;
+        let error = match result {
+            Ok(()) => return Err("record unexpectedly accepted invalid SimHub packets".into()),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("received 1 packet(s)"));
+        assert!(error.contains("1 parse error(s)"));
+        assert!(error.contains("UDP packets arrived"));
+        assert!(error.contains("SpeedMs"));
+        assert!(error.contains("FFBValue"));
+        assert!(!output.exists());
         Ok(())
     }
 
