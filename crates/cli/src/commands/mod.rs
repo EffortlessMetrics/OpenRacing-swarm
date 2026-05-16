@@ -996,7 +996,15 @@ pub enum MozaBundleStage {
     Passive,
     /// Passive evidence plus real zero-torque, watchdog, and disconnect proof
     Zero,
-    /// Complete real hardware plus simulator smoke evidence
+    /// OpenRacing-owned native control receipts without external compatibility gates
+    #[value(
+        name = "openracing-control-ready",
+        alias = "native-control-ready",
+        alias = "openracing_control_ready",
+        alias = "native_control_ready"
+    )]
+    OpenRacingControlReady,
+    /// Native control plus external simulator and vendor coexistence evidence
     SmokeReady,
 }
 

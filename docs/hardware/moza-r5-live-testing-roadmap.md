@@ -264,9 +264,10 @@ Do not skip steps.
 2. Zero-output safety receipts
 3. Watchdog, disconnect, and final-zero receipts
 4. Bounded low-torque proof
-5. Pit House coexistence
-6. Simulator telemetry only
-7. Bounded simulator-to-Moza FFB smoke
+5. Native steering input proof
+6. Native actuator profile smoke
+7. Optional simulator telemetry / SimHub compatibility
+8. Optional Pit House coexistence and release compatibility
 ```
 
 The first output test must be zero output only:
@@ -280,16 +281,19 @@ The first output test must be zero output only:
 The first non-zero output test must be bounded low torque only:
 
 - same-lane passive and zero receipts already present
-- descriptor-trusted direct report `0x20` metadata present
-- same-lane `direct_report_0x20` zero proof accepted by `torque-test`
-- no generated `--explicit-operator-override`; any override is a separate manual operator decision
+- explicit output strategy selected
+- direct path requires descriptor-trusted direct report `0x20` metadata and a same-lane `direct_report_0x20` zero proof accepted by `torque-test`
+- live R5 V1 path uses descriptor-proven PIDFF bounded effects, same-lane PIDFF Stop All zero proof, off/standard init receipts, and final Stop All cleanup
+- no generated `--explicit-operator-override`; any direct-path override is a separate manual operator decision
 - hard output cap
 - final-zero proof
 - no high torque
 
-Simulator FFB smoke is last. It requires passive, zero, low-torque, Pit House,
-and simulator telemetry receipts first. The virtual FFB output log flow is a
-planning and rehearsal tool only; it is not real simulator-to-device evidence.
+Native OpenRacing movement proof comes before optional simulator or vendor-app
+compatibility. Simulator FFB smoke requires passive, zero, low-torque, and the
+chosen input-source receipt first; Pit House remains a separate
+coexistence/release gate. The virtual FFB output log flow is a planning and
+rehearsal tool only; it is not real simulator-to-device evidence.
 
 ## Stop Conditions
 

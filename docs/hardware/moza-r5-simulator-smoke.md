@@ -1,4 +1,10 @@
-# Moza R5 Simulator Smoke Runbook
+# Moza R5 Simulator Compatibility Smoke Runbook
+
+This runbook is for the optional simulator-adapter compatibility path. It is
+not a prerequisite for native OpenRacing movement control. That native claim
+must be proven separately by R5 HID input, native steering feedback,
+OpenRacing force generation, bounded PIDFF output, and cleanup receipts without
+SimHub or Pit House.
 
 This runbook prepares the first simulator path for the Moza R5 lane. It is not
 a release procedure and it does not prove broad simulator support.
@@ -8,9 +14,12 @@ Run simulator work in two stages:
 1. telemetry-only proof
 2. bounded simulator-to-Moza FFB smoke
 
-Do not run the bounded FFB smoke until passive, zero-output, low-torque, Pit
-House, watchdog, disconnect, and final-zero safety receipts exist in the same
-dated lane.
+Do not run the bounded FFB smoke until passive, zero-output, watchdog,
+disconnect, final-zero, staged init, service/status, low-torque, and simulator
+telemetry receipts exist in the same dated lane. Pit House coexistence is a
+separate smoke-ready promotion gate; it does not block the first
+OpenRacing-controlled bounded FFB smoke when Pit House is not installed or not
+running.
 
 ## Preferred First Source
 
@@ -39,10 +48,15 @@ Before bounded FFB smoke:
 - `watchdog-proof.json` passed
 - `disconnect-proof.json` passed
 - `low-torque-proof.json` passed
-- Pit House coexistence receipts needed before smoke are present
-- direct report `0x20` descriptor trust is established or a deliberate explicit
-  operator override is recorded
+- `simulator-telemetry-proof.json` passed
+- `moza-status.json`, `device-status.json`, and `support-bundle.json` are
+  refreshed and still diagnostic/no-output receipts
+- the selected output strategy has descriptor trust. The live R5 V1 lane uses
+  `--strategy pidff-bounded-effect`; direct report `0x20` remains
+  verifier-distinct and blocked until descriptor metadata proves that report
 - high torque is disabled
+- Pit House is closed, not installed, or otherwise not in a firmware/update
+  flow. Do not claim Pit House coexistence from this smoke.
 - wheel is mounted safely
 - e-stop / stop path is available
 
@@ -123,7 +137,9 @@ and operator rehearsal only; it is not a Moza receipt and cannot satisfy
 ## Bounded FFB Smoke
 
 Run this only after the same dated lane contains the hardware prerequisite
-receipts listed above.
+receipts listed above. This step proves one bounded OpenRacing-controlled
+simulator output path. It is not a Pit House coexistence claim and it is not a
+release-ready claim.
 
 Start the service writer for the same lane:
 
@@ -148,9 +164,10 @@ wheelctl moza simulator-ffb-smoke `
   --json-out "$LANE/simulator-ffb-smoke.json"
 ```
 
-Use `--explicit-operator-override` only when descriptor trust cannot be
-established and the operator is intentionally accepting that limited smoke-test
-risk. Do not use it for high torque.
+Do not use `--explicit-operator-override` for the live R5 V1 PIDFF smoke path.
+If a future lane deliberately validates the direct report `0x20` path, keep that
+receipt verifier-distinct from PIDFF and document the descriptor evidence before
+running it.
 
 The output log must prove:
 
