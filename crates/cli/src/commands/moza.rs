@@ -6450,6 +6450,16 @@ fn native_visible_smoke_failed_real_receipt_action(lane: &Path) -> Option<String
     let stop_all_sent = optional_bool_text(json_bool(&receipt, "final_stop_all_sent"));
     let no_direct = optional_bool_text(json_bool(&receipt, "no_direct_torque_reports"));
     let no_high_torque = optional_bool_text(json_bool(&receipt, "no_high_torque"));
+    if let Some(plan) = native_visible_follow_up_plan(lane) {
+        let review_decision =
+            json_string(&plan, "review_decision").unwrap_or("missing_review_decision");
+        let output_authorized = optional_bool_text(json_bool(&plan, "hardware_output_authorized"));
+        let force_escalation_authorized =
+            optional_bool_text(json_bool(&plan, "force_escalation_authorized"));
+        return Some(format!(
+            "Current smoke-ready frontier: native actuator visible-motion receipt exists but failed measured movement: movement_observed={movement_observed}, angle_delta_degrees={delta}, movement_threshold_degrees={threshold}. Final Stop All sent={stop_all_sent}, no direct report 0x20={no_direct}, no high torque={no_high_torque}. Follow-up plan exists at {NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE}: review_decision={review_decision}, hardware_output_authorized={output_authorized}, force_escalation_authorized={force_escalation_authorized}. Do not run output until the follow-up requirements are complete and a fresh bench-clear is recorded for the exact next output command."
+        ));
+    }
     Some(format!(
         "Current smoke-ready frontier: native actuator visible-motion receipt exists but failed measured movement: movement_observed={movement_observed}, angle_delta_degrees={delta}, movement_threshold_degrees={threshold}. Final Stop All sent={stop_all_sent}, no direct report 0x20={no_direct}, no high torque={no_high_torque}. Do not rerun, raise force, or replace native-actuator-visible-smoke.json from generated guidance; inspect the bench/setup/FFB mode and record a deliberate follow-up plan in {NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE} before another hardware-output attempt."
     ))
@@ -6467,6 +6477,10 @@ fn failed_real_native_visible_smoke_receipt(lane: &Path) -> Option<Value> {
     } else {
         None
     }
+}
+
+fn native_visible_follow_up_plan(lane: &Path) -> Option<Value> {
+    read_json_value(lane, NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE).ok()
 }
 
 fn optional_bool_text(value: Option<bool>) -> String {
@@ -35576,6 +35590,27 @@ mod tests {
                 && actions.contains("Do not rerun, raise force, or replace native-actuator-visible-smoke.json from generated guidance")
                 && actions.contains(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE),
             "failed visible-motion receipt should require engineering review before another output attempt: {actions}"
+        );
+
+        let mut follow_up_plan =
+            moza_receipt_template(MozaReceiptTemplateKind::VisibleMotionFollowUp);
+        follow_up_plan["template"] = serde_json::json!(false);
+        follow_up_plan["review_decision"] = serde_json::json!("no_output_retry_authorized");
+        follow_up_plan["hardware_output_authorized"] = serde_json::json!(false);
+        follow_up_plan["force_escalation_authorized"] = serde_json::json!(false);
+        write_test_json_file(
+            &dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE),
+            &follow_up_plan,
+        )?;
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let actions = receipt.operator_actions.join("\n");
+        assert!(
+            actions.contains("Follow-up plan exists")
+                && actions.contains("review_decision=no_output_retry_authorized")
+                && actions.contains("hardware_output_authorized=false")
+                && actions
+                    .contains("fresh bench-clear is recorded for the exact next output command"),
+            "existing follow-up plan should suppress stale plan-recording guidance: {actions}"
         );
 
         write_test_json_file(

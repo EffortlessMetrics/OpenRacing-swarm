@@ -1,0 +1,71 @@
+{
+  "command": "wheelctl moza receipt-template",
+  "do_not_rerun_from_generated_guidance": true,
+  "evidence_status": "engineering_review_recorded",
+  "force_escalation_authorized": false,
+  "generated_at_utc": "2026-05-16T18:16:51Z",
+  "hardware_output_authorized": false,
+  "max_percent_limit": 5,
+  "review_decision": "no_output_retry_authorized",
+  "reviewed_at_utc": "2026-05-16T18:17:03Z",
+  "reviewed_by": "Codex",
+  "notes": [
+    "Review artifact only: this file is not evidence that visible motion passed.",
+    "The failed visible-motion receipt is real hardware evidence and must be preserved before any later replacement.",
+    "No further hardware-output command is authorized by this artifact; fill planned_next_output only after bench/setup/FFB-mode review and a fresh bench-clear for the exact command."
+  ],
+  "observed_failure_summary": {
+    "angle_delta_degrees": 0.18127718013275285,
+    "final_stop_all_sent": true,
+    "movement_observed": false,
+    "movement_threshold_degrees": 1.0,
+    "no_direct_torque_reports": true,
+    "no_high_torque": true,
+    "post_stop_stable": true,
+    "prior_actuator_profile_smoke_validated": true,
+    "steering_proof_validated": true,
+    "write_attempts": 4,
+    "writes_ok": 4,
+    "write_errors": 0
+  },
+  "planned_next_output": {
+    "allowed": false,
+    "command": "",
+    "duration_ms": "not_authorized",
+    "force_percent": "not_authorized",
+    "must_preserve_failed_receipt": true,
+    "requires_fresh_bench_clear": true
+  },
+  "prior_receipt": "native-actuator-visible-smoke.json",
+  "replacement_receipt": "native-actuator-visible-smoke.json",
+  "required_before_next_output": [
+    {
+      "check": "bench_clearance",
+      "evidence": "Prior bench-clear was acknowledged before this review artifact existed and is not bound to an exact reviewed retry command.",
+      "status": "pending"
+    },
+    {
+      "check": "wheelbase_ffb_mode_and_vendor_state",
+      "evidence": "Failed receipt shows PIDFF writes and Stop All cleanup succeeded, but measured steering delta was 0.181 degrees below the 1.000 degree threshold; inspect bench setup and FFB/vendor state before any output.",
+      "status": "pending"
+    },
+    {
+      "check": "steering_input_stream_still_valid",
+      "evidence": "steering-angle-stream-proof.json passed before the failed run; refresh if USB, power, topology, wheelbase mode, or bench setup changed.",
+      "status": "prior_passed_refresh_if_changed"
+    },
+    {
+      "check": "failed_receipt_preserved_before_replacement",
+      "evidence": "native-actuator-visible-smoke.json is committed as the failed real receipt; preserve or archive it before any deliberate replacement.",
+      "status": "current_failed_receipt_recorded"
+    },
+    {
+      "check": "fresh_operator_bench_clear_for_exact_next_output_command",
+      "evidence": "No exact next output command is authorized in this artifact.",
+      "status": "pending"
+    }
+  ],
+  "review_scope": "native_actuator_visible_motion_failure",
+  "success": false,
+  "template": false
+}
