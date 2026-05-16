@@ -1,0 +1,19 @@
+{
+  "case": "pit_house_closed",
+  "conflict_detected": false,
+  "evidence": "Pit House closed; existing init-off staged handshake remained ready without high torque or output reports.",
+  "high_torque": false,
+  "no_firmware_or_dfu_commands": true,
+  "no_serial_config_commands": true,
+  "observed": true,
+  "pit_house_observation_artifact": "pit-house-observation-closed.json",
+  "pit_house_state": "closed",
+  "result": "staged_handshake_ok",
+  "source_gate": "init_off_handshake",
+  "source_log": "feature_reports",
+  "source_receipt": "init-off.json",
+  "source_record_kinds": [
+    "ffb_mode"
+  ],
+  "staged_handshake_ready": true
+}

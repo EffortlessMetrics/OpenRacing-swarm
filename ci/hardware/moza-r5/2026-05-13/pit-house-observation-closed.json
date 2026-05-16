@@ -1,0 +1,17 @@
+{
+  "case": "pit_house_closed",
+  "command": "wheelctl moza pit-house-observation",
+  "evidence": "Pit House process/window snapshot showed no Pit House or MOZA process visible before staged handshake.",
+  "evidence_artifact": "pit-house-evidence-closed.json",
+  "evidence_kind": "process_window_snapshot",
+  "generated_at_utc": "2026-05-16T18:40:14Z",
+  "no_ffb_writes": true,
+  "no_firmware_or_dfu_commands": true,
+  "no_hid_device_opened": true,
+  "no_serial_config_commands": true,
+  "observed": true,
+  "observed_at_utc": "2026-05-16T18:40:14Z",
+  "operator": "Steven",
+  "pit_house_observed_state": "closed",
+  "success": true
+}

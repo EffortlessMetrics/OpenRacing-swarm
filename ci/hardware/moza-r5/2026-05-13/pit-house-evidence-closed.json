@@ -1,0 +1,18 @@
+{
+  "success": true,
+  "command": "powershell Get-Process filtered for Pit House/MOZA process-window snapshot",
+  "generated_at_utc": "2026-05-16T18:38:07Z",
+  "case": "pit_house_closed",
+  "evidence_kind": "process_window_snapshot",
+  "query_scope": "matching processes only; no full process list captured",
+  "process_name_pattern": "moza|pit|pithouse",
+  "window_title_pattern": "MOZA|Pit House|Pithouse",
+  "matched_process_count": 0,
+  "matched_processes": [],
+  "pit_house_process_visible": false,
+  "conclusion": "Pit House process/window not visible before OpenRacing staged handshake.",
+  "no_hid_device_opened": true,
+  "no_ffb_writes": true,
+  "no_serial_config_commands": true,
+  "no_firmware_or_dfu_commands": true
+}

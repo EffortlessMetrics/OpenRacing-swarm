@@ -3538,7 +3538,8 @@ async fn pit_house_case(request: PitHouseCaseRequest<'_>) -> Result<()> {
     }
 
     let observation_artifact = lane_relative_artifact_path(lane, observation_artifact)?;
-    let receipt = pit_house_case_artifact_receipt(case, &observation_artifact, evidence);
+    let mut receipt = pit_house_case_artifact_receipt(case, &observation_artifact, evidence);
+    align_pit_house_init_source_record_kinds(lane, &mut receipt);
     let case_id = pit_house_observation_case_id(case);
     if !pit_house_case_observation_is_safe(lane, &receipt, case_id) {
         return Err(anyhow!(
@@ -14529,6 +14530,41 @@ fn pit_house_case_artifact_receipt(
             "evidence": evidence
         }),
     }
+}
+
+fn align_pit_house_init_source_record_kinds(lane: &Path, artifact: &mut Value) {
+    let Some(case_id) = json_string(artifact, "case") else {
+        return;
+    };
+    if !matches!(case_id, "pit_house_closed" | "pit_house_open_idle_standard") {
+        return;
+    }
+    let Some(source_receipt) = json_string(artifact, "source_receipt") else {
+        return;
+    };
+    let Ok(source) = read_json_value(lane, source_receipt) else {
+        return;
+    };
+    if !pit_house_source_has_feature_report_kind(&source, "ffb_mode") {
+        return;
+    }
+    if pit_house_source_has_feature_report_kind(&source, "start_input_reports") {
+        return;
+    }
+
+    artifact["source_record_kinds"] = serde_json::json!(["ffb_mode"]);
+}
+
+fn pit_house_source_has_feature_report_kind(receipt: &Value, expected_kind: &str) -> bool {
+    receipt
+        .get("feature_reports")
+        .and_then(Value::as_array)
+        .map(|records| {
+            records
+                .iter()
+                .any(|record| json_string(record, "kind") == Some(expected_kind))
+        })
+        .unwrap_or(false)
 }
 
 fn pit_house_observation_case_id(case: MozaPitHouseObservationCase) -> &'static str {
@@ -31110,6 +31146,56 @@ mod tests {
 
         assert!(result.is_err());
         assert!(!output.exists());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn pit_house_case_accepts_r5_v1_mode_only_init_source() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_zero_torque_ready_r5_v1_manifest(dir.path())?;
+        write_test_json_file(
+            &dir.path()
+                .join(pit_house_observation_evidence_artifact("closed")),
+            &serde_json::json!({
+                "case": "pit_house_closed",
+                "pit_house_observed_state": "closed",
+                "captured_at_utc": "2026-05-06T00:00:00Z",
+                "source": "test_process_window_snapshot"
+            }),
+        )?;
+        write_test_json_file(
+            &dir.path().join("pit-house-observation-closed.json"),
+            &pit_house_observation_receipt("pit_house_closed", "closed"),
+        )?;
+        write_test_json_file(
+            &dir.path().join("init-off.json"),
+            &receipt_with_lane_path(dir.path(), "init-off.json", real_r5_v1_init_receipt("off")),
+        )?;
+        let output = dir.path().join("generated-closed.json");
+
+        pit_house_case(PitHouseCaseRequest {
+            json: false,
+            lane: dir.path(),
+            case: MozaPitHouseObservationCase::Closed,
+            observation_artifact: Path::new("pit-house-observation-closed.json"),
+            evidence: "Pit House closed state linked to R5 V1 mode-only init proof.",
+            json_out: &output,
+            overwrite: false,
+        })
+        .await?;
+
+        let artifact = read_json_path(&output)?;
+        assert_eq!(
+            artifact.get("source_record_kinds"),
+            Some(&serde_json::json!(["ffb_mode"]))
+        );
+        assert!(pit_house_case_artifact_is_safe(
+            dir.path(),
+            "generated-closed.json",
+            "pit_house_closed",
+            Some("staged_handshake_ok"),
+            SupportBundleValidationMode::Fresh
+        ));
         Ok(())
     }
 
