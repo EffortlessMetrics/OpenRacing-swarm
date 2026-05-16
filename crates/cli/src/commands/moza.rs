@@ -6311,7 +6311,7 @@ fn operator_actions_for_bundle_stage(
     }
 
     if stage == MozaBundleStage::SmokeReady && openracing_control_stage_gates_passed(gates) {
-        push_smoke_ready_frontier_operator_action(gates, &mut actions);
+        push_smoke_ready_frontier_operator_action(lane, gates, &mut actions);
     }
 
     actions
@@ -6400,8 +6400,16 @@ fn push_openracing_control_frontier_operator_action(
     }
 }
 
-fn push_smoke_ready_frontier_operator_action(gates: &[BundleGateCheck], actions: &mut Vec<String>) {
+fn push_smoke_ready_frontier_operator_action(
+    lane: &Path,
+    gates: &[BundleGateCheck],
+    actions: &mut Vec<String>,
+) {
     if !bundle_gate_check_passed(gates, "native_actuator_visible_smoke") {
+        if let Some(action) = native_visible_smoke_failed_real_receipt_action(lane) {
+            actions.push(action);
+            return;
+        }
         actions.push(
             "Current smoke-ready frontier: native actuator visible-motion proof. Run the bounded PIDFF visible-motion stage only after the 1% actuator-profile and steering stream proofs pass; it must prove actual steering delta, final Stop All cleanup, no direct report 0x20, no high torque, no feature reports, no serial config, and no firmware/DFU commands."
                 .to_string(),
@@ -6431,6 +6439,46 @@ fn push_smoke_ready_frontier_operator_action(gates: &[BundleGateCheck], actions:
                 .to_string(),
         );
     }
+}
+
+fn native_visible_smoke_failed_real_receipt_action(lane: &Path) -> Option<String> {
+    let receipt = failed_real_native_visible_smoke_receipt(lane)?;
+    let movement_observed = optional_bool_text(json_bool(&receipt, "movement_observed"));
+    let delta = optional_f64_text(json_f64(&receipt, "angle_delta_degrees"));
+    let threshold = optional_f64_text(json_f64(&receipt, "movement_threshold_degrees"));
+    let stop_all_sent = optional_bool_text(json_bool(&receipt, "final_stop_all_sent"));
+    let no_direct = optional_bool_text(json_bool(&receipt, "no_direct_torque_reports"));
+    let no_high_torque = optional_bool_text(json_bool(&receipt, "no_high_torque"));
+    Some(format!(
+        "Current smoke-ready frontier: native actuator visible-motion receipt exists but failed measured movement: movement_observed={movement_observed}, angle_delta_degrees={delta}, movement_threshold_degrees={threshold}. Final Stop All sent={stop_all_sent}, no direct report 0x20={no_direct}, no high torque={no_high_torque}. Do not rerun, raise force, or replace native-actuator-visible-smoke.json from generated guidance; inspect the bench/setup/FFB mode and record a deliberate follow-up plan before another hardware-output attempt."
+    ))
+}
+
+fn failed_real_native_visible_smoke_receipt(lane: &Path) -> Option<Value> {
+    let receipt = read_json_value(lane, "native-actuator-visible-smoke.json").ok()?;
+    let real_failed_visible_receipt = json_string(&receipt, "command")
+        == Some("wheelctl moza actuator-visible-smoke")
+        && json_bool(&receipt, "success") == Some(false)
+        && json_bool(&receipt, "dry_run") != Some(true)
+        && json_bool(&receipt, "hardware_output_enabled") == Some(true);
+    if real_failed_visible_receipt {
+        Some(receipt)
+    } else {
+        None
+    }
+}
+
+fn optional_bool_text(value: Option<bool>) -> String {
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "missing".to_string())
+}
+
+fn optional_f64_text(value: Option<f64>) -> String {
+    value
+        .filter(|value| value.is_finite())
+        .map(|value| format!("{value:.3}"))
+        .unwrap_or_else(|| "missing".to_string())
 }
 
 fn audit_lane_dir(lane: &Path, stage: MozaBundleStage) -> LaneAuditReceipt {
@@ -8057,6 +8105,13 @@ fn push_smoke_ready_next_commands(
     let r5_selector = next_command_r5_selector(lane);
 
     if !bundle_gate_check_passed(gates, "native_actuator_visible_smoke") {
+        if failed_real_native_visible_smoke_receipt(lane).is_some() {
+            commands.push(format!(
+                "wheelctl moza pre-output-readiness --lane {lane_arg} --json-out {} --json",
+                lane_path_arg(lane, "pre-output-readiness.json")
+            ));
+            return;
+        }
         commands.push(format!(
             "wheelctl moza actuator-visible-smoke --device {r5_selector} --lane {lane_arg} --prior-actuator-proof {} --steering-proof {} --profile constant-low-force --strategy pidff-bounded-effect --max-percent 5 --duration-ms 2000 --confirm-actuator-visible --json-out {} --json",
             lane_path_arg(lane, "native-actuator-profile-smoke.json"),
@@ -24909,6 +24964,20 @@ mod tests {
         Value::Object(receipt)
     }
 
+    fn failed_native_actuator_visible_smoke_receipt(root: &Path, pid: u16) -> Value {
+        let mut receipt = native_actuator_visible_smoke_receipt(root, pid);
+        receipt["success"] = serde_json::json!(false);
+        receipt["movement_observed"] = serde_json::json!(false);
+        receipt["angle_min_degrees"] = serde_json::json!(-15.219043259327083);
+        receipt["angle_max_degrees"] = serde_json::json!(-15.03776607919433);
+        receipt["angle_delta_degrees"] = serde_json::json!(0.18127718013275285);
+        receipt["post_stop_stable"] = serde_json::json!(true);
+        receipt["post_stop_sample_count"] = serde_json::json!(124);
+        receipt["steering_sample_count"] = serde_json::json!(992);
+        receipt["duration_ms"] = serde_json::json!(2000);
+        receipt
+    }
+
     #[test]
     fn r5_v1_pidff_set_effect_payload_matches_live_descriptor_layout() -> TestResult {
         let payload =
@@ -34965,6 +35034,20 @@ mod tests {
 
         write_test_json_file(
             &dir.path().join("native-actuator-visible-smoke.json"),
+            &failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V2),
+        )?;
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let commands = receipt.next_commands.join("\n");
+        assert!(
+            commands.contains("wheelctl moza pre-output-readiness")
+                && !commands.contains("wheelctl moza actuator-visible-smoke")
+                && !commands.contains("wheelctl telemetry record")
+                && !commands.contains("wheelctl moza simulator-ffb-smoke"),
+            "after a real visible-motion receipt fails, generated guidance must not rerun output automatically: {commands}"
+        );
+
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
             &native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V2),
         )?;
         let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
@@ -35367,6 +35450,20 @@ mod tests {
                 && actions.contains("actual steering delta")
                 && actions.contains("final Stop All cleanup"),
             "visible-motion frontier should follow the 1% native actuator proof: {actions}"
+        );
+
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V2),
+        )?;
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let actions = receipt.operator_actions.join("\n");
+        assert!(
+            actions.contains("native actuator visible-motion receipt exists but failed measured movement")
+                && actions.contains("angle_delta_degrees=0.181")
+                && actions.contains("movement_threshold_degrees=1.000")
+                && actions.contains("Do not rerun, raise force, or replace native-actuator-visible-smoke.json from generated guidance"),
+            "failed visible-motion receipt should require engineering review before another output attempt: {actions}"
         );
 
         write_test_json_file(

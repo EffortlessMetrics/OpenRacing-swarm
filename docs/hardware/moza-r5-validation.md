@@ -153,11 +153,11 @@ proves the OpenRacing-owned PIDFF output rail and cleanup path; smoke-ready
 also requires a separate 5 percent native actuator visible-motion receipt that
 proves actual steering delta from R5 input. `ready_for_native_control` is the
 OpenRacing-owned movement path and must not depend on SimHub, Pit House, or
-direct report `0x20`; until steering-angle stream and native actuator-profile
-receipts exist it remains false. `ready_for_external_compatibility` tracks
-optional simulator bridge and vendor-app coexistence receipts. `ready_for_ffb`
-remains the simulator-smoke preflight and stays false until visible motion and
-simulator telemetry are present.
+direct report `0x20`; the 2026-05-13 lane has reached this native-control state
+without claiming visible-motion success. `ready_for_external_compatibility`
+tracks optional simulator bridge and vendor-app coexistence receipts.
+`ready_for_ffb` remains the simulator-smoke preflight and stays false until a
+passing visible-motion receipt and simulator telemetry are present.
 
 If Windows cannot expose the raw HID report descriptor, paste descriptor hex
 from USBTreeView, USBPcap/Wireshark enumeration traffic, or an equivalent
@@ -480,7 +480,7 @@ wheelctl moza receipt-template --kind simulator-ffb --json-out ci/hardware/moza-
 These templates also default to `success: false` and must not be used as evidence until a real telemetry recording or bounded FFB smoke run fills the fields.
 The simulator FFB template includes operator-pending `prerequisite_gates`, same-lane `prerequisite_artifacts`, telemetry session, and writer timing placeholders so the required provenance fields are visible before the real run.
 
-After native visible-motion, simulator, and Pit House receipts exist, write the stored smoke-ready verification receipt:
+After passing native visible-motion, simulator, and Pit House receipts exist, write the stored smoke-ready verification receipt:
 
 ```powershell
 wheelctl moza verify-bundle --lane ci/hardware/moza-r5/<date> --stage smoke-ready --json-out ci/hardware/moza-r5/<date>/smoke-ready-verification.json
