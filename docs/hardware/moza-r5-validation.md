@@ -470,14 +470,15 @@ wheeld --hardware-lane ci/hardware/moza-r5/<date>
 wheelctl moza simulator-ffb-smoke --lane ci/hardware/moza-r5/<date> --game simhub-bridge --telemetry-source simhub_bridge --output-log-artifact simulator-ffb-output.jsonl --strategy pidff-bounded-effect --descriptor-trusted --watchdog-timeout-ms 100 --stop-cleared-output --pause-cleared-output --game-exit-cleared-output --json-out ci/hardware/moza-r5/<date>/simulator-ffb-smoke.json
 ```
 
-Starter templates are available for offline preparation of the two simulator receipts:
+Starter templates are available for the failed visible-motion follow-up review and offline preparation of the two simulator receipts:
 
 ```powershell
+wheelctl moza receipt-template --kind visible-motion-follow-up --json-out ci/hardware/moza-r5/<date>/native-actuator-visible-follow-up-plan.json
 wheelctl moza receipt-template --kind simulator-telemetry --json-out ci/hardware/moza-r5/<date>/simulator-telemetry-proof.json
 wheelctl moza receipt-template --kind simulator-ffb --json-out ci/hardware/moza-r5/<date>/simulator-ffb-smoke.json
 ```
 
-These templates also default to `success: false` and must not be used as evidence until a real telemetry recording or bounded FFB smoke run fills the fields.
+These templates also default to `success: false`. The visible-motion follow-up template is only a review artifact after a failed real visible-motion receipt; it does not authorize another output attempt, replace the failed receipt, or satisfy the visible-motion gate. The simulator templates must not be used as evidence until a real telemetry recording or bounded FFB smoke run fills the fields.
 The simulator FFB template includes operator-pending `prerequisite_gates`, same-lane `prerequisite_artifacts`, telemetry session, and writer timing placeholders so the required provenance fields are visible before the real run.
 
 After passing native visible-motion, simulator, and Pit House receipts exist, write the stored smoke-ready verification receipt:

@@ -1141,6 +1141,8 @@ pub enum MozaActuatorProfile {
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MozaReceiptTemplateKind {
+    /// Native visible-motion failure follow-up plan
+    VisibleMotionFollowUp,
     /// Pit House coexistence matrix receipt
     PitHouse,
     /// Telemetry-only real simulator receipt

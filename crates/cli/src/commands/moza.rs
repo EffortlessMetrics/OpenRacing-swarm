@@ -78,6 +78,7 @@ const PIDFF_EFFECT_SETUP_CLASSIFICATION: &str = "pidff_effect_setup";
 const PIDFF_BOUNDED_EFFECT_CLASSIFICATION: &str = "bounded_low_torque_pidff";
 const PIDFF_STOP_ALL_CLEANUP_CLASSIFICATION: &str = "pidff_stop_all_cleanup";
 const PIDFF_PLANNED_STOP_ALL_CLASSIFICATION: &str = "planned_pidff_stop_all";
+const NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE: &str = "native-actuator-visible-follow-up-plan.json";
 const R5_V1_LIVE_OUTPUT_REPORTS: &[(&str, usize)] = &[
     ("0x01", 22),
     ("0x02", 14),
@@ -6450,7 +6451,7 @@ fn native_visible_smoke_failed_real_receipt_action(lane: &Path) -> Option<String
     let no_direct = optional_bool_text(json_bool(&receipt, "no_direct_torque_reports"));
     let no_high_torque = optional_bool_text(json_bool(&receipt, "no_high_torque"));
     Some(format!(
-        "Current smoke-ready frontier: native actuator visible-motion receipt exists but failed measured movement: movement_observed={movement_observed}, angle_delta_degrees={delta}, movement_threshold_degrees={threshold}. Final Stop All sent={stop_all_sent}, no direct report 0x20={no_direct}, no high torque={no_high_torque}. Do not rerun, raise force, or replace native-actuator-visible-smoke.json from generated guidance; inspect the bench/setup/FFB mode and record a deliberate follow-up plan before another hardware-output attempt."
+        "Current smoke-ready frontier: native actuator visible-motion receipt exists but failed measured movement: movement_observed={movement_observed}, angle_delta_degrees={delta}, movement_threshold_degrees={threshold}. Final Stop All sent={stop_all_sent}, no direct report 0x20={no_direct}, no high torque={no_high_torque}. Do not rerun, raise force, or replace native-actuator-visible-smoke.json from generated guidance; inspect the bench/setup/FFB mode and record a deliberate follow-up plan in {NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE} before another hardware-output attempt."
     ))
 }
 
@@ -8106,6 +8107,12 @@ fn push_smoke_ready_next_commands(
 
     if !bundle_gate_check_passed(gates, "native_actuator_visible_smoke") {
         if failed_real_native_visible_smoke_receipt(lane).is_some() {
+            if !lane.join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE).exists() {
+                commands.push(format!(
+                    "wheelctl moza receipt-template --kind visible-motion-follow-up --json-out {} --json",
+                    lane_path_arg(lane, NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE)
+                ));
+            }
             commands.push(format!(
                 "wheelctl moza pre-output-readiness --lane {lane_arg} --json-out {} --json",
                 lane_path_arg(lane, "pre-output-readiness.json")
@@ -16419,6 +16426,68 @@ fn moza_lane_manifest_value(
 
 fn moza_receipt_template(kind: MozaReceiptTemplateKind) -> Value {
     match kind {
+        MozaReceiptTemplateKind::VisibleMotionFollowUp => serde_json::json!({
+            "success": false,
+            "template": true,
+            "evidence_status": "engineering_review_pending",
+            "command": "wheelctl moza receipt-template",
+            "generated_at_utc": now_utc(),
+            "review_scope": "native_actuator_visible_motion_failure",
+            "prior_receipt": "native-actuator-visible-smoke.json",
+            "replacement_receipt": "native-actuator-visible-smoke.json",
+            "do_not_rerun_from_generated_guidance": true,
+            "hardware_output_authorized": false,
+            "force_escalation_authorized": false,
+            "max_percent_limit": 5,
+            "observed_failure_summary": {
+                "movement_observed": false,
+                "angle_delta_degrees": "copy_from_failed_receipt",
+                "movement_threshold_degrees": "copy_from_failed_receipt",
+                "final_stop_all_sent": "copy_from_failed_receipt",
+                "no_direct_torque_reports": "copy_from_failed_receipt",
+                "no_high_torque": "copy_from_failed_receipt"
+            },
+            "required_before_next_output": [
+                {
+                    "check": "bench_clearance",
+                    "status": "pending",
+                    "evidence": ""
+                },
+                {
+                    "check": "wheelbase_ffb_mode_and_vendor_state",
+                    "status": "pending",
+                    "evidence": ""
+                },
+                {
+                    "check": "steering_input_stream_still_valid",
+                    "status": "pending",
+                    "evidence": ""
+                },
+                {
+                    "check": "failed_receipt_preserved_before_replacement",
+                    "status": "pending",
+                    "evidence": ""
+                },
+                {
+                    "check": "fresh_operator_bench_clear_for_exact_next_output_command",
+                    "status": "pending",
+                    "evidence": ""
+                }
+            ],
+            "planned_next_output": {
+                "allowed": false,
+                "command": "",
+                "requires_fresh_bench_clear": true,
+                "must_preserve_failed_receipt": true,
+                "force_percent": "not_authorized",
+                "duration_ms": "not_authorized"
+            },
+            "notes": [
+                "Template only: this file is a review surface, not evidence that visible motion passed.",
+                "Do not use generated smoke-ready guidance to rerun, raise force, or replace the failed visible-motion receipt.",
+                "Only fill planned_next_output after the failure has been reviewed and the operator gives a fresh bench-clear for the exact command."
+            ]
+        }),
         MozaReceiptTemplateKind::PitHouse => serde_json::json!({
             "success": false,
             "template": true,
@@ -21248,6 +21317,7 @@ fn print_init_lane_receipt(json: bool, receipt: &InitLaneReceipt) -> Result<()> 
 
 fn receipt_template_kind_label(kind: MozaReceiptTemplateKind) -> &'static str {
     match kind {
+        MozaReceiptTemplateKind::VisibleMotionFollowUp => "native visible-motion follow-up",
         MozaReceiptTemplateKind::PitHouse => "Pit House coexistence",
         MozaReceiptTemplateKind::SimulatorTelemetry => "simulator telemetry",
         MozaReceiptTemplateKind::SimulatorFfb => "simulator FFB smoke",
@@ -31432,9 +31502,17 @@ mod tests {
     #[tokio::test]
     async fn receipt_template_writes_verifier_rejected_simulator_templates() -> TestResult {
         let dir = tempfile::tempdir()?;
+        let follow_up_path = dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE);
         let telemetry_path = dir.path().join("simulator-telemetry-proof.json");
         let ffb_path = dir.path().join("simulator-ffb-smoke.json");
 
+        receipt_template(
+            false,
+            MozaReceiptTemplateKind::VisibleMotionFollowUp,
+            &follow_up_path,
+            false,
+        )
+        .await?;
         receipt_template(
             false,
             MozaReceiptTemplateKind::SimulatorTelemetry,
@@ -31450,8 +31528,26 @@ mod tests {
         )
         .await?;
 
+        let follow_up = read_json_path(&follow_up_path)?;
         let telemetry = read_json_path(&telemetry_path)?;
         let ffb = read_json_path(&ffb_path)?;
+        assert_eq!(json_bool(&follow_up, "success"), Some(false));
+        assert_eq!(
+            json_string(&follow_up, "review_scope"),
+            Some("native_actuator_visible_motion_failure")
+        );
+        assert_eq!(
+            json_bool(&follow_up, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&follow_up, "force_escalation_authorized"),
+            Some(false)
+        );
+        assert_eq!(
+            json_string(&follow_up, "prior_receipt"),
+            Some("native-actuator-visible-smoke.json")
+        );
         assert_eq!(json_bool(&telemetry, "success"), Some(false));
         assert_eq!(json_bool(&ffb, "success"), Some(false));
         assert_eq!(json_bool(&telemetry, "no_ffb_writes"), Some(true));
@@ -35039,11 +35135,26 @@ mod tests {
         let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
         let commands = receipt.next_commands.join("\n");
         assert!(
-            commands.contains("wheelctl moza pre-output-readiness")
+            commands.contains("wheelctl moza receipt-template --kind visible-motion-follow-up")
+                && commands.contains(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE)
+                && commands.contains("wheelctl moza pre-output-readiness")
                 && !commands.contains("wheelctl moza actuator-visible-smoke")
                 && !commands.contains("wheelctl telemetry record")
                 && !commands.contains("wheelctl moza simulator-ffb-smoke"),
             "after a real visible-motion receipt fails, generated guidance must not rerun output automatically: {commands}"
+        );
+        write_test_json_file(
+            &dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::VisibleMotionFollowUp),
+        )?;
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let commands = receipt.next_commands.join("\n");
+        assert!(
+            commands.contains("wheelctl moza pre-output-readiness")
+                && !commands
+                    .contains("wheelctl moza receipt-template --kind visible-motion-follow-up")
+                && !commands.contains("wheelctl moza actuator-visible-smoke"),
+            "after the follow-up plan template exists, generated guidance should not overwrite it: {commands}"
         );
 
         write_test_json_file(
@@ -35462,7 +35573,8 @@ mod tests {
             actions.contains("native actuator visible-motion receipt exists but failed measured movement")
                 && actions.contains("angle_delta_degrees=0.181")
                 && actions.contains("movement_threshold_degrees=1.000")
-                && actions.contains("Do not rerun, raise force, or replace native-actuator-visible-smoke.json from generated guidance"),
+                && actions.contains("Do not rerun, raise force, or replace native-actuator-visible-smoke.json from generated guidance")
+                && actions.contains(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE),
             "failed visible-motion receipt should require engineering review before another output attempt: {actions}"
         );
 
