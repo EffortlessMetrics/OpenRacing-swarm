@@ -306,4 +306,167 @@ mod tests {
         assert_eq!(session.metadata.format_version, "1.0");
         Ok(())
     }
+
+    /// Helper: build a session with one record and return its first payload.
+    fn first_payload(vendor: &str) -> Result<Vec<u8>, String> {
+        let session = build_synthetic_session(vendor, 1)
+            .ok_or_else(|| format!("vendor {vendor} returned None"))?;
+        let record = session
+            .records
+            .first()
+            .ok_or_else(|| format!("vendor {vendor} produced no records"))?;
+        Ok(record.payload.clone())
+    }
+
+    #[test]
+    fn moza_first_record_byte_layout() -> Result<(), String> {
+        // frame=0: steering=0, throttle=0, brake=0
+        let payload = first_payload("moza")?;
+        assert_eq!(payload.len(), 63);
+        assert_eq!(&payload[0..4], &[0x00, 0x00, 0x00, 0x00]);
+        // Remaining bytes are zero.
+        assert!(payload[4..].iter().all(|b| *b == 0));
+        Ok(())
+    }
+
+    #[test]
+    fn fanatec_first_record_byte_layout() -> Result<(), String> {
+        // frame=0: steering=0x8000 LE, throttle/brake/clutch released=0xFF,
+        // padding+buttons=0, hat=0x0F.
+        let payload = first_payload("fanatec")?;
+        assert_eq!(payload.len(), 63);
+        assert_eq!(
+            &payload[0..9],
+            &[0x00, 0x80, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x0F]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn thrustmaster_first_record_byte_layout() -> Result<(), String> {
+        // frame=0: steering=0x8000 LE, axes/buttons=0, hat=0x0F, paddles=0.
+        let payload = first_payload("thrustmaster")?;
+        assert_eq!(payload.len(), 63);
+        assert_eq!(
+            &payload[0..9],
+            &[0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0F, 0x00]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn simagic_first_record_byte_layout() -> Result<(), String> {
+        // frame=0: steering=0x8000 LE, throttle=0.
+        let payload = first_payload("simagic")?;
+        assert_eq!(payload.len(), 63);
+        assert_eq!(&payload[0..4], &[0x00, 0x80, 0x00, 0x00]);
+        Ok(())
+    }
+
+    #[test]
+    fn cammus_first_record_byte_layout() -> Result<(), String> {
+        // frame=0: steering=0, throttle=0, brake=0, buttons=0.
+        let payload = first_payload("cammus")?;
+        assert_eq!(payload.len(), 63);
+        assert_eq!(
+            &payload[0..8],
+            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vrs_first_record_byte_layout() -> Result<(), String> {
+        // frame=0: steering=0, throttle=0.
+        let payload = first_payload("vrs")?;
+        assert_eq!(payload.len(), 63);
+        assert_eq!(&payload[0..4], &[0x00, 0x00, 0x00, 0x00]);
+        Ok(())
+    }
+
+    #[test]
+    fn leo_bodnar_first_record_byte_layout() -> Result<(), String> {
+        // frame=0: buf[0]=0, buf[1]=0.
+        let payload = first_payload("leo_bodnar")?;
+        assert_eq!(payload.len(), 31);
+        assert_eq!(&payload[0..2], &[0x00, 0x00]);
+        Ok(())
+    }
+
+    #[test]
+    fn cube_controls_first_record_byte_layout() -> Result<(), String> {
+        // frame=0: buf[0]=0, buf[1]=0.
+        let payload = first_payload("cube_controls")?;
+        assert_eq!(payload.len(), 31);
+        assert_eq!(&payload[0..2], &[0x00, 0x00]);
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_matching_is_case_insensitive() -> Result<(), String> {
+        for vendor in ["MOZA", "Fanatec", "ThrustMaster", "Leo_Bodnar"] {
+            assert!(
+                build_synthetic_session(vendor, 1).is_some(),
+                "vendor {vendor} should resolve case-insensitively"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_aliases_resolve() -> Result<(), String> {
+        // Underscore, no-separator, and space variants all resolve.
+        for vendor in [
+            "leobodnar",
+            "leo bodnar",
+            "leo_bodnar",
+            "cubecontrols",
+            "cube controls",
+            "cube_controls",
+        ] {
+            assert!(
+                build_synthetic_session(vendor, 1).is_some(),
+                "alias {vendor} should resolve"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn zero_record_session_is_empty() -> Result<(), String> {
+        let session = build_synthetic_session("fanatec", 0)
+            .ok_or_else(|| "fanatec returned None".to_owned())?;
+        assert!(session.records.is_empty());
+        assert!(session.metadata.synthetic);
+        Ok(())
+    }
+
+    #[test]
+    fn all_records_flow_device_to_host() -> Result<(), String> {
+        for vendor in supported_vendors() {
+            let session = build_synthetic_session(vendor, 5)
+                .ok_or_else(|| format!("vendor {vendor} returned None"))?;
+            for record in &session.records {
+                assert_eq!(
+                    record.direction,
+                    Direction::DeviceToHost,
+                    "vendor {vendor} produced a non-device-to-host record"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn successive_records_have_distinct_payloads() -> Result<(), String> {
+        // cube_controls frame=0 → [0, 0]; frame=1 → [1, 7]. Confirms the fill
+        // function actually varies with the frame index.
+        let session = build_synthetic_session("cube_controls", 2)
+            .ok_or_else(|| "cube_controls returned None".to_owned())?;
+        assert_eq!(session.records.len(), 2);
+        assert_eq!(&session.records[0].payload[0..2], &[0x00, 0x00]);
+        assert_eq!(&session.records[1].payload[0..2], &[0x01, 0x07]);
+        assert_ne!(session.records[0].payload, session.records[1].payload);
+        Ok(())
+    }
 }

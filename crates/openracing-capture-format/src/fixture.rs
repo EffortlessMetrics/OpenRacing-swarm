@@ -400,4 +400,185 @@ mod tests {
         assert!(json.contains("\"real_hardware_validated\":false"));
         Ok(())
     }
+
+    #[test]
+    fn fully_populated_builder_exposes_all_getters() -> Result<(), CaptureFixtureMetadataError> {
+        let metadata = CaptureFixtureMetadata::new(
+            0x346E,
+            0x0014,
+            CaptureKind::Sweep,
+            CaptureEvidenceSource::Real,
+        )
+        .with_interface_number(2)
+        .with_usage_page("0xFF00")?
+        .with_usage("0x0001")?
+        .with_report_descriptor_crc32("0xD8079D85")?
+        .with_real_hardware_validated(true)?;
+
+        assert_eq!(metadata.vendor_id(), "0x346E");
+        assert_eq!(metadata.product_id(), "0x0014");
+        assert_eq!(metadata.interface_number(), Some(2));
+        assert_eq!(metadata.usage_page(), Some("0xFF00"));
+        assert_eq!(metadata.usage(), Some("0x0001"));
+        assert_eq!(metadata.report_descriptor_crc32(), Some("0xD8079D85"));
+        assert_eq!(metadata.capture_kind(), CaptureKind::Sweep);
+        assert_eq!(metadata.hardware_source(), CaptureEvidenceSource::Real);
+        assert!(metadata.real_hardware_validated());
+        assert!(metadata.is_real_hardware_evidence());
+        Ok(())
+    }
+
+    #[test]
+    fn capture_evidence_source_can_validate_real_hardware() {
+        assert!(CaptureEvidenceSource::Real.can_validate_real_hardware());
+        assert!(!CaptureEvidenceSource::Virtual.can_validate_real_hardware());
+        assert!(!CaptureEvidenceSource::Synthetic.can_validate_real_hardware());
+    }
+
+    #[test]
+    fn with_usage_page_rejects_empty_string() {
+        let result = CaptureFixtureMetadata::new(
+            0x346E,
+            0x0014,
+            CaptureKind::Idle,
+            CaptureEvidenceSource::Real,
+        )
+        .with_usage_page("");
+        assert_eq!(
+            result.err(),
+            Some(CaptureFixtureMetadataError::EmptyField {
+                field: "usage_page"
+            })
+        );
+    }
+
+    #[test]
+    fn with_usage_rejects_empty_string() {
+        let result = CaptureFixtureMetadata::new(
+            0x346E,
+            0x0014,
+            CaptureKind::Idle,
+            CaptureEvidenceSource::Real,
+        )
+        .with_usage("   ");
+        assert_eq!(
+            result.err(),
+            Some(CaptureFixtureMetadataError::EmptyField { field: "usage" })
+        );
+    }
+
+    #[test]
+    fn validate_rejects_lowercase_usage_page() -> Result<(), CaptureFixtureMetadataError> {
+        // with_usage_page only enforces non-empty; the case check fires in validate().
+        let metadata = CaptureFixtureMetadata::new(
+            0x346E,
+            0x0014,
+            CaptureKind::Idle,
+            CaptureEvidenceSource::Real,
+        )
+        .with_usage_page("0xff00")?;
+
+        assert_eq!(
+            metadata.validate(),
+            Err(CaptureFixtureMetadataError::InvalidHex {
+                field: "usage_page",
+                value: "0xff00".to_owned(),
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn validate_rejects_usage_without_0x_prefix() -> Result<(), CaptureFixtureMetadataError> {
+        let metadata = CaptureFixtureMetadata::new(
+            0x346E,
+            0x0014,
+            CaptureKind::Idle,
+            CaptureEvidenceSource::Real,
+        )
+        .with_usage("FF00")?;
+
+        assert_eq!(
+            metadata.validate(),
+            Err(CaptureFixtureMetadataError::InvalidHex {
+                field: "usage",
+                value: "FF00".to_owned(),
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn validate_rejects_crc32_with_wrong_length() {
+        // CRC32 must be exactly 10 chars long ("0x" + 8 hex digits).
+        let result = CaptureFixtureMetadata::new(
+            0x346E,
+            0x0014,
+            CaptureKind::Idle,
+            CaptureEvidenceSource::Real,
+        )
+        .with_report_descriptor_crc32("0xD8079D"); // too short
+
+        assert_eq!(
+            result.err(),
+            Some(CaptureFixtureMetadataError::InvalidHex {
+                field: "report_descriptor_crc32",
+                value: "0xD8079D".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn validate_rejects_lowercase_crc32() {
+        let result = CaptureFixtureMetadata::new(
+            0x346E,
+            0x0014,
+            CaptureKind::Idle,
+            CaptureEvidenceSource::Real,
+        )
+        .with_report_descriptor_crc32("0xd8079d85");
+
+        assert_eq!(
+            result.err(),
+            Some(CaptureFixtureMetadataError::InvalidHex {
+                field: "report_descriptor_crc32",
+                value: "0xd8079d85".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn validate_artifact_path_normalizes_backslashes() {
+        // Windows-style backslash path under the hardware lane is still blocked
+        // for non-real captures after backslash → forward-slash normalization.
+        let metadata = CaptureFixtureMetadata::new(
+            0x346E,
+            0x0014,
+            CaptureKind::Controls,
+            CaptureEvidenceSource::Synthetic,
+        );
+
+        let result = metadata
+            .validate_artifact_path("ci\\hardware\\moza-r5\\2026-05-10\\captures\\ks.jsonl");
+        assert_eq!(
+            result,
+            Err(CaptureFixtureMetadataError::NonRealUnderHardwareLane {
+                path: "ci/hardware/moza-r5/2026-05-10/captures/ks.jsonl".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn is_real_hardware_evidence_requires_validated_flag() {
+        // hardware_source=Real but real_hardware_validated=false → not evidence.
+        let metadata = CaptureFixtureMetadata::new(
+            0x346E,
+            0x0014,
+            CaptureKind::Idle,
+            CaptureEvidenceSource::Real,
+        );
+        assert_eq!(metadata.hardware_source(), CaptureEvidenceSource::Real);
+        assert!(!metadata.real_hardware_validated());
+        assert!(!metadata.is_real_hardware_evidence());
+    }
 }

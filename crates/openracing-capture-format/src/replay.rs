@@ -264,4 +264,162 @@ mod tests {
         assert_eq!(result.success_rate(), 0.0);
         Ok(())
     }
+
+    fn empty_session() -> CaptureSession {
+        CaptureSession {
+            device: DeviceId {
+                vid: 0,
+                pid: 0,
+                name: None,
+            },
+            metadata: CaptureMetadata::synthetic("empty"),
+            records: vec![],
+        }
+    }
+
+    #[test]
+    fn replay_iterator_combined_filters_direction_and_report_id() -> Result<(), String> {
+        // The sample session has two DeviceToHost records (ids 0x01, 0x02) and one
+        // HostToDevice (id 0x20). Combining direction+id 0x01 must yield exactly one.
+        let session = make_session();
+        let items: Vec<_> = ReplayIterator::new(&session)
+            .with_direction(Direction::DeviceToHost)
+            .with_report_id(0x01)
+            .collect();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].0, 0); // timestamp
+
+        // The HostToDevice record has report_id 0x20, but specifying DeviceToHost
+        // combined with 0x20 must yield zero matches.
+        let items: Vec<_> = ReplayIterator::new(&session)
+            .with_direction(Direction::DeviceToHost)
+            .with_report_id(0x20)
+            .collect();
+        assert!(items.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn replay_iterator_on_empty_session_yields_nothing() -> Result<(), String> {
+        let session = empty_session();
+        let items: Vec<_> = ReplayIterator::new(&session).collect();
+        assert!(items.is_empty());
+
+        // Filter combinations on empty input must also yield nothing.
+        let items: Vec<_> = ReplayIterator::new(&session)
+            .with_direction(Direction::DeviceToHost)
+            .with_report_id(0x01)
+            .collect();
+        assert!(items.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn reconstruct_report_with_empty_payload() -> Result<(), String> {
+        let record = CaptureRecord {
+            timestamp_ns: 0,
+            direction: Direction::DeviceToHost,
+            report_id: 0x42,
+            payload: vec![],
+        };
+        let raw = reconstruct_report(&record);
+        assert_eq!(raw, vec![0x42]);
+        Ok(())
+    }
+
+    #[test]
+    fn reconstruct_report_with_zero_report_id() -> Result<(), String> {
+        // report_id 0 must still be prepended verbatim.
+        let record = CaptureRecord {
+            timestamp_ns: 0,
+            direction: Direction::DeviceToHost,
+            report_id: 0,
+            payload: vec![0xAA, 0xBB],
+        };
+        let raw = reconstruct_report(&record);
+        assert_eq!(raw, vec![0x00, 0xAA, 0xBB]);
+        Ok(())
+    }
+
+    #[test]
+    fn replay_parse_ignores_host_to_device_records() -> Result<(), String> {
+        // Build a session that only contains HostToDevice records. The parser
+        // would have accepted them by content, but they must be skipped.
+        let session = CaptureSession {
+            device: DeviceId {
+                vid: 0,
+                pid: 0,
+                name: None,
+            },
+            metadata: CaptureMetadata::synthetic("h2d only"),
+            records: vec![
+                CaptureRecord {
+                    timestamp_ns: 0,
+                    direction: Direction::HostToDevice,
+                    report_id: 0x01,
+                    payload: vec![0xAA],
+                },
+                CaptureRecord {
+                    timestamp_ns: 1_000,
+                    direction: Direction::HostToDevice,
+                    report_id: 0x01,
+                    payload: vec![0xBB],
+                },
+            ],
+        };
+        let result = replay_parse(&session, |_data: &[u8]| Some(()));
+        assert!(result.parsed.is_empty());
+        assert_eq!(result.failed, 0);
+        assert_eq!(result.total(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn replay_parse_empty_session_returns_zero_totals() -> Result<(), String> {
+        let session = empty_session();
+        let result = replay_parse(&session, |_data: &[u8]| Some(42usize));
+        assert!(result.parsed.is_empty());
+        assert_eq!(result.failed, 0);
+        assert_eq!(result.total(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn replay_result_total_when_empty_is_zero() -> Result<(), String> {
+        let result: ReplayResult<u8> = ReplayResult {
+            parsed: vec![],
+            failed: 0,
+        };
+        assert_eq!(result.total(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn replay_result_success_rate_zero_when_all_fail() -> Result<(), String> {
+        let result: ReplayResult<()> = ReplayResult {
+            parsed: vec![],
+            failed: 5,
+        };
+        assert!((result.success_rate() - 0.0).abs() < f64::EPSILON);
+        Ok(())
+    }
+
+    #[test]
+    fn replay_result_success_rate_one_when_all_pass() -> Result<(), String> {
+        let result: ReplayResult<()> = ReplayResult {
+            parsed: vec![
+                ReplayEntry {
+                    timestamp_ns: 0,
+                    value: (),
+                },
+                ReplayEntry {
+                    timestamp_ns: 1,
+                    value: (),
+                },
+            ],
+            failed: 0,
+        };
+        assert!((result.success_rate() - 1.0).abs() < f64::EPSILON);
+        Ok(())
+    }
 }
