@@ -1,7 +1,7 @@
 {
   "success": true,
   "command": "wheelctl moza pre-output-readiness",
-  "generated_at_utc": "2026-05-16T15:01:19Z",
+  "generated_at_utc": "2026-05-16T17:01:24Z",
   "lane": "ci\\hardware\\moza-r5\\2026-05-13",
   "stage": "pre_output_readiness",
   "ready_for_zero_torque": true,
@@ -136,12 +136,11 @@
     "invalid_artifact_paths": [],
     "invalid_artifacts": 0,
     "missing_artifact_paths": [
-      "native-actuator-visible-smoke.json",
       "pit-house-coexistence.json",
       "simulator-telemetry-proof.json",
       "simulator-ffb-smoke.json"
     ],
-    "missing_artifacts": 4,
+    "missing_artifacts": 3,
     "requested_stage": "smoke_ready",
     "success": false
   },

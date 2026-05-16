@@ -8,7 +8,7 @@ Use [moza-r5-artifact-checklist.md](moza-r5-artifact-checklist.md) before changi
 
 | Lane | Stack | Platform | Transport | Evidence stage | Steven hardware validated | Simulator validated | High torque validated | Release ready |
 |------|-------|----------|-----------|----------------|---------------------------|---------------------|-----------------------|---------------|
-| `moza-r5-windows-usb` | R5 + KS/ES + SR-P + HBP | Windows | HID only | Zero proof ready; bounded PIDFF low torque proven; simulator FFB blocked | Bounded low torque only | No | No | No |
+| `moza-r5-windows-usb` | R5 + KS/ES + SR-P + HBP | Windows | HID only | OpenRacing control ready; 5 percent visible-motion attempt recorded but below movement threshold; simulator FFB blocked | Bounded low torque plus failed visible-motion receipt | No | No | No |
 
 ## Lane Detail: `moza-r5-windows-usb`
 
@@ -38,7 +38,8 @@ The checked-in `ci/hardware/moza-r5/2026-05-13/` lane currently supports only th
 - Zero-torque, watchdog, and bounded disconnect receipts exist; zero-stage verification, zero manifest promotion, and zero audit pass.
 - Staged `init-off.json` and `init-standard.json` receipts pass for the lane endpoint.
 - Bounded PIDFF low torque is proven at 1 percent for 150 ms with final Stop All cleanup.
-- Output claims stop at bounded PIDFF low torque. No direct mode, direct report `0x20`, simulator output, Pit House coexistence, high torque, or release readiness is claimed.
+- The native 1 percent actuator-profile smoke proves the OpenRacing PIDFF output rail and Stop All cleanup path; the later 5 percent visible-motion attempt did not meet the measured steering-delta threshold, so no visible-motion or smoke-ready success is claimed.
+- No direct mode, direct report `0x20`, simulator output, Pit House coexistence, high torque, or release readiness is claimed.
 
 ## Research Coverage Already Present
 

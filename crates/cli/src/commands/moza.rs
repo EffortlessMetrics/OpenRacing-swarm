@@ -26520,7 +26520,8 @@ mod tests {
         assert!(matrix.contains("moza-r5-artifact-checklist.md"));
         assert!(ci_readme.contains("docs/hardware/moza-r5-artifact-checklist.md"));
 
-        assert!(matrix.contains("| `moza-r5-windows-usb` | R5 + KS/ES + SR-P + HBP | Windows | HID only | Zero proof ready; bounded PIDFF low torque proven; simulator FFB blocked | Bounded low torque only | No | No | No |"));
+        assert!(matrix.contains("| `moza-r5-windows-usb` | R5 + KS/ES + SR-P + HBP | Windows | HID only | OpenRacing control ready; 5 percent visible-motion attempt recorded but below movement threshold; simulator FFB blocked | Bounded low torque plus failed visible-motion receipt | No | No | No |"));
+        assert!(matrix.contains("no visible-motion or smoke-ready success is claimed"));
         for non_claim in [
             "Direct mode or direct report `0x20` readiness",
             "Simulator-scale FFB output safety",
