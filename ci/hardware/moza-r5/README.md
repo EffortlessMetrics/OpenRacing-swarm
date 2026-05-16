@@ -48,6 +48,7 @@ ci/hardware/moza-r5/YYYY-MM-DD/
   low-torque-proof.json
   steering-angle-stream-proof.json
   native-actuator-profile-smoke.json
+  native-actuator-visible-smoke.json
   openracing-control-verification.json
   manifest-promotion-openracing-control.json
   lane-audit-openracing-control.json
@@ -208,6 +209,7 @@ Use this state before any hardware evidence exists:
     "low_torque_proof": "low-torque-proof.json",
     "steering_angle_stream_proof": "steering-angle-stream-proof.json",
     "native_actuator_profile_smoke": "native-actuator-profile-smoke.json",
+    "native_actuator_visible_smoke": "native-actuator-visible-smoke.json",
     "openracing_control_verification": "openracing-control-verification.json",
     "openracing_control_manifest_promotion": "manifest-promotion-openracing-control.json",
     "openracing_control_lane_audit": "lane-audit-openracing-control.json",
@@ -334,6 +336,12 @@ wheelctl moza pit-house-proof --lane ci/hardware/moza-r5/YYYY-MM-DD --closed-art
 wheelctl moza verify-bundle --lane ci/hardware/moza-r5/YYYY-MM-DD --stage smoke-ready --json-out ci/hardware/moza-r5/YYYY-MM-DD/smoke-ready-verification.json
 wheelctl moza promote-manifest --lane ci/hardware/moza-r5/YYYY-MM-DD --stage smoke-ready --json-out ci/hardware/moza-r5/YYYY-MM-DD/manifest-promotion-smoke-ready.json
 wheelctl moza audit-lane --lane ci/hardware/moza-r5/YYYY-MM-DD --stage smoke-ready --json-out ci/hardware/moza-r5/YYYY-MM-DD/lane-audit-smoke-ready.json
+```
+
+The 1% actuator-profile receipt proves the native PIDFF output rail and cleanup path, but it does not claim visible motion. Before smoke-ready promotion, collect a separate 5% visible-motion receipt that proves native steering delta from the R5 input stream while keeping final PIDFF Stop All cleanup and all high-risk surfaces disabled:
+
+```powershell
+wheelctl moza actuator-visible-smoke --device <r5> --lane ci/hardware/moza-r5/YYYY-MM-DD --prior-actuator-proof ci/hardware/moza-r5/YYYY-MM-DD/native-actuator-profile-smoke.json --steering-proof ci/hardware/moza-r5/YYYY-MM-DD/steering-angle-stream-proof.json --profile constant-low-force --strategy pidff-bounded-effect --max-percent 5 --duration-ms 2000 --confirm-actuator-visible --json-out ci/hardware/moza-r5/YYYY-MM-DD/native-actuator-visible-smoke.json
 ```
 
 For the live R5 V1 lane, the trusted descriptor exposes feature report `0x11` but not feature report `0x03`; `0x03` is an output report in this descriptor and must not be sent by the init stage. The init verifier therefore accepts the R5 V1 mode-only feature write: `0x11` (`11FF0000` for off or `11000000` for standard). Other wheelbase lanes may still require the ordered `0x03` start-input feature write followed by `0x11` when their trusted descriptor and adapter prove that shape. Any high-torque feature report or direct torque output report fails the stage.

@@ -1,12 +1,12 @@
 {
   "success": false,
   "command": "wheelctl moza verify-bundle",
-  "generated_at_utc": "2026-05-16T08:12:53Z",
+  "generated_at_utc": "2026-05-16T15:01:19Z",
   "lane": "ci\\hardware\\moza-r5\\2026-05-13",
   "requested_stage": "smoke_ready",
-  "missing_artifacts": 3,
+  "missing_artifacts": 4,
   "invalid_artifacts": 0,
-  "failed_gates": 3,
+  "failed_gates": 4,
   "artifacts": [
     {
       "path": "manifest.json",
@@ -270,6 +270,17 @@
       "notes": []
     },
     {
+      "path": "native-actuator-visible-smoke.json",
+      "kind": "json",
+      "required_stage": "smoke_ready",
+      "exists": false,
+      "valid": false,
+      "status": "missing",
+      "notes": [
+        "expected ci\\hardware\\moza-r5\\2026-05-13\\native-actuator-visible-smoke.json"
+      ]
+    },
+    {
       "path": "pit-house-coexistence.json",
       "kind": "json",
       "required_stage": "smoke_ready",
@@ -408,6 +419,11 @@
       "name": "native_actuator_profile_smoke",
       "status": "pass",
       "details": "native PIDFF actuator profile recorded 4 write attempt(s), including Stop All cleanup"
+    },
+    {
+      "name": "native_actuator_visible_smoke",
+      "status": "fail",
+      "details": "failed to read 'ci\\hardware\\moza-r5\\2026-05-13\\native-actuator-visible-smoke.json'"
     },
     {
       "name": "pit_house_coexistence",
@@ -597,11 +613,10 @@
     }
   ],
   "operator_actions": [
-    "Current external-compatibility frontier: simulator telemetry proof. Capture one real simulator telemetry path only; this step must not send Moza output reports, feature reports, torque, serial config, firmware, or DFU commands."
+    "Current smoke-ready frontier: native actuator visible-motion proof. Run the bounded PIDFF visible-motion stage only after the 1% actuator-profile and steering stream proofs pass; it must prove actual steering delta, final Stop All cleanup, no direct report 0x20, no high torque, no feature reports, no serial config, and no firmware/DFU commands."
   ],
   "next_commands": [
-    "wheelctl telemetry record --game simhub-bridge --telemetry-source simhub_bridge --live-simhub --port 5555 --out ci\\hardware\\moza-r5\\2026-05-13\\simulator-telemetry-recording.jsonl --duration-ms 30000",
-    "wheelctl moza simulator-telemetry-proof --lane ci\\hardware\\moza-r5\\2026-05-13 --game simhub-bridge --telemetry-source simhub_bridge --recorder-artifact simulator-telemetry-recording.jsonl --duration-ms 30000 --json-out ci\\hardware\\moza-r5\\2026-05-13\\simulator-telemetry-proof.json"
+    "wheelctl moza actuator-visible-smoke --device hid-0x346E-0x0004-if2-0x0001-0x0004 --lane ci\\hardware\\moza-r5\\2026-05-13 --prior-actuator-proof ci\\hardware\\moza-r5\\2026-05-13\\native-actuator-profile-smoke.json --steering-proof ci\\hardware\\moza-r5\\2026-05-13\\steering-angle-stream-proof.json --profile constant-low-force --strategy pidff-bounded-effect --max-percent 5 --duration-ms 2000 --confirm-actuator-visible --json-out ci\\hardware\\moza-r5\\2026-05-13\\native-actuator-visible-smoke.json --json"
   ],
   "no_hid_device_opened": true,
   "no_ffb_writes": true,

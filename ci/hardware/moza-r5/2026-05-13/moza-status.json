@@ -49,7 +49,7 @@
       "safety_reason": "status is observe-only; run explicit init, zero, and torque-test gates before any output"
     }
   ],
-  "generated_at_utc": "2026-05-16T08:10:47Z",
+  "generated_at_utc": "2026-05-16T14:59:01Z",
   "lane": "ci\\hardware\\moza-r5\\2026-05-13",
   "lane_status": {
     "artifact_index": [
@@ -318,6 +318,17 @@
         "exists": false,
         "kind": "json",
         "notes": [
+          "expected ci\\hardware\\moza-r5\\2026-05-13\\native-actuator-visible-smoke.json"
+        ],
+        "path": "native-actuator-visible-smoke.json",
+        "required_stage": "smoke_ready",
+        "status": "missing",
+        "valid": false
+      },
+      {
+        "exists": false,
+        "kind": "json",
+        "notes": [
           "expected ci\\hardware\\moza-r5\\2026-05-13\\pit-house-coexistence.json"
         ],
         "path": "pit-house-coexistence.json",
@@ -460,7 +471,7 @@
         "valid": false
       }
     ],
-    "generated_at_utc": "2026-05-16T08:10:47Z",
+    "generated_at_utc": "2026-05-16T14:59:01Z",
     "lane": "ci\\hardware\\moza-r5\\2026-05-13",
     "lane_directory_present": true,
     "manifest": {
@@ -478,25 +489,28 @@
     "readiness": {
       "claim_scope": "diagnostic_context_only",
       "external_compatibility_blocking_items": [
+        "native_actuator_visible_smoke",
         "pit_house_coexistence",
         "simulator_ffb_bounded",
         "simulator_telemetry"
       ],
       "first_blocking_stage": {
         "failed_gate_names": [
+          "native_actuator_visible_smoke",
           "pit_house_coexistence",
           "simulator_telemetry",
           "simulator_ffb_bounded"
         ],
-        "failed_gates": 3,
+        "failed_gates": 4,
         "invalid_artifact_paths": [],
         "invalid_artifacts": 0,
         "missing_artifact_paths": [
+          "native-actuator-visible-smoke.json",
           "pit-house-coexistence.json",
           "simulator-telemetry-proof.json",
           "simulator-ffb-smoke.json"
         ],
-        "missing_artifacts": 3,
+        "missing_artifacts": 4,
         "requested_stage": "smoke_ready",
         "success": false
       },
@@ -537,19 +551,21 @@
       },
       "smoke_ready": {
         "failed_gate_names": [
+          "native_actuator_visible_smoke",
           "pit_house_coexistence",
           "simulator_telemetry",
           "simulator_ffb_bounded"
         ],
-        "failed_gates": 3,
+        "failed_gates": 4,
         "invalid_artifact_paths": [],
         "invalid_artifacts": 0,
         "missing_artifact_paths": [
+          "native-actuator-visible-smoke.json",
           "pit-house-coexistence.json",
           "simulator-telemetry-proof.json",
           "simulator-ffb-smoke.json"
         ],
-        "missing_artifacts": 3,
+        "missing_artifacts": 4,
         "requested_stage": "smoke_ready",
         "success": false
       },

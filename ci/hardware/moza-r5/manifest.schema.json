@@ -309,6 +309,7 @@
         "low_torque_proof",
         "steering_angle_stream_proof",
         "native_actuator_profile_smoke",
+        "native_actuator_visible_smoke",
         "openracing_control_verification",
         "openracing_control_manifest_promotion",
         "openracing_control_lane_audit",
@@ -459,6 +460,10 @@
         "native_actuator_profile_smoke": {
           "type": "string",
           "const": "native-actuator-profile-smoke.json"
+        },
+        "native_actuator_visible_smoke": {
+          "type": "string",
+          "const": "native-actuator-visible-smoke.json"
         },
         "openracing_control_verification": {
           "type": "string",

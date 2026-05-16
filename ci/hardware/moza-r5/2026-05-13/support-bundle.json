@@ -32,7 +32,7 @@
           "usage_page": "0x0001",
           "vendor_id": "0x346E"
         },
-        "last_seen": "2026-05-16T08:10:54.090166400Z",
+        "last_seen": "2026-05-16T14:59:05.303726500Z",
         "moza": {
           "category": "wheelbase",
           "descriptor_crc32": "0x25345E0C",
@@ -359,6 +359,17 @@
         "exists": false,
         "kind": "json",
         "notes": [
+          "expected ci\\hardware\\moza-r5\\2026-05-13\\native-actuator-visible-smoke.json"
+        ],
+        "path": "native-actuator-visible-smoke.json",
+        "required_stage": "smoke_ready",
+        "status": "missing",
+        "valid": false
+      },
+      {
+        "exists": false,
+        "kind": "json",
+        "notes": [
           "expected ci\\hardware\\moza-r5\\2026-05-13\\pit-house-coexistence.json"
         ],
         "path": "pit-house-coexistence.json",
@@ -501,7 +512,7 @@
         "valid": false
       }
     ],
-    "generated_at_utc": "2026-05-16T08:12:21Z",
+    "generated_at_utc": "2026-05-16T15:00:48Z",
     "lane": "ci\\hardware\\moza-r5\\2026-05-13",
     "lane_directory_present": true,
     "manifest": {
@@ -519,25 +530,28 @@
     "readiness": {
       "claim_scope": "diagnostic_context_only",
       "external_compatibility_blocking_items": [
+        "native_actuator_visible_smoke",
         "pit_house_coexistence",
         "simulator_ffb_bounded",
         "simulator_telemetry"
       ],
       "first_blocking_stage": {
         "failed_gate_names": [
+          "native_actuator_visible_smoke",
           "pit_house_coexistence",
           "simulator_telemetry",
           "simulator_ffb_bounded"
         ],
-        "failed_gates": 3,
+        "failed_gates": 4,
         "invalid_artifact_paths": [],
         "invalid_artifacts": 0,
         "missing_artifact_paths": [
+          "native-actuator-visible-smoke.json",
           "pit-house-coexistence.json",
           "simulator-telemetry-proof.json",
           "simulator-ffb-smoke.json"
         ],
-        "missing_artifacts": 3,
+        "missing_artifacts": 4,
         "requested_stage": "smoke_ready",
         "success": false
       },
@@ -578,19 +592,21 @@
       },
       "smoke_ready": {
         "failed_gate_names": [
+          "native_actuator_visible_smoke",
           "pit_house_coexistence",
           "simulator_telemetry",
           "simulator_ffb_bounded"
         ],
-        "failed_gates": 3,
+        "failed_gates": 4,
         "invalid_artifact_paths": [],
         "invalid_artifacts": 0,
         "missing_artifact_paths": [
+          "native-actuator-visible-smoke.json",
           "pit-house-coexistence.json",
           "simulator-telemetry-proof.json",
           "simulator-ffb-smoke.json"
         ],
-        "missing_artifacts": 3,
+        "missing_artifacts": 4,
         "requested_stage": "smoke_ready",
         "success": false
       },
@@ -618,5 +634,5 @@
     "os": "windows",
     "version": "0.1.0"
   },
-  "timestamp": "2026-05-16T08:12:21.888933600Z"
+  "timestamp": "2026-05-16T15:00:48.622925300Z"
 }

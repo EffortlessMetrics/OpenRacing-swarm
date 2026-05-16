@@ -24,6 +24,7 @@
     "moza_probe": "moza-probe.json",
     "moza_status": "moza-status.json",
     "native_actuator_profile_smoke": "native-actuator-profile-smoke.json",
+    "native_actuator_visible_smoke": "native-actuator-visible-smoke.json",
     "openracing_control_lane_audit": "lane-audit-openracing-control.json",
     "openracing_control_manifest_promotion": "manifest-promotion-openracing-control.json",
     "openracing_control_verification": "openracing-control-verification.json",
