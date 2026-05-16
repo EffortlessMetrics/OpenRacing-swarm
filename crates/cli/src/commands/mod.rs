@@ -808,6 +808,43 @@ pub enum MozaCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
+    /// Run a native bounded PIDFF actuator profile after steering feedback is proven
+    ActuatorProfileSmoke {
+        /// Exact lane R5 HID endpoint selector, e.g. hid-0x346E-0x0004-if2-0x0001-0x0004
+        #[arg(long)]
+        device: String,
+        /// Hardware lane directory with passing low-torque and steering receipts
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Same-lane low-torque proof receipt from `wheelctl moza torque-test`
+        #[arg(long)]
+        low_torque_proof: Option<std::path::PathBuf>,
+        /// Same-lane steering stream proof receipt from `wheelctl moza steering-stream-proof`
+        #[arg(long)]
+        steering_proof: Option<std::path::PathBuf>,
+        /// Native actuator profile to run
+        #[arg(long, value_enum, default_value_t = MozaActuatorProfile::ConstantLowForce)]
+        profile: MozaActuatorProfile,
+        /// Output strategy for the native actuator profile; direct report 0x20 is not accepted
+        #[arg(long, value_enum, default_value_t = MozaLowTorqueStrategy::PidffBoundedEffect)]
+        strategy: MozaLowTorqueStrategy,
+        /// Build the actuator-profile receipt without opening or writing a HID device
+        #[arg(long)]
+        dry_run: bool,
+        /// Explicit acknowledgement required before actual actuator-profile writes
+        #[arg(long)]
+        confirm_actuator_profile: bool,
+        /// Maximum force percent, bounded to 0.1..=1.0
+        #[arg(long, default_value = "1")]
+        max_percent: f32,
+        /// Profile duration in milliseconds, bounded to 1..=2000
+        #[arg(long, default_value = "2000")]
+        duration_ms: u64,
+        /// Write the native actuator-profile proof receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
     /// Write a non-claiming starter receipt for manual Pit House or simulator evidence
     ReceiptTemplate {
         /// Receipt template kind to write
@@ -1048,6 +1085,12 @@ pub enum MozaLowTorqueStrategy {
     DirectReport0x20,
     /// Standard HID PIDFF bounded effect path
     PidffBoundedEffect,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MozaActuatorProfile {
+    /// One bounded constant-force PIDFF effect followed by Stop All cleanup
+    ConstantLowForce,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]

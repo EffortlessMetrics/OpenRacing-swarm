@@ -2191,6 +2191,74 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_actuator_profile_smoke() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "moza",
+            "actuator-profile-smoke",
+            "--device",
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
+            "--low-torque-proof",
+            "ci/hardware/moza-r5/2026-05-13/low-torque-proof.json",
+            "--steering-proof",
+            "ci/hardware/moza-r5/2026-05-13/steering-angle-stream-proof.json",
+            "--profile",
+            "constant-low-force",
+            "--strategy",
+            "pidff-bounded-effect",
+            "--max-percent",
+            "1",
+            "--duration-ms",
+            "2000",
+            "--confirm-actuator-profile",
+            "--json-out",
+            "ci/hardware/moza-r5/2026-05-13/native-actuator-profile-smoke.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::ActuatorProfileSmoke {
+                device,
+                lane,
+                low_torque_proof,
+                steering_proof,
+                profile,
+                strategy,
+                confirm_actuator_profile,
+                max_percent,
+                duration_ms,
+                json_out,
+                ..
+            }) => {
+                assert_eq!(device, "hid-0x346E-0x0004-if2-0x0001-0x0004");
+                assert_eq!(
+                    lane.as_path().to_str(),
+                    Some("ci/hardware/moza-r5/2026-05-13")
+                );
+                assert_eq!(
+                    low_torque_proof.as_ref().and_then(|p| p.to_str()),
+                    Some("ci/hardware/moza-r5/2026-05-13/low-torque-proof.json")
+                );
+                assert_eq!(
+                    steering_proof.as_ref().and_then(|p| p.to_str()),
+                    Some("ci/hardware/moza-r5/2026-05-13/steering-angle-stream-proof.json")
+                );
+                assert_eq!(*profile, MozaActuatorProfile::ConstantLowForce);
+                assert_eq!(*strategy, MozaLowTorqueStrategy::PidffBoundedEffect);
+                assert!(*confirm_actuator_profile);
+                assert!((*max_percent - 1.0).abs() < f32::EPSILON);
+                assert_eq!(*duration_ms, 2000);
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("ci/hardware/moza-r5/2026-05-13/native-actuator-profile-smoke.json")
+                );
+            }
+            _ => return Err("expected Moza ActuatorProfileSmoke command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_receipt_template() -> TestResult {
         let cli = Cli::try_parse_from([
             "wheelctl",
