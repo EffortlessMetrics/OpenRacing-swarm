@@ -503,21 +503,83 @@ impl FirmwareUpdateManager {
         Partition,
         Vec<PartitionInfo>,
     )> {
+        let device = &*device;
+        let total_bytes = firmware.size_bytes;
+
+        self.notify_initialization(&progress_tx, total_bytes).await;
+        let (active_partition, target_partition, old_version) =
+            self.plan_partition_swap(device, firmware).await?;
+
+        self.verify_firmware_hash(firmware, &progress_tx).await?;
+        self.prepare_target_partition(device, target_partition, total_bytes, &progress_tx)
+            .await?;
+        self.transfer_firmware_data(device, firmware, target_partition, &progress_tx, cancel_rx)
+            .await?;
+        self.validate_transferred_firmware(device, firmware, target_partition, &progress_tx)
+            .await?;
+        self.activate_new_firmware(device, target_partition, total_bytes, &progress_tx)
+            .await?;
+        self.run_post_update_health_check(device, total_bytes, active_partition, &progress_tx)
+            .await?;
+        let final_partition_info = self
+            .finalize_update(device, total_bytes, &progress_tx)
+            .await?;
+
+        Ok((
+            old_version,
+            firmware.version.clone(),
+            target_partition,
+            final_partition_info,
+        ))
+    }
+
+    /// Builds an [`UpdateProgress`] with no transfer rate, ETA, or warnings.
+    ///
+    /// Most phases of the update pipeline emit a single progress update with
+    /// fixed defaults; this keeps the call sites focused on the values that
+    /// actually vary per phase.
+    fn simple_progress(
+        phase: UpdatePhase,
+        progress_percent: u8,
+        bytes_transferred: u64,
+        total_bytes: u64,
+        status_message: impl Into<String>,
+    ) -> UpdateProgress {
+        UpdateProgress {
+            phase,
+            progress_percent,
+            bytes_transferred,
+            total_bytes,
+            transfer_rate_bps: 0,
+            eta_seconds: None,
+            status_message: status_message.into(),
+            warnings: Vec::new(),
+        }
+    }
+
+    async fn notify_initialization(
+        &self,
+        progress_tx: &mpsc::Sender<UpdateProgress>,
+        total_bytes: u64,
+    ) {
         self.send_progress(
-            &progress_tx,
-            UpdateProgress {
-                phase: UpdatePhase::Initializing,
-                progress_percent: 0,
-                bytes_transferred: 0,
-                total_bytes: firmware.size_bytes,
-                transfer_rate_bps: 0,
-                eta_seconds: None,
-                status_message: "Initializing firmware update".to_string(),
-                warnings: Vec::new(),
-            },
+            progress_tx,
+            Self::simple_progress(
+                UpdatePhase::Initializing,
+                0,
+                0,
+                total_bytes,
+                "Initializing firmware update",
+            ),
         )
         .await;
+    }
 
+    async fn plan_partition_swap(
+        &self,
+        device: &dyn FirmwareDevice,
+        firmware: &FirmwareImage,
+    ) -> Result<(Partition, Partition, Option<semver::Version>)> {
         let hardware_version = device
             .get_hardware_version()
             .await
@@ -547,18 +609,23 @@ impl FirmwareUpdateManager {
             active_partition, target_partition
         );
 
+        Ok((active_partition, target_partition, old_version))
+    }
+
+    async fn verify_firmware_hash(
+        &self,
+        firmware: &FirmwareImage,
+        progress_tx: &mpsc::Sender<UpdateProgress>,
+    ) -> Result<()> {
         self.send_progress(
-            &progress_tx,
-            UpdateProgress {
-                phase: UpdatePhase::Verifying,
-                progress_percent: 5,
-                bytes_transferred: 0,
-                total_bytes: firmware.size_bytes,
-                transfer_rate_bps: 0,
-                eta_seconds: None,
-                status_message: "Verifying firmware image".to_string(),
-                warnings: Vec::new(),
-            },
+            progress_tx,
+            Self::simple_progress(
+                UpdatePhase::Verifying,
+                5,
+                0,
+                firmware.size_bytes,
+                "Verifying firmware image",
+            ),
         )
         .await;
 
@@ -572,18 +639,25 @@ impl FirmwareUpdateManager {
             );
         }
 
+        Ok(())
+    }
+
+    async fn prepare_target_partition(
+        &self,
+        device: &dyn FirmwareDevice,
+        target_partition: Partition,
+        total_bytes: u64,
+        progress_tx: &mpsc::Sender<UpdateProgress>,
+    ) -> Result<()> {
         self.send_progress(
-            &progress_tx,
-            UpdateProgress {
-                phase: UpdatePhase::Preparing,
-                progress_percent: 10,
-                bytes_transferred: 0,
-                total_bytes: firmware.size_bytes,
-                transfer_rate_bps: 0,
-                eta_seconds: None,
-                status_message: "Preparing target partition".to_string(),
-                warnings: Vec::new(),
-            },
+            progress_tx,
+            Self::simple_progress(
+                UpdatePhase::Preparing,
+                10,
+                0,
+                total_bytes,
+                "Preparing target partition",
+            ),
         )
         .await;
 
@@ -592,18 +666,26 @@ impl FirmwareUpdateManager {
             .await
             .context("Failed to prepare target partition")?;
 
+        Ok(())
+    }
+
+    async fn transfer_firmware_data(
+        &self,
+        device: &dyn FirmwareDevice,
+        firmware: &FirmwareImage,
+        target_partition: Partition,
+        progress_tx: &mpsc::Sender<UpdateProgress>,
+        cancel_rx: &mut mpsc::Receiver<()>,
+    ) -> Result<()> {
         self.send_progress(
-            &progress_tx,
-            UpdateProgress {
-                phase: UpdatePhase::Transferring,
-                progress_percent: 15,
-                bytes_transferred: 0,
-                total_bytes: firmware.size_bytes,
-                transfer_rate_bps: 0,
-                eta_seconds: None,
-                status_message: "Transferring firmware data".to_string(),
-                warnings: Vec::new(),
-            },
+            progress_tx,
+            Self::simple_progress(
+                UpdatePhase::Transferring,
+                15,
+                0,
+                firmware.size_bytes,
+                "Transferring firmware data",
+            ),
         )
         .await;
 
@@ -639,7 +721,7 @@ impl FirmwareUpdateManager {
                 let progress_percent = 15 + ((bytes_transferred * 60) / firmware.size_bytes) as u8;
 
                 self.send_progress(
-                    &progress_tx,
+                    progress_tx,
                     UpdateProgress {
                         phase: UpdatePhase::Transferring,
                         progress_percent,
@@ -658,18 +740,25 @@ impl FirmwareUpdateManager {
             }
         }
 
+        Ok(())
+    }
+
+    async fn validate_transferred_firmware(
+        &self,
+        device: &dyn FirmwareDevice,
+        firmware: &FirmwareImage,
+        target_partition: Partition,
+        progress_tx: &mpsc::Sender<UpdateProgress>,
+    ) -> Result<()> {
         self.send_progress(
-            &progress_tx,
-            UpdateProgress {
-                phase: UpdatePhase::Validating,
-                progress_percent: 75,
-                bytes_transferred: firmware.size_bytes,
-                total_bytes: firmware.size_bytes,
-                transfer_rate_bps: 0,
-                eta_seconds: None,
-                status_message: "Validating transferred firmware".to_string(),
-                warnings: Vec::new(),
-            },
+            progress_tx,
+            Self::simple_progress(
+                UpdatePhase::Validating,
+                75,
+                firmware.size_bytes,
+                firmware.size_bytes,
+                "Validating transferred firmware",
+            ),
         )
         .await;
 
@@ -678,18 +767,25 @@ impl FirmwareUpdateManager {
             .await
             .context("Firmware validation failed")?;
 
+        Ok(())
+    }
+
+    async fn activate_new_firmware(
+        &self,
+        device: &dyn FirmwareDevice,
+        target_partition: Partition,
+        total_bytes: u64,
+        progress_tx: &mpsc::Sender<UpdateProgress>,
+    ) -> Result<()> {
         self.send_progress(
-            &progress_tx,
-            UpdateProgress {
-                phase: UpdatePhase::Activating,
-                progress_percent: 85,
-                bytes_transferred: firmware.size_bytes,
-                total_bytes: firmware.size_bytes,
-                transfer_rate_bps: 0,
-                eta_seconds: None,
-                status_message: "Activating new firmware".to_string(),
-                warnings: Vec::new(),
-            },
+            progress_tx,
+            Self::simple_progress(
+                UpdatePhase::Activating,
+                85,
+                total_bytes,
+                total_bytes,
+                "Activating new firmware",
+            ),
         )
         .await;
 
@@ -707,27 +803,34 @@ impl FirmwareUpdateManager {
 
         tokio::time::sleep(Duration::from_secs(10)).await;
 
+        Ok(())
+    }
+
+    async fn run_post_update_health_check(
+        &self,
+        device: &dyn FirmwareDevice,
+        total_bytes: u64,
+        rollback_partition: Partition,
+        progress_tx: &mpsc::Sender<UpdateProgress>,
+    ) -> Result<()> {
         self.send_progress(
-            &progress_tx,
-            UpdateProgress {
-                phase: UpdatePhase::HealthCheck,
-                progress_percent: 95,
-                bytes_transferred: firmware.size_bytes,
-                total_bytes: firmware.size_bytes,
-                transfer_rate_bps: 0,
-                eta_seconds: None,
-                status_message: "Running health checks".to_string(),
-                warnings: Vec::new(),
-            },
+            progress_tx,
+            Self::simple_progress(
+                UpdatePhase::HealthCheck,
+                95,
+                total_bytes,
+                total_bytes,
+                "Running health checks",
+            ),
         )
         .await;
 
-        let mut health_check_attempts = 0;
         const MAX_HEALTH_CHECK_ATTEMPTS: u32 = 5;
+        let mut health_check_attempts = 0;
 
         loop {
             match device.health_check().await {
-                Ok(()) => break,
+                Ok(()) => return Ok(()),
                 Err(e) => {
                     health_check_attempts += 1;
                     if health_check_attempts >= MAX_HEALTH_CHECK_ATTEMPTS {
@@ -737,7 +840,7 @@ impl FirmwareUpdateManager {
                         );
 
                         if let Err(rollback_error) =
-                            self.perform_rollback(&*device, active_partition).await
+                            self.perform_rollback(device, rollback_partition).await
                         {
                             error!("Rollback failed: {}", rollback_error);
                             return Err(FirmwareUpdateError::RollbackFailed(format!(
@@ -762,14 +865,21 @@ impl FirmwareUpdateManager {
                 }
             }
         }
+    }
 
+    async fn finalize_update(
+        &self,
+        device: &dyn FirmwareDevice,
+        total_bytes: u64,
+        progress_tx: &mpsc::Sender<UpdateProgress>,
+    ) -> Result<Vec<PartitionInfo>> {
         self.send_progress(
-            &progress_tx,
+            progress_tx,
             UpdateProgress {
                 phase: UpdatePhase::Completed,
                 progress_percent: 100,
-                bytes_transferred: firmware.size_bytes,
-                total_bytes: firmware.size_bytes,
+                bytes_transferred: total_bytes,
+                total_bytes,
                 transfer_rate_bps: 0,
                 eta_seconds: Some(0),
                 status_message: "Firmware update completed successfully".to_string(),
@@ -778,17 +888,10 @@ impl FirmwareUpdateManager {
         )
         .await;
 
-        let final_partition_info = device
+        device
             .get_partition_info()
             .await
-            .context("Failed to get final partition information")?;
-
-        Ok((
-            old_version,
-            firmware.version.clone(),
-            target_partition,
-            final_partition_info,
-        ))
+            .context("Failed to get final partition information")
     }
 
     async fn perform_rollback(
