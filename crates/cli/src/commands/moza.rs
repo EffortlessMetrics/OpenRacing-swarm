@@ -8128,10 +8128,12 @@ fn push_smoke_ready_next_commands(
                     lane_path_arg(lane, NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE)
                 ));
             }
-            commands.push(format!(
-                "wheelctl moza pre-output-readiness --lane {lane_arg} --json-out {} --json",
-                lane_path_arg(lane, "pre-output-readiness.json")
-            ));
+            if !pre_output_readiness_receipt_is_no_output_snapshot(lane) {
+                commands.push(format!(
+                    "wheelctl moza pre-output-readiness --lane {lane_arg} --json-out {} --json",
+                    lane_path_arg(lane, "pre-output-readiness.json")
+                ));
+            }
             return;
         }
         commands.push(format!(
@@ -8299,6 +8301,20 @@ fn push_smoke_ready_next_commands(
         "wheelctl moza verify-bundle --lane {lane_arg} --stage smoke-ready --json-out {}",
         lane_path_arg(lane, verification_receipt_path(MozaBundleStage::SmokeReady))
     ));
+}
+
+fn pre_output_readiness_receipt_is_no_output_snapshot(lane: &Path) -> bool {
+    let Ok(receipt) = read_json_value(lane, "pre-output-readiness.json") else {
+        return false;
+    };
+    json_string(&receipt, "command") == Some("wheelctl moza pre-output-readiness")
+        && json_string(&receipt, "stage") == Some("pre_output_readiness")
+        && lane_path_value_matches(lane, json_string(&receipt, "lane"))
+        && json_bool(&receipt, "no_hid_device_opened") == Some(true)
+        && json_bool(&receipt, "no_ffb_writes") == Some(true)
+        && json_bool(&receipt, "no_output_reports") == Some(true)
+        && json_bool(&receipt, "no_feature_reports") == Some(true)
+        && no_out_of_scope_device_commands(&receipt)
 }
 
 fn simulator_telemetry_session_id(lane: &Path) -> String {
@@ -35335,6 +35351,14 @@ mod tests {
                     .contains("wheelctl moza receipt-template --kind visible-motion-follow-up")
                 && !commands.contains("wheelctl moza actuator-visible-smoke"),
             "after the follow-up plan template exists, generated guidance should not overwrite it: {commands}"
+        );
+
+        write_pre_output_ready_receipt(dir.path())?;
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let commands = receipt.next_commands.join("\n");
+        assert!(
+            receipt.next_commands.is_empty(),
+            "after failed visible-motion review and no-output readiness are both recorded, guidance should stop instead of refreshing a timestamp: {commands}"
         );
 
         write_test_json_file(
