@@ -25,7 +25,8 @@ Use a direct game adapter only after the SimHub bridge flow is understood.
 Before telemetry-only proof:
 
 - `wheelctl telemetry record --help` works
-- a normalized telemetry source file exists
+- either a live SimHub UDP JSON source is available or a normalized telemetry
+  source file exists
 - no hardware output is enabled
 - no `wheeld --hardware-lane` writer is running for output
 
@@ -47,8 +48,9 @@ Before bounded FFB smoke:
 
 ## Telemetry-Only Proof
 
-Record normalized snapshots from the chosen source. The recorder input is a
-JSON or JSONL file containing normalized telemetry snapshots.
+Record normalized snapshots from the chosen source. For the first Windows bench
+path, prefer live SimHub JSON UDP on port `5555`; this records telemetry only
+and opens no HID or output path.
 
 ```powershell
 $DATE = Get-Date -Format "yyyy-MM-dd"
@@ -57,10 +59,15 @@ $LANE = "ci/hardware/moza-r5/$DATE"
 wheelctl telemetry record `
   --game simhub-bridge `
   --telemetry-source simhub_bridge `
-  --input "<normalized-telemetry-source.jsonl>" `
+  --live-simhub `
+  --port 5555 `
   --out "$LANE/simulator-telemetry-recording.jsonl" `
   --duration-ms 30000
 ```
+
+If live SimHub is not available, `wheelctl telemetry record` can also stamp an
+existing JSON/JSONL file containing normalized telemetry snapshots by using
+`--input <normalized-telemetry-source.jsonl>` instead of `--live-simhub`.
 
 Then build the telemetry-only proof receipt:
 

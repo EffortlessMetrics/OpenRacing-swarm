@@ -9917,6 +9917,7 @@ dependencies = [
  "racing-wheel-hid-capture",
  "racing-wheel-hid-moza-protocol",
  "racing-wheel-schemas",
+ "racing-wheel-telemetry-adapters",
  "racing-wheel-telemetry-config",
  "rand 0.9.4",
  "regex",

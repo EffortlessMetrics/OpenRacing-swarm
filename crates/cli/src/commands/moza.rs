@@ -6680,11 +6680,11 @@ fn push_smoke_ready_next_commands(
 
     if !bundle_gate_check_passed(gates, "simulator_telemetry") {
         commands.push(format!(
-            "wheelctl telemetry record --game <sim> --telemetry-source real_game --input <normalized-telemetry-source.jsonl> --out {} --duration-ms 30000",
+            "wheelctl telemetry record --game simhub-bridge --telemetry-source simhub_bridge --live-simhub --port 5555 --out {} --duration-ms 30000",
             lane_path_arg(lane, "simulator-telemetry-recording.jsonl")
         ));
         commands.push(format!(
-            "wheelctl moza simulator-telemetry-proof --lane {lane_arg} --game <sim> --telemetry-source real_game --recorder-artifact simulator-telemetry-recording.jsonl --duration-ms 30000 --json-out {}",
+            "wheelctl moza simulator-telemetry-proof --lane {lane_arg} --game simhub-bridge --telemetry-source simhub_bridge --recorder-artifact simulator-telemetry-recording.jsonl --duration-ms 30000 --json-out {}",
             lane_path_arg(lane, "simulator-telemetry-proof.json")
         ));
         return;

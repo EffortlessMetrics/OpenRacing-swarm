@@ -296,7 +296,13 @@ pub enum TelemetryCommands {
         telemetry_source: String,
         /// JSON/JSONL file containing normalized telemetry snapshots
         #[arg(long)]
-        input: String,
+        input: Option<String>,
+        /// Listen for live SimHub JSON UDP and record normalized snapshots
+        #[arg(long)]
+        live_simhub: bool,
+        /// Local UDP listen port for --live-simhub
+        #[arg(long, default_value = "5555")]
+        port: u16,
         /// Output JSONL recording path
         #[arg(long)]
         out: String,

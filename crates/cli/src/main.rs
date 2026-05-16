@@ -1191,13 +1191,62 @@ mod tests {
                 game,
                 telemetry_source,
                 input,
+                live_simhub,
+                port,
                 out,
                 session_id,
                 duration_ms,
             }) => {
                 assert_eq!(game, "simhub-bridge");
                 assert_eq!(telemetry_source, "simhub_bridge");
-                assert_eq!(input, "normalized.jsonl");
+                assert_eq!(input.as_deref(), Some("normalized.jsonl"));
+                assert!(!live_simhub);
+                assert_eq!(*port, 5555);
+                assert_eq!(out, "simulator-telemetry-recording.jsonl");
+                assert_eq!(session_id.as_deref(), Some("session-001"));
+                assert_eq!(*duration_ms, 5000);
+            }
+            _ => return Err("expected Telemetry Record command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_telemetry_record_live_simhub() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "telemetry",
+            "record",
+            "--game",
+            "simhub-bridge",
+            "--telemetry-source",
+            "simhub_bridge",
+            "--live-simhub",
+            "--port",
+            "5556",
+            "--out",
+            "simulator-telemetry-recording.jsonl",
+            "--session-id",
+            "session-001",
+            "--duration-ms",
+            "5000",
+        ])?;
+        match &cli.command {
+            Commands::Telemetry(TelemetryCommands::Record {
+                game,
+                telemetry_source,
+                input,
+                live_simhub,
+                port,
+                out,
+                session_id,
+                duration_ms,
+            }) => {
+                assert_eq!(game, "simhub-bridge");
+                assert_eq!(telemetry_source, "simhub_bridge");
+                assert!(input.is_none());
+                assert!(*live_simhub);
+                assert_eq!(*port, 5556);
                 assert_eq!(out, "simulator-telemetry-recording.jsonl");
                 assert_eq!(session_id.as_deref(), Some("session-001"));
                 assert_eq!(*duration_ms, 5000);
