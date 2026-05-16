@@ -994,4 +994,329 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn identity_builders_reject_blank_manufacturer_and_product_name() -> Result<(), VirtualHidError>
+    {
+        let identity = VirtualHidIdentity::new(0x1234, 0x5678, "key")?;
+        assert_eq!(
+            identity.clone().with_manufacturer("   "),
+            Err(VirtualHidError::EmptyField {
+                field: "manufacturer"
+            })
+        );
+        assert_eq!(
+            identity.with_product_name(""),
+            Err(VirtualHidError::EmptyField {
+                field: "product_name"
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn identity_builder_chain_populates_all_optional_metadata() -> Result<(), VirtualHidError> {
+        let identity = VirtualHidIdentity::new(0x1111, 0x2222, "stable-key")?
+            .with_manufacturer("Acme Wheels")?
+            .with_product_name("Test Wheel")?
+            .with_serial_number_present(true)
+            .with_interface(3)
+            .with_usage(0x0001, 0x0005);
+
+        assert_eq!(identity.vendor_id(), 0x1111);
+        assert_eq!(identity.product_id(), 0x2222);
+        assert_eq!(identity.device_key(), "stable-key");
+        assert_eq!(identity.manufacturer(), Some("Acme Wheels"));
+        assert_eq!(identity.product_name(), Some("Test Wheel"));
+        assert!(identity.serial_number_present());
+        assert_eq!(identity.interface_number(), Some(3));
+        assert_eq!(identity.usage_page(), Some(0x0001));
+        assert_eq!(identity.usage(), Some(0x0005));
+        Ok(())
+    }
+
+    #[test]
+    fn identity_defaults_have_no_optional_metadata() -> Result<(), VirtualHidError> {
+        let identity = VirtualHidIdentity::new(0x0A0A, 0x0B0B, "minimal")?;
+        assert_eq!(identity.manufacturer(), None);
+        assert_eq!(identity.product_name(), None);
+        assert!(!identity.serial_number_present());
+        assert_eq!(identity.interface_number(), None);
+        assert_eq!(identity.usage_page(), None);
+        assert_eq!(identity.usage(), None);
+        Ok(())
+    }
+
+    #[test]
+    fn descriptor_accepts_empty_input_report_lengths_and_id_lists() -> Result<(), VirtualHidError> {
+        let descriptor = VirtualHidDescriptor::new("0xDEADBEEF")?
+            .with_input_report_lengths(std::iter::empty::<usize>())?
+            .with_output_report_ids(std::iter::empty::<u8>())
+            .with_feature_report_ids(std::iter::empty::<u8>());
+
+        assert_eq!(descriptor.report_descriptor_crc32(), "0xDEADBEEF");
+        assert!(descriptor.input_report_lengths().is_empty());
+        assert!(descriptor.output_report_ids().is_empty());
+        assert!(descriptor.feature_report_ids().is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn descriptor_stores_provided_report_id_lists() -> Result<(), VirtualHidError> {
+        let descriptor = VirtualHidDescriptor::new("crc")?
+            .with_input_report_lengths([4, 8, 12])?
+            .with_output_report_ids([0x10, 0x20])
+            .with_feature_report_ids([0x30]);
+
+        assert_eq!(descriptor.input_report_lengths(), &[4, 8, 12]);
+        assert_eq!(descriptor.output_report_ids(), &[0x10, 0x20]);
+        assert_eq!(descriptor.feature_report_ids(), &[0x30]);
+        Ok(())
+    }
+
+    #[test]
+    fn input_report_exposes_bytes_length_and_report_id_from_first_byte()
+    -> Result<(), VirtualHidError> {
+        let report = VirtualInputReport::new(42, [0xAB, 0x11, 0x22])?;
+        assert_eq!(report.timestamp_us(), 42);
+        assert_eq!(report.report_id(), 0xAB);
+        assert_eq!(report.bytes(), &[0xAB, 0x11, 0x22]);
+        assert_eq!(report.len(), 3);
+        assert!(!report.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn read_input_report_errors_when_queue_is_empty() -> Result<(), VirtualHidError> {
+        let mut replay = VirtualHidReplay::new(sample_identity()?, sample_descriptor()?);
+        assert_eq!(
+            replay.read_input_report(),
+            Err(VirtualHidError::NoInputReport)
+        );
+        // No log entry should be appended for a failed dequeue.
+        assert!(replay.input_log().is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn reconnect_restores_read_and_write_ability() -> Result<(), VirtualHidError> {
+        let mut replay = VirtualHidReplay::new(sample_identity()?, sample_descriptor()?);
+        replay.queue_input_report(VirtualInputReport::new(
+            100,
+            [0x01, 0x02, 0x03, 0x04, 0x05],
+        )?);
+        replay.disconnect();
+        assert!(!replay.is_connected());
+
+        replay.reconnect();
+        assert!(replay.is_connected());
+
+        let report = replay.read_input_report()?;
+        assert_eq!(report.report_id(), 0x01);
+        assert_eq!(replay.write_output_report(&[0x20, 0x01])?, 2);
+        Ok(())
+    }
+
+    #[test]
+    fn disconnect_is_idempotent_and_records_single_fault() -> Result<(), VirtualHidError> {
+        let mut replay = VirtualHidReplay::new(sample_identity()?, sample_descriptor()?);
+        replay.disconnect();
+        replay.disconnect();
+
+        let disconnect_faults = replay
+            .fault_events()
+            .iter()
+            .filter(|fault| fault.kind() == VirtualHidFaultKind::Disconnect)
+            .count();
+        assert_eq!(disconnect_faults, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn write_reports_reject_empty_bytes() -> Result<(), VirtualHidError> {
+        let mut replay = VirtualHidReplay::new(sample_identity()?, sample_descriptor()?);
+        assert_eq!(
+            replay.write_output_report(&[]),
+            Err(VirtualHidError::EmptyReport { field: "bytes" })
+        );
+        assert_eq!(
+            replay.write_feature_report(&[]),
+            Err(VirtualHidError::EmptyReport { field: "bytes" })
+        );
+        // Empty writes must not be logged.
+        assert!(replay.output_log().is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn set_timestamp_us_is_applied_to_subsequent_output_entries() -> Result<(), VirtualHidError> {
+        let mut replay = VirtualHidReplay::new(sample_identity()?, sample_descriptor()?);
+
+        replay.set_timestamp_us(500);
+        replay.write_output_report(&[0x20, 0xAA])?;
+
+        replay.set_timestamp_us(1_500);
+        replay.write_feature_report(&[0x11, 0xBB])?;
+
+        let log = replay.output_log();
+        assert_eq!(log.len(), 2);
+        assert_eq!(log[0].timestamp_us(), 500);
+        assert_eq!(log[1].timestamp_us(), 1_500);
+        Ok(())
+    }
+
+    #[test]
+    fn write_output_disconnected_variant_is_logged_with_original_bytes()
+    -> Result<(), VirtualHidError> {
+        let mut replay = VirtualHidReplay::new(sample_identity()?, sample_descriptor()?);
+        replay.disconnect();
+
+        let attempt = replay.write_output_report(&[0x20, 0xDE, 0xAD]);
+        assert_eq!(attempt, Err(VirtualHidError::Disconnected));
+
+        let entry = replay
+            .output_log()
+            .first()
+            .ok_or(VirtualHidError::NoInputReport)?;
+        assert_eq!(entry.kind(), VirtualOutputKind::Output);
+        assert_eq!(entry.bytes(), &[0x20, 0xDE, 0xAD]);
+        assert_eq!(entry.result(), &VirtualWriteResult::Disconnected);
+        Ok(())
+    }
+
+    #[test]
+    fn queue_input_reports_preserves_iterator_order() -> Result<(), VirtualHidError> {
+        let mut replay = VirtualHidReplay::new(sample_identity()?, sample_descriptor()?);
+        replay.queue_input_reports([
+            VirtualInputReport::new(10, [0x01, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF])?,
+            VirtualInputReport::new(20, [0x02, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66])?,
+            VirtualInputReport::new(30, [0x03, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC])?,
+        ]);
+
+        let mut report_ids = Vec::new();
+        for _ in 0..3 {
+            report_ids.push(replay.read_input_report()?.report_id());
+        }
+        assert_eq!(report_ids, vec![0x01, 0x02, 0x03]);
+        Ok(())
+    }
+
+    #[test]
+    fn inject_stale_descriptor_rejects_empty_crc() -> Result<(), VirtualHidError> {
+        let mut replay = VirtualHidReplay::new(sample_identity()?, sample_descriptor()?);
+        assert_eq!(
+            replay.inject_stale_descriptor(""),
+            Err(VirtualHidError::EmptyField {
+                field: "report_descriptor_crc32"
+            })
+        );
+        // A rejected injection must not leave a fault behind.
+        assert!(replay.fault_events().is_empty());
+        // Reported descriptor must be unchanged.
+        assert_eq!(
+            replay.reported_descriptor().report_descriptor_crc32(),
+            replay.descriptor().report_descriptor_crc32()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn receipt_mirrors_replay_state_including_logs_and_faults() -> Result<(), VirtualHidError> {
+        let mut replay = VirtualHidReplay::new(sample_identity()?, sample_descriptor()?);
+        // Length 7 matches the minimum expected input report length so no
+        // short-report fault is recorded; this keeps the assertion focused on
+        // the injected fault kinds.
+        replay.queue_input_report(VirtualInputReport::new(
+            100,
+            [0x01, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF],
+        )?);
+        replay.read_input_report()?;
+        replay.write_output_report(&[0x20, 0x01])?;
+        replay.inject_wrong_product_id(0x9999);
+        replay.expire_watchdog(250);
+
+        let receipt = replay.receipt();
+        assert_eq!(receipt.hardware_source(), EvidenceSource::Virtual);
+        assert!(!receipt.real_hardware_validated());
+        assert_eq!(receipt.device(), replay.device());
+        assert_eq!(receipt.reported_device(), replay.reported_device());
+        assert_eq!(receipt.descriptor(), replay.descriptor());
+        assert_eq!(receipt.reported_descriptor(), replay.reported_descriptor());
+        assert_eq!(receipt.input_log().len(), 1);
+        assert_eq!(receipt.output_log().len(), 1);
+        // Faults: wrong_product_id and watchdog_expired
+        assert_eq!(receipt.fault_events().len(), 2);
+        let kinds: Vec<_> = receipt
+            .fault_events()
+            .iter()
+            .map(VirtualHidFaultEvent::kind)
+            .collect();
+        assert!(kinds.contains(&VirtualHidFaultKind::WrongProductId));
+        assert!(kinds.contains(&VirtualHidFaultKind::WatchdogExpired));
+        assert_eq!(receipt.reported_device().product_id(), 0x9999);
+        Ok(())
+    }
+
+    #[test]
+    fn event_index_increments_monotonically_across_mixed_operations() -> Result<(), VirtualHidError>
+    {
+        let mut replay = VirtualHidReplay::new(sample_identity()?, sample_descriptor()?);
+        replay.queue_input_report(VirtualInputReport::new(1, [0x01, 0x02, 0x03, 0x04, 0x05])?);
+
+        replay.read_input_report()?; // event 1
+        replay.write_output_report(&[0x20, 0xAA])?; // event 2
+        replay.inject_wrong_product_id(0x4321); // event 3
+        replay.disconnect(); // event 4
+
+        let input_log = replay.input_log();
+        let output_log = replay.output_log();
+        let fault_events = replay.fault_events();
+
+        let first_input = input_log.first().ok_or(VirtualHidError::NoInputReport)?;
+        let first_output = output_log.first().ok_or(VirtualHidError::NoInputReport)?;
+        assert_eq!(first_input.event_index(), 1);
+        assert_eq!(first_output.event_index(), 2);
+
+        let wrong_pid = fault_events
+            .iter()
+            .find(|fault| fault.kind() == VirtualHidFaultKind::WrongProductId)
+            .ok_or(VirtualHidError::NoInputReport)?;
+        let disconnect = fault_events
+            .iter()
+            .find(|fault| fault.kind() == VirtualHidFaultKind::Disconnect)
+            .ok_or(VirtualHidError::NoInputReport)?;
+        assert_eq!(wrong_pid.event_index(), 3);
+        assert_eq!(disconnect.event_index(), 4);
+        Ok(())
+    }
+
+    #[test]
+    fn fault_event_details_describe_injected_state() -> Result<(), VirtualHidError> {
+        let mut replay = VirtualHidReplay::new(sample_identity()?, sample_descriptor()?);
+        replay.inject_stale_descriptor("0xAABBCCDD")?;
+        replay.inject_wrong_product_id(0x00FF);
+        replay.expire_watchdog(750);
+
+        let descriptor_fault = replay
+            .fault_events()
+            .iter()
+            .find(|fault| fault.kind() == VirtualHidFaultKind::StaleDescriptor)
+            .ok_or(VirtualHidError::NoInputReport)?;
+        assert!(descriptor_fault.details().contains("0xAABBCCDD"));
+
+        let pid_fault = replay
+            .fault_events()
+            .iter()
+            .find(|fault| fault.kind() == VirtualHidFaultKind::WrongProductId)
+            .ok_or(VirtualHidError::NoInputReport)?;
+        assert!(pid_fault.details().contains("00FF"));
+
+        let watchdog_fault = replay
+            .fault_events()
+            .iter()
+            .find(|fault| fault.kind() == VirtualHidFaultKind::WatchdogExpired)
+            .ok_or(VirtualHidError::NoInputReport)?;
+        assert!(watchdog_fault.details().contains("750"));
+        Ok(())
+    }
 }
