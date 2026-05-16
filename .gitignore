@@ -68,8 +68,9 @@ crates/cli/support_bundle_*.zip
 compat_current.json
 compat_usage_report.json
 
-# Machine-specific cargo config
-.cargo/
+# Machine-specific cargo state; .cargo/config.toml is committed for workspace aliases.
+.cargo/*
+!.cargo/config.toml
 
 # Python bytecode
 __pycache__/

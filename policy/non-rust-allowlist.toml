@@ -129,6 +129,26 @@ covered_by = ["bash scripts/ci_nix.sh"]
 
 # --- CI / release workflows --------------------------------------------------
 
+
+[[allow]]
+path = ".cargo/config.toml"
+kind = "cargo_workspace_aliases"
+owner = "core"
+surface = "tooling"
+classification = "config"
+reason = "Workspace cargo aliases expose repository xtask commands."
+covered_by = ["cargo xtask --help"]
+
+[[allow]]
+glob = "badges/*.json"
+kind = "generated_badge_endpoint"
+owner = "release/ci"
+surface = "docs"
+classification = "generated"
+reason = "Generated Shields endpoint JSON for public README badges."
+generated_by = "cargo xtask badges"
+covered_by = ["cargo xtask badges --check"]
+
 [[allow]]
 glob = ".github/workflows/*.yml"
 kind = "ci_workflow"

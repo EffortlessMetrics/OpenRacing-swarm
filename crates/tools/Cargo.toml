@@ -28,7 +28,14 @@ path = "src/bin/check_glob_reexports.rs"
 name = "check-private-imports"
 path = "src/bin/check_private_imports.rs"
 
+[[bin]]
+name = "xtask"
+path = "src/bin/xtask.rs"
+
 [dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 
 [lints]
