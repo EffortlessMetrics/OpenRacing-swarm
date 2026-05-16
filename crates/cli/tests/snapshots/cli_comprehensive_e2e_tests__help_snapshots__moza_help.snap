@@ -1,6 +1,6 @@
 ---
 source: crates/cli/tests/cli_comprehensive_e2e_tests.rs
-assertion_line: 984
+assertion_line: 993
 expression: stdout
 ---
 Safe Moza HID probe and capture commands
@@ -13,6 +13,7 @@ Commands:
   status                     Summarize Moza device and lane readiness without opening HID devices
   descriptor                 Capture descriptor metadata for connected Moza HID devices
   capture-input              Capture input reports from one Moza HID device without FFB writes
+  steering-stream-proof      Record native steering angle samples from the lane R5 endpoint without output writes
   validate-capture           Validate captured Moza input JSONL through the parser without hardware writes
   analyze-capture            Analyze raw byte/word movement in a captured Moza input JSONL without hardware writes
   analyze-lane               Compare required passive lane captures against idle without hardware writes

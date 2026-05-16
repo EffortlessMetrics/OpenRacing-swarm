@@ -341,6 +341,27 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             )
             .await
         }
+        MozaCommands::SteeringStreamProof {
+            device,
+            lane,
+            duration_ms,
+            read_timeout_ms,
+            degrees_of_rotation,
+            jsonl_out,
+            json_out,
+        } => {
+            steering_stream_proof(
+                json,
+                device,
+                lane,
+                *duration_ms,
+                *read_timeout_ms,
+                *degrees_of_rotation,
+                jsonl_out.as_deref(),
+                json_out.as_deref(),
+            )
+            .await
+        }
         MozaCommands::ValidateCapture {
             capture,
             pid,
@@ -1230,6 +1251,202 @@ async fn capture_input(
     };
 
     print_capture_summary(json, &summary)
+}
+
+async fn steering_stream_proof(
+    json: bool,
+    selector: &str,
+    lane: &Path,
+    duration_ms: u64,
+    read_timeout_ms: i32,
+    degrees_of_rotation: f64,
+    jsonl_out: Option<&Path>,
+    json_out: Option<&Path>,
+) -> Result<()> {
+    if duration_ms == 0 {
+        return Err(anyhow!("--duration-ms must be greater than zero"));
+    }
+    if read_timeout_ms < 0 {
+        return Err(anyhow!("--read-timeout-ms must be non-negative"));
+    }
+    if !degrees_of_rotation.is_finite() || degrees_of_rotation <= 0.0 {
+        return Err(anyhow!(
+            "--degrees-of-rotation must be a positive finite value"
+        ));
+    }
+    let expected_selector = lane_manifest_r5_hid_observe_selector(lane)
+        .ok_or_else(|| anyhow!("lane manifest does not declare an exact R5 HID endpoint"))?;
+    if !selector.eq_ignore_ascii_case(&expected_selector) {
+        return Err(anyhow!(
+            "--device must match the lane R5 endpoint exactly ({expected_selector}); got {selector}"
+        ));
+    }
+
+    let receipt_path = proof_output_path(lane, json_out, "steering-angle-stream-proof.json");
+    let api = HidApi::new().context("failed to initialize HID API")?;
+    let (device, snapshot) = open_single_moza_device(&api, Some(selector))?;
+    device
+        .set_blocking_mode(true)
+        .context("failed to set HID blocking mode")?;
+
+    let product_id = parse_hex_selector(&snapshot.product_id).ok_or_else(|| {
+        anyhow!(
+            "selected Moza device has invalid product_id {}",
+            snapshot.product_id
+        )
+    })?;
+    if !matches!(product_id, product_ids::R5_V1 | product_ids::R5_V2) {
+        return Err(anyhow!(
+            "steering-stream-proof requires an R5 wheelbase endpoint; selected {}",
+            snapshot.product_id
+        ));
+    }
+    let protocol = MozaProtocol::new(product_id);
+
+    let mut sample_writer = match jsonl_out {
+        Some(path) => {
+            if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+                fs::create_dir_all(parent)
+                    .with_context(|| format!("failed to create '{}'", parent.display()))?;
+            }
+            Some(BufWriter::new(File::create(path).with_context(|| {
+                format!("failed to create '{}'", path.display())
+            })?))
+        }
+        None => None,
+    };
+
+    let started_at = Instant::now();
+    let deadline = started_at + Duration::from_millis(duration_ms);
+    let mut buf = [0u8; 256];
+    let mut sample_count = 0u64;
+    let mut rejected_reports = 0u64;
+    let mut raw_min: Option<u16> = None;
+    let mut raw_max: Option<u16> = None;
+    let mut angle_min: Option<f64> = None;
+    let mut angle_max: Option<f64> = None;
+    let mut previous_elapsed_us = 0u64;
+    let mut timestamps_monotonic = true;
+    let sequence_monotonic = true;
+    let mut baseline_sum = 0.0f64;
+    let mut baseline_count = 0u64;
+
+    while Instant::now() < deadline {
+        let n = device
+            .read_timeout(&mut buf, read_timeout_ms)
+            .context("HID read error")?;
+        if n == 0 {
+            continue;
+        }
+
+        let elapsed_us = started_at.elapsed().as_micros() as u64;
+        if sample_count > 0 && elapsed_us < previous_elapsed_us {
+            timestamps_monotonic = false;
+        }
+        previous_elapsed_us = elapsed_us;
+
+        let data = &buf[..n];
+        let Some(state) = protocol.parse_input_state(data) else {
+            rejected_reports = rejected_reports.saturating_add(1);
+            continue;
+        };
+
+        let steering_u16 = state.steering_u16;
+        let angle_degrees = steering_u16_to_degrees(steering_u16, degrees_of_rotation);
+        raw_min = Some(raw_min.map_or(steering_u16, |value| value.min(steering_u16)));
+        raw_max = Some(raw_max.map_or(steering_u16, |value| value.max(steering_u16)));
+        angle_min = Some(angle_min.map_or(angle_degrees, |value| value.min(angle_degrees)));
+        angle_max = Some(angle_max.map_or(angle_degrees, |value| value.max(angle_degrees)));
+        if baseline_count < 64 {
+            baseline_sum += angle_degrees;
+            baseline_count += 1;
+        }
+
+        if let Some(writer) = sample_writer.as_mut() {
+            let sample = serde_json::json!({
+                "sequence": sample_count,
+                "ts_ns": unix_now_ns(),
+                "elapsed_us": elapsed_us,
+                "steering_u16": steering_u16,
+                "angle_degrees": angle_degrees,
+                "product_id": snapshot.product_id.clone(),
+                "report_id": data.first().map(|id| hex_u8(*id)).unwrap_or_else(|| "0x00".to_string()),
+                "report_len": n,
+                "hardware_output_enabled": false,
+                "no_ffb_writes": true,
+                "no_output_reports": true,
+                "no_feature_reports": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true
+            });
+            writeln!(writer, "{}", serde_json::to_string(&sample)?)
+                .context("failed to write steering sample line")?;
+        }
+
+        sample_count = sample_count.saturating_add(1);
+    }
+
+    if let Some(writer) = sample_writer.as_mut() {
+        writer
+            .flush()
+            .context("failed to flush steering sample file")?;
+    }
+
+    let center_baseline = (baseline_count > 0).then_some(baseline_sum / baseline_count as f64);
+    let success = sample_count > 0;
+    let mut receipt = serde_json::json!({
+        "success": success,
+        "command": "wheelctl moza steering-stream-proof",
+        "generated_at_utc": now_utc(),
+        "receipt_path": receipt_path_string(&receipt_path),
+        "selector": selector,
+        "device": snapshot,
+        "duration_ms": duration_ms,
+        "read_timeout_ms": read_timeout_ms,
+        "sample_count": sample_count,
+        "parsed_reports": sample_count,
+        "rejected_reports": rejected_reports,
+        "sample_rate_hz": sample_count as f64 * 1000.0 / duration_ms as f64,
+        "angle_units": "degrees",
+        "degrees_of_rotation_assumption": degrees_of_rotation,
+        "center_baseline_degrees": center_baseline,
+        "steering_u16_min": raw_min,
+        "steering_u16_max": raw_max,
+        "angle_degrees_min": angle_min,
+        "angle_degrees_max": angle_max,
+        "movement_observed": raw_min.zip(raw_max).map(|(min, max)| min != max).unwrap_or(false),
+        "timestamps_monotonic": timestamps_monotonic,
+        "sequence_monotonic": sequence_monotonic,
+        "hardware_output_enabled": false,
+        "no_hid_device_opened": false,
+        "no_output_reports": true,
+        "no_feature_reports": true,
+        "no_ffb_writes": true,
+        "no_serial_config_commands": true,
+        "no_firmware_or_dfu_commands": true,
+        "notes": [
+            "steering-stream-proof opens the selected HID endpoint for input reads only",
+            "the command sends no output reports, feature reports, FFB writes, serial config, firmware, or DFU commands",
+            "degrees are scaled from the parsed steering_u16 range using the declared degrees_of_rotation assumption"
+        ]
+    });
+    if let Some(path) = jsonl_out {
+        receipt["sample_artifact"] = Value::String(receipt_path_string(path));
+        receipt["sample_artifact_records"] = Value::Number(sample_count.into());
+    }
+
+    write_json_receipt(Some(&receipt_path), &receipt)?;
+    print_proof_receipt(json, &receipt_path, "steering stream", &receipt)?;
+    if !success {
+        return Err(receipt_failure(format!(
+            "Moza steering stream proof failed: parsed_reports={sample_count}, rejected_reports={rejected_reports}"
+        )));
+    }
+    Ok(())
+}
+
+fn steering_u16_to_degrees(value: u16, degrees_of_rotation: f64) -> f64 {
+    (f64::from(value) / f64::from(u16::MAX) - 0.5) * degrees_of_rotation
 }
 
 async fn validate_capture(
@@ -19621,6 +19838,18 @@ mod tests {
             fs::create_dir_all(parent)?;
         }
         fs::write(path, contents)?;
+        Ok(())
+    }
+
+    #[test]
+    fn steering_u16_to_degrees_scales_declared_range() -> TestResult {
+        let full_left = steering_u16_to_degrees(0, 1080.0);
+        let center = steering_u16_to_degrees(32768, 1080.0);
+        let full_right = steering_u16_to_degrees(u16::MAX, 1080.0);
+
+        assert!((full_left + 540.0).abs() < 0.001);
+        assert!(center.abs() < 0.01);
+        assert!((full_right - 540.0).abs() < 0.001);
         Ok(())
     }
 

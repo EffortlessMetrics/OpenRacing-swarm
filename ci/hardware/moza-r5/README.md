@@ -302,6 +302,7 @@ Zero proof requires an explicit descriptor-trusted zero-output strategy. `wheelc
 After staged init, service/status receipts, bounded low torque, native steering-angle stream, and native actuator-profile smoke pass, promote the native OpenRacing control foundation before collecting optional external compatibility receipts:
 
 ```powershell
+wheelctl moza steering-stream-proof --device <r5> --lane ci/hardware/moza-r5/YYYY-MM-DD --duration-ms 5000 --jsonl-out ci/hardware/moza-r5/YYYY-MM-DD/steering-angle-stream.jsonl --json-out ci/hardware/moza-r5/YYYY-MM-DD/steering-angle-stream-proof.json
 wheelctl moza verify-bundle --lane ci/hardware/moza-r5/YYYY-MM-DD --stage openracing-control-ready --json-out ci/hardware/moza-r5/YYYY-MM-DD/openracing-control-verification.json
 wheelctl moza promote-manifest --lane ci/hardware/moza-r5/YYYY-MM-DD --stage openracing-control-ready --json-out ci/hardware/moza-r5/YYYY-MM-DD/manifest-promotion-openracing-control.json
 wheelctl moza audit-lane --lane ci/hardware/moza-r5/YYYY-MM-DD --stage openracing-control-ready --json-out ci/hardware/moza-r5/YYYY-MM-DD/lane-audit-openracing-control.json

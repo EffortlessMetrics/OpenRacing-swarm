@@ -1529,6 +1529,59 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_steering_stream_proof() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "moza",
+            "steering-stream-proof",
+            "--device",
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
+            "--duration-ms",
+            "5000",
+            "--read-timeout-ms",
+            "20",
+            "--degrees-of-rotation",
+            "1080",
+            "--jsonl-out",
+            "target/steering-angle-stream.jsonl",
+            "--json-out",
+            "ci/hardware/moza-r5/2026-05-13/steering-angle-stream-proof.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::SteeringStreamProof {
+                device,
+                lane,
+                duration_ms,
+                read_timeout_ms,
+                degrees_of_rotation,
+                jsonl_out,
+                json_out,
+            }) => {
+                assert_eq!(device, "hid-0x346E-0x0004-if2-0x0001-0x0004");
+                assert_eq!(
+                    lane.as_path().to_str(),
+                    Some("ci/hardware/moza-r5/2026-05-13")
+                );
+                assert_eq!(*duration_ms, 5000);
+                assert_eq!(*read_timeout_ms, 20);
+                assert_eq!(*degrees_of_rotation, 1080.0);
+                assert_eq!(
+                    jsonl_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/steering-angle-stream.jsonl")
+                );
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("ci/hardware/moza-r5/2026-05-13/steering-angle-stream-proof.json")
+                );
+            }
+            _ => return Err("expected Moza SteeringStreamProof command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_validate_capture() -> TestResult {
         let cli = Cli::try_parse_from([
             "wheelctl",

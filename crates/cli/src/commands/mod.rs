@@ -500,6 +500,31 @@ pub enum MozaCommands {
         json_out: std::path::PathBuf,
     },
 
+    /// Record native steering angle samples from the lane R5 endpoint without output writes
+    SteeringStreamProof {
+        /// Exact lane R5 HID endpoint selector, e.g. hid-0x346E-0x0004-if2-0x0001-0x0004
+        #[arg(long)]
+        device: String,
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-13
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Capture duration in milliseconds
+        #[arg(long, default_value = "5000")]
+        duration_ms: u64,
+        /// HID read timeout in milliseconds
+        #[arg(long, default_value = "20")]
+        read_timeout_ms: i32,
+        /// Declared steering range used only to scale raw steering samples into receipt degrees
+        #[arg(long, default_value = "1080")]
+        degrees_of_rotation: f64,
+        /// Optional JSON Lines file for per-sample steering records
+        #[arg(long)]
+        jsonl_out: Option<std::path::PathBuf>,
+        /// Write the steering proof receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
     /// Validate captured Moza input JSONL through the parser without hardware writes
     ValidateCapture {
         /// JSON Lines file produced by `wheelctl moza capture-input`
