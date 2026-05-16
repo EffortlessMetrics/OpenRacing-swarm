@@ -8183,32 +8183,39 @@ fn push_smoke_ready_next_commands(
         return;
     }
 
-    for (case, evidence_artifact, artifact, evidence) in [
+    for (case, case_id, evidence_artifact, artifact, evidence) in [
         (
             "closed",
+            "pit_house_closed",
             "pit-house-evidence-closed.json",
             "pit-house-observation-closed.json",
             "Pit House closed; OpenRacing staged handshake observed",
         ),
         (
             "open-standard",
+            "pit_house_open_idle_standard",
             "pit-house-evidence-open-standard.json",
             "pit-house-observation-open-standard.json",
             "Pit House open and idle; standard mode observed",
         ),
         (
             "open-direct",
+            "pit_house_open_direct",
             "pit-house-evidence-open-direct.json",
             "pit-house-observation-open-direct.json",
             "Pit House open during direct request; OpenRacing warned or blocked",
         ),
         (
             "firmware-page",
+            "pit_house_firmware_update_page_open",
             "pit-house-evidence-firmware-page.json",
             "pit-house-observation-firmware-page.json",
             "Pit House firmware/update page open; high-risk tests refused",
         ),
     ] {
+        if pit_house_observation_receipt_is_safe(lane, artifact, case_id) {
+            continue;
+        }
         push_pit_house_observation_next_command(
             lane,
             commands,
@@ -8219,50 +8226,69 @@ fn push_smoke_ready_next_commands(
         );
     }
 
-    for (case, observation, artifact, evidence) in [
+    for (case, case_id, observation, artifact, evidence) in [
         (
             "closed",
+            "pit_house_closed",
             "pit-house-observation-closed.json",
             "pit-house-closed.json",
             "Pit House closed case observed",
         ),
         (
             "open-standard",
+            "pit_house_open_idle_standard",
             "pit-house-observation-open-standard.json",
             "pit-house-open-standard.json",
             "Pit House open standard case observed",
         ),
         (
             "open-direct",
+            "pit_house_open_direct",
             "pit-house-observation-open-direct.json",
             "pit-house-direct-blocked.json",
             "Pit House open direct request warned or blocked",
         ),
         (
             "firmware-page",
+            "pit_house_firmware_update_page_open",
             "pit-house-observation-firmware-page.json",
             "pit-house-firmware-page.json",
             "Pit House firmware/update page refusal observed",
         ),
     ] {
+        if pit_house_case_receipt_is_safe(lane, artifact, case_id) {
+            continue;
+        }
         push_pit_house_case_next_command(lane, commands, case, observation, artifact, evidence);
     }
-    push_pit_house_observation_next_command(
+    if !pit_house_observation_receipt_is_safe(
         lane,
-        commands,
-        "mode-change",
-        "pit-house-evidence-mode-change.json",
         "pit-house-observation-mode-change.json",
-        "Pit House mode change observed during bounded run; output cleared",
-    );
-    push_pit_house_case_next_command(
+        "pit_house_mode_change_during_run",
+    ) {
+        push_pit_house_observation_next_command(
+            lane,
+            commands,
+            "mode-change",
+            "pit-house-evidence-mode-change.json",
+            "pit-house-observation-mode-change.json",
+            "Pit House mode change observed during bounded run; output cleared",
+        );
+    }
+    if !pit_house_case_receipt_is_safe(
         lane,
-        commands,
-        "mode-change",
-        "pit-house-observation-mode-change.json",
         "pit-house-mode-change.json",
-        "Pit House mode change fail-safe observed",
-    );
+        "pit_house_mode_change_during_run",
+    ) {
+        push_pit_house_case_next_command(
+            lane,
+            commands,
+            "mode-change",
+            "pit-house-observation-mode-change.json",
+            "pit-house-mode-change.json",
+            "Pit House mode change fail-safe observed",
+        );
+    }
     commands.push(format!(
         "wheelctl moza pit-house-proof --lane {lane_arg} --closed-artifact pit-house-closed.json --open-standard-artifact pit-house-open-standard.json --direct-artifact pit-house-direct-blocked.json --mode-change-artifact pit-house-mode-change.json --firmware-page-artifact pit-house-firmware-page.json --shared-control-risk warned --json-out {}",
         lane_path_arg(lane, "pit-house-coexistence.json")
@@ -8271,6 +8297,34 @@ fn push_smoke_ready_next_commands(
         "wheelctl moza verify-bundle --lane {lane_arg} --stage smoke-ready --json-out {}",
         lane_path_arg(lane, verification_receipt_path(MozaBundleStage::SmokeReady))
     ));
+}
+
+fn pit_house_observation_receipt_is_safe(
+    lane: &Path,
+    observation_artifact: &str,
+    case_id: &str,
+) -> bool {
+    let artifact = serde_json::json!({
+        "pit_house_observation_artifact": observation_artifact
+    });
+    pit_house_case_observation_is_safe(lane, &artifact, case_id)
+}
+
+fn pit_house_case_receipt_is_safe(lane: &Path, artifact_path: &str, case_id: &str) -> bool {
+    let Some(path) = resolve_receipt_path(lane, artifact_path) else {
+        return false;
+    };
+    let Ok(artifact) = read_json_path(&path) else {
+        return false;
+    };
+    let result = json_string(&artifact, "result");
+    pit_house_case_artifact_is_safe(
+        lane,
+        artifact_path,
+        case_id,
+        result,
+        SupportBundleValidationMode::Fresh,
+    )
 }
 
 fn push_pit_house_observation_next_command(
@@ -35368,6 +35422,66 @@ mod tests {
                 "smoke-ready next_commands should not use stale Pit House artifact name {stale_artifact}: {joined}"
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_smoke_pit_house_guidance_skips_completed_subcases() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_smoke_ready_bundle(dir.path())?;
+        fs::remove_file(dir.path().join("pit-house-coexistence.json"))?;
+        for artifact in [
+            "pit-house-evidence-open_idle_standard.json",
+            "pit-house-observation-open-standard.json",
+            "pit-house-open-standard.json",
+            "pit-house-evidence-open_direct.json",
+            "pit-house-observation-open-direct.json",
+            "pit-house-direct-blocked.json",
+            "pit-house-evidence-mode_change_during_run.json",
+            "pit-house-observation-mode-change.json",
+            "pit-house-mode-change.json",
+            "pit-house-evidence-firmware_update_page_open.json",
+            "pit-house-observation-firmware-page.json",
+            "pit-house-firmware-page.json",
+        ] {
+            fs::remove_file(dir.path().join(artifact))?;
+        }
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let commands = receipt.next_commands.join("\n");
+
+        assert!(
+            !commands.contains("wheelctl moza pit-house-observation --case closed")
+                && !receipt.next_commands.iter().any(|command| {
+                    command.contains("wheelctl moza pit-house-case")
+                        && command.contains("--case closed")
+                }),
+            "completed closed Pit House subcase should not be regenerated: {commands}"
+        );
+        assert!(
+            !commands.contains("pit-house-evidence-closed.json")
+                && !commands.contains("pit-house-observation-closed.json"),
+            "completed closed Pit House observation should not be repeated: {commands}"
+        );
+        for expected in [
+            "wheelctl moza pit-house-observation --case open-standard",
+            "wheelctl moza pit-house-case",
+            "--case open-standard",
+            "wheelctl moza pit-house-observation --case mode-change",
+            "--case mode-change",
+            "wheelctl moza pit-house-proof",
+        ] {
+            assert!(
+                commands.contains(expected),
+                "missing Pit House frontier command {expected}: {commands}"
+            );
+        }
+        let observation_commands = receipt
+            .next_commands
+            .iter()
+            .filter(|command| command.contains("wheelctl moza pit-house-observation"))
+            .count();
+        assert_eq!(observation_commands, 4);
         Ok(())
     }
 
