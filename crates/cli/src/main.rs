@@ -2409,6 +2409,47 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_pit_house_evidence() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "moza",
+            "pit-house-evidence",
+            "--case",
+            "open-standard",
+            "--operator",
+            "Steven",
+            "--evidence",
+            "Pit House process/window snapshot saved.",
+            "--json-out",
+            "pit-house-evidence-open-standard.json",
+            "--overwrite",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::PitHouseEvidence {
+                case,
+                operator,
+                evidence,
+                json_out,
+                overwrite,
+            }) => {
+                assert!(matches!(case, MozaPitHouseObservationCase::OpenStandard));
+                assert_eq!(operator, "Steven");
+                assert_eq!(
+                    evidence.as_deref(),
+                    Some("Pit House process/window snapshot saved.")
+                );
+                assert_eq!(
+                    json_out.as_path().to_str(),
+                    Some("pit-house-evidence-open-standard.json")
+                );
+                assert!(*overwrite);
+            }
+            _ => return Err("expected Moza PitHouseEvidence command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_pit_house_case() -> TestResult {
         let cli = Cli::try_parse_from([
             "wheelctl",

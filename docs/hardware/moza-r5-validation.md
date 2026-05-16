@@ -407,9 +407,14 @@ Pit House coexistence is a separate test. Do not infer it from passive capture o
 
 The closed, open-idle, direct-block, and firmware-page artifacts can be collected during this phase. The `pit_house_mode_change_during_run` artifact and the final `pit-house-coexistence.json` parent receipt must be generated after Phase 7 bounded simulator FFB smoke, because the verifier requires the mode-change case to link to `simulator-ffb-smoke.json` and a `clear_zero` output record tagged `mode_mismatch`.
 
-Generate each Pit House state observation receipt with the dedicated no-HID observation command, then reference the resulting JSON from the matching case artifact. Operator notes alone are not verifier-accepted evidence; save a lane-relative screenshot, video, or process/window snapshot first and pass it as `--evidence-artifact`:
+Generate each Pit House state observation receipt with the dedicated no-HID observation command, then reference the resulting JSON from the matching case artifact. Operator notes alone are not verifier-accepted evidence; save a lane-relative screenshot, video, or process/window snapshot first and pass it as `--evidence-artifact`. For process/window evidence on Windows, use `pit-house-evidence`; it writes a no-output JSON snapshot and `pit-house-observation` rejects wheelctl-generated snapshots that contradict the requested case:
 
 ```powershell
+wheelctl moza pit-house-evidence --case closed --operator Steven --evidence "Pit House closed before staged handshake." --json-out ci/hardware/moza-r5/<date>/pit-house-evidence-closed.json
+wheelctl moza pit-house-evidence --case open-standard --operator Steven --evidence "Pit House open and idle while standard mode completed." --json-out ci/hardware/moza-r5/<date>/pit-house-evidence-open-standard.json
+wheelctl moza pit-house-evidence --case open-direct --operator Steven --evidence "Pit House open while direct mode was blocked or required acknowledgement." --json-out ci/hardware/moza-r5/<date>/pit-house-evidence-open-direct.json
+wheelctl moza pit-house-evidence --case mode-change --operator Steven --evidence "Pit House mode change observed during bounded run; output cleared." --json-out ci/hardware/moza-r5/<date>/pit-house-evidence-mode-change.json
+wheelctl moza pit-house-evidence --case firmware-page --operator Steven --evidence "Pit House firmware/update page open; high-risk tests refused." --json-out ci/hardware/moza-r5/<date>/pit-house-evidence-firmware-page.json
 wheelctl moza pit-house-observation --case closed --evidence-kind process-window-snapshot --evidence-artifact pit-house-evidence-closed.json --evidence "Pit House closed before staged handshake." --json-out ci/hardware/moza-r5/<date>/pit-house-observation-closed.json
 wheelctl moza pit-house-observation --case open-standard --evidence-kind process-window-snapshot --evidence-artifact pit-house-evidence-open-standard.json --evidence "Pit House open and idle while standard mode completed." --json-out ci/hardware/moza-r5/<date>/pit-house-observation-open-standard.json
 wheelctl moza pit-house-observation --case open-direct --evidence-kind process-window-snapshot --evidence-artifact pit-house-evidence-open-direct.json --evidence "Pit House open while direct mode was blocked or required acknowledgement." --json-out ci/hardware/moza-r5/<date>/pit-house-observation-open-direct.json
@@ -439,7 +444,7 @@ The producer copies the case-specific safety booleans from each artifact into th
 wheelctl moza receipt-template --kind pit-house --json-out ci/hardware/moza-r5/<date>/pit-house-coexistence.json
 ```
 
-The generated template has `success: false` and is intentionally rejected by `verify-bundle` until every case is observed and the safety fields are updated from receipts. For each `pit-house-observation`, capture or copy the named screenshot, video, or process/window snapshot into the dated lane before running the command; the producer refuses to write an observation receipt if `--evidence-artifact` is missing.
+The generated template has `success: false` and is intentionally rejected by `verify-bundle` until every case is observed and the safety fields are updated from receipts. For each `pit-house-observation`, capture or copy the named screenshot or video into the dated lane, or create a process/window JSON snapshot with `pit-house-evidence`, before running the command; the observation producer refuses to write a receipt if `--evidence-artifact` is missing or if a wheelctl-generated process/window snapshot contradicts the requested case.
 
 The bundle verifier requires the direct-mode case to be blocked or require explicit acknowledgement, the mode-change case to detect mismatch or fail safe, and the firmware/update-page case to refuse high-risk tests.
 

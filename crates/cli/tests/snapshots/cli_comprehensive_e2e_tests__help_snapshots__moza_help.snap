@@ -31,6 +31,7 @@ Commands:
   actuator-visible-smoke     Run a bounded native actuator smoke that must prove visible steering motion
   receipt-template           Write a non-claiming starter receipt for manual Pit House or simulator evidence
   pit-house-observation      Write an observed Pit House UI/process state receipt
+  pit-house-evidence         Capture a no-output Pit House process/window snapshot evidence artifact
   pit-house-case             Build one Pit House coexistence case artifact from source receipts
   pit-house-proof            Build a Pit House coexistence receipt from observed case artifact files
   simulator-telemetry-proof  Build a telemetry-only simulator proof receipt from normalized snapshots

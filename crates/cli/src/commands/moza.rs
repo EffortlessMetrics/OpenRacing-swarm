@@ -24,6 +24,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Component, Path, PathBuf};
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 use crate::commands::{
@@ -311,6 +312,15 @@ struct PitHouseObservationRequest<'a> {
     evidence_artifact: Option<&'a Path>,
     operator: &'a str,
     evidence: &'a str,
+    json_out: &'a Path,
+    overwrite: bool,
+}
+
+struct PitHouseEvidenceRequest<'a> {
+    json: bool,
+    case: MozaPitHouseObservationCase,
+    operator: &'a str,
+    evidence: Option<&'a str>,
     json_out: &'a Path,
     overwrite: bool,
 }
@@ -701,6 +711,23 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 evidence_artifact: evidence_artifact.as_deref(),
                 operator,
                 evidence,
+                json_out,
+                overwrite: *overwrite,
+            })
+            .await
+        }
+        MozaCommands::PitHouseEvidence {
+            case,
+            operator,
+            evidence,
+            json_out,
+            overwrite,
+        } => {
+            pit_house_evidence(PitHouseEvidenceRequest {
+                json,
+                case: *case,
+                operator,
+                evidence: evidence.as_deref(),
                 json_out,
                 overwrite: *overwrite,
             })
@@ -3496,6 +3523,12 @@ async fn pit_house_observation(request: PitHouseObservationRequest<'_>) -> Resul
             json_out.display()
         ));
     }
+    if matches!(
+        evidence_kind,
+        MozaPitHouseEvidenceKind::ProcessWindowSnapshot
+    ) {
+        validate_known_pit_house_process_window_snapshot(&evidence_path, case)?;
+    }
 
     let receipt = serde_json::json!({
         "success": true,
@@ -3518,6 +3551,38 @@ async fn pit_house_observation(request: PitHouseObservationRequest<'_>) -> Resul
     ensure_receipt_writable(json_out, overwrite)?;
     write_json_receipt(Some(json_out), &receipt)?;
     print_proof_receipt(json, json_out, "Pit House observation", &receipt)
+}
+
+async fn pit_house_evidence(request: PitHouseEvidenceRequest<'_>) -> Result<()> {
+    let PitHouseEvidenceRequest {
+        json,
+        case,
+        operator,
+        evidence,
+        json_out,
+        overwrite,
+    } = request;
+
+    if operator.trim().is_empty() {
+        return Err(anyhow!("--operator must not be empty"));
+    }
+    if let Some(evidence) = evidence
+        && evidence.trim().is_empty()
+    {
+        return Err(anyhow!("--evidence must not be empty when provided"));
+    }
+
+    let receipt =
+        pit_house_evidence_receipt(case, operator, evidence, scan_pit_house_process_windows());
+
+    ensure_receipt_writable(json_out, overwrite)?;
+    write_json_receipt(Some(json_out), &receipt)?;
+    print_proof_receipt(
+        json,
+        json_out,
+        "Pit House process/window evidence",
+        &receipt,
+    )
 }
 
 async fn pit_house_case(request: PitHouseCaseRequest<'_>) -> Result<()> {
@@ -7470,7 +7535,8 @@ fn blocked_safe_followups_for_bundle_stage(
             no_ffb_writes: true,
             commands: pit_house_commands,
             notes: vec![
-                "Only run these after the matching lane-relative evidence artifact exists, such as a process/window snapshot.".to_string(),
+                "Run pit-house-evidence first when the matching process/window snapshot artifact is missing.".to_string(),
+                "pit-house-observation rejects wheelctl-generated snapshots that do not match the requested Pit House case.".to_string(),
                 "Do not run pit-house-proof or claim full coexistence from these subcases alone.".to_string(),
             ],
         });
@@ -8520,10 +8586,27 @@ fn push_pit_house_observation_next_command(
     output_artifact: &str,
     evidence: &str,
 ) {
+    if !lane.join(evidence_artifact).is_file() {
+        push_pit_house_evidence_next_command(lane, commands, case, evidence_artifact, evidence);
+    }
     commands.push(format!(
         "wheelctl moza pit-house-observation --case {case} --evidence-kind process-window-snapshot --evidence-artifact {evidence_artifact} --operator Steven --evidence {} --json-out {}",
         command_arg(evidence),
         lane_path_arg(lane, output_artifact)
+    ));
+}
+
+fn push_pit_house_evidence_next_command(
+    lane: &Path,
+    commands: &mut Vec<String>,
+    case: &str,
+    evidence_artifact: &str,
+    evidence: &str,
+) {
+    commands.push(format!(
+        "wheelctl moza pit-house-evidence --case {case} --operator Steven --evidence {} --json-out {}",
+        command_arg(evidence),
+        lane_path_arg(lane, evidence_artifact)
     ));
 }
 
@@ -14651,13 +14734,15 @@ fn pit_house_case_observation_is_safe(lane: &Path, artifact: &Value, case_id: &s
     let operator_present = json_string(&observation, "operator")
         .map(|value| !value.trim().is_empty())
         .unwrap_or(false);
-    let evidence_artifact_exists = json_string(&observation, "evidence_artifact")
-        .and_then(|value| resolve_receipt_path(lane, value))
-        .map(|path| path.is_file())
-        .unwrap_or(false);
     let evidence_kind_ok = matches!(
         json_string(&observation, "evidence_kind"),
         Some("operator_screenshot" | "operator_video" | "process_window_snapshot")
+    );
+    let evidence_artifact_ok = pit_house_observation_evidence_artifact_is_safe(
+        lane,
+        &observation,
+        case_id,
+        json_string(&observation, "evidence_kind"),
     );
 
     json_bool(&observation, "success") == Some(true)
@@ -14668,11 +14753,33 @@ fn pit_house_case_observation_is_safe(lane: &Path, artifact: &Value, case_id: &s
         && evidence_kind_ok
         && observed_at_present
         && operator_present
-        && evidence_artifact_exists
+        && evidence_artifact_ok
         && json_bool(&observation, "no_hid_device_opened") == Some(true)
         && json_bool(&observation, "no_ffb_writes") == Some(true)
         && no_out_of_scope_device_commands(&observation)
         && evidence_present
+}
+
+fn pit_house_observation_evidence_artifact_is_safe(
+    lane: &Path,
+    observation: &Value,
+    case_id: &str,
+    evidence_kind: Option<&str>,
+) -> bool {
+    let Some(evidence_path) = json_string(observation, "evidence_artifact")
+        .and_then(|value| resolve_receipt_path(lane, value))
+    else {
+        return false;
+    };
+    if !evidence_path.is_file() {
+        return false;
+    }
+    if evidence_kind != Some("process_window_snapshot") {
+        return true;
+    }
+    read_json_path(&evidence_path)
+        .map(|snapshot| pit_house_process_window_snapshot_matches_case(&snapshot, case_id))
+        .unwrap_or(true)
 }
 
 fn pit_house_case_artifact_receipt(
@@ -14806,6 +14913,214 @@ fn pit_house_source_has_feature_report_kind(receipt: &Value, expected_kind: &str
         .unwrap_or(false)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct PitHouseProcessWindowMatch {
+    process_name: String,
+    pid: Option<u32>,
+    window_title: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PitHouseProcessWindowScan {
+    process_scan_attempted: bool,
+    window_title_scan_attempted: bool,
+    matched_processes: Vec<PitHouseProcessWindowMatch>,
+    error: Option<String>,
+}
+
+fn pit_house_evidence_receipt(
+    case: MozaPitHouseObservationCase,
+    operator: &str,
+    evidence: Option<&str>,
+    scan: PitHouseProcessWindowScan,
+) -> Value {
+    let process_visible = !scan.matched_processes.is_empty();
+    let expected_visible = pit_house_process_window_expected_visible(case);
+    let snapshot_matches_case = process_visible == expected_visible;
+    let evidence_note = evidence
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| pit_house_process_window_conclusion(case, process_visible).to_string());
+
+    serde_json::json!({
+        "success": true,
+        "command": "wheelctl moza pit-house-evidence",
+        "generated_at_utc": now_utc(),
+        "case": pit_house_observation_case_id(case),
+        "evidence_kind": "process_window_snapshot",
+        "operator": operator,
+        "evidence": evidence_note,
+        "platform": std::env::consts::OS,
+        "query_scope": "matching processes only; no full process list captured",
+        "process_scan_attempted": scan.process_scan_attempted,
+        "window_title_scan_attempted": scan.window_title_scan_attempted,
+        "process_name_pattern": "moza|pit house|pithouse",
+        "window_title_pattern": "MOZA|Pit House|Pithouse",
+        "matched_process_count": scan.matched_processes.len(),
+        "matched_processes": scan.matched_processes,
+        "pit_house_process_visible": process_visible,
+        "expected_pit_house_process_visible": expected_visible,
+        "snapshot_matches_case": snapshot_matches_case,
+        "scan_error": scan.error,
+        "notes": pit_house_process_window_evidence_notes(case),
+        "no_hid_device_opened": true,
+        "no_ffb_writes": true,
+        "no_serial_config_commands": true,
+        "no_firmware_or_dfu_commands": true
+    })
+}
+
+fn scan_pit_house_process_windows() -> PitHouseProcessWindowScan {
+    if !cfg!(windows) {
+        return PitHouseProcessWindowScan {
+            process_scan_attempted: false,
+            window_title_scan_attempted: false,
+            matched_processes: Vec::new(),
+            error: Some("process/window snapshot is currently implemented only on Windows".into()),
+        };
+    }
+
+    let script = "$ErrorActionPreference='Stop'; Get-Process | Where-Object { $_.ProcessName -match 'MOZA|Pit House|Pithouse' -or $_.MainWindowTitle -match 'MOZA|Pit House|Pithouse' } | Select-Object ProcessName,Id,MainWindowTitle | ConvertTo-Json -Depth 2 -Compress";
+    match Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            match pit_house_process_window_matches_from_powershell_json(&stdout) {
+                Ok(matched_processes) => PitHouseProcessWindowScan {
+                    process_scan_attempted: true,
+                    window_title_scan_attempted: true,
+                    matched_processes,
+                    error: None,
+                },
+                Err(error) => PitHouseProcessWindowScan {
+                    process_scan_attempted: true,
+                    window_title_scan_attempted: true,
+                    matched_processes: Vec::new(),
+                    error: Some(error.to_string()),
+                },
+            }
+        }
+        Ok(output) => PitHouseProcessWindowScan {
+            process_scan_attempted: true,
+            window_title_scan_attempted: true,
+            matched_processes: Vec::new(),
+            error: Some(format!("powershell exited with status {}", output.status)),
+        },
+        Err(error) => PitHouseProcessWindowScan {
+            process_scan_attempted: true,
+            window_title_scan_attempted: true,
+            matched_processes: Vec::new(),
+            error: Some(error.to_string()),
+        },
+    }
+}
+
+#[cfg(test)]
+fn pit_house_process_window_matches_from_tasklist(output: &str) -> Vec<PitHouseProcessWindowMatch> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let fields = parse_csv_fields(line);
+            let process_name = fields.first()?.trim().to_string();
+            if process_name.is_empty() {
+                return None;
+            }
+            let pid = fields.get(1).and_then(|value| value.trim().parse().ok());
+            let window_title = fields
+                .get(8)
+                .map(|value| value.trim())
+                .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("N/A"))
+                .map(str::to_string);
+            let matches = pit_house_process_or_window_matches(
+                &process_name,
+                window_title.as_deref().unwrap_or_default(),
+            );
+            matches.then_some(PitHouseProcessWindowMatch {
+                process_name,
+                pid,
+                window_title,
+            })
+        })
+        .collect()
+}
+
+fn pit_house_process_window_matches_from_powershell_json(
+    output: &str,
+) -> Result<Vec<PitHouseProcessWindowMatch>> {
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+    let value: Value = serde_json::from_str(trimmed).context("invalid PowerShell process JSON")?;
+    let values: Vec<&Value> = match &value {
+        Value::Array(values) => values.iter().collect(),
+        Value::Object(_) => vec![&value],
+        _ => Vec::new(),
+    };
+
+    Ok(values
+        .into_iter()
+        .filter_map(|value| {
+            let process_name = json_string(value, "ProcessName")?.trim().to_string();
+            if process_name.is_empty() {
+                return None;
+            }
+            let pid = json_u64(value, "Id").and_then(|value| u32::try_from(value).ok());
+            let window_title = json_string(value, "MainWindowTitle")
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+            let matches = pit_house_process_or_window_matches(
+                &process_name,
+                window_title.as_deref().unwrap_or_default(),
+            );
+            matches.then_some(PitHouseProcessWindowMatch {
+                process_name,
+                pid,
+                window_title,
+            })
+        })
+        .collect())
+}
+
+#[cfg(test)]
+fn parse_csv_fields(line: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut current = String::new();
+    let mut chars = line.chars().peekable();
+    let mut in_quotes = false;
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' if in_quotes && chars.peek() == Some(&'"') => {
+                current.push('"');
+                chars.next();
+            }
+            '"' => in_quotes = !in_quotes,
+            ',' if !in_quotes => {
+                fields.push(std::mem::take(&mut current));
+            }
+            _ => current.push(ch),
+        }
+    }
+
+    fields.push(current);
+    fields
+}
+
+fn pit_house_process_or_window_matches(process_name: &str, window_title: &str) -> bool {
+    let process_name = process_name.to_ascii_lowercase();
+    let window_title = window_title.to_ascii_lowercase();
+    [process_name.as_str(), window_title.as_str()]
+        .iter()
+        .any(|value| {
+            value.contains("moza") || value.contains("pit house") || value.contains("pithouse")
+        })
+}
+
 fn pit_house_observation_case_id(case: MozaPitHouseObservationCase) -> &'static str {
     match case {
         MozaPitHouseObservationCase::Closed => "pit_house_closed",
@@ -14826,6 +15141,43 @@ fn pit_house_observation_state(case: MozaPitHouseObservationCase) -> &'static st
     }
 }
 
+fn pit_house_process_window_expected_visible(case: MozaPitHouseObservationCase) -> bool {
+    !matches!(case, MozaPitHouseObservationCase::Closed)
+}
+
+fn pit_house_process_window_conclusion(
+    case: MozaPitHouseObservationCase,
+    process_visible: bool,
+) -> &'static str {
+    match (case, process_visible) {
+        (MozaPitHouseObservationCase::Closed, false) => {
+            "Pit House process/window not visible for the closed-state evidence snapshot."
+        }
+        (MozaPitHouseObservationCase::Closed, true) => {
+            "Pit House process/window was visible, so this snapshot does not support the closed case."
+        }
+        (_, true) => {
+            "Pit House process/window visible for the requested open-state evidence snapshot."
+        }
+        (_, false) => {
+            "Pit House process/window not visible, so this snapshot does not support the requested open-state case."
+        }
+    }
+}
+
+fn pit_house_process_window_evidence_notes(case: MozaPitHouseObservationCase) -> Vec<&'static str> {
+    let mut notes = vec![
+        "pit-house-evidence captures process/window state only; it opens no HID device and sends no reports",
+        "run pit-house-observation against this JSON artifact before building the matching pit-house-case receipt",
+    ];
+    if !matches!(case, MozaPitHouseObservationCase::Closed) {
+        notes.push(
+            "open-state snapshots prove Pit House visibility, not the exact UI page or mode by themselves; keep operator evidence text specific",
+        );
+    }
+    notes
+}
+
 fn pit_house_evidence_kind_label(kind: MozaPitHouseEvidenceKind) -> &'static str {
     match kind {
         MozaPitHouseEvidenceKind::OperatorNotes => "operator_notes",
@@ -14833,6 +15185,66 @@ fn pit_house_evidence_kind_label(kind: MozaPitHouseEvidenceKind) -> &'static str
         MozaPitHouseEvidenceKind::OperatorVideo => "operator_video",
         MozaPitHouseEvidenceKind::ProcessWindowSnapshot => "process_window_snapshot",
     }
+}
+
+fn validate_known_pit_house_process_window_snapshot(
+    evidence_path: &Path,
+    case: MozaPitHouseObservationCase,
+) -> Result<()> {
+    let Ok(snapshot) = read_json_path(evidence_path) else {
+        return Ok(());
+    };
+    let case_id = pit_house_observation_case_id(case);
+    if pit_house_process_window_snapshot_matches_case(&snapshot, case_id) {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "Pit House process/window snapshot '{}' does not support case '{}'",
+            evidence_path.display(),
+            case_id
+        ))
+    }
+}
+
+fn pit_house_process_window_snapshot_matches_case(snapshot: &Value, case_id: &str) -> bool {
+    let generated_by_wheelctl =
+        json_string(snapshot, "command") == Some("wheelctl moza pit-house-evidence");
+
+    if generated_by_wheelctl
+        && (json_bool(snapshot, "success") != Some(true)
+            || json_string(snapshot, "evidence_kind") != Some("process_window_snapshot")
+            || json_string(snapshot, "case") != Some(case_id)
+            || json_bool(snapshot, "snapshot_matches_case") != Some(true)
+            || json_bool(snapshot, "no_hid_device_opened") != Some(true)
+            || json_bool(snapshot, "no_ffb_writes") != Some(true)
+            || !no_out_of_scope_device_commands(snapshot))
+    {
+        return false;
+    }
+
+    if let Some(snapshot_case) = json_string(snapshot, "case")
+        && snapshot_case != case_id
+    {
+        return false;
+    }
+    if json_bool(snapshot, "snapshot_matches_case") == Some(false) {
+        return false;
+    }
+    if let Some(visible) = json_bool(snapshot, "pit_house_process_visible") {
+        match case_id {
+            "pit_house_closed" if visible => return false,
+            "pit_house_open_idle_standard"
+            | "pit_house_open_direct"
+            | "pit_house_mode_change_during_run"
+            | "pit_house_firmware_update_page_open"
+                if !visible =>
+            {
+                return false;
+            }
+            _ => {}
+        }
+    }
+    true
 }
 
 fn pit_house_expected_observation_state(case_id: &str) -> Option<&'static str> {
@@ -30919,6 +31331,37 @@ mod tests {
     }
 
     #[test]
+    fn verify_pit_house_gate_rejects_generated_snapshot_for_wrong_state() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_pit_house_artifacts(dir.path())?;
+        write_test_json_file(
+            &dir.path()
+                .join("pit-house-evidence-open_idle_standard.json"),
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl moza pit-house-evidence",
+                "case": "pit_house_open_idle_standard",
+                "evidence_kind": "process_window_snapshot",
+                "pit_house_process_visible": false,
+                "snapshot_matches_case": false,
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true
+            }),
+        )?;
+        write_test_json_file(
+            &dir.path().join("pit-house-coexistence.json"),
+            &pit_house_receipt(),
+        )?;
+
+        let gate = verify_pit_house_coexistence_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
+        Ok(())
+    }
+
+    #[test]
     fn verify_pit_house_gate_requires_observation_command_provenance() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_pit_house_artifacts(dir.path())?;
@@ -31079,6 +31522,122 @@ mod tests {
             &case_artifact,
             "pit_house_open_idle_standard"
         ));
+        Ok(())
+    }
+
+    #[test]
+    fn pit_house_tasklist_parser_keeps_only_moza_process_window_matches() {
+        let output = concat!(
+            "\"System Idle Process\",\"0\",\"Services\",\"0\",\"8 K\",\"Unknown\",\"N/A\",\"0:00:00\",\"N/A\"\n",
+            "\"MOZA Pit House.exe\",\"1424\",\"Console\",\"1\",\"110,240 K\",\"Running\",\"Steven\",\"0:00:03\",\"MOZA Pit House\"\n",
+            "\"notepad.exe\",\"4444\",\"Console\",\"1\",\"18,000 K\",\"Running\",\"Steven\",\"0:00:01\",\"notes\"\n",
+            "\"helper.exe\",\"5555\",\"Console\",\"1\",\"18,000 K\",\"Running\",\"Steven\",\"0:00:01\",\"MozaPitHouse Status\"\n",
+        );
+
+        let matches = pit_house_process_window_matches_from_tasklist(output);
+
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].process_name, "MOZA Pit House.exe");
+        assert_eq!(matches[0].pid, Some(1424));
+        assert_eq!(matches[0].window_title.as_deref(), Some("MOZA Pit House"));
+        assert_eq!(matches[1].process_name, "helper.exe");
+        assert_eq!(matches[1].pid, Some(5555));
+        assert_eq!(
+            matches[1].window_title.as_deref(),
+            Some("MozaPitHouse Status")
+        );
+    }
+
+    #[test]
+    fn pit_house_powershell_parser_keeps_only_moza_process_window_matches() -> TestResult {
+        let output = r#"[
+{"ProcessName":"MOZA Pit House","Id":1424,"MainWindowTitle":"MOZA Pit House"},
+{"ProcessName":"notepad","Id":4444,"MainWindowTitle":"notes"},
+{"ProcessName":"helper","Id":5555,"MainWindowTitle":"MozaPitHouse Status"}
+]"#;
+
+        let matches = pit_house_process_window_matches_from_powershell_json(output)?;
+
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].process_name, "MOZA Pit House");
+        assert_eq!(matches[0].pid, Some(1424));
+        assert_eq!(matches[0].window_title.as_deref(), Some("MOZA Pit House"));
+        assert_eq!(matches[1].process_name, "helper");
+        assert_eq!(matches[1].pid, Some(5555));
+        assert_eq!(
+            matches[1].window_title.as_deref(),
+            Some("MozaPitHouse Status")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn pit_house_evidence_receipt_is_no_output_process_snapshot() {
+        let receipt = pit_house_evidence_receipt(
+            MozaPitHouseObservationCase::Closed,
+            "Steven",
+            Some("Pit House closed process snapshot recorded."),
+            PitHouseProcessWindowScan {
+                process_scan_attempted: true,
+                window_title_scan_attempted: true,
+                matched_processes: Vec::new(),
+                error: None,
+            },
+        );
+
+        assert_eq!(
+            json_string(&receipt, "command"),
+            Some("wheelctl moza pit-house-evidence")
+        );
+        assert_eq!(json_string(&receipt, "case"), Some("pit_house_closed"));
+        assert_eq!(
+            json_string(&receipt, "evidence_kind"),
+            Some("process_window_snapshot")
+        );
+        assert_eq!(json_bool(&receipt, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&receipt, "no_ffb_writes"), Some(true));
+        assert_eq!(json_bool(&receipt, "no_serial_config_commands"), Some(true));
+        assert_eq!(
+            json_bool(&receipt, "no_firmware_or_dfu_commands"),
+            Some(true)
+        );
+    }
+
+    #[tokio::test]
+    async fn pit_house_observation_rejects_generated_snapshot_for_wrong_state() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let evidence_path = dir.path().join("pit-house-evidence-open-standard.json");
+        let observation_path = dir.path().join("pit-house-observation-open-standard.json");
+        write_test_json_file(
+            &evidence_path,
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl moza pit-house-evidence",
+                "case": "pit_house_open_idle_standard",
+                "evidence_kind": "process_window_snapshot",
+                "pit_house_process_visible": false,
+                "snapshot_matches_case": false,
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true
+            }),
+        )?;
+
+        let result = pit_house_observation(PitHouseObservationRequest {
+            json: false,
+            case: MozaPitHouseObservationCase::OpenStandard,
+            evidence_kind: MozaPitHouseEvidenceKind::ProcessWindowSnapshot,
+            evidence_artifact: Some(Path::new("pit-house-evidence-open-standard.json")),
+            operator: "Steven",
+            evidence: "Pit House open idle process snapshot recorded.",
+            json_out: &observation_path,
+            overwrite: false,
+        })
+        .await;
+
+        assert!(result.is_err());
+        assert!(!observation_path.exists());
         Ok(())
     }
 

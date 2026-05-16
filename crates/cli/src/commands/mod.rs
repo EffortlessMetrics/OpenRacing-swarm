@@ -929,6 +929,25 @@ pub enum MozaCommands {
         overwrite: bool,
     },
 
+    /// Capture a no-output Pit House process/window snapshot evidence artifact
+    PitHouseEvidence {
+        /// Pit House coexistence case this evidence is intended to support
+        #[arg(long, value_enum)]
+        case: MozaPitHouseObservationCase,
+        /// Operator or host label recorded in the evidence artifact
+        #[arg(long, default_value = "Steven")]
+        operator: String,
+        /// Optional operator note for the process/window snapshot
+        #[arg(long)]
+        evidence: Option<String>,
+        /// Write the Pit House evidence artifact to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing evidence artifact
+        #[arg(long)]
+        overwrite: bool,
+    },
+
     /// Build one Pit House coexistence case artifact from source receipts
     PitHouseCase {
         /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06
