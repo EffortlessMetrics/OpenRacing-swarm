@@ -6074,6 +6074,7 @@ fn verify_bundle_dir_with_support_validation(
     let role_evidence = bundle_role_evidence(lane);
     let operator_actions = operator_actions_for_bundle_stage(lane, stage, &gates);
     let next_commands = next_commands_for_bundle_stage(lane, stage, &artifact_checks, &gates);
+    let blocked_safe_followups = blocked_safe_followups_for_bundle_stage(lane, stage, &gates);
 
     BundleVerificationReceipt {
         success,
@@ -6090,6 +6091,7 @@ fn verify_bundle_dir_with_support_validation(
         role_evidence,
         operator_actions,
         next_commands,
+        blocked_safe_followups,
         no_hid_device_opened: true,
         no_ffb_writes: true,
         no_serial_config_commands: true,
@@ -7442,6 +7444,147 @@ fn next_commands_for_bundle_stage(
     }
 
     commands
+}
+
+fn blocked_safe_followups_for_bundle_stage(
+    lane: &Path,
+    stage: MozaBundleStage,
+    gates: &[BundleGateCheck],
+) -> Vec<BundleBlockedSafeFollowup> {
+    if stage != MozaBundleStage::SmokeReady
+        || bundle_gate_check_passed(gates, "native_actuator_visible_smoke")
+        || failed_real_native_visible_smoke_receipt(lane).is_none()
+    {
+        return Vec::new();
+    }
+
+    let mut followups = Vec::new();
+    let mut pit_house_commands = Vec::new();
+    push_pit_house_pre_mode_change_safe_commands(lane, &mut pit_house_commands);
+    if !pit_house_commands.is_empty() {
+        followups.push(BundleBlockedSafeFollowup {
+            name: "pit_house_pre_mode_change_evidence",
+            reason: "Visible-motion remains blocked, but Pit House closed/open-standard/open-direct/firmware-page observations and case receipts are no-output evidence work. Mode-change and parent coexistence proof remain deferred until simulator FFB exists.".to_string(),
+            hardware_output_enabled: false,
+            no_hid_device_opened: true,
+            no_ffb_writes: true,
+            commands: pit_house_commands,
+            notes: vec![
+                "Only run these after the matching lane-relative evidence artifact exists, such as a process/window snapshot.".to_string(),
+                "Do not run pit-house-proof or claim full coexistence from these subcases alone.".to_string(),
+            ],
+        });
+    }
+
+    if !bundle_gate_check_passed(gates, "simulator_telemetry") {
+        let lane_arg = command_arg(&lane.display().to_string());
+        let session_id = simulator_telemetry_session_id(lane);
+        followups.push(BundleBlockedSafeFollowup {
+            name: "simulator_telemetry_only",
+            reason: "Visible-motion remains blocked, but simulator telemetry recording is no-output evidence and can be prepared when a real SimHub/simulator source is available.".to_string(),
+            hardware_output_enabled: false,
+            no_hid_device_opened: true,
+            no_ffb_writes: true,
+            commands: vec![
+                format!(
+                    "wheelctl telemetry record --game simhub-bridge --telemetry-source simhub_bridge --live-simhub --port 5555 --out {} --session-id {} --duration-ms 30000",
+                    lane_path_arg(lane, "simulator-telemetry-recording.jsonl"),
+                    command_arg(&session_id)
+                ),
+                format!(
+                    "wheelctl moza simulator-telemetry-proof --lane {lane_arg} --game simhub-bridge --telemetry-source simhub_bridge --recorder-artifact simulator-telemetry-recording.jsonl --duration-ms 30000 --json-out {}",
+                    lane_path_arg(lane, "simulator-telemetry-proof.json")
+                ),
+            ],
+            notes: vec![
+                "Use only with a real simulator or SimHub bridge source; fixtures and placeholders do not satisfy the gate.".to_string(),
+                "Do not start wheeld or simulator-ffb-smoke from this blocked follow-up.".to_string(),
+            ],
+        });
+    }
+
+    followups
+}
+
+fn push_pit_house_pre_mode_change_safe_commands(lane: &Path, commands: &mut Vec<String>) {
+    for (case, case_id, evidence_artifact, artifact, evidence) in [
+        (
+            "closed",
+            "pit_house_closed",
+            "pit-house-evidence-closed.json",
+            "pit-house-observation-closed.json",
+            "Pit House closed; OpenRacing staged handshake observed",
+        ),
+        (
+            "open-standard",
+            "pit_house_open_idle_standard",
+            "pit-house-evidence-open-standard.json",
+            "pit-house-observation-open-standard.json",
+            "Pit House open and idle; standard mode observed",
+        ),
+        (
+            "open-direct",
+            "pit_house_open_direct",
+            "pit-house-evidence-open-direct.json",
+            "pit-house-observation-open-direct.json",
+            "Pit House open during direct request; OpenRacing warned or blocked",
+        ),
+        (
+            "firmware-page",
+            "pit_house_firmware_update_page_open",
+            "pit-house-evidence-firmware-page.json",
+            "pit-house-observation-firmware-page.json",
+            "Pit House firmware/update page open; high-risk tests refused",
+        ),
+    ] {
+        if pit_house_observation_receipt_is_safe(lane, artifact, case_id) {
+            continue;
+        }
+        push_pit_house_observation_next_command(
+            lane,
+            commands,
+            case,
+            evidence_artifact,
+            artifact,
+            evidence,
+        );
+    }
+
+    for (case, case_id, observation, artifact, evidence) in [
+        (
+            "closed",
+            "pit_house_closed",
+            "pit-house-observation-closed.json",
+            "pit-house-closed.json",
+            "Pit House closed case observed",
+        ),
+        (
+            "open-standard",
+            "pit_house_open_idle_standard",
+            "pit-house-observation-open-standard.json",
+            "pit-house-open-standard.json",
+            "Pit House open standard case observed",
+        ),
+        (
+            "open-direct",
+            "pit_house_open_direct",
+            "pit-house-observation-open-direct.json",
+            "pit-house-direct-blocked.json",
+            "Pit House open direct request warned or blocked",
+        ),
+        (
+            "firmware-page",
+            "pit_house_firmware_update_page_open",
+            "pit-house-observation-firmware-page.json",
+            "pit-house-firmware-page.json",
+            "Pit House firmware/update page refusal observed",
+        ),
+    ] {
+        if pit_house_case_receipt_is_safe(lane, artifact, case_id) {
+            continue;
+        }
+        push_pit_house_case_next_command(lane, commands, case, observation, artifact, evidence);
+    }
 }
 
 fn next_command_lane(lane: &Path) -> PathBuf {
@@ -20092,10 +20235,22 @@ struct BundleVerificationReceipt {
     role_evidence: Vec<LaneRoleEvidenceEntry>,
     operator_actions: Vec<String>,
     next_commands: Vec<String>,
+    blocked_safe_followups: Vec<BundleBlockedSafeFollowup>,
     no_hid_device_opened: bool,
     no_ffb_writes: bool,
     no_serial_config_commands: bool,
     no_firmware_or_dfu_commands: bool,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct BundleBlockedSafeFollowup {
+    name: &'static str,
+    reason: String,
+    hardware_output_enabled: bool,
+    no_hid_device_opened: bool,
+    no_ffb_writes: bool,
+    commands: Vec<String>,
     notes: Vec<String>,
 }
 
@@ -35360,6 +35515,31 @@ mod tests {
             receipt.next_commands.is_empty(),
             "after failed visible-motion review and no-output readiness are both recorded, guidance should stop instead of refreshing a timestamp: {commands}"
         );
+        let followup_commands = receipt
+            .blocked_safe_followups
+            .iter()
+            .flat_map(|followup| followup.commands.iter())
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            followup_commands.contains("wheelctl moza pit-house-observation --case open-standard")
+                && followup_commands.contains("wheelctl telemetry record")
+                && followup_commands.contains("wheelctl moza simulator-telemetry-proof")
+                && !followup_commands.contains("wheelctl moza actuator-visible-smoke")
+                && !followup_commands.contains("wheelctl moza simulator-ffb-smoke")
+                && !followup_commands.contains("wheelctl moza pit-house-proof"),
+            "blocked safe follow-ups should expose only no-output Pit House and telemetry work: {followup_commands}"
+        );
+        assert!(
+            receipt.blocked_safe_followups.iter().all(|followup| {
+                !followup.hardware_output_enabled
+                    && followup.no_hid_device_opened
+                    && followup.no_ffb_writes
+            }),
+            "blocked safe follow-ups must remain no-output: {:?}",
+            receipt.blocked_safe_followups
+        );
 
         write_test_json_file(
             &dir.path().join("native-actuator-visible-smoke.json"),
@@ -35367,6 +35547,10 @@ mod tests {
         )?;
         let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
         let commands = receipt.next_commands.join("\n");
+        assert!(
+            receipt.blocked_safe_followups.is_empty(),
+            "safe follow-ups should clear once visible motion passes"
+        );
         assert!(
             commands.contains("wheelctl telemetry record")
                 && commands.contains("--session-id")
@@ -37669,6 +37853,7 @@ mod tests {
                 role_evidence: Vec::new(),
                 operator_actions: Vec::new(),
                 next_commands: Vec::new(),
+                blocked_safe_followups: Vec::new(),
                 no_hid_device_opened: true,
                 no_ffb_writes: true,
                 no_serial_config_commands: true,
