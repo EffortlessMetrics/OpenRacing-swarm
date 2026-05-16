@@ -845,6 +845,52 @@ pub enum MozaCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
+    /// Run a bounded native actuator smoke that must prove visible steering motion
+    ActuatorVisibleSmoke {
+        /// Exact lane R5 HID endpoint selector, e.g. hid-0x346E-0x0004-if2-0x0001-0x0004
+        #[arg(long)]
+        device: String,
+        /// Hardware lane directory with passing prior actuator and steering receipts
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Same-lane native actuator-profile receipt from `wheelctl moza actuator-profile-smoke`
+        #[arg(long)]
+        prior_actuator_proof: Option<std::path::PathBuf>,
+        /// Same-lane steering stream proof receipt from `wheelctl moza steering-stream-proof`
+        #[arg(long)]
+        steering_proof: Option<std::path::PathBuf>,
+        /// Native actuator profile to run
+        #[arg(long, value_enum, default_value_t = MozaActuatorProfile::ConstantLowForce)]
+        profile: MozaActuatorProfile,
+        /// Output strategy for the visible actuator smoke; direct report 0x20 is not accepted
+        #[arg(long, value_enum, default_value_t = MozaLowTorqueStrategy::PidffBoundedEffect)]
+        strategy: MozaLowTorqueStrategy,
+        /// Build the visible-motion receipt without opening or writing a HID device
+        #[arg(long)]
+        dry_run: bool,
+        /// Explicit acknowledgement required before actual visible-motion writes
+        #[arg(long)]
+        confirm_actuator_visible: bool,
+        /// Maximum force percent, bounded to 0.1..=5.0
+        #[arg(long, default_value = "5")]
+        max_percent: f32,
+        /// Profile duration in milliseconds, bounded to 1..=2000
+        #[arg(long, default_value = "2000")]
+        duration_ms: u64,
+        /// HID read timeout in milliseconds while sampling steering motion
+        #[arg(long, default_value = "20")]
+        read_timeout_ms: i32,
+        /// Declared steering range used only to scale raw steering samples into receipt degrees
+        #[arg(long, default_value = "1080")]
+        degrees_of_rotation: f64,
+        /// Minimum observed steering delta required before movement_observed becomes true
+        #[arg(long, default_value = "1")]
+        movement_threshold_degrees: f64,
+        /// Write the native actuator visible-motion proof receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
     /// Write a non-claiming starter receipt for manual Pit House or simulator evidence
     ReceiptTemplate {
         /// Receipt template kind to write

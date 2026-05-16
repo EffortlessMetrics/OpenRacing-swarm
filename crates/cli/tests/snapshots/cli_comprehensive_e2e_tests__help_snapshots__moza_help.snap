@@ -28,6 +28,7 @@ Commands:
   init                       Run the staged Moza wheelbase handshake in off or standard mode
   torque-test                Send a gated low-torque ladder after a passing real zero-torque proof
   actuator-profile-smoke     Run a native bounded PIDFF actuator profile after steering feedback is proven
+  actuator-visible-smoke     Run a bounded native actuator smoke that must prove visible steering motion
   receipt-template           Write a non-claiming starter receipt for manual Pit House or simulator evidence
   pit-house-observation      Write an observed Pit House UI/process state receipt
   pit-house-case             Build one Pit House coexistence case artifact from source receipts

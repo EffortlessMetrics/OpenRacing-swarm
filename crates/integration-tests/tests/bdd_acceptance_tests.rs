@@ -159,7 +159,10 @@ fn scenario_moza_plug_in_failure_recovers_on_retry() -> Result<(), Box<dyn std::
     let mut scenario = MozaScenario::wheelbase_failing(moza_product_ids::R9_V2);
 
     // When: first initialisation attempt fails (cable/USB error)
-    scenario.initialize()?;
+    assert!(
+        scenario.initialize().is_err(),
+        "transient write failure must surface while leaving retry state"
+    );
     assert_eq!(
         scenario.protocol.init_state(),
         MozaInitState::Failed,

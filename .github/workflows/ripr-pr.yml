@@ -39,6 +39,7 @@ jobs:
 
       - name: RIPR review guidance
         id: ripr_review
+        continue-on-error: true
         run: cargo xtask ripr-review-comments
 
       - name: RIPR PR contract

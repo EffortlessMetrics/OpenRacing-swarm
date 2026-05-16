@@ -6,7 +6,7 @@
 //! with raw torque `0` and flags `0`.
 
 use anyhow::{Context, Result, anyhow};
-use hidapi::{DeviceInfo, HidApi};
+use hidapi::{DeviceInfo, HidApi, HidDevice};
 use jsonschema::Validator;
 use openracing_pidff_common::{self as pidff, EffectOp, EffectType};
 use racing_wheel_hid_capture::{
@@ -168,10 +168,34 @@ struct ActuatorProfileSmokeRequest<'a> {
     json_out: Option<&'a Path>,
 }
 
+struct ActuatorVisibleSmokeRequest<'a> {
+    json: bool,
+    selector: &'a str,
+    lane: &'a Path,
+    prior_actuator_proof: Option<&'a Path>,
+    steering_proof: Option<&'a Path>,
+    profile: MozaActuatorProfile,
+    strategy: MozaLowTorqueStrategy,
+    dry_run: bool,
+    confirm_actuator_visible: bool,
+    max_percent: f32,
+    duration_ms: u64,
+    read_timeout_ms: i32,
+    degrees_of_rotation: f64,
+    movement_threshold_degrees: f64,
+    json_out: Option<&'a Path>,
+}
+
 struct ZeroOutputStagePreflight {
     lane: PathBuf,
     lane_display: String,
     pre_output_readiness_generated_at: Option<String>,
+}
+
+enum SteeringAngleSample {
+    Angle(f64),
+    NoData,
+    Rejected,
 }
 
 #[derive(Debug, Clone)]
@@ -616,6 +640,41 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 confirm_actuator_profile: *confirm_actuator_profile,
                 max_percent: *max_percent,
                 duration_ms: *duration_ms,
+                json_out: json_out.as_deref(),
+            })
+            .await
+        }
+        MozaCommands::ActuatorVisibleSmoke {
+            device,
+            lane,
+            prior_actuator_proof,
+            steering_proof,
+            profile,
+            strategy,
+            dry_run,
+            confirm_actuator_visible,
+            max_percent,
+            duration_ms,
+            read_timeout_ms,
+            degrees_of_rotation,
+            movement_threshold_degrees,
+            json_out,
+        } => {
+            actuator_visible_smoke(ActuatorVisibleSmokeRequest {
+                json,
+                selector: device,
+                lane,
+                prior_actuator_proof: prior_actuator_proof.as_deref(),
+                steering_proof: steering_proof.as_deref(),
+                profile: *profile,
+                strategy: *strategy,
+                dry_run: *dry_run,
+                confirm_actuator_visible: *confirm_actuator_visible,
+                max_percent: *max_percent,
+                duration_ms: *duration_ms,
+                read_timeout_ms: *read_timeout_ms,
+                degrees_of_rotation: *degrees_of_rotation,
+                movement_threshold_degrees: *movement_threshold_degrees,
                 json_out: json_out.as_deref(),
             })
             .await
@@ -1267,6 +1326,28 @@ async fn steering_stream_proof(
 
 fn steering_u16_to_degrees(value: u16, degrees_of_rotation: f64) -> f64 {
     (f64::from(value) / f64::from(u16::MAX) - 0.5) * degrees_of_rotation
+}
+
+fn read_steering_angle_sample(
+    device: &HidDevice,
+    protocol: &MozaProtocol,
+    buf: &mut [u8],
+    read_timeout_ms: i32,
+    degrees_of_rotation: f64,
+) -> std::result::Result<SteeringAngleSample, String> {
+    let n = device
+        .read_timeout(buf, read_timeout_ms)
+        .map_err(|error| error.to_string())?;
+    if n == 0 {
+        return Ok(SteeringAngleSample::NoData);
+    }
+    let Some(state) = protocol.parse_input_state(&buf[..n]) else {
+        return Ok(SteeringAngleSample::Rejected);
+    };
+    Ok(SteeringAngleSample::Angle(steering_u16_to_degrees(
+        state.steering_u16,
+        degrees_of_rotation,
+    )))
 }
 
 async fn validate_capture(
@@ -2704,6 +2785,172 @@ async fn actuator_profile_smoke(request: ActuatorProfileSmokeRequest<'_>) -> Res
     Ok(())
 }
 
+async fn actuator_visible_smoke(request: ActuatorVisibleSmokeRequest<'_>) -> Result<()> {
+    let ActuatorVisibleSmokeRequest {
+        json,
+        selector,
+        lane,
+        prior_actuator_proof,
+        steering_proof,
+        profile,
+        strategy,
+        dry_run,
+        confirm_actuator_visible,
+        max_percent,
+        duration_ms,
+        read_timeout_ms,
+        degrees_of_rotation,
+        movement_threshold_degrees,
+        json_out,
+    } = request;
+
+    validate_actuator_visible_smoke_args(
+        strategy,
+        max_percent,
+        duration_ms,
+        read_timeout_ms,
+        degrees_of_rotation,
+        movement_threshold_degrees,
+    )?;
+    if !dry_run && !confirm_actuator_visible {
+        return Err(anyhow!(
+            "--confirm-actuator-visible is required before actual native visible-motion writes"
+        ));
+    }
+
+    let preflight = validate_native_actuator_visible_smoke_preflight(
+        selector,
+        lane,
+        prior_actuator_proof,
+        steering_proof,
+        json_out,
+        dry_run,
+    )?;
+
+    if dry_run {
+        let pid = parse_required_hex_u16(&preflight.target_product_id)?;
+        let device = synthetic_moza_device_record(pid);
+        let mut receipt = NativeActuatorVisibleSmokeReceipt::new(
+            selector.to_string(),
+            lane,
+            device,
+            preflight,
+            profile,
+            max_percent,
+            duration_ms,
+            read_timeout_ms,
+            degrees_of_rotation,
+            movement_threshold_degrees,
+            true,
+        );
+        receipt.plan_only();
+        receipt.success = receipt.no_nonzero_above_limit
+            && receipt.final_stop_all_sent
+            && receipt.no_high_torque
+            && !receipt.high_torque;
+        receipt
+            .notes
+            .push("dry-run mode opened no HID device and sent no reports".to_string());
+        receipt.set_receipt_path(json_out);
+        write_json_receipt(json_out, &receipt)?;
+        print_actuator_visible_smoke_receipt(json, json_out, &receipt)?;
+        return Ok(());
+    }
+
+    let api = HidApi::new().context("failed to initialize HID API")?;
+    let (device, snapshot) = open_single_moza_device(&api, Some(selector))?;
+    if !snapshot.output_capable {
+        return Err(anyhow!(
+            "selected Moza device is not an output-capable wheelbase: {} {}",
+            snapshot.product_name,
+            snapshot.product_id
+        ));
+    }
+    if preflight.target_product_id != snapshot.product_id {
+        return Err(anyhow!(
+            "native visible-motion preflight target PID {} does not match selected device PID {}",
+            preflight.target_product_id,
+            snapshot.product_id
+        ));
+    }
+    device
+        .set_blocking_mode(true)
+        .context("failed to set HID blocking mode")?;
+    let product_id = parse_hex_selector(&snapshot.product_id).ok_or_else(|| {
+        anyhow!(
+            "selected Moza device has invalid product_id {}",
+            snapshot.product_id
+        )
+    })?;
+    let protocol = MozaProtocol::new(product_id);
+    let mut read_buf = [0u8; 256];
+
+    let mut receipt = NativeActuatorVisibleSmokeReceipt::new(
+        selector.to_string(),
+        lane,
+        snapshot,
+        preflight,
+        profile,
+        max_percent,
+        duration_ms,
+        read_timeout_ms,
+        degrees_of_rotation,
+        movement_threshold_degrees,
+        false,
+    );
+    let started_at = Instant::now();
+    execute_pidff_bounded_actuator_visible_sequence(
+        &mut receipt,
+        started_at,
+        true,
+        |payload| device.write(payload).map_err(|error| error.to_string()),
+        || {
+            read_steering_angle_sample(
+                &device,
+                &protocol,
+                &mut read_buf,
+                read_timeout_ms,
+                degrees_of_rotation,
+            )
+        },
+    );
+    receipt.success = receipt.confirmed
+        && receipt.hardware_output_enabled
+        && !receipt.no_hid_device_opened
+        && receipt.prior_actuator_profile_smoke_validated
+        && receipt.steering_proof_validated
+        && receipt.no_feature_reports
+        && !receipt.no_ffb_writes
+        && receipt.no_direct_torque_reports
+        && receipt.no_high_torque
+        && !receipt.high_torque
+        && receipt.no_serial_config_commands
+        && receipt.no_firmware_or_dfu_commands
+        && receipt.no_nonzero_above_limit
+        && receipt.pidff_effect_setup_proven
+        && receipt.write_errors == 0
+        && receipt.final_stop_all_sent
+        && receipt.steering_sample_count > 0
+        && receipt.movement_observed
+        && receipt.post_stop_stable;
+    receipt.set_receipt_path(json_out);
+
+    write_json_receipt(json_out, &receipt)?;
+    print_actuator_visible_smoke_receipt(json, json_out, &receipt)?;
+    if !receipt.success {
+        return Err(receipt_failure(format!(
+            "Moza native actuator visible-motion smoke failed: movement_observed={}, angle_delta_degrees={:?}, post_stop_stable={}, writes_ok={}, write_errors={}, final_stop_all_sent={}",
+            receipt.movement_observed,
+            receipt.angle_delta_degrees,
+            receipt.post_stop_stable,
+            receipt.writes_ok,
+            receipt.write_errors,
+            receipt.final_stop_all_sent
+        )));
+    }
+    Ok(())
+}
+
 fn execute_pidff_bounded_low_torque_sequence<F>(
     receipt: &mut LowTorqueProofReceipt,
     started_at: Instant,
@@ -2901,6 +3148,241 @@ fn execute_pidff_bounded_actuator_profile_sequence<F>(
                 started_at,
                 error,
             ));
+        }
+    }
+}
+
+fn execute_pidff_bounded_actuator_visible_sequence<F, R>(
+    receipt: &mut NativeActuatorVisibleSmokeReceipt,
+    started_at: Instant,
+    sleep_before_cleanup: bool,
+    mut write: F,
+    mut read_angle: R,
+) where
+    F: FnMut(&[u8]) -> std::result::Result<usize, String>,
+    R: FnMut() -> std::result::Result<SteeringAngleSample, String>,
+{
+    if !sample_pre_output_steering_angle(receipt, sleep_before_cleanup, &mut read_angle) {
+        if receipt.abort_reason.is_none() {
+            receipt.abort_reason = Some("pre_angle_unavailable".to_string());
+        }
+        return;
+    }
+
+    let mut sequence = receipt.command_log.len().min(u32::MAX as usize) as u32;
+    let mut setup_ok = true;
+    for report in pidff_low_torque_reports(receipt.max_percent, receipt.duration_ms) {
+        receipt.write_attempts = receipt.write_attempts.saturating_add(1);
+        match write(&report.payload) {
+            Ok(bytes_written) => {
+                receipt.bytes_written_total =
+                    receipt.bytes_written_total.saturating_add(bytes_written);
+                if let Some(error) = short_zero_output_write_error(report.report_len, bytes_written)
+                {
+                    setup_ok = false;
+                    receipt.write_errors = receipt.write_errors.saturating_add(1);
+                    receipt.abort_reason = Some(error.clone());
+                    receipt.record_command(LowTorqueCommandRecord::partial_pidff_output(
+                        sequence,
+                        &report,
+                        started_at,
+                        bytes_written,
+                        error,
+                    ));
+                    break;
+                }
+                receipt.writes_ok = receipt.writes_ok.saturating_add(1);
+                receipt.record_command(LowTorqueCommandRecord::ok_pidff_output(
+                    sequence,
+                    &report,
+                    started_at,
+                    bytes_written,
+                ));
+            }
+            Err(error) => {
+                setup_ok = false;
+                receipt.write_errors = receipt.write_errors.saturating_add(1);
+                receipt.abort_reason = Some(format!("hid_write_error: {error}"));
+                receipt.record_command(LowTorqueCommandRecord::error_pidff_output(
+                    sequence, &report, started_at, error,
+                ));
+                break;
+            }
+        }
+        sequence = sequence.saturating_add(1);
+    }
+
+    receipt.pidff_effect_setup_proven = setup_ok && receipt.write_errors == 0;
+    if receipt.pidff_effect_setup_proven {
+        receipt.pidff_effect_block_index = Some(PIDFF_LOW_TORQUE_EFFECT_BLOCK_INDEX);
+        sample_visible_steering_window(receipt, sleep_before_cleanup, &mut read_angle);
+    }
+
+    let stop_all = ZeroOutputPayload::pidff_stop_all();
+    receipt.final_zero_attempted = true;
+    receipt.final_stop_all_attempted = true;
+    receipt.write_attempts = receipt.write_attempts.saturating_add(1);
+    match write(&stop_all.bytes) {
+        Ok(bytes_written) => {
+            receipt.bytes_written_total = receipt.bytes_written_total.saturating_add(bytes_written);
+            if let Some(error) = short_zero_output_write_error(stop_all.report_len, bytes_written) {
+                receipt.write_errors = receipt.write_errors.saturating_add(1);
+                receipt.final_zero_error = Some(error.clone());
+                receipt.record_command(LowTorqueCommandRecord::partial_pidff_stop_all(
+                    sequence,
+                    "final_stop_all",
+                    started_at,
+                    bytes_written,
+                    error,
+                ));
+            } else {
+                receipt.writes_ok = receipt.writes_ok.saturating_add(1);
+                receipt.final_zero_sent = true;
+                receipt.final_stop_all_sent = true;
+                receipt.record_command(LowTorqueCommandRecord::ok_pidff_stop_all(
+                    sequence,
+                    "final_stop_all",
+                    started_at,
+                    bytes_written,
+                ));
+            }
+        }
+        Err(error) => {
+            receipt.write_errors = receipt.write_errors.saturating_add(1);
+            receipt.final_zero_error = Some(error.clone());
+            receipt.record_command(LowTorqueCommandRecord::error_pidff_stop_all(
+                sequence,
+                "final_stop_all",
+                started_at,
+                error,
+            ));
+        }
+    }
+
+    sample_post_stop_steering_window(receipt, sleep_before_cleanup, &mut read_angle);
+}
+
+fn sample_pre_output_steering_angle<R>(
+    receipt: &mut NativeActuatorVisibleSmokeReceipt,
+    sleep_before_cleanup: bool,
+    read_angle: &mut R,
+) -> bool
+where
+    R: FnMut() -> std::result::Result<SteeringAngleSample, String>,
+{
+    if sleep_before_cleanup {
+        let deadline = Instant::now() + Duration::from_millis(250);
+        while Instant::now() < deadline {
+            if receipt.pre_angle_degrees.is_some() {
+                return true;
+            }
+            if !record_visible_steering_sample(receipt, read_angle)
+                && receipt.abort_reason.is_some()
+            {
+                return false;
+            }
+        }
+    } else {
+        for _ in 0..8 {
+            if receipt.pre_angle_degrees.is_some() {
+                return true;
+            }
+            if !record_visible_steering_sample(receipt, read_angle)
+                && receipt.abort_reason.is_some()
+            {
+                return false;
+            }
+        }
+    }
+    receipt.pre_angle_degrees.is_some()
+}
+
+fn sample_visible_steering_window<R>(
+    receipt: &mut NativeActuatorVisibleSmokeReceipt,
+    sleep_before_cleanup: bool,
+    read_angle: &mut R,
+) where
+    R: FnMut() -> std::result::Result<SteeringAngleSample, String>,
+{
+    if sleep_before_cleanup {
+        let deadline = Instant::now() + Duration::from_millis(receipt.duration_ms.min(2_000));
+        while Instant::now() < deadline {
+            record_visible_steering_sample(receipt, read_angle);
+        }
+    } else {
+        for _ in 0..8 {
+            if !record_visible_steering_sample(receipt, read_angle) {
+                break;
+            }
+        }
+    }
+}
+
+fn sample_post_stop_steering_window<R>(
+    receipt: &mut NativeActuatorVisibleSmokeReceipt,
+    sleep_before_cleanup: bool,
+    read_angle: &mut R,
+) where
+    R: FnMut() -> std::result::Result<SteeringAngleSample, String>,
+{
+    if sleep_before_cleanup {
+        let deadline = Instant::now() + Duration::from_millis(250);
+        while Instant::now() < deadline {
+            record_post_stop_steering_sample(receipt, read_angle);
+        }
+    } else {
+        for _ in 0..4 {
+            if !record_post_stop_steering_sample(receipt, read_angle) {
+                break;
+            }
+        }
+    }
+}
+
+fn record_visible_steering_sample<R>(
+    receipt: &mut NativeActuatorVisibleSmokeReceipt,
+    read_angle: &mut R,
+) -> bool
+where
+    R: FnMut() -> std::result::Result<SteeringAngleSample, String>,
+{
+    match read_angle() {
+        Ok(SteeringAngleSample::Angle(angle)) => {
+            receipt.record_steering_angle(angle);
+            true
+        }
+        Ok(SteeringAngleSample::Rejected) => {
+            receipt.record_rejected_steering_report();
+            true
+        }
+        Ok(SteeringAngleSample::NoData) => false,
+        Err(error) => {
+            receipt.abort_reason = Some(format!("hid_read_error: {error}"));
+            false
+        }
+    }
+}
+
+fn record_post_stop_steering_sample<R>(
+    receipt: &mut NativeActuatorVisibleSmokeReceipt,
+    read_angle: &mut R,
+) -> bool
+where
+    R: FnMut() -> std::result::Result<SteeringAngleSample, String>,
+{
+    match read_angle() {
+        Ok(SteeringAngleSample::Angle(angle)) => {
+            receipt.record_post_stop_angle(angle);
+            true
+        }
+        Ok(SteeringAngleSample::Rejected) => {
+            receipt.record_rejected_steering_report();
+            true
+        }
+        Ok(SteeringAngleSample::NoData) => false,
+        Err(error) => {
+            receipt.abort_reason = Some(format!("hid_read_error: {error}"));
+            false
         }
     }
 }
@@ -4148,6 +4630,41 @@ fn validate_actuator_profile_smoke_args(
     Ok(())
 }
 
+fn validate_actuator_visible_smoke_args(
+    strategy: MozaLowTorqueStrategy,
+    max_percent: f32,
+    duration_ms: u64,
+    read_timeout_ms: i32,
+    degrees_of_rotation: f64,
+    movement_threshold_degrees: f64,
+) -> Result<()> {
+    if strategy != MozaLowTorqueStrategy::PidffBoundedEffect {
+        return Err(anyhow!(
+            "native actuator visible-motion smoke only supports --strategy pidff-bounded-effect"
+        ));
+    }
+    if !max_percent.is_finite() || !(0.1..=5.0).contains(&max_percent) {
+        return Err(anyhow!("--max-percent must be in 0.1..=5.0"));
+    }
+    if duration_ms == 0 || duration_ms > 2_000 {
+        return Err(anyhow!("--duration-ms must be in 1..=2000"));
+    }
+    if read_timeout_ms < 0 {
+        return Err(anyhow!("--read-timeout-ms must be non-negative"));
+    }
+    if !degrees_of_rotation.is_finite() || degrees_of_rotation <= 0.0 {
+        return Err(anyhow!(
+            "--degrees-of-rotation must be a positive finite value"
+        ));
+    }
+    if !movement_threshold_degrees.is_finite() || movement_threshold_degrees <= 0.0 {
+        return Err(anyhow!(
+            "--movement-threshold-degrees must be a positive finite value"
+        ));
+    }
+    Ok(())
+}
+
 fn disconnect_max_writes(max_duration_ms: u64, hz: u32) -> u32 {
     max_duration_ms
         .saturating_mul(u64::from(hz))
@@ -4361,6 +4878,14 @@ struct PidffLowTorqueRealHardwarePreflight {
 struct NativeActuatorProfileSmokePreflight {
     target_product_id: String,
     low_torque_generated_at: Option<String>,
+    steering_generated_at: Option<String>,
+}
+
+struct NativeActuatorVisibleSmokePreflight {
+    target_product_id: String,
+    prior_actuator_profile_smoke_validated: bool,
+    prior_actuator_generated_at: Option<String>,
+    steering_proof_validated: bool,
     steering_generated_at: Option<String>,
 }
 
@@ -4673,6 +5198,109 @@ fn validate_native_actuator_profile_smoke_preflight(
         target_product_id,
         low_torque_generated_at: json_string(&low_torque_receipt, "generated_at_utc")
             .map(str::to_string),
+        steering_generated_at: json_string(&steering_receipt, "generated_at_utc")
+            .map(str::to_string),
+    })
+}
+
+fn validate_native_actuator_visible_smoke_preflight(
+    selector: &str,
+    lane: &Path,
+    prior_actuator_proof: Option<&Path>,
+    steering_proof: Option<&Path>,
+    json_out: Option<&Path>,
+    dry_run: bool,
+) -> Result<NativeActuatorVisibleSmokePreflight> {
+    validate_lane_manifest_endpoint_selector(
+        lane,
+        Some(selector),
+        "native actuator visible-motion smoke",
+    )?;
+    if let Some(path) = prior_actuator_proof {
+        require_lane_artifact_path(
+            lane,
+            path,
+            "native-actuator-profile-smoke.json",
+            "--prior-actuator-proof",
+        )?;
+    }
+    if let Some(path) = steering_proof {
+        require_lane_artifact_path(
+            lane,
+            path,
+            "steering-angle-stream-proof.json",
+            "--steering-proof",
+        )?;
+    }
+    if !dry_run {
+        let json_out = json_out.ok_or_else(|| {
+            anyhow!("--json-out is required before actual native actuator visible-motion writes")
+        })?;
+        require_lane_artifact_path(
+            lane,
+            json_out,
+            "native-actuator-visible-smoke.json",
+            "--json-out",
+        )?;
+    }
+
+    validate_zero_output_pidff_stop_all_report_metadata(lane)?;
+    let descriptor_blockers = pidff_bounded_effect_descriptor_blockers(lane);
+    if !descriptor_blockers.is_empty() {
+        return Err(anyhow!(
+            "native actuator visible-motion smoke requires descriptor-proven PIDFF bounded-effect reports: {}",
+            descriptor_blockers.join("; ")
+        ));
+    }
+
+    let prior_gate = verify_native_actuator_profile_smoke_gate(lane);
+    if prior_gate.status != "pass" {
+        return Err(anyhow!(
+            "same-lane native actuator-profile smoke must pass before visible-motion smoke: {}",
+            prior_gate.details
+        ));
+    }
+    let steering_gate = verify_steering_angle_stream_gate(lane);
+    if steering_gate.status != "pass" {
+        return Err(anyhow!(
+            "same-lane steering stream proof must pass before visible-motion smoke: {}",
+            steering_gate.details
+        ));
+    }
+
+    let prior_receipt = read_json_value(lane, "native-actuator-profile-smoke.json")?;
+    if json_string(&prior_receipt, "output_strategy")
+        != Some(low_torque_strategy_name(
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+        ))
+    {
+        return Err(anyhow!(
+            "native actuator visible-motion smoke requires a same-lane PIDFF actuator-profile proof"
+        ));
+    }
+    let target_product_id = prior_receipt
+        .get("device")
+        .and_then(|device| json_string(device, "product_id"))
+        .map(str::to_string)
+        .ok_or_else(|| anyhow!("native actuator-profile receipt device.product_id is missing"))?;
+    let steering_receipt = read_json_value(lane, "steering-angle-stream-proof.json")?;
+    let steering_product_id = steering_receipt
+        .get("device")
+        .and_then(|device| json_string(device, "product_id"));
+    if steering_product_id != Some(target_product_id.as_str()) {
+        return Err(anyhow!(
+            "steering proof PID {:?} does not match prior actuator proof PID {}",
+            steering_product_id,
+            target_product_id
+        ));
+    }
+
+    Ok(NativeActuatorVisibleSmokePreflight {
+        target_product_id,
+        prior_actuator_profile_smoke_validated: true,
+        prior_actuator_generated_at: json_string(&prior_receipt, "generated_at_utc")
+            .map(str::to_string),
+        steering_proof_validated: true,
         steering_generated_at: json_string(&steering_receipt, "generated_at_utc")
             .map(str::to_string),
     })
@@ -12829,6 +13457,122 @@ fn verify_native_actuator_profile_smoke_gate(lane: &Path) -> BundleGateCheck {
     }
 }
 
+#[cfg(test)]
+fn verify_native_actuator_visible_smoke_gate(lane: &Path) -> BundleGateCheck {
+    let receipt = match read_json_value(lane, "native-actuator-visible-smoke.json") {
+        Ok(value) => value,
+        Err(e) => return BundleGateCheck::fail("native_actuator_visible_smoke", e.to_string()),
+    };
+
+    let success = json_bool(&receipt, "success") == Some(true);
+    let command_ok =
+        json_string(&receipt, "command") == Some("wheelctl moza actuator-visible-smoke");
+    let receipt_path_ok =
+        receipt_path_matches(lane, &receipt, "native-actuator-visible-smoke.json");
+    let selector_matches_lane_endpoint = receipt_selector_matches_lane_endpoint(lane, &receipt);
+    let confirmed = json_bool(&receipt, "confirmed");
+    let no_hid_device_opened = json_bool(&receipt, "no_hid_device_opened");
+    let hardware_output_enabled = json_bool(&receipt, "hardware_output_enabled");
+    let no_feature_reports = json_bool(&receipt, "no_feature_reports");
+    let no_ffb_writes = json_bool(&receipt, "no_ffb_writes");
+    let no_direct_torque_reports = json_bool(&receipt, "no_direct_torque_reports");
+    let no_high_torque = json_bool(&receipt, "no_high_torque");
+    let high_torque = json_bool(&receipt, "high_torque");
+    let no_nonzero_above_limit = json_bool(&receipt, "no_nonzero_above_limit");
+    let no_out_of_scope = no_out_of_scope_device_commands(&receipt);
+    let prior_actuator_profile_smoke_validated =
+        json_bool(&receipt, "prior_actuator_profile_smoke_validated");
+    let steering_proof_validated = json_bool(&receipt, "steering_proof_validated");
+    let pidff_effect_setup_proven = json_bool(&receipt, "pidff_effect_setup_proven");
+    let final_stop_all_attempted = json_bool(&receipt, "final_stop_all_attempted");
+    let final_stop_all_sent = json_bool(&receipt, "final_stop_all_sent");
+    let movement_observed = json_bool(&receipt, "movement_observed");
+    let post_stop_stable = json_bool(&receipt, "post_stop_stable");
+    let generated_at_utc = json_string(&receipt, "generated_at_utc");
+    let generated_at_valid = generated_at_utc
+        .map(|value| utc_timestamp_pair_is_ordered(value, value))
+        .unwrap_or(false);
+    let strategy_ok = json_string(&receipt, "output_strategy")
+        == Some(low_torque_strategy_name(
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+        ));
+    let max_percent = json_f64(&receipt, "max_percent").unwrap_or(f64::NAN);
+    let duration_ms = json_u64(&receipt, "duration_ms").unwrap_or(0);
+    let steering_sample_count = json_u64(&receipt, "steering_sample_count").unwrap_or(0);
+    let angle_delta_degrees = json_f64(&receipt, "angle_delta_degrees").unwrap_or(f64::NAN);
+    let movement_threshold_degrees =
+        json_f64(&receipt, "movement_threshold_degrees").unwrap_or(f64::NAN);
+    let post_stop_sample_count = json_u64(&receipt, "post_stop_sample_count").unwrap_or(0);
+    let write_attempts = json_u64(&receipt, "write_attempts").unwrap_or(0);
+    let writes_ok = json_u64(&receipt, "writes_ok").unwrap_or(0);
+    let write_errors = json_u64(&receipt, "write_errors").unwrap_or(u64::MAX);
+    let command_log_entries = receipt
+        .get("command_log")
+        .and_then(Value::as_array)
+        .map(|records| records.len().min(u64::MAX as usize) as u64)
+        .unwrap_or(0);
+    let command_log_no_direct_report =
+        command_log_omits_report_id(&receipt, DIRECT_TORQUE_REPORT_ID);
+    let device = receipt.get("device");
+    let r5_device = device.map(is_r5_device_value).unwrap_or(false);
+
+    let bounded = max_percent.is_finite() && max_percent > 0.0 && max_percent <= 5.0;
+    let movement_delta_ok = angle_delta_degrees.is_finite()
+        && movement_threshold_degrees.is_finite()
+        && angle_delta_degrees >= movement_threshold_degrees;
+    let safe = success
+        && command_ok
+        && receipt_path_ok
+        && selector_matches_lane_endpoint
+        && confirmed == Some(true)
+        && no_hid_device_opened == Some(false)
+        && hardware_output_enabled == Some(true)
+        && no_feature_reports == Some(true)
+        && no_ffb_writes == Some(false)
+        && no_direct_torque_reports == Some(true)
+        && no_high_torque == Some(true)
+        && high_torque == Some(false)
+        && no_nonzero_above_limit == Some(true)
+        && no_out_of_scope
+        && prior_actuator_profile_smoke_validated == Some(true)
+        && steering_proof_validated == Some(true)
+        && pidff_effect_setup_proven == Some(true)
+        && final_stop_all_attempted == Some(true)
+        && final_stop_all_sent == Some(true)
+        && movement_observed == Some(true)
+        && movement_delta_ok
+        && post_stop_stable == Some(true)
+        && generated_at_valid
+        && strategy_ok
+        && bounded
+        && duration_ms > 0
+        && duration_ms <= 2000
+        && steering_sample_count > 0
+        && post_stop_sample_count >= 2
+        && write_attempts > 0
+        && write_attempts == command_log_entries
+        && writes_ok == write_attempts
+        && write_errors == 0
+        && command_log_no_direct_report
+        && r5_device;
+
+    if safe {
+        BundleGateCheck::pass(
+            "native_actuator_visible_smoke",
+            format!(
+                "native PIDFF actuator visible-motion smoke recorded {angle_delta_degrees:.3} degree(s) of steering delta"
+            ),
+        )
+    } else {
+        BundleGateCheck::fail(
+            "native_actuator_visible_smoke",
+            format!(
+                "success={success}, command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, selector_matches_lane_endpoint={selector_matches_lane_endpoint}, confirmed={confirmed:?}, no_hid_device_opened={no_hid_device_opened:?}, hardware_output_enabled={hardware_output_enabled:?}, no_feature_reports={no_feature_reports:?}, no_ffb_writes={no_ffb_writes:?}, no_direct_torque_reports={no_direct_torque_reports:?}, no_high_torque={no_high_torque:?}, high_torque={high_torque:?}, no_nonzero_above_limit={no_nonzero_above_limit:?}, no_out_of_scope={no_out_of_scope}, prior_actuator_profile_smoke_validated={prior_actuator_profile_smoke_validated:?}, steering_proof_validated={steering_proof_validated:?}, pidff_effect_setup_proven={pidff_effect_setup_proven:?}, final_stop_all_attempted={final_stop_all_attempted:?}, final_stop_all_sent={final_stop_all_sent:?}, movement_observed={movement_observed:?}, movement_delta_ok={movement_delta_ok}, post_stop_stable={post_stop_stable:?}, generated_at_valid={generated_at_valid}, strategy_ok={strategy_ok}, max_percent={max_percent}, duration_ms={duration_ms}, steering_sample_count={steering_sample_count}, angle_delta_degrees={angle_delta_degrees}, movement_threshold_degrees={movement_threshold_degrees}, post_stop_sample_count={post_stop_sample_count}, write_attempts={write_attempts}, writes_ok={writes_ok}, write_errors={write_errors}, command_log_entries={command_log_entries}, command_log_no_direct_report={command_log_no_direct_report}, r5_device={r5_device}"
+            ),
+        )
+    }
+}
+
 fn command_log_omits_report_id(receipt: &Value, forbidden_report_id: &str) -> bool {
     receipt
         .get("command_log")
@@ -17956,6 +18700,253 @@ impl NativeActuatorProfileSmokeReceipt {
     }
 }
 
+#[derive(Debug, Serialize)]
+struct NativeActuatorVisibleSmokeReceipt {
+    success: bool,
+    command: &'static str,
+    generated_at_utc: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    receipt_path: Option<String>,
+    lane: String,
+    selector: String,
+    profile: &'static str,
+    output_strategy: &'static str,
+    max_percent: f32,
+    duration_ms: u64,
+    read_timeout_ms: i32,
+    degrees_of_rotation: f64,
+    movement_threshold_degrees: f64,
+    confirmed: bool,
+    dry_run: bool,
+    hardware_output_enabled: bool,
+    no_hid_device_opened: bool,
+    no_feature_reports: bool,
+    no_ffb_writes: bool,
+    no_direct_torque_reports: bool,
+    no_high_torque: bool,
+    high_torque: bool,
+    no_serial_config_commands: bool,
+    no_firmware_or_dfu_commands: bool,
+    no_nonzero_above_limit: bool,
+    prior_actuator_profile_smoke_validated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prior_actuator_generated_at: Option<String>,
+    steering_proof_validated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    steering_generated_at: Option<String>,
+    pidff_effect_setup_proven: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pidff_effect_block_index: Option<u8>,
+    device: MozaDeviceRecord,
+    steering_sample_count: u64,
+    rejected_steering_reports: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pre_angle_degrees: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    angle_min_degrees: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    angle_max_degrees: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    angle_delta_degrees: Option<f64>,
+    movement_observed: bool,
+    post_stop_sample_count: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    post_stop_angle_degrees: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    post_stop_delta_degrees: Option<f64>,
+    post_stop_stable: bool,
+    write_attempts: u64,
+    writes_ok: u64,
+    write_errors: u64,
+    bytes_written_total: usize,
+    final_zero_attempted: bool,
+    final_zero_sent: bool,
+    final_stop_all_attempted: bool,
+    final_stop_all_sent: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    final_zero_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    abort_reason: Option<String>,
+    command_log: Vec<LowTorqueCommandRecord>,
+    notes: Vec<String>,
+}
+
+#[allow(clippy::too_many_arguments)]
+impl NativeActuatorVisibleSmokeReceipt {
+    fn new(
+        selector: String,
+        lane: &Path,
+        device: MozaDeviceRecord,
+        preflight: NativeActuatorVisibleSmokePreflight,
+        profile: MozaActuatorProfile,
+        max_percent: f32,
+        duration_ms: u64,
+        read_timeout_ms: i32,
+        degrees_of_rotation: f64,
+        movement_threshold_degrees: f64,
+        dry_run: bool,
+    ) -> Self {
+        Self {
+            success: false,
+            command: "wheelctl moza actuator-visible-smoke",
+            generated_at_utc: now_utc(),
+            receipt_path: None,
+            lane: lane.display().to_string(),
+            selector,
+            profile: actuator_profile_name(profile),
+            output_strategy: low_torque_strategy_name(MozaLowTorqueStrategy::PidffBoundedEffect),
+            max_percent,
+            duration_ms,
+            read_timeout_ms,
+            degrees_of_rotation,
+            movement_threshold_degrees,
+            confirmed: !dry_run,
+            dry_run,
+            hardware_output_enabled: !dry_run,
+            no_hid_device_opened: dry_run,
+            no_feature_reports: true,
+            no_ffb_writes: dry_run,
+            no_direct_torque_reports: true,
+            no_high_torque: true,
+            high_torque: false,
+            no_serial_config_commands: true,
+            no_firmware_or_dfu_commands: true,
+            no_nonzero_above_limit: true,
+            prior_actuator_profile_smoke_validated: preflight
+                .prior_actuator_profile_smoke_validated,
+            prior_actuator_generated_at: preflight.prior_actuator_generated_at,
+            steering_proof_validated: preflight.steering_proof_validated,
+            steering_generated_at: preflight.steering_generated_at,
+            pidff_effect_setup_proven: false,
+            pidff_effect_block_index: None,
+            device,
+            steering_sample_count: 0,
+            rejected_steering_reports: 0,
+            pre_angle_degrees: None,
+            angle_min_degrees: None,
+            angle_max_degrees: None,
+            angle_delta_degrees: None,
+            movement_observed: false,
+            post_stop_sample_count: 0,
+            post_stop_angle_degrees: None,
+            post_stop_delta_degrees: None,
+            post_stop_stable: false,
+            write_attempts: 0,
+            writes_ok: 0,
+            write_errors: 0,
+            bytes_written_total: 0,
+            final_zero_attempted: false,
+            final_zero_sent: false,
+            final_stop_all_attempted: false,
+            final_stop_all_sent: false,
+            final_zero_error: None,
+            abort_reason: None,
+            command_log: Vec::new(),
+            notes: vec![
+                "actuator-visible-smoke is the first native OpenRacing-owned visible-motion stage and does not depend on SimHub or Pit House".to_string(),
+                "the receipt must prove steering movement from native input samples, not only PIDFF writes".to_string(),
+                "direct report 0x20, high torque, feature reports, serial config, firmware, and DFU remain forbidden".to_string(),
+            ],
+        }
+    }
+
+    fn set_receipt_path(&mut self, path: Option<&Path>) {
+        self.receipt_path = path.map(|path| path.display().to_string());
+    }
+
+    fn plan_only(&mut self) {
+        let started_at = Instant::now();
+        let mut sequence = 0u32;
+        for report in pidff_low_torque_reports(self.max_percent, self.duration_ms) {
+            self.record_command(LowTorqueCommandRecord::planned_pidff_output(
+                sequence, &report, started_at,
+            ));
+            sequence = sequence.saturating_add(1);
+        }
+        self.pidff_effect_setup_proven = true;
+        self.pidff_effect_block_index = Some(PIDFF_LOW_TORQUE_EFFECT_BLOCK_INDEX);
+        self.final_zero_attempted = true;
+        self.final_zero_sent = true;
+        self.final_stop_all_attempted = true;
+        self.final_stop_all_sent = true;
+        self.record_command(LowTorqueCommandRecord::planned_pidff_stop_all(
+            sequence,
+            "final_stop_all",
+            started_at,
+        ));
+        self.notes.push(
+            "dry-run mode records the write plan only; movement_observed remains false until real steering samples are captured"
+                .to_string(),
+        );
+    }
+
+    fn record_command(&mut self, record: LowTorqueCommandRecord) {
+        let safe = record.report_id != DIRECT_TORQUE_REPORT_ID
+            && record
+                .safety_classification
+                .map(|classification| {
+                    classification == PIDFF_PLANNED_STOP_ALL_CLASSIFICATION
+                        || classification == PIDFF_EFFECT_SETUP_CLASSIFICATION
+                        || classification == PIDFF_BOUNDED_EFFECT_CLASSIFICATION
+                        || classification == PIDFF_STOP_ALL_CLEANUP_CLASSIFICATION
+                })
+                .unwrap_or(false)
+            && record.percent <= self.max_percent;
+        if !safe {
+            self.no_nonzero_above_limit = false;
+        }
+        self.command_log.push(record);
+    }
+
+    fn record_steering_angle(&mut self, angle_degrees: f64) {
+        if self.pre_angle_degrees.is_none() {
+            self.pre_angle_degrees = Some(angle_degrees);
+        }
+        self.steering_sample_count = self.steering_sample_count.saturating_add(1);
+        self.angle_min_degrees = Some(
+            self.angle_min_degrees
+                .map_or(angle_degrees, |value| value.min(angle_degrees)),
+        );
+        self.angle_max_degrees = Some(
+            self.angle_max_degrees
+                .map_or(angle_degrees, |value| value.max(angle_degrees)),
+        );
+        self.refresh_angle_delta();
+    }
+
+    fn record_rejected_steering_report(&mut self) {
+        self.rejected_steering_reports = self.rejected_steering_reports.saturating_add(1);
+    }
+
+    fn record_post_stop_angle(&mut self, angle_degrees: f64) {
+        self.post_stop_sample_count = self.post_stop_sample_count.saturating_add(1);
+        let previous = self.post_stop_angle_degrees;
+        self.post_stop_angle_degrees = Some(angle_degrees);
+        if let Some(previous) = previous {
+            let delta = (angle_degrees - previous).abs();
+            self.post_stop_delta_degrees = Some(
+                self.post_stop_delta_degrees
+                    .map_or(delta, |value| value.max(delta)),
+            );
+        } else {
+            self.post_stop_delta_degrees = Some(0.0);
+        }
+        self.post_stop_stable = self.post_stop_sample_count >= 2
+            && self
+                .post_stop_delta_degrees
+                .map(|delta| delta <= self.movement_threshold_degrees)
+                .unwrap_or(false);
+    }
+
+    fn refresh_angle_delta(&mut self) {
+        if let (Some(min), Some(max)) = (self.angle_min_degrees, self.angle_max_degrees) {
+            let delta = (max - min).abs();
+            self.angle_delta_degrees = Some(delta);
+            self.movement_observed = delta >= self.movement_threshold_degrees;
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct LowTorqueStage {
     percent: f32,
@@ -19996,6 +20987,31 @@ fn print_actuator_profile_smoke_receipt(
             receipt.dry_run,
             receipt.profile,
             receipt.writes_ok,
+            receipt.final_stop_all_sent,
+            receipt.max_percent
+        );
+        if let Some(path) = json_out {
+            println!("Receipt: {}", path.display());
+        }
+    }
+    Ok(())
+}
+
+fn print_actuator_visible_smoke_receipt(
+    json: bool,
+    json_out: Option<&Path>,
+    receipt: &NativeActuatorVisibleSmokeReceipt,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Moza actuator visible-motion smoke success={}, dry_run={}, profile={}, movement_observed={}, angle_delta_degrees={:?}, final_stop_all_sent={}, max_percent={}.",
+            receipt.success,
+            receipt.dry_run,
+            receipt.profile,
+            receipt.movement_observed,
+            receipt.angle_delta_degrees,
             receipt.final_stop_all_sent,
             receipt.max_percent
         );
@@ -23674,6 +24690,75 @@ mod tests {
             && receipt.write_errors == 0
             && receipt.final_stop_all_sent;
         receipt.set_receipt_path(Some(&root.join("native-actuator-profile-smoke.json")));
+        Ok(serde_json::to_value(receipt)?)
+    }
+
+    fn write_native_actuator_visible_prerequisite_receipts(root: &Path) -> TestResult {
+        let profile = successful_native_actuator_profile_receipt(root)?;
+        write_test_json_file(&root.join("native-actuator-profile-smoke.json"), &profile)?;
+        Ok(())
+    }
+
+    fn successful_native_actuator_visible_receipt(root: &Path) -> TestResult<Value> {
+        write_native_actuator_visible_prerequisite_receipts(root)?;
+        let preflight = validate_native_actuator_visible_smoke_preflight(
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            root,
+            Some(&root.join("native-actuator-profile-smoke.json")),
+            Some(&root.join("steering-angle-stream-proof.json")),
+            Some(&root.join("native-actuator-visible-smoke.json")),
+            false,
+        )?;
+        let mut receipt = NativeActuatorVisibleSmokeReceipt::new(
+            "hid-0x346E-0x0004-if2-0x0001-0x0004".to_string(),
+            root,
+            synthetic_moza_device_record(product_ids::R5_V1),
+            preflight,
+            MozaActuatorProfile::ConstantLowForce,
+            5.0,
+            150,
+            20,
+            1080.0,
+            1.0,
+            false,
+        );
+        let mut samples = std::collections::VecDeque::from([
+            SteeringAngleSample::Angle(0.0),
+            SteeringAngleSample::Angle(0.5),
+            SteeringAngleSample::Angle(2.0),
+            SteeringAngleSample::Angle(4.5),
+            SteeringAngleSample::Angle(5.5),
+            SteeringAngleSample::NoData,
+            SteeringAngleSample::Angle(5.4),
+            SteeringAngleSample::Angle(5.3),
+        ]);
+        execute_pidff_bounded_actuator_visible_sequence(
+            &mut receipt,
+            Instant::now(),
+            false,
+            |payload| Ok(payload.len()),
+            || Ok(samples.pop_front().unwrap_or(SteeringAngleSample::NoData)),
+        );
+        receipt.success = receipt.confirmed
+            && receipt.hardware_output_enabled
+            && !receipt.no_hid_device_opened
+            && receipt.prior_actuator_profile_smoke_validated
+            && receipt.steering_proof_validated
+            && receipt.no_feature_reports
+            && !receipt.no_ffb_writes
+            && receipt.no_direct_torque_reports
+            && receipt.no_high_torque
+            && !receipt.high_torque
+            && receipt.no_serial_config_commands
+            && receipt.no_firmware_or_dfu_commands
+            && receipt.no_nonzero_above_limit
+            && receipt.pidff_effect_setup_proven
+            && receipt.write_errors == 0
+            && receipt.final_stop_all_sent
+            && receipt.steering_sample_count > 0
+            && receipt.movement_observed
+            && receipt.post_stop_stable;
+        receipt.set_receipt_path(Some(&root.join("native-actuator-visible-smoke.json")));
         Ok(serde_json::to_value(receipt)?)
     }
 
@@ -27966,6 +29051,214 @@ mod tests {
             gate.details
                 .contains("pidff_effect_setup_proven=Some(false)")
         );
+        Ok(())
+    }
+
+    #[test]
+    fn actuator_visible_smoke_args_allow_five_percent_pidff_only() -> TestResult {
+        validate_actuator_visible_smoke_args(
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.0,
+            2_000,
+            20,
+            1080.0,
+            1.0,
+        )?;
+
+        let direct_message = validate_actuator_visible_smoke_args(
+            MozaLowTorqueStrategy::DirectReport0x20,
+            5.0,
+            2_000,
+            20,
+            1080.0,
+            1.0,
+        )
+        .err()
+        .map(|error| error.to_string())
+        .ok_or("expected direct report strategy rejection")?;
+        assert!(direct_message.contains("pidff-bounded-effect"));
+
+        let percent_message = validate_actuator_visible_smoke_args(
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.1,
+            2_000,
+            20,
+            1080.0,
+            1.0,
+        )
+        .err()
+        .map(|error| error.to_string())
+        .ok_or("expected max percent rejection")?;
+        assert!(percent_message.contains("0.1..=5.0"));
+        Ok(())
+    }
+
+    #[test]
+    fn validate_native_actuator_visible_preflight_requires_prior_profile_and_steering() -> TestResult
+    {
+        let dir = tempfile::tempdir()?;
+        write_native_actuator_visible_prerequisite_receipts(dir.path())?;
+
+        let preflight = validate_native_actuator_visible_smoke_preflight(
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            dir.path(),
+            Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            Some(&dir.path().join("steering-angle-stream-proof.json")),
+            Some(&dir.path().join("native-actuator-visible-smoke.json")),
+            false,
+        )?;
+        assert_eq!(preflight.target_product_id, "0x0004");
+        assert!(preflight.prior_actuator_profile_smoke_validated);
+        assert!(preflight.steering_proof_validated);
+
+        fs::remove_file(dir.path().join("native-actuator-profile-smoke.json"))?;
+        let message = validate_native_actuator_visible_smoke_preflight(
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            dir.path(),
+            Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            Some(&dir.path().join("steering-angle-stream-proof.json")),
+            Some(&dir.path().join("native-actuator-visible-smoke.json")),
+            false,
+        )
+        .err()
+        .map(|error| error.to_string())
+        .ok_or("expected missing prior actuator proof rejection")?;
+        assert!(message.contains("native actuator-profile smoke"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn actuator_visible_smoke_actual_requires_exact_endpoint_before_hid_open() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_native_actuator_visible_prerequisite_receipts(dir.path())?;
+
+        let result = actuator_visible_smoke(ActuatorVisibleSmokeRequest {
+            json: false,
+            selector: "0x346E:0x0004",
+            lane: dir.path(),
+            prior_actuator_proof: Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            steering_proof: Some(&dir.path().join("steering-angle-stream-proof.json")),
+            profile: MozaActuatorProfile::ConstantLowForce,
+            strategy: MozaLowTorqueStrategy::PidffBoundedEffect,
+            dry_run: false,
+            confirm_actuator_visible: true,
+            max_percent: 5.0,
+            duration_ms: 150,
+            read_timeout_ms: 20,
+            degrees_of_rotation: 1080.0,
+            movement_threshold_degrees: 1.0,
+            json_out: Some(&dir.path().join("native-actuator-visible-smoke.json")),
+        })
+        .await;
+
+        let message = result
+            .err()
+            .map(|error| error.to_string())
+            .ok_or("expected exact endpoint preflight failure")?;
+        assert!(message.contains("lane manifest wheelbase endpoint selector"));
+        assert!(
+            !dir.path()
+                .join("native-actuator-visible-smoke.json")
+                .exists()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn execute_pidff_actuator_visible_sequence_records_motion_and_cleanup() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let receipt = successful_native_actuator_visible_receipt(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &receipt,
+        )?;
+
+        assert_eq!(json_bool(&receipt, "movement_observed"), Some(true));
+        assert_eq!(json_bool(&receipt, "post_stop_stable"), Some(true));
+        assert!(
+            json_f64(&receipt, "angle_delta_degrees")
+                .map(|delta| delta >= 1.0)
+                .unwrap_or(false)
+        );
+        let records = receipt
+            .get("command_log")
+            .and_then(Value::as_array)
+            .ok_or("expected visible smoke command log")?;
+        assert_eq!(records.len(), 4);
+        assert!(records.iter().all(|record| {
+            json_string(record, "report_id")
+                .map(|report_id| report_id != DIRECT_TORQUE_REPORT_ID)
+                .unwrap_or(false)
+        }));
+
+        let gate = verify_native_actuator_visible_smoke_gate(dir.path());
+        assert_eq!(
+            gate.status, "pass",
+            "expected visible actuator gate pass: {}",
+            gate.details
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn execute_pidff_actuator_visible_sequence_requires_pre_angle_before_writes() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_native_actuator_visible_prerequisite_receipts(dir.path())?;
+        let preflight = validate_native_actuator_visible_smoke_preflight(
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            dir.path(),
+            Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            Some(&dir.path().join("steering-angle-stream-proof.json")),
+            Some(&dir.path().join("native-actuator-visible-smoke.json")),
+            false,
+        )?;
+        let mut receipt = NativeActuatorVisibleSmokeReceipt::new(
+            "hid-0x346E-0x0004-if2-0x0001-0x0004".to_string(),
+            dir.path(),
+            synthetic_moza_device_record(product_ids::R5_V1),
+            preflight,
+            MozaActuatorProfile::ConstantLowForce,
+            5.0,
+            150,
+            20,
+            1080.0,
+            1.0,
+            false,
+        );
+        execute_pidff_bounded_actuator_visible_sequence(
+            &mut receipt,
+            Instant::now(),
+            false,
+            |_payload| Err("write should not be attempted without pre-angle".to_string()),
+            || Ok(SteeringAngleSample::NoData),
+        );
+
+        assert_eq!(receipt.write_attempts, 0);
+        assert!(receipt.command_log.is_empty());
+        assert_eq!(receipt.pre_angle_degrees, None);
+        assert_eq!(
+            receipt.abort_reason.as_deref(),
+            Some("pre_angle_unavailable")
+        );
+        assert!(!receipt.final_stop_all_attempted);
+        Ok(())
+    }
+
+    #[test]
+    fn verify_native_actuator_visible_gate_rejects_no_movement() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let mut receipt = successful_native_actuator_visible_receipt(dir.path())?;
+        receipt["movement_observed"] = serde_json::json!(false);
+        receipt["angle_delta_degrees"] = serde_json::json!(0.1);
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &receipt,
+        )?;
+
+        let gate = verify_native_actuator_visible_smoke_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
+        assert!(gate.details.contains("movement_observed=Some(false)"));
         Ok(())
     }
 

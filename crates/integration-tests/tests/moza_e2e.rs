@@ -19,13 +19,17 @@ fn scenario_wheelbase_only_handshake_with_high_torque() -> Result<(), Box<dyn st
     // Then: state is Ready
     assert_eq!(s.protocol.init_state(), MozaInitState::Ready);
 
-    // Then: exact handshake sequence [HIGH_TORQUE, START_REPORTS, FFB_MODE]
+    // Then: exact R5 V1 handshake sequence [HIGH_TORQUE, FFB_MODE].
+    // R5 V1 does not expose START_REPORTS as a valid feature report.
     let reports = s.device.feature_reports();
-    assert_eq!(reports.len(), 3);
+    assert_eq!(reports.len(), 2);
     assert_eq!(reports[0][0], report_ids::HIGH_TORQUE);
-    assert_eq!(reports[1][0], report_ids::START_REPORTS);
-    assert_eq!(reports[2][0], report_ids::FFB_MODE);
-    assert_eq!(reports[2][1], FfbMode::Standard as u8);
+    assert_eq!(reports[1][0], report_ids::FFB_MODE);
+    assert_eq!(reports[1][1], FfbMode::Standard as u8);
+    assert!(
+        !s.device.sent_feature_report_id(report_ids::START_REPORTS),
+        "R5 V1 must not send START_REPORTS as a feature report"
+    );
 
     Ok(())
 }
@@ -110,7 +114,10 @@ fn scenario_handshake_retry_on_transient_io_failure() -> Result<(), Box<dyn std:
     let mut s = MozaScenario::wheelbase_failing(product_ids::R5_V1);
 
     // When: first attempt fails
-    s.initialize()?; // returns Ok even on failure (graceful)
+    assert!(
+        s.initialize().is_err(),
+        "transient write failure must surface while leaving retry state"
+    );
     assert_eq!(s.protocol.init_state(), MozaInitState::Failed);
     assert!(
         s.protocol.can_retry(),
@@ -139,7 +146,10 @@ fn scenario_retries_bounded_no_deadlock() -> Result<(), Box<dyn std::error::Erro
 
     // When: exhausting retries (DEFAULT_MAX_RETRIES = 3)
     for _ in 0..3 {
-        s.initialize()?;
+        assert!(
+            s.initialize().is_err(),
+            "failing virtual device must surface initialization errors"
+        );
     }
 
     // Then: state is PermanentFailure (not deadlocked)

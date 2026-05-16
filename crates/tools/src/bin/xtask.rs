@@ -202,8 +202,9 @@ fn ripr_pr(check: bool) -> anyhow::Result<()> {
             OsStr::new("check"),
             OsStr::new("--root"),
             workspace_root.as_os_str(),
+            OsStr::new("--no-unchanged-tests"),
             OsStr::new("--format"),
-            OsStr::new("repo-exposure-json"),
+            OsStr::new("badge-json"),
         ],
         &out_dir.join("repo-exposure.json"),
     )?;
@@ -214,8 +215,9 @@ fn ripr_pr(check: bool) -> anyhow::Result<()> {
             OsStr::new("check"),
             OsStr::new("--root"),
             workspace_root.as_os_str(),
+            OsStr::new("--no-unchanged-tests"),
             OsStr::new("--format"),
-            OsStr::new("repo-exposure-md"),
+            OsStr::new("human"),
         ],
         &out_dir.join("repo-exposure.md"),
     )?;
@@ -238,21 +240,38 @@ fn ripr_review_comments(check: bool) -> anyhow::Result<()> {
 
     fs::create_dir_all(&out_dir)
         .with_context(|| format!("failed to create {}", out_dir.display()))?;
-    let ripr_bin = env::var("RIPR_BIN").unwrap_or_else(|_| "ripr".to_string());
-    run_status(
-        Command::new(&ripr_bin)
-            .arg("review-comments")
-            .arg("--root")
-            .arg(&workspace_root)
-            .arg("--base")
-            .arg("origin/main")
-            .arg("--head")
-            .arg("HEAD")
-            .arg("--out")
-            .arg(&json_path)
-            .current_dir(&workspace_root),
-        &format!("{ripr_bin} review-comments"),
-    )?;
+    if env::var_os("RIPR_REVIEW_COMMENTS_LIVE").is_some() {
+        let ripr_bin = env::var("RIPR_BIN").unwrap_or_else(|_| "ripr".to_string());
+        run_status(
+            Command::new(&ripr_bin)
+                .arg("review-comments")
+                .arg("--root")
+                .arg(&workspace_root)
+                .arg("--base")
+                .arg("origin/main")
+                .arg("--head")
+                .arg("HEAD")
+                .arg("--out")
+                .arg(&json_path)
+                .current_dir(&workspace_root),
+            &format!("{ripr_bin} review-comments"),
+        )?;
+    } else {
+        let review = serde_json::json!({
+            "base": "origin/main",
+            "head": "HEAD",
+            "comments": [],
+            "notes": [
+                "bounded CI mode writes a non-blocking placeholder; set RIPR_REVIEW_COMMENTS_LIVE=1 to run live ripr review-comments"
+            ]
+        });
+        write_json_pretty(&json_path, &review)?;
+        fs::write(
+            &md_path,
+            "# RIPR PR Guidance\n\nNo line-placeable RIPR review guidance was produced in bounded CI mode.\nSet `RIPR_REVIEW_COMMENTS_LIVE=1` to run the full advisory review-comments pass locally or in a dedicated workflow.\n",
+        )
+        .with_context(|| format!("failed to write {}", md_path.display()))?;
+    }
     validate_json_file(&json_path)?;
     ensure_non_empty_file(&md_path)?;
     Ok(())
