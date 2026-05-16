@@ -913,7 +913,10 @@ pub enum MozaCommands {
         /// Lane-relative output log artifact
         #[arg(long)]
         output_log_artifact: std::path::PathBuf,
-        /// Descriptor trust was established before direct-mode FFB
+        /// Bounded simulator FFB output strategy
+        #[arg(long, value_enum, default_value_t = MozaLowTorqueStrategy::DirectReport0x20)]
+        strategy: MozaLowTorqueStrategy,
+        /// Descriptor trust was established before simulator FFB
         #[arg(long)]
         descriptor_trusted: bool,
         /// Explicit operator override allowed direct-mode FFB without descriptor trust

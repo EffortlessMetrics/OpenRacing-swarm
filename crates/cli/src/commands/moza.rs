@@ -274,6 +274,7 @@ struct SimulatorFfbSmokeRequest<'a> {
     game: &'a str,
     telemetry_source: &'a str,
     output_log_artifact: &'a Path,
+    strategy: MozaLowTorqueStrategy,
     descriptor_trusted: bool,
     explicit_operator_override: bool,
     watchdog_timeout_ms: u64,
@@ -633,6 +634,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             game,
             telemetry_source,
             output_log_artifact,
+            strategy,
             descriptor_trusted,
             explicit_operator_override,
             watchdog_timeout_ms,
@@ -648,6 +650,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 game,
                 telemetry_source,
                 output_log_artifact,
+                strategy: *strategy,
                 descriptor_trusted: *descriptor_trusted,
                 explicit_operator_override: *explicit_operator_override,
                 watchdog_timeout_ms: *watchdog_timeout_ms,
@@ -2985,6 +2988,7 @@ async fn simulator_ffb_smoke(request: SimulatorFfbSmokeRequest<'_>) -> Result<()
         game,
         telemetry_source,
         output_log_artifact,
+        strategy,
         descriptor_trusted,
         explicit_operator_override,
         watchdog_timeout_ms,
@@ -3022,17 +3026,42 @@ async fn simulator_ffb_smoke(request: SimulatorFfbSmokeRequest<'_>) -> Result<()
     let mut nonzero_output_count = 0u64;
     let mut zero_output_count = 0u64;
     let mut max_abs_output_percent = 0.0f64;
-    let mut all_direct_records = true;
-    for record in &records {
-        let Some(output) = direct_torque_artifact_record(record) else {
-            all_direct_records = false;
-            continue;
-        };
-        max_abs_output_percent = max_abs_output_percent.max(output.percent.abs());
-        if output.torque_raw == 0 {
-            zero_output_count += 1;
-        } else {
-            nonzero_output_count += 1;
+    let mut output_records_match_strategy = true;
+    match strategy {
+        MozaLowTorqueStrategy::DirectReport0x20 => {
+            for record in &records {
+                let Some(output) = direct_torque_artifact_record(record) else {
+                    output_records_match_strategy = false;
+                    continue;
+                };
+                max_abs_output_percent = max_abs_output_percent.max(output.percent.abs());
+                if output.torque_raw == 0 {
+                    zero_output_count += 1;
+                } else {
+                    nonzero_output_count += 1;
+                }
+            }
+        }
+        MozaLowTorqueStrategy::PidffBoundedEffect => {
+            for record in &records {
+                let Some(output) = pidff_output_artifact_record(record) else {
+                    output_records_match_strategy = false;
+                    continue;
+                };
+                max_abs_output_percent = max_abs_output_percent.max(output.percent.abs());
+                match output.kind.as_str() {
+                    "pidff_set_constant_force" if output.torque_raw != 0 => {
+                        nonzero_output_count += 1;
+                    }
+                    "clear_zero" | "final_stop_all" | "final_zero"
+                        if pidff_stop_all_record_is_safe(record) =>
+                    {
+                        zero_output_count += 1;
+                    }
+                    "pidff_set_effect" | "pidff_effect_start" => {}
+                    _ => output_records_match_strategy = false,
+                }
+            }
         }
     }
     let output_provenance = simulator_ffb_output_provenance_for_records(lane, &records, output_pid);
@@ -3050,21 +3079,42 @@ async fn simulator_ffb_smoke(request: SimulatorFfbSmokeRequest<'_>) -> Result<()
     );
     let prerequisite_artifacts_value = serde_json::to_value(&prerequisite_artifacts)?;
     let last_record = records.last();
-    let final_zero_attempted =
-        last_record.and_then(|record| json_string(record, "kind")) == Some("final_zero");
+    let final_zero_attempted = matches!(
+        last_record.and_then(|record| json_string(record, "kind")),
+        Some("final_zero" | "final_stop_all")
+    );
     let final_zero_sent = last_record
         .map(|record| {
-            json_string(record, "result") == Some("ok") && zero_payload_record_is_safe(record)
+            json_string(record, "result") == Some("ok")
+                && match strategy {
+                    MozaLowTorqueStrategy::DirectReport0x20 => zero_payload_record_is_safe(record),
+                    MozaLowTorqueStrategy::PidffBoundedEffect => {
+                        pidff_stop_all_record_is_safe(record)
+                    }
+                }
         })
         .unwrap_or(false);
     let final_zero_payload_hex = last_record
         .and_then(|record| json_string(record, "payload_hex"))
         .unwrap_or_default();
+    let final_zero_report_id = last_record
+        .and_then(|record| json_string(record, "report_id"))
+        .unwrap_or_default();
+    let final_zero_torque_raw = last_record.and_then(|record| json_i64(record, "torque_raw"));
+    let final_zero_flags = last_record.and_then(|record| json_u64(record, "flags"));
     let mode_mismatch_cleared_output = simulator_ffb_clear_events_for_records(&records)
         .mode_mismatch
         .is_some();
     let source_ok = matches!(telemetry_source, "real_game" | "simhub_bridge");
-    let descriptor_trust_observed = lane_descriptor_trusted_for_pid(lane, &hex_u16(output_pid));
+    let direct_descriptor_trust_observed =
+        lane_descriptor_trusted_for_pid(lane, &hex_u16(output_pid));
+    let pidff_descriptor_trust_observed = validate_zero_output_pidff_stop_all_report_metadata(lane)
+        .is_ok()
+        && pidff_bounded_effect_descriptor_blockers(lane).is_empty();
+    let descriptor_trust_observed = match strategy {
+        MozaLowTorqueStrategy::DirectReport0x20 => direct_descriptor_trust_observed,
+        MozaLowTorqueStrategy::PidffBoundedEffect => pidff_descriptor_trust_observed,
+    };
     let descriptor_trust_valid = !descriptor_trusted || descriptor_trust_observed;
     let direct_mode_allowed = ((descriptor_trusted && descriptor_trust_observed)
         || explicit_operator_override)
@@ -3087,24 +3137,46 @@ async fn simulator_ffb_smoke(request: SimulatorFfbSmokeRequest<'_>) -> Result<()
         telemetry_source: telemetry_source.to_string(),
         ffb_scalars_by_sequence,
     };
-    let output_artifact_safe = all_direct_records
-        && simulator_ffb_output_artifact_is_safe(
-            lane,
-            &output_log_artifact,
-            output_report_count,
-            nonzero_output_count,
-            zero_output_count,
-            max_abs_output_percent,
-            output_pid,
-            &telemetry_link,
-        );
+    let output_artifact_safe = output_records_match_strategy
+        && match strategy {
+            MozaLowTorqueStrategy::DirectReport0x20 => simulator_ffb_output_artifact_is_safe(
+                lane,
+                &output_log_artifact,
+                output_report_count,
+                nonzero_output_count,
+                zero_output_count,
+                max_abs_output_percent,
+                output_pid,
+                &telemetry_link,
+            ),
+            MozaLowTorqueStrategy::PidffBoundedEffect => {
+                simulator_ffb_pidff_output_artifact_is_safe(
+                    lane,
+                    &output_log_artifact,
+                    output_report_count,
+                    nonzero_output_count,
+                    zero_output_count,
+                    max_abs_output_percent,
+                    &telemetry_link,
+                )
+            }
+        };
+    let output_strategy_allowed = match strategy {
+        MozaLowTorqueStrategy::DirectReport0x20 => direct_mode_allowed,
+        MozaLowTorqueStrategy::PidffBoundedEffect => {
+            descriptor_trusted
+                && descriptor_trust_observed
+                && descriptor_trust_valid
+                && !explicit_operator_override
+        }
+    };
     let success = !game.trim().is_empty()
         && source_ok
         && telemetry_receipt_ok
         && telemetry_receipt_matches_run
         && hardware_prerequisites_validated
         && prerequisite_artifacts_bound
-        && direct_mode_allowed
+        && output_strategy_allowed
         && watchdog_timeout_ms > 0
         && output_report_count > 0
         && nonzero_output_count > 0
@@ -3156,7 +3228,20 @@ async fn simulator_ffb_smoke(request: SimulatorFfbSmokeRequest<'_>) -> Result<()
         Value::String(telemetry_source.to_string()),
     );
     receipt.insert("hardware".to_string(), Value::String("moza-r5".to_string()));
-    receipt.insert("ffb_mode".to_string(), Value::String("direct".to_string()));
+    receipt.insert(
+        "ffb_mode".to_string(),
+        Value::String(
+            match strategy {
+                MozaLowTorqueStrategy::DirectReport0x20 => "direct",
+                MozaLowTorqueStrategy::PidffBoundedEffect => "pidff",
+            }
+            .to_string(),
+        ),
+    );
+    receipt.insert(
+        "output_strategy".to_string(),
+        Value::String(low_torque_strategy_name(strategy).to_string()),
+    );
     receipt.insert(
         "descriptor_trusted".to_string(),
         Value::Bool(descriptor_trusted),
@@ -3171,6 +3256,10 @@ async fn simulator_ffb_smoke(request: SimulatorFfbSmokeRequest<'_>) -> Result<()
     );
     receipt.insert("high_torque".to_string(), Value::Bool(false));
     receipt.insert("no_high_torque".to_string(), Value::Bool(true));
+    receipt.insert(
+        "no_direct_torque_reports".to_string(),
+        Value::Bool(strategy == MozaLowTorqueStrategy::PidffBoundedEffect),
+    );
     receipt.insert("no_hid_device_opened".to_string(), Value::Bool(false));
     receipt.insert("no_ffb_writes".to_string(), Value::Bool(false));
     receipt.insert("no_serial_config_commands".to_string(), Value::Bool(true));
@@ -3285,6 +3374,22 @@ async fn simulator_ffb_smoke(request: SimulatorFfbSmokeRequest<'_>) -> Result<()
     receipt.insert(
         "final_zero_payload_hex".to_string(),
         Value::String(final_zero_payload_hex.to_string()),
+    );
+    receipt.insert(
+        "final_zero_report_id".to_string(),
+        Value::String(final_zero_report_id.to_string()),
+    );
+    receipt.insert(
+        "final_zero_torque_raw".to_string(),
+        final_zero_torque_raw
+            .map(|value| serde_json::json!(value))
+            .unwrap_or(Value::Null),
+    );
+    receipt.insert(
+        "final_zero_flags".to_string(),
+        final_zero_flags
+            .map(|value| serde_json::json!(value))
+            .unwrap_or(Value::Null),
     );
     receipt.insert(
         "stop_cleared_output".to_string(),
@@ -6592,6 +6697,21 @@ fn pidff_bounded_effect_descriptor_blockers(lane: &Path) -> Vec<&'static str> {
     blockers
 }
 
+fn simulator_ffb_smoke_strategy_arg(lane: &Path) -> &'static str {
+    let Ok(receipt) = read_json_value(lane, "low-torque-proof.json") else {
+        return "";
+    };
+    if json_string(&receipt, "low_torque_strategy")
+        == Some(low_torque_strategy_name(
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+        ))
+    {
+        " --strategy pidff-bounded-effect"
+    } else {
+        ""
+    }
+}
+
 fn low_torque_direct_zero_proof_ready(lane: &Path) -> bool {
     let proof_path = lane.join("zero-torque-proof.json");
     read_json_path(&proof_path)
@@ -6691,9 +6811,10 @@ fn push_smoke_ready_next_commands(
     }
 
     if !bundle_gate_check_passed(gates, "simulator_ffb_bounded") {
+        let strategy_arg = simulator_ffb_smoke_strategy_arg(lane);
         commands.push(format!("wheeld --hardware-lane {lane_arg}"));
         commands.push(format!(
-            "wheelctl moza simulator-ffb-smoke --lane {lane_arg} --game <sim> --telemetry-source real_game --output-log-artifact simulator-ffb-output.jsonl --descriptor-trusted --watchdog-timeout-ms 100 --stop-cleared-output --pause-cleared-output --game-exit-cleared-output --json-out {}",
+            "wheelctl moza simulator-ffb-smoke --lane {lane_arg} --game <sim> --telemetry-source real_game --output-log-artifact simulator-ffb-output.jsonl{strategy_arg} --descriptor-trusted --watchdog-timeout-ms 100 --stop-cleared-output --pause-cleared-output --game-exit-cleared-output --json-out {}",
             lane_path_arg(lane, "simulator-ffb-smoke.json")
         ));
         return;
@@ -12776,19 +12897,40 @@ fn verify_simulator_ffb_gate(lane: &Path) -> BundleGateCheck {
     let hardware = json_string(&receipt, "hardware");
     let hardware_ok = hardware == Some("moza-r5");
     let ffb_mode = json_string(&receipt, "ffb_mode");
+    let output_strategy = json_string(&receipt, "output_strategy").unwrap_or(
+        low_torque_strategy_name(MozaLowTorqueStrategy::DirectReport0x20),
+    );
     let descriptor_trusted = json_bool(&receipt, "descriptor_trusted");
     let explicit_operator_override = json_bool(&receipt, "explicit_operator_override");
     let receipt_pid = receipt_r5_device_pid(&receipt);
-    let descriptor_trust_observed = receipt_pid
+    let direct_descriptor_trust_observed = receipt_pid
         .map(|pid| lane_descriptor_trusted_for_pid(lane, &hex_u16(pid)))
         .unwrap_or(false);
+    let pidff_descriptor_trust_observed = validate_zero_output_pidff_stop_all_report_metadata(lane)
+        .is_ok()
+        && pidff_bounded_effect_descriptor_blockers(lane).is_empty();
+    let descriptor_trust_observed =
+        if output_strategy == low_torque_strategy_name(MozaLowTorqueStrategy::PidffBoundedEffect) {
+            pidff_descriptor_trust_observed
+        } else {
+            direct_descriptor_trust_observed
+        };
     let descriptor_trust_valid = descriptor_trusted != Some(true) || descriptor_trust_observed;
     let direct_mode_allowed = ffb_mode == Some("direct")
+        && output_strategy == low_torque_strategy_name(MozaLowTorqueStrategy::DirectReport0x20)
         && ((descriptor_trusted == Some(true) && descriptor_trust_observed)
             || explicit_operator_override == Some(true))
         && descriptor_trust_valid;
+    let pidff_mode_allowed = ffb_mode == Some("pidff")
+        && output_strategy == low_torque_strategy_name(MozaLowTorqueStrategy::PidffBoundedEffect)
+        && descriptor_trusted == Some(true)
+        && descriptor_trust_observed
+        && explicit_operator_override == Some(false)
+        && descriptor_trust_valid;
+    let output_strategy_allowed = direct_mode_allowed || pidff_mode_allowed;
     let high_torque = json_bool(&receipt, "high_torque");
     let no_high_torque = json_bool(&receipt, "no_high_torque");
+    let no_direct_torque_reports = json_bool(&receipt, "no_direct_torque_reports");
     let no_out_of_scope = no_out_of_scope_device_commands(&receipt);
     let no_hid_device_opened = json_bool(&receipt, "no_hid_device_opened");
     let no_ffb_writes = json_bool(&receipt, "no_ffb_writes");
@@ -12817,12 +12959,19 @@ fn verify_simulator_ffb_gate(lane: &Path) -> BundleGateCheck {
     let zero_output_count = json_u64(&receipt, "zero_output_count")
         .or_else(|| json_u64(&receipt, "zero_command_count"))
         .unwrap_or(0);
-    let final_zero_payload_safe = json_string(&receipt, "final_zero_payload_hex")
-        .map(|value| value.eq_ignore_ascii_case("2000000000000000"))
-        .unwrap_or(false)
-        || (json_string(&receipt, "final_zero_report_id") == Some(DIRECT_TORQUE_REPORT_ID)
-            && json_i64(&receipt, "final_zero_torque_raw") == Some(0)
-            && json_u64(&receipt, "final_zero_flags") == Some(0));
+    let final_zero_payload_safe = if output_strategy
+        == low_torque_strategy_name(MozaLowTorqueStrategy::PidffBoundedEffect)
+    {
+        json_string(&receipt, "final_zero_payload_hex") == Some("0C04")
+            && json_string(&receipt, "final_zero_report_id") == Some(PIDFF_DEVICE_CONTROL_REPORT_ID)
+    } else {
+        json_string(&receipt, "final_zero_payload_hex")
+            .map(|value| value.eq_ignore_ascii_case("2000000000000000"))
+            .unwrap_or(false)
+            || (json_string(&receipt, "final_zero_report_id") == Some(DIRECT_TORQUE_REPORT_ID)
+                && json_i64(&receipt, "final_zero_torque_raw") == Some(0)
+                && json_u64(&receipt, "final_zero_flags") == Some(0))
+    };
     let max_percent = json_f64(&receipt, "max_output_percent")
         .or_else(|| json_f64(&receipt, "max_percent"))
         .or_else(|| json_f64(&receipt, "max_command_percent"));
@@ -12851,16 +13000,30 @@ fn verify_simulator_ffb_gate(lane: &Path) -> BundleGateCheck {
             linked_telemetry
                 .as_ref()
                 .map(|telemetry| {
-                    simulator_ffb_output_artifact_is_safe(
-                        lane,
-                        value,
-                        output_report_count,
-                        nonzero_output_count,
-                        zero_output_count,
-                        max_artifact_percent,
-                        receipt_pid.unwrap_or(product_ids::R5_V2),
-                        telemetry,
-                    )
+                    if output_strategy
+                        == low_torque_strategy_name(MozaLowTorqueStrategy::PidffBoundedEffect)
+                    {
+                        simulator_ffb_pidff_output_artifact_is_safe(
+                            lane,
+                            value,
+                            output_report_count,
+                            nonzero_output_count,
+                            zero_output_count,
+                            max_artifact_percent,
+                            telemetry,
+                        )
+                    } else {
+                        simulator_ffb_output_artifact_is_safe(
+                            lane,
+                            value,
+                            output_report_count,
+                            nonzero_output_count,
+                            zero_output_count,
+                            max_artifact_percent,
+                            receipt_pid.unwrap_or(product_ids::R5_V2),
+                            telemetry,
+                        )
+                    }
                 })
                 .unwrap_or(false)
         })
@@ -12879,9 +13042,11 @@ fn verify_simulator_ffb_gate(lane: &Path) -> BundleGateCheck {
         && !game.trim().is_empty()
         && source_ok
         && hardware_ok
-        && direct_mode_allowed
+        && output_strategy_allowed
         && high_torque == Some(false)
         && no_high_torque == Some(true)
+        && (output_strategy != low_torque_strategy_name(MozaLowTorqueStrategy::PidffBoundedEffect)
+            || no_direct_torque_reports == Some(true))
         && no_out_of_scope
         && no_hid_device_opened == Some(false)
         && no_ffb_writes == Some(false)
@@ -12924,7 +13089,7 @@ fn verify_simulator_ffb_gate(lane: &Path) -> BundleGateCheck {
         BundleGateCheck::fail(
             "simulator_ffb_bounded",
             format!(
-                "success={success}, command_ok={command_ok}, game_present={}, telemetry_source={source:?}, hardware={hardware:?}, ffb_mode={ffb_mode:?}, descriptor_trusted={descriptor_trusted:?}, descriptor_trust_observed={descriptor_trust_observed}, descriptor_trust_valid={descriptor_trust_valid}, explicit_operator_override={explicit_operator_override:?}, direct_mode_allowed={direct_mode_allowed}, high_torque={high_torque:?}, no_high_torque={no_high_torque:?}, no_out_of_scope={no_out_of_scope}, no_hid_device_opened={no_hid_device_opened:?}, no_ffb_writes={no_ffb_writes:?}, hardware_prerequisites_validated={hardware_prerequisites_validated:?}, prerequisite_gates_valid={prerequisite_gates_valid}, prerequisite_artifacts_valid={prerequisite_artifacts_valid}, hardware_output_enabled={hardware_output_enabled:?}, watchdog_active={watchdog_active:?}, watchdog_timeout_ms={watchdog_timeout_ms}, final_zero_attempted={final_zero_attempted:?}, final_zero_sent={final_zero_sent:?}, final_zero_payload_safe={final_zero_payload_safe}, stop_cleared_output={stop_cleared_output:?}, pause_cleared_output={pause_cleared_output:?}, game_exit_cleared_output={game_exit_cleared_output:?}, mode_mismatch_cleared_output={mode_mismatch_cleared_output:?}, output_report_count={output_report_count}, nonzero_output_count={nonzero_output_count}, zero_output_count={zero_output_count}, simulator_telemetry_gate_valid={simulator_telemetry_gate_valid}, linked_telemetry_snapshot_count={linked_telemetry_snapshot_count:?}, output_log_provenance_valid={output_log_provenance_valid}, output_log_artifact_valid={output_log_artifact_valid}, faults_empty={faults_empty}, r5_output_device={r5_output_device}, writer_selector_matches_lane_endpoint={writer_selector_matches_lane_endpoint}, max_output_percent={max_percent:?}, max_abs_output_percent={max_abs_output_percent:?}",
+                "success={success}, command_ok={command_ok}, game_present={}, telemetry_source={source:?}, hardware={hardware:?}, ffb_mode={ffb_mode:?}, output_strategy={output_strategy:?}, descriptor_trusted={descriptor_trusted:?}, descriptor_trust_observed={descriptor_trust_observed}, descriptor_trust_valid={descriptor_trust_valid}, explicit_operator_override={explicit_operator_override:?}, direct_mode_allowed={direct_mode_allowed}, pidff_mode_allowed={pidff_mode_allowed}, output_strategy_allowed={output_strategy_allowed}, high_torque={high_torque:?}, no_high_torque={no_high_torque:?}, no_direct_torque_reports={no_direct_torque_reports:?}, no_out_of_scope={no_out_of_scope}, no_hid_device_opened={no_hid_device_opened:?}, no_ffb_writes={no_ffb_writes:?}, hardware_prerequisites_validated={hardware_prerequisites_validated:?}, prerequisite_gates_valid={prerequisite_gates_valid}, prerequisite_artifacts_valid={prerequisite_artifacts_valid}, hardware_output_enabled={hardware_output_enabled:?}, watchdog_active={watchdog_active:?}, watchdog_timeout_ms={watchdog_timeout_ms}, final_zero_attempted={final_zero_attempted:?}, final_zero_sent={final_zero_sent:?}, final_zero_payload_safe={final_zero_payload_safe}, stop_cleared_output={stop_cleared_output:?}, pause_cleared_output={pause_cleared_output:?}, game_exit_cleared_output={game_exit_cleared_output:?}, mode_mismatch_cleared_output={mode_mismatch_cleared_output:?}, output_report_count={output_report_count}, nonzero_output_count={nonzero_output_count}, zero_output_count={zero_output_count}, simulator_telemetry_gate_valid={simulator_telemetry_gate_valid}, linked_telemetry_snapshot_count={linked_telemetry_snapshot_count:?}, output_log_provenance_valid={output_log_provenance_valid}, output_log_artifact_valid={output_log_artifact_valid}, faults_empty={faults_empty}, r5_output_device={r5_output_device}, writer_selector_matches_lane_endpoint={writer_selector_matches_lane_endpoint}, max_output_percent={max_percent:?}, max_abs_output_percent={max_abs_output_percent:?}",
                 !game.trim().is_empty()
             ),
         )
@@ -13443,10 +13608,140 @@ fn simulator_ffb_output_artifact_is_safe(
         && clear_events.all_ordered_before_final_zero(records.len().saturating_sub(1))
 }
 
+fn simulator_ffb_pidff_output_artifact_is_safe(
+    lane: &Path,
+    path: &str,
+    expected_count: u64,
+    expected_nonzero_count: u64,
+    expected_zero_count: u64,
+    max_percent: f64,
+    telemetry_link: &SimulatorFfbTelemetryLink,
+) -> bool {
+    if expected_count == 0
+        || expected_nonzero_count == 0
+        || expected_zero_count == 0
+        || !max_percent.is_finite()
+        || !(0.0..=5.0).contains(&max_percent)
+        || telemetry_link.snapshot_count == 0
+    {
+        return false;
+    }
+
+    let Some(records) = read_receipt_artifact_records(
+        lane,
+        path,
+        &["output_log", "records", "commands", "reports"],
+    ) else {
+        return false;
+    };
+    let Ok(expected_len) = usize::try_from(expected_count) else {
+        return false;
+    };
+    if records.len() != expected_len {
+        return false;
+    }
+
+    let mut nonzero_count = 0u64;
+    let mut zero_count = 0u64;
+    let mut set_effect_seen = false;
+    let mut constant_force_seen = false;
+    let mut effect_start_seen = false;
+    let mut clear_events = SimulatorFfbClearEvents::default();
+    let mut previous_elapsed_us = None;
+    let mut elapsed_advanced = false;
+
+    for (index, record) in records.iter().enumerate() {
+        let Some(output) = pidff_output_artifact_record(record) else {
+            return false;
+        };
+        let Some(elapsed_us) = json_u64(record, "elapsed_us") else {
+            return false;
+        };
+        if let Some(previous) = previous_elapsed_us {
+            if elapsed_us < previous {
+                return false;
+            }
+            if elapsed_us > previous {
+                elapsed_advanced = true;
+            }
+        }
+        previous_elapsed_us = Some(elapsed_us);
+
+        if json_string(record, "result") != Some("ok")
+            || !record_sequence_matches_index(record, index)
+            || !simulator_ffb_record_has_hid_write_metadata(record)
+            || !simulator_ffb_record_links_telemetry(record, telemetry_link)
+            || !lane_descriptor_has_output_report(lane, &output.report_id, output.report_len)
+            || output.effect_magnitude_percent > max_percent
+        {
+            return false;
+        }
+
+        let is_last = index + 1 == records.len();
+        match output.kind.as_str() {
+            "pidff_set_effect" => {
+                if is_last
+                    || output.report_id != PIDFF_SET_EFFECT_REPORT_ID
+                    || output.safety_classification != PIDFF_EFFECT_SETUP_CLASSIFICATION
+                {
+                    return false;
+                }
+                set_effect_seen = true;
+            }
+            "pidff_set_constant_force" => {
+                if is_last
+                    || output.report_id != PIDFF_SET_CONSTANT_FORCE_REPORT_ID
+                    || output.safety_classification != PIDFF_BOUNDED_EFFECT_CLASSIFICATION
+                    || output.torque_raw == 0
+                    || output.percent == 0.0
+                    || output.percent.abs() > max_percent
+                    || !simulator_ffb_output_sign_matches_input(record, output.percent)
+                {
+                    return false;
+                }
+                constant_force_seen = true;
+                nonzero_count += 1;
+            }
+            "pidff_effect_start" => {
+                if is_last
+                    || output.report_id != PIDFF_EFFECT_OPERATION_REPORT_ID
+                    || output.safety_classification != PIDFF_BOUNDED_EFFECT_CLASSIFICATION
+                {
+                    return false;
+                }
+                effect_start_seen = true;
+            }
+            "clear_zero" => {
+                if is_last || !pidff_stop_all_record_is_safe(record) {
+                    return false;
+                }
+                clear_events.record(record, index);
+                zero_count += 1;
+            }
+            "final_stop_all" | "final_zero" => {
+                if !is_last || !pidff_stop_all_record_is_safe(record) {
+                    return false;
+                }
+                zero_count += 1;
+            }
+            _ => return false,
+        }
+    }
+
+    nonzero_count == expected_nonzero_count
+        && zero_count == expected_zero_count
+        && set_effect_seen
+        && constant_force_seen
+        && effect_start_seen
+        && elapsed_advanced
+        && clear_events.all_ordered_before_final_zero(records.len().saturating_sub(1))
+}
+
 fn simulator_ffb_clear_events_for_records(records: &[Value]) -> SimulatorFfbClearEvents {
     let mut clear_events = SimulatorFfbClearEvents::default();
     for (index, record) in records.iter().enumerate() {
-        if json_string(record, "kind") == Some("clear_zero") && zero_payload_record_is_safe(record)
+        if json_string(record, "kind") == Some("clear_zero")
+            && (zero_payload_record_is_safe(record) || pidff_stop_all_record_is_safe(record))
         {
             clear_events.record(record, index);
         }
@@ -13770,6 +14065,16 @@ struct DirectTorqueArtifactRecord {
     percent: f64,
 }
 
+struct PidffOutputArtifactRecord {
+    report_id: String,
+    report_len: usize,
+    torque_raw: i64,
+    percent: f64,
+    effect_magnitude_percent: f64,
+    kind: String,
+    safety_classification: String,
+}
+
 fn direct_torque_artifact_record(record: &Value) -> Option<DirectTorqueArtifactRecord> {
     let payload_hex = json_string(record, "payload_hex")?;
     let bytes = parse_hex_bytes(payload_hex).ok()?;
@@ -13795,6 +14100,59 @@ fn direct_torque_artifact_record(record: &Value) -> Option<DirectTorqueArtifactR
         motor_enabled,
         percent,
     })
+}
+
+fn pidff_output_artifact_record(record: &Value) -> Option<PidffOutputArtifactRecord> {
+    let kind = json_string(record, "kind")?.to_string();
+    let report_id = json_string(record, "report_id")?.to_string();
+    let report_len =
+        json_u64(record, "report_len").and_then(|value| usize::try_from(value).ok())?;
+    let payload_hex = json_string(record, "payload_hex")?;
+    let payload_len = parse_hex_bytes(payload_hex).ok()?.len();
+    let torque_raw = json_i64(record, "torque_raw")?;
+    let percent = json_f64(record, "percent").or_else(|| json_f64(record, "output_percent"))?;
+    let effect_magnitude_percent =
+        json_f64(record, "effect_magnitude_percent").unwrap_or(percent.abs());
+    let safety_classification = json_string(record, "safety_classification")?.to_string();
+
+    if json_string(record, "low_torque_strategy")
+        != Some(low_torque_strategy_name(
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+        ))
+        || report_id == DIRECT_TORQUE_REPORT_ID
+        || payload_len != report_len
+        || !percent.is_finite()
+        || !effect_magnitude_percent.is_finite()
+    {
+        return None;
+    }
+
+    Some(PidffOutputArtifactRecord {
+        report_id,
+        report_len,
+        torque_raw,
+        percent,
+        effect_magnitude_percent,
+        kind,
+        safety_classification,
+    })
+}
+
+fn pidff_stop_all_record_is_safe(record: &Value) -> bool {
+    json_string(record, "payload_hex") == Some("0C04")
+        && json_string(record, "report_id") == Some(PIDFF_DEVICE_CONTROL_REPORT_ID)
+        && json_u64(record, "report_len") == Some(PIDFF_DEVICE_CONTROL_REPORT_LEN as u64)
+        && json_i64(record, "torque_raw") == Some(0)
+        && json_u64(record, "flags") == Some(0)
+        && json_bool(record, "motor_enabled") == Some(false)
+        && json_string(record, "pidff_device_control_command")
+            == Some(hex_u8(PIDFF_STOP_ALL_EFFECTS_COMMAND).as_str())
+        && json_string(record, "pidff_device_control_command_name")
+            == Some(PIDFF_STOP_ALL_EFFECTS_COMMAND_NAME)
+        && matches!(
+            json_string(record, "safety_classification"),
+            Some(PIDFF_STOP_ALL_CLEANUP_CLASSIFICATION | PIDFF_PLANNED_STOP_ALL_CLASSIFICATION)
+        )
 }
 
 fn telemetry_record_has_normalized_fields(record: &Value) -> bool {
@@ -18825,6 +19183,174 @@ mod tests {
         write_text_file(path, &lines)
     }
 
+    fn simulator_pidff_output_record(
+        sequence: usize,
+        kind: &'static str,
+        percent: f64,
+        writer_hardware_lane: &Path,
+    ) -> Value {
+        let (payload_hex, report_id, report_len, torque_raw, motor_enabled, safety) = match kind {
+            "pidff_set_effect" => (
+                "010101960000000000000003FF052823000000000000",
+                "0x01",
+                22_u64,
+                0_i64,
+                false,
+                PIDFF_EFFECT_SETUP_CLASSIFICATION,
+            ),
+            "pidff_effect_start" => (
+                "0A010101",
+                "0x0A",
+                4_u64,
+                0_i64,
+                true,
+                PIDFF_BOUNDED_EFFECT_CLASSIFICATION,
+            ),
+            "pidff_set_constant_force" => {
+                if percent < 0.0 {
+                    (
+                        "0501B8FE",
+                        "0x05",
+                        4_u64,
+                        -328_i64,
+                        true,
+                        PIDFF_BOUNDED_EFFECT_CLASSIFICATION,
+                    )
+                } else {
+                    (
+                        "05014801",
+                        "0x05",
+                        4_u64,
+                        328_i64,
+                        true,
+                        PIDFF_BOUNDED_EFFECT_CLASSIFICATION,
+                    )
+                }
+            }
+            "clear_zero" | "final_stop_all" | "final_zero" => (
+                "0C04",
+                "0x0C",
+                2_u64,
+                0_i64,
+                false,
+                PIDFF_STOP_ALL_CLEANUP_CLASSIFICATION,
+            ),
+            _ => ("", "", 0_u64, 0_i64, false, ""),
+        };
+        let telemetry_sequence = sequence % 120;
+        let mut record = simulator_ffb_output_record(sequence, kind, 0.0, writer_hardware_lane);
+        record["writer_session_id"] = serde_json::json!("sim-ffb-pidff-session-001");
+        record["writer_device_path"] = serde_json::json!("\\\\?\\hid#vid_346e&pid_0004&mi_02");
+        record["writer_product_id"] = serde_json::json!("0x0004");
+        record["writer_endpoint_selector"] =
+            serde_json::json!("hid-0x346E-0x0004-if2-0x0001-0x0004");
+        record["product_id"] = serde_json::json!("0x0004");
+        record["telemetry_sequence"] = serde_json::json!(telemetry_sequence);
+        record["input_ffb_scalar"] =
+            serde_json::json!(simulator_fixture_ffb_scalar(telemetry_sequence));
+        record["low_torque_strategy"] = serde_json::json!("pidff_bounded_effect");
+        record["zero_output_strategy"] = serde_json::json!("pidff_device_control_stop_all");
+        record["percent"] = serde_json::json!(percent);
+        record["effect_magnitude_percent"] = serde_json::json!(percent.abs());
+        record["payload_hex"] = serde_json::json!(payload_hex);
+        record["report_id"] = serde_json::json!(report_id);
+        record["report_len"] = serde_json::json!(report_len);
+        record["torque_raw"] = serde_json::json!(torque_raw);
+        record["flags"] = serde_json::json!(0);
+        record["motor_enabled"] = serde_json::json!(motor_enabled);
+        record["safety_classification"] = serde_json::json!(safety);
+        record["bytes_written"] = serde_json::json!(report_len);
+        if report_id == "0x0C" {
+            record["pidff_device_control_command"] = serde_json::json!("0x04");
+            record["pidff_device_control_command_name"] = serde_json::json!("stop_all_effects");
+        }
+        record
+    }
+
+    fn write_simulator_pidff_output_jsonl(
+        path: &Path,
+        nonzero_count: usize,
+        zero_count: usize,
+    ) -> TestResult {
+        write_simulator_pidff_output_jsonl_mutated(path, nonzero_count, zero_count, |_, _| {})
+    }
+
+    fn write_simulator_pidff_output_jsonl_mutated<F>(
+        path: &Path,
+        nonzero_count: usize,
+        zero_count: usize,
+        mut mutate: F,
+    ) -> TestResult
+    where
+        F: FnMut(usize, &mut Value),
+    {
+        if nonzero_count == 0 || zero_count < 5 {
+            return Err("invalid simulator PIDFF output counts".into());
+        }
+        let writer_hardware_lane = path.parent().unwrap_or_else(|| Path::new("."));
+        let mut lines = String::new();
+        for (sequence, mut record) in [
+            simulator_pidff_output_record(0, "pidff_set_effect", 1.0, writer_hardware_lane),
+            simulator_pidff_output_record(1, "pidff_effect_start", 1.0, writer_hardware_lane),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            record["sequence"] = serde_json::json!(sequence);
+            record["elapsed_us"] = serde_json::json!(sequence as u64 * 1000);
+            mutate(sequence, &mut record);
+            lines.push_str(&serde_json::to_string(&record)?);
+            lines.push('\n');
+        }
+
+        let mut sequence = 2usize;
+        for index in 0..nonzero_count {
+            let telemetry_sequence = index * 2;
+            let percent = if simulator_fixture_ffb_scalar(telemetry_sequence) >= 0.0 {
+                1.0
+            } else {
+                -1.0
+            };
+            let mut record = simulator_pidff_output_record(
+                sequence,
+                "pidff_set_constant_force",
+                percent,
+                writer_hardware_lane,
+            );
+            record["telemetry_sequence"] = serde_json::json!(telemetry_sequence);
+            record["input_ffb_scalar"] =
+                serde_json::json!(simulator_fixture_ffb_scalar(telemetry_sequence));
+            mutate(sequence, &mut record);
+            lines.push_str(&serde_json::to_string(&record)?);
+            lines.push('\n');
+            sequence += 1;
+        }
+
+        for index in 0..zero_count {
+            let kind = if index + 1 == zero_count {
+                "final_stop_all"
+            } else {
+                "clear_zero"
+            };
+            let mut record =
+                simulator_pidff_output_record(sequence, kind, 0.0, writer_hardware_lane);
+            if kind == "clear_zero" {
+                match index {
+                    0 => record["clear_event"] = serde_json::json!("stop"),
+                    1 => record["clear_event"] = serde_json::json!("pause"),
+                    2 => record["clear_event"] = serde_json::json!("game_exit"),
+                    3 => record["clear_event"] = serde_json::json!("mode_mismatch"),
+                    _ => {}
+                }
+            }
+            mutate(sequence, &mut record);
+            lines.push_str(&serde_json::to_string(&record)?);
+            lines.push('\n');
+            sequence += 1;
+        }
+        write_text_file(path, &lines)
+    }
+
     fn write_test_json_file(path: &Path, value: &Value) -> TestResult {
         let mut value = value.clone();
         if matches!(
@@ -21053,6 +21579,66 @@ mod tests {
         })
     }
 
+    fn pidff_stop_all_command_record(
+        sequence: u32,
+        kind: &'static str,
+        result: &'static str,
+        error: Option<&'static str>,
+    ) -> Value {
+        let mut record = serde_json::json!({
+            "sequence": sequence,
+            "kind": kind,
+            "elapsed_us": u64::from(sequence),
+            "payload_hex": "0C04",
+            "zero_output_strategy": "pidff_device_control_stop_all",
+            "report_id": "0x0C",
+            "report_len": 2,
+            "torque_raw": 0,
+            "flags": 0,
+            "motor_enabled": false,
+            "pidff_device_control_command": "0x04",
+            "pidff_device_control_command_name": "stop_all_effects",
+            "result": result
+        });
+        if result == "ok" {
+            record["bytes_written"] = serde_json::json!(2);
+        }
+        if let Some(error) = error {
+            record["error"] = serde_json::json!(error);
+        }
+        record
+    }
+
+    fn pidff_watchdog_command_log(pre_zero_count: u32) -> Vec<Value> {
+        let mut records = Vec::new();
+        for sequence in 0..pre_zero_count {
+            records.push(pidff_stop_all_command_record(
+                sequence,
+                "scheduled_zero",
+                "ok",
+                None,
+            ));
+        }
+        records.push(pidff_stop_all_command_record(
+            pre_zero_count,
+            "final_zero",
+            "ok",
+            None,
+        ));
+        records
+    }
+
+    fn real_pidff_watchdog_receipt(pre_zero_count: u32) -> Value {
+        let mut receipt = real_watchdog_receipt(pre_zero_count);
+        receipt["device"]["product_id"] = serde_json::json!("0x0004");
+        receipt["device"]["product_name"] = serde_json::json!("Moza R5 V1");
+        receipt["zero_output_strategy"] = serde_json::json!(zero_output_strategy_name(
+            MozaZeroOutputStrategy::PidffStopAll
+        ));
+        receipt["command_log"] = serde_json::json!(pidff_watchdog_command_log(pre_zero_count));
+        receipt
+    }
+
     fn disconnect_command_log(scheduled_count: u32) -> Vec<Value> {
         let mut records = Vec::new();
         for sequence in 0..scheduled_count {
@@ -21145,6 +21731,46 @@ mod tests {
             "final_zero_error": "device disconnected",
             "command_log": disconnect_command_log(2)
         })
+    }
+
+    fn pidff_disconnect_command_log(scheduled_count: u32) -> Vec<Value> {
+        let mut records = Vec::new();
+        for sequence in 0..scheduled_count {
+            records.push(pidff_stop_all_command_record(
+                sequence,
+                "scheduled_zero",
+                "ok",
+                None,
+            ));
+        }
+        records.push(pidff_stop_all_command_record(
+            scheduled_count,
+            "disconnect_probe",
+            "error",
+            Some("device disconnected"),
+        ));
+        records.push(pidff_stop_all_command_record(
+            scheduled_count + 1,
+            "final_zero",
+            "error",
+            Some("device disconnected"),
+        ));
+        records
+    }
+
+    fn real_pidff_disconnect_receipt() -> Value {
+        let scheduled_count = 2u32;
+        let mut receipt = real_disconnect_receipt();
+        receipt["device"]["product_id"] = serde_json::json!("0x0004");
+        receipt["device"]["product_name"] = serde_json::json!("Moza R5 V1");
+        receipt["zero_output_strategy"] = serde_json::json!(zero_output_strategy_name(
+            MozaZeroOutputStrategy::PidffStopAll
+        ));
+        receipt["payload_hex"] = serde_json::json!("0C04");
+        receipt["report_id"] = serde_json::json!("0x0C");
+        receipt["report_len"] = serde_json::json!(2);
+        receipt["command_log"] = serde_json::json!(pidff_disconnect_command_log(scheduled_count));
+        receipt
     }
 
     fn bounded_disconnect_receipt() -> TestResult<Value> {
@@ -21497,6 +22123,18 @@ mod tests {
         write_test_json_file(
             &root.join("zero-torque-proof.json"),
             &receipt_with_lane_path(root, "zero-torque-proof.json", real_pidff_zero_receipt(100)),
+        )?;
+        write_test_json_file(
+            &root.join("watchdog-proof.json"),
+            &receipt_with_lane_path(root, "watchdog-proof.json", real_pidff_watchdog_receipt(3)),
+        )?;
+        write_test_json_file(
+            &root.join("disconnect-proof.json"),
+            &receipt_with_lane_path(
+                root,
+                "disconnect-proof.json",
+                real_pidff_disconnect_receipt(),
+            ),
         )?;
         write_test_json_file(
             &root.join("init-off.json"),
@@ -22119,6 +22757,25 @@ mod tests {
         )?;
         write_simulator_telemetry_jsonl(&root.join("simulator-telemetry-recording.jsonl"), 120)?;
         write_simulator_ffb_output_jsonl(&root.join("simulator-ffb-output.jsonl"), 240, 180, 60)?;
+        write_test_json_file(
+            &root.join("simulator-telemetry-proof.json"),
+            &simulator_telemetry_receipt(),
+        )?;
+        Ok(())
+    }
+
+    fn write_simulator_pidff_artifacts(root: &Path) -> TestResult {
+        write_pidff_low_torque_prerequisite_receipts(root)?;
+        let mut manifest = sample_lane_manifest("real_hardware_smoke_ready", true, true);
+        manifest["hardware"]["wheelbase_pid"] = serde_json::json!("0x0004");
+        manifest["topology"] = moza_lane_manifest_topology_value(product_ids::R5_V1);
+        write_test_json_file(&root.join("manifest.json"), &manifest)?;
+        write_test_json_file(
+            &root.join("low-torque-proof.json"),
+            &real_pidff_low_torque_receipt_for_lane(root)?,
+        )?;
+        write_simulator_telemetry_jsonl(&root.join("simulator-telemetry-recording.jsonl"), 120)?;
+        write_simulator_pidff_output_jsonl(&root.join("simulator-ffb-output.jsonl"), 12, 5)?;
         write_test_json_file(
             &root.join("simulator-telemetry-proof.json"),
             &simulator_telemetry_receipt(),
@@ -27613,6 +28270,7 @@ mod tests {
             game: "simhub-bridge",
             telemetry_source: "simhub_bridge",
             output_log_artifact: Path::new("simulator-ffb-output.jsonl"),
+            strategy: MozaLowTorqueStrategy::DirectReport0x20,
             descriptor_trusted: true,
             explicit_operator_override: false,
             watchdog_timeout_ms: 100,
@@ -27662,6 +28320,221 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn simulator_ffb_smoke_accepts_pidff_bounded_effect_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_simulator_pidff_artifacts(dir.path())?;
+
+        simulator_ffb_smoke(SimulatorFfbSmokeRequest {
+            json: false,
+            lane: dir.path(),
+            game: "simhub-bridge",
+            telemetry_source: "simhub_bridge",
+            output_log_artifact: Path::new("simulator-ffb-output.jsonl"),
+            strategy: MozaLowTorqueStrategy::PidffBoundedEffect,
+            descriptor_trusted: true,
+            explicit_operator_override: false,
+            watchdog_timeout_ms: 100,
+            stop_cleared_output: true,
+            pause_cleared_output: true,
+            game_exit_cleared_output: true,
+            json_out: None,
+            overwrite: false,
+        })
+        .await?;
+
+        let receipt = read_json_path(&dir.path().join("simulator-ffb-smoke.json"))?;
+        assert_eq!(json_string(&receipt, "ffb_mode"), Some("pidff"));
+        assert_eq!(
+            json_string(&receipt, "output_strategy"),
+            Some("pidff_bounded_effect")
+        );
+        assert_eq!(json_bool(&receipt, "no_direct_torque_reports"), Some(true));
+        assert_eq!(json_string(&receipt, "final_zero_report_id"), Some("0x0C"));
+        assert_eq!(
+            json_string(&receipt, "final_zero_payload_hex"),
+            Some("0C04")
+        );
+
+        let gate = verify_simulator_ffb_gate(dir.path());
+        assert_eq!(gate.status, "pass", "{}", gate.details);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn simulator_ffb_smoke_rejects_pidff_missing_final_stop_all() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_simulator_pidff_artifacts(dir.path())?;
+        write_simulator_pidff_output_jsonl_mutated(
+            &dir.path().join("simulator-ffb-output.jsonl"),
+            12,
+            5,
+            |sequence, record| {
+                if sequence == 18 {
+                    record["kind"] = serde_json::json!("clear_zero");
+                    record["clear_event"] = serde_json::json!("mode_mismatch");
+                }
+            },
+        )?;
+
+        let result = simulator_ffb_smoke(SimulatorFfbSmokeRequest {
+            json: false,
+            lane: dir.path(),
+            game: "simhub-bridge",
+            telemetry_source: "simhub_bridge",
+            output_log_artifact: Path::new("simulator-ffb-output.jsonl"),
+            strategy: MozaLowTorqueStrategy::PidffBoundedEffect,
+            descriptor_trusted: true,
+            explicit_operator_override: false,
+            watchdog_timeout_ms: 100,
+            stop_cleared_output: true,
+            pause_cleared_output: true,
+            game_exit_cleared_output: true,
+            json_out: None,
+            overwrite: false,
+        })
+        .await;
+
+        assert!(result.is_err());
+        let receipt = read_json_path(&dir.path().join("simulator-ffb-smoke.json"))?;
+        assert_eq!(json_bool(&receipt, "success"), Some(false));
+        assert_eq!(json_bool(&receipt, "final_zero_attempted"), Some(false));
+        let gate = verify_simulator_ffb_gate(dir.path());
+        assert_eq!(gate.status, "fail");
+        assert!(gate.details.contains("final_zero_attempted=Some(false)"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn simulator_ffb_smoke_rejects_pidff_output_log_with_direct_report() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_simulator_pidff_artifacts(dir.path())?;
+        write_simulator_pidff_output_jsonl_mutated(
+            &dir.path().join("simulator-ffb-output.jsonl"),
+            12,
+            5,
+            |sequence, record| {
+                if sequence == 2 {
+                    record["payload_hex"] = serde_json::json!("2001000000000000");
+                    record["report_id"] = serde_json::json!("0x20");
+                    record["report_len"] = serde_json::json!(8);
+                    record["torque_raw"] = serde_json::json!(1);
+                    record["bytes_written"] = serde_json::json!(8);
+                }
+            },
+        )?;
+
+        let result = simulator_ffb_smoke(SimulatorFfbSmokeRequest {
+            json: false,
+            lane: dir.path(),
+            game: "simhub-bridge",
+            telemetry_source: "simhub_bridge",
+            output_log_artifact: Path::new("simulator-ffb-output.jsonl"),
+            strategy: MozaLowTorqueStrategy::PidffBoundedEffect,
+            descriptor_trusted: true,
+            explicit_operator_override: false,
+            watchdog_timeout_ms: 100,
+            stop_cleared_output: true,
+            pause_cleared_output: true,
+            game_exit_cleared_output: true,
+            json_out: None,
+            overwrite: false,
+        })
+        .await;
+
+        assert!(result.is_err());
+        let receipt = read_json_path(&dir.path().join("simulator-ffb-smoke.json"))?;
+        assert_eq!(json_bool(&receipt, "success"), Some(false));
+        assert_eq!(json_bool(&receipt, "no_direct_torque_reports"), Some(true));
+        let gate = verify_simulator_ffb_gate(dir.path());
+        assert_eq!(gate.status, "fail");
+        assert!(gate.details.contains("output_log_artifact_valid=false"));
+        Ok(())
+    }
+
+    #[test]
+    fn verify_simulator_ffb_gate_rejects_pidff_receipt_with_direct_output_log() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_simulator_pidff_artifacts(dir.path())?;
+        write_simulator_ffb_output_jsonl_mutated(
+            &dir.path().join("simulator-ffb-output.jsonl"),
+            20,
+            12,
+            8,
+            |_, record| {
+                record["writer_product_id"] = serde_json::json!("0x0004");
+                record["writer_endpoint_selector"] =
+                    serde_json::json!("hid-0x346E-0x0004-if2-0x0001-0x0004");
+                record["writer_device_path"] =
+                    serde_json::json!("\\\\?\\hid#vid_346e&pid_0004&mi_02");
+                record["product_id"] = serde_json::json!("0x0004");
+            },
+        )?;
+        let mut receipt = simulator_ffb_receipt();
+        receipt["device"]["product_id"] = serde_json::json!("0x0004");
+        receipt["ffb_mode"] = serde_json::json!("pidff");
+        receipt["output_strategy"] = serde_json::json!("pidff_bounded_effect");
+        receipt["descriptor_trusted"] = serde_json::json!(true);
+        receipt["explicit_operator_override"] = serde_json::json!(false);
+        receipt["no_direct_torque_reports"] = serde_json::json!(true);
+        receipt["writer_product_id"] = serde_json::json!("0x0004");
+        receipt["writer_endpoint_selector"] =
+            serde_json::json!("hid-0x346E-0x0004-if2-0x0001-0x0004");
+        receipt["writer_device_path"] = serde_json::json!("\\\\?\\hid#vid_346e&pid_0004&mi_02");
+        receipt["writer_hardware_lane"] = serde_json::json!(dir.path().display().to_string());
+        receipt["output_report_count"] = serde_json::json!(20);
+        receipt["nonzero_output_count"] = serde_json::json!(12);
+        receipt["zero_output_count"] = serde_json::json!(8);
+        receipt["max_output_percent"] = serde_json::json!(2.0);
+        receipt["max_abs_output_percent"] = serde_json::json!(2.0);
+        write_test_json_file(&dir.path().join("simulator-ffb-smoke.json"), &receipt)?;
+
+        let gate = verify_simulator_ffb_gate(dir.path());
+
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details.contains("output_log_artifact_valid=false"),
+            "expected PIDFF/direct output-log confusion to fail, got {}",
+            gate.details
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn smoke_ready_next_commands_use_pidff_strategy_after_pidff_low_torque() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_simulator_pidff_artifacts(dir.path())?;
+
+        let gates = [
+            "init_off_handshake",
+            "init_standard_handshake",
+            "service_status_receipts",
+            "low_torque_bounded",
+            "simulator_telemetry",
+        ]
+        .into_iter()
+        .map(|name| BundleGateCheck::pass(name, "ok".to_string()))
+        .chain(std::iter::once(BundleGateCheck::fail(
+            "simulator_ffb_bounded",
+            "missing".to_string(),
+        )))
+        .collect::<Vec<_>>();
+        let mut next_commands = Vec::new();
+        push_smoke_ready_next_commands(dir.path(), &gates, &mut next_commands);
+        let commands = next_commands.join("\n");
+
+        assert!(
+            commands.contains("wheelctl moza simulator-ffb-smoke")
+                && commands.contains("--strategy pidff-bounded-effect"),
+            "PIDFF low-torque lanes should carry PIDFF strategy into simulator FFB guidance: {commands}"
+        );
+        assert!(
+            !commands.contains("--strategy direct-report"),
+            "PIDFF simulator FFB guidance must not fall back to direct report 0x20: {commands}"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn simulator_ffb_smoke_rejects_missing_hardware_prerequisites() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_trusted_descriptor_if_missing(dir.path())?;
@@ -27693,6 +28566,7 @@ mod tests {
             game: "simhub-bridge",
             telemetry_source: "simhub_bridge",
             output_log_artifact: Path::new("simulator-ffb-output.jsonl"),
+            strategy: MozaLowTorqueStrategy::DirectReport0x20,
             descriptor_trusted: true,
             explicit_operator_override: false,
             watchdog_timeout_ms: 100,

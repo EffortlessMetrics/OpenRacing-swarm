@@ -79,7 +79,16 @@ fn path_str(p: &std::path::Path) -> Result<&str, Box<dyn std::error::Error>> {
 
 /// Normalize binary name across platforms
 fn normalize_output(s: &str) -> String {
-    s.replace("wheelctl.exe", "wheelctl")
+    let normalized = s.replace("wheelctl.exe", "wheelctl");
+    let mut output = normalized
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
+    if normalized.ends_with('\n') {
+        output.push('\n');
+    }
+    output
 }
 
 // ===========================================================================

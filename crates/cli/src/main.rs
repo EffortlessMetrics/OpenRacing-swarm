@@ -2418,6 +2418,7 @@ mod tests {
                 game,
                 telemetry_source,
                 output_log_artifact,
+                strategy,
                 descriptor_trusted,
                 explicit_operator_override,
                 watchdog_timeout_ms,
@@ -2437,6 +2438,7 @@ mod tests {
                     output_log_artifact.as_path().to_str(),
                     Some("simulator-ffb-output.jsonl")
                 );
+                assert_eq!(*strategy, MozaLowTorqueStrategy::DirectReport0x20);
                 assert!(*descriptor_trusted);
                 assert!(!*explicit_operator_override);
                 assert_eq!(*watchdog_timeout_ms, 100);
@@ -2448,6 +2450,39 @@ mod tests {
                     Some("simulator-ffb-smoke.json")
                 );
                 assert!(*overwrite);
+            }
+            _ => return Err("expected Moza SimulatorFfbSmoke command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_moza_simulator_ffb_smoke_pidff_strategy() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "moza",
+            "simulator-ffb-smoke",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
+            "--game",
+            "simhub-bridge",
+            "--telemetry-source",
+            "simhub_bridge",
+            "--output-log-artifact",
+            "simulator-ffb-output.jsonl",
+            "--strategy",
+            "pidff-bounded-effect",
+            "--descriptor-trusted",
+            "--watchdog-timeout-ms",
+            "100",
+            "--stop-cleared-output",
+            "--pause-cleared-output",
+            "--game-exit-cleared-output",
+        ])?;
+
+        match &cli.command {
+            Commands::Moza(MozaCommands::SimulatorFfbSmoke { strategy, .. }) => {
+                assert_eq!(*strategy, MozaLowTorqueStrategy::PidffBoundedEffect);
             }
             _ => return Err("expected Moza SimulatorFfbSmoke command".into()),
         }

@@ -9,31 +9,56 @@ Usage: wheelctl moza simulator-ffb-smoke [OPTIONS] --lane <LANE> --game <GAME> -
 Options:
       --json
           Output in JSON format for machine parsing
+
       --lane <LANE>
           Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06
+
       --game <GAME>
           Simulator or bridge name
+
   -v, --verbose...
           Verbose logging
+
       --telemetry-source <TELEMETRY_SOURCE>
-          Telemetry source: real_game or simhub_bridge [default: simhub_bridge]
+          Telemetry source: real_game or simhub_bridge
+
+          [default: simhub_bridge]
+
       --output-log-artifact <OUTPUT_LOG_ARTIFACT>
           Lane-relative output log artifact
+
+      --strategy <STRATEGY>
+          Bounded simulator FFB output strategy
+
+          Possible values:
+          - direct-report-0x20:   Moza proprietary direct torque report 0x20
+          - pidff-bounded-effect: Standard HID PIDFF bounded effect path
+
+          [default: direct-report-0x20]
+
       --descriptor-trusted
-          Descriptor trust was established before direct-mode FFB
+          Descriptor trust was established before simulator FFB
+
       --explicit-operator-override
           Explicit operator override allowed direct-mode FFB without descriptor trust
+
       --watchdog-timeout-ms <WATCHDOG_TIMEOUT_MS>
           Watchdog timeout used during the smoke run
+
       --stop-cleared-output
           Stop event cleared output
+
       --pause-cleared-output
           Pause event cleared output
+
       --game-exit-cleared-output
           Game exit cleared output
+
       --json-out <JSON_OUT>
           Write the simulator FFB smoke proof receipt to this JSON file
+
       --overwrite
           Replace an existing proof receipt
+
   -h, --help
-          Print help
+          Print help (see a summary with '-h')

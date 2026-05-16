@@ -131,6 +131,7 @@ wheelctl moza simulator-ffb-smoke `
   --game simhub-bridge `
   --telemetry-source simhub_bridge `
   --output-log-artifact simulator-ffb-output.jsonl `
+  --strategy pidff-bounded-effect `
   --descriptor-trusted `
   --watchdog-timeout-ms 100 `
   --stop-cleared-output `
@@ -145,7 +146,9 @@ risk. Do not use it for high torque.
 
 The output log must prove:
 
-- bounded direct torque reports only
+- the declared output strategy; live R5 V1 uses PIDFF bounded effects, not direct report `0x20`
+- no direct report `0x20` records when `--strategy pidff-bounded-effect` is used
+- PIDFF Set Effect / Constant Force / Effect Operation records followed by Stop All cleanup
 - `max_output_percent <= 5`
 - high torque false
 - watchdog active
@@ -154,7 +157,7 @@ The output log must prove:
 - game exit clears output
 - mode mismatch clears output if Pit House changes mode
 - final zero attempted and sent
-- the final record is zero output
+- the final record is zero output / PIDFF Stop All
 - output records link back to telemetry sequences and `ffb_scalar`
 - writer provenance includes the exact lane manifest HID endpoint selector
 
