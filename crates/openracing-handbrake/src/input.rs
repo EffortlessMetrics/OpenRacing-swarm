@@ -65,6 +65,7 @@ pub struct HandbrakeCalibration {
     pub min: u16,
     pub max: u16,
     pub center: Option<u16>,
+    samples: u32,
 }
 
 impl HandbrakeCalibration {
@@ -73,16 +74,23 @@ impl HandbrakeCalibration {
             min: 0,
             max: MAX_ANALOG_VALUE,
             center: None,
+            samples: 0,
         }
     }
 
     pub fn sample(&mut self, value: u16) {
-        if value < self.min || self.min == 0 {
+        if self.samples == 0 {
             self.min = value;
-        }
-        if value > self.max || self.max == MAX_ANALOG_VALUE {
             self.max = value;
+        } else {
+            if value < self.min {
+                self.min = value;
+            }
+            if value > self.max {
+                self.max = value;
+            }
         }
+        self.samples = self.samples.saturating_add(1);
     }
 
     pub fn apply(&self, input: &mut HandbrakeInput) {
@@ -355,6 +363,29 @@ mod tests {
     }
 
     #[test]
+    fn test_calibration_preserves_max_after_sentinel_observation() {
+        // Regression: previously, observing MAX_ANALOG_VALUE then a smaller
+        // sample would clobber max back down because of an OR-sentinel check
+        // (`self.max == MAX_ANALOG_VALUE`).
+        let mut cal = HandbrakeCalibration::new();
+        cal.sample(MAX_ANALOG_VALUE);
+        cal.sample(3000);
+        assert_eq!(cal.min, 3000);
+        assert_eq!(cal.max, MAX_ANALOG_VALUE);
+    }
+
+    #[test]
+    fn test_calibration_preserves_min_after_zero_observation() {
+        // Regression: observing 0 then a larger sample previously clobbered
+        // min upward because of an OR-sentinel check (`self.min == 0`).
+        let mut cal = HandbrakeCalibration::new();
+        cal.sample(0);
+        cal.sample(5000);
+        assert_eq!(cal.min, 0);
+        assert_eq!(cal.max, 5000);
+    }
+
+    #[test]
     fn test_calibration_center_stays_none() {
         let mut cal = HandbrakeCalibration::new();
         cal.sample(100);
@@ -419,7 +450,7 @@ mod tests {
         }
 
         #[test]
-        fn prop_calibration_sample_tracks_extremes(samples in proptest::collection::vec(1u16..=65534u16, 1..50)) {
+        fn prop_calibration_sample_tracks_extremes(samples in proptest::collection::vec(any::<u16>(), 1..50)) {
             let mut calibration = HandbrakeCalibration::new();
             for &s in &samples {
                 calibration.sample(s);

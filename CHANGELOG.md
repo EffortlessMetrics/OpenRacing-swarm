@@ -41,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Formatted vendor_timing_replay_tests.rs with rustfmt (#212)
 
 ### Fixed
+- `HandbrakeCalibration::sample()` sentinel-collision bug: observing 0 or
+  `MAX_ANALOG_VALUE` no longer causes the next sample to clobber the
+  recorded bound.
 - CHANGELOG section name and macOS extern block safety (#219)
 - Synced game_support_matrix.yaml canonical with telemetry adapter additions (#217)
 - CHANGELOG section name and macOS compilation errors (#215)

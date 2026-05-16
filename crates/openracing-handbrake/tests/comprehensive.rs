@@ -294,7 +294,7 @@ proptest! {
 
     #[test]
     fn prop_calibration_sample_tracks_min_max(
-        samples in proptest::collection::vec(1u16..=65534u16, 1..50),
+        samples in proptest::collection::vec(any::<u16>(), 1..50),
     ) {
         let mut cal = HandbrakeCalibration::new();
         for &s in &samples {
