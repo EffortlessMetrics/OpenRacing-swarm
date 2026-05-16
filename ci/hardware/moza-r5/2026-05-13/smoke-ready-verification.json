@@ -1,12 +1,12 @@
 {
   "success": false,
   "command": "wheelctl moza verify-bundle",
-  "generated_at_utc": "2026-05-16T04:54:26Z",
+  "generated_at_utc": "2026-05-16T08:12:53Z",
   "lane": "ci\\hardware\\moza-r5\\2026-05-13",
   "requested_stage": "smoke_ready",
-  "missing_artifacts": 4,
+  "missing_artifacts": 3,
   "invalid_artifacts": 0,
-  "failed_gates": 4,
+  "failed_gates": 3,
   "artifacts": [
     {
       "path": "manifest.json",
@@ -264,12 +264,10 @@
       "path": "native-actuator-profile-smoke.json",
       "kind": "json",
       "required_stage": "openracing_control_ready",
-      "exists": false,
-      "valid": false,
-      "status": "missing",
-      "notes": [
-        "expected ci\\hardware\\moza-r5\\2026-05-13\\native-actuator-profile-smoke.json"
-      ]
+      "exists": true,
+      "valid": true,
+      "status": "pass",
+      "notes": []
     },
     {
       "path": "pit-house-coexistence.json",
@@ -408,8 +406,8 @@
     },
     {
       "name": "native_actuator_profile_smoke",
-      "status": "fail",
-      "details": "failed to read 'ci\\hardware\\moza-r5\\2026-05-13\\native-actuator-profile-smoke.json'"
+      "status": "pass",
+      "details": "native PIDFF actuator profile recorded 4 write attempt(s), including Stop All cleanup"
     },
     {
       "name": "pit_house_coexistence",
@@ -599,10 +597,11 @@
     }
   ],
   "operator_actions": [
-    "Current OpenRacing-control frontier: native PIDFF actuator-profile smoke. Run only after steering feedback is proven, keep the force profile bounded, require final PIDFF Stop All cleanup, and keep SimHub and Pit House out of this native-control claim."
+    "Current external-compatibility frontier: simulator telemetry proof. Capture one real simulator telemetry path only; this step must not send Moza output reports, feature reports, torque, serial config, firmware, or DFU commands."
   ],
   "next_commands": [
-    "wheelctl moza pre-output-readiness --lane ci\\hardware\\moza-r5\\2026-05-13 --json-out ci\\hardware\\moza-r5\\2026-05-13\\pre-output-readiness.json --json"
+    "wheelctl telemetry record --game simhub-bridge --telemetry-source simhub_bridge --live-simhub --port 5555 --out ci\\hardware\\moza-r5\\2026-05-13\\simulator-telemetry-recording.jsonl --duration-ms 30000",
+    "wheelctl moza simulator-telemetry-proof --lane ci\\hardware\\moza-r5\\2026-05-13 --game simhub-bridge --telemetry-source simhub_bridge --recorder-artifact simulator-telemetry-recording.jsonl --duration-ms 30000 --json-out ci\\hardware\\moza-r5\\2026-05-13\\simulator-telemetry-proof.json"
   ],
   "no_hid_device_opened": true,
   "no_ffb_writes": true,

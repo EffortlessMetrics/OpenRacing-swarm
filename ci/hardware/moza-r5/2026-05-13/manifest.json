@@ -50,7 +50,7 @@
     "high_torque": false,
     "pit_house_coexistence": "tested_separately"
   },
-  "completion_state": "zero_torque_ready",
+  "completion_state": "openracing_control_ready",
   "generated_at_utc": "2026-05-13T16:02:09Z",
   "hardware": {
     "handbrake": "HBP",
@@ -64,7 +64,7 @@
     "wheelbase": "Moza R5",
     "wheelbase_pid": "0x0004"
   },
-  "hardware_validated": false,
+  "hardware_validated": true,
   "high_torque_validated": false,
   "lane": "moza-r5-windows-usb",
   "notes": [

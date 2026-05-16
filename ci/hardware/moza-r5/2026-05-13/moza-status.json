@@ -49,7 +49,7 @@
       "safety_reason": "status is observe-only; run explicit init, zero, and torque-test gates before any output"
     }
   ],
-  "generated_at_utc": "2026-05-16T03:10:55Z",
+  "generated_at_utc": "2026-05-16T08:10:47Z",
   "lane": "ci\\hardware\\moza-r5\\2026-05-13",
   "lane_status": {
     "artifact_index": [
@@ -297,26 +297,22 @@
         "valid": true
       },
       {
-        "exists": false,
+        "exists": true,
         "kind": "json",
-        "notes": [
-          "expected ci\\hardware\\moza-r5\\2026-05-13\\steering-angle-stream-proof.json"
-        ],
+        "notes": [],
         "path": "steering-angle-stream-proof.json",
         "required_stage": "openracing_control_ready",
-        "status": "missing",
-        "valid": false
+        "status": "pass",
+        "valid": true
       },
       {
-        "exists": false,
+        "exists": true,
         "kind": "json",
-        "notes": [
-          "expected ci\\hardware\\moza-r5\\2026-05-13\\native-actuator-profile-smoke.json"
-        ],
+        "notes": [],
         "path": "native-actuator-profile-smoke.json",
         "required_stage": "openracing_control_ready",
-        "status": "missing",
-        "valid": false
+        "status": "pass",
+        "valid": true
       },
       {
         "exists": false,
@@ -415,26 +411,22 @@
         "valid": true
       },
       {
-        "exists": false,
+        "exists": true,
         "kind": "json",
-        "notes": [
-          "expected ci\\hardware\\moza-r5\\2026-05-13\\manifest-promotion-openracing-control.json"
-        ],
+        "notes": [],
         "path": "manifest-promotion-openracing-control.json",
         "required_stage": "openracing_control_ready",
-        "status": "missing",
-        "valid": false
+        "status": "pass",
+        "valid": true
       },
       {
-        "exists": false,
+        "exists": true,
         "kind": "json",
-        "notes": [
-          "expected ci\\hardware\\moza-r5\\2026-05-13\\lane-audit-openracing-control.json"
-        ],
+        "notes": [],
         "path": "lane-audit-openracing-control.json",
         "required_stage": "openracing_control_ready",
-        "status": "missing",
-        "valid": false
+        "status": "pass",
+        "valid": true
       },
       {
         "exists": true,
@@ -468,12 +460,12 @@
         "valid": false
       }
     ],
-    "generated_at_utc": "2026-05-16T03:10:55Z",
+    "generated_at_utc": "2026-05-16T08:10:47Z",
     "lane": "ci\\hardware\\moza-r5\\2026-05-13",
     "lane_directory_present": true,
     "manifest": {
-      "completion_state": "zero_torque_ready",
-      "hardware_validated": false,
+      "completion_state": "openracing_control_ready",
+      "hardware_validated": true,
       "high_torque_validated": false,
       "present": true,
       "release_ready": false,
@@ -492,31 +484,30 @@
       ],
       "first_blocking_stage": {
         "failed_gate_names": [
-          "steering_angle_stream_proof",
-          "native_actuator_profile_smoke"
+          "pit_house_coexistence",
+          "simulator_telemetry",
+          "simulator_ffb_bounded"
         ],
-        "failed_gates": 2,
+        "failed_gates": 3,
         "invalid_artifact_paths": [],
         "invalid_artifacts": 0,
         "missing_artifact_paths": [
-          "steering-angle-stream-proof.json",
-          "native-actuator-profile-smoke.json"
+          "pit-house-coexistence.json",
+          "simulator-telemetry-proof.json",
+          "simulator-ffb-smoke.json"
         ],
-        "missing_artifacts": 2,
-        "requested_stage": "openracing_control_ready",
+        "missing_artifacts": 3,
+        "requested_stage": "smoke_ready",
         "success": false
       },
-      "highest_passing_stage": "zero",
-      "native_control_blocking_items": [
-        "native_actuator_profile_smoke",
-        "steering_angle_stream_proof"
-      ],
-      "next_required_stage": "openracing_control_ready",
-      "openracing_control_lane_audit_passed": false,
+      "highest_passing_stage": "openracing_control_ready",
+      "native_control_blocking_items": [],
+      "next_required_stage": "smoke_ready",
+      "openracing_control_lane_audit_passed": true,
       "passive_lane_audit_passed": true,
       "ready_for_external_compatibility": false,
       "ready_for_low_torque": true,
-      "ready_for_native_control": false,
+      "ready_for_native_control": true,
       "ready_for_real_hardware_smoke": false,
       "ready_for_zero_torque": true,
       "release_ready": false,
@@ -525,20 +516,14 @@
     },
     "verifications": {
       "openracing_control_ready": {
-        "failed_gate_names": [
-          "steering_angle_stream_proof",
-          "native_actuator_profile_smoke"
-        ],
-        "failed_gates": 2,
+        "failed_gate_names": [],
+        "failed_gates": 0,
         "invalid_artifact_paths": [],
         "invalid_artifacts": 0,
-        "missing_artifact_paths": [
-          "steering-angle-stream-proof.json",
-          "native-actuator-profile-smoke.json"
-        ],
-        "missing_artifacts": 2,
+        "missing_artifact_paths": [],
+        "missing_artifacts": 0,
         "requested_stage": "openracing_control_ready",
-        "success": false
+        "success": true
       },
       "passive": {
         "failed_gate_names": [],
@@ -552,23 +537,19 @@
       },
       "smoke_ready": {
         "failed_gate_names": [
-          "steering_angle_stream_proof",
-          "native_actuator_profile_smoke",
           "pit_house_coexistence",
           "simulator_telemetry",
           "simulator_ffb_bounded"
         ],
-        "failed_gates": 5,
+        "failed_gates": 3,
         "invalid_artifact_paths": [],
         "invalid_artifacts": 0,
         "missing_artifact_paths": [
-          "steering-angle-stream-proof.json",
-          "native-actuator-profile-smoke.json",
           "pit-house-coexistence.json",
           "simulator-telemetry-proof.json",
           "simulator-ffb-smoke.json"
         ],
-        "missing_artifacts": 5,
+        "missing_artifacts": 3,
         "requested_stage": "smoke_ready",
         "success": false
       },

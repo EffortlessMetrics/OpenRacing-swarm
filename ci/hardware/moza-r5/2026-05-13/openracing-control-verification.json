@@ -1,12 +1,12 @@
 {
-  "success": false,
+  "success": true,
   "command": "wheelctl moza verify-bundle",
-  "generated_at_utc": "2026-05-16T04:53:36Z",
+  "generated_at_utc": "2026-05-16T08:05:17Z",
   "lane": "ci\\hardware\\moza-r5\\2026-05-13",
   "requested_stage": "openracing_control_ready",
-  "missing_artifacts": 1,
+  "missing_artifacts": 0,
   "invalid_artifacts": 0,
-  "failed_gates": 1,
+  "failed_gates": 0,
   "artifacts": [
     {
       "path": "manifest.json",
@@ -264,12 +264,10 @@
       "path": "native-actuator-profile-smoke.json",
       "kind": "json",
       "required_stage": "openracing_control_ready",
-      "exists": false,
-      "valid": false,
-      "status": "missing",
-      "notes": [
-        "expected ci\\hardware\\moza-r5\\2026-05-13\\native-actuator-profile-smoke.json"
-      ]
+      "exists": true,
+      "valid": true,
+      "status": "pass",
+      "notes": []
     }
   ],
   "gates": [
@@ -375,8 +373,8 @@
     },
     {
       "name": "native_actuator_profile_smoke",
-      "status": "fail",
-      "details": "failed to read 'ci\\hardware\\moza-r5\\2026-05-13\\native-actuator-profile-smoke.json'"
+      "status": "pass",
+      "details": "native PIDFF actuator profile recorded 4 write attempt(s), including Stop All cleanup"
     }
   ],
   "endpoint_observations": [
@@ -550,12 +548,8 @@
       "notes": []
     }
   ],
-  "operator_actions": [
-    "Current OpenRacing-control frontier: native PIDFF actuator-profile smoke. Run only after steering feedback is proven, keep the force profile bounded, require final PIDFF Stop All cleanup, and keep SimHub and Pit House out of this native-control claim."
-  ],
-  "next_commands": [
-    "wheelctl moza pre-output-readiness --lane ci\\hardware\\moza-r5\\2026-05-13 --json-out ci\\hardware\\moza-r5\\2026-05-13\\pre-output-readiness.json --json"
-  ],
+  "operator_actions": [],
+  "next_commands": [],
   "no_hid_device_opened": true,
   "no_ffb_writes": true,
   "no_serial_config_commands": true,

@@ -3097,6 +3097,7 @@ fn execute_pidff_bounded_actuator_profile_sequence<F>(
     let stop_all = ZeroOutputPayload::pidff_stop_all();
     receipt.final_zero_attempted = true;
     receipt.final_stop_all_attempted = true;
+    receipt.write_attempts = receipt.write_attempts.saturating_add(1);
     match write(&stop_all.bytes) {
         Ok(bytes_written) => {
             receipt.bytes_written_total = receipt.bytes_written_total.saturating_add(bytes_written);
@@ -13001,6 +13002,11 @@ fn verify_native_actuator_profile_smoke_gate(lane: &Path) -> BundleGateCheck {
     let write_attempts = json_u64(&receipt, "write_attempts").unwrap_or(0);
     let writes_ok = json_u64(&receipt, "writes_ok").unwrap_or(0);
     let write_errors = json_u64(&receipt, "write_errors").unwrap_or(u64::MAX);
+    let command_log_entries = receipt
+        .get("command_log")
+        .and_then(Value::as_array)
+        .map(|records| records.len().min(u64::MAX as usize) as u64)
+        .unwrap_or(0);
     let command_log_no_direct_report =
         command_log_omits_report_id(&receipt, DIRECT_TORQUE_REPORT_ID);
     let device = receipt.get("device");
@@ -13031,7 +13037,8 @@ fn verify_native_actuator_profile_smoke_gate(lane: &Path) -> BundleGateCheck {
         && duration_ms > 0
         && duration_ms <= 2000
         && write_attempts > 0
-        && writes_ok >= write_attempts
+        && write_attempts == command_log_entries
+        && writes_ok == write_attempts
         && write_errors == 0
         && command_log_no_direct_report
         && r5_device;
@@ -13040,14 +13047,14 @@ fn verify_native_actuator_profile_smoke_gate(lane: &Path) -> BundleGateCheck {
         BundleGateCheck::pass(
             "native_actuator_profile_smoke",
             format!(
-                "native PIDFF actuator profile recorded {write_attempts} bounded write(s) plus Stop All cleanup"
+                "native PIDFF actuator profile recorded {write_attempts} write attempt(s), including Stop All cleanup"
             ),
         )
     } else {
         BundleGateCheck::fail(
             "native_actuator_profile_smoke",
             format!(
-                "success={success}, command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, selector_matches_lane_endpoint={selector_matches_lane_endpoint}, confirmed={confirmed:?}, no_hid_device_opened={no_hid_device_opened:?}, hardware_output_enabled={hardware_output_enabled:?}, no_feature_reports={no_feature_reports:?}, no_ffb_writes={no_ffb_writes:?}, no_direct_torque_reports={no_direct_torque_reports:?}, no_high_torque={no_high_torque:?}, high_torque={high_torque:?}, no_nonzero_above_limit={no_nonzero_above_limit:?}, no_out_of_scope={no_out_of_scope}, pidff_effect_setup_proven={pidff_effect_setup_proven:?}, final_stop_all_attempted={final_stop_all_attempted:?}, final_stop_all_sent={final_stop_all_sent:?}, generated_at_valid={generated_at_valid}, strategy_ok={strategy_ok}, profile_present={profile_present}, max_percent={max_percent}, duration_ms={duration_ms}, write_attempts={write_attempts}, writes_ok={writes_ok}, write_errors={write_errors}, command_log_no_direct_report={command_log_no_direct_report}, r5_device={r5_device}"
+                "success={success}, command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, selector_matches_lane_endpoint={selector_matches_lane_endpoint}, confirmed={confirmed:?}, no_hid_device_opened={no_hid_device_opened:?}, hardware_output_enabled={hardware_output_enabled:?}, no_feature_reports={no_feature_reports:?}, no_ffb_writes={no_ffb_writes:?}, no_direct_torque_reports={no_direct_torque_reports:?}, no_high_torque={no_high_torque:?}, high_torque={high_torque:?}, no_nonzero_above_limit={no_nonzero_above_limit:?}, no_out_of_scope={no_out_of_scope}, pidff_effect_setup_proven={pidff_effect_setup_proven:?}, final_stop_all_attempted={final_stop_all_attempted:?}, final_stop_all_sent={final_stop_all_sent:?}, generated_at_valid={generated_at_valid}, strategy_ok={strategy_ok}, profile_present={profile_present}, max_percent={max_percent}, duration_ms={duration_ms}, write_attempts={write_attempts}, writes_ok={writes_ok}, write_errors={write_errors}, command_log_entries={command_log_entries}, command_log_no_direct_report={command_log_no_direct_report}, r5_device={r5_device}"
             ),
         )
     }
@@ -24676,7 +24683,7 @@ mod tests {
             "pidff_effect_block_index": 1,
             "final_stop_all_attempted": true,
             "final_stop_all_sent": true,
-            "write_attempts": 3,
+            "write_attempts": 4,
             "writes_ok": 4,
             "write_errors": 0,
             "command_log": pidff_bounded_command_log()
@@ -28188,6 +28195,8 @@ mod tests {
             .and_then(Value::as_array)
             .ok_or("expected actuator profile command log")?;
         assert_eq!(records.len(), 4);
+        assert_eq!(json_u64(&receipt, "write_attempts"), Some(4));
+        assert_eq!(json_u64(&receipt, "writes_ok"), Some(4));
         assert!(records.iter().all(|record| {
             json_string(record, "report_id")
                 .map(|report_id| report_id != DIRECT_TORQUE_REPORT_ID)

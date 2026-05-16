@@ -1,20 +1,18 @@
 {
   "success": true,
   "command": "wheelctl moza pre-output-readiness",
-  "generated_at_utc": "2026-05-16T04:54:34Z",
+  "generated_at_utc": "2026-05-16T08:12:22Z",
   "lane": "ci\\hardware\\moza-r5\\2026-05-13",
   "stage": "pre_output_readiness",
   "ready_for_zero_torque": true,
   "ready_for_ffb": false,
-  "ready_for_native_control": false,
+  "ready_for_native_control": true,
   "ready_for_external_compatibility": false,
   "blocking_items": [],
   "ffb_blocking_items": [
     "simulator_telemetry"
   ],
-  "native_control_blocking_items": [
-    "native_actuator_profile_smoke"
-  ],
+  "native_control_blocking_items": [],
   "external_compatibility_blocking_items": [
     "pit_house_coexistence",
     "simulator_ffb_bounded",
@@ -75,7 +73,8 @@
     "zero_output_strategy_ready",
     "passive_verification",
     "passive_audit",
-    "ready_for_zero_torque"
+    "ready_for_zero_torque",
+    "ready_for_native_control"
   ],
   "status_receipts": [
     {
@@ -115,42 +114,36 @@
     "success": true
   },
   "openracing_control_verification": {
-    "failed_gate_names": [
-      "native_actuator_profile_smoke"
-    ],
-    "failed_gates": 1,
+    "failed_gate_names": [],
+    "failed_gates": 0,
     "invalid_artifact_paths": [],
     "invalid_artifacts": 0,
-    "missing_artifact_paths": [
-      "native-actuator-profile-smoke.json"
-    ],
-    "missing_artifacts": 1,
+    "missing_artifact_paths": [],
+    "missing_artifacts": 0,
     "requested_stage": "openracing_control_ready",
-    "success": false
+    "success": true
   },
   "smoke_ready_verification": {
     "failed_gate_names": [
-      "native_actuator_profile_smoke",
       "pit_house_coexistence",
       "simulator_telemetry",
       "simulator_ffb_bounded"
     ],
-    "failed_gates": 4,
+    "failed_gates": 3,
     "invalid_artifact_paths": [],
     "invalid_artifacts": 0,
     "missing_artifact_paths": [
-      "native-actuator-profile-smoke.json",
       "pit-house-coexistence.json",
       "simulator-telemetry-proof.json",
       "simulator-ffb-smoke.json"
     ],
-    "missing_artifacts": 4,
+    "missing_artifacts": 3,
     "requested_stage": "smoke_ready",
     "success": false
   },
   "passive_audit_passed": true,
   "zero_audit_passed": true,
-  "openracing_control_audit_passed": false,
+  "openracing_control_audit_passed": true,
   "smoke_ready_audit_passed": false,
   "no_hid_device_opened": true,
   "no_ffb_writes": true,
