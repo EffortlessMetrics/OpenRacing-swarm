@@ -194,4 +194,161 @@ mod tests {
         assert!(violations.is_empty());
         Ok(())
     }
+
+    #[test]
+    fn parse_args_defaults_root_to_current_dir() -> Result<(), Box<dyn std::error::Error>> {
+        let args = parse_args(vec!["check-glob-reexports".to_string()])?;
+        assert_eq!(args.root, PathBuf::from("."));
+        Ok(())
+    }
+
+    #[test]
+    fn parse_args_accepts_root_option() -> Result<(), Box<dyn std::error::Error>> {
+        let args = parse_args(vec![
+            "check-glob-reexports".to_string(),
+            "--root".to_string(),
+            "/some/path".to_string(),
+        ])?;
+        assert_eq!(args.root, PathBuf::from("/some/path"));
+        Ok(())
+    }
+
+    #[test]
+    fn parse_args_errors_when_root_value_missing() {
+        let result = parse_args(vec![
+            "check-glob-reexports".to_string(),
+            "--root".to_string(),
+        ]);
+        match result {
+            Err(message) => assert!(message.contains("--root requires a path")),
+            Ok(args) => panic!("expected error, got {args:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_help_returns_usage_for_short_and_long_flags() {
+        for flag in ["-h", "--help"] {
+            let result = parse_args(vec!["check-glob-reexports".to_string(), flag.to_string()]);
+            match result {
+                Err(message) => assert!(message.starts_with("Usage:")),
+                Ok(args) => panic!("expected usage error for {flag}, got {args:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn parse_args_rejects_unknown_argument() {
+        let result = parse_args(vec![
+            "check-glob-reexports".to_string(),
+            "--bogus".to_string(),
+        ]);
+        match result {
+            Err(message) => {
+                assert!(message.contains("unknown argument: --bogus"));
+                assert!(message.contains("Usage:"));
+            }
+            Ok(args) => panic!("expected error, got {args:?}"),
+        }
+    }
+
+    #[test]
+    fn is_glob_reexport_detects_indented_lines() {
+        assert!(is_glob_reexport("    pub use crate::module::*;"));
+        assert!(is_glob_reexport("\tpub use foo::bar::*;"));
+    }
+
+    #[test]
+    fn is_glob_reexport_rejects_non_pub_use() {
+        assert!(!is_glob_reexport("use crate::module::*;"));
+        assert!(!is_glob_reexport("pub mod module;"));
+        assert!(!is_glob_reexport("// pub use crate::module::*;"));
+    }
+
+    #[test]
+    fn is_glob_reexport_requires_glob_and_semicolon() {
+        assert!(!is_glob_reexport("pub use crate::module::Thing;"));
+        assert!(!is_glob_reexport("pub use crate::module::*"));
+        assert!(!is_glob_reexport("pub use crate::module"));
+    }
+
+    #[test]
+    fn check_glob_reexports_missing_crates_dir_returns_empty()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let temp = tempfile::tempdir()?;
+        // No `crates/` directory created.
+        let violations = check_glob_reexports(temp.path())?;
+        assert!(violations.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn check_glob_reexports_ignores_non_rust_files() -> Result<(), Box<dyn std::error::Error>> {
+        let temp = tempfile::tempdir()?;
+        let src_dir = temp.path().join("crates/example/src");
+        fs::create_dir_all(&src_dir)?;
+        // A `.txt` file containing what looks like a glob re-export should be ignored.
+        fs::write(src_dir.join("notes.txt"), "pub use crate::module::*;\n")?;
+        // A `.md` file as well.
+        fs::write(src_dir.join("README.md"), "pub use foo::*;\n")?;
+
+        let violations = check_glob_reexports(temp.path())?;
+
+        assert!(violations.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn check_glob_reexports_walks_nested_directories() -> Result<(), Box<dyn std::error::Error>> {
+        let temp = tempfile::tempdir()?;
+        let nested = temp.path().join("crates/alpha/src/inner/deeper");
+        fs::create_dir_all(&nested)?;
+        fs::write(nested.join("mod.rs"), "pub use crate::a::*;\n")?;
+
+        let violations = check_glob_reexports(temp.path())?;
+
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].line, 1);
+        assert_eq!(violations[0].content, "pub use crate::a::*;");
+        Ok(())
+    }
+
+    #[test]
+    fn check_glob_reexports_reports_multiple_violations_in_one_file()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let temp = tempfile::tempdir()?;
+        let src_dir = temp.path().join("crates/example/src");
+        fs::create_dir_all(&src_dir)?;
+        let content = "// header comment\n\
+                       pub use crate::a::*;\n\
+                       pub use crate::b::Thing;\n\
+                       pub use crate::c::*;\n";
+        fs::write(src_dir.join("lib.rs"), content)?;
+
+        let violations = check_glob_reexports(temp.path())?;
+
+        assert_eq!(violations.len(), 2);
+        assert_eq!(violations[0].line, 2);
+        assert_eq!(violations[0].content, "pub use crate::a::*;");
+        assert_eq!(violations[1].line, 4);
+        assert_eq!(violations[1].content, "pub use crate::c::*;");
+        Ok(())
+    }
+
+    #[test]
+    fn check_glob_reexports_handles_multiple_files() -> Result<(), Box<dyn std::error::Error>> {
+        let temp = tempfile::tempdir()?;
+        let a_src = temp.path().join("crates/alpha/src");
+        let b_src = temp.path().join("crates/beta/src");
+        fs::create_dir_all(&a_src)?;
+        fs::create_dir_all(&b_src)?;
+        fs::write(a_src.join("lib.rs"), "pub use crate::a::*;\n")?;
+        fs::write(b_src.join("lib.rs"), "pub use crate::b::Item;\n")?;
+
+        let violations = check_glob_reexports(temp.path())?;
+
+        assert_eq!(violations.len(), 1);
+        assert!(violations[0].path.ends_with("alpha/src/lib.rs"));
+        assert_eq!(violations[0].content, "pub use crate::a::*;");
+        Ok(())
+    }
 }

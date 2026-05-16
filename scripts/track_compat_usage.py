@@ -140,6 +140,7 @@ class CompatUsageTracker:
             "crates/schemas/tests/compile-fail/",  # tests that deprecated APIs fail
             "crates/schemas/tests/compile_fail/",  # same
             "crates/integration-tests/",  # test crate exercises all device protocol APIs
+            "crates/tools/",  # repo-maintenance binaries; test fixtures contain literal pattern strings by design
             "crates/hid-simucube-protocol/",  # intra-crate glob re-exports (not deprecated API pattern)
             "crates/hid-asetek-protocol/",  # intra-crate glob re-exports (not deprecated API pattern)
             "crates/hid-openffboard-protocol/",  # intra-crate glob re-exports (not deprecated API pattern)
