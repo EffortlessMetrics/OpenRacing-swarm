@@ -4164,7 +4164,13 @@ async fn promote_manifest(
         completion_state,
         hardware_validated,
         simulator_validated,
-        || verify_bundle_dir(lane, stage),
+        || {
+            verify_bundle_dir_with_support_validation(
+                lane,
+                stage,
+                SupportBundleValidationMode::ShapeOnly,
+            )
+        },
     )?;
 
     let receipt = serde_json::json!({
@@ -4190,6 +4196,7 @@ async fn promote_manifest(
         "verification_after": bundle_verification_summary_value(&verification_after),
         "notes": [
             "promote-manifest runs live bundle verification before changing manifest claims",
+            "post-promotion verification uses shape-only support bundle validation because manifest promotion intentionally changes the lane snapshot that support-bundle records",
             "release_ready and high_torque_validated remain false"
         ]
     });
@@ -8750,18 +8757,17 @@ fn verify_manifest_gate(lane: &Path, stage: MozaBundleStage) -> BundleGateCheck 
     let openracing_control_manifest = completion_state == Some("openracing_control_ready")
         && hardware_validated == Some(true)
         && simulator_validated == Some(false);
+    let smoke_ready_manifest = completion_state == Some("real_hardware_smoke_ready")
+        && hardware_validated == Some(true)
+        && simulator_validated == Some(true);
+    let safe_progressed_manifest =
+        non_claiming_manifest || openracing_control_manifest || smoke_ready_manifest;
     let stage_ok = match stage {
-        MozaBundleStage::Passive | MozaBundleStage::Zero => non_claiming_manifest,
+        MozaBundleStage::Passive | MozaBundleStage::Zero => safe_progressed_manifest,
         MozaBundleStage::OpenRacingControlReady => {
-            non_claiming_manifest || openracing_control_manifest
+            non_claiming_manifest || openracing_control_manifest || smoke_ready_manifest
         }
-        MozaBundleStage::SmokeReady => {
-            non_claiming_manifest
-                || openracing_control_manifest
-                || (completion_state == Some("real_hardware_smoke_ready")
-                    && hardware_validated == Some(true)
-                    && simulator_validated == Some(true))
-        }
+        MozaBundleStage::SmokeReady => safe_progressed_manifest,
     };
 
     if schema_ok && contract_ok && base_ok && stage_ok {
@@ -8790,7 +8796,7 @@ fn verify_manifest_gate(lane: &Path, stage: MozaBundleStage) -> BundleGateCheck 
 fn verify_manifest_r5_pid_consistency_gate_with_support_validation(
     lane: &Path,
     stage: MozaBundleStage,
-    support_validation: SupportBundleValidationMode,
+    _support_validation: SupportBundleValidationMode,
 ) -> BundleGateCheck {
     let Some(expected_pid) = lane_manifest_r5_pid(lane) else {
         return BundleGateCheck::fail(
@@ -8884,7 +8890,13 @@ fn verify_manifest_r5_pid_consistency_gate_with_support_validation(
                 Err(error) => unavailable.push(format!("{path}:{error}")),
             }
         }
-        match manifest_pid_service_receipts_with_support_validation(lane, support_validation) {
+        // PID consistency only needs the observed service receipt product IDs. Fresh
+        // support-bundle validation recursively rebuilds lane status and is covered
+        // by the dedicated service_status_receipts gate below.
+        match manifest_pid_service_receipts_with_support_validation(
+            lane,
+            SupportBundleValidationMode::ShapeOnly,
+        ) {
             Ok(pids) if pids.iter().all(|pid| pid == &expected) => {
                 observed.push(format!("service-status:{}", pids.join(",")));
             }
@@ -12145,7 +12157,11 @@ fn artifact_index_has_pass(artifacts: &[Value], path: &str) -> bool {
 fn moza_status_reports_post_init_safe_state(moza: &Value) -> bool {
     matches!(
         json_string(moza, "safety_state"),
-        Some("lane_init_handshakes_observed" | "lane_low_torque_gate_receipts_observed")
+        Some(
+            "lane_init_handshakes_observed"
+                | "lane_low_torque_gate_receipts_observed"
+                | "lane_openracing_control_receipts_observed"
+        )
     ) && json_bool(moza, "ffb_ready") == Some(false)
         && json_bool(moza, "safe_to_send_torque") == Some(false)
         && json_bool(moza, "direct_mode_allowed") == Some(false)
@@ -31703,6 +31719,22 @@ mod tests {
     }
 
     #[test]
+    fn verify_manifest_gate_accepts_progressed_manifest_for_lower_stage_summaries() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_test_json_file(
+            &dir.path().join("manifest.json"),
+            &sample_lane_manifest("openracing_control_ready", true, false),
+        )?;
+
+        let passive = verify_manifest_gate(dir.path(), MozaBundleStage::Passive);
+        let zero = verify_manifest_gate(dir.path(), MozaBundleStage::Zero);
+
+        assert_eq!(passive.status, "pass");
+        assert_eq!(zero.status, "pass");
+        Ok(())
+    }
+
+    #[test]
     fn verify_bundle_passive_rejects_manifest_pid_mismatch() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_minimal_passive_bundle(dir.path())?;
@@ -36301,6 +36333,64 @@ mod tests {
             gate.details
         );
         Ok(())
+    }
+
+    #[test]
+    fn manifest_pid_gate_uses_shape_only_support_validation() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_smoke_ready_bundle(dir.path())?;
+        let path = dir.path().join("support-bundle.json");
+        let mut receipt = read_json_path(&path)?;
+        let readiness = receipt
+            .pointer_mut("/moza_lane/readiness")
+            .and_then(Value::as_object_mut)
+            .ok_or("expected support readiness")?;
+        readiness.insert(
+            "highest_passing_stage".to_string(),
+            serde_json::json!("smoke_ready"),
+        );
+        readiness.insert("next_required_stage".to_string(), Value::Null);
+        readiness.insert(
+            "ready_for_real_hardware_smoke".to_string(),
+            serde_json::json!(true),
+        );
+        write_test_json_file(&path, &receipt)?;
+
+        let manifest_gate = verify_manifest_r5_pid_consistency_gate_with_support_validation(
+            dir.path(),
+            MozaBundleStage::SmokeReady,
+            SupportBundleValidationMode::Fresh,
+        );
+        let service_gate = verify_service_status_gate(dir.path());
+
+        assert_eq!(manifest_gate.status, "pass");
+        assert!(
+            manifest_gate
+                .details
+                .contains("service-status:0x0014,0x0014,0x0014"),
+            "expected manifest PID gate to read service PID shape without fresh support recursion, got {}",
+            manifest_gate.details
+        );
+        assert_eq!(service_gate.status, "fail");
+        assert!(
+            service_gate.details.contains("moza_lane_status_ok=false"),
+            "expected dedicated service gate to reject stale support readiness, got {}",
+            service_gate.details
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn post_init_service_status_accepts_openracing_control_observe_state() {
+        let status = serde_json::json!({
+            "safety_state": "lane_openracing_control_receipts_observed",
+            "ffb_ready": false,
+            "safe_to_send_torque": false,
+            "direct_mode_allowed": false,
+            "high_torque_allowed": false
+        });
+
+        assert!(moza_status_reports_post_init_safe_state(&status));
     }
 
     #[test]
