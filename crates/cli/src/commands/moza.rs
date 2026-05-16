@@ -5182,6 +5182,17 @@ fn verify_bundle_dir_with_support_validation(
         .filter(|requirement| stage_rank(requirement.stage) <= stage_rank(stage))
         .map(|requirement| check_bundle_artifact(lane, requirement))
         .collect();
+    // Missing stage artifacts already make the receipt fail; avoid recursively
+    // rebuilding fresh support status before writing that diagnostic receipt.
+    let support_validation = if matches!(support_validation, SupportBundleValidationMode::Fresh)
+        && artifact_checks
+            .iter()
+            .any(|check| check.status == "missing" || check.status == "invalid")
+    {
+        SupportBundleValidationMode::ShapeOnly
+    } else {
+        support_validation
+    };
 
     let mut gates = Vec::new();
     gates.push(if lane.is_dir() {
@@ -34672,6 +34683,99 @@ mod tests {
                 "external compatibility gate {external_gate} must not be part of openracing-control-ready"
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_openracing_control_ready_reports_missing_native_receipts_promptly()
+    -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_openracing_control_bundle(dir.path())?;
+        fs::remove_file(dir.path().join("steering-angle-stream-proof.json"))?;
+        fs::remove_file(dir.path().join("native-actuator-profile-smoke.json"))?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::OpenRacingControlReady);
+
+        assert!(!receipt.success);
+        assert_eq!(receipt.missing_artifacts, 2);
+        for native_artifact in [
+            "steering-angle-stream-proof.json",
+            "native-actuator-profile-smoke.json",
+        ] {
+            assert!(
+                receipt.artifacts.iter().any(|artifact| {
+                    artifact.path == native_artifact && artifact.status == "missing"
+                }),
+                "missing native artifact should be reported: {native_artifact}"
+            );
+        }
+        for native_gate in [
+            "steering_angle_stream_proof",
+            "native_actuator_profile_smoke",
+        ] {
+            assert!(
+                receipt
+                    .gates
+                    .iter()
+                    .any(|gate| gate.name == native_gate && gate.status == "fail"),
+                "missing native gate should fail: {native_gate}"
+            );
+        }
+        assert!(
+            receipt
+                .gates
+                .iter()
+                .any(|gate| gate.name == "service_status_receipts" && gate.status == "pass"),
+            "stale support-bundle freshness should not hide the same-stage missing artifact blockers"
+        );
+        for external_gate in [
+            "pit_house_coexistence",
+            "simulator_telemetry",
+            "simulator_ffb_bounded",
+        ] {
+            assert!(
+                !receipt.gates.iter().any(|gate| gate.name == external_gate),
+                "external compatibility gate {external_gate} must not be part of openracing-control-ready"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_openracing_control_ready_reports_invalid_native_receipt_promptly() -> TestResult
+    {
+        let dir = tempfile::tempdir()?;
+        write_openracing_control_bundle(dir.path())?;
+        fs::write(
+            dir.path().join("native-actuator-profile-smoke.json"),
+            "{not-json",
+        )?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::OpenRacingControlReady);
+
+        assert!(!receipt.success);
+        assert_eq!(receipt.missing_artifacts, 0);
+        assert_eq!(receipt.invalid_artifacts, 1);
+        assert!(
+            receipt.artifacts.iter().any(|artifact| {
+                artifact.path == "native-actuator-profile-smoke.json"
+                    && artifact.status == "invalid"
+            }),
+            "invalid native actuator receipt should be reported"
+        );
+        assert!(
+            receipt.gates.iter().any(|gate| {
+                gate.name == "native_actuator_profile_smoke" && gate.status == "fail"
+            }),
+            "invalid native actuator receipt should fail its gate"
+        );
+        assert!(
+            receipt
+                .gates
+                .iter()
+                .any(|gate| gate.name == "service_status_receipts" && gate.status == "pass"),
+            "stale support-bundle freshness should not hide invalid same-stage artifact blockers"
+        );
         Ok(())
     }
 
