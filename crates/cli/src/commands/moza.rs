@@ -8586,7 +8586,7 @@ fn push_pit_house_observation_next_command(
     output_artifact: &str,
     evidence: &str,
 ) {
-    if !lane.join(evidence_artifact).is_file() {
+    if pit_house_evidence_artifact_needs_refresh(lane, evidence_artifact, case) {
         push_pit_house_evidence_next_command(lane, commands, case, evidence_artifact, evidence);
     }
     commands.push(format!(
@@ -8594,6 +8594,34 @@ fn push_pit_house_observation_next_command(
         command_arg(evidence),
         lane_path_arg(lane, output_artifact)
     ));
+}
+
+fn pit_house_evidence_artifact_needs_refresh(
+    lane: &Path,
+    evidence_artifact: &str,
+    case: &str,
+) -> bool {
+    let path = lane.join(evidence_artifact);
+    if !path.is_file() {
+        return true;
+    }
+    let Some(case_id) = pit_house_observation_case_arg_id(case) else {
+        return false;
+    };
+    read_json_path(&path)
+        .map(|snapshot| !pit_house_process_window_snapshot_matches_case(&snapshot, case_id))
+        .unwrap_or(false)
+}
+
+fn pit_house_observation_case_arg_id(case: &str) -> Option<&'static str> {
+    match case {
+        "closed" => Some("pit_house_closed"),
+        "open-standard" => Some("pit_house_open_idle_standard"),
+        "open-direct" => Some("pit_house_open_direct"),
+        "mode-change" => Some("pit_house_mode_change_during_run"),
+        "firmware-page" => Some("pit_house_firmware_update_page_open"),
+        _ => None,
+    }
 }
 
 fn push_pit_house_evidence_next_command(
@@ -36277,6 +36305,85 @@ mod tests {
             .filter(|command| command.contains("wheelctl moza pit-house-observation"))
             .count();
         assert_eq!(observation_commands, 4);
+        Ok(())
+    }
+
+    #[test]
+    fn pit_house_observation_guidance_refreshes_mismatched_evidence() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_test_json_file(
+            &dir.path().join("pit-house-evidence-open-standard.json"),
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl moza pit-house-evidence",
+                "case": "pit_house_open_idle_standard",
+                "evidence_kind": "process_window_snapshot",
+                "pit_house_process_visible": false,
+                "snapshot_matches_case": false,
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true
+            }),
+        )?;
+
+        let mut commands = Vec::new();
+        push_pit_house_observation_next_command(
+            dir.path(),
+            &mut commands,
+            "open-standard",
+            "pit-house-evidence-open-standard.json",
+            "pit-house-observation-open-standard.json",
+            "Pit House open and idle; standard mode observed",
+        );
+        let joined = commands.join("\n");
+
+        assert!(
+            commands
+                .first()
+                .is_some_and(|command| command.contains("wheelctl moza pit-house-evidence")),
+            "mismatched generated Pit House evidence must be regenerated before observation: {joined}"
+        );
+        assert!(
+            commands
+                .get(1)
+                .is_some_and(|command| command.contains("wheelctl moza pit-house-observation")),
+            "open-standard observation should still follow evidence refresh: {joined}"
+        );
+
+        write_test_json_file(
+            &dir.path().join("pit-house-evidence-open-standard.json"),
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl moza pit-house-evidence",
+                "case": "pit_house_open_idle_standard",
+                "evidence_kind": "process_window_snapshot",
+                "pit_house_process_visible": true,
+                "snapshot_matches_case": true,
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true
+            }),
+        )?;
+        commands.clear();
+        push_pit_house_observation_next_command(
+            dir.path(),
+            &mut commands,
+            "open-standard",
+            "pit-house-evidence-open-standard.json",
+            "pit-house-observation-open-standard.json",
+            "Pit House open and idle; standard mode observed",
+        );
+        let joined = commands.join("\n");
+        assert!(
+            !joined.contains("wheelctl moza pit-house-evidence"),
+            "matching generated evidence should not be regenerated: {joined}"
+        );
+        assert!(
+            joined.contains("wheelctl moza pit-house-observation --case open-standard"),
+            "matching generated evidence should still allow observation guidance: {joined}"
+        );
         Ok(())
     }
 
