@@ -47,6 +47,10 @@
     "pcapng_sha256": {
       "$ref": "#/$defs/sha256"
     },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
     "tool": {
       "type": "object",
       "additionalProperties": false,

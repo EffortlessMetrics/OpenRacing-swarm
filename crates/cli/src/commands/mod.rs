@@ -412,6 +412,34 @@ pub enum HardwareCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
+    /// Summarize a passive USB pcapng capture without sending hardware output
+    SniffSummary {
+        /// Passive USB capture saved as .pcapng
+        #[arg(long)]
+        pcapng: std::path::PathBuf,
+        /// Optional USB vendor ID filter, e.g. 0x346E
+        #[arg(long)]
+        vendor: Option<String>,
+        /// Optional USB product ID filter, e.g. 0x0014
+        #[arg(long)]
+        product: Option<String>,
+        /// Optional USB interface number filter
+        #[arg(long)]
+        interface: Option<u16>,
+        /// Include raw payload hex samples in addition to hashes
+        #[arg(long)]
+        include_payload_samples: bool,
+        /// Maximum payload samples to keep per direction/report ID
+        #[arg(long)]
+        max_samples_per_report: Option<usize>,
+        /// Write the sniff summary JSON artifact to this file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+        /// Write an optional Markdown summary to this file
+        #[arg(long)]
+        md_out: Option<std::path::PathBuf>,
+    },
+
     /// Scaffold a hardware validation lane from a device-family rail adapter
     #[command(subcommand)]
     Lane(Box<HardwareLaneCommands>),

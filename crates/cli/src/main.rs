@@ -558,6 +558,62 @@ mod tests {
     }
 
     #[test]
+    fn parse_hardware_sniff_summary() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "hardware",
+            "sniff-summary",
+            "--pcapng",
+            "target/sniff/pit-house-open-idle/capture.pcapng",
+            "--vendor",
+            "0x346E",
+            "--product",
+            "0x0014",
+            "--interface",
+            "2",
+            "--include-payload-samples",
+            "--max-samples-per-report",
+            "2",
+            "--json-out",
+            "target/sniff/pit-house-open-idle/sniff-summary.json",
+            "--md-out",
+            "target/sniff/pit-house-open-idle/sniff-summary.md",
+        ])?;
+        match &cli.command {
+            Commands::Hardware(HardwareCommands::SniffSummary {
+                pcapng,
+                vendor,
+                product,
+                interface,
+                include_payload_samples,
+                max_samples_per_report,
+                json_out,
+                md_out,
+            }) => {
+                assert_eq!(
+                    pcapng.to_str(),
+                    Some("target/sniff/pit-house-open-idle/capture.pcapng")
+                );
+                assert_eq!(vendor.as_deref(), Some("0x346E"));
+                assert_eq!(product.as_deref(), Some("0x0014"));
+                assert_eq!(*interface, Some(2));
+                assert!(*include_payload_samples);
+                assert_eq!(*max_samples_per_report, Some(2));
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/sniff/pit-house-open-idle/sniff-summary.json")
+                );
+                assert_eq!(
+                    md_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/sniff/pit-house-open-idle/sniff-summary.md")
+                );
+            }
+            _ => return Err("expected Hardware SniffSummary command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_hardware_lane_init() -> TestResult {
         let cli = parse_cli([
             "wheelctl",
