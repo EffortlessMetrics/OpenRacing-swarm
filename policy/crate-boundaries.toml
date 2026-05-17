@@ -1,0 +1,532 @@
+schema_version = 1
+
+[public]
+packages = [
+  "openracing",
+  "openracing-engine",
+  "openracing-ffb",
+  "openracing-calibration",
+  "openracing-curves",
+  "openracing-profile",
+  "openracing-hid",
+  "openracing-pidff",
+  "openracing-moza",
+  "openracing-firmware-update",
+  "openracing-plugin-abi",
+  "openracing-plugin-sdk",
+  "openracing-telemetry",
+  "openracing-telemetry-adapters",
+  "openracing-telemetry-config",
+  "openracing-telemetry-recorder",
+  "openracing-service",
+  "wheelctl",
+]
+
+[internal]
+packages = [
+  "openracing-tools",
+  "workspace-hack",
+  "racing-wheel-ui",
+  "racing-wheel-integration-tests",
+  "compat",
+  "openracing-test-helpers",
+  "openracing-plugin-examples",
+]
+
+[[collapse]]
+from = "racing-wheel-ks"
+to = "openracing-moza::rims::ks"
+owner = "openracing-moza"
+reason = "Moza accessory leaf; same public audience and cadence as Moza family."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-srp"
+to = "openracing-moza::pedals::srp"
+owner = "openracing-moza"
+reason = "Moza accessory leaf; not an independent public API."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-hbp"
+to = "openracing-moza::handbrake::hbp"
+owner = "openracing-moza"
+reason = "Moza accessory leaf; not an independent public API."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-moza-wheelbase-report"
+to = "openracing-moza::wheelbase::reports"
+owner = "openracing-moza"
+reason = "Moza wheelbase report model belongs to the validated Moza family."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-hid-moza-protocol"
+to = "openracing-moza::protocol"
+owner = "openracing-moza"
+reason = "Moza protocol implementation belongs to the validated Moza family."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-hid-fanatec-protocol"
+to = "openracing-hid::protocol::fanatec"
+owner = "openracing-hid"
+reason = "Vendor HID leaf; keep as module until receipt-backed enough to graduate."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-hid-logitech-protocol"
+to = "openracing-hid::protocol::logitech"
+owner = "openracing-hid"
+reason = "Vendor HID leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-hid-thrustmaster-protocol"
+to = "openracing-hid::protocol::thrustmaster"
+owner = "openracing-hid"
+reason = "Vendor HID leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-hid-simagic-protocol"
+to = "openracing-hid::protocol::simagic"
+owner = "openracing-hid"
+reason = "Vendor HID leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-hid-vrs-protocol"
+to = "openracing-hid::protocol::vrs"
+owner = "openracing-hid"
+reason = "Vendor HID leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "hid-simucube-protocol"
+to = "openracing-hid::protocol::simucube"
+owner = "openracing-hid"
+reason = "Vendor HID leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "hid-heusinkveld-protocol"
+to = "openracing-hid::protocol::heusinkveld"
+owner = "openracing-hid"
+reason = "Vendor HID leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "hid-asetek-protocol"
+to = "openracing-hid::protocol::asetek"
+owner = "openracing-hid"
+reason = "Vendor HID leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "hid-button-box-protocol"
+to = "openracing-hid::protocol::button_box"
+owner = "openracing-hid"
+reason = "Vendor HID leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-hid-leo-bodnar-protocol"
+to = "openracing-hid::protocol::leo_bodnar"
+owner = "openracing-hid"
+reason = "Vendor HID leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-hid-accuforce-protocol"
+to = "openracing-hid::protocol::accuforce"
+owner = "openracing-hid"
+reason = "Vendor HID leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-hid-openffboard-protocol"
+to = "openracing-hid::protocol::openffboard"
+owner = "openracing-hid"
+reason = "Vendor HID leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-hid-ffbeast-protocol"
+to = "openracing-hid::protocol::ffbeast"
+owner = "openracing-hid"
+reason = "Vendor HID leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-hid-cammus-protocol"
+to = "openracing-hid::protocol::cammus"
+owner = "openracing-hid"
+reason = "Vendor HID leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "hid-cube-controls-protocol"
+to = "openracing-hid::protocol::cube_controls"
+owner = "openracing-hid"
+reason = "Vendor HID leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-hid-pxn-protocol"
+to = "openracing-hid::protocol::pxn"
+owner = "openracing-hid"
+reason = "Vendor HID leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-simplemotion-v2"
+to = "openracing-hid::protocol::simplemotion_v2"
+owner = "openracing-hid"
+reason = "Vendor transport/protocol leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-hid-common"
+to = "openracing-hid::transport"
+owner = "openracing-hid"
+reason = "Generic HID transport belongs to the durable HID package."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-device-types"
+to = "openracing-hid::registry::device_types"
+owner = "openracing-hid"
+reason = "Device registry types belong to the durable HID package."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-capture-ids"
+to = "openracing-hid::capture::ids"
+owner = "openracing-hid"
+reason = "Capture identifiers belong to HID capture/replay."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-capture-format"
+to = "openracing-hid::capture::format"
+owner = "openracing-hid"
+reason = "Capture file format belongs to HID capture/replay."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-hid-capture"
+to = "openracing-hid::capture"
+owner = "openracing-hid"
+reason = "HID capture tooling belongs to the durable HID package."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-shifter"
+to = "openracing-hid::devices::shifter"
+owner = "openracing-hid"
+reason = "Generic shifter model belongs to HID device support."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-handbrake"
+to = "openracing-hid::devices::handbrake"
+owner = "openracing-hid"
+reason = "Generic handbrake model belongs to HID device support."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-filters"
+to = "openracing-ffb::filters"
+owner = "openracing-ffb"
+reason = "FFB implementation kernel; public API belongs to openracing-ffb."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-pipeline"
+to = "openracing-ffb::pipeline"
+owner = "openracing-ffb"
+reason = "FFB orchestration seam; not an independent public package."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-atomic"
+to = "openracing-engine::rt::atomic"
+owner = "openracing-engine"
+reason = "Runtime helper; engine-owned implementation seam."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-scheduler"
+to = "openracing-engine::rt::scheduler"
+owner = "openracing-engine"
+reason = "Runtime scheduler; engine-owned implementation seam."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-tracing"
+to = "openracing-engine::observability"
+owner = "openracing-engine"
+reason = "Runtime observability; not a standalone public contract."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-fmea"
+to = "openracing-engine::safety::fmea"
+owner = "openracing-engine"
+reason = "Safety analysis model currently serves engine/service/wheelctl lifecycle."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-watchdog"
+to = "openracing-engine::safety::watchdog"
+owner = "openracing-engine"
+reason = "Engine safety runtime seam."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-hardware-watchdog"
+to = "openracing-engine::safety::hardware_watchdog"
+owner = "openracing-engine"
+reason = "Hardware safety runtime seam."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-hardware-core"
+to = "openracing-engine::hardware::evidence"
+owner = "openracing-engine"
+reason = "Evidence model is important, but not yet a standalone external SDK."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-diagnostic"
+to = "openracing-engine::diagnostic"
+owner = "openracing-engine"
+reason = "Diagnostic model belongs to the engine/service lifecycle."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-errors"
+to = "openracing-engine::error"
+owner = "openracing-engine"
+reason = "Shared errors should collapse into owner-local errors or the engine error facade."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-crypto"
+to = "openracing-firmware-update::crypto"
+owner = "openracing-firmware-update"
+reason = "Firmware/update cryptographic helpers are part of the update safety boundary."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-ipc"
+to = "openracing-service::ipc"
+owner = "openracing-service"
+reason = "Service IPC is a product/runtime seam, not a standalone public library."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-schemas"
+to = "openracing-service::schemas"
+owner = "openracing-service"
+reason = "Repository schemas serve service/tool integration and are not a standalone public crate."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-changelog"
+to = "openracing-service::release_notes"
+owner = "openracing-service"
+reason = "Changelog support is release tooling, not an independent public package."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-plugins"
+to = "openracing-service::plugins"
+owner = "openracing-service"
+reason = "Plugin host orchestration belongs to the service product boundary."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-profile-repository"
+to = "openracing-profile::repository"
+owner = "openracing-profile"
+reason = "Profile storage belongs to the profile contract."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-input-maps"
+to = "openracing-profile::input_maps"
+owner = "openracing-profile"
+reason = "Input mapping is profile-facing, not a separate package."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-native-plugin"
+to = "openracing-service::plugins::native_host"
+owner = "openracing-service"
+reason = "Host runtime, not plugin-author API."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-wasm-runtime"
+to = "openracing-service::plugins::wasm_host"
+owner = "openracing-service"
+reason = "Host runtime, not plugin-author API."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-core"
+to = "openracing-telemetry"
+owner = "openracing-telemetry"
+reason = "Normalized telemetry core is the durable telemetry model package."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "openracing-telemetry-streams"
+to = "openracing-telemetry::streams"
+owner = "openracing-telemetry"
+reason = "Telemetry streams are part of the durable telemetry model/orchestration package."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-adapters"
+to = "openracing-telemetry-adapters"
+owner = "openracing-telemetry-adapters"
+reason = "Game adapter aggregation is the durable adapter-family package."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-config"
+to = "openracing-telemetry-config"
+owner = "openracing-telemetry-config"
+reason = "Telemetry config is the durable support-matrix package."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-recorder"
+to = "openracing-telemetry-recorder"
+owner = "openracing-telemetry-recorder"
+reason = "Telemetry recording and replay is the durable recorder package."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-config-writers"
+to = "openracing-telemetry-config::writers"
+owner = "openracing-telemetry-config"
+reason = "Config writer leaves belong to telemetry configuration."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-lfs"
+to = "openracing-telemetry-adapters::games::live_for_speed"
+owner = "openracing-telemetry-adapters"
+reason = "Game telemetry leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-ams2"
+to = "openracing-telemetry-adapters::games::ams2"
+owner = "openracing-telemetry-adapters"
+reason = "Game telemetry leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-simhub"
+to = "openracing-telemetry-adapters::games::simhub"
+owner = "openracing-telemetry-adapters"
+reason = "Game telemetry leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-mudrunner"
+to = "openracing-telemetry-adapters::games::mudrunner"
+owner = "openracing-telemetry-adapters"
+reason = "Game telemetry leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-f1"
+to = "openracing-telemetry-adapters::games::f1"
+owner = "openracing-telemetry-adapters"
+reason = "Game telemetry leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-forza"
+to = "openracing-telemetry-adapters::games::forza"
+owner = "openracing-telemetry-adapters"
+reason = "Game telemetry leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-rennsport"
+to = "openracing-telemetry-adapters::games::rennsport"
+owner = "openracing-telemetry-adapters"
+reason = "Game telemetry leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-wrc-generations"
+to = "openracing-telemetry-adapters::games::wrc_generations"
+owner = "openracing-telemetry-adapters"
+reason = "Game telemetry leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-kartkraft"
+to = "openracing-telemetry-adapters::games::kartkraft"
+owner = "openracing-telemetry-adapters"
+reason = "Game telemetry leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-raceroom"
+to = "openracing-telemetry-adapters::games::raceroom"
+owner = "openracing-telemetry-adapters"
+reason = "Game telemetry leaf; not a separate public support promise."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-rate-limiter"
+to = "openracing-telemetry::rate_limiter"
+owner = "openracing-telemetry"
+reason = "Telemetry runtime helper belongs to telemetry orchestration."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-orchestrator"
+to = "openracing-telemetry::orchestrator"
+owner = "openracing-telemetry"
+reason = "Telemetry orchestration belongs to the durable telemetry package."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-bdd-metrics"
+to = "openracing-telemetry::metrics::bdd"
+owner = "openracing-telemetry"
+reason = "Telemetry BDD metrics are support internals, not a public package seam."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-support"
+to = "openracing-telemetry::support"
+owner = "openracing-telemetry"
+reason = "Telemetry support helpers are internal to telemetry packages."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-integration"
+to = "openracing-telemetry::integration"
+owner = "openracing-telemetry"
+reason = "Telemetry integration helpers are internal to telemetry packages."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+
+[[collapse]]
+from = "racing-wheel-telemetry-contracts"
+to = "openracing-telemetry::contracts"
+owner = "openracing-telemetry"
+reason = "Telemetry contracts belong under the durable telemetry API family."
+transition = "Tracked by the crate-surface migration ladder; code movement is intentionally deferred from the policy PR."
+

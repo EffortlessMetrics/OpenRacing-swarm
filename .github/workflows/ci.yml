@@ -1268,8 +1268,10 @@ jobs:
 
       - name: Check for RT heap allocations
         run: |
-          # Additional check for zero allocations in RT path
-          RUST_LOG=debug cargo test --release --locked test_zero_alloc_rt_path 2>/dev/null || echo "RT heap allocation test not found, skipping"
+          # Additional check for zero allocations in the RT path. Keep this scoped
+          # to the engine integration test so the performance job does not spend
+          # its entire timeout compiling unrelated release test targets.
+          RUST_LOG=debug cargo test --release --locked -p racing-wheel-engine --test zero_alloc_integration test_complete_zero_alloc_pipeline_flow -- --exact
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4

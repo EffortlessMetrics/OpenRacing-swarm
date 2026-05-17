@@ -29,9 +29,12 @@ Commands:
   torque-test                Send a gated low-torque ladder after a passing real zero-torque proof
   actuator-profile-smoke     Run a native bounded PIDFF actuator profile after steering feedback is proven
   actuator-visible-smoke     Run a bounded native actuator smoke that must prove visible steering motion
+  controlled-angle-smoke     Preflight the feedback-bounded native controlled-angle ramp without HID output
+  authorize-visible-output   Authorize one exact native visible-motion retry after fresh bench-clear
   receipt-template           Write a non-claiming starter receipt for manual Pit House or simulator evidence
   pit-house-observation      Write an observed Pit House UI/process state receipt
   pit-house-evidence         Capture a no-output Pit House process/window snapshot evidence artifact
+  pit-house-availability     Capture a non-claiming Pit House install/process availability receipt
   pit-house-case             Build one Pit House coexistence case artifact from source receipts
   pit-house-proof            Build a Pit House coexistence receipt from observed case artifact files
   simulator-telemetry-proof  Build a telemetry-only simulator proof receipt from normalized snapshots

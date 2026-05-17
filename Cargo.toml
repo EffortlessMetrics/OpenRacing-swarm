@@ -89,6 +89,21 @@ members = [
     "crates/telemetry-contracts",
     "workspace-hack",
   ]
+default-members = [
+    "crates/tools",
+    "crates/cli",
+    "crates/service",
+    "crates/engine",
+    "crates/openracing-ffb",
+    "crates/openracing-calibration",
+    "crates/openracing-curves",
+    "crates/openracing-profile",
+    "crates/openracing-plugin-abi",
+    "crates/telemetry-core",
+    "crates/telemetry-adapters",
+    "crates/telemetry-config",
+    "crates/telemetry-recorder",
+]
 exclude = ["third_party/shared_memory", "fuzz"]
 resolver = "2"
 
@@ -245,6 +260,29 @@ overflow-checks = false
 debug = false
 
 # Build configuration
+
+[workspace.metadata.publish]
+allow = [
+    "openracing",
+    "openracing-engine",
+    "openracing-ffb",
+    "openracing-calibration",
+    "openracing-curves",
+    "openracing-profile",
+    "openracing-hid",
+    "openracing-pidff",
+    "openracing-moza",
+    "openracing-firmware-update",
+    "openracing-plugin-abi",
+    "openracing-plugin-sdk",
+    "openracing-telemetry",
+    "openracing-telemetry-adapters",
+    "openracing-telemetry-config",
+    "openracing-telemetry-recorder",
+    "openracing-service",
+    "wheelctl",
+]
+
 [workspace.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]

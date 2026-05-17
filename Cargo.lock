@@ -4755,10 +4755,12 @@ name = "openracing-tools"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cargo_metadata",
  "serde",
  "serde_json",
  "serde_yaml_ng",
  "tempfile",
+ "toml 0.8.2",
 ]
 
 [[package]]
@@ -10880,6 +10882,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-stream",
+ "toml 0.8.2",
  "tower",
  "tracing",
  "tracing-core",
