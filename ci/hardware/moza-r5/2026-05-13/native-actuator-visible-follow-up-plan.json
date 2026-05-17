@@ -12,7 +12,7 @@
   "notes": [
     "Review artifact only: this file is not evidence that visible motion passed.",
     "The failed visible-motion receipt is real hardware evidence and must be preserved before any later replacement.",
-    "No further hardware-output command is authorized by this artifact; fill planned_next_output only after bench/setup/FFB-mode review and a fresh bench-clear for the exact command."
+    "No further hardware-output command is authorized by this artifact; use wheelctl moza authorize-visible-output only after bench/setup/FFB-mode review and a fresh bench-clear for the exact command."
   ],
   "observed_failure_summary": {
     "angle_delta_degrees": 0.18127718013275285,
@@ -96,7 +96,7 @@
     },
     "software_next_step": {
       "status": "implemented_no_output_authorized",
-      "description": "The bounded shaped PIDFF micro-profile is available for dry-run/preflight and still requires fresh bench-clear before any hardware-output attempt."
+      "description": "The bounded shaped PIDFF micro-profile is available for dry-run/preflight; use wheelctl moza authorize-visible-output to record fresh bench-clear, preserve the response-only receipt, and authorize exactly one matching hardware-output command."
     }
   },
   "planned_next_output": {

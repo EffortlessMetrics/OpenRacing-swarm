@@ -891,6 +891,55 @@ pub enum MozaCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
+    /// Authorize one exact native visible-motion retry after fresh bench-clear
+    AuthorizeVisibleOutput {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-13
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Exact lane R5 HID endpoint selector, e.g. hid-0x346E-0x0004-if2-0x0001-0x0004
+        #[arg(long)]
+        device: String,
+        /// Operator or host label granting bench-clear
+        #[arg(long, default_value = "Steven")]
+        operator: String,
+        /// Fresh bench-clear evidence for this exact command
+        #[arg(long)]
+        bench_clear_evidence: String,
+        /// Bench/setup/FFB-mode review evidence for the prior sub-degree response
+        #[arg(long)]
+        ffb_mode_evidence: String,
+        /// Same-lane native actuator-profile receipt for the planned run
+        #[arg(long)]
+        prior_actuator_proof: Option<std::path::PathBuf>,
+        /// Same-lane steering stream proof receipt for the planned run
+        #[arg(long)]
+        steering_proof: Option<std::path::PathBuf>,
+        /// Planned native actuator profile
+        #[arg(long, value_enum, default_value_t = MozaActuatorProfile::BoundedShapedPidffMicroProfile)]
+        profile: MozaActuatorProfile,
+        /// Planned output strategy; direct report 0x20 is not accepted
+        #[arg(long, value_enum, default_value_t = MozaLowTorqueStrategy::PidffBoundedEffect)]
+        strategy: MozaLowTorqueStrategy,
+        /// Planned maximum force percent, bounded to 0.1..=5.0
+        #[arg(long, default_value = "5")]
+        max_percent: f32,
+        /// Planned profile duration in milliseconds, bounded to 1..=2000
+        #[arg(long, default_value = "2000")]
+        duration_ms: u64,
+        /// Planned visible-motion threshold in degrees
+        #[arg(long, default_value = "1")]
+        movement_threshold_degrees: f64,
+        /// Optional lane-relative preserved copy of the current response-only receipt
+        #[arg(long)]
+        preserve_receipt: Option<std::path::PathBuf>,
+        /// Update the native visible-motion follow-up plan JSON
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+        /// Replace an existing preserved response-only receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
     /// Write a non-claiming starter receipt for manual Pit House or simulator evidence
     ReceiptTemplate {
         /// Receipt template kind to write

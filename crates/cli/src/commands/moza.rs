@@ -189,6 +189,25 @@ struct ActuatorVisibleSmokeRequest<'a> {
     json_out: Option<&'a Path>,
 }
 
+struct AuthorizeVisibleOutputRequest<'a> {
+    json: bool,
+    lane: &'a Path,
+    selector: &'a str,
+    operator: &'a str,
+    bench_clear_evidence: &'a str,
+    ffb_mode_evidence: &'a str,
+    prior_actuator_proof: Option<&'a Path>,
+    steering_proof: Option<&'a Path>,
+    profile: MozaActuatorProfile,
+    strategy: MozaLowTorqueStrategy,
+    max_percent: f32,
+    duration_ms: u64,
+    movement_threshold_degrees: f64,
+    preserve_receipt: Option<&'a Path>,
+    json_out: Option<&'a Path>,
+    overwrite: bool,
+}
+
 struct ZeroOutputStagePreflight {
     lane: PathBuf,
     lane_display: String,
@@ -703,6 +722,43 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 degrees_of_rotation: *degrees_of_rotation,
                 movement_threshold_degrees: *movement_threshold_degrees,
                 json_out: json_out.as_deref(),
+            })
+            .await
+        }
+        MozaCommands::AuthorizeVisibleOutput {
+            lane,
+            device,
+            operator,
+            bench_clear_evidence,
+            ffb_mode_evidence,
+            prior_actuator_proof,
+            steering_proof,
+            profile,
+            strategy,
+            max_percent,
+            duration_ms,
+            movement_threshold_degrees,
+            preserve_receipt,
+            json_out,
+            overwrite,
+        } => {
+            authorize_visible_output(AuthorizeVisibleOutputRequest {
+                json,
+                lane,
+                selector: device,
+                operator,
+                bench_clear_evidence,
+                ffb_mode_evidence,
+                prior_actuator_proof: prior_actuator_proof.as_deref(),
+                steering_proof: steering_proof.as_deref(),
+                profile: *profile,
+                strategy: *strategy,
+                max_percent: *max_percent,
+                duration_ms: *duration_ms,
+                movement_threshold_degrees: *movement_threshold_degrees,
+                preserve_receipt: preserve_receipt.as_deref(),
+                json_out: json_out.as_deref(),
+                overwrite: *overwrite,
             })
             .await
         }
@@ -3519,6 +3575,194 @@ async fn audit_lane(
     Ok(())
 }
 
+async fn authorize_visible_output(request: AuthorizeVisibleOutputRequest<'_>) -> Result<()> {
+    let AuthorizeVisibleOutputRequest {
+        json,
+        lane,
+        selector,
+        operator,
+        bench_clear_evidence,
+        ffb_mode_evidence,
+        prior_actuator_proof,
+        steering_proof,
+        profile,
+        strategy,
+        max_percent,
+        duration_ms,
+        movement_threshold_degrees,
+        preserve_receipt,
+        json_out,
+        overwrite,
+    } = request;
+
+    validate_actuator_visible_smoke_args(
+        profile,
+        strategy,
+        max_percent,
+        duration_ms,
+        20,
+        1080.0,
+        movement_threshold_degrees,
+    )?;
+    validate_lane_manifest_endpoint_selector(
+        lane,
+        Some(selector),
+        "native visible-motion output authorization",
+    )?;
+    if let Some(path) = prior_actuator_proof {
+        require_lane_artifact_path(
+            lane,
+            path,
+            "native-actuator-profile-smoke.json",
+            "--prior-actuator-proof",
+        )?;
+    }
+    if let Some(path) = steering_proof {
+        require_lane_artifact_path(
+            lane,
+            path,
+            "steering-angle-stream-proof.json",
+            "--steering-proof",
+        )?;
+    }
+
+    let prior_receipt = failed_real_native_visible_smoke_receipt(lane).ok_or_else(|| {
+        anyhow!(
+            "{} requires an existing real response-only native-actuator-visible-smoke.json receipt",
+            "wheelctl moza authorize-visible-output"
+        )
+    })?;
+    let mut plan =
+        read_json_value(lane, NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE).with_context(|| {
+            format!(
+                "failed to read required follow-up plan {}",
+                lane.join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE).display()
+            )
+        })?;
+    let expected_plan_path = lane.join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE);
+    let plan_path = json_out
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| expected_plan_path.clone());
+    if !path_value_matches(&expected_plan_path, Some(&plan_path.display().to_string())) {
+        return Err(anyhow!(
+            "--json-out '{}' must resolve to same-lane artifact '{}'",
+            plan_path.display(),
+            expected_plan_path.display()
+        ));
+    }
+    if json_bool(&plan, "hardware_output_authorized") == Some(true) && !overwrite {
+        return Err(anyhow!(
+            "{} already authorizes hardware output; pass --overwrite only after re-reviewing the exact command",
+            NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE
+        ));
+    }
+
+    let preserved_path = preserve_receipt
+        .map(|path| lane_output_artifact_path(lane, path))
+        .transpose()?
+        .unwrap_or_else(|| lane.join("native-actuator-visible-smoke-response-only.json"));
+    let current_visible_path = lane.join("native-actuator-visible-smoke.json");
+    if path_value_matches(
+        &current_visible_path,
+        Some(&preserved_path.display().to_string()),
+    ) {
+        return Err(anyhow!(
+            "--preserve-receipt must not point at the live replacement receipt '{}'",
+            current_visible_path.display()
+        ));
+    }
+    if preserved_path.exists() && !overwrite {
+        return Err(anyhow!(
+            "{} already exists; pass --overwrite only after confirming it is the same preserved response-only receipt",
+            preserved_path.display()
+        ));
+    }
+    if let Some(parent) = preserved_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create '{}'", parent.display()))?;
+    }
+    fs::copy(&current_visible_path, &preserved_path).with_context(|| {
+        format!(
+            "failed to preserve response-only receipt '{}' as '{}'",
+            current_visible_path.display(),
+            preserved_path.display()
+        )
+    })?;
+
+    let planned_command = native_visible_output_command(
+        lane,
+        selector,
+        profile,
+        strategy,
+        max_percent,
+        duration_ms,
+        movement_threshold_degrees,
+    );
+    validate_authorized_native_visible_command(
+        lane,
+        &planned_command,
+        selector,
+        profile,
+        strategy,
+        max_percent,
+        duration_ms,
+        movement_threshold_degrees,
+        &current_visible_path,
+    )?;
+
+    let authorized_at = now_utc();
+    plan["command"] = serde_json::json!("wheelctl moza authorize-visible-output");
+    plan["evidence_status"] = serde_json::json!("exact_output_authorized_pending_run");
+    plan["review_decision"] =
+        serde_json::json!("exact_output_command_authorized_after_fresh_bench_clear");
+    plan["hardware_output_authorized"] = serde_json::json!(true);
+    plan["force_escalation_authorized"] = serde_json::json!(false);
+    plan["authorized_at_utc"] = serde_json::json!(authorized_at);
+    plan["authorized_by"] = serde_json::json!(operator);
+    plan["bench_clear_evidence"] = serde_json::json!(bench_clear_evidence);
+    plan["ffb_mode_review_evidence"] = serde_json::json!(ffb_mode_evidence);
+    plan["authorization_recorded"] = serde_json::json!(true);
+    plan["success"] = serde_json::json!(false);
+    plan["template"] = serde_json::json!(false);
+    plan["prior_receipt_preserved_artifact"] =
+        serde_json::json!(lane_relative_or_display(lane, &preserved_path));
+    plan["planned_next_output"] = serde_json::json!({
+        "allowed": true,
+        "command": planned_command,
+        "profile": actuator_profile_cli_name(profile),
+        "strategy": low_torque_strategy_cli_name(strategy),
+        "duration_ms": duration_ms,
+        "force_percent": max_percent,
+        "movement_threshold_degrees": movement_threshold_degrees,
+        "operator": operator,
+        "authorized_at_utc": plan["authorized_at_utc"].clone(),
+        "must_preserve_failed_receipt": true,
+        "preserved_receipt": lane_relative_or_display(lane, &preserved_path),
+        "requires_fresh_bench_clear": false
+    });
+    update_native_visible_authorization_checks(
+        &mut plan,
+        bench_clear_evidence,
+        ffb_mode_evidence,
+        &preserved_path,
+    );
+    plan["notes"] = serde_json::json!([
+        "Authorization artifact only: this file is not evidence that visible motion passed.",
+        "The response-only visible-motion receipt was preserved before authorizing replacement.",
+        "The planned output command is exact and remains capped at 5 percent for up to 2000 ms through descriptor-proven PIDFF bounded-effect reports."
+    ]);
+    plan["observed_failure_summary"]["preserved_receipt"] =
+        serde_json::json!(lane_relative_or_display(lane, &preserved_path));
+    plan["observed_failure_summary"]["prior_angle_delta_degrees"] =
+        serde_json::json!(json_f64(&prior_receipt, "angle_delta_degrees"));
+
+    write_json_file(&plan_path, &plan)?;
+    print_authorize_visible_output_receipt(json, &plan_path, &plan)
+}
+
 async fn receipt_template(
     json: bool,
     kind: MozaReceiptTemplateKind,
@@ -5739,6 +5983,124 @@ fn command_arg_u64_matches(tokens: &[&str], flag: &str, expected: u64) -> bool {
     command_arg_value(tokens, flag).and_then(|value| value.parse::<u64>().ok()) == Some(expected)
 }
 
+#[allow(clippy::too_many_arguments)]
+fn native_visible_output_command(
+    lane: &Path,
+    selector: &str,
+    profile: MozaActuatorProfile,
+    strategy: MozaLowTorqueStrategy,
+    max_percent: f32,
+    duration_ms: u64,
+    movement_threshold_degrees: f64,
+) -> String {
+    format!(
+        "wheelctl moza actuator-visible-smoke --device {} --lane {} --prior-actuator-proof {} --steering-proof {} --profile {} --strategy {} --max-percent {} --duration-ms {} --movement-threshold-degrees {} --confirm-actuator-visible --json-out {} --json",
+        command_arg(selector),
+        command_arg(&lane.display().to_string()),
+        lane_path_arg(lane, "native-actuator-profile-smoke.json"),
+        lane_path_arg(lane, "steering-angle-stream-proof.json"),
+        actuator_profile_cli_name(profile),
+        low_torque_strategy_cli_name(strategy),
+        compact_f32(max_percent),
+        duration_ms,
+        compact_f64(movement_threshold_degrees),
+        lane_path_arg(lane, "native-actuator-visible-smoke.json")
+    )
+}
+
+fn compact_f32(value: f32) -> String {
+    if value.fract() == 0.0 {
+        format!("{value:.0}")
+    } else {
+        value.to_string()
+    }
+}
+
+fn compact_f64(value: f64) -> String {
+    if value.fract() == 0.0 {
+        format!("{value:.0}")
+    } else {
+        value.to_string()
+    }
+}
+
+fn lane_output_artifact_path(lane: &Path, path: &Path) -> Result<PathBuf> {
+    if path
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err(anyhow!(
+            "lane output artifact '{}' must not contain '..'",
+            path.display()
+        ));
+    }
+
+    if path.is_absolute() {
+        let lane_norm = normalized_path_string(&lane.display().to_string());
+        let path_norm = normalized_path_string(&path.display().to_string());
+        if path_norm == lane_norm || path_norm.starts_with(&format!("{lane_norm}/")) {
+            return Ok(path.to_path_buf());
+        }
+        return Err(anyhow!(
+            "lane output artifact '{}' must stay under '{}'",
+            path.display(),
+            lane.display()
+        ));
+    }
+
+    let lane_norm = normalized_path_string(&lane.display().to_string());
+    let path_norm = normalized_path_string(&path.display().to_string());
+    if path_norm == lane_norm || path_norm.starts_with(&format!("{lane_norm}/")) {
+        Ok(path.to_path_buf())
+    } else {
+        Ok(lane.join(path))
+    }
+}
+
+fn lane_relative_or_display(lane: &Path, path: &Path) -> String {
+    path.strip_prefix(lane)
+        .map(|relative| normalized_path_string(&relative.display().to_string()))
+        .unwrap_or_else(|_| normalized_path_string(&path.display().to_string()))
+}
+
+fn update_native_visible_authorization_checks(
+    plan: &mut Value,
+    bench_clear_evidence: &str,
+    ffb_mode_evidence: &str,
+    preserved_path: &Path,
+) {
+    let Some(checks) = plan
+        .get_mut("required_before_next_output")
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    for check in checks {
+        match json_string(check, "check") {
+            Some("bench_clearance") => {
+                check["status"] = serde_json::json!("passed");
+                check["evidence"] = serde_json::json!(bench_clear_evidence);
+            }
+            Some("wheelbase_ffb_mode_and_vendor_state") => {
+                check["status"] = serde_json::json!("passed");
+                check["evidence"] = serde_json::json!(ffb_mode_evidence);
+            }
+            Some("failed_receipt_preserved_before_replacement") => {
+                check["status"] = serde_json::json!("passed");
+                check["evidence"] = serde_json::json!(format!(
+                    "Preserved current response-only receipt at {} before authorizing replacement.",
+                    preserved_path.display()
+                ));
+            }
+            Some("fresh_operator_bench_clear_for_exact_next_output_command") => {
+                check["status"] = serde_json::json!("passed");
+                check["evidence"] = serde_json::json!(bench_clear_evidence);
+            }
+            _ => {}
+        }
+    }
+}
+
 fn require_lane_artifact_path(
     lane: &Path,
     path: &Path,
@@ -6929,7 +7291,7 @@ fn native_visible_smoke_failed_real_receipt_action(lane: &Path) -> Option<String
         let profile_plan_summary = native_visible_planned_profile_summary(&plan)
             .unwrap_or_else(|| "planned_profile_details=missing".to_string());
         return Some(format!(
-            "Current native-visible frontier: native actuator response is recorded, but visible-motion remains unclaimed: movement_observed={movement_observed}, angle_delta_degrees={delta}, movement_threshold_degrees={threshold}. Final Stop All sent={stop_all_sent}, no direct report 0x20={no_direct}, no high torque={no_high_torque}. Follow-up plan exists at {NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE}: review_decision={review_decision}, profile_design_status={profile_design_status}, {profile_plan_summary}, hardware_output_authorized={output_authorized}, force_escalation_authorized={force_escalation_authorized}. Do not run output until the follow-up requirements are complete and a fresh bench-clear is recorded for the exact next output command. Pit House, SimHub, and simulators are not required for this native diagnosis."
+            "Current native-visible frontier: native actuator response is recorded, but visible-motion remains unclaimed: movement_observed={movement_observed}, angle_delta_degrees={delta}, movement_threshold_degrees={threshold}. Final Stop All sent={stop_all_sent}, no direct report 0x20={no_direct}, no high torque={no_high_torque}. Follow-up plan exists at {NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE}: review_decision={review_decision}, profile_design_status={profile_design_status}, {profile_plan_summary}, hardware_output_authorized={output_authorized}, force_escalation_authorized={force_escalation_authorized}. Do not run output until the follow-up requirements are complete and a fresh bench-clear is recorded for the exact next output command via wheelctl moza authorize-visible-output. Pit House, SimHub, and simulators are not required for this native diagnosis."
         ));
     }
     Some(format!(
@@ -18010,7 +18372,7 @@ fn moza_receipt_template(kind: MozaReceiptTemplateKind) -> Value {
                 },
                 "software_next_step": {
                     "status": "implemented_no_output_authorized",
-                    "description": "The bounded shaped PIDFF micro-profile is available for dry-run/preflight and still requires fresh bench-clear before any hardware-output attempt."
+                    "description": "The bounded shaped PIDFF micro-profile is available for dry-run/preflight; use wheelctl moza authorize-visible-output to record fresh bench-clear, preserve the response-only receipt, and authorize exactly one matching hardware-output command."
                 }
             },
             "required_before_next_output": [
@@ -18051,7 +18413,7 @@ fn moza_receipt_template(kind: MozaReceiptTemplateKind) -> Value {
             "notes": [
                 "Template only: this file is a review surface, not evidence that visible motion passed.",
                 "Do not use generated smoke-ready guidance to rerun, raise force, or replace the preserved response/visible-motion receipt.",
-                "Only fill planned_next_output after the failure has been reviewed and the operator gives a fresh bench-clear for the exact command."
+                "Use wheelctl moza authorize-visible-output after the failure has been reviewed and the operator gives a fresh bench-clear for the exact command."
             ]
         }),
         MozaReceiptTemplateKind::PitHouse => serde_json::json!({
@@ -22880,6 +23242,25 @@ fn print_receipt_template(
             receipt_template_kind_label(kind),
             json_out.display()
         );
+    }
+    Ok(())
+}
+
+fn print_authorize_visible_output_receipt(
+    json: bool,
+    json_out: &Path,
+    receipt: &Value,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        let planned = receipt.get("planned_next_output").unwrap_or(&Value::Null);
+        let command = json_string(planned, "command").unwrap_or("missing");
+        println!(
+            "Authorized one exact Moza native visible-motion retry in {}; visible-motion is still unproven until the planned command passes.",
+            json_out.display()
+        );
+        println!("Planned command: {command}");
     }
     Ok(())
 }
@@ -31241,6 +31622,96 @@ mod tests {
             false,
         )?;
 
+        assert_eq!(preflight.target_product_id, "0x0004");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn authorize_visible_output_updates_plan_and_preserves_response_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_native_actuator_visible_prerequisite_receipts(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V1),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::VisibleMotionFollowUp),
+        )?;
+
+        authorize_visible_output(AuthorizeVisibleOutputRequest {
+            json: false,
+            lane: dir.path(),
+            selector: "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            operator: "Steven",
+            bench_clear_evidence: "Bench clear for the exact shaped PIDFF command.",
+            ffb_mode_evidence: "Wheelbase standard/PIDFF mode observed; no simulator FFB source active.",
+            prior_actuator_proof: Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            steering_proof: Some(&dir.path().join("steering-angle-stream-proof.json")),
+            profile: MozaActuatorProfile::BoundedShapedPidffMicroProfile,
+            strategy: MozaLowTorqueStrategy::PidffBoundedEffect,
+            max_percent: 5.0,
+            duration_ms: 2_000,
+            movement_threshold_degrees: 1.0,
+            preserve_receipt: None,
+            json_out: Some(&dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE)),
+            overwrite: false,
+        })
+        .await?;
+
+        let plan = read_json_value(dir.path(), NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE)?;
+        assert_eq!(
+            json_string(&plan, "command"),
+            Some("wheelctl moza authorize-visible-output")
+        );
+        assert_eq!(json_bool(&plan, "success"), Some(false));
+        assert_eq!(json_bool(&plan, "hardware_output_authorized"), Some(true));
+        assert_eq!(json_bool(&plan, "force_escalation_authorized"), Some(false));
+        assert_eq!(json_string(&plan, "authorized_by"), Some("Steven"));
+        assert_eq!(
+            json_string(&plan, "prior_receipt_preserved_artifact"),
+            Some("native-actuator-visible-smoke-response-only.json")
+        );
+        assert!(
+            dir.path()
+                .join("native-actuator-visible-smoke-response-only.json")
+                .exists()
+        );
+        let planned = plan
+            .get("planned_next_output")
+            .ok_or("expected planned_next_output")?;
+        assert_eq!(json_bool(planned, "allowed"), Some(true));
+        assert_eq!(
+            json_bool(planned, "requires_fresh_bench_clear"),
+            Some(false)
+        );
+        assert_eq!(
+            json_string(planned, "profile"),
+            Some("bounded-shaped-pidff-micro-profile")
+        );
+        assert!(
+            json_string(planned, "command")
+                .map(|command| {
+                    command.contains("--profile bounded-shaped-pidff-micro-profile")
+                        && command.contains("--confirm-actuator-visible")
+                        && !command.contains("--dry-run")
+                })
+                .unwrap_or(false)
+        );
+
+        let preflight = validate_native_actuator_visible_smoke_preflight(
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            dir.path(),
+            Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            Some(&dir.path().join("steering-angle-stream-proof.json")),
+            Some(&dir.path().join("native-actuator-visible-smoke.json")),
+            MozaActuatorProfile::BoundedShapedPidffMicroProfile,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.0,
+            2_000,
+            1.0,
+            false,
+        )?;
         assert_eq!(preflight.target_product_id, "0x0004");
         Ok(())
     }

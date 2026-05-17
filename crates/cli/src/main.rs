@@ -2378,6 +2378,70 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_authorize_visible_output() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "moza",
+            "authorize-visible-output",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
+            "--device",
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            "--operator",
+            "Steven",
+            "--bench-clear-evidence",
+            "Bench clear for the exact shaped PIDFF command.",
+            "--ffb-mode-evidence",
+            "Wheelbase is in standard/PIDFF mode; no simulator FFB source active.",
+            "--profile",
+            "bounded-shaped-pidff-micro-profile",
+            "--strategy",
+            "pidff-bounded-effect",
+            "--max-percent",
+            "5",
+            "--duration-ms",
+            "2000",
+            "--json-out",
+            "ci/hardware/moza-r5/2026-05-13/native-actuator-visible-follow-up-plan.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::AuthorizeVisibleOutput {
+                lane,
+                device,
+                operator,
+                profile,
+                strategy,
+                max_percent,
+                duration_ms,
+                json_out,
+                ..
+            }) => {
+                assert_eq!(
+                    lane.as_path().to_str(),
+                    Some("ci/hardware/moza-r5/2026-05-13")
+                );
+                assert_eq!(device, "hid-0x346E-0x0004-if2-0x0001-0x0004");
+                assert_eq!(operator, "Steven");
+                assert_eq!(
+                    *profile,
+                    MozaActuatorProfile::BoundedShapedPidffMicroProfile
+                );
+                assert_eq!(*strategy, MozaLowTorqueStrategy::PidffBoundedEffect);
+                assert!((*max_percent - 5.0).abs() < f32::EPSILON);
+                assert_eq!(*duration_ms, 2000);
+                assert_eq!(
+                    json_out.as_ref().and_then(|path| path.to_str()),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/native-actuator-visible-follow-up-plan.json"
+                    )
+                );
+            }
+            _ => return Err("expected Moza AuthorizeVisibleOutput command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_receipt_template() -> TestResult {
         let cli = Cli::try_parse_from([
             "wheelctl",
