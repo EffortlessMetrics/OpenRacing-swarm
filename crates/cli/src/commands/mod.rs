@@ -911,8 +911,8 @@ pub enum MozaCommands {
         /// Planned maximum force percent, bounded to 0.1..=5.0
         #[arg(long, default_value = "5")]
         max_percent: f32,
-        /// Safety timeout in milliseconds; actual writes are currently capped at 2000 ms
-        #[arg(long, default_value = "15000")]
+        /// Safety timeout in milliseconds; actual writes are capped at 2000 ms
+        #[arg(long, default_value = "2000")]
         timeout_ms: u64,
         /// HID read timeout in milliseconds while sampling steering motion
         #[arg(long, default_value = "20")]

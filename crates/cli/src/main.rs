@@ -2407,8 +2407,6 @@ mod tests {
             "1",
             "--max-percent",
             "5",
-            "--timeout-ms",
-            "15000",
             "--strategy",
             "pidff-bounded-effect",
             "--dry-run",
@@ -2435,7 +2433,7 @@ mod tests {
                 );
                 assert!((*target_degrees - 1.0).abs() < f64::EPSILON);
                 assert!((*max_percent - 5.0).abs() < f32::EPSILON);
-                assert_eq!(*timeout_ms, 15000);
+                assert_eq!(*timeout_ms, 2000);
                 assert_eq!(*strategy, MozaLowTorqueStrategy::PidffBoundedEffect);
                 assert!(*dry_run);
                 assert!(!*confirm_controlled_angle);
