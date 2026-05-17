@@ -353,9 +353,138 @@ pub enum HardwareCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
+    /// Create a non-claiming passive USB sniff plan artifact
+    SniffPlan {
+        /// Hardware family this sniff supports, for example moza-r5
+        #[arg(long, default_value = "generic-wheelbase")]
+        family: String,
+        /// Passive sniff scenario taxonomy value
+        #[arg(long, value_enum)]
+        scenario: HardwareSniffScenario,
+        /// Hardware or sniff lane directory this plan belongs to
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Operator name recorded in the plan
+        #[arg(long, default_value = "Steven")]
+        operator: String,
+        /// Human device note, for example wheelbase PID and attached rim/pedals
+        #[arg(long)]
+        device_note: String,
+        /// Capture tool expected for this plan; repeat for multiple tools
+        #[arg(long = "capture-tool", value_enum)]
+        capture_tools: Vec<HardwareSniffCaptureTool>,
+        /// Platform hint for the intended capture host
+        #[arg(long, value_enum)]
+        platform_hint: Option<HardwareSniffPlatformHint>,
+        /// Write the sniff plan JSON artifact to this file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+        /// Write an optional Markdown operator plan to this file
+        #[arg(long)]
+        md_out: Option<std::path::PathBuf>,
+    },
+
+    /// Create a non-claiming passive USB sniff receipt from a plan and pcapng
+    SniffReceipt {
+        /// Sniff plan JSON artifact to read
+        #[arg(long)]
+        plan: std::path::PathBuf,
+        /// Passive USB capture saved by Wireshark, tshark, USBPcap, or usbmon
+        #[arg(long)]
+        pcapng: Option<std::path::PathBuf>,
+        /// Operator name for this receipt; defaults to the plan operator
+        #[arg(long)]
+        operator: Option<String>,
+        /// External app, OS stack, simulator, or bridge observed in this capture
+        #[arg(long)]
+        app: String,
+        /// Scenario override; defaults to the plan scenario
+        #[arg(long, value_enum)]
+        scenario: Option<HardwareSniffScenario>,
+        /// Device note override; defaults to the plan device note
+        #[arg(long)]
+        device_note: Option<String>,
+        /// Operator evidence text for what was observed
+        #[arg(long)]
+        evidence: String,
+        /// Write the sniff receipt JSON artifact to this file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
     /// Scaffold a hardware validation lane from a device-family rail adapter
     #[command(subcommand)]
     Lane(Box<HardwareLaneCommands>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum HardwareSniffScenario {
+    Enumeration,
+    VendorAppClosedIdle,
+    PitHouseOpenIdle,
+    PitHouseSettingChange,
+    PitHouseFirmwarePageObserved,
+    SimhubOpenIdle,
+    SimhubDeviceDetect,
+    SimhubOutputSession,
+    SimulatorSessionStartStop,
+    Custom,
+}
+
+impl HardwareSniffScenario {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Enumeration => "enumeration",
+            Self::VendorAppClosedIdle => "vendor-app-closed-idle",
+            Self::PitHouseOpenIdle => "pit-house-open-idle",
+            Self::PitHouseSettingChange => "pit-house-setting-change",
+            Self::PitHouseFirmwarePageObserved => "pit-house-firmware-page-observed",
+            Self::SimhubOpenIdle => "simhub-open-idle",
+            Self::SimhubDeviceDetect => "simhub-device-detect",
+            Self::SimhubOutputSession => "simhub-output-session",
+            Self::SimulatorSessionStartStop => "simulator-session-start-stop",
+            Self::Custom => "custom",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum HardwareSniffCaptureTool {
+    Wireshark,
+    #[value(name = "usbpcap")]
+    UsbPcap,
+    Tshark,
+    Usbmon,
+}
+
+impl HardwareSniffCaptureTool {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Wireshark => "wireshark",
+            Self::UsbPcap => "usbpcap",
+            Self::Tshark => "tshark",
+            Self::Usbmon => "usbmon",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum HardwareSniffPlatformHint {
+    Windows,
+    Linux,
+    Macos,
+    Unknown,
+}
+
+impl HardwareSniffPlatformHint {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Windows => "windows",
+            Self::Linux => "linux",
+            Self::Macos => "macos",
+            Self::Unknown => "unknown",
+        }
+    }
 }
 
 #[derive(Subcommand)]

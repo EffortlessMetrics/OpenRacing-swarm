@@ -432,6 +432,132 @@ mod tests {
     }
 
     #[test]
+    fn parse_hardware_sniff_plan() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "hardware",
+            "sniff-plan",
+            "--family",
+            "moza",
+            "--scenario",
+            "pit-house-open-idle",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
+            "--operator",
+            "Steven",
+            "--device-note",
+            "R5 + KS, SR-P and HBP through base",
+            "--capture-tool",
+            "wireshark",
+            "--capture-tool",
+            "usbpcap",
+            "--platform-hint",
+            "windows",
+            "--json-out",
+            "target/sniff/pit-house-open-idle/sniff-plan.json",
+            "--md-out",
+            "target/sniff/pit-house-open-idle/sniff-plan.md",
+        ])?;
+        match &cli.command {
+            Commands::Hardware(HardwareCommands::SniffPlan {
+                family,
+                scenario,
+                lane,
+                operator,
+                device_note,
+                capture_tools,
+                platform_hint,
+                json_out,
+                md_out,
+            }) => {
+                assert_eq!(family, "moza");
+                assert_eq!(*scenario, HardwareSniffScenario::PitHouseOpenIdle);
+                assert_eq!(lane.to_str(), Some("ci/hardware/moza-r5/2026-05-13"));
+                assert_eq!(operator, "Steven");
+                assert_eq!(device_note, "R5 + KS, SR-P and HBP through base");
+                assert_eq!(
+                    capture_tools,
+                    &vec![
+                        HardwareSniffCaptureTool::Wireshark,
+                        HardwareSniffCaptureTool::UsbPcap,
+                    ]
+                );
+                assert_eq!(*platform_hint, Some(HardwareSniffPlatformHint::Windows));
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/sniff/pit-house-open-idle/sniff-plan.json")
+                );
+                assert_eq!(
+                    md_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/sniff/pit-house-open-idle/sniff-plan.md")
+                );
+            }
+            _ => return Err("expected Hardware SniffPlan command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_hardware_sniff_receipt() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "hardware",
+            "sniff-receipt",
+            "--plan",
+            "target/sniff/pit-house-open-idle/sniff-plan.json",
+            "--pcapng",
+            "target/sniff/pit-house-open-idle/capture.pcapng",
+            "--operator",
+            "Steven",
+            "--app",
+            "Pit House",
+            "--scenario",
+            "pit-house-open-idle",
+            "--device-note",
+            "R5 + KS, SR-P and HBP through base",
+            "--evidence",
+            "Pit House opened and left idle for 30 seconds.",
+            "--json-out",
+            "target/sniff/pit-house-open-idle/sniff-receipt.json",
+        ])?;
+        match &cli.command {
+            Commands::Hardware(HardwareCommands::SniffReceipt {
+                plan,
+                pcapng,
+                operator,
+                app,
+                scenario,
+                device_note,
+                evidence,
+                json_out,
+            }) => {
+                assert_eq!(
+                    plan.to_str(),
+                    Some("target/sniff/pit-house-open-idle/sniff-plan.json")
+                );
+                assert_eq!(
+                    pcapng.as_ref().and_then(|p| p.to_str()),
+                    Some("target/sniff/pit-house-open-idle/capture.pcapng")
+                );
+                assert_eq!(operator.as_deref(), Some("Steven"));
+                assert_eq!(app, "Pit House");
+                assert_eq!(*scenario, Some(HardwareSniffScenario::PitHouseOpenIdle));
+                assert_eq!(
+                    device_note.as_deref(),
+                    Some("R5 + KS, SR-P and HBP through base")
+                );
+                assert_eq!(evidence, "Pit House opened and left idle for 30 seconds.");
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/sniff/pit-house-open-idle/sniff-receipt.json")
+                );
+            }
+            _ => return Err("expected Hardware SniffReceipt command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_hardware_lane_init() -> TestResult {
         let cli = parse_cli([
             "wheelctl",
