@@ -64,15 +64,15 @@ impl<'a> Iterator for ReplayIterator<'a> {
             let record = &self.records[self.index];
             self.index += 1;
 
-            if let Some(dir) = self.direction_filter {
-                if record.direction != dir {
-                    continue;
-                }
+            if let Some(dir) = self.direction_filter
+                && record.direction != dir
+            {
+                continue;
             }
-            if let Some(rid) = self.report_id_filter {
-                if record.report_id != rid {
-                    continue;
-                }
+            if let Some(rid) = self.report_id_filter
+                && record.report_id != rid
+            {
+                continue;
             }
 
             return Some((record.timestamp_ns, reconstruct_report(record)));

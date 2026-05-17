@@ -1084,7 +1084,7 @@ Budget violation policy:
 
 #### For Safe Plugins (WASM)
 
-- **Rust** 1.85.0 or later (nightly toolchain required)
+- **Rust** 1.95.0 or later (nightly toolchain required)
 - **WASI target**: `rustup target add wasm32-wasi`
 - **Cargo** (included with Rust)
 

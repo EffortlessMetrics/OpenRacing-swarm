@@ -14,8 +14,8 @@
 #   * No global `-D warnings` until warn-stage debt is intentionally zero.
 
 schema_version = "1.0"
-msrv = "1.85.0"
-target_msrv = "1.93"  # MSRV bump is tracked separately; not yet active.
+msrv = "1.95.0"
+target_msrv = "1.95"  # Matches the workspace rust-version policy.
 
 [policy]
 panic_free_tests = true
