@@ -891,7 +891,7 @@ pub enum MozaCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
-    /// Preflight the feedback-bounded native controlled-angle ramp without HID output
+    /// Preflight or run one authorized feedback-bounded native controlled-angle attempt
     ControlledAngleSmoke {
         /// Exact lane R5 HID endpoint selector, e.g. hid-0x346E-0x0004-if2-0x0001-0x0004
         #[arg(long)]
@@ -911,7 +911,7 @@ pub enum MozaCommands {
         /// Planned maximum force percent, bounded to 0.1..=5.0
         #[arg(long, default_value = "5")]
         max_percent: f32,
-        /// Safety timeout in milliseconds; this is not an open-loop dwell objective
+        /// Safety timeout in milliseconds; actual writes are currently capped at 2000 ms
         #[arg(long, default_value = "15000")]
         timeout_ms: u64,
         /// HID read timeout in milliseconds while sampling steering motion
@@ -926,10 +926,10 @@ pub enum MozaCommands {
         /// Build the controlled-angle preflight receipt without opening or writing a HID device
         #[arg(long)]
         dry_run: bool,
-        /// Explicit acknowledgement required before any future controlled-angle writes
+        /// Explicit acknowledgement required before authorized controlled-angle writes
         #[arg(long)]
         confirm_controlled_angle: bool,
-        /// Write the native controlled-angle preflight receipt to this JSON file
+        /// Write the native controlled-angle receipt to this JSON file
         #[arg(long)]
         json_out: Option<std::path::PathBuf>,
     },
