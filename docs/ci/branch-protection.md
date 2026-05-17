@@ -69,6 +69,7 @@ Global required checks:
 - `CHANGELOG Validation`
 - `PR Change Filter`
 - `Docs & Policy Checks`
+- `Crate Surface Policy`
 - `PR Required Baseline`
 - `Game support matrix sync`
 - `track-compat-usage`
@@ -98,8 +99,8 @@ rulesets only when the matching PR surface is present:
 | Moza parser, verifier, or hardware receipt plumbing | `Moza Focused Checks` via the global ruleset; `Moza Receipt Verification` for `ci/hardware/**` and `crates/hid-moza-protocol/fixtures/**` |
 | Hardware docs-only changes | Same docs-only lane unless the PR also changes real receipt artifacts or parser/verifier code |
 | UI or packaging paths | `UI Isolation Build (ubuntu-22.04)`, `UI Isolation Build (ubuntu-24.04)` |
-| Dependency, `Cargo.lock`, workspace feature, or `deny.toml` changes | `Feature Combinations`, `Dependency Governance`, `Security & License Audit`, `Comprehensive Lint Gates & Governance (ubuntu-latest)` |
-| CI, workflow, scripts, or policy changes | `Feature Combinations`, `Dependency Governance`, `Comprehensive Lint Gates & Governance (ubuntu-latest)`, `Final Workspace Validation (ubuntu-latest)` |
+| Dependency, `Cargo.lock`, workspace feature, or `deny.toml` changes | `Crate Surface Policy`, `Feature Combinations`, `Dependency Governance`, `Security & License Audit`, `Comprehensive Lint Gates & Governance (ubuntu-latest)` |
+| CI, workflow, scripts, or policy changes | `Crate Surface Policy`, `Feature Combinations`, `Dependency Governance`, `Comprehensive Lint Gates & Governance (ubuntu-latest)`, `Final Workspace Validation (ubuntu-latest)` |
 | Performance-sensitive engine or integration-test paths | `Performance Gate` |
 | Release-candidate or `full-ci` labeled PRs | `Feature Combinations`, `Dependency Governance`, `Comprehensive Lint Gates & Governance (ubuntu-latest)`, `Performance Gate`, `Security & License Audit`, `Final Workspace Validation (ubuntu-latest)`, `Stress Tests`, `CI Soak Test`, `Comprehensive Validation` |
 

@@ -326,6 +326,20 @@ jobs:
       - name: Check whitespace-sensitive diffs
         run: git diff --check
 
+  crate-surface-policy:
+    name: Crate Surface Policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check crate surface policy
+        run: cargo run --locked -p openracing-tools --bin package-surface -- --check
+
   # Phase 0b: MSRV (Minimum Supported Rust Version) check
   msrv-check:
     name: MSRV Check
@@ -1565,6 +1579,7 @@ jobs:
       - pr-change-filter
       - changelog-validation
       - docs-policy-checks
+      - crate-surface-policy
     if: always()
     env:
       NEEDS_JSON: ${{ toJson(needs) }}
@@ -1596,6 +1611,7 @@ jobs:
           require("pr-change-filter")
           require("changelog-validation")
           require("docs-policy-checks")
+          require("crate-surface-policy")
 
           if failures:
               print("Baseline PR gates failed or did not complete:")
