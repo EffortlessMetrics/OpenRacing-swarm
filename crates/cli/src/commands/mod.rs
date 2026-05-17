@@ -1131,7 +1131,25 @@ pub enum MozaBundleStage {
         alias = "native_control_ready"
     )]
     OpenRacingControlReady,
-    /// Native control plus external simulator and vendor coexistence evidence
+    /// Native PIDFF output produced measurable steering response above noise floor
+    #[value(
+        name = "native-response-ready",
+        alias = "native-actuator-response-ready",
+        alias = "native_response_ready",
+        alias = "native_actuator_response_ready"
+    )]
+    NativeResponseReady,
+    /// Native visible motion proven without simulator or vendor-app compatibility gates
+    #[value(
+        name = "native-visible-ready",
+        alias = "native-motion-ready",
+        alias = "native-ffb-ready",
+        alias = "native_visible_ready",
+        alias = "native_motion_ready",
+        alias = "native_ffb_ready"
+    )]
+    NativeVisibleReady,
+    /// Native visible motion plus external simulator and vendor coexistence evidence
     SmokeReady,
 }
 

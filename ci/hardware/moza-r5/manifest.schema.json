@@ -36,6 +36,8 @@
         "passive_capture_ready",
         "zero_torque_ready",
         "openracing_control_ready",
+        "native_response_ready",
+        "native_visible_ready",
         "real_hardware_smoke_ready"
       ]
     },
@@ -516,6 +518,25 @@
         "properties": {
           "completion_state": {
             "const": "openracing_control_ready"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "hardware_validated": {
+            "const": true
+          },
+          "simulator_validated": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "completion_state": {
+            "enum": ["native_response_ready", "native_visible_ready"]
           }
         }
       },

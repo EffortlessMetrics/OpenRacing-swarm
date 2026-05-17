@@ -28,6 +28,42 @@
     "writes_ok": 4,
     "write_errors": 0
   },
+  "response_classification": {
+    "classification": "actuator_response_recorded_visible_motion_unproven",
+    "interpretation": "The 5 percent / 2000 ms PIDFF run produced measurable steering response above the response floor, but it did not meet the operator-visible motion threshold.",
+    "response_threshold_degrees": 0.1,
+    "visible_threshold_degrees": 1.0
+  },
+  "intentional_profile_design": {
+    "status": "profile_design_recorded_no_output_authorized",
+    "objective": "Record the next visible-motion profile decision before any output command is authorized.",
+    "current_cli_limits": {
+      "profile_options": [
+        "constant-low-force"
+      ],
+      "strategy": "pidff-bounded-effect",
+      "max_percent_limit": 5,
+      "duration_ms_limit": 2000,
+      "direct_report_0x20_allowed": false,
+      "high_torque_allowed": false,
+      "serial_firmware_dfu_allowed": false
+    },
+    "candidate_profiles": [
+      {
+        "name": "repeat_current_profile_after_specific_setup_fix",
+        "status": "not_authorized",
+        "profile": "constant-low-force",
+        "max_percent": 5,
+        "duration_ms": 2000,
+        "use_only_if": "Bench, setup, or FFB-mode review identifies a specific reason the previous 5 percent response stayed below the visible threshold."
+      },
+      {
+        "name": "higher_longer_or_shaped_profile",
+        "status": "requires_separate_software_and_safety_plan",
+        "reason": "The current visible smoke command is capped at 5 percent and 2000 ms and implements only constant-low-force."
+      }
+    ]
+  },
   "planned_next_output": {
     "allowed": false,
     "command": "",

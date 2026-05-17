@@ -297,7 +297,7 @@ wheelctl moza promote-manifest --lane ci/hardware/moza-r5/<date> --stage passive
 wheelctl moza audit-lane --lane ci/hardware/moza-r5/<date> --stage passive --json-out ci/hardware/moza-r5/<date>/lane-audit-passive.json
 ```
 
-When `verify-bundle` fails, its JSON receipt includes `next_commands` with the staged commands to rebuild evidence through the requested gate. For the passive stage those commands remain observe-only: enumeration, descriptor metadata, missing input capture, offline lane analysis, role-status sync, parser validation, fixture promotion, verification, manifest promotion, and lane audit. If a capture already exists but parser-visible role movement is missing, `next_commands` keeps the flow on `analyze-lane` / `sync-role-status` rather than blindly recapturing the same file. If a real visible-motion receipt failed and both the follow-up plan plus `pre-output-readiness.json` already exist, generated smoke-ready guidance stops at the operator action instead of looping on a timestamp-only readiness refresh. In that blocked state, `blocked_safe_followups` may list no-output Pit House subcase or simulator telemetry commands that can gather evidence without satisfying smoke-ready or authorizing another actuator output run.
+When `verify-bundle` fails, its JSON receipt includes `next_commands` with the staged commands to rebuild evidence through the requested gate. For the passive stage those commands remain observe-only: enumeration, descriptor metadata, missing input capture, offline lane analysis, role-status sync, parser validation, fixture promotion, verification, manifest promotion, and lane audit. If a capture already exists but parser-visible role movement is missing, `next_commands` keeps the flow on `analyze-lane` / `sync-role-status` rather than blindly recapturing the same file. Native stages are split from external compatibility: `openracing-control-ready` is the native control foundation, `native-response-ready` proves bounded PIDFF response above the response floor, `native-visible-ready` proves operator-visible motion, and `smoke-ready` adds simulator and Pit House evidence. Pit House, SimHub, simulator telemetry, and simulator FFB must not appear as prerequisites for native control or native response. If a real response receipt exists but visible motion remains unproven and both the follow-up plan plus `pre-output-readiness.json` already exist, generated native-visible and smoke-ready guidance stops at the operator action instead of looping on a timestamp-only readiness refresh. In that blocked state, `blocked_safe_followups` may list no-output Pit House subcase or simulator telemetry commands that can gather evidence without satisfying native-visible or smoke-ready, and without authorizing another actuator output run.
 
 Validate every passive capture before promoting fixtures. The verifier consumes `parser-fixture-validation.json` from `wheelctl moza validate-captures` as the lane summary and requires `fixture-promotion.json` from `wheelctl moza promote-fixtures`; it rejects a single passing idle capture as coverage for steering, pedals, HBP, KS, and ES. Promoted fixture entries may point to lane-relative files or repo-relative files under `crates/hid-moza-protocol/fixtures/...`, matching the documented parser fixture promotion command.
 
@@ -375,7 +375,32 @@ Required behavior:
 - Abort to final zero on any HID write error.
 - Receipt logs every command and final zero.
 
-## Phase 6: Pit House Coexistence
+## Phase 6: Native Response And Visible Motion
+
+OpenRacing native movement is independent of Pit House, SimHub, and simulator telemetry. The native path is descriptor, init, Stop All/zero, steering stream, bounded PIDFF output, measured response, then intentionally reviewed visible motion. External compatibility receipts are useful later, but they are not prerequisites for native OpenRacing control.
+
+The 1 percent actuator-profile receipt proves the native PIDFF output rail and cleanup path, but it does not claim visible motion. A bounded 5 percent / 2000 ms R5 PIDFF command can reasonably produce sub-degree motion after firmware filtering, friction, damping, wheel inertia, and centering behavior. The 2026-05-13 receipt measured about 0.181 degrees, sent the PIDFF reports, and sent final Stop All; classify that as actuator-response evidence, not as a failed output path.
+
+```powershell
+wheelctl moza steering-stream-proof --device <r5> --lane ci/hardware/moza-r5/<date> --duration-ms 5000 --jsonl-out ci/hardware/moza-r5/<date>/steering-angle-stream.jsonl --json-out ci/hardware/moza-r5/<date>/steering-angle-stream-proof.json
+wheelctl moza verify-bundle --lane ci/hardware/moza-r5/<date> --stage openracing-control-ready --json-out ci/hardware/moza-r5/<date>/openracing-control-verification.json
+wheelctl moza promote-manifest --lane ci/hardware/moza-r5/<date> --stage openracing-control-ready --json-out ci/hardware/moza-r5/<date>/manifest-promotion-openracing-control.json
+wheelctl moza audit-lane --lane ci/hardware/moza-r5/<date> --stage openracing-control-ready --json-out ci/hardware/moza-r5/<date>/lane-audit-openracing-control.json
+wheelctl moza verify-bundle --lane ci/hardware/moza-r5/<date> --stage native-response-ready --json-out ci/hardware/moza-r5/<date>/native-response-verification.json
+wheelctl moza promote-manifest --lane ci/hardware/moza-r5/<date> --stage native-response-ready --json-out ci/hardware/moza-r5/<date>/manifest-promotion-native-response.json
+wheelctl moza audit-lane --lane ci/hardware/moza-r5/<date> --stage native-response-ready --json-out ci/hardware/moza-r5/<date>/lane-audit-native-response.json
+```
+
+`native-response-ready` requires measured steering delta above the response threshold, same-lane steering and actuator-profile prerequisites, bounded PIDFF strategy, successful write accounting, final Stop All cleanup, and the same high-risk exclusions as visible motion. It does not require `success=true` or `movement_observed=true` from a visible-motion receipt, and it does not require Pit House or simulator artifacts.
+
+`native-visible-ready` remains stricter. It requires `success=true`, `movement_observed=true`, and measured steering delta that meets the visible-motion threshold. The current 0.181 degree receipt must still fail this stage. Do not rerun, raise force, or replace `native-actuator-visible-smoke.json` merely because the bench is available. First create or update the non-claiming follow-up plan, record the intended next profile and why the prior 5 percent response did not meet the visible threshold, then require a fresh bench-clear for the exact output command before `planned_next_output.allowed` can become true. The current visible-smoke command supports only `constant-low-force`, `pidff-bounded-effect`, at up to 5 percent for up to 2000 ms; any higher, longer, or shaped profile needs a separate software and safety plan.
+
+```powershell
+wheelctl moza receipt-template --kind visible-motion-follow-up --json-out ci/hardware/moza-r5/<date>/native-actuator-visible-follow-up-plan.json
+wheelctl moza verify-bundle --lane ci/hardware/moza-r5/<date> --stage native-visible-ready --json-out ci/hardware/moza-r5/<date>/native-visible-verification.json
+```
+
+## Phase 7: Pit House Coexistence
 
 Pit House coexistence is a separate test. Do not infer it from passive capture or low-torque success.
 
@@ -405,7 +430,7 @@ Pit House coexistence is a separate test. Do not infer it from passive capture o
 - source links on every case artifact: `source_receipt`, `source_gate`, and `source_log`, with `source_record_kinds` or `source_record_kind` where the evidence is a command log. The verifier reuses the linked gates instead of trusting operator booleans alone.
 - case-specific artifact evidence: closed Pit House records `staged_handshake_ready` linked to `init-off.json` / `init_off_handshake` feature reports; open idle records `ffb_mode: "standard"` linked to `init-standard.json` / `init_standard_handshake`; direct mode records `blocked` or `operator_ack_required` linked to `low-torque-proof.json` / `low_torque_bounded`; mode change records `mismatch_detected`, `failed_safe`, output cleared, and final-zero attempted linked to `simulator-ffb-smoke.json` / `simulator_ffb_bounded` with a `clear_zero` record tagged `source_clear_event: "mode_mismatch"` and `source_requires_final_zero: true`; firmware/update page records `high_risk_refused` linked to `support-bundle.json` / `service_status_receipts`
 
-The closed, open-idle, direct-block, and firmware-page artifacts can be collected during this phase. The `pit_house_mode_change_during_run` artifact and the final `pit-house-coexistence.json` parent receipt must be generated after Phase 7 bounded simulator FFB smoke, because the verifier requires the mode-change case to link to `simulator-ffb-smoke.json` and a `clear_zero` output record tagged `mode_mismatch`.
+The closed, open-idle, direct-block, and firmware-page artifacts can be collected during this phase. The `pit_house_mode_change_during_run` artifact and the final `pit-house-coexistence.json` parent receipt must be generated after Phase 8 bounded simulator FFB smoke, because the verifier requires the mode-change case to link to `simulator-ffb-smoke.json` and a `clear_zero` output record tagged `mode_mismatch`.
 
 Generate each Pit House state observation receipt with the dedicated no-HID observation command, then reference the resulting JSON from the matching case artifact. Operator notes alone are not verifier-accepted evidence; save a lane-relative screenshot, video, or process/window snapshot first and pass it as `--evidence-artifact`. For process/window evidence on Windows, use `pit-house-evidence`; it writes a no-output JSON snapshot and `pit-house-observation` rejects wheelctl-generated snapshots that contradict the requested case:
 
@@ -448,7 +473,7 @@ The generated template has `success: false` and is intentionally rejected by `ve
 
 The bundle verifier requires the direct-mode case to be blocked or require explicit acknowledgement, the mode-change case to detect mismatch or fail safe, and the firmware/update-page case to refuse high-risk tests.
 
-## Phase 7: Simulator Proof
+## Phase 8: Simulator Proof
 
 Start with telemetry only, then run bounded simulator-to-Moza smoke.
 
@@ -475,7 +500,7 @@ wheeld --hardware-lane ci/hardware/moza-r5/<date>
 wheelctl moza simulator-ffb-smoke --lane ci/hardware/moza-r5/<date> --game simhub-bridge --telemetry-source simhub_bridge --output-log-artifact simulator-ffb-output.jsonl --strategy pidff-bounded-effect --descriptor-trusted --watchdog-timeout-ms 100 --stop-cleared-output --pause-cleared-output --game-exit-cleared-output --json-out ci/hardware/moza-r5/<date>/simulator-ffb-smoke.json
 ```
 
-Starter templates are available for the failed visible-motion follow-up review and offline preparation of the two simulator receipts:
+Starter templates are available for the response-only visible-motion follow-up review and offline preparation of the two simulator receipts:
 
 ```powershell
 wheelctl moza receipt-template --kind visible-motion-follow-up --json-out ci/hardware/moza-r5/<date>/native-actuator-visible-follow-up-plan.json
@@ -483,7 +508,7 @@ wheelctl moza receipt-template --kind simulator-telemetry --json-out ci/hardware
 wheelctl moza receipt-template --kind simulator-ffb --json-out ci/hardware/moza-r5/<date>/simulator-ffb-smoke.json
 ```
 
-These templates also default to `success: false`. The visible-motion follow-up template is only a review artifact after a failed real visible-motion receipt; it does not authorize another output attempt, replace the failed receipt, or satisfy the visible-motion gate. The simulator templates must not be used as evidence until a real telemetry recording or bounded FFB smoke run fills the fields.
+These templates also default to `success: false`. The visible-motion follow-up template is only a review artifact after a response-only real visible-motion receipt; it does not authorize another output attempt, replace the preserved response/visible-motion receipt, or satisfy the visible-motion gate. Its profile-design section records the current command limits and keeps higher, longer, or shaped profile ideas in `requires_separate_software_and_safety_plan` state until a later PR and bench-clear authorize an exact command. The simulator templates must not be used as evidence until a real telemetry recording or bounded FFB smoke run fills the fields.
 The simulator FFB template includes operator-pending `prerequisite_gates`, same-lane `prerequisite_artifacts`, telemetry session, and writer timing placeholders so the required provenance fields are visible before the real run.
 
 After passing native visible-motion, simulator, and Pit House receipts exist, write the stored smoke-ready verification receipt:
@@ -513,7 +538,7 @@ Use the top-level `wheelctl support-bundle --device <r5>` form for the lane arti
 
 The smoke-ready verifier requires `moza-status.json`, `device-status.json`, and `support-bundle.json`. These receipts must all identify the same R5 PID, including the support bundle's top-level `devices[]` entry and service-facing `device_statuses[]` snapshot. They must keep `ffb_ready`, direct mode, high torque, and `safe_to_send_torque` false, include descriptor CRC/source where service status is involved, declare no FFB/serial/firmware/DFU commands, and keep support-bundle readiness as diagnostic context with `release_ready: false`. During service-status verification, the Moza support-bundle section is checked against a fresh lane read on a no-overclaim basis: a bundle may conservatively show an earlier stage or a missing artifact from when it was generated, but it cannot claim a passing readiness flag, lane-audit flag, highest stage, or artifact `pass` state that the current lane cannot prove.
 
-The support bundle includes service-facing `device_statuses` snapshots plus a Moza section with an `artifact_index` for every required lane receipt/capture, including stored verification, manifest-promotion, and lane-audit receipts even when they are still missing, and a diagnostic `readiness` summary with `highest_passing_stage`, `next_required_stage`, `first_blocking_stage`, `ready_for_zero_torque`, `ready_for_low_torque`, `ready_for_native_control`, `ready_for_external_compatibility`, `ready_for_real_hardware_smoke`, lane-audit booleans, and `release_ready: false`. Each artifact-index entry must record the path, kind, required stage, existence/validity booleans, and a consistent `pass`, `missing`, or `invalid` status. `ready_for_zero_torque` requires the passive verifier, `lane-audit-passive.json`, and at least one implemented descriptor-trusted zero-output strategy; `ready_for_low_torque` requires either the descriptor/direct zero path for `direct_report_0x20` or the descriptor-proven PIDFF bounded-effect path with same-lane PIDFF zero and init receipts; `ready_for_native_control` tracks the OpenRacing-owned movement path and excludes SimHub/Pit House; `ready_for_external_compatibility` tracks simulator bridge and vendor-app coexistence gates; `ready_for_real_hardware_smoke` requires the smoke-ready verifier plus `lane-audit-smoke-ready.json`. This summary helps triage missing receipts and failed gates, but it is not a readiness promotion by itself.
+The support bundle includes service-facing `device_statuses` snapshots plus a Moza section with an `artifact_index` for every required lane receipt/capture, including stored verification, manifest-promotion, and lane-audit receipts even when they are still missing, and a diagnostic `readiness` summary with `highest_passing_stage`, `next_required_stage`, `first_blocking_stage`, `ready_for_zero_torque`, `ready_for_low_torque`, `ready_for_native_control`, `native_actuator_response_proven`, `native_visible_motion_proven`, `ready_for_external_compatibility`, `ready_for_real_hardware_smoke`, lane-audit booleans, and `release_ready: false`. Each artifact-index entry must record the path, kind, required stage, existence/validity booleans, and a consistent `pass`, `missing`, or `invalid` status. `ready_for_zero_torque` requires the passive verifier, `lane-audit-passive.json`, and at least one implemented descriptor-trusted zero-output strategy; `ready_for_low_torque` requires either the descriptor/direct zero path for `direct_report_0x20` or the descriptor-proven PIDFF bounded-effect path with same-lane PIDFF zero and init receipts; `ready_for_native_control` tracks the OpenRacing-owned movement path and excludes SimHub/Pit House; `native_actuator_response_proven` and `native_visible_motion_proven` distinguish measured PIDFF response from operator-visible motion; `ready_for_external_compatibility` tracks simulator bridge and vendor-app coexistence gates; `ready_for_real_hardware_smoke` requires the smoke-ready verifier plus `lane-audit-smoke-ready.json`. This summary helps triage missing receipts and failed gates, but it is not a readiness promotion by itself.
 
 This command reads lane receipts only; it opens no HID device and sends no reports. The Moza section is diagnostic context for missing artifacts and failed gates, not a manifest promotion or compatibility claim.
 
