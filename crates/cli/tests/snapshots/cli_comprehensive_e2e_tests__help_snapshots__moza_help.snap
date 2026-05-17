@@ -8,41 +8,42 @@ Safe Moza HID probe and capture commands
 Usage: wheelctl moza [OPTIONS] <COMMAND>
 
 Commands:
-  init-lane                  Create a Moza R5 validation lane manifest and capture directory
-  probe                      Probe connected Moza HID devices without sending FFB writes
-  status                     Summarize Moza device and lane readiness without opening HID devices
-  descriptor                 Capture descriptor metadata for connected Moza HID devices
-  capture-input              Capture input reports from one Moza HID device without FFB writes
-  steering-stream-proof      Record native steering angle samples from the lane R5 endpoint without output writes
-  validate-capture           Validate captured Moza input JSONL through the parser without hardware writes
-  analyze-capture            Analyze raw byte/word movement in a captured Moza input JSONL without hardware writes
-  analyze-lane               Compare required passive lane captures against idle without hardware writes
-  sync-role-status           Sync manifest logical-control semantic_status fields from stored captures
-  validate-captures          Validate every required Moza lane capture through the parser without hardware writes
-  pre-output-readiness       Summarize whether a Moza lane is ready for zero-torque or FFB output
-  promote-fixture            Promote a validated Moza capture JSONL into a parser fixture file
-  promote-fixtures           Promote every required Moza lane capture into parser fixture files
-  zero                       Send bounded zero-torque output reports to a Moza wheelbase
-  watchdog-proof             Inject a watchdog timeout and prove the response is final zero
-  disconnect-proof           Write zero torque until a disconnect is observed, then attempt final zero
-  init                       Run the staged Moza wheelbase handshake in off or standard mode
-  torque-test                Send a gated low-torque ladder after a passing real zero-torque proof
-  actuator-profile-smoke     Run a native bounded PIDFF actuator profile after steering feedback is proven
-  actuator-visible-smoke     Run a bounded native actuator smoke that must prove visible steering motion
-  controlled-angle-smoke     Preflight the feedback-bounded native controlled-angle ramp without HID output
-  authorize-visible-output   Authorize one exact native visible-motion retry after fresh bench-clear
-  receipt-template           Write a non-claiming starter receipt for manual Pit House or simulator evidence
-  pit-house-observation      Write an observed Pit House UI/process state receipt
-  pit-house-evidence         Capture a no-output Pit House process/window snapshot evidence artifact
-  pit-house-availability     Capture a non-claiming Pit House install/process availability receipt
-  pit-house-case             Build one Pit House coexistence case artifact from source receipts
-  pit-house-proof            Build a Pit House coexistence receipt from observed case artifact files
-  simulator-telemetry-proof  Build a telemetry-only simulator proof receipt from normalized snapshots
-  simulator-ffb-smoke        Build a bounded simulator-to-Moza FFB smoke proof from output logs
-  promote-manifest           Promote manifest completion state only after a live bundle verification passes
-  verify-bundle              Verify a Moza hardware lane receipt bundle before claiming readiness
-  audit-lane                 Audit stored verification and manifest-promotion receipts after promotion
-  help                       Print this message or the help of the given subcommand(s)
+  init-lane                          Create a Moza R5 validation lane manifest and capture directory
+  probe                              Probe connected Moza HID devices without sending FFB writes
+  status                             Summarize Moza device and lane readiness without opening HID devices
+  descriptor                         Capture descriptor metadata for connected Moza HID devices
+  capture-input                      Capture input reports from one Moza HID device without FFB writes
+  steering-stream-proof              Record native steering angle samples from the lane R5 endpoint without output writes
+  validate-capture                   Validate captured Moza input JSONL through the parser without hardware writes
+  analyze-capture                    Analyze raw byte/word movement in a captured Moza input JSONL without hardware writes
+  analyze-lane                       Compare required passive lane captures against idle without hardware writes
+  sync-role-status                   Sync manifest logical-control semantic_status fields from stored captures
+  validate-captures                  Validate every required Moza lane capture through the parser without hardware writes
+  pre-output-readiness               Summarize whether a Moza lane is ready for zero-torque or FFB output
+  promote-fixture                    Promote a validated Moza capture JSONL into a parser fixture file
+  promote-fixtures                   Promote every required Moza lane capture into parser fixture files
+  zero                               Send bounded zero-torque output reports to a Moza wheelbase
+  watchdog-proof                     Inject a watchdog timeout and prove the response is final zero
+  disconnect-proof                   Write zero torque until a disconnect is observed, then attempt final zero
+  init                               Run the staged Moza wheelbase handshake in off or standard mode
+  torque-test                        Send a gated low-torque ladder after a passing real zero-torque proof
+  actuator-profile-smoke             Run a native bounded PIDFF actuator profile after steering feedback is proven
+  actuator-visible-smoke             Run a bounded native actuator smoke that must prove visible steering motion
+  controlled-angle-smoke             Preflight or run one authorized feedback-bounded native controlled-angle attempt
+  authorize-visible-output           Authorize one exact native visible-motion retry after fresh bench-clear
+  authorize-controlled-angle-output  Authorize one exact native controlled-angle hardware attempt after fresh bench-clear
+  receipt-template                   Write a non-claiming starter receipt for manual Pit House or simulator evidence
+  pit-house-observation              Write an observed Pit House UI/process state receipt
+  pit-house-evidence                 Capture a no-output Pit House process/window snapshot evidence artifact
+  pit-house-availability             Capture a non-claiming Pit House install/process availability receipt
+  pit-house-case                     Build one Pit House coexistence case artifact from source receipts
+  pit-house-proof                    Build a Pit House coexistence receipt from observed case artifact files
+  simulator-telemetry-proof          Build a telemetry-only simulator proof receipt from normalized snapshots
+  simulator-ffb-smoke                Build a bounded simulator-to-Moza FFB smoke proof from output logs
+  promote-manifest                   Promote manifest completion state only after a live bundle verification passes
+  verify-bundle                      Verify a Moza hardware lane receipt bundle before claiming readiness
+  audit-lane                         Audit stored verification and manifest-promotion receipts after promotion
+  help                               Print this message or the help of the given subcommand(s)
 
 Options:
       --json        Output in JSON format for machine parsing
