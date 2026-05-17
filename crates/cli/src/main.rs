@@ -2472,6 +2472,43 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_pit_house_availability() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "moza",
+            "pit-house-availability",
+            "--operator",
+            "Steven",
+            "--evidence",
+            "Pit House is not installed on this host.",
+            "--json-out",
+            "pit-house-availability.json",
+            "--overwrite",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::PitHouseAvailability {
+                operator,
+                evidence,
+                json_out,
+                overwrite,
+            }) => {
+                assert_eq!(operator, "Steven");
+                assert_eq!(
+                    evidence.as_deref(),
+                    Some("Pit House is not installed on this host.")
+                );
+                assert_eq!(
+                    json_out.as_path().to_str(),
+                    Some("pit-house-availability.json")
+                );
+                assert!(*overwrite);
+            }
+            _ => return Err("expected Moza PitHouseAvailability command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_pit_house_observation() -> TestResult {
         let cli = Cli::try_parse_from([
             "wheelctl",

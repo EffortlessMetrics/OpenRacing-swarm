@@ -360,6 +360,14 @@ struct PitHouseEvidenceRequest<'a> {
     overwrite: bool,
 }
 
+struct PitHouseAvailabilityRequest<'a> {
+    json: bool,
+    operator: &'a str,
+    evidence: Option<&'a str>,
+    json_out: &'a Path,
+    overwrite: bool,
+}
+
 struct PitHouseCaseRequest<'a> {
     json: bool,
     lane: &'a Path,
@@ -798,6 +806,21 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             pit_house_evidence(PitHouseEvidenceRequest {
                 json,
                 case: *case,
+                operator,
+                evidence: evidence.as_deref(),
+                json_out,
+                overwrite: *overwrite,
+            })
+            .await
+        }
+        MozaCommands::PitHouseAvailability {
+            operator,
+            evidence,
+            json_out,
+            overwrite,
+        } => {
+            pit_house_availability(PitHouseAvailabilityRequest {
+                json,
                 operator,
                 evidence: evidence.as_deref(),
                 json_out,
@@ -3882,6 +3905,36 @@ async fn pit_house_evidence(request: PitHouseEvidenceRequest<'_>) -> Result<()> 
         "Pit House process/window evidence",
         &receipt,
     )
+}
+
+async fn pit_house_availability(request: PitHouseAvailabilityRequest<'_>) -> Result<()> {
+    let PitHouseAvailabilityRequest {
+        json,
+        operator,
+        evidence,
+        json_out,
+        overwrite,
+    } = request;
+
+    if operator.trim().is_empty() {
+        return Err(anyhow!("--operator must not be empty"));
+    }
+    if let Some(evidence) = evidence
+        && evidence.trim().is_empty()
+    {
+        return Err(anyhow!("--evidence must not be empty when provided"));
+    }
+
+    let receipt = pit_house_availability_receipt(
+        operator,
+        evidence,
+        scan_pit_house_process_windows(),
+        scan_pit_house_installation(),
+    );
+
+    ensure_receipt_writable(json_out, overwrite)?;
+    write_json_receipt(Some(json_out), &receipt)?;
+    print_proof_receipt(json, json_out, "Pit House availability", &receipt)
 }
 
 async fn pit_house_case(request: PitHouseCaseRequest<'_>) -> Result<()> {
@@ -8344,22 +8397,60 @@ fn blocked_safe_followups_for_bundle_stage(
     }
 
     let mut followups = Vec::new();
-    let mut pit_house_commands = Vec::new();
-    push_pit_house_pre_mode_change_safe_commands(lane, &mut pit_house_commands);
-    if !pit_house_commands.is_empty() {
-        followups.push(BundleBlockedSafeFollowup {
-            name: "pit_house_pre_mode_change_evidence",
-            reason: "Visible-motion remains blocked, but Pit House closed/open-standard/open-direct/firmware-page observations and case receipts are no-output evidence work. Mode-change and parent coexistence proof remain deferred until simulator FFB exists.".to_string(),
-            hardware_output_enabled: false,
-            no_hid_device_opened: true,
-            no_ffb_writes: true,
-            commands: pit_house_commands,
-            notes: vec![
-                "Run pit-house-evidence first when the matching process/window snapshot artifact is missing.".to_string(),
-                "pit-house-observation rejects wheelctl-generated snapshots that do not match the requested Pit House case.".to_string(),
-                "Do not run pit-house-proof or claim full coexistence from these subcases alone.".to_string(),
-            ],
-        });
+    match pit_house_availability_state(lane) {
+        PitHouseAvailabilityState::MissingOrInvalid => {
+            let mut commands = Vec::new();
+            push_pit_house_availability_next_command(lane, &mut commands, false);
+            followups.push(BundleBlockedSafeFollowup {
+                name: "pit_house_availability_check",
+                reason: "Visible-motion remains blocked, and Pit House open-state evidence should start with a no-output install/process availability receipt before generating case-specific observations.".to_string(),
+                hardware_output_enabled: false,
+                no_hid_device_opened: true,
+                no_ffb_writes: true,
+                commands,
+                notes: vec![
+                    "This availability receipt is not Pit House coexistence proof.".to_string(),
+                    "If Pit House is absent, leave smoke-ready blocked instead of fabricating open-state observations.".to_string(),
+                    "If Pit House is available, rerun verify-bundle and follow the generated case-specific observation commands.".to_string(),
+                ],
+            });
+        }
+        PitHouseAvailabilityState::Unavailable => {
+            let mut commands = Vec::new();
+            push_pit_house_availability_next_command(lane, &mut commands, true);
+            followups.push(BundleBlockedSafeFollowup {
+                name: "pit_house_unavailable_recorded",
+                reason: "Visible-motion remains blocked, and the lane records that Pit House is not installed or running on this host. Smoke-ready remains blocked rather than fabricating coexistence evidence.".to_string(),
+                hardware_output_enabled: false,
+                no_hid_device_opened: true,
+                no_ffb_writes: true,
+                commands,
+                notes: vec![
+                    "Refresh this availability receipt after installing or launching Pit House.".to_string(),
+                    "Do not run pit-house-observation open-state cases until the availability receipt shows Pit House is present.".to_string(),
+                    "Do not run pit-house-proof or claim full coexistence from an unavailable receipt.".to_string(),
+                ],
+            });
+        }
+        PitHouseAvailabilityState::Available => {
+            let mut pit_house_commands = Vec::new();
+            push_pit_house_pre_mode_change_safe_commands(lane, &mut pit_house_commands);
+            if !pit_house_commands.is_empty() {
+                followups.push(BundleBlockedSafeFollowup {
+                    name: "pit_house_pre_mode_change_evidence",
+                    reason: "Visible-motion remains blocked, but Pit House closed/open-standard/open-direct/firmware-page observations and case receipts are no-output evidence work. Mode-change and parent coexistence proof remain deferred until simulator FFB exists.".to_string(),
+                    hardware_output_enabled: false,
+                    no_hid_device_opened: true,
+                    no_ffb_writes: true,
+                    commands: pit_house_commands,
+                    notes: vec![
+                        "Run pit-house-evidence first when the matching process/window snapshot artifact is missing.".to_string(),
+                        "pit-house-observation rejects wheelctl-generated snapshots that do not match the requested Pit House case.".to_string(),
+                        "Do not run pit-house-proof or claim full coexistence from these subcases alone.".to_string(),
+                    ],
+                });
+            }
+        }
     }
 
     if !bundle_gate_check_passed(gates, "simulator_telemetry") {
@@ -8390,6 +8481,53 @@ fn blocked_safe_followups_for_bundle_stage(
     }
 
     followups
+}
+
+enum PitHouseAvailabilityState {
+    MissingOrInvalid,
+    Unavailable,
+    Available,
+}
+
+fn pit_house_availability_state(lane: &Path) -> PitHouseAvailabilityState {
+    let Ok(receipt) = read_json_value(lane, "pit-house-availability.json") else {
+        return PitHouseAvailabilityState::MissingOrInvalid;
+    };
+    if !pit_house_availability_receipt_is_safe(&receipt) {
+        return PitHouseAvailabilityState::MissingOrInvalid;
+    }
+    if json_bool(&receipt, "pit_house_available") == Some(true) {
+        PitHouseAvailabilityState::Available
+    } else {
+        PitHouseAvailabilityState::Unavailable
+    }
+}
+
+fn pit_house_availability_receipt_is_safe(receipt: &Value) -> bool {
+    json_bool(receipt, "success") == Some(true)
+        && json_string(receipt, "command") == Some("wheelctl moza pit-house-availability")
+        && json_string(receipt, "evidence_status") == Some("non_claiming_external_app_availability")
+        && json_bool(receipt, "pit_house_coexistence_proven") == Some(false)
+        && json_bool(receipt, "satisfies_pit_house_coexistence") == Some(false)
+        && json_bool(receipt, "no_hid_device_opened") == Some(true)
+        && json_bool(receipt, "no_ffb_writes") == Some(true)
+        && no_out_of_scope_device_commands(receipt)
+}
+
+fn push_pit_house_availability_next_command(
+    lane: &Path,
+    commands: &mut Vec<String>,
+    overwrite: bool,
+) {
+    let mut command = format!(
+        "wheelctl moza pit-house-availability --operator Steven --evidence {} --json-out {}",
+        command_arg("Pit House install/process/window availability snapshot."),
+        lane_path_arg(lane, "pit-house-availability.json")
+    );
+    if overwrite {
+        command.push_str(" --overwrite");
+    }
+    commands.push(command);
 }
 
 fn push_pit_house_pre_mode_change_safe_commands(lane: &Path, commands: &mut Vec<String>) {
@@ -9260,6 +9398,18 @@ fn push_external_smoke_ready_next_commands(
             ));
         }
         return;
+    }
+
+    match pit_house_availability_state(lane) {
+        PitHouseAvailabilityState::MissingOrInvalid => {
+            push_pit_house_availability_next_command(lane, commands, false);
+            return;
+        }
+        PitHouseAvailabilityState::Unavailable => {
+            push_pit_house_availability_next_command(lane, commands, true);
+            return;
+        }
+        PitHouseAvailabilityState::Available => {}
     }
 
     for (case, case_id, evidence_artifact, artifact, evidence) in [
@@ -16087,6 +16237,92 @@ struct PitHouseProcessWindowScan {
     error: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct PitHouseInstallMatch {
+    source: String,
+    name: String,
+    path: Option<String>,
+    version: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PitHouseInstallationScan {
+    installation_scan_attempted: bool,
+    matched_installations: Vec<PitHouseInstallMatch>,
+    error: Option<String>,
+}
+
+fn pit_house_availability_receipt(
+    operator: &str,
+    evidence: Option<&str>,
+    process_scan: PitHouseProcessWindowScan,
+    installation_scan: PitHouseInstallationScan,
+) -> Value {
+    let process_visible = !process_scan.matched_processes.is_empty();
+    let installed = !installation_scan.matched_installations.is_empty();
+    let available = process_visible || installed;
+    let status = match (
+        available,
+        installed,
+        process_visible,
+        process_scan.error.is_some() || installation_scan.error.is_some(),
+    ) {
+        (true, true, true, _) => "installed_and_running",
+        (true, true, false, _) => "installed_not_running",
+        (true, false, true, _) => "running_install_location_unknown",
+        (false, false, false, true) => "unknown_scan_error",
+        (false, false, false, false) => "not_installed_or_not_running",
+        _ => "unknown",
+    };
+    let evidence_note = evidence
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            if available {
+                "Pit House availability evidence found by install or process/window scan."
+                    .to_string()
+            } else {
+                "Pit House was not found by install, process, or window scan on this host."
+                    .to_string()
+            }
+        });
+
+    serde_json::json!({
+        "success": true,
+        "command": "wheelctl moza pit-house-availability",
+        "generated_at_utc": now_utc(),
+        "evidence_status": "non_claiming_external_app_availability",
+        "operator": operator,
+        "evidence": evidence_note,
+        "platform": std::env::consts::OS,
+        "availability_status": status,
+        "pit_house_available": available,
+        "pit_house_installed": installed,
+        "pit_house_process_visible": process_visible,
+        "pit_house_coexistence_proven": false,
+        "satisfies_pit_house_coexistence": false,
+        "installation_scan_attempted": installation_scan.installation_scan_attempted,
+        "matched_installation_count": installation_scan.matched_installations.len(),
+        "matched_installations": installation_scan.matched_installations,
+        "installation_scan_error": installation_scan.error,
+        "process_scan_attempted": process_scan.process_scan_attempted,
+        "window_title_scan_attempted": process_scan.window_title_scan_attempted,
+        "matched_process_count": process_scan.matched_processes.len(),
+        "matched_processes": process_scan.matched_processes,
+        "process_window_scan_error": process_scan.error,
+        "notes": [
+            "Availability is not coexistence proof and must not satisfy pit-house-coexistence.json.",
+            "If Pit House is absent, leave smoke-ready blocked instead of fabricating open-state observations.",
+            "This command opens no HID device and sends no output, feature, serial, firmware, or DFU commands."
+        ],
+        "no_hid_device_opened": true,
+        "no_ffb_writes": true,
+        "no_serial_config_commands": true,
+        "no_firmware_or_dfu_commands": true
+    })
+}
+
 fn pit_house_evidence_receipt(
     case: MozaPitHouseObservationCase,
     operator: &str,
@@ -16175,6 +16411,124 @@ fn scan_pit_house_process_windows() -> PitHouseProcessWindowScan {
             error: Some(error.to_string()),
         },
     }
+}
+
+fn scan_pit_house_installation() -> PitHouseInstallationScan {
+    if !cfg!(windows) {
+        return PitHouseInstallationScan {
+            installation_scan_attempted: false,
+            matched_installations: Vec::new(),
+            error: Some(
+                "Pit House installation scan is currently implemented only on Windows".into(),
+            ),
+        };
+    }
+
+    let script = r#"$ErrorActionPreference='SilentlyContinue';
+$matches = @();
+$roots = @($env:ProgramFiles, ${env:ProgramFiles(x86)});
+foreach ($root in $roots) {
+  if ($root -and (Test-Path $root)) {
+    Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -match 'MOZA|Pit House|Pithouse' -or $_.FullName -match 'MOZA|Pit House|Pithouse' } |
+      ForEach-Object { $matches += [pscustomobject]@{ source='program_files'; name=$_.Name; path=$_.FullName; version=$null } };
+  }
+}
+$menus = @($env:ProgramData + '\Microsoft\Windows\Start Menu\Programs', $env:APPDATA + '\Microsoft\Windows\Start Menu\Programs');
+foreach ($menu in $menus) {
+  if ($menu -and (Test-Path $menu)) {
+    Get-ChildItem -Path $menu -Recurse -Filter '*MOZA*' -ErrorAction SilentlyContinue |
+      ForEach-Object { $matches += [pscustomobject]@{ source='start_menu'; name=$_.Name; path=$_.FullName; version=$null } };
+  }
+}
+$regRoots = @(
+  'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
+  'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
+  'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
+);
+foreach ($regRoot in $regRoots) {
+  Get-ItemProperty $regRoot -ErrorAction SilentlyContinue |
+    Where-Object { $_.DisplayName -match 'MOZA|Pit House|Pithouse' } |
+    ForEach-Object { $matches += [pscustomobject]@{ source='uninstall_registry'; name=$_.DisplayName; path=$_.InstallLocation; version=$_.DisplayVersion } };
+}
+@($matches | Sort-Object source,name,path -Unique) | ConvertTo-Json -Depth 3 -Compress"#;
+
+    match Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            match pit_house_install_matches_from_powershell_json(&stdout) {
+                Ok(matched_installations) => PitHouseInstallationScan {
+                    installation_scan_attempted: true,
+                    matched_installations,
+                    error: None,
+                },
+                Err(error) => PitHouseInstallationScan {
+                    installation_scan_attempted: true,
+                    matched_installations: Vec::new(),
+                    error: Some(error.to_string()),
+                },
+            }
+        }
+        Ok(output) => PitHouseInstallationScan {
+            installation_scan_attempted: true,
+            matched_installations: Vec::new(),
+            error: Some(format!("powershell exited with status {}", output.status)),
+        },
+        Err(error) => PitHouseInstallationScan {
+            installation_scan_attempted: true,
+            matched_installations: Vec::new(),
+            error: Some(error.to_string()),
+        },
+    }
+}
+
+fn pit_house_install_matches_from_powershell_json(
+    output: &str,
+) -> Result<Vec<PitHouseInstallMatch>> {
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+    let value: Value = serde_json::from_str(trimmed)
+        .with_context(|| "failed to parse Pit House install scan JSON")?;
+    let records: Vec<Value> = match value {
+        Value::Array(records) => records,
+        Value::Null => Vec::new(),
+        record => vec![record],
+    };
+
+    let mut matches = Vec::new();
+    for record in records {
+        let Some(name) = json_string(&record, "name")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        let source = json_string(&record, "source")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("unknown")
+            .to_string();
+        let path = json_string(&record, "path")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let version = json_string(&record, "version")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        matches.push(PitHouseInstallMatch {
+            source,
+            name: name.to_string(),
+            path,
+            version,
+        });
+    }
+    Ok(matches)
 }
 
 #[cfg(test)]
@@ -27361,6 +27715,75 @@ mod tests {
         ])
     }
 
+    fn pit_house_availability_receipt_available() -> Value {
+        serde_json::json!({
+            "success": true,
+            "command": "wheelctl moza pit-house-availability",
+            "generated_at_utc": "2026-05-06T00:00:00Z",
+            "evidence_status": "non_claiming_external_app_availability",
+            "operator": "Steven",
+            "evidence": "Pit House is installed or visible for open-state compatibility observations.",
+            "availability_status": "installed_and_running",
+            "pit_house_available": true,
+            "pit_house_installed": true,
+            "pit_house_process_visible": true,
+            "pit_house_coexistence_proven": false,
+            "satisfies_pit_house_coexistence": false,
+            "installation_scan_attempted": true,
+            "matched_installation_count": 1,
+            "matched_installations": [
+                {
+                    "source": "program_files",
+                    "name": "MOZA Pit House",
+                    "path": "C:\\Program Files\\MOZA Pit House",
+                    "version": "test"
+                }
+            ],
+            "process_scan_attempted": true,
+            "window_title_scan_attempted": true,
+            "matched_process_count": 1,
+            "matched_processes": [
+                {
+                    "process_name": "MOZA Pit House",
+                    "pid": 1234,
+                    "window_title": "MOZA Pit House"
+                }
+            ],
+            "no_hid_device_opened": true,
+            "no_ffb_writes": true,
+            "no_serial_config_commands": true,
+            "no_firmware_or_dfu_commands": true
+        })
+    }
+
+    fn pit_house_availability_receipt_unavailable() -> Value {
+        serde_json::json!({
+            "success": true,
+            "command": "wheelctl moza pit-house-availability",
+            "generated_at_utc": "2026-05-06T00:00:00Z",
+            "evidence_status": "non_claiming_external_app_availability",
+            "operator": "Steven",
+            "evidence": "Pit House is not installed or running on this host.",
+            "availability_status": "not_installed_or_not_running",
+            "pit_house_available": false,
+            "pit_house_installed": false,
+            "pit_house_process_visible": false,
+            "pit_house_coexistence_proven": false,
+            "satisfies_pit_house_coexistence": false,
+            "installation_scan_attempted": true,
+            "matched_installation_count": 0,
+            "matched_installations": [],
+            "process_scan_attempted": true,
+            "window_title_scan_attempted": true,
+            "matched_process_count": 0,
+            "matched_processes": [],
+            "no_hid_device_opened": true,
+            "no_ffb_writes": true,
+            "no_serial_config_commands": true,
+            "no_firmware_or_dfu_commands": true
+        })
+    }
+
     fn pit_house_observation_receipt(case_id: &str, observed_state: &str) -> Value {
         serde_json::json!({
             "success": true,
@@ -33281,6 +33704,98 @@ mod tests {
         );
     }
 
+    #[test]
+    fn pit_house_availability_receipt_is_non_claiming_when_absent() {
+        let receipt = pit_house_availability_receipt(
+            "Steven",
+            Some("Pit House was not found on this host."),
+            PitHouseProcessWindowScan {
+                process_scan_attempted: true,
+                window_title_scan_attempted: true,
+                matched_processes: Vec::new(),
+                error: None,
+            },
+            PitHouseInstallationScan {
+                installation_scan_attempted: true,
+                matched_installations: Vec::new(),
+                error: None,
+            },
+        );
+
+        assert_eq!(
+            json_string(&receipt, "command"),
+            Some("wheelctl moza pit-house-availability")
+        );
+        assert_eq!(
+            json_string(&receipt, "availability_status"),
+            Some("not_installed_or_not_running")
+        );
+        assert_eq!(json_bool(&receipt, "pit_house_available"), Some(false));
+        assert_eq!(
+            json_bool(&receipt, "satisfies_pit_house_coexistence"),
+            Some(false)
+        );
+        assert!(pit_house_availability_receipt_is_safe(&receipt));
+    }
+
+    #[test]
+    fn pit_house_install_scan_parser_accepts_single_and_array_records() -> TestResult {
+        let one = pit_house_install_matches_from_powershell_json(
+            r#"{"source":"start_menu","name":"MOZA Pit House.lnk","path":"C:\\Menu\\MOZA Pit House.lnk","version":null}"#,
+        )?;
+        assert_eq!(one.len(), 1);
+        assert_eq!(one[0].source, "start_menu");
+        assert_eq!(one[0].name, "MOZA Pit House.lnk");
+
+        let many = pit_house_install_matches_from_powershell_json(
+            r#"[{"source":"program_files","name":"MOZA Pit House","path":"C:\\Program Files\\MOZA Pit House","version":""},{"source":"uninstall_registry","name":"MOZA Pit House","path":"","version":"1.2.3"}]"#,
+        )?;
+        assert_eq!(many.len(), 2);
+        assert_eq!(many[1].version.as_deref(), Some("1.2.3"));
+        Ok(())
+    }
+
+    #[test]
+    fn pit_house_availability_unavailable_suppresses_open_state_followups() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_openracing_control_bundle(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V2),
+        )?;
+        let mut follow_up_plan =
+            moza_receipt_template(MozaReceiptTemplateKind::VisibleMotionFollowUp);
+        follow_up_plan["template"] = serde_json::json!(false);
+        write_test_json_file(
+            &dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE),
+            &follow_up_plan,
+        )?;
+        write_pre_output_ready_receipt(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("pit-house-availability.json"),
+            &pit_house_availability_receipt_unavailable(),
+        )?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let followup_commands = receipt
+            .blocked_safe_followups
+            .iter()
+            .flat_map(|followup| followup.commands.iter())
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            followup_commands.contains("wheelctl moza pit-house-availability")
+                && followup_commands.contains("--overwrite")
+                && !followup_commands.contains("wheelctl moza pit-house-observation")
+                && !followup_commands.contains("wheelctl moza pit-house-case")
+                && !followup_commands.contains("wheelctl moza pit-house-proof"),
+            "unavailable Pit House receipt should expose only refresh guidance: {followup_commands}"
+        );
+        Ok(())
+    }
+
     #[tokio::test]
     async fn pit_house_observation_rejects_generated_snapshot_for_wrong_state() -> TestResult {
         let dir = tempfile::tempdir()?;
@@ -37803,13 +38318,32 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(
-            followup_commands.contains("wheelctl moza pit-house-observation --case open-standard")
+            followup_commands.contains("wheelctl moza pit-house-availability")
                 && followup_commands.contains("wheelctl telemetry record")
                 && followup_commands.contains("wheelctl moza simulator-telemetry-proof")
+                && !followup_commands.contains("wheelctl moza pit-house-observation")
                 && !followup_commands.contains("wheelctl moza actuator-visible-smoke")
                 && !followup_commands.contains("wheelctl moza simulator-ffb-smoke")
                 && !followup_commands.contains("wheelctl moza pit-house-proof"),
-            "blocked safe follow-ups should expose only no-output Pit House and telemetry work: {followup_commands}"
+            "blocked safe follow-ups should start with no-output Pit House availability and telemetry work: {followup_commands}"
+        );
+        write_test_json_file(
+            &dir.path().join("pit-house-availability.json"),
+            &pit_house_availability_receipt_available(),
+        )?;
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let followup_commands = receipt
+            .blocked_safe_followups
+            .iter()
+            .flat_map(|followup| followup.commands.iter())
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            followup_commands.contains("wheelctl moza pit-house-observation --case open-standard")
+                && followup_commands.contains("wheelctl telemetry record")
+                && !followup_commands.contains("wheelctl moza pit-house-proof"),
+            "available Pit House follow-ups should expose only no-output pre-mode-change observations and telemetry: {followup_commands}"
         );
         assert!(
             receipt.blocked_safe_followups.iter().all(|followup| {
@@ -37961,6 +38495,10 @@ mod tests {
         ] {
             fs::remove_file(dir.path().join(artifact))?;
         }
+        write_test_json_file(
+            &dir.path().join("pit-house-availability.json"),
+            &pit_house_availability_receipt_available(),
+        )?;
 
         let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
         let commands = receipt.next_commands.join("\n");

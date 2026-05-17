@@ -1,0 +1,33 @@
+{
+  "availability_status": "not_installed_or_not_running",
+  "command": "wheelctl moza pit-house-availability",
+  "evidence": "Pit House was not found in install, process, or window scans on this host.",
+  "evidence_status": "non_claiming_external_app_availability",
+  "generated_at_utc": "2026-05-17T03:49:44Z",
+  "installation_scan_attempted": true,
+  "installation_scan_error": null,
+  "matched_installation_count": 0,
+  "matched_installations": [],
+  "matched_process_count": 0,
+  "matched_processes": [],
+  "no_ffb_writes": true,
+  "no_firmware_or_dfu_commands": true,
+  "no_hid_device_opened": true,
+  "no_serial_config_commands": true,
+  "notes": [
+    "Availability is not coexistence proof and must not satisfy pit-house-coexistence.json.",
+    "If Pit House is absent, leave smoke-ready blocked instead of fabricating open-state observations.",
+    "This command opens no HID device and sends no output, feature, serial, firmware, or DFU commands."
+  ],
+  "operator": "Steven",
+  "pit_house_available": false,
+  "pit_house_coexistence_proven": false,
+  "pit_house_installed": false,
+  "pit_house_process_visible": false,
+  "platform": "windows",
+  "process_scan_attempted": true,
+  "process_window_scan_error": null,
+  "satisfies_pit_house_coexistence": false,
+  "success": true,
+  "window_title_scan_attempted": true
+}

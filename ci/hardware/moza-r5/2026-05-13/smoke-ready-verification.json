@@ -1,7 +1,7 @@
 {
   "success": false,
   "command": "wheelctl moza verify-bundle",
-  "generated_at_utc": "2026-05-17T03:09:08Z",
+  "generated_at_utc": "2026-05-17T03:50:17Z",
   "lane": "ci/hardware/moza-r5/2026-05-13",
   "requested_stage": "smoke_ready",
   "missing_artifacts": 3,
@@ -621,26 +621,18 @@
   "next_commands": [],
   "blocked_safe_followups": [
     {
-      "name": "pit_house_pre_mode_change_evidence",
-      "reason": "Visible-motion remains blocked, but Pit House closed/open-standard/open-direct/firmware-page observations and case receipts are no-output evidence work. Mode-change and parent coexistence proof remain deferred until simulator FFB exists.",
+      "name": "pit_house_unavailable_recorded",
+      "reason": "Visible-motion remains blocked, and the lane records that Pit House is not installed or running on this host. Smoke-ready remains blocked rather than fabricating coexistence evidence.",
       "hardware_output_enabled": false,
       "no_hid_device_opened": true,
       "no_ffb_writes": true,
       "commands": [
-        "wheelctl moza pit-house-evidence --case open-standard --operator Steven --evidence 'Pit House open and idle; standard mode observed' --json-out ci/hardware/moza-r5/2026-05-13\\pit-house-evidence-open-standard.json",
-        "wheelctl moza pit-house-observation --case open-standard --evidence-kind process-window-snapshot --evidence-artifact pit-house-evidence-open-standard.json --operator Steven --evidence 'Pit House open and idle; standard mode observed' --json-out ci/hardware/moza-r5/2026-05-13\\pit-house-observation-open-standard.json",
-        "wheelctl moza pit-house-evidence --case open-direct --operator Steven --evidence 'Pit House open during direct request; OpenRacing warned or blocked' --json-out ci/hardware/moza-r5/2026-05-13\\pit-house-evidence-open-direct.json",
-        "wheelctl moza pit-house-observation --case open-direct --evidence-kind process-window-snapshot --evidence-artifact pit-house-evidence-open-direct.json --operator Steven --evidence 'Pit House open during direct request; OpenRacing warned or blocked' --json-out ci/hardware/moza-r5/2026-05-13\\pit-house-observation-open-direct.json",
-        "wheelctl moza pit-house-evidence --case firmware-page --operator Steven --evidence 'Pit House firmware/update page open; high-risk tests refused' --json-out ci/hardware/moza-r5/2026-05-13\\pit-house-evidence-firmware-page.json",
-        "wheelctl moza pit-house-observation --case firmware-page --evidence-kind process-window-snapshot --evidence-artifact pit-house-evidence-firmware-page.json --operator Steven --evidence 'Pit House firmware/update page open; high-risk tests refused' --json-out ci/hardware/moza-r5/2026-05-13\\pit-house-observation-firmware-page.json",
-        "wheelctl moza pit-house-case --lane ci/hardware/moza-r5/2026-05-13 --case open-standard --observation-artifact pit-house-observation-open-standard.json --evidence 'Pit House open standard case observed' --json-out ci/hardware/moza-r5/2026-05-13\\pit-house-open-standard.json",
-        "wheelctl moza pit-house-case --lane ci/hardware/moza-r5/2026-05-13 --case open-direct --observation-artifact pit-house-observation-open-direct.json --evidence 'Pit House open direct request warned or blocked' --json-out ci/hardware/moza-r5/2026-05-13\\pit-house-direct-blocked.json",
-        "wheelctl moza pit-house-case --lane ci/hardware/moza-r5/2026-05-13 --case firmware-page --observation-artifact pit-house-observation-firmware-page.json --evidence 'Pit House firmware/update page refusal observed' --json-out ci/hardware/moza-r5/2026-05-13\\pit-house-firmware-page.json"
+        "wheelctl moza pit-house-availability --operator Steven --evidence 'Pit House install/process/window availability snapshot.' --json-out ci/hardware/moza-r5/2026-05-13\\pit-house-availability.json --overwrite"
       ],
       "notes": [
-        "Run pit-house-evidence first when the matching process/window snapshot artifact is missing.",
-        "pit-house-observation rejects wheelctl-generated snapshots that do not match the requested Pit House case.",
-        "Do not run pit-house-proof or claim full coexistence from these subcases alone."
+        "Refresh this availability receipt after installing or launching Pit House.",
+        "Do not run pit-house-observation open-state cases until the availability receipt shows Pit House is present.",
+        "Do not run pit-house-proof or claim full coexistence from an unavailable receipt."
       ]
     },
     {

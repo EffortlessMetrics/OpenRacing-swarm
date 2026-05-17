@@ -997,6 +997,22 @@ pub enum MozaCommands {
         overwrite: bool,
     },
 
+    /// Capture a non-claiming Pit House install/process availability receipt
+    PitHouseAvailability {
+        /// Operator or host label recorded in the availability artifact
+        #[arg(long, default_value = "Steven")]
+        operator: String,
+        /// Optional operator note for the availability snapshot
+        #[arg(long)]
+        evidence: Option<String>,
+        /// Write the Pit House availability artifact to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing availability artifact
+        #[arg(long)]
+        overwrite: bool,
+    },
+
     /// Build one Pit House coexistence case artifact from source receipts
     PitHouseCase {
         /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-06
