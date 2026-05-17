@@ -1,0 +1,196 @@
+{
+  "blocked_requests": [
+    {
+      "reason": "Three seconds is still open-loop dwell and does not prove bounded angle control.",
+      "request": "5 percent / 3000 ms",
+      "status": "not_authorized"
+    },
+    {
+      "reason": "Thirty seconds is sustained force dwell and must not be used to find visible motion.",
+      "request": "5 percent / 30000 ms",
+      "status": "rejected_as_next_ramp"
+    },
+    {
+      "reason": "A 90 degree move is a later stage after smaller feedback-bounded angle receipts pass.",
+      "request": "90 degrees right, then 90 degrees left to reset",
+      "status": "not_authorized"
+    }
+  ],
+  "command": "wheelctl moza receipt-template",
+  "controlled_angle_profile_plan": {
+    "control_loop_requirements": [
+      "sample and record the starting steering angle before any nonzero output",
+      "compute the target as a relative offset from the sampled start angle",
+      "send bounded PIDFF output only while samples move toward the target",
+      "send PIDFF Stop All immediately on target reached, timeout, stale steering samples, wrong-way movement, velocity guard breach, or write error",
+      "return toward the sampled start angle inside the same bounded guard model",
+      "send a final PIDFF Stop All after the return leg and record final angle error"
+    ],
+    "current_force_percent_limit": 5,
+    "direct_report_0x20_allowed": false,
+    "duration_only_profile_allowed": false,
+    "high_torque_allowed": false,
+    "objective": "Move to a relative steering target and return to the start angle using live steering feedback, not open-loop dwell duration.",
+    "open_loop_dwell_allowed": false,
+    "operator_goal": {
+      "authorized_now": false,
+      "eventual_target": "90 degrees right, then 90 degrees left to reset",
+      "next_authorizable_target": "the first ladder stage after implementation and review"
+    },
+    "profile_family": "feedback_bounded_controlled_angle",
+    "promotion_rule": "Do not attempt a later ladder stage until the prior stage has a receipt with target reached, return-to-start cleanup, final Stop All, no direct report 0x20, no high torque, and no serial/firmware/DFU actions.",
+    "serial_firmware_dfu_allowed": false,
+    "stages": [
+      {
+        "direction": "right_then_return_to_start",
+        "name": "one_degree_visibility_probe",
+        "requires_prior_stage_receipt": false,
+        "status": "not_authorized",
+        "success_receipt_requirements": [
+          "target reached from steering samples",
+          "return-to-start attempted under steering feedback",
+          "final PIDFF Stop All sent",
+          "angle error recorded",
+          "no direct report 0x20",
+          "no high torque",
+          "no serial config",
+          "no firmware or DFU"
+        ],
+        "target_degrees": 1
+      },
+      {
+        "direction": "right_then_return_to_start",
+        "name": "three_degree_visibility_probe",
+        "requires_prior_stage_receipt": true,
+        "status": "not_authorized",
+        "success_receipt_requirements": [
+          "target reached from steering samples",
+          "return-to-start attempted under steering feedback",
+          "final PIDFF Stop All sent",
+          "angle error recorded",
+          "no direct report 0x20",
+          "no high torque",
+          "no serial config",
+          "no firmware or DFU"
+        ],
+        "target_degrees": 3
+      },
+      {
+        "direction": "right_then_return_to_start",
+        "name": "five_degree_bounded_profile",
+        "requires_prior_stage_receipt": true,
+        "status": "not_authorized",
+        "success_receipt_requirements": [
+          "target reached from steering samples",
+          "return-to-start attempted under steering feedback",
+          "final PIDFF Stop All sent",
+          "angle error recorded",
+          "no direct report 0x20",
+          "no high torque",
+          "no serial config",
+          "no firmware or DFU"
+        ],
+        "target_degrees": 5
+      },
+      {
+        "direction": "right_then_return_to_start",
+        "name": "ten_degree_bounded_profile",
+        "requires_prior_stage_receipt": true,
+        "status": "not_authorized",
+        "success_receipt_requirements": [
+          "target reached from steering samples",
+          "return-to-start attempted under steering feedback",
+          "final PIDFF Stop All sent",
+          "angle error recorded",
+          "no direct report 0x20",
+          "no high torque",
+          "no serial config",
+          "no firmware or DFU"
+        ],
+        "target_degrees": 10
+      },
+      {
+        "direction": "right_then_return_to_start",
+        "name": "thirty_degree_bounded_profile",
+        "requires_prior_stage_receipt": true,
+        "status": "not_authorized",
+        "success_receipt_requirements": [
+          "target reached from steering samples",
+          "return-to-start attempted under steering feedback",
+          "final PIDFF Stop All sent",
+          "angle error recorded",
+          "no direct report 0x20",
+          "no high torque",
+          "no serial config",
+          "no firmware or DFU"
+        ],
+        "target_degrees": 30
+      },
+      {
+        "direction": "right_then_return_to_start",
+        "name": "ninety_degree_right_left_reset",
+        "requires_prior_stage_receipt": true,
+        "status": "not_authorized",
+        "success_receipt_requirements": [
+          "target reached from steering samples",
+          "return-to-start attempted under steering feedback",
+          "final PIDFF Stop All sent",
+          "angle error recorded",
+          "no direct report 0x20",
+          "no high torque",
+          "no serial config",
+          "no firmware or DFU"
+        ],
+        "target_degrees": 90
+      }
+    ],
+    "status": "requires_software_implementation_no_output_authorized",
+    "target_ladder_degrees": [
+      1,
+      3,
+      5,
+      10,
+      30,
+      90
+    ]
+  },
+  "evidence_status": "engineering_review_pending",
+  "force_escalation_authorized": false,
+  "generated_at_utc": "2026-05-17T06:13:22Z",
+  "hardware_output_authorized": false,
+  "no_feature_reports": true,
+  "no_ffb_writes": true,
+  "no_firmware_or_dfu_commands": true,
+  "no_hid_device_opened": true,
+  "no_output_reports": true,
+  "no_serial_config_commands": true,
+  "notes": [
+    "Template only: this file is a design surface, not permission to move hardware.",
+    "Do not extend the 5 percent profile by dwell time to find visible motion.",
+    "Pit House, SimHub, and simulators are not prerequisites for this native controlled-angle plan."
+  ],
+  "planned_next_output": {
+    "allowed": false,
+    "command": "",
+    "duration_ms": "not_authorized",
+    "force_percent": "not_authorized",
+    "requires_fresh_bench_clear": true,
+    "target_degrees": "not_authorized"
+  },
+  "prior_receipts": [
+    "native-actuator-profile-smoke.json",
+    "steering-angle-stream-proof.json",
+    "native-actuator-visible-smoke.json",
+    "native-actuator-visible-follow-up-plan.json"
+  ],
+  "required_before_any_output": [
+    "implement a feedback-bounded controlled-angle command path that stops from steering samples",
+    "prove dry-run/preflight validation for the exact staged command",
+    "preserve the current response-only visible-motion receipt",
+    "refresh no-output readiness if USB topology, power, wheelbase mode, or bench setup changed",
+    "record fresh bench-clear for one exact command after the software plan is reviewed"
+  ],
+  "review_scope": "native_controlled_angle_profile_design",
+  "success": false,
+  "template": true
+}

@@ -7496,13 +7496,54 @@ fn native_visible_smoke_failed_real_receipt_action(lane: &Path) -> Option<String
             .unwrap_or("missing_profile_design");
         let profile_plan_summary = native_visible_planned_profile_summary(&plan)
             .unwrap_or_else(|| "planned_profile_details=missing".to_string());
+        let controlled_angle_artifact_summary = native_controlled_angle_plan_artifact_summary(lane);
         return Some(format!(
-            "Current native-visible frontier: native actuator response is recorded, but visible-motion remains unclaimed: movement_observed={movement_observed}, angle_delta_degrees={delta}, movement_threshold_degrees={threshold}. Final Stop All sent={stop_all_sent}, no direct report 0x20={no_direct}, no high torque={no_high_torque}. Follow-up plan exists at {NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE}: review_decision={review_decision}, profile_design_status={profile_design_status}, {profile_plan_summary}, hardware_output_authorized={output_authorized}, force_escalation_authorized={force_escalation_authorized}. Do not run output until the follow-up requirements are complete and a fresh bench-clear is recorded for the exact next output command via wheelctl moza authorize-visible-output. Pit House, SimHub, and simulators are not required for this native diagnosis."
+            "Current native-visible frontier: native actuator response is recorded, but visible-motion remains unclaimed: movement_observed={movement_observed}, angle_delta_degrees={delta}, movement_threshold_degrees={threshold}. Final Stop All sent={stop_all_sent}, no direct report 0x20={no_direct}, no high torque={no_high_torque}. Follow-up plan exists at {NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE}: review_decision={review_decision}, profile_design_status={profile_design_status}, {profile_plan_summary}, {controlled_angle_artifact_summary}, hardware_output_authorized={output_authorized}, force_escalation_authorized={force_escalation_authorized}. Do not run output until the follow-up requirements are complete and a fresh bench-clear is recorded for the exact next output command via wheelctl moza authorize-visible-output. Pit House, SimHub, and simulators are not required for this native diagnosis."
         ));
     }
     Some(format!(
         "Current native-visible frontier: native actuator response is recorded, but visible-motion remains unclaimed: movement_observed={movement_observed}, angle_delta_degrees={delta}, movement_threshold_degrees={threshold}. Final Stop All sent={stop_all_sent}, no direct report 0x20={no_direct}, no high torque={no_high_torque}. Do not rerun, raise force, or replace native-actuator-visible-smoke.json from generated guidance; inspect the bench/setup/FFB mode and record a deliberate follow-up plan in {NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE} before another hardware-output attempt. Pit House, SimHub, and simulators are not required for this native diagnosis."
     ))
+}
+
+fn native_controlled_angle_plan_artifact_summary(lane: &Path) -> String {
+    let Ok(plan) = read_json_value(lane, NATIVE_CONTROLLED_ANGLE_PLAN_FILE) else {
+        return "controlled_angle_plan_artifact=missing".to_string();
+    };
+
+    let command_ok = json_string(&plan, "command") == Some("wheelctl moza receipt-template");
+    let no_output_ok = json_bool(&plan, "hardware_output_authorized") == Some(false)
+        && plan
+            .get("planned_next_output")
+            .and_then(|planned| json_bool(planned, "allowed"))
+            == Some(false)
+        && json_bool(&plan, "no_hid_device_opened") == Some(true)
+        && json_bool(&plan, "no_ffb_writes") == Some(true)
+        && json_bool(&plan, "no_output_reports") == Some(true)
+        && json_bool(&plan, "no_feature_reports") == Some(true)
+        && no_out_of_scope_device_commands(&plan);
+    let ladder_ok = native_controlled_angle_plan_ladder_ok(&plan);
+    let artifact_status = if command_ok && no_output_ok && ladder_ok {
+        "present_no_output"
+    } else {
+        "present_needs_review"
+    };
+
+    format!(
+        "controlled_angle_plan_artifact={artifact_status}, controlled_angle_ladder=1/3/5/10/30/90, controlled_angle_command_ok={command_ok}, controlled_angle_no_output_ok={no_output_ok}, controlled_angle_ladder_ok={ladder_ok}"
+    )
+}
+
+fn native_controlled_angle_plan_ladder_ok(plan: &Value) -> bool {
+    let Some(ladder) = plan
+        .get("controlled_angle_profile_plan")
+        .and_then(|profile| profile.get("target_ladder_degrees"))
+        .and_then(Value::as_array)
+    else {
+        return false;
+    };
+    let observed = ladder.iter().filter_map(Value::as_u64).collect::<Vec<_>>();
+    observed == [1, 3, 5, 10, 30, 90]
 }
 
 fn failed_real_native_visible_smoke_receipt(lane: &Path) -> Option<Value> {
@@ -7536,13 +7577,9 @@ fn native_visible_planned_profile_summary(plan: &Value) -> Option<String> {
         .get("planned_next_output")
         .and_then(|planned| json_bool(planned, "allowed"))
         .unwrap_or(false);
-    let controlled_angle_status = design
-        .get("later_controlled_angle_profile")
-        .and_then(|controlled| json_string(controlled, "status"))
-        .unwrap_or("missing_controlled_angle_plan");
 
     Some(format!(
-        "planned_profile_status={status}, planned_profile_family={family}, planned_profile_cli_support={cli_support}, expected_small_angle_envelope_degrees={min:.3}..{max:.3}, controlled_angle_plan_status={controlled_angle_status}, exact_output_command_authorized={exact_output_authorized}"
+        "planned_profile_status={status}, planned_profile_family={family}, planned_profile_cli_support={cli_support}, expected_small_angle_envelope_degrees={min:.3}..{max:.3}, exact_output_command_authorized={exact_output_authorized}"
     ))
 }
 
@@ -38806,6 +38843,13 @@ mod tests {
         assert!(
             receipt.next_commands.is_empty(),
             "after response-only visible-motion review, no-output readiness, and controlled-angle planning are recorded, guidance should stop instead of authorizing output: {commands}"
+        );
+        let action_text = receipt.operator_actions.join("\n");
+        assert!(
+            action_text.contains("controlled_angle_plan_artifact=present_no_output")
+                && action_text.contains("controlled_angle_no_output_ok=true")
+                && action_text.contains("controlled_angle_ladder_ok=true"),
+            "operator action should report the checked-in controlled-angle plan artifact accurately: {action_text}"
         );
         let followup_commands = receipt
             .blocked_safe_followups
