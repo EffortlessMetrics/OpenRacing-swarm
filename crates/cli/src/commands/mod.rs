@@ -994,7 +994,8 @@ pub enum MozaCommands {
         /// Operator or host label granting bench-clear
         #[arg(long, default_value = "Steven")]
         operator: String,
-        /// Fresh bench-clear evidence for this exact controlled-angle command
+        /// Fresh command-bound bench-clear evidence naming the exact 1 degree, 5 percent,
+        /// 2000 ms PIDFF command plus stable R5, secure rim, hands clear, and wheel clear
         #[arg(long)]
         bench_clear_evidence: String,
         /// Same-lane response-only native visible/actuator response receipt

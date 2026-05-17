@@ -4113,6 +4113,7 @@ async fn authorize_controlled_angle_output(
         1080.0,
     )?;
     validate_controlled_angle_actual_output_limits(target_degrees, max_percent, timeout_ms)?;
+    validate_controlled_angle_bench_clear_evidence(bench_clear_evidence)?;
     validate_lane_manifest_endpoint_selector(
         lane,
         Some(selector),
@@ -5679,6 +5680,64 @@ fn validate_controlled_angle_actual_output_limits(
             NATIVE_CONTROLLED_ANGLE_FIRST_MAX_DURATION_MS
         ));
     }
+    Ok(())
+}
+
+fn contains_any(haystack: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|needle| haystack.contains(needle))
+}
+
+fn validate_controlled_angle_bench_clear_evidence(evidence: &str) -> Result<()> {
+    let normalized = evidence.trim().to_ascii_lowercase();
+    let mut missing = Vec::new();
+
+    if !contains_any(&normalized, &["bench clear", "bench-clear"]) {
+        missing.push("bench clear");
+    }
+    if !contains_any(&normalized, &["exactly one", "one exact"]) {
+        missing.push("exactly one command");
+    }
+    if !contains_any(
+        &normalized,
+        &["target 1 degree", "target 1 degrees", "1 degree"],
+    ) {
+        missing.push("target 1 degree");
+    }
+    if !contains_any(
+        &normalized,
+        &["max 5%", "max 5 percent", "max-percent 5", "max 5"],
+    ) {
+        missing.push("max 5 percent");
+    }
+    if !contains_any(
+        &normalized,
+        &["timeout 2000 ms", "timeout 2000ms", "2000 ms"],
+    ) {
+        missing.push("timeout 2000 ms");
+    }
+    if !normalized.contains("pidff-bounded-effect") {
+        missing.push("strategy pidff-bounded-effect");
+    }
+    if !(normalized.contains("r5") && normalized.contains("stable")) {
+        missing.push("R5 stable");
+    }
+    if !(normalized.contains("attached") && normalized.contains("secure")) {
+        missing.push("rim attached securely");
+    }
+    if !normalized.contains("hands clear") {
+        missing.push("hands clear");
+    }
+    if !normalized.contains("wheel clear") {
+        missing.push("wheel clear");
+    }
+
+    if !missing.is_empty() {
+        return Err(anyhow!(
+            "--bench-clear-evidence must be command-bound for the exact controlled-angle run; missing: {}",
+            missing.join(", ")
+        ));
+    }
+
     Ok(())
 }
 
@@ -34952,7 +35011,7 @@ mod tests {
             lane: dir.path(),
             selector: "hid-0x346E-0x0004-if2-0x0001-0x0004",
             operator: "Steven",
-            bench_clear_evidence: "Bench clear for exactly one 1 degree controlled-angle command.",
+            bench_clear_evidence: "bench clear for exactly one Moza controlled-angle run: target 1 degree, max 5%, timeout 2000 ms, strategy pidff-bounded-effect, R5 stable, KS attached securely, hands clear, wheel clear",
             prior_response_proof: Some(&dir.path().join("native-actuator-visible-smoke.json")),
             prior_actuator_proof: Some(&dir.path().join("native-actuator-profile-smoke.json")),
             steering_proof: Some(&dir.path().join("steering-angle-stream-proof.json")),
@@ -34999,6 +35058,37 @@ mod tests {
             MozaLowTorqueStrategy::PidffBoundedEffect,
             &dir.path().join(NATIVE_CONTROLLED_ANGLE_SMOKE_FILE),
         )?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn authorize_controlled_angle_output_rejects_vague_bench_clear() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let error = authorize_controlled_angle_output(AuthorizeControlledAngleOutputRequest {
+            json: false,
+            lane: dir.path(),
+            selector: "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            operator: "Steven",
+            bench_clear_evidence: "bench clear",
+            prior_response_proof: None,
+            prior_actuator_proof: None,
+            steering_proof: None,
+            target_degrees: 1.0,
+            strategy: MozaLowTorqueStrategy::PidffBoundedEffect,
+            max_percent: 5.0,
+            timeout_ms: 2_000,
+            json_out: Some(&dir.path().join(NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE)),
+            overwrite: false,
+        })
+        .await
+        .err()
+        .map(|error| error.to_string())
+        .ok_or("expected vague bench clear rejection")?;
+
+        assert!(error.contains("--bench-clear-evidence"));
+        assert!(error.contains("target 1 degree"));
+        assert!(error.contains("hands clear"));
+        assert!(error.contains("wheel clear"));
         Ok(())
     }
 
