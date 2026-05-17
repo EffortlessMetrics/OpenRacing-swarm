@@ -5639,9 +5639,10 @@ fn validate_controlled_angle_smoke_args(
     if !max_percent.is_finite() || !(0.1..=5.0).contains(&max_percent) {
         return Err(anyhow!("--max-percent must be in 0.1..=5.0"));
     }
-    if timeout_ms == 0 || timeout_ms > 15_000 {
+    if timeout_ms == 0 || timeout_ms > NATIVE_CONTROLLED_ANGLE_FIRST_MAX_DURATION_MS {
         return Err(anyhow!(
-            "--timeout-ms must be in 1..=15000; it is a safety cutoff, not an open-loop dwell"
+            "--timeout-ms must be in 1..={}; it is a safety cutoff, not an open-loop dwell",
+            NATIVE_CONTROLLED_ANGLE_FIRST_MAX_DURATION_MS
         ));
     }
     if read_timeout_ms < 0 {
@@ -34677,7 +34678,7 @@ mod tests {
             MozaLowTorqueStrategy::PidffBoundedEffect,
             1.0,
             5.0,
-            15_000,
+            2_000,
             20,
             1080.0,
         )?;
@@ -34685,7 +34686,7 @@ mod tests {
             MozaLowTorqueStrategy::PidffBoundedEffect,
             90.0,
             5.0,
-            15_000,
+            2_000,
             20,
             1080.0,
         )?;
@@ -34694,7 +34695,7 @@ mod tests {
             MozaLowTorqueStrategy::PidffBoundedEffect,
             2.0,
             5.0,
-            15_000,
+            2_000,
             20,
             1080.0,
         )
@@ -34707,7 +34708,7 @@ mod tests {
             MozaLowTorqueStrategy::PidffBoundedEffect,
             1.0,
             5.0,
-            30_000,
+            3_000,
             20,
             1080.0,
         )
@@ -34720,7 +34721,7 @@ mod tests {
             MozaLowTorqueStrategy::DirectReport0x20,
             1.0,
             5.0,
-            15_000,
+            2_000,
             20,
             1080.0,
         )
@@ -34766,7 +34767,7 @@ mod tests {
             steering_proof: Some(&dir.path().join("steering-angle-stream-proof.json")),
             target_degrees: 1.0,
             max_percent: 5.0,
-            timeout_ms: 15_000,
+            timeout_ms: 2_000,
             read_timeout_ms: 20,
             degrees_of_rotation: 1080.0,
             strategy: MozaLowTorqueStrategy::PidffBoundedEffect,
@@ -34793,7 +34794,7 @@ mod tests {
             Some(false)
         );
         assert_eq!(json_f64(&receipt, "target_degrees"), Some(1.0));
-        assert_eq!(json_u64(&receipt, "safety_timeout_ms"), Some(15_000));
+        assert_eq!(json_u64(&receipt, "safety_timeout_ms"), Some(2_000));
         assert_eq!(
             receipt
                 .get("target_ladder_degrees")
@@ -34935,7 +34936,7 @@ mod tests {
             steering_proof: Some(&dir.path().join("steering-angle-stream-proof.json")),
             target_degrees: 1.0,
             max_percent: 5.0,
-            timeout_ms: 15_000,
+            timeout_ms: 2_000,
             read_timeout_ms: 20,
             degrees_of_rotation: 1080.0,
             strategy: MozaLowTorqueStrategy::PidffBoundedEffect,
@@ -35101,7 +35102,7 @@ mod tests {
             &moza_receipt_template(MozaReceiptTemplateKind::ControlledAnglePlan),
             1.0,
             5.0,
-            15_000,
+            2_000,
             20,
             1080.0,
         )?;
