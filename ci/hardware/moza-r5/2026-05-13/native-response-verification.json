@@ -1,7 +1,7 @@
 {
   "success": true,
   "command": "wheelctl moza verify-bundle",
-  "generated_at_utc": "2026-05-17T05:17:24Z",
+  "generated_at_utc": "2026-05-17T06:55:15Z",
   "lane": "ci/hardware/moza-r5/2026-05-13",
   "requested_stage": "native_response_ready",
   "missing_artifacts": 0,
@@ -563,7 +563,7 @@
     }
   ],
   "operator_actions": [
-    "Current native-visible frontier: native actuator response is recorded, but visible-motion remains unclaimed: movement_observed=false, angle_delta_degrees=0.181, movement_threshold_degrees=1.000. Final Stop All sent=true, no direct report 0x20=true, no high torque=true. Follow-up plan exists at native-actuator-visible-follow-up-plan.json: review_decision=authorized_output_consumed_visible_motion_unproven, profile_design_status=profile_design_recorded_no_output_authorized, planned_profile_status=software_profile_implemented_no_output_authorized, planned_profile_family=bounded_shaped_pidff_micro_profile, planned_profile_cli_support=implemented_pending_bench_clear, expected_small_angle_envelope_degrees=1.000..3.000, exact_output_command_authorized=false, hardware_output_authorized=false, force_escalation_authorized=false. Do not run output until the follow-up requirements are complete and a fresh bench-clear is recorded for the exact next output command via wheelctl moza authorize-visible-output. Pit House, SimHub, and simulators are not required for this native diagnosis."
+    "Current native-visible frontier: native actuator response is recorded, but visible-motion remains unclaimed: movement_observed=false, angle_delta_degrees=0.181, movement_threshold_degrees=1.000. Final Stop All sent=true, no direct report 0x20=true, no high torque=true. Follow-up plan exists at native-actuator-visible-follow-up-plan.json: review_decision=authorized_output_consumed_visible_motion_unproven, profile_design_status=profile_design_recorded_no_output_authorized, planned_profile_status=software_profile_implemented_no_output_authorized, planned_profile_family=bounded_shaped_pidff_micro_profile, planned_profile_cli_support=implemented_pending_bench_clear, expected_small_angle_envelope_degrees=1.000..3.000, exact_output_command_authorized=false, controlled_angle_plan_artifact=present_no_output, controlled_angle_ladder=1/3/5/10/30/90, controlled_angle_command_ok=true, controlled_angle_no_output_ok=true, controlled_angle_ladder_ok=true, controlled_angle_preflight_artifact=present_no_output, controlled_angle_preflight_target_degrees=1.000, controlled_angle_preflight_command_ok=true, controlled_angle_preflight_no_output_ok=true, controlled_angle_motion_unclaimed=true, hardware_output_authorized=false, force_escalation_authorized=false. Do not run output until the follow-up requirements are complete and a fresh bench-clear is recorded for the exact next output command via wheelctl moza authorize-visible-output. Pit House, SimHub, and simulators are not required for this native diagnosis."
   ],
   "next_commands": [],
   "blocked_safe_followups": [],

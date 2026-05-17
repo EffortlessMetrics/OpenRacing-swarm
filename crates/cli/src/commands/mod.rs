@@ -891,6 +891,49 @@ pub enum MozaCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
+    /// Preflight the feedback-bounded native controlled-angle ramp without HID output
+    ControlledAngleSmoke {
+        /// Exact lane R5 HID endpoint selector, e.g. hid-0x346E-0x0004-if2-0x0001-0x0004
+        #[arg(long)]
+        device: String,
+        /// Hardware lane directory with passing native actuator response and steering receipts
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Same-lane native actuator-profile receipt from `wheelctl moza actuator-profile-smoke`
+        #[arg(long)]
+        prior_actuator_proof: Option<std::path::PathBuf>,
+        /// Same-lane steering stream proof receipt from `wheelctl moza steering-stream-proof`
+        #[arg(long)]
+        steering_proof: Option<std::path::PathBuf>,
+        /// Planned staged target angle in degrees; use the 1, 3, 5, 10, 30, 90 ladder
+        #[arg(long, default_value = "1")]
+        target_degrees: f64,
+        /// Planned maximum force percent, bounded to 0.1..=5.0
+        #[arg(long, default_value = "5")]
+        max_percent: f32,
+        /// Safety timeout in milliseconds; this is not an open-loop dwell objective
+        #[arg(long, default_value = "15000")]
+        timeout_ms: u64,
+        /// HID read timeout in milliseconds while sampling steering motion
+        #[arg(long, default_value = "20")]
+        read_timeout_ms: i32,
+        /// Declared steering range used only to scale raw steering samples into receipt degrees
+        #[arg(long, default_value = "1080")]
+        degrees_of_rotation: f64,
+        /// Output strategy for the future controlled-angle smoke; direct report 0x20 is not accepted
+        #[arg(long, value_enum, default_value_t = MozaLowTorqueStrategy::PidffBoundedEffect)]
+        strategy: MozaLowTorqueStrategy,
+        /// Build the controlled-angle preflight receipt without opening or writing a HID device
+        #[arg(long)]
+        dry_run: bool,
+        /// Explicit acknowledgement required before any future controlled-angle writes
+        #[arg(long)]
+        confirm_controlled_angle: bool,
+        /// Write the native controlled-angle preflight receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
     /// Authorize one exact native visible-motion retry after fresh bench-clear
     AuthorizeVisibleOutput {
         /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-13

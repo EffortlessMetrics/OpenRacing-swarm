@@ -1,8 +1,8 @@
 {
   "success": true,
   "command": "wheelctl moza audit-lane",
-  "generated_at_utc": "2026-05-17T00:36:45Z",
-  "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+  "generated_at_utc": "2026-05-17T06:57:02Z",
+  "lane": "ci/hardware/moza-r5/2026-05-13",
   "requested_stage": "native_response_ready",
   "live_verification_success": true,
   "live_verification": {

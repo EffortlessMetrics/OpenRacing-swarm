@@ -258,11 +258,26 @@ mod tests {
 
     type TestResult = Result<(), Box<dyn std::error::Error>>;
 
+    fn parse_cli<I, T>(args: I) -> Result<Cli, Box<dyn std::error::Error>>
+    where
+        I: IntoIterator<Item = T> + Send + 'static,
+        T: Into<std::ffi::OsString> + Clone + Send + 'static,
+    {
+        let handle = std::thread::Builder::new()
+            .name("wheelctl-parse-test".to_string())
+            .stack_size(8 * 1024 * 1024)
+            .spawn(move || Cli::try_parse_from(args))?;
+        let parsed = handle
+            .join()
+            .map_err(|_| std::io::Error::other("CLI parse thread panicked"))?;
+        Ok(parsed?)
+    }
+
     // --- Global flag parsing ---
 
     #[test]
     fn parse_device_list_defaults() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "device", "list"])?;
+        let cli = parse_cli(["wheelctl", "device", "list"])?;
         assert!(!cli.json);
         assert_eq!(cli.verbose, 0);
         assert!(cli.endpoint.is_none());
@@ -279,37 +294,37 @@ mod tests {
 
     #[test]
     fn parse_global_json_flag_before_subcommand() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "--json", "device", "list"])?;
+        let cli = parse_cli(["wheelctl", "--json", "device", "list"])?;
         assert!(cli.json);
         Ok(())
     }
 
     #[test]
     fn parse_global_json_flag_after_subcommand() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "device", "list", "--json"])?;
+        let cli = parse_cli(["wheelctl", "device", "list", "--json"])?;
         assert!(cli.json);
         Ok(())
     }
 
     #[test]
     fn parse_verbose_levels() -> TestResult {
-        let cli0 = Cli::try_parse_from(["wheelctl", "device", "list"])?;
+        let cli0 = parse_cli(["wheelctl", "device", "list"])?;
         assert_eq!(cli0.verbose, 0);
 
-        let cli1 = Cli::try_parse_from(["wheelctl", "-v", "device", "list"])?;
+        let cli1 = parse_cli(["wheelctl", "-v", "device", "list"])?;
         assert_eq!(cli1.verbose, 1);
 
-        let cli2 = Cli::try_parse_from(["wheelctl", "-vv", "device", "list"])?;
+        let cli2 = parse_cli(["wheelctl", "-vv", "device", "list"])?;
         assert_eq!(cli2.verbose, 2);
 
-        let cli3 = Cli::try_parse_from(["wheelctl", "-vvv", "device", "list"])?;
+        let cli3 = parse_cli(["wheelctl", "-vvv", "device", "list"])?;
         assert_eq!(cli3.verbose, 3);
         Ok(())
     }
 
     #[test]
     fn parse_endpoint_flag() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "--endpoint",
             "http://localhost:5000",
@@ -324,7 +339,7 @@ mod tests {
 
     #[test]
     fn parse_device_list_detailed() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "device", "list", "--detailed"])?;
+        let cli = parse_cli(["wheelctl", "device", "list", "--detailed"])?;
         assert!(matches!(
             cli.command,
             Commands::Device(DeviceCommands::List {
@@ -338,7 +353,7 @@ mod tests {
 
     #[test]
     fn parse_device_list_hid_observe_only() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "device", "list", "--hid-observe-only"])?;
+        let cli = parse_cli(["wheelctl", "device", "list", "--hid-observe-only"])?;
         assert!(matches!(
             cli.command,
             Commands::Device(DeviceCommands::List {
@@ -352,7 +367,7 @@ mod tests {
 
     #[test]
     fn parse_device_list_json_out() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "device",
             "list",
@@ -373,7 +388,7 @@ mod tests {
 
     #[test]
     fn parse_hardware_doctor_json_out() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "hardware",
             "doctor",
@@ -394,7 +409,7 @@ mod tests {
 
     #[test]
     fn parse_hardware_bringup_rail() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "hardware",
             "bringup-rail",
@@ -418,7 +433,7 @@ mod tests {
 
     #[test]
     fn parse_hardware_lane_init() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "hardware",
             "lane",
@@ -458,7 +473,7 @@ mod tests {
 
     #[test]
     fn parse_hardware_lane_init_role_overrides() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "hardware",
             "lane",
@@ -503,7 +518,7 @@ mod tests {
 
     #[test]
     fn parse_hardware_lane_status() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "hardware",
             "lane",
@@ -531,7 +546,7 @@ mod tests {
 
     #[test]
     fn parse_hardware_lane_set_role_endpoint() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "hardware",
             "lane",
@@ -570,7 +585,7 @@ mod tests {
 
     #[test]
     fn parse_device_status() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "device", "status", "wheel-001"])?;
+        let cli = parse_cli(["wheelctl", "device", "status", "wheel-001"])?;
         match &cli.command {
             Commands::Device(DeviceCommands::Status {
                 device,
@@ -590,7 +605,7 @@ mod tests {
 
     #[test]
     fn parse_device_status_moza_lane() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "device",
             "status",
@@ -620,7 +635,7 @@ mod tests {
 
     #[test]
     fn parse_device_status_watch() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "device", "status", "wheel-001", "--watch"])?;
+        let cli = parse_cli(["wheelctl", "device", "status", "wheel-001", "--watch"])?;
         match &cli.command {
             Commands::Device(DeviceCommands::Status { watch, .. }) => {
                 assert!(watch);
@@ -632,7 +647,7 @@ mod tests {
 
     #[test]
     fn parse_device_status_json_out() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "device",
             "status",
@@ -654,7 +669,7 @@ mod tests {
 
     #[test]
     fn parse_device_calibrate() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "device",
             "calibrate",
@@ -685,7 +700,7 @@ mod tests {
             ("pedals", CalibrationType::Pedals),
             ("all", CalibrationType::All),
         ] {
-            let cli = Cli::try_parse_from(["wheelctl", "device", "calibrate", "w1", arg])?;
+            let cli = parse_cli(["wheelctl", "device", "calibrate", "w1", arg])?;
             match &cli.command {
                 Commands::Device(DeviceCommands::Calibrate {
                     calibration_type, ..
@@ -703,7 +718,7 @@ mod tests {
 
     #[test]
     fn parse_device_reset_force() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "device", "reset", "dev-001", "--force"])?;
+        let cli = parse_cli(["wheelctl", "device", "reset", "dev-001", "--force"])?;
         match &cli.command {
             Commands::Device(DeviceCommands::Reset { device, force }) => {
                 assert_eq!(device, "dev-001");
@@ -718,7 +733,7 @@ mod tests {
 
     #[test]
     fn parse_profile_list_with_filters() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl", "profile", "list", "--game", "iracing", "--car", "gt3",
         ])?;
         match &cli.command {
@@ -733,7 +748,7 @@ mod tests {
 
     #[test]
     fn parse_profile_list_no_filters() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "profile", "list"])?;
+        let cli = parse_cli(["wheelctl", "profile", "list"])?;
         match &cli.command {
             Commands::Profile(ProfileCommands::List { game, car }) => {
                 assert!(game.is_none());
@@ -746,7 +761,7 @@ mod tests {
 
     #[test]
     fn parse_profile_apply_with_skip_validation() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "profile",
             "apply",
@@ -771,7 +786,7 @@ mod tests {
 
     #[test]
     fn parse_profile_create_with_options() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "profile",
             "create",
@@ -800,7 +815,7 @@ mod tests {
 
     #[test]
     fn parse_profile_edit_with_field_value() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "profile",
             "edit",
@@ -827,8 +842,7 @@ mod tests {
 
     #[test]
     fn parse_profile_validate() -> TestResult {
-        let cli =
-            Cli::try_parse_from(["wheelctl", "profile", "validate", "test.json", "--detailed"])?;
+        let cli = parse_cli(["wheelctl", "profile", "validate", "test.json", "--detailed"])?;
         match &cli.command {
             Commands::Profile(ProfileCommands::Validate { path, detailed }) => {
                 assert_eq!(path, "test.json");
@@ -841,7 +855,7 @@ mod tests {
 
     #[test]
     fn parse_profile_export_signed() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl", "profile", "export", "p.json", "--output", "out.json", "--signed",
         ])?;
         match &cli.command {
@@ -861,7 +875,7 @@ mod tests {
 
     #[test]
     fn parse_profile_import_with_verify() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "profile",
             "import",
@@ -889,7 +903,7 @@ mod tests {
 
     #[test]
     fn parse_plugin_install_with_version() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "plugin",
             "install",
@@ -909,7 +923,7 @@ mod tests {
 
     #[test]
     fn parse_plugin_search() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "plugin", "search", "smoothing"])?;
+        let cli = parse_cli(["wheelctl", "plugin", "search", "smoothing"])?;
         match &cli.command {
             Commands::Plugin(PluginCommands::Search { query }) => {
                 assert_eq!(query, "smoothing");
@@ -921,7 +935,7 @@ mod tests {
 
     #[test]
     fn parse_plugin_uninstall_force() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "plugin", "uninstall", "my-plugin", "--force"])?;
+        let cli = parse_cli(["wheelctl", "plugin", "uninstall", "my-plugin", "--force"])?;
         match &cli.command {
             Commands::Plugin(PluginCommands::Uninstall { plugin_id, force }) => {
                 assert_eq!(plugin_id, "my-plugin");
@@ -934,7 +948,7 @@ mod tests {
 
     #[test]
     fn parse_plugin_verify() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "plugin", "verify", "ffb-smoothing"])?;
+        let cli = parse_cli(["wheelctl", "plugin", "verify", "ffb-smoothing"])?;
         match &cli.command {
             Commands::Plugin(PluginCommands::Verify { plugin_id }) => {
                 assert_eq!(plugin_id, "ffb-smoothing");
@@ -948,7 +962,7 @@ mod tests {
 
     #[test]
     fn parse_safety_limit_global() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "safety",
             "limit",
@@ -973,7 +987,7 @@ mod tests {
 
     #[test]
     fn parse_safety_stop_all() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "safety", "stop"])?;
+        let cli = parse_cli(["wheelctl", "safety", "stop"])?;
         match &cli.command {
             Commands::Safety(SafetyCommands::Stop { device }) => {
                 assert!(device.is_none());
@@ -985,7 +999,7 @@ mod tests {
 
     #[test]
     fn parse_safety_stop_specific_device() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "safety", "stop", "wheel-001"])?;
+        let cli = parse_cli(["wheelctl", "safety", "stop", "wheel-001"])?;
         match &cli.command {
             Commands::Safety(SafetyCommands::Stop { device }) => {
                 assert_eq!(device.as_deref(), Some("wheel-001"));
@@ -997,7 +1011,7 @@ mod tests {
 
     #[test]
     fn parse_safety_enable_force() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "safety", "enable", "wheel-001", "--force"])?;
+        let cli = parse_cli(["wheelctl", "safety", "enable", "wheel-001", "--force"])?;
         match &cli.command {
             Commands::Safety(SafetyCommands::Enable { device, force }) => {
                 assert_eq!(device, "wheel-001");
@@ -1012,7 +1026,7 @@ mod tests {
 
     #[test]
     fn parse_diag_record_with_defaults() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "diag", "record", "wheel-001"])?;
+        let cli = parse_cli(["wheelctl", "diag", "record", "wheel-001"])?;
         match &cli.command {
             Commands::Diag(DiagCommands::Record {
                 device, duration, ..
@@ -1027,7 +1041,7 @@ mod tests {
 
     #[test]
     fn parse_diag_record_custom_duration() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "diag",
             "record",
@@ -1054,8 +1068,7 @@ mod tests {
 
     #[test]
     fn parse_diag_test_specific_type() -> TestResult {
-        let cli =
-            Cli::try_parse_from(["wheelctl", "diag", "test", "--device", "wheel-001", "motor"])?;
+        let cli = parse_cli(["wheelctl", "diag", "test", "--device", "wheel-001", "motor"])?;
         match &cli.command {
             Commands::Diag(DiagCommands::Test { device, test_type }) => {
                 assert_eq!(device.as_deref(), Some("wheel-001"));
@@ -1068,7 +1081,7 @@ mod tests {
 
     #[test]
     fn parse_diag_metrics_watch() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "diag", "metrics", "--watch"])?;
+        let cli = parse_cli(["wheelctl", "diag", "metrics", "--watch"])?;
         match &cli.command {
             Commands::Diag(DiagCommands::Metrics { watch, .. }) => {
                 assert!(watch);
@@ -1082,7 +1095,7 @@ mod tests {
 
     #[test]
     fn parse_telemetry_probe() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "telemetry",
             "probe",
@@ -1114,7 +1127,7 @@ mod tests {
 
     #[test]
     fn parse_telemetry_probe_defaults() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "telemetry", "probe", "--game", "acc"])?;
+        let cli = parse_cli(["wheelctl", "telemetry", "probe", "--game", "acc"])?;
         match &cli.command {
             Commands::Telemetry(TelemetryCommands::Probe {
                 endpoint,
@@ -1133,7 +1146,7 @@ mod tests {
 
     #[test]
     fn parse_telemetry_capture() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "telemetry",
             "capture",
@@ -1169,7 +1182,7 @@ mod tests {
 
     #[test]
     fn parse_telemetry_record() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "telemetry",
             "record",
@@ -1213,7 +1226,7 @@ mod tests {
 
     #[test]
     fn parse_telemetry_record_live_simhub() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "telemetry",
             "record",
@@ -1258,7 +1271,7 @@ mod tests {
 
     #[test]
     fn parse_telemetry_virtual_ffb_log() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "telemetry",
             "virtual-ffb-log",
@@ -1296,7 +1309,7 @@ mod tests {
 
     #[test]
     fn parse_moza_init_lane() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "init-lane",
@@ -1330,8 +1343,7 @@ mod tests {
 
     #[test]
     fn parse_moza_probe_with_json_out() -> TestResult {
-        let cli =
-            Cli::try_parse_from(["wheelctl", "moza", "probe", "--json-out", "moza-probe.json"])?;
+        let cli = parse_cli(["wheelctl", "moza", "probe", "--json-out", "moza-probe.json"])?;
         match &cli.command {
             Commands::Moza(MozaCommands::Probe { json_out }) => {
                 assert_eq!(
@@ -1346,7 +1358,7 @@ mod tests {
 
     #[test]
     fn parse_moza_status_with_lane() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "status",
@@ -1380,7 +1392,7 @@ mod tests {
 
     #[test]
     fn parse_moza_descriptor_with_device() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "descriptor",
@@ -1418,7 +1430,7 @@ mod tests {
 
     #[test]
     fn parse_moza_descriptor_with_report_descriptor_hex_file() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "descriptor",
@@ -1458,7 +1470,7 @@ mod tests {
 
     #[test]
     fn parse_moza_descriptor_with_report_descriptor_bin_file() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "descriptor",
@@ -1498,7 +1510,7 @@ mod tests {
 
     #[test]
     fn parse_moza_capture_input() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "capture-input",
@@ -1530,7 +1542,7 @@ mod tests {
 
     #[test]
     fn parse_moza_steering_stream_proof() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "steering-stream-proof",
@@ -1583,7 +1595,7 @@ mod tests {
 
     #[test]
     fn parse_moza_validate_capture() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "validate-capture",
@@ -1614,7 +1626,7 @@ mod tests {
 
     #[test]
     fn parse_moza_analyze_capture() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "analyze-capture",
@@ -1641,7 +1653,7 @@ mod tests {
 
     #[test]
     fn parse_moza_analyze_lane() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "analyze-lane",
@@ -1668,7 +1680,7 @@ mod tests {
 
     #[test]
     fn parse_moza_sync_role_status() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "sync-role-status",
@@ -1701,7 +1713,7 @@ mod tests {
 
     #[test]
     fn parse_moza_validate_captures() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "validate-captures",
@@ -1728,7 +1740,7 @@ mod tests {
 
     #[test]
     fn parse_moza_pre_output_readiness() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "pre-output-readiness",
@@ -1755,7 +1767,7 @@ mod tests {
 
     #[test]
     fn parse_moza_promote_fixture() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "promote-fixture",
@@ -1804,7 +1816,7 @@ mod tests {
 
     #[test]
     fn parse_moza_promote_fixtures() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "promote-fixtures",
@@ -1848,7 +1860,7 @@ mod tests {
 
     #[test]
     fn parse_moza_zero() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "zero",
@@ -1909,7 +1921,7 @@ mod tests {
 
     #[test]
     fn parse_moza_zero_pidff_stop_all_strategy() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "zero",
@@ -1935,7 +1947,7 @@ mod tests {
 
     #[test]
     fn parse_moza_watchdog_proof() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "watchdog-proof",
@@ -1990,7 +2002,7 @@ mod tests {
 
     #[test]
     fn parse_moza_disconnect_proof() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "disconnect-proof",
@@ -2041,7 +2053,7 @@ mod tests {
 
     #[test]
     fn parse_moza_init() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "init",
@@ -2083,7 +2095,7 @@ mod tests {
 
     #[test]
     fn parse_moza_torque_test() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "torque-test",
@@ -2155,7 +2167,7 @@ mod tests {
 
     #[test]
     fn parse_moza_torque_test_pidff_strategy() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "torque-test",
@@ -2192,7 +2204,7 @@ mod tests {
 
     #[test]
     fn parse_moza_actuator_profile_smoke() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "actuator-profile-smoke",
@@ -2260,7 +2272,7 @@ mod tests {
 
     #[test]
     fn parse_moza_actuator_visible_smoke() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "actuator-visible-smoke",
@@ -2328,7 +2340,7 @@ mod tests {
 
     #[test]
     fn parse_moza_actuator_visible_shaped_micro_profile() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "actuator-visible-smoke",
@@ -2378,8 +2390,68 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_controlled_angle_smoke_dry_run() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "controlled-angle-smoke",
+            "--device",
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
+            "--prior-actuator-proof",
+            "ci/hardware/moza-r5/2026-05-13/native-actuator-profile-smoke.json",
+            "--steering-proof",
+            "ci/hardware/moza-r5/2026-05-13/steering-angle-stream-proof.json",
+            "--target-degrees",
+            "1",
+            "--max-percent",
+            "5",
+            "--timeout-ms",
+            "15000",
+            "--strategy",
+            "pidff-bounded-effect",
+            "--dry-run",
+            "--json-out",
+            "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-smoke.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::ControlledAngleSmoke {
+                device,
+                lane,
+                target_degrees,
+                max_percent,
+                timeout_ms,
+                strategy,
+                dry_run,
+                confirm_controlled_angle,
+                json_out,
+                ..
+            }) => {
+                assert_eq!(device, "hid-0x346E-0x0004-if2-0x0001-0x0004");
+                assert_eq!(
+                    lane.as_path().to_str(),
+                    Some("ci/hardware/moza-r5/2026-05-13")
+                );
+                assert!((*target_degrees - 1.0).abs() < f64::EPSILON);
+                assert!((*max_percent - 5.0).abs() < f32::EPSILON);
+                assert_eq!(*timeout_ms, 15000);
+                assert_eq!(*strategy, MozaLowTorqueStrategy::PidffBoundedEffect);
+                assert!(*dry_run);
+                assert!(!*confirm_controlled_angle);
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("ci/hardware/moza-r5/2026-05-13/native-controlled-angle-smoke.json")
+                );
+            }
+            _ => return Err("expected Moza ControlledAngleSmoke command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_authorize_visible_output() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "authorize-visible-output",
@@ -2443,7 +2515,7 @@ mod tests {
 
     #[test]
     fn parse_moza_receipt_template() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "receipt-template",
@@ -2473,7 +2545,7 @@ mod tests {
 
     #[test]
     fn parse_moza_pit_house_availability() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "pit-house-availability",
@@ -2510,7 +2582,7 @@ mod tests {
 
     #[test]
     fn parse_moza_pit_house_observation() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "pit-house-observation",
@@ -2562,7 +2634,7 @@ mod tests {
 
     #[test]
     fn parse_moza_pit_house_evidence() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "pit-house-evidence",
@@ -2603,7 +2675,7 @@ mod tests {
 
     #[test]
     fn parse_moza_pit_house_case() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "pit-house-case",
@@ -2651,7 +2723,7 @@ mod tests {
 
     #[test]
     fn parse_moza_pit_house_proof() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "pit-house-proof",
@@ -2723,7 +2795,7 @@ mod tests {
 
     #[test]
     fn parse_moza_simulator_telemetry_proof_defaults_source() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "simulator-telemetry-proof",
@@ -2772,7 +2844,7 @@ mod tests {
 
     #[test]
     fn parse_moza_simulator_ffb_smoke() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "simulator-ffb-smoke",
@@ -2840,7 +2912,7 @@ mod tests {
 
     #[test]
     fn parse_moza_simulator_ffb_smoke_pidff_strategy() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "simulator-ffb-smoke",
@@ -2873,7 +2945,7 @@ mod tests {
 
     #[test]
     fn parse_moza_promote_manifest() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "promote-manifest",
@@ -2907,7 +2979,7 @@ mod tests {
 
     #[test]
     fn parse_moza_verify_bundle() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "verify-bundle",
@@ -2941,7 +3013,7 @@ mod tests {
 
     #[test]
     fn parse_moza_audit_lane() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "moza",
             "audit-lane",
@@ -2977,7 +3049,7 @@ mod tests {
 
     #[test]
     fn parse_game_configure() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "game",
             "configure",
@@ -2999,7 +3071,7 @@ mod tests {
 
     #[test]
     fn parse_game_test_custom_duration() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "game", "test", "acc", "--duration", "30"])?;
+        let cli = parse_cli(["wheelctl", "game", "test", "acc", "--duration", "30"])?;
         match &cli.command {
             Commands::Game(GameCommands::Test { game, duration }) => {
                 assert_eq!(game, "acc");
@@ -3012,7 +3084,7 @@ mod tests {
 
     #[test]
     fn parse_game_test_default_duration() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "game", "test", "acc"])?;
+        let cli = parse_cli(["wheelctl", "game", "test", "acc"])?;
         match &cli.command {
             Commands::Game(GameCommands::Test { duration, .. }) => {
                 assert_eq!(*duration, 10);
@@ -3026,14 +3098,14 @@ mod tests {
 
     #[test]
     fn parse_completion_bash() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "completion", "bash"])?;
+        let cli = parse_cli(["wheelctl", "completion", "bash"])?;
         assert!(matches!(cli.command, Commands::Completion { .. }));
         Ok(())
     }
 
     #[test]
     fn parse_health_no_watch() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "health"])?;
+        let cli = parse_cli(["wheelctl", "health"])?;
         match &cli.command {
             Commands::Health { watch } => assert!(!watch),
             _ => return Err("expected Health command".into()),
@@ -3043,7 +3115,7 @@ mod tests {
 
     #[test]
     fn parse_health_watch() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "health", "--watch"])?;
+        let cli = parse_cli(["wheelctl", "health", "--watch"])?;
         match &cli.command {
             Commands::Health { watch } => assert!(watch),
             _ => return Err("expected Health command".into()),
@@ -3055,61 +3127,61 @@ mod tests {
 
     #[test]
     fn reject_no_subcommand() {
-        let result = Cli::try_parse_from(["wheelctl"]);
+        let result = parse_cli(["wheelctl"]);
         assert!(result.is_err());
     }
 
     #[test]
     fn reject_unknown_subcommand() {
-        let result = Cli::try_parse_from(["wheelctl", "nonexistent"]);
+        let result = parse_cli(["wheelctl", "nonexistent"]);
         assert!(result.is_err());
     }
 
     #[test]
     fn reject_missing_required_device_arg() {
-        let result = Cli::try_parse_from(["wheelctl", "device", "status"]);
+        let result = parse_cli(["wheelctl", "device", "status"]);
         assert!(result.is_err());
     }
 
     #[test]
     fn reject_invalid_calibration_type() {
-        let result = Cli::try_parse_from(["wheelctl", "device", "calibrate", "w1", "invalid_type"]);
+        let result = parse_cli(["wheelctl", "device", "calibrate", "w1", "invalid_type"]);
         assert!(result.is_err());
     }
 
     #[test]
     fn reject_invalid_test_type() {
-        let result = Cli::try_parse_from(["wheelctl", "diag", "test", "bad_type"]);
+        let result = parse_cli(["wheelctl", "diag", "test", "bad_type"]);
         assert!(result.is_err());
     }
 
     #[test]
     fn reject_missing_plugin_search_query() {
-        let result = Cli::try_parse_from(["wheelctl", "plugin", "search"]);
+        let result = parse_cli(["wheelctl", "plugin", "search"]);
         assert!(result.is_err());
     }
 
     #[test]
     fn reject_missing_completion_shell() {
-        let result = Cli::try_parse_from(["wheelctl", "completion"]);
+        let result = parse_cli(["wheelctl", "completion"]);
         assert!(result.is_err());
     }
 
     #[test]
     fn reject_safety_limit_missing_torque() {
-        let result = Cli::try_parse_from(["wheelctl", "safety", "limit", "wheel-001"]);
+        let result = parse_cli(["wheelctl", "safety", "limit", "wheel-001"]);
         assert!(result.is_err());
     }
 
     #[test]
     fn reject_safety_limit_non_numeric_torque() {
-        let result = Cli::try_parse_from(["wheelctl", "safety", "limit", "wheel-001", "abc"]);
+        let result = parse_cli(["wheelctl", "safety", "limit", "wheel-001", "abc"]);
         assert!(result.is_err());
     }
 
     #[test]
     fn reject_unknown_device_subcommand() {
-        let result = Cli::try_parse_from(["wheelctl", "device", "fly"]);
+        let result = parse_cli(["wheelctl", "device", "fly"]);
         assert!(result.is_err());
     }
 
@@ -3117,7 +3189,7 @@ mod tests {
 
     #[test]
     fn parse_profile_show() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "profile", "show", "my_profile.json"])?;
+        let cli = parse_cli(["wheelctl", "profile", "show", "my_profile.json"])?;
         match &cli.command {
             Commands::Profile(ProfileCommands::Show { profile }) => {
                 assert_eq!(profile, "my_profile.json");
@@ -3129,7 +3201,7 @@ mod tests {
 
     #[test]
     fn parse_plugin_list_no_filter() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "plugin", "list"])?;
+        let cli = parse_cli(["wheelctl", "plugin", "list"])?;
         match &cli.command {
             Commands::Plugin(PluginCommands::List { category }) => {
                 assert!(category.is_none());
@@ -3141,7 +3213,7 @@ mod tests {
 
     #[test]
     fn parse_plugin_list_with_category() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "plugin", "list", "--category", "ffb"])?;
+        let cli = parse_cli(["wheelctl", "plugin", "list", "--category", "ffb"])?;
         match &cli.command {
             Commands::Plugin(PluginCommands::List { category }) => {
                 assert_eq!(category.as_deref(), Some("ffb"));
@@ -3153,7 +3225,7 @@ mod tests {
 
     #[test]
     fn parse_plugin_info() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "plugin", "info", "ffb-smoothing"])?;
+        let cli = parse_cli(["wheelctl", "plugin", "info", "ffb-smoothing"])?;
         match &cli.command {
             Commands::Plugin(PluginCommands::Info { plugin_id, version }) => {
                 assert_eq!(plugin_id, "ffb-smoothing");
@@ -3166,7 +3238,7 @@ mod tests {
 
     #[test]
     fn parse_plugin_info_with_version() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "plugin",
             "info",
@@ -3186,7 +3258,7 @@ mod tests {
 
     #[test]
     fn parse_diag_replay() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "diag", "replay", "recording.wbb"])?;
+        let cli = parse_cli(["wheelctl", "diag", "replay", "recording.wbb"])?;
         match &cli.command {
             Commands::Diag(DiagCommands::Replay { file, detailed }) => {
                 assert_eq!(file, "recording.wbb");
@@ -3199,8 +3271,7 @@ mod tests {
 
     #[test]
     fn parse_diag_replay_detailed() -> TestResult {
-        let cli =
-            Cli::try_parse_from(["wheelctl", "diag", "replay", "recording.wbb", "--detailed"])?;
+        let cli = parse_cli(["wheelctl", "diag", "replay", "recording.wbb", "--detailed"])?;
         match &cli.command {
             Commands::Diag(DiagCommands::Replay { detailed, .. }) => {
                 assert!(detailed);
@@ -3212,7 +3283,7 @@ mod tests {
 
     #[test]
     fn parse_diag_support_defaults() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "diag", "support"])?;
+        let cli = parse_cli(["wheelctl", "diag", "support"])?;
         match &cli.command {
             Commands::Diag(DiagCommands::Support {
                 blackbox,
@@ -3230,7 +3301,7 @@ mod tests {
 
     #[test]
     fn parse_diag_support_with_options() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "diag",
             "support",
@@ -3255,7 +3326,7 @@ mod tests {
 
     #[test]
     fn parse_diag_support_with_moza_lane() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "diag",
             "support",
@@ -3273,7 +3344,7 @@ mod tests {
 
     #[test]
     fn parse_support_bundle_alias_with_device_and_moza_lane() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "support-bundle",
             "--device",
@@ -3300,7 +3371,7 @@ mod tests {
 
     #[test]
     fn parse_game_list_defaults() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "game", "list"])?;
+        let cli = parse_cli(["wheelctl", "game", "list"])?;
         match &cli.command {
             Commands::Game(GameCommands::List { detailed }) => {
                 assert!(!detailed);
@@ -3312,7 +3383,7 @@ mod tests {
 
     #[test]
     fn parse_game_list_detailed() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "game", "list", "--detailed"])?;
+        let cli = parse_cli(["wheelctl", "game", "list", "--detailed"])?;
         match &cli.command {
             Commands::Game(GameCommands::List { detailed }) => {
                 assert!(detailed);
@@ -3324,7 +3395,7 @@ mod tests {
 
     #[test]
     fn parse_game_status_no_telemetry() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "game", "status"])?;
+        let cli = parse_cli(["wheelctl", "game", "status"])?;
         match &cli.command {
             Commands::Game(GameCommands::Status { telemetry }) => {
                 assert!(!telemetry);
@@ -3336,7 +3407,7 @@ mod tests {
 
     #[test]
     fn parse_game_status_with_telemetry() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "game", "status", "--telemetry"])?;
+        let cli = parse_cli(["wheelctl", "game", "status", "--telemetry"])?;
         match &cli.command {
             Commands::Game(GameCommands::Status { telemetry }) => {
                 assert!(telemetry);
@@ -3348,7 +3419,7 @@ mod tests {
 
     #[test]
     fn parse_safety_status_no_device() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "safety", "status"])?;
+        let cli = parse_cli(["wheelctl", "safety", "status"])?;
         match &cli.command {
             Commands::Safety(SafetyCommands::Status { device }) => {
                 assert!(device.is_none());
@@ -3360,7 +3431,7 @@ mod tests {
 
     #[test]
     fn parse_safety_status_with_device() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "safety", "status", "wheel-001"])?;
+        let cli = parse_cli(["wheelctl", "safety", "status", "wheel-001"])?;
         match &cli.command {
             Commands::Safety(SafetyCommands::Status { device }) => {
                 assert_eq!(device.as_deref(), Some("wheel-001"));
@@ -3372,7 +3443,7 @@ mod tests {
 
     #[test]
     fn parse_diag_metrics_default() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "diag", "metrics"])?;
+        let cli = parse_cli(["wheelctl", "diag", "metrics"])?;
         match &cli.command {
             Commands::Diag(DiagCommands::Metrics { device, watch }) => {
                 assert!(device.is_none());
@@ -3385,7 +3456,7 @@ mod tests {
 
     #[test]
     fn parse_diag_metrics_with_device() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "diag", "metrics", "wheel-001", "--watch"])?;
+        let cli = parse_cli(["wheelctl", "diag", "metrics", "wheel-001", "--watch"])?;
         match &cli.command {
             Commands::Diag(DiagCommands::Metrics { device, watch }) => {
                 assert_eq!(device.as_deref(), Some("wheel-001"));
@@ -3398,7 +3469,7 @@ mod tests {
 
     #[test]
     fn parse_telemetry_capture_defaults() -> TestResult {
-        let cli = Cli::try_parse_from([
+        let cli = parse_cli([
             "wheelctl",
             "telemetry",
             "capture",
@@ -3428,7 +3499,7 @@ mod tests {
 
     #[test]
     fn parse_game_configure_minimal() -> TestResult {
-        let cli = Cli::try_parse_from(["wheelctl", "game", "configure", "acc"])?;
+        let cli = parse_cli(["wheelctl", "game", "configure", "acc"])?;
         match &cli.command {
             Commands::Game(GameCommands::Configure { game, path, auto }) => {
                 assert_eq!(game, "acc");
@@ -3442,25 +3513,25 @@ mod tests {
 
     #[test]
     fn reject_missing_game_configure_id() {
-        let result = Cli::try_parse_from(["wheelctl", "game", "configure"]);
+        let result = parse_cli(["wheelctl", "game", "configure"]);
         assert!(result.is_err());
     }
 
     #[test]
     fn reject_diag_record_missing_device() {
-        let result = Cli::try_parse_from(["wheelctl", "diag", "record"]);
+        let result = parse_cli(["wheelctl", "diag", "record"]);
         assert!(result.is_err());
     }
 
     #[test]
     fn reject_telemetry_probe_missing_game() {
-        let result = Cli::try_parse_from(["wheelctl", "telemetry", "probe"]);
+        let result = parse_cli(["wheelctl", "telemetry", "probe"]);
         assert!(result.is_err());
     }
 
     #[test]
     fn reject_telemetry_capture_missing_out() {
-        let result = Cli::try_parse_from(["wheelctl", "telemetry", "capture", "--game", "acc"]);
+        let result = parse_cli(["wheelctl", "telemetry", "capture", "--game", "acc"]);
         assert!(result.is_err());
     }
 }
