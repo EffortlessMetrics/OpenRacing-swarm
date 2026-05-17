@@ -1174,6 +1174,8 @@ pub enum MozaLowTorqueStrategy {
 pub enum MozaActuatorProfile {
     /// One bounded constant-force PIDFF effect followed by Stop All cleanup
     ConstantLowForce,
+    /// Bounded shaped PIDFF micro-profile for reviewed native visible-motion follow-up
+    BoundedShapedPidffMicroProfile,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]

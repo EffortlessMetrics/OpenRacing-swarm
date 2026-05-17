@@ -39,7 +39,8 @@
     "objective": "Record the next visible-motion profile decision before any output command is authorized.",
     "current_cli_limits": {
       "profile_options": [
-        "constant-low-force"
+        "constant-low-force",
+        "bounded-shaped-pidff-micro-profile"
       ],
       "strategy": "pidff-bounded-effect",
       "max_percent_limit": 5,
@@ -58,16 +59,26 @@
         "use_only_if": "Bench, setup, or FFB-mode review identifies a specific reason the previous 5 percent response stayed below the visible threshold."
       },
       {
-        "name": "higher_longer_or_shaped_profile",
+        "name": "higher_or_longer_profile",
         "status": "requires_separate_software_and_safety_plan",
-        "reason": "The current visible smoke command is capped at 5 percent and 2000 ms and implements only constant-low-force."
+        "reason": "The current visible smoke command remains capped at 5 percent and 2000 ms; any higher or longer profile needs a separate software and safety plan."
       }
     ],
     "selected_next_profile": {
-      "status": "software_plan_recorded_no_output_authorized",
+      "status": "software_profile_implemented_no_output_authorized",
       "family": "bounded_shaped_pidff_micro_profile",
       "reason_previous_5_percent": "The 5 percent / 2000 ms PIDFF command produced actuator response above the response floor, so the next profile should target a small visible steering envelope instead of treating the prior run as dead output.",
-      "current_cli_support": "not_implemented",
+      "current_cli_support": "implemented_pending_bench_clear",
+      "command_profile": "bounded-shaped-pidff-micro-profile",
+      "reviewed_command_template": "wheelctl moza actuator-visible-smoke --device <r5> --lane ci/hardware/moza-r5/<date> --prior-actuator-proof ci/hardware/moza-r5/<date>/native-actuator-profile-smoke.json --steering-proof ci/hardware/moza-r5/<date>/steering-angle-stream-proof.json --profile bounded-shaped-pidff-micro-profile --strategy pidff-bounded-effect --max-percent 5 --duration-ms 2000 --movement-threshold-degrees 1 --confirm-actuator-visible --json-out ci/hardware/moza-r5/<date>/native-actuator-visible-smoke.json --json",
+      "profile_shape": {
+        "outbound_percent": "max_percent",
+        "outbound_duration_percent": 55,
+        "return_percent": "-0.5 * max_percent",
+        "return_duration_percent_of_remaining": 67,
+        "settle_percent": 0,
+        "final_cleanup": "pidff_device_control_stop_all"
+      },
       "expected_small_angle_envelope_degrees": {
         "min": 1.0,
         "max": 3.0,
@@ -84,8 +95,8 @@
       ]
     },
     "software_next_step": {
-      "status": "required_before_output",
-      "description": "Implement or review the exact bounded shaped PIDFF profile in software before any next visible-motion hardware attempt."
+      "status": "implemented_no_output_authorized",
+      "description": "The bounded shaped PIDFF micro-profile is available for dry-run/preflight and still requires fresh bench-clear before any hardware-output attempt."
     }
   },
   "planned_next_output": {

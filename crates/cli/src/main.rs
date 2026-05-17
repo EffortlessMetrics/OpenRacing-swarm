@@ -2327,6 +2327,57 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_actuator_visible_shaped_micro_profile() -> TestResult {
+        let cli = Cli::try_parse_from([
+            "wheelctl",
+            "moza",
+            "actuator-visible-smoke",
+            "--device",
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
+            "--prior-actuator-proof",
+            "ci/hardware/moza-r5/2026-05-13/native-actuator-profile-smoke.json",
+            "--steering-proof",
+            "ci/hardware/moza-r5/2026-05-13/steering-angle-stream-proof.json",
+            "--profile",
+            "bounded-shaped-pidff-micro-profile",
+            "--strategy",
+            "pidff-bounded-effect",
+            "--max-percent",
+            "5",
+            "--duration-ms",
+            "2000",
+            "--dry-run",
+            "--json-out",
+            "target/native-actuator-visible-shaped-plan.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::ActuatorVisibleSmoke {
+                profile,
+                strategy,
+                dry_run,
+                confirm_actuator_visible,
+                max_percent,
+                duration_ms,
+                ..
+            }) => {
+                assert_eq!(
+                    *profile,
+                    MozaActuatorProfile::BoundedShapedPidffMicroProfile
+                );
+                assert_eq!(*strategy, MozaLowTorqueStrategy::PidffBoundedEffect);
+                assert!(*dry_run);
+                assert!(!*confirm_actuator_visible);
+                assert!((*max_percent - 5.0).abs() < f32::EPSILON);
+                assert_eq!(*duration_ms, 2000);
+            }
+            _ => return Err("expected Moza ActuatorVisibleSmoke command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_receipt_template() -> TestResult {
         let cli = Cli::try_parse_from([
             "wheelctl",

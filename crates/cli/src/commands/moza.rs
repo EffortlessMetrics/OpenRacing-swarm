@@ -284,6 +284,7 @@ fn low_torque_strategy_name(strategy: MozaLowTorqueStrategy) -> &'static str {
 fn actuator_profile_name(profile: MozaActuatorProfile) -> &'static str {
     match profile {
         MozaActuatorProfile::ConstantLowForce => "constant_low_force",
+        MozaActuatorProfile::BoundedShapedPidffMicroProfile => "bounded_shaped_pidff_micro_profile",
     }
 }
 
@@ -2708,7 +2709,7 @@ async fn actuator_profile_smoke(request: ActuatorProfileSmokeRequest<'_>) -> Res
         json_out,
     } = request;
 
-    validate_actuator_profile_smoke_args(strategy, max_percent, duration_ms)?;
+    validate_actuator_profile_smoke_args(profile, strategy, max_percent, duration_ms)?;
     if !dry_run && !confirm_actuator_profile {
         return Err(anyhow!(
             "--confirm-actuator-profile is required before actual native actuator-profile writes"
@@ -2834,6 +2835,7 @@ async fn actuator_visible_smoke(request: ActuatorVisibleSmokeRequest<'_>) -> Res
     } = request;
 
     validate_actuator_visible_smoke_args(
+        profile,
         strategy,
         max_percent,
         duration_ms,
@@ -3200,7 +3202,14 @@ fn execute_pidff_bounded_actuator_visible_sequence<F, R>(
 
     let mut sequence = receipt.command_log.len().min(u32::MAX as usize) as u32;
     let mut setup_ok = true;
-    for report in pidff_low_torque_reports(receipt.max_percent, receipt.duration_ms) {
+    let shaped_sampling =
+        receipt.profile_kind == MozaActuatorProfile::BoundedShapedPidffMicroProfile;
+    for report in pidff_actuator_visible_reports(
+        receipt.profile_kind,
+        receipt.max_percent,
+        receipt.duration_ms,
+    ) {
+        let phase_duration_ms = report.phase_duration_ms;
         receipt.write_attempts = receipt.write_attempts.saturating_add(1);
         match write(&report.payload) {
             Ok(bytes_written) => {
@@ -3227,6 +3236,14 @@ fn execute_pidff_bounded_actuator_visible_sequence<F, R>(
                     started_at,
                     bytes_written,
                 ));
+                if shaped_sampling && let Some(phase_duration_ms) = phase_duration_ms {
+                    sample_visible_steering_window_for(
+                        receipt,
+                        sleep_before_cleanup,
+                        &mut read_angle,
+                        phase_duration_ms,
+                    );
+                }
             }
             Err(error) => {
                 setup_ok = false;
@@ -3244,7 +3261,9 @@ fn execute_pidff_bounded_actuator_visible_sequence<F, R>(
     receipt.pidff_effect_setup_proven = setup_ok && receipt.write_errors == 0;
     if receipt.pidff_effect_setup_proven {
         receipt.pidff_effect_block_index = Some(PIDFF_LOW_TORQUE_EFFECT_BLOCK_INDEX);
-        sample_visible_steering_window(receipt, sleep_before_cleanup, &mut read_angle);
+        if !shaped_sampling {
+            sample_visible_steering_window(receipt, sleep_before_cleanup, &mut read_angle);
+        }
     }
 
     let stop_all = ZeroOutputPayload::pidff_stop_all();
@@ -3333,8 +3352,24 @@ fn sample_visible_steering_window<R>(
 ) where
     R: FnMut() -> std::result::Result<SteeringAngleSample, String>,
 {
+    sample_visible_steering_window_for(
+        receipt,
+        sleep_before_cleanup,
+        read_angle,
+        receipt.duration_ms.min(2_000),
+    );
+}
+
+fn sample_visible_steering_window_for<R>(
+    receipt: &mut NativeActuatorVisibleSmokeReceipt,
+    sleep_before_cleanup: bool,
+    read_angle: &mut R,
+    duration_ms: u64,
+) where
+    R: FnMut() -> std::result::Result<SteeringAngleSample, String>,
+{
     if sleep_before_cleanup {
-        let deadline = Instant::now() + Duration::from_millis(receipt.duration_ms.min(2_000));
+        let deadline = Instant::now() + Duration::from_millis(duration_ms.min(2_000));
         while Instant::now() < deadline {
             record_visible_steering_sample(receipt, read_angle);
         }
@@ -4680,10 +4715,16 @@ fn validate_torque_test_args(max_percent: f32, duration_ms: u64, hz: u32) -> Res
 }
 
 fn validate_actuator_profile_smoke_args(
+    profile: MozaActuatorProfile,
     strategy: MozaLowTorqueStrategy,
     max_percent: f32,
     duration_ms: u64,
 ) -> Result<()> {
+    if profile != MozaActuatorProfile::ConstantLowForce {
+        return Err(anyhow!(
+            "native actuator-profile smoke only supports --profile constant-low-force"
+        ));
+    }
     if strategy != MozaLowTorqueStrategy::PidffBoundedEffect {
         return Err(anyhow!(
             "native actuator-profile smoke only supports --strategy pidff-bounded-effect"
@@ -4699,6 +4740,7 @@ fn validate_actuator_profile_smoke_args(
 }
 
 fn validate_actuator_visible_smoke_args(
+    profile: MozaActuatorProfile,
     strategy: MozaLowTorqueStrategy,
     max_percent: f32,
     duration_ms: u64,
@@ -4706,6 +4748,14 @@ fn validate_actuator_visible_smoke_args(
     degrees_of_rotation: f64,
     movement_threshold_degrees: f64,
 ) -> Result<()> {
+    if !matches!(
+        profile,
+        MozaActuatorProfile::ConstantLowForce | MozaActuatorProfile::BoundedShapedPidffMicroProfile
+    ) {
+        return Err(anyhow!(
+            "unsupported native actuator visible-motion profile"
+        ));
+    }
     if strategy != MozaLowTorqueStrategy::PidffBoundedEffect {
         return Err(anyhow!(
             "native actuator visible-motion smoke only supports --strategy pidff-bounded-effect"
@@ -4849,7 +4899,20 @@ fn pidff_gain_for_percent(percent: f32) -> u8 {
 }
 
 fn pidff_constant_force_for_percent(percent: f32) -> i16 {
-    ((f32::from(i16::MAX) * (percent / 100.0)).round() as i32).clamp(1, i32::from(i16::MAX)) as i16
+    pidff_signed_constant_force_for_percent(percent.max(0.0))
+}
+
+fn pidff_signed_constant_force_for_percent(percent: f32) -> i16 {
+    if percent == 0.0 {
+        return 0;
+    }
+    let raw = ((f32::from(i16::MAX) * (percent / 100.0)).round() as i32)
+        .clamp(i32::from(i16::MIN), i32::from(i16::MAX));
+    if raw == 0 {
+        percent.signum() as i16
+    } else {
+        raw as i16
+    }
 }
 
 fn pidff_low_torque_reports(max_percent: f32, duration_ms: u64) -> Vec<PidffLowTorqueReport> {
@@ -4896,6 +4959,114 @@ fn pidff_low_torque_reports(max_percent: f32, duration_ms: u64) -> Vec<PidffLowT
             PIDFF_BOUNDED_EFFECT_CLASSIFICATION,
         ),
     ]
+}
+
+fn pidff_actuator_visible_reports(
+    profile: MozaActuatorProfile,
+    max_percent: f32,
+    duration_ms: u64,
+) -> Vec<PidffLowTorqueReport> {
+    match profile {
+        MozaActuatorProfile::ConstantLowForce => pidff_low_torque_reports(max_percent, duration_ms),
+        MozaActuatorProfile::BoundedShapedPidffMicroProfile => {
+            pidff_shaped_micro_visible_reports(max_percent, duration_ms)
+        }
+    }
+}
+
+fn pidff_shaped_micro_visible_reports(
+    max_percent: f32,
+    duration_ms: u64,
+) -> Vec<PidffLowTorqueReport> {
+    let duration = duration_ms.min(u64::from(u16::MAX)) as u16;
+    let gain = pidff_gain_for_percent(max_percent);
+    let outbound_ms = duration_ms.saturating_mul(55).div_ceil(100).max(1);
+    let remaining_ms = duration_ms.saturating_sub(outbound_ms);
+    let return_ms = remaining_ms.saturating_mul(2).div_ceil(3);
+    let settle_ms = remaining_ms.saturating_sub(return_ms);
+    let outbound_magnitude = pidff_signed_constant_force_for_percent(max_percent);
+    let return_percent = -(max_percent * 0.5);
+    let return_magnitude = pidff_signed_constant_force_for_percent(return_percent);
+
+    let mut reports = vec![
+        PidffLowTorqueReport::new(
+            "pidff_set_effect",
+            max_percent,
+            r5_v1_pidff_set_effect_payload(
+                PIDFF_LOW_TORQUE_EFFECT_BLOCK_INDEX,
+                EffectType::Constant as u8,
+                duration,
+                gain,
+                PIDFF_LOW_TORQUE_DIRECTION_X,
+                PIDFF_LOW_TORQUE_DIRECTION_Y,
+            )
+            .to_vec(),
+            0,
+            false,
+            PIDFF_EFFECT_SETUP_CLASSIFICATION,
+        )
+        .with_profile_phase("setup", None),
+        PidffLowTorqueReport::new(
+            "pidff_set_constant_force_outbound",
+            max_percent,
+            pidff::encode_set_constant_force(
+                PIDFF_LOW_TORQUE_EFFECT_BLOCK_INDEX,
+                outbound_magnitude,
+            )
+            .to_vec(),
+            outbound_magnitude,
+            true,
+            PIDFF_BOUNDED_EFFECT_CLASSIFICATION,
+        )
+        .with_profile_phase("outbound", None),
+        PidffLowTorqueReport::new(
+            "pidff_effect_start",
+            max_percent,
+            pidff::encode_effect_operation(
+                PIDFF_LOW_TORQUE_EFFECT_BLOCK_INDEX,
+                EffectOp::Start,
+                PIDFF_LOW_TORQUE_LOOP_COUNT,
+            )
+            .to_vec(),
+            0,
+            true,
+            PIDFF_BOUNDED_EFFECT_CLASSIFICATION,
+        )
+        .with_profile_phase("outbound_hold", Some(outbound_ms)),
+    ];
+
+    if return_ms > 0 {
+        reports.push(
+            PidffLowTorqueReport::new(
+                "pidff_set_constant_force_return",
+                return_percent,
+                pidff::encode_set_constant_force(
+                    PIDFF_LOW_TORQUE_EFFECT_BLOCK_INDEX,
+                    return_magnitude,
+                )
+                .to_vec(),
+                return_magnitude,
+                true,
+                PIDFF_BOUNDED_EFFECT_CLASSIFICATION,
+            )
+            .with_profile_phase("return", Some(return_ms)),
+        );
+    }
+    if settle_ms > 0 {
+        reports.push(
+            PidffLowTorqueReport::new(
+                "pidff_set_constant_force_settle",
+                0.0,
+                pidff::encode_set_constant_force(PIDFF_LOW_TORQUE_EFFECT_BLOCK_INDEX, 0).to_vec(),
+                0,
+                false,
+                PIDFF_BOUNDED_EFFECT_CLASSIFICATION,
+            )
+            .with_profile_phase("settle", Some(settle_ms)),
+        );
+    }
+
+    reports
 }
 
 fn low_torque_ladder_for_pid(
@@ -17590,7 +17761,7 @@ fn moza_receipt_template(kind: MozaReceiptTemplateKind) -> Value {
                 "status": "no_output_authorized",
                 "objective": "Record the next visible-motion profile decision before any output command is authorized.",
                 "current_cli_limits": {
-                    "profile_options": ["constant-low-force"],
+                    "profile_options": ["constant-low-force", "bounded-shaped-pidff-micro-profile"],
                     "strategy": "pidff-bounded-effect",
                     "max_percent_limit": 5,
                     "duration_ms_limit": 2000,
@@ -17608,16 +17779,26 @@ fn moza_receipt_template(kind: MozaReceiptTemplateKind) -> Value {
                         "use_only_if": "Bench, setup, or FFB-mode review identifies a specific reason the previous 5 percent response stayed below the visible threshold."
                     },
                     {
-                        "name": "higher_longer_or_shaped_profile",
+                        "name": "higher_or_longer_profile",
                         "status": "requires_separate_software_and_safety_plan",
-                        "reason": "The current visible smoke command is capped at 5 percent and 2000 ms and implements only constant-low-force."
+                        "reason": "The current visible smoke command remains capped at 5 percent and 2000 ms; any higher or longer profile needs a separate software and safety plan."
                     }
                 ],
                 "selected_next_profile": {
-                    "status": "software_plan_recorded_no_output_authorized",
+                    "status": "software_profile_implemented_no_output_authorized",
                     "family": "bounded_shaped_pidff_micro_profile",
                     "reason_previous_5_percent": "The 5 percent / 2000 ms PIDFF command produced actuator response above the response floor, so the next profile should target a small visible steering envelope instead of treating the prior run as dead output.",
-                    "current_cli_support": "not_implemented",
+                    "current_cli_support": "implemented_pending_bench_clear",
+                    "command_profile": "bounded-shaped-pidff-micro-profile",
+                    "reviewed_command_template": "wheelctl moza actuator-visible-smoke --device <r5> --lane ci/hardware/moza-r5/<date> --prior-actuator-proof ci/hardware/moza-r5/<date>/native-actuator-profile-smoke.json --steering-proof ci/hardware/moza-r5/<date>/steering-angle-stream-proof.json --profile bounded-shaped-pidff-micro-profile --strategy pidff-bounded-effect --max-percent 5 --duration-ms 2000 --movement-threshold-degrees 1 --confirm-actuator-visible --json-out ci/hardware/moza-r5/<date>/native-actuator-visible-smoke.json --json",
+                    "profile_shape": {
+                        "outbound_percent": "max_percent",
+                        "outbound_duration_percent": 55,
+                        "return_percent": "-0.5 * max_percent",
+                        "return_duration_percent_of_remaining": 67,
+                        "settle_percent": 0,
+                        "final_cleanup": "pidff_device_control_stop_all"
+                    },
                     "expected_small_angle_envelope_degrees": {
                         "min": 1.0,
                         "max": 3.0,
@@ -17634,8 +17815,8 @@ fn moza_receipt_template(kind: MozaReceiptTemplateKind) -> Value {
                     ]
                 },
                 "software_next_step": {
-                    "status": "required_before_output",
-                    "description": "Implement or review the exact bounded shaped PIDFF profile in software before any next visible-motion hardware attempt."
+                    "status": "implemented_no_output_authorized",
+                    "description": "The bounded shaped PIDFF micro-profile is available for dry-run/preflight and still requires fresh bench-clear before any hardware-output attempt."
                 }
             },
             "required_before_next_output": [
@@ -20051,7 +20232,7 @@ impl NativeActuatorProfileSmokeReceipt {
                         || classification == PIDFF_STOP_ALL_CLEANUP_CLASSIFICATION
                 })
                 .unwrap_or(false)
-            && record.percent <= self.max_percent;
+            && record.percent.abs() <= self.max_percent;
         if !safe {
             self.no_nonzero_above_limit = false;
         }
@@ -20069,6 +20250,8 @@ struct NativeActuatorVisibleSmokeReceipt {
     lane: String,
     selector: String,
     profile: &'static str,
+    #[serde(skip)]
+    profile_kind: MozaActuatorProfile,
     output_strategy: &'static str,
     max_percent: f32,
     duration_ms: u64,
@@ -20153,6 +20336,7 @@ impl NativeActuatorVisibleSmokeReceipt {
             lane: lane.display().to_string(),
             selector,
             profile: actuator_profile_name(profile),
+            profile_kind: profile,
             output_strategy: low_torque_strategy_name(MozaLowTorqueStrategy::PidffBoundedEffect),
             max_percent,
             duration_ms,
@@ -20216,7 +20400,9 @@ impl NativeActuatorVisibleSmokeReceipt {
     fn plan_only(&mut self) {
         let started_at = Instant::now();
         let mut sequence = 0u32;
-        for report in pidff_low_torque_reports(self.max_percent, self.duration_ms) {
+        for report in
+            pidff_actuator_visible_reports(self.profile_kind, self.max_percent, self.duration_ms)
+        {
             self.record_command(LowTorqueCommandRecord::planned_pidff_output(
                 sequence, &report, started_at,
             ));
@@ -20343,6 +20529,8 @@ struct PidffLowTorqueReport {
     kind: &'static str,
     percent: f32,
     effect_magnitude_percent: f32,
+    profile_phase: Option<&'static str>,
+    phase_duration_ms: Option<u64>,
     payload: Vec<u8>,
     report_id: String,
     report_len: usize,
@@ -20366,6 +20554,8 @@ impl PidffLowTorqueReport {
             kind,
             percent,
             effect_magnitude_percent: percent,
+            profile_phase: None,
+            phase_duration_ms: None,
             report_len: payload.len(),
             report_id,
             payload,
@@ -20374,6 +20564,12 @@ impl PidffLowTorqueReport {
             motor_enabled,
             safety_classification,
         }
+    }
+
+    fn with_profile_phase(mut self, phase: &'static str, duration_ms: Option<u64>) -> Self {
+        self.profile_phase = Some(phase);
+        self.phase_duration_ms = duration_ms;
+        self
     }
 }
 
@@ -20393,6 +20589,10 @@ struct LowTorqueCommandRecord {
     motor_enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     effect_magnitude_percent: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    profile_phase: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    phase_duration_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pidff_device_control_command: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -20618,6 +20818,8 @@ impl LowTorqueCommandRecord {
             flags: 0,
             motor_enabled: false,
             effect_magnitude_percent: Some(0.0),
+            profile_phase: None,
+            phase_duration_ms: None,
             pidff_device_control_command: Some(hex_u8(PIDFF_STOP_ALL_EFFECTS_COMMAND)),
             pidff_device_control_command_name: Some(PIDFF_STOP_ALL_EFFECTS_COMMAND_NAME),
             safety_classification: Some(safety_classification),
@@ -20650,6 +20852,8 @@ impl LowTorqueCommandRecord {
             flags: report.flags,
             motor_enabled: report.motor_enabled,
             effect_magnitude_percent: Some(report.effect_magnitude_percent),
+            profile_phase: report.profile_phase,
+            phase_duration_ms: report.phase_duration_ms,
             pidff_device_control_command: None,
             pidff_device_control_command_name: None,
             safety_classification: Some(report.safety_classification),
@@ -20686,6 +20890,8 @@ impl LowTorqueCommandRecord {
             flags,
             motor_enabled: flags & 0x01 != 0,
             effect_magnitude_percent: Some(percent),
+            profile_phase: None,
+            phase_duration_ms: None,
             pidff_device_control_command: None,
             pidff_device_control_command_name: None,
             safety_classification: Some("bounded_low_torque_direct_report"),
@@ -30399,12 +30605,25 @@ mod tests {
     #[test]
     fn actuator_profile_smoke_args_require_pidff_and_tight_bounds() -> TestResult {
         validate_actuator_profile_smoke_args(
+            MozaActuatorProfile::ConstantLowForce,
             MozaLowTorqueStrategy::PidffBoundedEffect,
             1.0,
             2_000,
         )?;
 
+        let profile_message = validate_actuator_profile_smoke_args(
+            MozaActuatorProfile::BoundedShapedPidffMicroProfile,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            1.0,
+            2_000,
+        )
+        .err()
+        .map(|error| error.to_string())
+        .ok_or("expected actuator-profile profile rejection")?;
+        assert!(profile_message.contains("constant-low-force"));
+
         let direct_message = validate_actuator_profile_smoke_args(
+            MozaActuatorProfile::ConstantLowForce,
             MozaLowTorqueStrategy::DirectReport0x20,
             1.0,
             2_000,
@@ -30415,6 +30634,7 @@ mod tests {
         assert!(direct_message.contains("pidff-bounded-effect"));
 
         let percent_message = validate_actuator_profile_smoke_args(
+            MozaActuatorProfile::ConstantLowForce,
             MozaLowTorqueStrategy::PidffBoundedEffect,
             1.1,
             2_000,
@@ -30425,6 +30645,7 @@ mod tests {
         assert!(percent_message.contains("0.1..=1.0"));
 
         let duration_message = validate_actuator_profile_smoke_args(
+            MozaActuatorProfile::ConstantLowForce,
             MozaLowTorqueStrategy::PidffBoundedEffect,
             1.0,
             2_001,
@@ -30639,6 +30860,16 @@ mod tests {
     #[test]
     fn actuator_visible_smoke_args_allow_five_percent_pidff_only() -> TestResult {
         validate_actuator_visible_smoke_args(
+            MozaActuatorProfile::ConstantLowForce,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.0,
+            2_000,
+            20,
+            1080.0,
+            1.0,
+        )?;
+        validate_actuator_visible_smoke_args(
+            MozaActuatorProfile::BoundedShapedPidffMicroProfile,
             MozaLowTorqueStrategy::PidffBoundedEffect,
             5.0,
             2_000,
@@ -30648,6 +30879,7 @@ mod tests {
         )?;
 
         let direct_message = validate_actuator_visible_smoke_args(
+            MozaActuatorProfile::BoundedShapedPidffMicroProfile,
             MozaLowTorqueStrategy::DirectReport0x20,
             5.0,
             2_000,
@@ -30661,6 +30893,7 @@ mod tests {
         assert!(direct_message.contains("pidff-bounded-effect"));
 
         let percent_message = validate_actuator_visible_smoke_args(
+            MozaActuatorProfile::BoundedShapedPidffMicroProfile,
             MozaLowTorqueStrategy::PidffBoundedEffect,
             5.1,
             2_000,
@@ -30777,6 +31010,103 @@ mod tests {
         assert_eq!(
             gate.status, "pass",
             "expected visible actuator gate pass: {}",
+            gate.details
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn execute_pidff_actuator_visible_shaped_profile_records_phases() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_native_actuator_visible_prerequisite_receipts(dir.path())?;
+        let preflight = validate_native_actuator_visible_smoke_preflight(
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            dir.path(),
+            Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            Some(&dir.path().join("steering-angle-stream-proof.json")),
+            Some(&dir.path().join("native-actuator-visible-smoke.json")),
+            false,
+        )?;
+        let mut receipt = NativeActuatorVisibleSmokeReceipt::new(
+            "hid-0x346E-0x0004-if2-0x0001-0x0004".to_string(),
+            dir.path(),
+            synthetic_moza_device_record(product_ids::R5_V1),
+            preflight,
+            MozaActuatorProfile::BoundedShapedPidffMicroProfile,
+            5.0,
+            2_000,
+            20,
+            1080.0,
+            1.0,
+            false,
+        );
+        let mut sample_index = 0_u32;
+        execute_pidff_bounded_actuator_visible_sequence(
+            &mut receipt,
+            Instant::now(),
+            false,
+            |payload| Ok(payload.len()),
+            || {
+                let angle = match sample_index {
+                    0 => 0.0,
+                    1..=8 => f64::from(sample_index) * 0.2,
+                    9..=16 => 1.6 - (f64::from(sample_index - 8) * 0.05),
+                    _ => 1.2,
+                };
+                sample_index = sample_index.saturating_add(1);
+                Ok(SteeringAngleSample::Angle(angle))
+            },
+        );
+        receipt.success = receipt.confirmed
+            && receipt.hardware_output_enabled
+            && receipt.prior_actuator_profile_smoke_validated
+            && receipt.steering_proof_validated
+            && receipt.no_direct_torque_reports
+            && receipt.no_high_torque
+            && receipt.no_nonzero_above_limit
+            && receipt.pidff_effect_setup_proven
+            && receipt.write_errors == 0
+            && receipt.final_stop_all_sent
+            && receipt.movement_observed
+            && receipt.post_stop_stable;
+        receipt.set_receipt_path(Some(&dir.path().join("native-actuator-visible-smoke.json")));
+        let receipt = serde_json::to_value(&receipt)?;
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &receipt,
+        )?;
+
+        assert_eq!(
+            json_string(&receipt, "profile"),
+            Some("bounded_shaped_pidff_micro_profile")
+        );
+        assert_eq!(json_bool(&receipt, "success"), Some(true));
+        assert_eq!(json_bool(&receipt, "no_nonzero_above_limit"), Some(true));
+        let records = receipt
+            .get("command_log")
+            .and_then(Value::as_array)
+            .ok_or("expected shaped visible command log")?;
+        assert_eq!(records.len(), 6);
+        assert!(records.iter().any(|record| {
+            json_string(record, "profile_phase") == Some("return")
+                && json_f64(record, "percent")
+                    .map(|percent| percent < 0.0)
+                    .unwrap_or(false)
+        }));
+        assert!(records.iter().any(|record| {
+            json_string(record, "profile_phase") == Some("settle")
+                && json_f64(record, "percent") == Some(0.0)
+        }));
+        assert!(records.iter().all(|record| {
+            json_string(record, "report_id")
+                .map(|report_id| report_id != DIRECT_TORQUE_REPORT_ID)
+                .unwrap_or(false)
+        }));
+
+        let gate = verify_native_actuator_visible_smoke_gate(dir.path());
+        assert_eq!(
+            gate.status, "pass",
+            "expected shaped visible actuator gate pass: {}",
             gate.details
         );
         Ok(())
@@ -33041,7 +33371,7 @@ mod tests {
         };
         assert_eq!(
             json_string(selected_profile, "status"),
-            Some("software_plan_recorded_no_output_authorized")
+            Some("software_profile_implemented_no_output_authorized")
         );
         assert_eq!(
             json_string(selected_profile, "family"),
@@ -33049,7 +33379,16 @@ mod tests {
         );
         assert_eq!(
             json_string(selected_profile, "current_cli_support"),
-            Some("not_implemented")
+            Some("implemented_pending_bench_clear")
+        );
+        assert_eq!(
+            json_string(selected_profile, "command_profile"),
+            Some("bounded-shaped-pidff-micro-profile")
+        );
+        assert!(
+            json_string(selected_profile, "reviewed_command_template")
+                .map(|command| command.contains("--profile bounded-shaped-pidff-micro-profile"))
+                .unwrap_or(false)
         );
         let Some(envelope) = selected_profile.get("expected_small_angle_envelope_degrees") else {
             return Err("visible follow-up template missing expected angle envelope".into());
@@ -37293,10 +37632,11 @@ mod tests {
                 && actions.contains("review_decision=no_output_retry_authorized")
                 && actions
                     .contains("profile_design_status=profile_design_recorded_no_output_authorized")
-                && actions
-                    .contains("planned_profile_status=software_plan_recorded_no_output_authorized")
+                && actions.contains(
+                    "planned_profile_status=software_profile_implemented_no_output_authorized"
+                )
                 && actions.contains("planned_profile_family=bounded_shaped_pidff_micro_profile")
-                && actions.contains("planned_profile_cli_support=not_implemented")
+                && actions.contains("planned_profile_cli_support=implemented_pending_bench_clear")
                 && actions.contains("expected_small_angle_envelope_degrees=1.000..3.000")
                 && actions.contains("exact_output_command_authorized=false")
                 && actions.contains("hardware_output_authorized=false")
