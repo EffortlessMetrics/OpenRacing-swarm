@@ -8325,13 +8325,22 @@ fn native_visible_smoke_failed_real_receipt_action(lane: &Path) -> Option<String
         let controlled_angle_artifact_summary = native_controlled_angle_plan_artifact_summary(lane);
         let controlled_angle_preflight_summary =
             native_controlled_angle_smoke_artifact_summary(lane);
+        let authorization_guidance = native_visible_authorization_guidance(lane);
         return Some(format!(
-            "Current native-visible frontier: native actuator response is recorded, but visible-motion remains unclaimed: movement_observed={movement_observed}, angle_delta_degrees={delta}, movement_threshold_degrees={threshold}. Final Stop All sent={stop_all_sent}, no direct report 0x20={no_direct}, no high torque={no_high_torque}. Follow-up plan exists at {NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE}: review_decision={review_decision}, profile_design_status={profile_design_status}, {profile_plan_summary}, {controlled_angle_artifact_summary}, {controlled_angle_preflight_summary}, hardware_output_authorized={output_authorized}, force_escalation_authorized={force_escalation_authorized}. Do not run output until the follow-up requirements are complete and a fresh bench-clear is recorded for the exact next output command via wheelctl moza authorize-visible-output. Pit House, SimHub, and simulators are not required for this native diagnosis."
+            "Current native-visible frontier: native actuator response is recorded, but visible-motion remains unclaimed: movement_observed={movement_observed}, angle_delta_degrees={delta}, movement_threshold_degrees={threshold}. Final Stop All sent={stop_all_sent}, no direct report 0x20={no_direct}, no high torque={no_high_torque}. Follow-up plan exists at {NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE}: review_decision={review_decision}, profile_design_status={profile_design_status}, {profile_plan_summary}, {controlled_angle_artifact_summary}, {controlled_angle_preflight_summary}, hardware_output_authorized={output_authorized}, force_escalation_authorized={force_escalation_authorized}. {authorization_guidance} Pit House, SimHub, and simulators are not required for this native diagnosis."
         ));
     }
     Some(format!(
         "Current native-visible frontier: native actuator response is recorded, but visible-motion remains unclaimed: movement_observed={movement_observed}, angle_delta_degrees={delta}, movement_threshold_degrees={threshold}. Final Stop All sent={stop_all_sent}, no direct report 0x20={no_direct}, no high torque={no_high_torque}. Do not rerun, raise force, or replace native-actuator-visible-smoke.json from generated guidance; inspect the bench/setup/FFB mode and record a deliberate follow-up plan in {NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE} before another hardware-output attempt. Pit House, SimHub, and simulators are not required for this native diagnosis."
     ))
+}
+
+fn native_visible_authorization_guidance(lane: &Path) -> &'static str {
+    if native_controlled_angle_smoke_is_no_output_preflight(lane) {
+        "Do not run output until fresh bench-clear is recorded for the exact 1 degree controlled-angle command via wheelctl moza authorize-controlled-angle-output, producing native-controlled-angle-authorization.json; no visible-output authorizer is required for this controlled-angle path."
+    } else {
+        "Do not run output until the follow-up requirements are complete and a fresh bench-clear is recorded for the exact next output command via wheelctl moza authorize-visible-output."
+    }
 }
 
 fn native_controlled_angle_plan_artifact_summary(lane: &Path) -> String {
@@ -8391,6 +8400,25 @@ fn native_controlled_angle_smoke_artifact_summary(lane: &Path) -> String {
     format!(
         "controlled_angle_preflight_artifact={status}, controlled_angle_preflight_target_degrees={target}, controlled_angle_preflight_command_ok={command_ok}, controlled_angle_preflight_no_output_ok={no_output_ok}, controlled_angle_motion_unclaimed={motion_unclaimed}"
     )
+}
+
+fn native_controlled_angle_smoke_is_no_output_preflight(lane: &Path) -> bool {
+    let Ok(receipt) = read_json_value(lane, NATIVE_CONTROLLED_ANGLE_SMOKE_FILE) else {
+        return false;
+    };
+    let command_ok =
+        json_string(&receipt, "command") == Some("wheelctl moza controlled-angle-smoke");
+    let no_output_ok = json_bool(&receipt, "hardware_output_enabled") == Some(false)
+        && json_bool(&receipt, "dry_run") == Some(true)
+        && json_bool(&receipt, "no_hid_device_opened") == Some(true)
+        && json_bool(&receipt, "no_ffb_writes") == Some(true)
+        && json_bool(&receipt, "no_output_reports") == Some(true)
+        && json_bool(&receipt, "no_feature_reports") == Some(true)
+        && no_out_of_scope_device_commands(&receipt);
+    let motion_unclaimed = json_bool(&receipt, "controlled_angle_motion_proven") == Some(false)
+        && json_bool(&receipt, "actual_hardware_writes_supported") == Some(false)
+        && json_bool(&receipt, "planned_next_output_allowed") == Some(false);
+    command_ok && no_output_ok && motion_unclaimed
 }
 
 fn native_controlled_angle_ladder_degrees() -> [f64; 6] {
@@ -10487,8 +10515,11 @@ fn push_native_visible_next_commands(
             if lane.join(NATIVE_CONTROLLED_ANGLE_PLAN_FILE).exists()
                 && !lane.join(NATIVE_CONTROLLED_ANGLE_SMOKE_FILE).exists()
             {
+                let target_degrees = compact_f64(NATIVE_CONTROLLED_ANGLE_FIRST_TARGET_DEGREES);
+                let max_percent = compact_f32(NATIVE_CONTROLLED_ANGLE_FIRST_MAX_PERCENT);
+                let timeout_ms = NATIVE_CONTROLLED_ANGLE_FIRST_MAX_DURATION_MS;
                 commands.push(format!(
-                    "wheelctl moza controlled-angle-smoke --device {r5_selector} --lane {lane_arg} --prior-actuator-proof {} --steering-proof {} --target-degrees 1 --max-percent 5 --timeout-ms 15000 --strategy pidff-bounded-effect --dry-run --json-out {} --json",
+                    "wheelctl moza controlled-angle-smoke --device {r5_selector} --lane {lane_arg} --prior-actuator-proof {} --steering-proof {} --target-degrees {target_degrees} --max-percent {max_percent} --timeout-ms {timeout_ms} --strategy pidff-bounded-effect --dry-run --json-out {} --json",
                     lane_path_arg(lane, "native-actuator-profile-smoke.json"),
                     lane_path_arg(lane, "steering-angle-stream-proof.json"),
                     lane_path_arg(lane, NATIVE_CONTROLLED_ANGLE_SMOKE_FILE)
@@ -41625,7 +41656,7 @@ mod tests {
                 && commands.contains("--dry-run")
                 && commands.contains("--target-degrees 1")
                 && commands.contains("--max-percent 5")
-                && commands.contains("--timeout-ms 15000")
+                && commands.contains("--timeout-ms 2000")
                 && !commands.contains("wheelctl moza actuator-visible-smoke"),
             "after controlled-angle planning is recorded, guidance should allow only the no-output controlled-angle preflight: {commands}"
         );
@@ -41662,8 +41693,11 @@ mod tests {
                 && action_text.contains("controlled_angle_ladder_ok=true")
                 && action_text.contains("controlled_angle_preflight_artifact=present_no_output")
                 && action_text.contains("controlled_angle_preflight_no_output_ok=true")
-                && action_text.contains("controlled_angle_motion_unclaimed=true"),
-            "operator action should report the checked-in controlled-angle plan and preflight artifacts accurately: {action_text}"
+                && action_text.contains("controlled_angle_motion_unclaimed=true")
+                && action_text.contains("wheelctl moza authorize-controlled-angle-output")
+                && action_text.contains(NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE)
+                && !action_text.contains("wheelctl moza authorize-visible-output"),
+            "operator action should report the checked-in controlled-angle plan and preflight artifacts accurately and point at controlled-angle authorization: {action_text}"
         );
         let followup_commands = receipt
             .blocked_safe_followups
@@ -42318,7 +42352,8 @@ mod tests {
                 && actions.contains("exact_output_command_authorized=false")
                 && actions.contains("hardware_output_authorized=false")
                 && actions
-                    .contains("fresh bench-clear is recorded for the exact next output command"),
+                    .contains("fresh bench-clear is recorded for the exact next output command")
+                && actions.contains("wheelctl moza authorize-visible-output"),
             "existing follow-up plan should suppress stale plan-recording guidance: {actions}"
         );
 
