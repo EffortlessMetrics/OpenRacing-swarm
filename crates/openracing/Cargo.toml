@@ -1,0 +1,42 @@
+[package]
+name = "openracing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+publish = true
+homepage = "https://github.com/EffortlessMetrics/OpenRacing"
+documentation = "https://docs.rs/openracing"
+readme = "README.md"
+description = "Facade SDK entrypoint for OpenRacing public crates"
+keywords = ["openracing", "sdk", "ffb", "racing", "hardware"]
+categories = ["game-development", "hardware-support"]
+
+[package.metadata.cargo-udeps.ignore]
+normal = ["workspace-hack"]
+
+[dependencies]
+openracing-calibration = { path = "../openracing-calibration", version = "0.1.0", optional = true }
+openracing-curves = { path = "../openracing-curves", version = "0.1.0", optional = true }
+openracing-engine = { package = "racing-wheel-engine", path = "../engine", version = "0.1.0", optional = true, default-features = false }
+openracing-ffb = { path = "../openracing-ffb", version = "0.1.0", optional = true }
+openracing-plugin-abi = { path = "../openracing-plugin-abi", version = "0.1.0", optional = true }
+openracing-profile = { path = "../openracing-profile", version = "0.1.0", optional = true }
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[features]
+default = []
+sdk = ["calibration", "curves", "ffb", "profile", "plugin-abi"]
+runtime = ["sdk", "engine"]
+calibration = ["dep:openracing-calibration"]
+curves = ["dep:openracing-curves"]
+engine = ["dep:openracing-engine"]
+ffb = ["dep:openracing-ffb"]
+plugin-abi = ["dep:openracing-plugin-abi"]
+profile = ["dep:openracing-profile"]
+
+[lints]
+workspace = true

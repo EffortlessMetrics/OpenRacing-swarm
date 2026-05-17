@@ -4291,6 +4291,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
+name = "openracing"
+version = "0.1.0"
+dependencies = [
+ "openracing-calibration",
+ "openracing-curves",
+ "openracing-ffb",
+ "openracing-plugin-abi",
+ "openracing-profile",
+ "racing-wheel-engine",
+ "workspace-hack",
+]
+
+[[package]]
 name = "openracing-atomic"
 version = "0.1.0"
 dependencies = [

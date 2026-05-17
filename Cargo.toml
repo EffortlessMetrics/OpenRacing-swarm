@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/openracing",
     "crates/schemas",
     "crates/ks",
     "crates/srp",
@@ -90,6 +91,7 @@ members = [
     "workspace-hack",
   ]
 default-members = [
+    "crates/openracing",
     "crates/tools",
     "crates/cli",
     "crates/service",

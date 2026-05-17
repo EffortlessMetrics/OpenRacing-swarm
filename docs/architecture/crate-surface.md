@@ -44,6 +44,39 @@ The target public support surface contains 18 packages:
 
 `openracing-curves` remains public because it is reusable math. `openracing-moza` remains public because the Moza family is receipt-backed and validated enough to be a hardware-family contract rather than a generic HID leaf.
 
+## Facade and Naming Spine
+
+`openracing` is the start-here SDK facade. It owns stable public module names,
+not implementation placement. The facade may re-export durable public crates
+behind product-oriented features, but it must stay thin and must not become a
+dumping ground for runtime, HID, service, simulator, or vendor-specific
+implementation details.
+
+The initial facade introduces these feature families:
+
+| Feature | Module | Backing package today |
+| --- | --- | --- |
+| `calibration` | `openracing::calibration` | `openracing-calibration` |
+| `curves` | `openracing::curves` | `openracing-curves` |
+| `ffb` | `openracing::ffb` | `openracing-ffb` |
+| `profile` | `openracing::profile` | `openracing-profile` |
+| `plugin-abi` | `openracing::plugin_abi` | `openracing-plugin-abi` |
+| `engine` | `openracing::engine` | `racing-wheel-engine` during transition |
+
+The facade deliberately does not create `hid`, `pidff`, `moza`, or telemetry
+modules until those owner packages exist. Later migration PRs should add those
+facade modules only after the corresponding public package has landed or been
+promoted.
+
+Naming rules during the transition:
+
+- prefer the final public names in new docs and examples;
+- keep historical package names only where they describe current Cargo reality;
+- add facade modules as thin re-exports, not as code movement;
+- do not add migration-only feature names that match old microcrate seams;
+- do not use the facade to make Pit House, SimHub, simulator, or hardware-output
+  paths prerequisites for native OpenRacing control.
+
 ## Internal Packages
 
 Internal packages are limited to tools, test crates, compatibility fixtures, examples, workspace machinery, and development-only support packages. They must have `publish = false` and should have a description that makes their internal role clear.
