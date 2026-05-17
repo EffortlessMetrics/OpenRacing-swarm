@@ -1,9 +1,9 @@
 {
   "availability_status": "not_installed_or_not_running",
   "command": "wheelctl moza pit-house-availability",
-  "evidence": "Pit House was not found in install, process, or window scans on this host.",
+  "evidence": "Pit House install/process/window availability snapshot on Windows bench; no native output, no HID device opened.",
   "evidence_status": "non_claiming_external_app_availability",
-  "generated_at_utc": "2026-05-17T03:49:44Z",
+  "generated_at_utc": "2026-05-17T21:18:17Z",
   "installation_scan_attempted": true,
   "installation_scan_error": null,
   "matched_installation_count": 0,
