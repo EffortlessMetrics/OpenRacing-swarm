@@ -2514,6 +2514,71 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_authorize_controlled_angle_output() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "authorize-controlled-angle-output",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
+            "--device",
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            "--operator",
+            "Steven",
+            "--bench-clear-evidence",
+            "Bench clear for exactly one 1 degree controlled-angle command.",
+            "--prior-response-proof",
+            "ci/hardware/moza-r5/2026-05-13/native-actuator-visible-smoke.json",
+            "--prior-actuator-proof",
+            "ci/hardware/moza-r5/2026-05-13/native-actuator-profile-smoke.json",
+            "--steering-proof",
+            "ci/hardware/moza-r5/2026-05-13/steering-angle-stream-proof.json",
+            "--target-degrees",
+            "1",
+            "--strategy",
+            "pidff-bounded-effect",
+            "--max-percent",
+            "5",
+            "--timeout-ms",
+            "2000",
+            "--json-out",
+            "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-authorization.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::AuthorizeControlledAngleOutput {
+                lane,
+                device,
+                operator,
+                target_degrees,
+                strategy,
+                max_percent,
+                timeout_ms,
+                json_out,
+                ..
+            }) => {
+                assert_eq!(
+                    lane.as_path().to_str(),
+                    Some("ci/hardware/moza-r5/2026-05-13")
+                );
+                assert_eq!(device, "hid-0x346E-0x0004-if2-0x0001-0x0004");
+                assert_eq!(operator, "Steven");
+                assert!((*target_degrees - 1.0).abs() < f64::EPSILON);
+                assert_eq!(*strategy, MozaLowTorqueStrategy::PidffBoundedEffect);
+                assert!((*max_percent - 5.0).abs() < f32::EPSILON);
+                assert_eq!(*timeout_ms, 2000);
+                assert_eq!(
+                    json_out.as_ref().and_then(|path| path.to_str()),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-authorization.json"
+                    )
+                );
+            }
+            _ => return Err("expected Moza AuthorizeControlledAngleOutput command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_receipt_template() -> TestResult {
         let cli = parse_cli([
             "wheelctl",

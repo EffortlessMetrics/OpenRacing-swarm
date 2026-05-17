@@ -983,6 +983,49 @@ pub enum MozaCommands {
         overwrite: bool,
     },
 
+    /// Authorize one exact native controlled-angle hardware attempt after fresh bench-clear
+    AuthorizeControlledAngleOutput {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-13
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Exact lane R5 HID endpoint selector, e.g. hid-0x346E-0x0004-if2-0x0001-0x0004
+        #[arg(long)]
+        device: String,
+        /// Operator or host label granting bench-clear
+        #[arg(long, default_value = "Steven")]
+        operator: String,
+        /// Fresh bench-clear evidence for this exact controlled-angle command
+        #[arg(long)]
+        bench_clear_evidence: String,
+        /// Same-lane response-only native visible/actuator response receipt
+        #[arg(long)]
+        prior_response_proof: Option<std::path::PathBuf>,
+        /// Same-lane native actuator-profile receipt for the planned run
+        #[arg(long)]
+        prior_actuator_proof: Option<std::path::PathBuf>,
+        /// Same-lane steering stream proof receipt for the planned run
+        #[arg(long)]
+        steering_proof: Option<std::path::PathBuf>,
+        /// Planned controlled-angle target in degrees; first authorized rung is 1 degree
+        #[arg(long, default_value = "1")]
+        target_degrees: f64,
+        /// Planned output strategy; direct report 0x20 is not accepted
+        #[arg(long, value_enum, default_value_t = MozaLowTorqueStrategy::PidffBoundedEffect)]
+        strategy: MozaLowTorqueStrategy,
+        /// Planned maximum force percent; first authorized rung requires exactly 5 percent
+        #[arg(long, default_value = "5")]
+        max_percent: f32,
+        /// Planned feedback-bounded timeout in milliseconds; actual writes are capped at 2000 ms
+        #[arg(long, default_value = "2000")]
+        timeout_ms: u64,
+        /// Write the native controlled-angle authorization receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+        /// Replace an existing controlled-angle authorization receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
     /// Write a non-claiming starter receipt for manual Pit House or simulator evidence
     ReceiptTemplate {
         /// Receipt template kind to write
