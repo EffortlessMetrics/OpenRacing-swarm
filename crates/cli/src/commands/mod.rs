@@ -1247,6 +1247,8 @@ pub enum MozaActuatorProfile {
 pub enum MozaReceiptTemplateKind {
     /// Native visible-motion failure follow-up plan
     VisibleMotionFollowUp,
+    /// Native feedback-bounded controlled-angle movement plan
+    ControlledAnglePlan,
     /// Pit House coexistence matrix receipt
     PitHouse,
     /// Telemetry-only real simulator receipt

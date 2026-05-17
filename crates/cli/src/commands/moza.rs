@@ -81,6 +81,7 @@ const PIDFF_STOP_ALL_CLEANUP_CLASSIFICATION: &str = "pidff_stop_all_cleanup";
 const PIDFF_PLANNED_STOP_ALL_CLASSIFICATION: &str = "planned_pidff_stop_all";
 const NATIVE_ACTUATOR_RESPONSE_MIN_DELTA_DEGREES: f64 = 0.10;
 const NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE: &str = "native-actuator-visible-follow-up-plan.json";
+const NATIVE_CONTROLLED_ANGLE_PLAN_FILE: &str = "native-controlled-angle-plan.json";
 const R5_V1_LIVE_OUTPUT_REPORTS: &[(&str, usize)] = &[
     ("0x01", 22),
     ("0x02", 14),
@@ -7535,9 +7536,13 @@ fn native_visible_planned_profile_summary(plan: &Value) -> Option<String> {
         .get("planned_next_output")
         .and_then(|planned| json_bool(planned, "allowed"))
         .unwrap_or(false);
+    let controlled_angle_status = design
+        .get("later_controlled_angle_profile")
+        .and_then(|controlled| json_string(controlled, "status"))
+        .unwrap_or("missing_controlled_angle_plan");
 
     Some(format!(
-        "planned_profile_status={status}, planned_profile_family={family}, planned_profile_cli_support={cli_support}, expected_small_angle_envelope_degrees={min:.3}..{max:.3}, exact_output_command_authorized={exact_output_authorized}"
+        "planned_profile_status={status}, planned_profile_family={family}, planned_profile_cli_support={cli_support}, expected_small_angle_envelope_degrees={min:.3}..{max:.3}, controlled_angle_plan_status={controlled_angle_status}, exact_output_command_authorized={exact_output_authorized}"
     ))
 }
 
@@ -9462,6 +9467,12 @@ fn push_native_visible_next_commands(
                 commands.push(format!(
                     "wheelctl moza receipt-template --kind visible-motion-follow-up --json-out {} --json",
                     lane_path_arg(lane, NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE)
+                ));
+            }
+            if !lane.join(NATIVE_CONTROLLED_ANGLE_PLAN_FILE).exists() {
+                commands.push(format!(
+                    "wheelctl moza receipt-template --kind controlled-angle-plan --json-out {} --json",
+                    lane_path_arg(lane, NATIVE_CONTROLLED_ANGLE_PLAN_FILE)
                 ));
             }
             if !pre_output_readiness_receipt_is_no_output_snapshot(lane) {
@@ -18879,8 +18890,32 @@ fn moza_receipt_template(kind: MozaReceiptTemplateKind) -> Value {
                 "software_next_step": {
                     "status": "implemented_no_output_authorized",
                     "description": "The bounded shaped PIDFF micro-profile is available for dry-run/preflight; use wheelctl moza authorize-visible-output to record fresh bench-clear, preserve the response-only receipt, and authorize exactly one matching hardware-output command."
-                }
+                },
+                "later_controlled_angle_profile": native_controlled_angle_profile_plan_value()
             },
+            "controlled_angle_plan_artifact": {
+                "status": "not_written",
+                "artifact": NATIVE_CONTROLLED_ANGLE_PLAN_FILE,
+                "template_command": "wheelctl moza receipt-template --kind controlled-angle-plan",
+                "purpose": "Plan a feedback-bounded staged angle profile before any 90 degree right/left movement attempt."
+            },
+            "blocked_requests": [
+                {
+                    "request": "5 percent / 3000 ms",
+                    "status": "not_authorized",
+                    "reason": "Longer open-loop dwell is not the right ramp from a sub-degree response receipt."
+                },
+                {
+                    "request": "5 percent / 30000 ms",
+                    "status": "rejected_as_next_ramp",
+                    "reason": "Thirty seconds is sustained force dwell, not a feedback-bounded movement proof."
+                },
+                {
+                    "request": "90 degrees right, then 90 degrees left to reset",
+                    "status": "requires_controlled_angle_plan",
+                    "reason": "The 90 degree goal must be staged through smaller feedback-bounded angle receipts first."
+                }
+            ],
             "required_before_next_output": [
                 {
                     "check": "bench_clearance",
@@ -18922,6 +18957,9 @@ fn moza_receipt_template(kind: MozaReceiptTemplateKind) -> Value {
                 "Use wheelctl moza authorize-visible-output after the failure has been reviewed and the operator gives a fresh bench-clear for the exact command."
             ]
         }),
+        MozaReceiptTemplateKind::ControlledAnglePlan => {
+            native_controlled_angle_plan_receipt_template_value()
+        }
         MozaReceiptTemplateKind::PitHouse => serde_json::json!({
             "success": false,
             "template": true,
@@ -19016,6 +19054,126 @@ fn moza_receipt_template(kind: MozaReceiptTemplateKind) -> Value {
         }),
         MozaReceiptTemplateKind::SimulatorFfb => simulator_ffb_receipt_template_value(),
     }
+}
+
+fn native_controlled_angle_plan_receipt_template_value() -> Value {
+    serde_json::json!({
+        "success": false,
+        "template": true,
+        "evidence_status": "engineering_review_pending",
+        "command": "wheelctl moza receipt-template",
+        "generated_at_utc": now_utc(),
+        "review_scope": "native_controlled_angle_profile_design",
+        "prior_receipts": [
+            "native-actuator-profile-smoke.json",
+            "steering-angle-stream-proof.json",
+            "native-actuator-visible-smoke.json",
+            NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE
+        ],
+        "hardware_output_authorized": false,
+        "force_escalation_authorized": false,
+        "no_hid_device_opened": true,
+        "no_ffb_writes": true,
+        "no_output_reports": true,
+        "no_feature_reports": true,
+        "no_serial_config_commands": true,
+        "no_firmware_or_dfu_commands": true,
+        "planned_next_output": {
+            "allowed": false,
+            "command": "",
+            "requires_fresh_bench_clear": true,
+            "force_percent": "not_authorized",
+            "duration_ms": "not_authorized",
+            "target_degrees": "not_authorized"
+        },
+        "controlled_angle_profile_plan": native_controlled_angle_profile_plan_value(),
+        "blocked_requests": [
+            {
+                "request": "5 percent / 3000 ms",
+                "status": "not_authorized",
+                "reason": "Three seconds is still open-loop dwell and does not prove bounded angle control."
+            },
+            {
+                "request": "5 percent / 30000 ms",
+                "status": "rejected_as_next_ramp",
+                "reason": "Thirty seconds is sustained force dwell and must not be used to find visible motion."
+            },
+            {
+                "request": "90 degrees right, then 90 degrees left to reset",
+                "status": "not_authorized",
+                "reason": "A 90 degree move is a later stage after smaller feedback-bounded angle receipts pass."
+            }
+        ],
+        "required_before_any_output": [
+            "implement a feedback-bounded controlled-angle command path that stops from steering samples",
+            "prove dry-run/preflight validation for the exact staged command",
+            "preserve the current response-only visible-motion receipt",
+            "refresh no-output readiness if USB topology, power, wheelbase mode, or bench setup changed",
+            "record fresh bench-clear for one exact command after the software plan is reviewed"
+        ],
+        "notes": [
+            "Template only: this file is a design surface, not permission to move hardware.",
+            "Do not extend the 5 percent profile by dwell time to find visible motion.",
+            "Pit House, SimHub, and simulators are not prerequisites for this native controlled-angle plan."
+        ]
+    })
+}
+
+fn native_controlled_angle_profile_plan_value() -> Value {
+    serde_json::json!({
+        "status": "requires_software_implementation_no_output_authorized",
+        "profile_family": "feedback_bounded_controlled_angle",
+        "objective": "Move to a relative steering target and return to the start angle using live steering feedback, not open-loop dwell duration.",
+        "current_force_percent_limit": 5,
+        "open_loop_dwell_allowed": false,
+        "duration_only_profile_allowed": false,
+        "direct_report_0x20_allowed": false,
+        "high_torque_allowed": false,
+        "serial_firmware_dfu_allowed": false,
+        "target_ladder_degrees": [1, 3, 5, 10, 30, 90],
+        "stages": [
+            native_controlled_angle_stage_value("one_degree_visibility_probe", 1),
+            native_controlled_angle_stage_value("three_degree_visibility_probe", 3),
+            native_controlled_angle_stage_value("five_degree_bounded_profile", 5),
+            native_controlled_angle_stage_value("ten_degree_bounded_profile", 10),
+            native_controlled_angle_stage_value("thirty_degree_bounded_profile", 30),
+            native_controlled_angle_stage_value("ninety_degree_right_left_reset", 90)
+        ],
+        "control_loop_requirements": [
+            "sample and record the starting steering angle before any nonzero output",
+            "compute the target as a relative offset from the sampled start angle",
+            "send bounded PIDFF output only while samples move toward the target",
+            "send PIDFF Stop All immediately on target reached, timeout, stale steering samples, wrong-way movement, velocity guard breach, or write error",
+            "return toward the sampled start angle inside the same bounded guard model",
+            "send a final PIDFF Stop All after the return leg and record final angle error"
+        ],
+        "promotion_rule": "Do not attempt a later ladder stage until the prior stage has a receipt with target reached, return-to-start cleanup, final Stop All, no direct report 0x20, no high torque, and no serial/firmware/DFU actions.",
+        "operator_goal": {
+            "eventual_target": "90 degrees right, then 90 degrees left to reset",
+            "next_authorizable_target": "the first ladder stage after implementation and review",
+            "authorized_now": false
+        }
+    })
+}
+
+fn native_controlled_angle_stage_value(name: &str, target_degrees: u64) -> Value {
+    serde_json::json!({
+        "name": name,
+        "target_degrees": target_degrees,
+        "direction": "right_then_return_to_start",
+        "status": "not_authorized",
+        "requires_prior_stage_receipt": target_degrees > 1,
+        "success_receipt_requirements": [
+            "target reached from steering samples",
+            "return-to-start attempted under steering feedback",
+            "final PIDFF Stop All sent",
+            "angle error recorded",
+            "no direct report 0x20",
+            "no high torque",
+            "no serial config",
+            "no firmware or DFU"
+        ]
+    })
 }
 
 fn simulator_ffb_receipt_template_value() -> Value {
@@ -23818,6 +23976,7 @@ fn print_init_lane_receipt(json: bool, receipt: &InitLaneReceipt) -> Result<()> 
 fn receipt_template_kind_label(kind: MozaReceiptTemplateKind) -> &'static str {
     match kind {
         MozaReceiptTemplateKind::VisibleMotionFollowUp => "native visible-motion follow-up",
+        MozaReceiptTemplateKind::ControlledAnglePlan => "native controlled-angle plan",
         MozaReceiptTemplateKind::PitHouse => "Pit House coexistence",
         MozaReceiptTemplateKind::SimulatorTelemetry => "simulator telemetry",
         MozaReceiptTemplateKind::SimulatorFfb => "simulator FFB smoke",
@@ -29301,6 +29460,9 @@ mod tests {
         assert!(matrix.contains("no visible-motion or smoke-ready success is claimed"));
         assert!(matrix.contains("does not authorize 5 percent / 3000 ms"));
         assert!(matrix.contains("90 degree right/left output"));
+        assert!(validation.contains("controlled-angle-plan"));
+        assert!(ci_readme.contains("controlled-angle-plan"));
+        assert!(checklist.contains("native-controlled-angle-plan.json"));
         for non_claim in [
             "Direct mode or direct report `0x20` readiness",
             "Simulator-scale FFB output safety",
@@ -34849,9 +35011,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn receipt_template_writes_verifier_rejected_simulator_templates() -> TestResult {
+    async fn receipt_template_writes_verifier_rejected_planning_templates() -> TestResult {
         let dir = tempfile::tempdir()?;
         let follow_up_path = dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE);
+        let controlled_angle_path = dir.path().join(NATIVE_CONTROLLED_ANGLE_PLAN_FILE);
         let telemetry_path = dir.path().join("simulator-telemetry-proof.json");
         let ffb_path = dir.path().join("simulator-ffb-smoke.json");
 
@@ -34859,6 +35022,13 @@ mod tests {
             false,
             MozaReceiptTemplateKind::VisibleMotionFollowUp,
             &follow_up_path,
+            false,
+        )
+        .await?;
+        receipt_template(
+            false,
+            MozaReceiptTemplateKind::ControlledAnglePlan,
+            &controlled_angle_path,
             false,
         )
         .await?;
@@ -34878,6 +35048,7 @@ mod tests {
         .await?;
 
         let follow_up = read_json_path(&follow_up_path)?;
+        let controlled_angle = read_json_path(&controlled_angle_path)?;
         let telemetry = read_json_path(&telemetry_path)?;
         let ffb = read_json_path(&ffb_path)?;
         assert_eq!(json_bool(&follow_up, "success"), Some(false));
@@ -34940,6 +35111,73 @@ mod tests {
         };
         assert_eq!(json_f64(envelope, "min"), Some(1.0));
         assert_eq!(json_f64(envelope, "max"), Some(3.0));
+        let Some(later_controlled_angle) = profile_design.get("later_controlled_angle_profile")
+        else {
+            return Err("visible follow-up template missing later_controlled_angle_profile".into());
+        };
+        assert_eq!(
+            json_bool(later_controlled_angle, "open_loop_dwell_allowed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(later_controlled_angle, "duration_only_profile_allowed"),
+            Some(false)
+        );
+        assert_eq!(
+            follow_up
+                .get("controlled_angle_plan_artifact")
+                .and_then(|artifact| json_string(artifact, "artifact")),
+            Some(NATIVE_CONTROLLED_ANGLE_PLAN_FILE)
+        );
+        assert_eq!(json_bool(&controlled_angle, "success"), Some(false));
+        assert_eq!(json_bool(&controlled_angle, "template"), Some(true));
+        assert_eq!(
+            json_string(&controlled_angle, "review_scope"),
+            Some("native_controlled_angle_profile_design")
+        );
+        assert_eq!(
+            json_bool(&controlled_angle, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&controlled_angle, "force_escalation_authorized"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&controlled_angle, "no_hid_device_opened"),
+            Some(true)
+        );
+        assert_eq!(json_bool(&controlled_angle, "no_ffb_writes"), Some(true));
+        let Some(controlled_plan) = controlled_angle.get("controlled_angle_profile_plan") else {
+            return Err("controlled-angle template missing controlled_angle_profile_plan".into());
+        };
+        assert_eq!(
+            json_bool(controlled_plan, "open_loop_dwell_allowed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(controlled_plan, "duration_only_profile_allowed"),
+            Some(false)
+        );
+        let Some(stages) = controlled_plan.get("stages").and_then(Value::as_array) else {
+            return Err("controlled-angle template missing stages".into());
+        };
+        let targets = stages
+            .iter()
+            .map(|stage| json_u64(stage, "target_degrees").ok_or("stage missing target_degrees"))
+            .collect::<Result<Vec<_>, _>>()?;
+        assert_eq!(targets, vec![1, 3, 5, 10, 30, 90]);
+        assert!(
+            stages
+                .iter()
+                .all(|stage| json_string(stage, "status") == Some("not_authorized"))
+        );
+        assert_eq!(
+            controlled_angle
+                .get("planned_next_output")
+                .and_then(|planned| json_bool(planned, "allowed")),
+            Some(false)
+        );
         assert_eq!(json_bool(&telemetry, "success"), Some(false));
         assert_eq!(json_bool(&ffb, "success"), Some(false));
         assert_eq!(json_bool(&telemetry, "no_ffb_writes"), Some(true));
@@ -38553,8 +38791,21 @@ mod tests {
         let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
         let commands = receipt.next_commands.join("\n");
         assert!(
+            commands.contains("wheelctl moza receipt-template --kind controlled-angle-plan")
+                && commands.contains(NATIVE_CONTROLLED_ANGLE_PLAN_FILE)
+                && !commands.contains("wheelctl moza actuator-visible-smoke"),
+            "after response-only visible-motion review and no-output readiness are both recorded, guidance should request the controlled-angle plan without output: {commands}"
+        );
+
+        write_test_json_file(
+            &dir.path().join(NATIVE_CONTROLLED_ANGLE_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::ControlledAnglePlan),
+        )?;
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
+        let commands = receipt.next_commands.join("\n");
+        assert!(
             receipt.next_commands.is_empty(),
-            "after response-only visible-motion review and no-output readiness are both recorded, guidance should stop instead of refreshing a timestamp: {commands}"
+            "after response-only visible-motion review, no-output readiness, and controlled-angle planning are recorded, guidance should stop instead of authorizing output: {commands}"
         );
         let followup_commands = receipt
             .blocked_safe_followups

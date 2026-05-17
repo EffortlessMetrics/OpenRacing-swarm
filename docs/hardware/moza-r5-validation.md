@@ -397,6 +397,7 @@ wheelctl moza audit-lane --lane ci/hardware/moza-r5/<date> --stage native-respon
 
 ```powershell
 wheelctl moza receipt-template --kind visible-motion-follow-up --json-out ci/hardware/moza-r5/<date>/native-actuator-visible-follow-up-plan.json
+wheelctl moza receipt-template --kind controlled-angle-plan --json-out ci/hardware/moza-r5/<date>/native-controlled-angle-plan.json
 wheelctl moza authorize-visible-output --lane ci/hardware/moza-r5/<date> --device <r5> --operator Steven --bench-clear-evidence "<fresh bench-clear for this exact command>" --ffb-mode-evidence "<bench/setup/FFB-mode review>" --profile bounded-shaped-pidff-micro-profile --strategy pidff-bounded-effect --max-percent 5 --duration-ms 2000 --movement-threshold-degrees 1 --json-out ci/hardware/moza-r5/<date>/native-actuator-visible-follow-up-plan.json
 wheelctl moza verify-bundle --lane ci/hardware/moza-r5/<date> --stage native-visible-ready --json-out ci/hardware/moza-r5/<date>/native-visible-verification.json
 ```
@@ -506,6 +507,7 @@ Starter templates are available for the response-only visible-motion follow-up r
 
 ```powershell
 wheelctl moza receipt-template --kind visible-motion-follow-up --json-out ci/hardware/moza-r5/<date>/native-actuator-visible-follow-up-plan.json
+wheelctl moza receipt-template --kind controlled-angle-plan --json-out ci/hardware/moza-r5/<date>/native-controlled-angle-plan.json
 wheelctl moza receipt-template --kind simulator-telemetry --json-out ci/hardware/moza-r5/<date>/simulator-telemetry-proof.json
 wheelctl moza receipt-template --kind simulator-ffb --json-out ci/hardware/moza-r5/<date>/simulator-ffb-smoke.json
 ```

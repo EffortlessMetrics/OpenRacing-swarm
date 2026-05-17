@@ -371,6 +371,7 @@ If a real response receipt exists but does not satisfy the visible-motion thresh
 
 ```powershell
 wheelctl moza receipt-template --kind visible-motion-follow-up --json-out ci/hardware/moza-r5/YYYY-MM-DD/native-actuator-visible-follow-up-plan.json
+wheelctl moza receipt-template --kind controlled-angle-plan --json-out ci/hardware/moza-r5/YYYY-MM-DD/native-controlled-angle-plan.json
 wheelctl moza authorize-visible-output --lane ci/hardware/moza-r5/YYYY-MM-DD --device <r5> --operator Steven --bench-clear-evidence "<fresh bench-clear for this exact command>" --ffb-mode-evidence "<bench/setup/FFB-mode review>" --profile bounded-shaped-pidff-micro-profile --strategy pidff-bounded-effect --max-percent 5 --duration-ms 2000 --movement-threshold-degrees 1 --json-out ci/hardware/moza-r5/YYYY-MM-DD/native-actuator-visible-follow-up-plan.json
 ```
 
@@ -392,6 +393,7 @@ For offline preparation, generate non-claiming starter files first if needed:
 
 ```powershell
 wheelctl moza receipt-template --kind visible-motion-follow-up --json-out ci/hardware/moza-r5/YYYY-MM-DD/native-actuator-visible-follow-up-plan.json
+wheelctl moza receipt-template --kind controlled-angle-plan --json-out ci/hardware/moza-r5/YYYY-MM-DD/native-controlled-angle-plan.json
 wheelctl moza receipt-template --kind pit-house --json-out ci/hardware/moza-r5/YYYY-MM-DD/pit-house-coexistence.json
 wheelctl moza receipt-template --kind simulator-telemetry --json-out ci/hardware/moza-r5/YYYY-MM-DD/simulator-telemetry-proof.json
 wheelctl moza receipt-template --kind simulator-ffb --json-out ci/hardware/moza-r5/YYYY-MM-DD/simulator-ffb-smoke.json
