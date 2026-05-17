@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openracing.local/schemas/hardware/sniffing/sniff-plan.schema.json",
+  "title": "OpenRacing Passive USB Sniff Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "success",
+    "command",
+    "generated_at_utc",
+    "family",
+    "scenario",
+    "lane",
+    "operator",
+    "device_note",
+    "capture_kind",
+    "capture_tools",
+    "platform_hint",
+    "allowed_actions",
+    "forbidden_actions",
+    "evidence_status",
+    "native_control_evidence",
+    "openracing_hardware_output",
+    "external_app_may_have_sent_output",
+    "satisfies_native_response_ready",
+    "satisfies_native_visible_ready",
+    "satisfies_smoke_ready",
+    "satisfies_release_ready",
+    "readiness_claims",
+    "notes"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "command": {
+      "type": "string",
+      "const": "wheelctl hardware sniff-plan"
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "family": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scenario": {
+      "$ref": "#/$defs/scenario"
+    },
+    "lane": {
+      "type": "string",
+      "minLength": 1
+    },
+    "operator": {
+      "type": "string",
+      "minLength": 1
+    },
+    "device_note": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capture_kind": {
+      "type": "string",
+      "const": "software_usb_urb_capture"
+    },
+    "capture_tools": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "enum": ["wireshark", "usbpcap", "tshark", "usbmon"]
+      },
+      "uniqueItems": true
+    },
+    "platform_hint": {
+      "type": "string",
+      "enum": ["windows", "linux", "macos", "unknown"]
+    },
+    "allowed_actions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "forbidden_actions": {
+      "type": "array",
+      "minItems": 9,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "allOf": [
+        {
+          "contains": {
+            "const": "install Zadig"
+          }
+        },
+        {
+          "contains": {
+            "const": "replace HID driver"
+          }
+        },
+        {
+          "contains": {
+            "const": "switch device to WinUSB"
+          }
+        },
+        {
+          "contains": {
+            "const": "run OpenRacing output commands"
+          }
+        },
+        {
+          "contains": {
+            "const": "send OpenRacing HID output reports"
+          }
+        },
+        {
+          "contains": {
+            "const": "send OpenRacing HID feature reports"
+          }
+        },
+        {
+          "contains": {
+            "const": "touch serial configuration"
+          }
+        },
+        {
+          "contains": {
+            "const": "open firmware update flows"
+          }
+        },
+        {
+          "contains": {
+            "const": "run firmware or DFU tools"
+          }
+        }
+      ]
+    },
+    "evidence_status": {
+      "type": "string",
+      "const": "passive_external_usb_observation"
+    },
+    "native_control_evidence": {
+      "type": "boolean",
+      "const": false
+    },
+    "openracing_hardware_output": {
+      "type": "boolean",
+      "const": false
+    },
+    "external_app_may_have_sent_output": {
+      "type": "boolean"
+    },
+    "satisfies_native_response_ready": {
+      "type": "boolean",
+      "const": false
+    },
+    "satisfies_native_visible_ready": {
+      "type": "boolean",
+      "const": false
+    },
+    "satisfies_smoke_ready": {
+      "type": "boolean",
+      "const": false
+    },
+    "satisfies_release_ready": {
+      "type": "boolean",
+      "const": false
+    },
+    "readiness_claims": {
+      "$ref": "#/$defs/readiness_claims"
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "$defs": {
+    "scenario": {
+      "type": "string",
+      "enum": [
+        "enumeration",
+        "vendor-app-closed-idle",
+        "pit-house-open-idle",
+        "pit-house-setting-change",
+        "pit-house-firmware-page-observed",
+        "simhub-open-idle",
+        "simhub-device-detect",
+        "simhub-output-session",
+        "simulator-session-start-stop",
+        "custom"
+      ]
+    },
+    "readiness_claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "satisfies_native_response_ready",
+        "satisfies_native_visible_ready",
+        "satisfies_smoke_ready",
+        "satisfies_release_ready"
+      ],
+      "properties": {
+        "satisfies_native_response_ready": {
+          "type": "boolean",
+          "const": false
+        },
+        "satisfies_native_visible_ready": {
+          "type": "boolean",
+          "const": false
+        },
+        "satisfies_smoke_ready": {
+          "type": "boolean",
+          "const": false
+        },
+        "satisfies_release_ready": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    }
+  }
+}

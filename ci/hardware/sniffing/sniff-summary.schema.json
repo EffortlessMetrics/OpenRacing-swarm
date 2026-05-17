@@ -1,0 +1,328 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openracing.local/schemas/hardware/sniffing/sniff-summary.schema.json",
+  "title": "OpenRacing Passive USB Sniff Summary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "success",
+    "command",
+    "generated_at_utc",
+    "pcapng_sha256",
+    "tool",
+    "filters",
+    "matched_packets",
+    "usb_transfer_summary",
+    "observed_devices",
+    "observed_reports",
+    "descriptor_candidates",
+    "evidence_status",
+    "native_control_evidence",
+    "openracing_hardware_output",
+    "external_app_may_have_sent_output",
+    "satisfies_native_response_ready",
+    "satisfies_native_visible_ready",
+    "satisfies_smoke_ready",
+    "satisfies_release_ready",
+    "readiness_claims",
+    "notes"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "command": {
+      "type": "string",
+      "const": "wheelctl hardware sniff-summary"
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "pcapng_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tshark_present", "tshark_version"],
+      "properties": {
+        "tshark_present": {
+          "type": "boolean"
+        },
+        "tshark_version": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "filters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vendor_id", "product_id", "interface_number"],
+      "properties": {
+        "vendor_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/hex16"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "product_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/hex16"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "interface_number": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "matched_packets": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "usb_transfer_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host_to_device", "device_to_host", "control", "interrupt"],
+      "properties": {
+        "host_to_device": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "device_to_host": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "control": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "interrupt": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "observed_devices": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["vendor_id", "product_id", "interfaces", "endpoints"],
+        "properties": {
+          "vendor_id": {
+            "$ref": "#/$defs/hex16"
+          },
+          "product_id": {
+            "$ref": "#/$defs/hex16"
+          },
+          "interfaces": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "uniqueItems": true
+          },
+          "endpoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/hex8"
+            },
+            "uniqueItems": true
+          }
+        }
+      }
+    },
+    "observed_reports": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "direction",
+          "report_id",
+          "count",
+          "payload_sample_count",
+          "payload_sha256_examples"
+        ],
+        "properties": {
+          "direction": {
+            "type": "string",
+            "enum": ["host_to_device", "device_to_host"]
+          },
+          "report_id": {
+            "$ref": "#/$defs/hex8"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "payload_sample_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "payload_sha256_examples": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/sha256"
+            }
+          },
+          "payload_hex_samples": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^([0-9A-Fa-f]{2})( [0-9A-Fa-f]{2})*$"
+            }
+          }
+        }
+      }
+    },
+    "descriptor_candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "interface_number",
+          "payload_sha256",
+          "payload_len",
+          "extractable"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["hid_report_descriptor", "usb_device_descriptor", "usb_configuration_descriptor", "other"]
+          },
+          "interface_number": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "payload_sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "payload_len": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "extractable": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "evidence_status": {
+      "type": "string",
+      "const": "passive_external_usb_observation"
+    },
+    "native_control_evidence": {
+      "type": "boolean",
+      "const": false
+    },
+    "openracing_hardware_output": {
+      "type": "boolean",
+      "const": false
+    },
+    "external_app_may_have_sent_output": {
+      "type": "boolean"
+    },
+    "satisfies_native_response_ready": {
+      "type": "boolean",
+      "const": false
+    },
+    "satisfies_native_visible_ready": {
+      "type": "boolean",
+      "const": false
+    },
+    "satisfies_smoke_ready": {
+      "type": "boolean",
+      "const": false
+    },
+    "satisfies_release_ready": {
+      "type": "boolean",
+      "const": false
+    },
+    "readiness_claims": {
+      "$ref": "#/$defs/readiness_claims"
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "$defs": {
+    "hex8": {
+      "type": "string",
+      "pattern": "^0x[0-9A-Fa-f]{2}$"
+    },
+    "hex16": {
+      "type": "string",
+      "pattern": "^0x[0-9A-Fa-f]{4}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "readiness_claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "satisfies_native_response_ready",
+        "satisfies_native_visible_ready",
+        "satisfies_smoke_ready",
+        "satisfies_release_ready"
+      ],
+      "properties": {
+        "satisfies_native_response_ready": {
+          "type": "boolean",
+          "const": false
+        },
+        "satisfies_native_visible_ready": {
+          "type": "boolean",
+          "const": false
+        },
+        "satisfies_smoke_ready": {
+          "type": "boolean",
+          "const": false
+        },
+        "satisfies_release_ready": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    }
+  }
+}

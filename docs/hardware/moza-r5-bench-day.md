@@ -107,6 +107,11 @@ explicit operator-selected endpoint before output is allowed.
 If Windows cannot expose the raw R5 HID report descriptor, collect the report
 descriptor bytes with USBTreeView, USBPcap/Wireshark enumeration traffic, Linux
 sysfs, or an equivalent USB descriptor tool.
+For broader external-app USB observation, use the separate
+[passive USB sniffing](usb-sniffing.md) evidence spec and
+[scenario taxonomy](sniffing-scenarios.md). Those sniff artifacts are protocol
+research/support evidence only and do not satisfy Moza native response, native
+visible, smoke, or release readiness gates.
 The fallback needs the actual HID Report Descriptor byte block. A USBTreeView
 summary that only shows `wDescriptorLength`, or a descriptor read failure such
 as `ERROR_INVALID_PARAMETER`, is not enough to satisfy descriptor trust. A

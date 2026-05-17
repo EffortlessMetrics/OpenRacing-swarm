@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openracing.local/schemas/hardware/sniffing/sniff-bundle-manifest.schema.json",
+  "title": "OpenRacing Passive USB Sniff Bundle Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "success",
+    "command",
+    "generated_at_utc",
+    "bundle_kind",
+    "includes_raw_pcapng",
+    "artifacts",
+    "evidence_status",
+    "native_control_evidence",
+    "openracing_hardware_output",
+    "external_app_may_have_sent_output",
+    "satisfies_native_response_ready",
+    "satisfies_native_visible_ready",
+    "satisfies_smoke_ready",
+    "satisfies_release_ready",
+    "readiness_claims"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "command": {
+      "type": "string",
+      "const": "wheelctl hardware sniff-bundle"
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "bundle_kind": {
+      "type": "string",
+      "const": "openracing_passive_usb_sniff_bundle"
+    },
+    "includes_raw_pcapng": {
+      "type": "boolean"
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "$ref": "#/$defs/sha256"
+          }
+        }
+      }
+    },
+    "evidence_status": {
+      "type": "string",
+      "const": "passive_external_usb_observation"
+    },
+    "native_control_evidence": {
+      "type": "boolean",
+      "const": false
+    },
+    "openracing_hardware_output": {
+      "type": "boolean",
+      "const": false
+    },
+    "external_app_may_have_sent_output": {
+      "type": "boolean"
+    },
+    "satisfies_native_response_ready": {
+      "type": "boolean",
+      "const": false
+    },
+    "satisfies_native_visible_ready": {
+      "type": "boolean",
+      "const": false
+    },
+    "satisfies_smoke_ready": {
+      "type": "boolean",
+      "const": false
+    },
+    "satisfies_release_ready": {
+      "type": "boolean",
+      "const": false
+    },
+    "readiness_claims": {
+      "$ref": "#/$defs/readiness_claims"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "readiness_claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "satisfies_native_response_ready",
+        "satisfies_native_visible_ready",
+        "satisfies_smoke_ready",
+        "satisfies_release_ready"
+      ],
+      "properties": {
+        "satisfies_native_response_ready": {
+          "type": "boolean",
+          "const": false
+        },
+        "satisfies_native_visible_ready": {
+          "type": "boolean",
+          "const": false
+        },
+        "satisfies_smoke_ready": {
+          "type": "boolean",
+          "const": false
+        },
+        "satisfies_release_ready": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    }
+  }
+}
