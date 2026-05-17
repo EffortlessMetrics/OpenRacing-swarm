@@ -281,10 +281,24 @@ fn low_torque_strategy_name(strategy: MozaLowTorqueStrategy) -> &'static str {
     }
 }
 
+fn low_torque_strategy_cli_name(strategy: MozaLowTorqueStrategy) -> &'static str {
+    match strategy {
+        MozaLowTorqueStrategy::DirectReport0x20 => "direct-report-0x20",
+        MozaLowTorqueStrategy::PidffBoundedEffect => "pidff-bounded-effect",
+    }
+}
+
 fn actuator_profile_name(profile: MozaActuatorProfile) -> &'static str {
     match profile {
         MozaActuatorProfile::ConstantLowForce => "constant_low_force",
         MozaActuatorProfile::BoundedShapedPidffMicroProfile => "bounded_shaped_pidff_micro_profile",
+    }
+}
+
+fn actuator_profile_cli_name(profile: MozaActuatorProfile) -> &'static str {
+    match profile {
+        MozaActuatorProfile::ConstantLowForce => "constant-low-force",
+        MozaActuatorProfile::BoundedShapedPidffMicroProfile => "bounded-shaped-pidff-micro-profile",
     }
 }
 
@@ -2855,6 +2869,11 @@ async fn actuator_visible_smoke(request: ActuatorVisibleSmokeRequest<'_>) -> Res
         prior_actuator_proof,
         steering_proof,
         json_out,
+        profile,
+        strategy,
+        max_percent,
+        duration_ms,
+        movement_threshold_degrees,
         dry_run,
     )?;
 
@@ -5442,12 +5461,18 @@ fn validate_native_actuator_profile_smoke_preflight(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validate_native_actuator_visible_smoke_preflight(
     selector: &str,
     lane: &Path,
     prior_actuator_proof: Option<&Path>,
     steering_proof: Option<&Path>,
     json_out: Option<&Path>,
+    profile: MozaActuatorProfile,
+    strategy: MozaLowTorqueStrategy,
+    max_percent: f32,
+    duration_ms: u64,
+    movement_threshold_degrees: f64,
     dry_run: bool,
 ) -> Result<NativeActuatorVisibleSmokePreflight> {
     validate_lane_manifest_endpoint_selector(
@@ -5480,6 +5505,16 @@ fn validate_native_actuator_visible_smoke_preflight(
             json_out,
             "native-actuator-visible-smoke.json",
             "--json-out",
+        )?;
+        validate_native_visible_retry_authorization(
+            lane,
+            selector,
+            profile,
+            strategy,
+            max_percent,
+            duration_ms,
+            movement_threshold_degrees,
+            json_out,
         )?;
     }
 
@@ -5543,6 +5578,165 @@ fn validate_native_actuator_visible_smoke_preflight(
         steering_generated_at: json_string(&steering_receipt, "generated_at_utc")
             .map(str::to_string),
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_native_visible_retry_authorization(
+    lane: &Path,
+    selector: &str,
+    profile: MozaActuatorProfile,
+    strategy: MozaLowTorqueStrategy,
+    max_percent: f32,
+    duration_ms: u64,
+    movement_threshold_degrees: f64,
+    json_out: &Path,
+) -> Result<()> {
+    if failed_real_native_visible_smoke_receipt(lane).is_none() {
+        return Ok(());
+    }
+
+    let plan = read_json_value(lane, NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE).with_context(|| {
+        format!(
+            "a response-only native visible-motion receipt already exists; record {} before another hardware-output attempt",
+            NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE
+        )
+    })?;
+    let planned_next_output = plan.get("planned_next_output").ok_or_else(|| {
+        anyhow!(
+            "{} is missing planned_next_output",
+            NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE
+        )
+    })?;
+    let allowed = json_bool(planned_next_output, "allowed") == Some(true);
+    let hardware_authorized = json_bool(&plan, "hardware_output_authorized") == Some(true);
+    let fresh_clear_recorded =
+        json_bool(planned_next_output, "requires_fresh_bench_clear") == Some(false);
+
+    if !allowed || !hardware_authorized || !fresh_clear_recorded {
+        return Err(anyhow!(
+            "existing response-only native visible-motion receipt blocks another hardware-output attempt until {} sets hardware_output_authorized=true, planned_next_output.allowed=true, planned_next_output.requires_fresh_bench_clear=false, and records the exact command",
+            NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE
+        ));
+    }
+    let command = json_string(planned_next_output, "command")
+        .map(str::trim)
+        .filter(|command| !command.is_empty())
+        .ok_or_else(|| anyhow!("planned_next_output.command is empty"))?;
+    validate_authorized_native_visible_command(
+        lane,
+        command,
+        selector,
+        profile,
+        strategy,
+        max_percent,
+        duration_ms,
+        movement_threshold_degrees,
+        json_out,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_authorized_native_visible_command(
+    lane: &Path,
+    command: &str,
+    selector: &str,
+    profile: MozaActuatorProfile,
+    strategy: MozaLowTorqueStrategy,
+    max_percent: f32,
+    duration_ms: u64,
+    movement_threshold_degrees: f64,
+    json_out: &Path,
+) -> Result<()> {
+    if command.contains('<') || command.contains('>') {
+        return Err(anyhow!(
+            "planned_next_output.command must be the exact command, not a template"
+        ));
+    }
+    let tokens: Vec<&str> = command.split_whitespace().collect();
+    let command_prefix_ok = tokens.starts_with(&["wheelctl", "moza", "actuator-visible-smoke"]);
+    let selector_ok = command_arg_matches(&tokens, "--device", selector);
+    let lane_ok = command_arg_path_matches(&tokens, "--lane", lane);
+    let prior_ok = command_arg_path_matches(
+        &tokens,
+        "--prior-actuator-proof",
+        &lane.join("native-actuator-profile-smoke.json"),
+    );
+    let steering_ok = command_arg_path_matches(
+        &tokens,
+        "--steering-proof",
+        &lane.join("steering-angle-stream-proof.json"),
+    );
+    let profile_ok = command_arg_matches(&tokens, "--profile", actuator_profile_cli_name(profile));
+    let strategy_ok = command_arg_matches(
+        &tokens,
+        "--strategy",
+        low_torque_strategy_cli_name(strategy),
+    );
+    let max_percent_ok = command_arg_f32_matches(&tokens, "--max-percent", max_percent);
+    let duration_ok = command_arg_u64_matches(&tokens, "--duration-ms", duration_ms);
+    let threshold_ok = command_arg_f64_matches(
+        &tokens,
+        "--movement-threshold-degrees",
+        movement_threshold_degrees,
+    );
+    let confirm_ok = tokens.contains(&"--confirm-actuator-visible");
+    let dry_run_absent = !tokens.contains(&"--dry-run");
+    let json_out_ok = command_arg_path_matches(&tokens, "--json-out", json_out);
+    if command_prefix_ok
+        && selector_ok
+        && lane_ok
+        && prior_ok
+        && steering_ok
+        && profile_ok
+        && strategy_ok
+        && max_percent_ok
+        && duration_ok
+        && threshold_ok
+        && confirm_ok
+        && dry_run_absent
+        && json_out_ok
+    {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "planned_next_output.command does not match this native visible-motion output request: command_prefix_ok={command_prefix_ok}, selector_ok={selector_ok}, lane_ok={lane_ok}, prior_ok={prior_ok}, steering_ok={steering_ok}, profile_ok={profile_ok}, strategy_ok={strategy_ok}, max_percent_ok={max_percent_ok}, duration_ok={duration_ok}, threshold_ok={threshold_ok}, confirm_ok={confirm_ok}, dry_run_absent={dry_run_absent}, json_out_ok={json_out_ok}"
+        ))
+    }
+}
+
+fn command_arg_value<'a>(tokens: &'a [&str], flag: &str) -> Option<&'a str> {
+    tokens
+        .windows(2)
+        .find(|window| window[0] == flag)
+        .map(|window| window[1])
+}
+
+fn command_arg_matches(tokens: &[&str], flag: &str, expected: &str) -> bool {
+    command_arg_value(tokens, flag) == Some(expected)
+}
+
+fn command_arg_path_matches(tokens: &[&str], flag: &str, expected: &Path) -> bool {
+    command_arg_value(tokens, flag)
+        .map(|recorded| artifact_path_value_matches(expected, Some(recorded)))
+        .unwrap_or(false)
+}
+
+fn command_arg_f32_matches(tokens: &[&str], flag: &str, expected: f32) -> bool {
+    command_arg_value(tokens, flag)
+        .and_then(|value| value.parse::<f32>().ok())
+        .map(|value| (value - expected).abs() <= f32::EPSILON)
+        .unwrap_or(false)
+}
+
+fn command_arg_f64_matches(tokens: &[&str], flag: &str, expected: f64) -> bool {
+    command_arg_value(tokens, flag)
+        .and_then(|value| value.parse::<f64>().ok())
+        .map(|value| (value - expected).abs() <= f64::EPSILON)
+        .unwrap_or(false)
+}
+
+fn command_arg_u64_matches(tokens: &[&str], flag: &str, expected: u64) -> bool {
+    command_arg_value(tokens, flag).and_then(|value| value.parse::<u64>().ok()) == Some(expected)
 }
 
 fn require_lane_artifact_path(
@@ -26389,6 +26583,11 @@ mod tests {
             Some(&root.join("native-actuator-profile-smoke.json")),
             Some(&root.join("steering-angle-stream-proof.json")),
             Some(&root.join("native-actuator-visible-smoke.json")),
+            MozaActuatorProfile::ConstantLowForce,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.0,
+            150,
+            1.0,
             false,
         )?;
         let mut receipt = NativeActuatorVisibleSmokeReceipt::new(
@@ -30920,6 +31119,11 @@ mod tests {
             Some(&dir.path().join("native-actuator-profile-smoke.json")),
             Some(&dir.path().join("steering-angle-stream-proof.json")),
             Some(&dir.path().join("native-actuator-visible-smoke.json")),
+            MozaActuatorProfile::ConstantLowForce,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.0,
+            2_000,
+            1.0,
             false,
         )?;
         assert_eq!(preflight.target_product_id, "0x0004");
@@ -30933,12 +31137,111 @@ mod tests {
             Some(&dir.path().join("native-actuator-profile-smoke.json")),
             Some(&dir.path().join("steering-angle-stream-proof.json")),
             Some(&dir.path().join("native-actuator-visible-smoke.json")),
+            MozaActuatorProfile::ConstantLowForce,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.0,
+            2_000,
+            1.0,
             false,
         )
         .err()
         .map(|error| error.to_string())
         .ok_or("expected missing prior actuator proof rejection")?;
         assert!(message.contains("native actuator-profile smoke"));
+        Ok(())
+    }
+
+    #[test]
+    fn validate_native_actuator_visible_preflight_blocks_unauthorized_retry() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_native_actuator_visible_prerequisite_receipts(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V1),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::VisibleMotionFollowUp),
+        )?;
+
+        let message = validate_native_actuator_visible_smoke_preflight(
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            dir.path(),
+            Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            Some(&dir.path().join("steering-angle-stream-proof.json")),
+            Some(&dir.path().join("native-actuator-visible-smoke.json")),
+            MozaActuatorProfile::BoundedShapedPidffMicroProfile,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.0,
+            2_000,
+            1.0,
+            false,
+        )
+        .err()
+        .map(|error| error.to_string())
+        .ok_or("expected unauthorized retry rejection")?;
+        assert!(message.contains("blocks another hardware-output attempt"));
+
+        validate_native_actuator_visible_smoke_preflight(
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            dir.path(),
+            Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            Some(&dir.path().join("steering-angle-stream-proof.json")),
+            Some(&dir.path().join("native-actuator-visible-smoke.json")),
+            MozaActuatorProfile::BoundedShapedPidffMicroProfile,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.0,
+            2_000,
+            1.0,
+            true,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn validate_native_actuator_visible_preflight_accepts_authorized_exact_retry() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_native_actuator_visible_prerequisite_receipts(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V1),
+        )?;
+        let mut plan = moza_receipt_template(MozaReceiptTemplateKind::VisibleMotionFollowUp);
+        plan["hardware_output_authorized"] = serde_json::json!(true);
+        plan["planned_next_output"]["allowed"] = serde_json::json!(true);
+        plan["planned_next_output"]["requires_fresh_bench_clear"] = serde_json::json!(false);
+        plan["planned_next_output"]["duration_ms"] = serde_json::json!(2_000);
+        plan["planned_next_output"]["force_percent"] = serde_json::json!(5.0);
+        plan["planned_next_output"]["command"] = serde_json::json!(format!(
+            "wheelctl moza actuator-visible-smoke --device hid-0x346E-0x0004-if2-0x0001-0x0004 --lane {} --prior-actuator-proof {} --steering-proof {} --profile bounded-shaped-pidff-micro-profile --strategy pidff-bounded-effect --max-percent 5 --duration-ms 2000 --movement-threshold-degrees 1 --confirm-actuator-visible --json-out {} --json",
+            dir.path().display(),
+            dir.path()
+                .join("native-actuator-profile-smoke.json")
+                .display(),
+            dir.path()
+                .join("steering-angle-stream-proof.json")
+                .display(),
+            dir.path()
+                .join("native-actuator-visible-smoke.json")
+                .display()
+        ));
+        write_test_json_file(&dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE), &plan)?;
+
+        let preflight = validate_native_actuator_visible_smoke_preflight(
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            dir.path(),
+            Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            Some(&dir.path().join("steering-angle-stream-proof.json")),
+            Some(&dir.path().join("native-actuator-visible-smoke.json")),
+            MozaActuatorProfile::BoundedShapedPidffMicroProfile,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.0,
+            2_000,
+            1.0,
+            false,
+        )?;
+
+        assert_eq!(preflight.target_product_id, "0x0004");
         Ok(())
     }
 
@@ -31025,6 +31328,11 @@ mod tests {
             Some(&dir.path().join("native-actuator-profile-smoke.json")),
             Some(&dir.path().join("steering-angle-stream-proof.json")),
             Some(&dir.path().join("native-actuator-visible-smoke.json")),
+            MozaActuatorProfile::BoundedShapedPidffMicroProfile,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.0,
+            2_000,
+            1.0,
             false,
         )?;
         let mut receipt = NativeActuatorVisibleSmokeReceipt::new(
@@ -31122,6 +31430,11 @@ mod tests {
             Some(&dir.path().join("native-actuator-profile-smoke.json")),
             Some(&dir.path().join("steering-angle-stream-proof.json")),
             Some(&dir.path().join("native-actuator-visible-smoke.json")),
+            MozaActuatorProfile::ConstantLowForce,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.0,
+            150,
+            1.0,
             false,
         )?;
         let mut receipt = NativeActuatorVisibleSmokeReceipt::new(
