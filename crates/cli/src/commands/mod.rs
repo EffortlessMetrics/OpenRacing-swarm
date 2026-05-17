@@ -1075,6 +1075,9 @@ pub enum MozaCommands {
         /// Optional operator note for the process/window snapshot
         #[arg(long)]
         evidence: Option<String>,
+        /// Refuse to write the evidence artifact unless the process/window snapshot supports the requested case
+        #[arg(long)]
+        require_match: bool,
         /// Write the Pit House evidence artifact to this JSON file
         #[arg(long)]
         json_out: std::path::PathBuf,

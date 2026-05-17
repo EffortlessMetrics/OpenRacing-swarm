@@ -398,6 +398,7 @@ struct PitHouseEvidenceRequest<'a> {
     case: MozaPitHouseObservationCase,
     operator: &'a str,
     evidence: Option<&'a str>,
+    require_match: bool,
     json_out: &'a Path,
     overwrite: bool,
 }
@@ -908,6 +909,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             case,
             operator,
             evidence,
+            require_match,
             json_out,
             overwrite,
         } => {
@@ -916,6 +918,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 case: *case,
                 operator,
                 evidence: evidence.as_deref(),
+                require_match: *require_match,
                 json_out,
                 overwrite: *overwrite,
             })
@@ -4392,6 +4395,7 @@ async fn pit_house_evidence(request: PitHouseEvidenceRequest<'_>) -> Result<()> 
         case,
         operator,
         evidence,
+        require_match,
         json_out,
         overwrite,
     } = request;
@@ -4407,6 +4411,7 @@ async fn pit_house_evidence(request: PitHouseEvidenceRequest<'_>) -> Result<()> 
 
     let receipt =
         pit_house_evidence_receipt(case, operator, evidence, scan_pit_house_process_windows());
+    validate_pit_house_evidence_required_match(&receipt, case, require_match)?;
 
     ensure_receipt_writable(json_out, overwrite)?;
     write_json_receipt(Some(json_out), &receipt)?;
@@ -9638,7 +9643,7 @@ fn blocked_safe_followups_for_bundle_stage(
                     no_ffb_writes: true,
                     commands: pit_house_commands,
                     notes: vec![
-                        "Run pit-house-evidence first when the matching process/window snapshot artifact is missing.".to_string(),
+                        "Run pit-house-evidence first when the matching process/window snapshot artifact is missing; generated commands use --require-match so an unavailable Pit House app fails without writing stale open-case evidence.".to_string(),
                         "pit-house-observation rejects wheelctl-generated snapshots that do not match the requested Pit House case.".to_string(),
                         "Do not run pit-house-proof or claim full coexistence from these subcases alone.".to_string(),
                     ],
@@ -10861,7 +10866,7 @@ fn push_pit_house_evidence_next_command(
     evidence: &str,
 ) {
     commands.push(format!(
-        "wheelctl moza pit-house-evidence --case {case} --operator Steven --evidence {} --json-out {}",
+        "wheelctl moza pit-house-evidence --case {case} --operator Steven --evidence {} --require-match --json-out {}",
         command_arg(evidence),
         lane_path_arg(lane, evidence_artifact)
     ));
@@ -17712,7 +17717,9 @@ fn pit_house_evidence_receipt(
 ) -> Value {
     let process_visible = !scan.matched_processes.is_empty();
     let expected_visible = pit_house_process_window_expected_visible(case);
-    let snapshot_matches_case = process_visible == expected_visible;
+    let scan_completed =
+        scan.process_scan_attempted && scan.window_title_scan_attempted && scan.error.is_none();
+    let snapshot_matches_case = scan_completed && process_visible == expected_visible;
     let evidence_note = evidence
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -18062,6 +18069,7 @@ fn pit_house_process_window_conclusion(
 fn pit_house_process_window_evidence_notes(case: MozaPitHouseObservationCase) -> Vec<&'static str> {
     let mut notes = vec![
         "pit-house-evidence captures process/window state only; it opens no HID device and sends no reports",
+        "use --require-match for verifier-directed evidence so mismatched snapshots fail before writing an artifact",
         "run pit-house-observation against this JSON artifact before building the matching pit-house-case receipt",
     ];
     if !matches!(case, MozaPitHouseObservationCase::Closed) {
@@ -18070,6 +18078,21 @@ fn pit_house_process_window_evidence_notes(case: MozaPitHouseObservationCase) ->
         );
     }
     notes
+}
+
+fn validate_pit_house_evidence_required_match(
+    receipt: &Value,
+    case: MozaPitHouseObservationCase,
+    require_match: bool,
+) -> Result<()> {
+    if !require_match || json_bool(receipt, "snapshot_matches_case") == Some(true) {
+        return Ok(());
+    }
+
+    Err(anyhow!(
+        "Pit House process/window snapshot does not support case '{}'; leave the lane blocked until the requested state is visible or rerun without --require-match for a diagnostic-only artifact",
+        pit_house_observation_case_id(case)
+    ))
 }
 
 fn pit_house_evidence_kind_label(kind: MozaPitHouseEvidenceKind) -> &'static str {
@@ -18109,6 +18132,7 @@ fn pit_house_process_window_snapshot_matches_case(snapshot: &Value, case_id: &st
             || json_string(snapshot, "evidence_kind") != Some("process_window_snapshot")
             || json_string(snapshot, "case") != Some(case_id)
             || json_bool(snapshot, "snapshot_matches_case") != Some(true)
+            || json_string(snapshot, "scan_error").is_some()
             || json_bool(snapshot, "no_hid_device_opened") != Some(true)
             || json_bool(snapshot, "no_ffb_writes") != Some(true)
             || !no_out_of_scope_device_commands(snapshot))
@@ -36958,6 +36982,89 @@ mod tests {
             json_bool(&receipt, "no_firmware_or_dfu_commands"),
             Some(true)
         );
+        assert_eq!(json_bool(&receipt, "snapshot_matches_case"), Some(true));
+    }
+
+    #[test]
+    fn pit_house_evidence_require_match_rejects_mismatched_snapshot() -> TestResult {
+        let mismatched = pit_house_evidence_receipt(
+            MozaPitHouseObservationCase::OpenStandard,
+            "Steven",
+            Some("Pit House open standard evidence requested."),
+            PitHouseProcessWindowScan {
+                process_scan_attempted: true,
+                window_title_scan_attempted: true,
+                matched_processes: Vec::new(),
+                error: None,
+            },
+        );
+
+        let error = validate_pit_house_evidence_required_match(
+            &mismatched,
+            MozaPitHouseObservationCase::OpenStandard,
+            true,
+        )
+        .err()
+        .ok_or("expected require-match to reject mismatched Pit House snapshot")?;
+        assert!(
+            error
+                .to_string()
+                .contains("does not support case 'pit_house_open_idle_standard'"),
+            "unexpected require-match error: {error}"
+        );
+
+        validate_pit_house_evidence_required_match(
+            &mismatched,
+            MozaPitHouseObservationCase::OpenStandard,
+            false,
+        )?;
+
+        let matched = pit_house_evidence_receipt(
+            MozaPitHouseObservationCase::OpenStandard,
+            "Steven",
+            Some("Pit House open standard evidence requested."),
+            PitHouseProcessWindowScan {
+                process_scan_attempted: true,
+                window_title_scan_attempted: true,
+                matched_processes: vec![PitHouseProcessWindowMatch {
+                    process_name: "MOZA Pit House".to_string(),
+                    pid: Some(1424),
+                    window_title: Some("MOZA Pit House".to_string()),
+                }],
+                error: None,
+            },
+        );
+        validate_pit_house_evidence_required_match(
+            &matched,
+            MozaPitHouseObservationCase::OpenStandard,
+            true,
+        )?;
+
+        let closed_scan_error = pit_house_evidence_receipt(
+            MozaPitHouseObservationCase::Closed,
+            "Steven",
+            Some("Pit House closed evidence requested."),
+            PitHouseProcessWindowScan {
+                process_scan_attempted: true,
+                window_title_scan_attempted: true,
+                matched_processes: Vec::new(),
+                error: Some("scan failed".to_string()),
+            },
+        );
+        assert_eq!(
+            json_bool(&closed_scan_error, "snapshot_matches_case"),
+            Some(false)
+        );
+        assert!(
+            validate_pit_house_evidence_required_match(
+                &closed_scan_error,
+                MozaPitHouseObservationCase::Closed,
+                true,
+            )
+            .is_err(),
+            "require-match should reject a closed-state snapshot when scanning failed"
+        );
+        Ok(())
     }
 
     #[test]
@@ -41730,6 +41837,9 @@ mod tests {
             .join("\n");
         assert!(
             followup_commands.contains("wheelctl moza pit-house-observation --case open-standard")
+                && followup_commands
+                    .contains("wheelctl moza pit-house-evidence --case open-standard")
+                && followup_commands.contains("--require-match")
                 && followup_commands.contains("wheelctl telemetry record")
                 && !followup_commands.contains("wheelctl moza pit-house-proof"),
             "available Pit House follow-ups should expose only no-output pre-mode-change observations and telemetry: {followup_commands}"
@@ -41958,9 +42068,9 @@ mod tests {
         let joined = commands.join("\n");
 
         assert!(
-            commands
-                .first()
-                .is_some_and(|command| command.contains("wheelctl moza pit-house-evidence")),
+            commands.first().is_some_and(|command| command
+                .contains("wheelctl moza pit-house-evidence")
+                && command.contains("--require-match")),
             "mismatched generated Pit House evidence must be regenerated before observation: {joined}"
         );
         assert!(

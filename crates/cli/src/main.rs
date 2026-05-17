@@ -2709,6 +2709,7 @@ mod tests {
             "Steven",
             "--evidence",
             "Pit House process/window snapshot saved.",
+            "--require-match",
             "--json-out",
             "pit-house-evidence-open-standard.json",
             "--overwrite",
@@ -2718,6 +2719,7 @@ mod tests {
                 case,
                 operator,
                 evidence,
+                require_match,
                 json_out,
                 overwrite,
             }) => {
@@ -2731,6 +2733,7 @@ mod tests {
                     json_out.as_path().to_str(),
                     Some("pit-house-evidence-open-standard.json")
                 );
+                assert!(*require_match);
                 assert!(*overwrite);
             }
             _ => return Err("expected Moza PitHouseEvidence command".into()),
