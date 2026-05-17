@@ -7,12 +7,12 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-use racing_wheel_schemas::prelude::*;
-use racing_wheel_telemetry_adapters::{MockAdapter, TelemetryAdapter, adapter_factories};
-use racing_wheel_telemetry_config::{
+use openracing_telemetry_adapters::{MockAdapter, TelemetryAdapter, adapter_factories};
+use openracing_telemetry_config::{
     TelemetryConfig, config_writer_factories, load_default_matrix, matrix_game_id_set,
     matrix_game_ids, normalize_game_id,
 };
+use racing_wheel_schemas::prelude::*;
 
 use tempfile::TempDir;
 
@@ -897,7 +897,7 @@ mod multi_game {
 
 mod rate_limiting {
     use super::*;
-    use racing_wheel_telemetry_adapters::telemetry_now_ns;
+    use openracing_telemetry_adapters::telemetry_now_ns;
 
     #[test]
     fn rate_limiter_allows_first_frame() -> TestResult {

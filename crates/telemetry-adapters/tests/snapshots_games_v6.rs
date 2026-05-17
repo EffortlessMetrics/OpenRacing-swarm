@@ -2,7 +2,7 @@
 //!
 //! Covers: F1 25 (EA Sports F1 2025) and WRC 10 (Kylotonn).
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     F1_25Adapter, TelemetryAdapter, WrcKylotonnAdapter, f1_25::build_car_telemetry_packet,
     wrc_kylotonn::WrcKylotonnVariant,
 };

@@ -13,7 +13,7 @@ Runtime orchestration and adapter management for telemetry integrations.
 
 - `TelemetryService` – facade used by service runtime and higher layers.
 - Adapter registration is derived from `racing-wheel-telemetry-support` matrix entries.
-- The actual constructor registry is sourced from `racing-wheel-telemetry-adapters` via
+- The actual constructor registry is sourced from `openracing-telemetry-adapters` via
   `adapter_factories()`.
 - `TelemetryService::runtime_coverage_report()` exposes startup matrix/registry parity details.
 - `TelemetryService::runtime_bdd_metrics()` exposes policy-aware BDD counters/ratios with `parity_ok`.

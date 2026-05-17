@@ -6,7 +6,7 @@
 //!
 //! Two scenarios: normal race pace input, and pit-stop / idle input.
 
-use racing_wheel_telemetry_adapters::{ACEvoAdapter, TelemetryAdapter};
+use openracing_telemetry_adapters::{ACEvoAdapter, TelemetryAdapter};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 

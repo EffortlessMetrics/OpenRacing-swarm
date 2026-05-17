@@ -4,7 +4,7 @@
 //! version detection, flag extraction, G-force conventions, tire data,
 //! and paused/menu state handling.
 
-use racing_wheel_telemetry_adapters::{RaceRoomAdapter, TelemetryAdapter, TelemetryValue};
+use openracing_telemetry_adapters::{RaceRoomAdapter, TelemetryAdapter, TelemetryValue};
 use std::time::Duration;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

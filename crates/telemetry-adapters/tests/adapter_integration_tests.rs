@@ -7,7 +7,7 @@
 //!   - Valid packets → expected field values
 //!   - Game-paused / not-racing states → empty telemetry
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     AssettoCorsaAdapter, BeamNGAdapter, ForzaAdapter, IRacingAdapter, PCars2Adapter,
     RFactor2Adapter, RaceRoomAdapter, TelemetryAdapter,
 };
@@ -442,7 +442,7 @@ fn iracing_large_zeroed_buffer_returns_ok() -> TestResult {
 
 #[test]
 fn adapter_factories_registry_contains_all_expected_games() -> TestResult {
-    use racing_wheel_telemetry_adapters::adapter_factories;
+    use openracing_telemetry_adapters::adapter_factories;
 
     let factories = adapter_factories();
     let game_ids: Vec<&str> = factories.iter().map(|(id, _)| *id).collect();
@@ -470,7 +470,7 @@ fn adapter_factories_registry_contains_all_expected_games() -> TestResult {
 
 #[test]
 fn adapter_game_ids_are_unique() -> TestResult {
-    use racing_wheel_telemetry_adapters::adapter_factories;
+    use openracing_telemetry_adapters::adapter_factories;
     use std::collections::HashSet;
 
     let factories = adapter_factories();

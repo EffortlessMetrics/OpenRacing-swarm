@@ -10,16 +10,16 @@
 
 use std::collections::BTreeMap;
 
+use openracing_telemetry_adapters::{TelemetryAdapter, adapter_factories};
+use openracing_telemetry_config::{
+    ConfigDiff, DiffOperation, GameSupportMatrix, TelemetryConfig, config_writer_factories,
+    load_default_matrix, matrix_game_id_set,
+};
 use racing_wheel_schemas::telemetry::{
     NormalizedTelemetry, NormalizedTelemetryBuilder, TelemetryFlags, TelemetrySnapshot,
     TelemetryValue,
 };
 use racing_wheel_service::system_config::SystemConfig;
-use racing_wheel_telemetry_adapters::{TelemetryAdapter, adapter_factories};
-use racing_wheel_telemetry_config::{
-    ConfigDiff, DiffOperation, GameSupportMatrix, TelemetryConfig, config_writer_factories,
-    load_default_matrix, matrix_game_id_set,
-};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 1. End-to-end telemetry pipeline tests

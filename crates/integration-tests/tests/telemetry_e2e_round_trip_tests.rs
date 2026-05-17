@@ -4,8 +4,8 @@
 //! feeds it through the adapter's parse/normalize pipeline, and asserts that
 //! the resulting `NormalizedTelemetry` fields match expectations.
 
+use openracing_telemetry_adapters::{TelemetryAdapter, adapter_factories};
 use racing_wheel_schemas::telemetry::TelemetryValue;
-use racing_wheel_telemetry_adapters::{TelemetryAdapter, adapter_factories};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -264,7 +264,7 @@ fn iracing_rejects_undersized_packet() -> Result<(), Box<dyn std::error::Error>>
 // parse_decrypted() directly to verify the field extraction logic on known
 // plaintext payloads (as requested: "test decrypted payload parsing").
 
-use racing_wheel_telemetry_adapters::gran_turismo_7::{
+use openracing_telemetry_adapters::gran_turismo_7::{
     MAGIC, OFF_MAGIC, PACKET_SIZE, parse_decrypted,
 };
 
@@ -518,7 +518,7 @@ fn f1_25_rejects_undersized_packet() -> Result<(), Box<dyn std::error::Error>> {
 // Rather than manually computing byte offsets in a complex repr(C) struct,
 // we construct the public `RF2VehicleTelemetry` directly, then cast to bytes.
 
-use racing_wheel_telemetry_adapters::rfactor2::RF2VehicleTelemetry;
+use openracing_telemetry_adapters::rfactor2::RF2VehicleTelemetry;
 
 #[test]
 fn rfactor2_vehicle_telemetry_round_trips_engine_data() -> Result<(), Box<dyn std::error::Error>> {

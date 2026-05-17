@@ -8,7 +8,7 @@
 //!
 //! `rust,no_run
 //! use racing_wheel_telemetry_mudrunner::{MudRunnerAdapter, MudRunnerVariant};
-//! use racing_wheel_telemetry_adapters::TelemetryAdapter;
+//! use openracing_telemetry_adapters::TelemetryAdapter;
 //!
 //! # #[tokio::main]
 //! # async fn main() -> anyhow::Result<()> {
@@ -20,9 +20,9 @@
 
 #![deny(static_mut_refs)]
 
-pub use racing_wheel_telemetry_adapters::TelemetryAdapter;
-pub use racing_wheel_telemetry_adapters::mudrunner::{MudRunnerAdapter, MudRunnerVariant};
-pub use racing_wheel_telemetry_core::{NormalizedTelemetry, TelemetryFrame};
+pub use openracing_telemetry::{NormalizedTelemetry, TelemetryFrame};
+pub use openracing_telemetry_adapters::TelemetryAdapter;
+pub use openracing_telemetry_adapters::games::mudrunner::{MudRunnerAdapter, MudRunnerVariant};
 
 #[cfg(test)]
 mod tests {

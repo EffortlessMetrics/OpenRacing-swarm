@@ -24,10 +24,10 @@ use openracing_filters::{
 };
 
 // ── Telemetry adapters ───────────────────────────────────────────────────────
-use racing_wheel_telemetry_adapters::gran_turismo_7::{
+use openracing_telemetry_adapters::gran_turismo_7::{
     MAGIC as GT7_MAGIC, PACKET_SIZE as GT7_PACKET_SIZE, parse_decrypted,
 };
-use racing_wheel_telemetry_adapters::{TelemetryAdapter, adapter_factories};
+use openracing_telemetry_adapters::{TelemetryAdapter, adapter_factories};
 
 // ── Protocol crates ──────────────────────────────────────────────────────────
 use racing_wheel_hid_fanatec_protocol::{CONSTANT_FORCE_REPORT_LEN, FanatecConstantForceEncoder};

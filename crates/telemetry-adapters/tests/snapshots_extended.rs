@@ -3,7 +3,7 @@
 //! Covers adapters not yet snapshotted in `snapshot_tests.rs`:
 //! Forza (Sled + CarDash), BeamNG, LFS, ETS2/ATS, PCars2, iRacing, rFactor2, AMS2.
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     AMS2Adapter, BeamNGAdapter, Ets2Adapter, ForzaAdapter, IRacingAdapter, LFSAdapter,
     PCars2Adapter, PCars3Adapter, RFactor2Adapter, TelemetryAdapter, ams2::AMS2SharedMemory,
     ets2::Ets2Variant, rfactor2::RF2VehicleTelemetry,

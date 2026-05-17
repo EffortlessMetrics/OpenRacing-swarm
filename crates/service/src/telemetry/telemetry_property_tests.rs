@@ -13,7 +13,7 @@ use crate::telemetry::adapters::{
     acc::ACCAdapter, ams2::AMS2Adapter, f1_25::F1_25Adapter, iracing::IRacingAdapter,
     rfactor2::RFactor2Adapter,
 };
-use racing_wheel_telemetry_adapters::f1_25::build_car_telemetry_packet;
+use openracing_telemetry_adapters::f1_25::build_car_telemetry_packet;
 
 /// Maximum allowed parsing time in nanoseconds (100ms = 100,000,000ns)
 const MAX_PARSING_TIME_NS: u128 = 100_000_000;

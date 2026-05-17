@@ -7,15 +7,15 @@ authors.workspace = true
 repository.workspace = true
 homepage = "https://github.com/EffortlessMetrics/OpenRacing"
 documentation = "https://docs.rs/racing-wheel-telemetry-f1"
-publish = true
+publish = false
 description = "F1 2023/2024 native UDP telemetry adapter (Codemasters/EA packet formats 2023 and 2024)"
 readme = "README.md"
 keywords = ["telemetry", "f1", "formula1", "codemasters", "racing"]
 
 categories = ["game-development"]
 [dependencies]
-racing-wheel-telemetry-adapters = { path = "../telemetry-adapters", version = "0.1.0" }
-racing-wheel-telemetry-core = { path = "../telemetry-core", version = "0.1.0" }
+openracing-telemetry-adapters = { path = "../telemetry-adapters", version = "0.1.0" }
+openracing-telemetry = { path = "../telemetry-core", version = "0.1.0" }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }

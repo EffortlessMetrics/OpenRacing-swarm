@@ -5,8 +5,8 @@
 //! mapping, lap-time arithmetic, state-machine interactions, and proptest
 //! fuzzing of the normalize path.
 
+use openracing_telemetry_adapters::{ACCAdapter, TelemetryAdapter, TelemetryValue};
 use proptest::prelude::*;
-use racing_wheel_telemetry_adapters::{ACCAdapter, TelemetryAdapter, TelemetryValue};
 use std::time::Duration;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

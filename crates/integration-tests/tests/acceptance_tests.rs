@@ -241,7 +241,7 @@ fn make_acc_car_update_packet(gear_raw: u8, speed_kmh: u16) -> Vec<u8> {
 #[test]
 fn scenario_telemetry_reception_acc_packet_parsed_with_valid_ranges()
 -> Result<(), Box<dyn std::error::Error>> {
-    use racing_wheel_telemetry_adapters::{ACCAdapter, TelemetryAdapter};
+    use openracing_telemetry_adapters::{ACCAdapter, TelemetryAdapter};
 
     // Given: an ACC session sending a RealtimeCarUpdate packet
     //   gear_raw = 5 → normalised gear = 5 − 1 = 4
@@ -300,7 +300,7 @@ fn scenario_telemetry_reception_acc_packet_parsed_with_valid_ranges()
 #[test]
 fn scenario_telemetry_reception_truncated_packet_returns_error()
 -> Result<(), Box<dyn std::error::Error>> {
-    use racing_wheel_telemetry_adapters::{ACCAdapter, TelemetryAdapter};
+    use openracing_telemetry_adapters::{ACCAdapter, TelemetryAdapter};
 
     let adapter = ACCAdapter::new();
 

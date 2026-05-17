@@ -8,7 +8,7 @@ authors.workspace = true
 repository.workspace = true
 homepage = "https://github.com/EffortlessMetrics/OpenRacing"
 documentation = "https://docs.rs/racing-wheel-telemetry-support"
-publish = true
+publish = false
 description = "Shared game support matrix definitions for OpenRacing telemetry integrations"
 readme = "README.md"
 

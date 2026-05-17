@@ -4,7 +4,7 @@
 //! Each test constructs a realistic race-scenario packet and snapshots the
 //! normalised output via `insta::assert_yaml_snapshot!`.
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     LeMansUltimateAdapter, MotoGPAdapter, Nascar21Adapter, NascarAdapter, Ride5Adapter,
     TelemetryAdapter, WreckfestAdapter, WtcrAdapter,
 };

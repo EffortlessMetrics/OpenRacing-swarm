@@ -1,13 +1,13 @@
-//! Deep tests v2 for the racing-wheel-telemetry-recorder crate.
+//! Deep tests v2 for the openracing-telemetry-recorder crate.
 //!
 //! Exercises recording format validation, file size/rotation semantics,
 //! concurrent multi-source recording, dropped-frame resilience, playback
 //! edge cases, and metadata enrichment not covered by the first deep test suite.
 
-use racing_wheel_schemas::telemetry::{NormalizedTelemetry, TelemetryFlags, TelemetryFrame};
-use racing_wheel_telemetry_recorder::{
+use openracing_telemetry_recorder::{
     TelemetryPlayer, TelemetryRecorder, TelemetryRecording, TestFixtureGenerator, TestScenario,
 };
+use racing_wheel_schemas::telemetry::{NormalizedTelemetry, TelemetryFlags, TelemetryFrame};
 use std::io::Read;
 use tempfile::tempdir;
 

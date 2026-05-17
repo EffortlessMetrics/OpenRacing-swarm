@@ -4,8 +4,8 @@
 //! verifies invariants on valid parsed output, tests boundary conditions,
 //! and checks NaN/Inf handling.
 
+use openracing_telemetry_adapters::ams2::AMS2SharedMemory;
 use proptest::prelude::*;
-use racing_wheel_telemetry_adapters::ams2::AMS2SharedMemory;
 use racing_wheel_telemetry_ams2::{AMS2Adapter, NormalizedTelemetry, TelemetryAdapter};
 
 const AMS2_MEM_SIZE: usize = std::mem::size_of::<AMS2SharedMemory>();

@@ -35,7 +35,7 @@ use openracing_calibration::AxisCalibration;
 use openracing_profile::WheelProfile;
 
 // ── Telemetry adapters ───────────────────────────────────────────────────────
-use racing_wheel_telemetry_adapters::adapter_factories;
+use openracing_telemetry_adapters::adapter_factories;
 
 // ── IPC ──────────────────────────────────────────────────────────────────────
 use openracing_ipc::codec::{MessageHeader, message_flags, message_types};

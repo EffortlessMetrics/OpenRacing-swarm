@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use racing_wheel_telemetry_config::{
+use openracing_telemetry_config::{
     AutoDetectConfig, ConfigDiff, DiffOperation, GameSupportMatrix, GameSupportStatus, GameVersion,
     TelemetryConfig, TelemetryFieldMapping, TelemetrySupport, config_writer_factories,
     load_default_matrix, matrix_game_id_set, matrix_game_ids, normalize_game_id,
@@ -397,7 +397,7 @@ mod per_game_overrides {
         for (id, game) in &matrix.games {
             let json = serde_json::to_string(game)?;
             assert!(!json.is_empty(), "game {} produced empty JSON", id);
-            let _decoded: racing_wheel_telemetry_config::GameSupport = serde_json::from_str(&json)?;
+            let _decoded: openracing_telemetry_config::GameSupport = serde_json::from_str(&json)?;
         }
         Ok(())
     }

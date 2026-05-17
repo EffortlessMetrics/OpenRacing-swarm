@@ -13,6 +13,7 @@
 
 use std::time::{Duration, Instant};
 
+use openracing_telemetry_adapters::{ForzaAdapter, TelemetryAdapter};
 use racing_wheel_engine::policies::SafetyPolicy;
 use racing_wheel_engine::protocol::fault_flags;
 use racing_wheel_engine::safety::{FaultType, SafetyState};
@@ -21,7 +22,6 @@ use racing_wheel_hid_logitech_protocol::product_ids as logitech_product_ids;
 use racing_wheel_integration_tests::logitech_virtual::LogitechScenario;
 use racing_wheel_plugins::quarantine::{QuarantineManager, QuarantinePolicy, ViolationType};
 use racing_wheel_schemas::prelude::*;
-use racing_wheel_telemetry_adapters::{ForzaAdapter, TelemetryAdapter};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Scenario 1: Logitech G29 connected → service start → FFB active

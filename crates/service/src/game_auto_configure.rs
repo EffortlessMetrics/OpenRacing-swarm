@@ -8,7 +8,7 @@
 
 use crate::game_service::GameService;
 use anyhow::Result;
-use racing_wheel_telemetry_config::support::{load_default_matrix, normalize_game_id};
+use openracing_telemetry_config::support::{load_default_matrix, normalize_game_id};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

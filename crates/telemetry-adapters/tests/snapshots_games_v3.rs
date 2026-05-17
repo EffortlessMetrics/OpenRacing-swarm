@@ -4,7 +4,7 @@
 //! DiRT Rally 2.0, Dirt Showdown, EA WRC, F1, Gran Turismo 7, GRID 2019,
 //! GRID Legends, KartKraft, Le Mans Ultimate, NASCAR 21, Race Driver GRID.
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     AssettoCorsaAdapter, Automobilista1Adapter, Dirt3Adapter, Dirt4Adapter, Dirt5Adapter,
     DirtRally2Adapter, DirtShowdownAdapter, EAWRCAdapter, F1Adapter, Grid2019Adapter,
     GridLegendsAdapter, KartKraftAdapter, LeMansUltimateAdapter, Nascar21Adapter,

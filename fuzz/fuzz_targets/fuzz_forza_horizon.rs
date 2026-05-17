@@ -4,7 +4,7 @@
 //!   cargo +nightly fuzz run fuzz_forza_horizon
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     ForzaHorizon4Adapter, ForzaHorizon5Adapter, TelemetryAdapter,
 };
 

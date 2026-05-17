@@ -1,10 +1,10 @@
 //! Deep tests for the Project CARS 2 / Project CARS 3 telemetry adapter.
 
-use racing_wheel_telemetry_adapters::pcars2::{
+use openracing_telemetry_adapters::pcars2::{
     PACKET_TYPE_TIMINGS, merge_timing_fields, parse_pcars2_packet, parse_pcars2_timings_packet,
     pcars2_packet_type,
 };
-use racing_wheel_telemetry_adapters::{NormalizedTelemetry, PCars2Adapter, TelemetryAdapter};
+use openracing_telemetry_adapters::{NormalizedTelemetry, PCars2Adapter, TelemetryAdapter};
 use std::time::Duration;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

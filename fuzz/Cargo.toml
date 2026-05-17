@@ -11,8 +11,8 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-racing-wheel-telemetry-adapters = { path = "../crates/telemetry-adapters" }
-racing-wheel-telemetry-core = { path = "../crates/telemetry-core" }
+openracing-telemetry-adapters = { path = "../crates/telemetry-adapters" }
+openracing-telemetry = { path = "../crates/telemetry-core" }
 racing-wheel-hid-ffbeast-protocol = { path = "../crates/hid-ffbeast-protocol" }
 racing-wheel-hid-moza-protocol = { path = "../crates/hid-moza-protocol" }
 racing-wheel-hid-thrustmaster-protocol = { path = "../crates/hid-thrustmaster-protocol" }
@@ -45,7 +45,7 @@ openracing-calibration = { path = "../crates/openracing-calibration" }
 openracing-pipeline = { path = "../crates/openracing-pipeline" }
 openracing-profile = { path = "../crates/openracing-profile" }
 racing-wheel-schemas = { path = "../crates/schemas" }
-racing-wheel-telemetry-recorder = { path = "../crates/telemetry-recorder" }
+openracing-telemetry-recorder = { path = "../crates/telemetry-recorder" }
 prost = "0.14.3"
 serde_json = "1"
 serde_yaml = { package = "serde_yaml_ng", version = "0.10.0" }

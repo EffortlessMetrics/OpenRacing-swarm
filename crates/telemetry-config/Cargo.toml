@@ -1,12 +1,12 @@
 [package]
-name = "racing-wheel-telemetry-config"
+name = "openracing-telemetry-config"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage = "https://github.com/EffortlessMetrics/OpenRacing"
-documentation = "https://docs.rs/racing-wheel-telemetry-config"
+documentation = "https://docs.rs/openracing-telemetry-config"
 publish = true
 description = "Game support matrix, utilities, and config writers for OpenRacing telemetry"
 readme = "README.md"

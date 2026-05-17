@@ -18,7 +18,7 @@ This crate combines:
 ## Usage
 
 ```rust
-use racing_wheel_telemetry_config::{
+use openracing_telemetry_config::{
     load_default_matrix, matrix_game_ids,
     config_writer_factories, ConfigWriter, TelemetryConfig,
 };

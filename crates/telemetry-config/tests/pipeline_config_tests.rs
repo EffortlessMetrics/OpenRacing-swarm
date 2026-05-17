@@ -8,7 +8,7 @@
 //! - Config writer factory IDs are all present in the matrix
 //! - Property-based tests for game ID normalization
 
-use racing_wheel_telemetry_config::{
+use openracing_telemetry_config::{
     GameSupportMatrix, GameSupportStatus, config_writer_factories, load_default_matrix,
     matrix_game_id_set, matrix_game_ids, normalize_game_id,
 };

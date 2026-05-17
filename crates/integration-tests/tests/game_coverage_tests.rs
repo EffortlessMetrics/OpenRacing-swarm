@@ -5,8 +5,8 @@
 //! and config writer existed in Rust code but had no corresponding entry in either
 //! YAML configuration file, causing silent runtime failures.
 
-use racing_wheel_telemetry_adapters::adapter_factories;
-use racing_wheel_telemetry_config::config_writer_factories;
+use openracing_telemetry_adapters::adapter_factories;
+use openracing_telemetry_config::config_writer_factories;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -17,7 +17,7 @@ type TestResult = Result<(), Box<dyn std::error::Error>>;
 /// at runtime even though all Rust code compiled successfully.
 #[test]
 fn all_adapter_game_ids_present_in_both_yaml_files() -> TestResult {
-    let config_ids = racing_wheel_telemetry_config::matrix_game_id_set()?;
+    let config_ids = openracing_telemetry_config::matrix_game_id_set()?;
     let support_ids = racing_wheel_telemetry_support::matrix_game_id_set()?;
 
     let mut missing_from_config: Vec<&str> = Vec::new();
@@ -55,7 +55,7 @@ fn all_adapter_game_ids_present_in_both_yaml_files() -> TestResult {
 /// skipped at runtime (see friction log F-002).
 #[test]
 fn all_config_writer_ids_present_in_both_yaml_files() -> TestResult {
-    let config_ids = racing_wheel_telemetry_config::matrix_game_id_set()?;
+    let config_ids = openracing_telemetry_config::matrix_game_id_set()?;
     let support_ids = racing_wheel_telemetry_support::matrix_game_id_set()?;
 
     let mut missing_from_config: Vec<&str> = Vec::new();
@@ -94,13 +94,13 @@ fn all_config_writer_ids_present_in_both_yaml_files() -> TestResult {
 /// that omission is caught here.
 #[test]
 fn all_config_writer_ids_from_writers_crate_present_in_both_yaml_files() -> TestResult {
-    let config_ids = racing_wheel_telemetry_config::matrix_game_id_set()?;
+    let config_ids = openracing_telemetry_config::matrix_game_id_set()?;
     let support_ids = racing_wheel_telemetry_support::matrix_game_id_set()?;
 
     let mut missing_from_config: Vec<&str> = Vec::new();
     let mut missing_from_support: Vec<&str> = Vec::new();
 
-    for (game_id, _) in racing_wheel_telemetry_config_writers::config_writer_factories() {
+    for (game_id, _) in openracing_telemetry_config::config_writer_factories() {
         if !config_ids.contains(*game_id) {
             missing_from_config.push(game_id);
         }

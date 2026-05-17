@@ -9,14 +9,14 @@
 //! Requirements: GI-01, GI-03
 
 use anyhow::Result;
-use racing_wheel_telemetry_config::support::load_default_matrix;
+use openracing_telemetry_config::support::load_default_matrix;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use tracing::info;
 
-pub use racing_wheel_telemetry_config::support::{
+pub use openracing_telemetry_config::support::{
     GameSupport, GameSupportMatrix, TelemetryFieldMapping,
 };
 

@@ -6,11 +6,11 @@
 
 use anyhow::Result;
 
+use openracing_telemetry_adapters::adapter_factories;
 use racing_wheel_engine::ports::{HidDevice, HidPort};
 use racing_wheel_engine::safety::{FaultType, SafetyService};
 use racing_wheel_engine::{DeviceInfo, Frame, Pipeline, VirtualDevice, VirtualHidPort};
 use racing_wheel_schemas::prelude::*;
-use racing_wheel_telemetry_adapters::adapter_factories;
 
 // ---------------------------------------------------------------------------
 // Helper: collect all adapter game IDs for parameterized tests

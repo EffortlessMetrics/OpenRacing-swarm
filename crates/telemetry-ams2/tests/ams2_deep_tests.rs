@@ -4,7 +4,7 @@
 //! exclusivity, weather/tire edge cases, boost pressure, crash state,
 //! extended data completeness, and shared memory struct integrity.
 
-use racing_wheel_telemetry_adapters::ams2::{
+use openracing_telemetry_adapters::ams2::{
     AMS2Adapter, AMS2SharedMemory, DrsState, GameState, HighestFlag, PitMode, RaceState,
     SessionState,
 };

@@ -2,7 +2,7 @@
 //!
 //! Covers adapters NOT in v8: DiRT 3, Dirt 4, Dirt 5, GRID 2019.
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     Dirt3Adapter, Dirt4Adapter, Dirt5Adapter, Grid2019Adapter, TelemetryAdapter,
 };
 

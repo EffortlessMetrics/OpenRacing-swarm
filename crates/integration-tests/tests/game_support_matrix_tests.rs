@@ -8,10 +8,8 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-use racing_wheel_telemetry_adapters::adapter_factories;
-use racing_wheel_telemetry_config_writers::{
-    DiffOperation, TelemetryConfig, config_writer_factories,
-};
+use openracing_telemetry_adapters::adapter_factories;
+use openracing_telemetry_config::{DiffOperation, TelemetryConfig, config_writer_factories};
 use racing_wheel_telemetry_support::{
     GameSupportMatrix, GameSupportStatus, load_default_matrix, matrix_game_id_set, matrix_game_ids,
     normalize_game_id,

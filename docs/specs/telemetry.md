@@ -49,7 +49,7 @@ An adapter SHOULD:
 - The support matrix is the source of truth for active telemetry integrations.
 - The runtime should validate registry parity between:
   - matrix-defined game IDs (`game_support_matrix.yaml`)
-  - adapter factories (`racing-wheel-telemetry-adapters`)
+  - adapter factories (`openracing-telemetry-adapters`)
   - config writer factories (`racing-wheel-telemetry-config-writers`)
 - Missing adapter/writer coverage must be surfaced through startup logs; missing writers are a hard failure path for game configuration services.
 

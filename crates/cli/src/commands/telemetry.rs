@@ -4,7 +4,7 @@ use crate::commands::TelemetryCommands;
 use crate::error::CliError;
 use anyhow::{Context, Result, anyhow};
 use chrono::{SecondsFormat, Utc};
-use racing_wheel_telemetry_adapters::simhub::parse_simhub_packet;
+use openracing_telemetry_adapters::simhub::parse_simhub_packet;
 use serde::Serialize;
 use serde_json::Value;
 use std::fs::File;

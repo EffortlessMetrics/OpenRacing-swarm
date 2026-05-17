@@ -4,11 +4,11 @@
 //! Tests config validation round-trips, profile merging via serde, and
 //! edge cases including empty config and conflicting settings.
 
-use proptest::prelude::*;
-use racing_wheel_telemetry_config::{
+use openracing_telemetry_config::{
     AutoDetectConfig, ConfigDiff, DiffOperation, GameSupportStatus, TelemetryConfig,
     TelemetryFieldMapping, load_default_matrix, matrix_game_ids, normalize_game_id,
 };
+use proptest::prelude::*;
 
 // ---------------------------------------------------------------------------
 // Proptest: config validation round-trips

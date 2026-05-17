@@ -5,7 +5,7 @@
 
 use crate::game_support_matrix::create_default_matrix;
 use anyhow::Result;
-pub use racing_wheel_telemetry_config::support::{
+pub use openracing_telemetry_config::support::{
     GameSupport, GameSupportMatrix, TelemetryFieldMapping,
 };
 use serde::{Deserialize, Serialize};

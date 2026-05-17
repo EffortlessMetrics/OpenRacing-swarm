@@ -3,7 +3,7 @@
 //! Covers packet parsing, normalization edge cases, flag handling,
 //! tire data, fuel calculations, and game-specific AMS2 features.
 
-use racing_wheel_telemetry_adapters::ams2::{AMS2SharedMemory, DrsState, HighestFlag, PitMode};
+use openracing_telemetry_adapters::ams2::{AMS2SharedMemory, DrsState, HighestFlag, PitMode};
 use racing_wheel_telemetry_ams2::{AMS2Adapter, TelemetryAdapter};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

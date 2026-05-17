@@ -34,7 +34,7 @@ use openracing_filters::{
 use openracing_calibration::AxisCalibration;
 
 // Telemetry adapters
-use racing_wheel_telemetry_adapters::adapter_factories;
+use openracing_telemetry_adapters::adapter_factories;
 
 /// Helper: build a filter-level Frame from telemetry values.
 fn filter_frame_from_telemetry(ffb_scalar: f32, wheel_speed: f32) -> FilterFrame {

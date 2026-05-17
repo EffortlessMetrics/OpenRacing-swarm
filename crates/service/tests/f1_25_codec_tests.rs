@@ -39,7 +39,7 @@ fn test_f1_25_car_telemetry_fixture_normalizes() -> TestResult {
 /// CarTelemetry fixture must have DRS active flag set in extended fields.
 #[test]
 fn test_f1_25_car_telemetry_fixture_drs_active() -> TestResult {
-    use racing_wheel_telemetry_core::TelemetryValue;
+    use openracing_telemetry::TelemetryValue;
     let adapter = F1_25Adapter::new();
     let normalized = adapter.normalize(FIXTURE_CAR_TELEMETRY)?;
 

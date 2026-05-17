@@ -8,7 +8,7 @@
 //! The non-deterministic `timestamp: Instant` field is scrubbed via an insta
 //! regex filter so snapshots remain stable across runs.
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     ACRallyAdapter, BeamNGAdapter, DakarDesertRallyAdapter, Dirt3Adapter, Dirt5Adapter,
     Ets2Adapter, FlatOutAdapter, ForzaAdapter, MotoGPAdapter, NascarAdapter, PCars2Adapter,
     RBRAdapter, RaceRoomAdapter, RennsportAdapter, SimHubAdapter, TelemetryAdapter,

@@ -3,7 +3,7 @@
 //! These tests lock down the normalized output format so that any change to
 //! the adapter's output is caught as a snapshot diff.
 
-use racing_wheel_telemetry_adapters::ams2::{AMS2SharedMemory, HighestFlag, PitMode, SessionState};
+use openracing_telemetry_adapters::ams2::{AMS2SharedMemory, HighestFlag, PitMode, SessionState};
 use racing_wheel_telemetry_ams2::{AMS2Adapter, TelemetryAdapter};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

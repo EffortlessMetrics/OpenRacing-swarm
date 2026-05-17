@@ -3,7 +3,7 @@
 //! Tests exercise parsing, normalization, boundary values, and flag handling
 //! through the public `TelemetryAdapter::normalize()` API.
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     ACCAdapter, BeamNGAdapter, IRacingAdapter, TelemetryAdapter, TelemetryValue,
 };
 use std::time::Duration;

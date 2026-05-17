@@ -2,11 +2,11 @@
 //!
 //! Validates that game telemetry adapters correctly parse raw packets and
 //! produce expected `NormalizedTelemetry` field values. Each test imports
-//! both the adapter (via `racing_wheel_telemetry_adapters`) and the schemas
+//! both the adapter (via `openracing_telemetry_adapters`) and the schemas
 //! crate, constructs a representative packet, normalizes it, and verifies
 //! key fields.
 
-use racing_wheel_telemetry_adapters::{TelemetryAdapter, adapter_factories};
+use openracing_telemetry_adapters::{TelemetryAdapter, adapter_factories};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

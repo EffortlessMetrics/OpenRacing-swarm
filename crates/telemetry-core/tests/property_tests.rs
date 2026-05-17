@@ -1,14 +1,14 @@
 #![allow(clippy::redundant_closure)]
-//! Property-based tests for racing-wheel-telemetry-core.
+//! Property-based tests for openracing-telemetry.
 //!
 //! Uses proptest for randomized testing of telemetry value round-trips,
 //! normalization boundaries, type conversions, and builder validation.
 
-use proptest::prelude::*;
-use racing_wheel_telemetry_core::{
+use openracing_telemetry::{
     ConnectionState, ConnectionStateEvent, DisconnectionConfig, NormalizedTelemetry,
     TelemetryFlags, TelemetryFrame, TelemetryValue,
 };
+use proptest::prelude::*;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 

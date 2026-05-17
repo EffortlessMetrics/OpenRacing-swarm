@@ -22,8 +22,8 @@ path = "src/main.rs"
 normal = ["workspace-hack"]
 
 [dependencies]
-racing-wheel-telemetry-config = { path = "../telemetry-config", version = "0.1.0" }
-racing-wheel-telemetry-adapters = { path = "../telemetry-adapters", version = "0.1.0" }
+openracing-telemetry-config = { path = "../telemetry-config", version = "0.1.0" }
+openracing-telemetry-adapters = { path = "../telemetry-adapters", version = "0.1.0" }
 racing-wheel-schemas = { path = "../schemas", version = "0.1.0" }
 racing-wheel-hid-moza-protocol = { path = "../hid-moza-protocol", version = "0.1.0" }
 racing-wheel-hid-capture = { path = "../hid-capture", version = "0.1.0" }

@@ -10,7 +10,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     ACC2Adapter, ACCAdapter, ACEvoAdapter, AssettoCorsaAdapter, TelemetryAdapter,
 };
 

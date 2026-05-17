@@ -136,12 +136,12 @@ fn all_vendors_half_torque_produces_proportional_output() -> Result<(), Box<dyn 
 
 // ─── Game telemetry pipeline ──────────────────────────────────────────────────
 
-use racing_wheel_telemetry_adapters::adapter_factories;
+use openracing_telemetry_adapters::adapter_factories;
 
 /// Look up an adapter by game_id from the factory registry.
 fn get_adapter(
     game_id: &str,
-) -> Result<Box<dyn racing_wheel_telemetry_adapters::TelemetryAdapter>, String> {
+) -> Result<Box<dyn openracing_telemetry_adapters::TelemetryAdapter>, String> {
     let factories = adapter_factories();
     let (_, factory) = factories
         .iter()

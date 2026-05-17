@@ -4,17 +4,17 @@
 //! share the 264-byte Codemasters Mode 1 binary packet format parsed by
 //! `codemasters_shared::parse_codemasters_mode1_common`.
 
-use proptest::prelude::*;
-use racing_wheel_telemetry_adapters::codemasters_shared::{
+use openracing_telemetry_adapters::codemasters_shared::{
     FFB_LAT_G_MAX, MIN_PACKET_SIZE, OFF_BRAKE, OFF_BRAKES_TEMP_FL, OFF_CAR_POSITION,
     OFF_CURRENT_LAP, OFF_FUEL_CAPACITY, OFF_FUEL_IN_TANK, OFF_GEAR, OFF_GFORCE_LAT, OFF_GFORCE_LON,
     OFF_IN_PIT, OFF_LAST_LAP_TIME, OFF_MAX_RPM, OFF_RPM, OFF_STEER, OFF_THROTTLE,
     OFF_TYRES_PRESSURE_FL, OFF_VEL_X, OFF_VEL_Y, OFF_VEL_Z, OFF_WHEEL_SPEED_FL, OFF_WHEEL_SPEED_FR,
     OFF_WHEEL_SPEED_RL, OFF_WHEEL_SPEED_RR,
 };
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     Dirt3Adapter, Dirt4Adapter, DirtRally2Adapter, DirtShowdownAdapter, TelemetryAdapter,
 };
+use proptest::prelude::*;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 

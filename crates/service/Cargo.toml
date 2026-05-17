@@ -29,10 +29,10 @@ normal = ["workspace-hack", "libudev", "openracing-ipc"]
 [dependencies]
 racing-wheel-schemas = { path = "../schemas", version = "0.1.0" }
 racing-wheel-engine = { path = "../engine", version = "0.1.0" }
-racing-wheel-telemetry-core = { path = "../telemetry-core", version = "0.1.0", features = ["orchestrator"] }
-racing-wheel-telemetry-adapters = { path = "../telemetry-adapters", version = "0.1.0" }
-racing-wheel-telemetry-recorder = { path = "../telemetry-recorder", version = "0.1.0" }
-racing-wheel-telemetry-config = { path = "../telemetry-config", version = "0.1.0" }
+openracing-telemetry = { path = "../telemetry-core", version = "0.1.0", features = ["orchestrator"] }
+openracing-telemetry-adapters = { path = "../telemetry-adapters", version = "0.1.0" }
+openracing-telemetry-recorder = { path = "../telemetry-recorder", version = "0.1.0" }
+openracing-telemetry-config = { path = "../telemetry-config", version = "0.1.0" }
 racing-wheel-changelog = { workspace = true }
 racing-wheel-hid-moza-protocol = { path = "../hid-moza-protocol", version = "0.1.0" }
 openracing-errors = { workspace = true }

@@ -6,7 +6,7 @@
 //!   3. F1 Native    — EA F1 2023/2024 native UDP with extended telemetry
 //!   4. F1 Manager   — stub adapter (strategy game, no driving telemetry)
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     F1_25Adapter, F1Adapter, F1ManagerAdapter, F1NativeAdapter, TelemetryAdapter,
     f1_25::build_car_telemetry_packet, f1_native::build_car_telemetry_packet_native,
 };

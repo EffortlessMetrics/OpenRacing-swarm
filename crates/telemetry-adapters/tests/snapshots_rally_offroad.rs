@@ -3,7 +3,7 @@
 //! Covers: EA WRC, WRC Generations, WRC Kylotonn (WRC 10), Seb Loeb Rally,
 //! V-Rally 4, Dakar Desert Rally, Gravel, and FlatOut.
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     DakarDesertRallyAdapter, EAWRCAdapter, FlatOutAdapter, GravelAdapter, SebLoebRallyAdapter,
     TelemetryAdapter, VRally4Adapter, WrcGenerationsAdapter,
     wrc_kylotonn::{WrcKylotonnAdapter, WrcKylotonnVariant},

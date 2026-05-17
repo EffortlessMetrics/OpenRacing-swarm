@@ -1,7 +1,7 @@
 //! Deep tests for telemetry-core: core types, normalization, data flow,
 //! serialization roundtrips, error handling, and thread safety.
 
-use racing_wheel_telemetry_core::{
+use openracing_telemetry::{
     ConnectionState, ConnectionStateEvent, DisconnectionConfig, DisconnectionTracker,
     GameTelemetry, GameTelemetrySnapshot, NormalizedTelemetry, TelemetryError, TelemetryFlags,
     TelemetryFrame, TelemetryValue,
@@ -946,9 +946,9 @@ fn telemetry_now_ns_from_multiple_threads() -> TestResult {
     let handles: Vec<_> = (0..4)
         .map(|_| {
             std::thread::spawn(|| {
-                let mut prev = racing_wheel_telemetry_core::telemetry_now_ns();
+                let mut prev = openracing_telemetry::telemetry_now_ns();
                 for _ in 0..100 {
-                    let now = racing_wheel_telemetry_core::telemetry_now_ns();
+                    let now = openracing_telemetry::telemetry_now_ns();
                     assert!(now >= prev, "timestamps must be monotonic");
                     prev = now;
                 }
@@ -965,7 +965,7 @@ fn telemetry_now_ns_from_multiple_threads() -> TestResult {
 #[test]
 fn telemetry_now_ns_returns_nonzero_after_delay() -> TestResult {
     std::thread::sleep(Duration::from_millis(1));
-    let ns = racing_wheel_telemetry_core::telemetry_now_ns();
+    let ns = openracing_telemetry::telemetry_now_ns();
     assert!(ns > 0, "should be nonzero after 1ms delay");
     Ok(())
 }
@@ -976,7 +976,7 @@ fn telemetry_now_ns_returns_nonzero_after_delay() -> TestResult {
 
 #[test]
 fn adapter_factories_returns_empty_slice() -> TestResult {
-    let factories = racing_wheel_telemetry_core::adapter_factories();
+    let factories = openracing_telemetry::adapter_factories();
     // Without registrations, should be empty
     assert!(factories.is_empty());
     Ok(())
@@ -988,8 +988,8 @@ fn adapter_factories_returns_empty_slice() -> TestResult {
 
 #[test]
 fn bdd_matrix_metrics_from_sets_exact() -> TestResult {
-    use racing_wheel_telemetry_core::BddMatrixMetrics;
-    use racing_wheel_telemetry_core::MatrixParityPolicy;
+    use openracing_telemetry::BddMatrixMetrics;
+    use openracing_telemetry::MatrixParityPolicy;
 
     let m = BddMatrixMetrics::from_sets(
         ["acc", "iracing"],
@@ -1008,8 +1008,8 @@ fn bdd_matrix_metrics_from_sets_exact() -> TestResult {
 
 #[test]
 fn bdd_matrix_metrics_empty_inputs() -> TestResult {
-    use racing_wheel_telemetry_core::BddMatrixMetrics;
-    use racing_wheel_telemetry_core::MatrixParityPolicy;
+    use openracing_telemetry::BddMatrixMetrics;
+    use openracing_telemetry::MatrixParityPolicy;
 
     let m = BddMatrixMetrics::from_sets(
         Vec::<&str>::new(),
@@ -1024,9 +1024,7 @@ fn bdd_matrix_metrics_empty_inputs() -> TestResult {
 
 #[test]
 fn runtime_bdd_matrix_metrics_combined() -> TestResult {
-    use racing_wheel_telemetry_core::{
-        BddMatrixMetrics, MatrixParityPolicy, RuntimeBddMatrixMetrics,
-    };
+    use openracing_telemetry::{BddMatrixMetrics, MatrixParityPolicy, RuntimeBddMatrixMetrics};
 
     let adapter = BddMatrixMetrics::from_sets(["a", "b"], ["a", "b"], MatrixParityPolicy::STRICT);
     let writer = BddMatrixMetrics::from_sets(["a", "b"], ["a"], MatrixParityPolicy::STRICT);
@@ -1043,8 +1041,5 @@ fn runtime_bdd_matrix_metrics_combined() -> TestResult {
 
 #[test]
 fn default_disconnection_timeout_constant() {
-    assert_eq!(
-        racing_wheel_telemetry_core::DEFAULT_DISCONNECTION_TIMEOUT_MS,
-        2000
-    );
+    assert_eq!(openracing_telemetry::DEFAULT_DISCONNECTION_TIMEOUT_MS, 2000);
 }

@@ -10,14 +10,14 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use anyhow::Result;
-use racing_wheel_telemetry_adapters::{TelemetryAdapter, TelemetryReceiver, adapter_factories};
+use openracing_telemetry_adapters::{TelemetryAdapter, TelemetryReceiver, adapter_factories};
+use openracing_telemetry_config::config_writer_factories;
+use openracing_telemetry_recorder::TelemetryRecorder;
 use racing_wheel_telemetry_bdd_metrics::RuntimeBddMatrixMetrics;
-use racing_wheel_telemetry_config_writers::config_writer_factories;
 use racing_wheel_telemetry_integration::{
     CoveragePolicy, RuntimeCoverageReport, compare_runtime_registries_with_policies,
 };
 use racing_wheel_telemetry_rate_limiter::RateLimiter;
-use racing_wheel_telemetry_recorder::TelemetryRecorder;
 use racing_wheel_telemetry_support::{GameSupportMatrix, normalize_game_id};
 use tracing::{debug, warn};
 

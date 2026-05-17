@@ -12,8 +12,7 @@
 mod helpers;
 
 use helpers::write_f32_le;
-use proptest::prelude::*;
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     self as adapters,
     // Adapters accessed via normalize()
     BeamNGAdapter,
@@ -64,6 +63,7 @@ use racing_wheel_telemetry_adapters::{
     wreckfest,
     wtcr,
 };
+use proptest::prelude::*;
 
 // ── Invariant helpers ────────────────────────────────────────────────────────
 

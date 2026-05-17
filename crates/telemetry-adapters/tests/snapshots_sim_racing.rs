@@ -3,7 +3,7 @@
 //! Covers: PCars2, PCars3, Automobilista 1, RaceRoom, Gran Turismo 7,
 //! Gran Turismo Sport, Trackmania, and AC Rally.
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     ACRallyAdapter, Automobilista1Adapter, PCars2Adapter, PCars3Adapter, RaceRoomAdapter,
     TelemetryAdapter, TrackmaniaAdapter,
 };
@@ -387,7 +387,7 @@ fn gran_turismo_7_race_snapshot() -> TestResult {
     let flags: u16 = 1 << 11;
     write_u16_le(&mut buf, GT7_OFF_FLAGS, flags);
 
-    let normalized = racing_wheel_telemetry_adapters::gran_turismo_7::parse_decrypted(&buf)?;
+    let normalized = openracing_telemetry_adapters::gran_turismo_7::parse_decrypted(&buf)?;
     insta::assert_yaml_snapshot!(normalized);
     Ok(())
 }
@@ -422,7 +422,7 @@ fn gran_turismo_sport_race_snapshot() -> TestResult {
     write_u16_le(&mut buf, GT7_OFF_FLAGS, 0);
 
     // GT Sport shares the same packet format; use parse_decrypted directly.
-    let normalized = racing_wheel_telemetry_adapters::gran_turismo_7::parse_decrypted(&buf)?;
+    let normalized = openracing_telemetry_adapters::gran_turismo_7::parse_decrypted(&buf)?;
     insta::assert_yaml_snapshot!(normalized);
     Ok(())
 }

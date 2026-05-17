@@ -1,7 +1,7 @@
 //! Deep tests for Wreckfest (and related) telemetry adapters.
 
-use racing_wheel_telemetry_adapters::wreckfest::parse_wreckfest_packet;
-use racing_wheel_telemetry_adapters::{BeamNGAdapter, TelemetryAdapter, WreckfestAdapter};
+use openracing_telemetry_adapters::wreckfest::parse_wreckfest_packet;
+use openracing_telemetry_adapters::{BeamNGAdapter, TelemetryAdapter, WreckfestAdapter};
 use std::time::Duration;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

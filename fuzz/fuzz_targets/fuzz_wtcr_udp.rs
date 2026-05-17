@@ -6,7 +6,7 @@
 //!   cargo +nightly fuzz run fuzz_wtcr_udp
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use racing_wheel_telemetry_adapters::{TelemetryAdapter, WtcrAdapter};
+use openracing_telemetry_adapters::{TelemetryAdapter, WtcrAdapter};
 
 fuzz_target!(|data: &[u8]| {
     // Must never panic on arbitrary bytes — errors are expected, panics are not.

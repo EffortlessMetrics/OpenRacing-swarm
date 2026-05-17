@@ -16,13 +16,13 @@ use openracing_filters::Frame;
 use openracing_fmea::{FaultType, FmeaMatrix, FmeaSystem, SoftStopController};
 use openracing_pipeline::Pipeline;
 use openracing_profile::{WheelProfile, WheelSettings};
+use openracing_telemetry_recorder::{TelemetryPlayer, TestFixtureGenerator, TestScenario};
 use openracing_watchdog::{SystemComponent, WatchdogConfig, WatchdogSystem};
 use racing_wheel_engine::JitterMetrics;
 use racing_wheel_engine::safety::{
     SafetyInterlockState, SafetyInterlockSystem, SafetyService, SoftwareWatchdog,
 };
 use racing_wheel_schemas::prelude::NormalizedTelemetry;
-use racing_wheel_telemetry_recorder::{TelemetryPlayer, TestFixtureGenerator, TestScenario};
 
 type BoxErr = Box<dyn std::error::Error + Send + Sync>;
 
@@ -137,7 +137,7 @@ fn soak_pipeline_rapid_config_changes() -> Result<()> {
 fn soak_telemetry_recording_extended_session() -> Result<()> {
     let temp_dir = tempfile::TempDir::new()?;
     let output_path = temp_dir.path().join("soak_recording.json");
-    let mut recorder = racing_wheel_telemetry_recorder::TelemetryRecorder::new(output_path)?;
+    let mut recorder = openracing_telemetry_recorder::TelemetryRecorder::new(output_path)?;
 
     recorder.start_recording("soak_test_game".to_string());
     assert!(recorder.is_recording());

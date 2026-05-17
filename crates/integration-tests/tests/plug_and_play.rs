@@ -22,7 +22,7 @@
 
 use std::time::{Duration, Instant};
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     ACCAdapter, AssettoCorsaAdapter, ForzaAdapter, IRacingAdapter, TelemetryAdapter,
     adapter_factories,
 };

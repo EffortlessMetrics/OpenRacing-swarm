@@ -4,13 +4,13 @@
 //! Complements `f1_deep_tests.rs` with proptest fuzzing, boundary arithmetic,
 //! and additional state-machine scenarios.
 
-use proptest::prelude::*;
-use proptest::test_runner::TestCaseError;
-use racing_wheel_telemetry_adapters::f1_native::{
+use openracing_telemetry_adapters::f1_native::{
     F1NativeAdapter, F1NativeState, PACKET_FORMAT_2023, PACKET_FORMAT_2024,
     build_car_status_packet_f23, build_car_status_packet_f24, build_car_telemetry_packet_native,
     build_f1_native_header_bytes, parse_car_status_2023, parse_car_status_2024,
 };
+use proptest::prelude::*;
+use proptest::test_runner::TestCaseError;
 use racing_wheel_telemetry_f1::TelemetryAdapter;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

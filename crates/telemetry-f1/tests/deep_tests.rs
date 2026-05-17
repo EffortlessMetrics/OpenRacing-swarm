@@ -3,7 +3,7 @@
 //! Covers packet construction, header parsing, field extraction,
 //! normalization, ERS data, and game-specific F1 features.
 
-use racing_wheel_telemetry_adapters::f1_native::{
+use openracing_telemetry_adapters::f1_native::{
     F1NativeAdapter, F1NativeState, PACKET_FORMAT_2023, PACKET_FORMAT_2024,
     build_car_status_packet_f23, build_car_status_packet_f24, build_car_telemetry_packet_native,
     build_f1_native_header_bytes,

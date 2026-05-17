@@ -4,7 +4,7 @@
 //! boundary values, and corrupted-packet handling against the 92-byte OutGauge
 //! protocol (port 30000).  With optional OutGauge ID the packet is 96 bytes.
 
-use racing_wheel_telemetry_adapters::{LFSAdapter, TelemetryAdapter, TelemetryValue};
+use openracing_telemetry_adapters::{LFSAdapter, TelemetryAdapter, TelemetryValue};
 use std::time::Duration;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

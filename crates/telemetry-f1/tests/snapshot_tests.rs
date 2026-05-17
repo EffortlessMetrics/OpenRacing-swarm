@@ -3,8 +3,8 @@
 //! These tests lock down the normalized output format so that any change to
 //! the adapter's output is caught as a snapshot diff.
 
-use racing_wheel_telemetry_adapters::f1_25::{CarTelemetryData, SessionData};
-use racing_wheel_telemetry_adapters::f1_native::{
+use openracing_telemetry_adapters::f1_25::{CarTelemetryData, SessionData};
+use openracing_telemetry_adapters::f1_native::{
     F1NativeAdapter, F1NativeCarStatusData, PACKET_FORMAT_2024, build_car_telemetry_packet_native,
     normalize,
 };

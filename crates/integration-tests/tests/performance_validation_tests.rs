@@ -29,13 +29,13 @@ use openracing_filters::{
     torque_cap_filter,
 };
 use openracing_ipc::codec::{MessageHeader, message_types};
+use openracing_telemetry_adapters::adapter_factories;
 use openracing_watchdog::{SystemComponent, WatchdogConfig, WatchdogSystem};
 use racing_wheel_engine::ports::HidDevice;
 use racing_wheel_engine::safety::SafetyService;
 use racing_wheel_engine::{Frame, Pipeline, TorqueCommand, VirtualDevice};
 use racing_wheel_schemas::prelude::*;
 use racing_wheel_service::system_config::SystemConfig;
-use racing_wheel_telemetry_adapters::adapter_factories;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Helpers

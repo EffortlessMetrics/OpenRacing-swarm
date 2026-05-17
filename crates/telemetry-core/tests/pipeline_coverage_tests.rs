@@ -8,8 +8,8 @@
 //! - TelemetryError display/variant exhaustiveness
 //! - Property-based tests for GameTelemetry conversion
 
-use racing_wheel_telemetry_core::contracts::{FlagCoverage, TelemetryFieldCoverage};
-use racing_wheel_telemetry_core::{
+use openracing_telemetry::contracts::{FlagCoverage, TelemetryFieldCoverage};
+use openracing_telemetry::{
     ConnectionState, ConnectionStateEvent, DisconnectionConfig, DisconnectionTracker,
     GameTelemetry, GameTelemetrySnapshot, NormalizedTelemetry, TelemetryError, TelemetryFlags,
     TelemetryFrame, TelemetryValue, telemetry_now_ns,

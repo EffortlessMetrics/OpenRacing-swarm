@@ -3,7 +3,7 @@
 //! AMS2 uses Windows shared memory, so most behavioral tests are adapter-level
 //! (game_id, update_rate, etc.). Shared memory tests require a running AMS2 instance.
 
-use racing_wheel_telemetry_adapters::ams2::{AMS2SharedMemory, DrsState, HighestFlag, PitMode};
+use openracing_telemetry_adapters::ams2::{AMS2SharedMemory, DrsState, HighestFlag, PitMode};
 use racing_wheel_telemetry_ams2::{AMS2Adapter, TelemetryAdapter};
 use std::time::Duration;
 

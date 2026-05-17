@@ -29,8 +29,8 @@ use openracing_filters::{
     friction_filter, slew_rate_filter, torque_cap_filter,
 };
 
+use openracing_telemetry_adapters::{TelemetryAdapter, adapter_factories};
 use racing_wheel_service::system_config::SystemConfig;
-use racing_wheel_telemetry_adapters::{TelemetryAdapter, adapter_factories};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Helpers

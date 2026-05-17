@@ -4,7 +4,7 @@
 //! and corrupted-packet handling against the RBR LiveData UDP plugin protocol
 //! (128-byte legacy and 184-byte current formats, port 6776).
 
-use racing_wheel_telemetry_adapters::{RBRAdapter, TelemetryAdapter};
+use openracing_telemetry_adapters::{RBRAdapter, TelemetryAdapter};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 

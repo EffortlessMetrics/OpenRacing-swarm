@@ -64,7 +64,7 @@ cargo test -p racing-wheel-engine --test virtual_device_integration -- --nocaptu
 cargo test -p racing-wheel-integration-tests --test integration_tests --features ci-gates -- --nocapture
 cargo test -p racing-wheel-integration-tests --test performance_gate_tests --features ci-gates -- --nocapture
 cargo test -p racing-wheel-integration-tests --test plug_and_play --features ci-gates -- --nocapture
-cargo test -p racing-wheel-telemetry-adapters --test protocol_deep_tests -- --nocapture
+cargo test -p openracing-telemetry-adapters --test protocol_deep_tests -- --nocapture
 ```
 
 Linux/macOS shell:
@@ -79,7 +79,7 @@ cargo test -p racing-wheel-engine --test virtual_device_integration -- --nocaptu
 cargo test -p racing-wheel-integration-tests --test integration_tests --features ci-gates -- --nocapture
 cargo test -p racing-wheel-integration-tests --test performance_gate_tests --features ci-gates -- --nocapture
 cargo test -p racing-wheel-integration-tests --test plug_and_play --features ci-gates -- --nocapture
-cargo test -p racing-wheel-telemetry-adapters --test protocol_deep_tests -- --nocapture
+cargo test -p openracing-telemetry-adapters --test protocol_deep_tests -- --nocapture
 ```
 
 If the process is running under GitHub-hosted Actions, tests that key off

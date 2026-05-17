@@ -1,1 +1,1 @@
-pub use racing_wheel_telemetry_core::*;
+pub use openracing_telemetry::*;

@@ -1,15 +1,16 @@
 ---
-source: crates/telemetry-adapters/src/lfs.rs
+source: crates/telemetry-adapters/src/ets2.rs
+assertion_line: 608
 expression: result
 ---
-speed_ms: 42
-steering_angle: 0
-throttle: 0.85
+speed_ms: 25
+steering_angle: -0.06109
+throttle: 0.75
 brake: 0
-clutch: 0.1
-rpm: 6800
-max_rpm: 0
-gear: 3
+clutch: 0
+rpm: 1400
+max_rpm: 2200
+gear: 8
 num_gears: 0
 lateral_g: 0
 longitudinal_g: 0
@@ -29,7 +30,7 @@ tire_pressures_psi:
   - 0
   - 0
   - 0
-ffb_scalar: 0
+ffb_scalar: 0.16333336
 ffb_torque_nm: 0
 flags:
   yellow_flag: false
@@ -44,8 +45,8 @@ flags:
   ers_available: false
   ers_active: false
   launch_control: false
-  traction_control: true
-  abs_active: true
+  traction_control: false
+  abs_active: false
   engine_limiter: false
   safety_car: false
   formation_lap: false
@@ -57,22 +58,10 @@ best_lap_time_s: 0
 last_lap_time_s: 0
 delta_ahead_s: 0
 delta_behind_s: 0
-fuel_percent: 0.62
-engine_temp_c: 92.5
+fuel_percent: 0.65
+engine_temp_c: 88
 extended:
-  dash_lights_raw:
-    type: Integer
-    value: 1041
-  oil_pressure_bar:
+  engine_load:
     type: Float
-    value: 3.8
-  oil_temp_c:
-    type: Float
-    value: 105
-  shift_light:
-    type: Boolean
-    value: true
-  turbo_bar:
-    type: Float
-    value: 1.2
+    value: 0.55
 sequence: 0

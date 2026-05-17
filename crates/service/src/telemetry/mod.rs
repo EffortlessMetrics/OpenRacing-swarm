@@ -13,8 +13,8 @@ pub use adapters::{
     MockAdapter, RFactor2Adapter, TelemetryAdapter, TelemetryReceiver, telemetry_now_ns,
 };
 pub use game_telemetry::*;
-pub use racing_wheel_telemetry_adapters as adapters;
-pub use racing_wheel_telemetry_core::TelemetryService;
+pub use openracing_telemetry::TelemetryService;
+pub use openracing_telemetry_adapters as adapters;
 pub use recorder::*;
 
 #[cfg(test)]

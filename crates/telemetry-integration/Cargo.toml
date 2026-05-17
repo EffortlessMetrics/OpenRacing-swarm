@@ -7,7 +7,7 @@ authors.workspace = true
 repository.workspace = true
 homepage = "https://github.com/EffortlessMetrics/OpenRacing"
 documentation = "https://docs.rs/racing-wheel-telemetry-integration"
-publish = true
+publish = false
 description = "Utilities for validating telemetry matrix and runtime registry parity."
 readme = "README.md"
 keywords = ["telemetry", "racing", "matrix", "integration", "compatibility"]
@@ -22,9 +22,9 @@ racing-wheel-telemetry-bdd-metrics = { path = "../telemetry-bdd-metrics", versio
 workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 
 [dev-dependencies]
-racing-wheel-telemetry-adapters = { path = "../telemetry-adapters", version = "0.1.0" }
+openracing-telemetry-adapters = { path = "../telemetry-adapters", version = "0.1.0" }
 racing-wheel-telemetry-rate-limiter = { path = "../telemetry-rate-limiter", version = "0.1.0" }
-racing-wheel-telemetry-recorder = { path = "../telemetry-recorder", version = "0.1.0" }
+openracing-telemetry-recorder = { path = "../telemetry-recorder", version = "0.1.0" }
 racing-wheel-telemetry-support = { path = "../telemetry-support", version = "0.1.0" }
 tempfile = "3.25.0"
 tokio = { workspace = true }

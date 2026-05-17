@@ -13,7 +13,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 
-pub use racing_wheel_telemetry_core::{
+pub use openracing_telemetry::{
     NormalizedTelemetry, TelemetryFlags, TelemetryFrame, TelemetryValue,
 };
 
@@ -75,6 +75,33 @@ pub mod wrc_generations;
 pub mod wrc_kylotonn;
 pub mod wreckfest;
 pub mod wtcr;
+
+/// Stable namespace for game-specific telemetry adapters.
+///
+/// The root modules remain available during the transition, while new callers
+/// should prefer these grouped paths.
+pub mod games {
+    pub use crate::ams2;
+    pub use crate::kartkraft;
+    pub use crate::lfs as live_for_speed;
+    pub use crate::mudrunner;
+    pub use crate::raceroom;
+    pub use crate::rennsport;
+    pub use crate::simhub;
+    pub use crate::wrc_generations;
+
+    pub mod f1 {
+        pub use crate::f1::F1Adapter;
+        pub use crate::f1_25::F1_25Adapter;
+        pub use crate::f1_manager::F1ManagerAdapter;
+        pub use crate::f1_native::F1NativeAdapter;
+    }
+
+    pub mod forza {
+        pub use crate::forza::ForzaAdapter;
+        pub use crate::forza_horizon::{ForzaHorizon4Adapter, ForzaHorizon5Adapter};
+    }
+}
 
 #[cfg(test)]
 mod normalization_tests;

@@ -3,19 +3,19 @@
 //! Covers F1 2023/2024 packet parsing, struct layout verification,
 //! normalization, process_packet state machine, and edge cases.
 
-use racing_wheel_telemetry_adapters::f1_25::{
+use openracing_telemetry::TelemetryValue;
+use openracing_telemetry_adapters::f1_25::{
     CAR_TELEMETRY_ENTRY_SIZE, CarTelemetryData, ERS_MAX_STORE_ENERGY_J,
     MIN_CAR_TELEMETRY_PACKET_SIZE, SessionData, parse_car_telemetry, parse_header,
     parse_session_data,
 };
-use racing_wheel_telemetry_adapters::f1_native::{
+use openracing_telemetry_adapters::f1_native::{
     CAR_STATUS_2023_ENTRY_SIZE, CAR_STATUS_2024_ENTRY_SIZE, F1NativeAdapter, F1NativeCarStatusData,
     F1NativeState, MIN_CAR_STATUS_2023_PACKET_SIZE, MIN_CAR_STATUS_2024_PACKET_SIZE,
     PACKET_FORMAT_2023, PACKET_FORMAT_2024, build_car_status_packet_f23,
     build_car_status_packet_f24, build_car_telemetry_packet_native, build_f1_native_header_bytes,
     normalize, parse_car_status_2023, parse_car_status_2024,
 };
-use racing_wheel_telemetry_core::TelemetryValue;
 use racing_wheel_telemetry_f1::TelemetryAdapter;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -2166,7 +2166,7 @@ fn normalize_tc_abs_off() -> TestResult {
 /// Track names resolve correctly for known IDs.
 #[test]
 fn track_name_lookup_known_ids() -> TestResult {
-    use racing_wheel_telemetry_adapters::f1_25::track_name_from_id;
+    use openracing_telemetry_adapters::f1_25::track_name_from_id;
 
     let known = [
         (0, "Melbourne"),
@@ -2193,7 +2193,7 @@ fn track_name_lookup_known_ids() -> TestResult {
 /// Unknown track IDs return "Unknown".
 #[test]
 fn track_name_lookup_unknown_ids() -> TestResult {
-    use racing_wheel_telemetry_adapters::f1_25::track_name_from_id;
+    use openracing_telemetry_adapters::f1_25::track_name_from_id;
     assert_eq!(track_name_from_id(33), "Unknown");
     assert_eq!(track_name_from_id(127), "Unknown");
     // Negative IDs are clamped to 0 by max(0), so -1 maps to Melbourne (index 0)
@@ -2204,7 +2204,7 @@ fn track_name_lookup_unknown_ids() -> TestResult {
 /// Wet tyre compound name.
 #[test]
 fn tyre_compound_wet() -> TestResult {
-    use racing_wheel_telemetry_adapters::f1_25::tyre_compound_name;
+    use openracing_telemetry_adapters::f1_25::tyre_compound_name;
     assert_eq!(tyre_compound_name(8), "Wet");
     assert_eq!(tyre_compound_name(15), "Wet");
     Ok(())
@@ -2213,7 +2213,7 @@ fn tyre_compound_wet() -> TestResult {
 /// Intermediate tyre compound name.
 #[test]
 fn tyre_compound_intermediate() -> TestResult {
-    use racing_wheel_telemetry_adapters::f1_25::tyre_compound_name;
+    use openracing_telemetry_adapters::f1_25::tyre_compound_name;
     assert_eq!(tyre_compound_name(7), "Intermediate");
     Ok(())
 }

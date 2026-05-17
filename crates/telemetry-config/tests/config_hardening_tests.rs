@@ -1,9 +1,9 @@
-//! Hardening tests for racing-wheel-telemetry-config.
+//! Hardening tests for openracing-telemetry-config.
 //!
 //! Covers: config file parsing, config validation, config diff/merge,
 //! default config generation for each game, and config migration.
 
-use racing_wheel_telemetry_config::{
+use openracing_telemetry_config::{
     ConfigDiff, DiffOperation, TelemetryConfig, config_writer_factories, load_default_matrix,
     normalize_game_id,
 };

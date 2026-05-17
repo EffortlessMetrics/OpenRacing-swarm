@@ -6,7 +6,7 @@
 //!   cargo +nightly fuzz run fuzz_codemasters_udp
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use racing_wheel_telemetry_adapters::CustomUdpSpec;
+use openracing_telemetry_adapters::CustomUdpSpec;
 
 fuzz_target!(|data: &[u8]| {
     if data.is_empty() {

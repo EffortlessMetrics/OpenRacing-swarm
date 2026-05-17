@@ -1,15 +1,16 @@
 ---
-source: crates/telemetry-adapters/src/ets2.rs
-expression: result
+source: crates/telemetry-adapters/src/forza_horizon.rs
+assertion_line: 355
+expression: normalized
 ---
-speed_ms: 25
-steering_angle: -0.06109
-throttle: 0.75
+speed_ms: 20
+steering_angle: 0
+throttle: 0
 brake: 0
 clutch: 0
-rpm: 1400
-max_rpm: 2200
-gear: 8
+rpm: 5000
+max_rpm: 8000
+gear: 0
 num_gears: 0
 lateral_g: 0
 longitudinal_g: 0
@@ -29,7 +30,7 @@ tire_pressures_psi:
   - 0
   - 0
   - 0
-ffb_scalar: 0.16333336
+ffb_scalar: 0
 ffb_torque_nm: 0
 flags:
   yellow_flag: false
@@ -57,10 +58,43 @@ best_lap_time_s: 0
 last_lap_time_s: 0
 delta_ahead_s: 0
 delta_behind_s: 0
-fuel_percent: 0.65
-engine_temp_c: 88
+fuel_percent: 0
+engine_temp_c: 0
 extended:
-  engine_load:
+  suspension_travel_fl:
     type: Float
-    value: 0.55
+    value: 0
+  suspension_travel_fr:
+    type: Float
+    value: 0
+  suspension_travel_rl:
+    type: Float
+    value: 0
+  suspension_travel_rr:
+    type: Float
+    value: 0
+  tire_slip_ratio_fl:
+    type: Float
+    value: 0
+  tire_slip_ratio_fr:
+    type: Float
+    value: 0
+  tire_slip_ratio_rl:
+    type: Float
+    value: 0
+  tire_slip_ratio_rr:
+    type: Float
+    value: 0
+  wheel_speed_fl:
+    type: Float
+    value: 0
+  wheel_speed_fr:
+    type: Float
+    value: 0
+  wheel_speed_rl:
+    type: Float
+    value: 0
+  wheel_speed_rr:
+    type: Float
+    value: 0
 sequence: 0

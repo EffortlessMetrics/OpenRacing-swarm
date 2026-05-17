@@ -7,7 +7,7 @@ authors.workspace = true
 repository.workspace = true
 homepage = "https://github.com/EffortlessMetrics/OpenRacing"
 documentation = "https://docs.rs/racing-wheel-telemetry-lfs"
-publish = true
+publish = false
 description = "Live for Speed (LFS) OutGauge/OutSim telemetry adapter"
 readme = "README.md"
 keywords = ["telemetry", "lfs", "live-for-speed", "outgauge", "racing"]
@@ -18,8 +18,8 @@ normal = ["workspace-hack"]
 
 categories = ["game-development"]
 [dependencies]
-racing-wheel-telemetry-adapters = { path = "../telemetry-adapters", version = "0.1.0" }
-racing-wheel-telemetry-core = { path = "../telemetry-core", version = "0.1.0" }
+openracing-telemetry-adapters = { path = "../telemetry-adapters", version = "0.1.0" }
+openracing-telemetry = { path = "../telemetry-core", version = "0.1.0" }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }

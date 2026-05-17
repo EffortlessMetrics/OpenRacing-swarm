@@ -1,15 +1,16 @@
 ---
-source: crates/telemetry-adapters/src/forza_horizon.rs
+source: crates/telemetry-adapters/src/acc.rs
+assertion_line: 1115
 expression: normalized
 ---
-speed_ms: 20
+speed_ms: 50
 steering_angle: 0
 throttle: 0
 brake: 0
 clutch: 0
-rpm: 5000
-max_rpm: 8000
-gear: 0
+rpm: 0
+max_rpm: 0
+gear: 5
 num_gears: 0
 lateral_g: 0
 longitudinal_g: 0
@@ -50,50 +51,52 @@ flags:
   safety_car: false
   formation_lap: false
   session_paused: false
-position: 0
-lap: 0
-current_lap_time_s: 0
-best_lap_time_s: 0
-last_lap_time_s: 0
+car_id: car_7
+track_id: monza
+position: 2
+lap: 12
+current_lap_time_s: 45
+best_lap_time_s: 91
+last_lap_time_s: 92
 delta_ahead_s: 0
 delta_behind_s: 0
 fuel_percent: 0
 engine_temp_c: 0
 extended:
-  suspension_travel_fl:
+  ambient_temp_c:
+    type: Integer
+    value: 24
+  best_session_lap_s:
     type: Float
-    value: 0
-  suspension_travel_fr:
+    value: 91
+  cup_position:
+    type: Integer
+    value: 2
+  delta_ms:
+    type: Integer
+    value: -120
+  rain_level:
     type: Float
-    value: 0
-  suspension_travel_rl:
+    value: 0.1
+  session_phase:
+    type: Integer
+    value: 4
+  session_time_ms:
     type: Float
-    value: 0
-  suspension_travel_rr:
+    value: 12345
+  session_type:
+    type: Integer
+    value: 3
+  spline_position:
     type: Float
-    value: 0
-  tire_slip_ratio_fl:
+    value: 0.5
+  track_position:
+    type: Integer
+    value: 2
+  track_temp_c:
+    type: Integer
+    value: 31
+  wetness:
     type: Float
-    value: 0
-  tire_slip_ratio_fr:
-    type: Float
-    value: 0
-  tire_slip_ratio_rl:
-    type: Float
-    value: 0
-  tire_slip_ratio_rr:
-    type: Float
-    value: 0
-  wheel_speed_fl:
-    type: Float
-    value: 0
-  wheel_speed_fr:
-    type: Float
-    value: 0
-  wheel_speed_rl:
-    type: Float
-    value: 0
-  wheel_speed_rr:
-    type: Float
-    value: 0
+    value: 0.3
 sequence: 0

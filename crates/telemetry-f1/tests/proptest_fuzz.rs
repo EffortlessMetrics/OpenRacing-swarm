@@ -3,15 +3,15 @@
 //! Ensures the parser never panics on arbitrary or random input,
 //! and that encode→decode round-trips preserve data.
 
-use proptest::prelude::*;
-use racing_wheel_telemetry_adapters::f1_25::{
+use openracing_telemetry_adapters::f1_25::{
     CarTelemetryData, SessionData, parse_car_telemetry, parse_header,
 };
-use racing_wheel_telemetry_adapters::f1_native::{
+use openracing_telemetry_adapters::f1_native::{
     F1NativeAdapter, F1NativeCarStatusData, F1NativeState, build_car_status_packet_f23,
     build_car_status_packet_f24, build_car_telemetry_packet_native, build_f1_native_header_bytes,
     normalize, parse_car_status_2023, parse_car_status_2024,
 };
+use proptest::prelude::*;
 use racing_wheel_telemetry_f1::TelemetryAdapter;
 
 const F1_PACKET_MAX: usize = 2048;
@@ -182,12 +182,12 @@ proptest! {
         prop_assert!(norm.speed_ms >= 0.0, "speed must be non-negative");
         prop_assert!(norm.rpm >= 0.0, "rpm must be non-negative");
 
-        if let Some(racing_wheel_telemetry_core::TelemetryValue::Float(frac)) =
+        if let Some(openracing_telemetry::TelemetryValue::Float(frac)) =
             norm.extended.get("ers_store_fraction")
         {
             prop_assert!(*frac >= 0.0 && *frac <= 1.0, "ERS fraction out of [0,1]: {}", frac);
         }
-        if let Some(racing_wheel_telemetry_core::TelemetryValue::Float(frac)) =
+        if let Some(openracing_telemetry::TelemetryValue::Float(frac)) =
             norm.extended.get("rpm_fraction")
         {
             prop_assert!(*frac >= 0.0 && *frac <= 1.0, "RPM fraction out of [0,1]: {}", frac);

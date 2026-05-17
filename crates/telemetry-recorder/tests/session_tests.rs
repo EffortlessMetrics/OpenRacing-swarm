@@ -4,11 +4,11 @@
 //! multiple simultaneous sessions, large sessions, export formats (CSV / JSON / binary),
 //! and session comparison / diff.
 
-use racing_wheel_schemas::telemetry::{NormalizedTelemetry, TelemetryFlags, TelemetryFrame};
-use racing_wheel_telemetry_recorder::{
+use openracing_telemetry_recorder::{
     FieldDiff, RecordingMetadata, TelemetryPlayer, TelemetryRecorder, TelemetryRecording,
     TestFixtureGenerator, TestScenario,
 };
+use racing_wheel_schemas::telemetry::{NormalizedTelemetry, TelemetryFlags, TelemetryFrame};
 use std::thread;
 use std::time::Duration;
 use tempfile::tempdir;

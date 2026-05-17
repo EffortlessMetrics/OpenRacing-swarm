@@ -3,7 +3,7 @@
 //! These tests encode "known good" behavior for protocol parsing.
 //! Run `cargo insta review` to accept new snapshots.
 
-use racing_wheel_telemetry_adapters::{ACCAdapter, CustomUdpSpec, TelemetryAdapter};
+use openracing_telemetry_adapters::{ACCAdapter, CustomUdpSpec, TelemetryAdapter};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 

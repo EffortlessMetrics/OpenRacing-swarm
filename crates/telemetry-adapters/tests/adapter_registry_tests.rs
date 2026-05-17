@@ -1,6 +1,6 @@
 //! Deep tests for the adapter registry (adapter_factories).
 
-use racing_wheel_telemetry_adapters::adapter_factories;
+use openracing_telemetry_adapters::adapter_factories;
 use std::collections::{HashMap, HashSet};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

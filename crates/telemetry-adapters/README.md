@@ -1,4 +1,4 @@
-# racing-wheel-telemetry-adapters
+# openracing-telemetry-adapters
 
 Game-specific telemetry adapter implementations for OpenRacing.
 

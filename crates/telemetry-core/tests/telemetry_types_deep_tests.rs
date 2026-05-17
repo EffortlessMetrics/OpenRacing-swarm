@@ -2,7 +2,7 @@
 //! timestamp precision, rate limiter edge cases, adaptive limiter behavior,
 //! and telemetry data type coverage.
 
-use racing_wheel_telemetry_core::{
+use openracing_telemetry::{
     ConnectionState, ConnectionStateEvent, DisconnectionConfig, DisconnectionTracker,
     GameTelemetry, GameTelemetrySnapshot, NormalizedTelemetry, TelemetryError, TelemetryFrame,
     TelemetryValue,
@@ -216,20 +216,20 @@ fn front_rear_slip_angle_split() -> TestResult {
 
 #[test]
 fn telemetry_now_ns_monotonically_increases() -> TestResult {
-    let t1 = racing_wheel_telemetry_core::telemetry_now_ns();
+    let t1 = openracing_telemetry::telemetry_now_ns();
     std::thread::sleep(Duration::from_millis(1));
-    let t2 = racing_wheel_telemetry_core::telemetry_now_ns();
+    let t2 = openracing_telemetry::telemetry_now_ns();
     assert!(t2 > t1, "telemetry_now_ns should increase over time");
     Ok(())
 }
 
 #[test]
 fn telemetry_now_ns_nanosecond_granularity() -> TestResult {
-    let t1 = racing_wheel_telemetry_core::telemetry_now_ns();
+    let t1 = openracing_telemetry::telemetry_now_ns();
     // Busy-wait briefly
     let mut t2 = t1;
     for _ in 0..10_000 {
-        t2 = racing_wheel_telemetry_core::telemetry_now_ns();
+        t2 = openracing_telemetry::telemetry_now_ns();
         if t2 > t1 {
             break;
         }

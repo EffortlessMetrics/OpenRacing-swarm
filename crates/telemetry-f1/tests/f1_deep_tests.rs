@@ -4,7 +4,7 @@
 //! CarStatus field extraction, ERS calculations, tyre compound names,
 //! state machine transitions, edge cases, and combined scenarios.
 
-use racing_wheel_telemetry_adapters::f1_native::{
+use openracing_telemetry_adapters::f1_native::{
     CAR_STATUS_2023_ENTRY_SIZE, CAR_STATUS_2024_ENTRY_SIZE, F1NativeAdapter, F1NativeCarStatusData,
     F1NativeState, MIN_CAR_STATUS_2023_PACKET_SIZE, MIN_CAR_STATUS_2024_PACKET_SIZE,
     PACKET_FORMAT_2023, PACKET_FORMAT_2024, build_car_status_packet_f23,

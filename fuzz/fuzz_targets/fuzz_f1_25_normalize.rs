@@ -10,8 +10,8 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use racing_wheel_telemetry_adapters::TelemetryAdapter;
-use racing_wheel_telemetry_adapters::f1_25::F1_25Adapter;
+use openracing_telemetry_adapters::TelemetryAdapter;
+use openracing_telemetry_adapters::f1_25::F1_25Adapter;
 
 fuzz_target!(|data: &[u8]| {
     let adapter = F1_25Adapter::new();

@@ -3,7 +3,7 @@
 //! Covers: RaceRoom, RBR, Rennsport, WTCR, WRC Generations, Wreckfest,
 //! MotoGP (SimHub), MudRunner (SimHub), RIDE 5 (SimHub), and AC Rally.
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     ACRallyAdapter, MotoGPAdapter, MudRunnerAdapter, RBRAdapter, RaceRoomAdapter, RennsportAdapter,
     Ride5Adapter, TelemetryAdapter, WrcGenerationsAdapter, WreckfestAdapter, WtcrAdapter,
     mudrunner::MudRunnerVariant,

@@ -27,7 +27,7 @@ use openracing_filters::{DamperState, Frame as FilterFrame, damper_filter, torqu
 use racing_wheel_engine::{Frame as EngineFrame, Pipeline as EnginePipeline};
 
 // ── Telemetry adapters ───────────────────────────────────────────────────────
-use racing_wheel_telemetry_adapters::{MockAdapter, TelemetryAdapter};
+use openracing_telemetry_adapters::{MockAdapter, TelemetryAdapter};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Helpers

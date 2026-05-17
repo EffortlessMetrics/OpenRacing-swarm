@@ -1,13 +1,13 @@
-//! Additional coverage tests for racing-wheel-telemetry-recorder.
+//! Additional coverage tests for openracing-telemetry-recorder.
 //!
 //! Targets edge cases in recording, playback, fixture generation,
 //! and serialization not covered by unit tests or comprehensive.rs.
 
-use racing_wheel_schemas::telemetry::{NormalizedTelemetry, TelemetryFlags, TelemetryFrame};
-use racing_wheel_telemetry_recorder::{
+use openracing_telemetry_recorder::{
     RecordingMetadata, TelemetryPlayer, TelemetryRecorder, TelemetryRecording,
     TestFixtureGenerator, TestScenario,
 };
+use racing_wheel_schemas::telemetry::{NormalizedTelemetry, TelemetryFlags, TelemetryFrame};
 use tempfile::tempdir;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

@@ -4,7 +4,7 @@
 //! dashboard-light bitmask flags, extended telemetry fields, connection
 //! management (port builder), and edge-case handling.
 
-use racing_wheel_telemetry_core::TelemetryValue;
+use openracing_telemetry::TelemetryValue;
 use racing_wheel_telemetry_lfs::{LFSAdapter, TelemetryAdapter};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

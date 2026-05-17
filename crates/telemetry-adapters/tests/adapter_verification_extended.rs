@@ -19,7 +19,7 @@
 #[allow(dead_code)]
 mod helpers;
 
-use racing_wheel_telemetry_adapters::TelemetryAdapter;
+use openracing_telemetry_adapters::TelemetryAdapter;
 use std::time::Duration;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -39,7 +39,7 @@ type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 mod pcars2_verification {
     use super::*;
-    use racing_wheel_telemetry_adapters::PCars2Adapter;
+    use openracing_telemetry_adapters::PCars2Adapter;
 
     /// Default pCars2 UDP port is 5606.
     /// Source: CrewChiefV4 PCars2 docs; SMS UDP specification.
@@ -76,7 +76,7 @@ mod pcars2_verification {
     #[test]
     fn packet_type_constants() {
         let telemetry_type: u8 = 0;
-        let timings_type: u8 = racing_wheel_telemetry_adapters::pcars2::PACKET_TYPE_TIMINGS;
+        let timings_type: u8 = openracing_telemetry_adapters::pcars2::PACKET_TYPE_TIMINGS;
         assert_eq!(telemetry_type, 0);
         assert_eq!(timings_type, 3);
     }
@@ -244,8 +244,8 @@ mod pcars2_verification {
 
 mod ams2_verification {
     use super::*;
-    use racing_wheel_telemetry_adapters::AMS2Adapter;
-    use racing_wheel_telemetry_adapters::ams2;
+    use openracing_telemetry_adapters::AMS2Adapter;
+    use openracing_telemetry_adapters::ams2;
 
     /// AMS2 uses the same shared memory name as pCars2: `$pcars2$`.
     /// Source: CREST2-AMS2 HttpMessageHandler.cpp `MAP_OBJECT_NAME`.
@@ -348,7 +348,7 @@ mod ams2_verification {
 
 mod raceroom_verification {
     use super::*;
-    use racing_wheel_telemetry_adapters::RaceRoomAdapter;
+    use openracing_telemetry_adapters::RaceRoomAdapter;
 
     /// Shared memory name: `Local\$R3E`.
     /// Source: sector3studios/r3e-api sample code (r3e.h `R3E_SHARED_MEMORY_NAME`).
@@ -507,7 +507,7 @@ mod raceroom_verification {
 
 mod rbr_verification {
     use super::*;
-    use racing_wheel_telemetry_adapters::RBRAdapter;
+    use openracing_telemetry_adapters::RBRAdapter;
 
     /// Default RBR LiveData UDP port is 6776.
     /// Source: RSF/RBR LiveData UDP plugin documentation.
@@ -643,8 +643,8 @@ mod rbr_verification {
 
 mod rfactor2_verification {
     use super::*;
-    use racing_wheel_telemetry_adapters::RFactor2Adapter;
-    use racing_wheel_telemetry_adapters::rfactor2;
+    use openracing_telemetry_adapters::RFactor2Adapter;
+    use openracing_telemetry_adapters::rfactor2;
 
     /// Shared memory name for telemetry.
     /// Source: rF2SharedMemoryMapPlugin `$rFactor2SMMP_Telemetry$`.
@@ -806,7 +806,7 @@ mod rfactor2_verification {
 
 mod lfs_verification {
     use super::*;
-    use racing_wheel_telemetry_adapters::LFSAdapter;
+    use openracing_telemetry_adapters::LFSAdapter;
 
     /// Default OutGauge port is 30000.
     /// Source: en.lfsmanual.net/wiki/OutGauge example binds 30000.
@@ -991,7 +991,7 @@ mod lfs_verification {
 
 mod automobilista_verification {
     use super::*;
-    use racing_wheel_telemetry_adapters::Automobilista1Adapter;
+    use openracing_telemetry_adapters::Automobilista1Adapter;
 
     /// Shared memory name is `$rFactor$`.
     /// Source: ISI InternalsPlugin SDK; dallongo/rFactorSharedMemoryMap.
@@ -1115,7 +1115,7 @@ mod automobilista_verification {
 
 mod kartkraft_verification {
     use super::*;
-    use racing_wheel_telemetry_adapters::KartKraftAdapter;
+    use openracing_telemetry_adapters::KartKraftAdapter;
 
     /// Default KartKraft UDP port is 5000.
     /// Source: motorsportgames/kartkraft-telemetry README;
@@ -1243,8 +1243,8 @@ mod kartkraft_verification {
 
 mod mudrunner_snowrunner_verification {
     use super::*;
-    use racing_wheel_telemetry_adapters::MudRunnerAdapter;
-    use racing_wheel_telemetry_adapters::mudrunner::MudRunnerVariant;
+    use openracing_telemetry_adapters::MudRunnerAdapter;
+    use openracing_telemetry_adapters::mudrunner::MudRunnerVariant;
 
     /// SimHub UDP bridge port is 8877.
     /// Source: SimHub JSON telemetry bridge configuration.
@@ -1353,7 +1353,7 @@ mod mudrunner_snowrunner_verification {
 
 mod eawrc_verification {
     use super::*;
-    use racing_wheel_telemetry_adapters::EAWRCAdapter;
+    use openracing_telemetry_adapters::EAWRCAdapter;
 
     /// Default EA WRC UDP telemetry port is 20778.
     /// Source: EA Sports WRC in-game telemetry settings.
@@ -1458,7 +1458,7 @@ mod extended_port_verification {
     /// Verify all extended adapters return non-empty game IDs.
     #[test]
     fn all_extended_game_ids_non_empty() {
-        use racing_wheel_telemetry_adapters::*;
+        use openracing_telemetry_adapters::*;
         let adapters: Vec<Box<dyn TelemetryAdapter>> = vec![
             Box::new(PCars2Adapter::new()),
             Box::new(AMS2Adapter::new()),
@@ -1479,7 +1479,7 @@ mod extended_port_verification {
     /// Verify all extended adapters have reasonable update rates (1ms ≤ rate ≤ 1000ms).
     #[test]
     fn all_extended_update_rates_reasonable() {
-        use racing_wheel_telemetry_adapters::*;
+        use openracing_telemetry_adapters::*;
         use std::time::Duration;
         let adapters: Vec<Box<dyn TelemetryAdapter>> = vec![
             Box::new(PCars2Adapter::new()),

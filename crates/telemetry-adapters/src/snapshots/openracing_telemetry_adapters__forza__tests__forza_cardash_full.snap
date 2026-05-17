@@ -1,22 +1,23 @@
 ---
 source: crates/telemetry-adapters/src/forza.rs
+assertion_line: 1133
 expression: result
 ---
-speed_ms: 26.944387
-steering_angle: 0
-throttle: 0
+speed_ms: 35
+steering_angle: 0.11811024
+throttle: 0.78431374
 brake: 0
 clutch: 0
-rpm: 6500
+rpm: 7200
 max_rpm: 8000
-gear: 0
+gear: 4
 num_gears: 0
-lateral_g: 1.5
-longitudinal_g: 0.3
+lateral_g: 0
+longitudinal_g: 0
 vertical_g: 0
 slip_ratio: 0
-slip_angle_fl: 0.02
-slip_angle_fr: 0.03
+slip_angle_fl: 0
+slip_angle_fr: 0
 slip_angle_rl: 0
 slip_angle_rr: 0
 tire_temps_c:
@@ -60,6 +61,12 @@ delta_behind_s: 0
 fuel_percent: 0
 engine_temp_c: 0
 extended:
+  boost_psi:
+    type: Float
+    value: 0
+  power_w:
+    type: Float
+    value: 0
   suspension_travel_fl:
     type: Float
     value: 0
@@ -82,6 +89,9 @@ extended:
     type: Float
     value: 0
   tire_slip_ratio_rr:
+    type: Float
+    value: 0
+  torque_nm:
     type: Float
     value: 0
   wheel_speed_fl:

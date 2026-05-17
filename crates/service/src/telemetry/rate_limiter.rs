@@ -1,1 +1,1 @@
-pub use racing_wheel_telemetry_core::{AdaptiveRateLimiter, RateLimiter, RateLimiterStats};
+pub use openracing_telemetry::{AdaptiveRateLimiter, RateLimiter, RateLimiterStats};

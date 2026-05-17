@@ -8,7 +8,7 @@
 //! DiRT Rally 2.0, GRID Legends, Wreckfest, KartKraft, Rennsport,
 //! Dakar Desert Rally, Forza Motorsport (CarDash).
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     AMS2Adapter, DakarDesertRallyAdapter, DirtRally2Adapter, Ets2Adapter, ForzaAdapter,
     GridLegendsAdapter, IRacingAdapter, KartKraftAdapter, RFactor2Adapter, RaceRoomAdapter,
     RennsportAdapter, TelemetryAdapter, WreckfestAdapter,

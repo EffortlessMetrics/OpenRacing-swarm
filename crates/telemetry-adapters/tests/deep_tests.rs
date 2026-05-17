@@ -7,10 +7,10 @@
 mod helpers;
 
 use helpers::write_f32_le;
-use racing_wheel_telemetry_adapters::codemasters_shared;
-use racing_wheel_telemetry_adapters::ets2;
-use racing_wheel_telemetry_adapters::gran_turismo_7;
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::codemasters_shared;
+use openracing_telemetry_adapters::ets2;
+use openracing_telemetry_adapters::gran_turismo_7;
+use openracing_telemetry_adapters::{
     DirtRally2Adapter, Ets2Adapter, GranTurismo7Adapter, TelemetryAdapter, TelemetryValue,
 };
 use std::time::Duration;

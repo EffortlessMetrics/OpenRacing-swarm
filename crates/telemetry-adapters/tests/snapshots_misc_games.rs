@@ -3,7 +3,7 @@
 //! Covers: Forza Horizon (freeroam), LFS (race with dashboard flags),
 //! ACC2 (stub adapter), AMS2 (race session with realistic values).
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     ACC2Adapter, AMS2Adapter, ForzaHorizon4Adapter, ForzaHorizon5Adapter, LFSAdapter,
     TelemetryAdapter, ams2::AMS2SharedMemory,
 };

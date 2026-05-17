@@ -24,11 +24,11 @@ use openracing_calibration::types::{AxisCalibration, DeviceCalibration};
 use openracing_filters::{DamperState, Frame as FilterFrame, damper_filter, torque_cap_filter};
 use openracing_profile::types::{FfbSettings, WheelProfile, WheelSettings};
 use openracing_profile::validation;
+use openracing_telemetry_adapters::{ForzaAdapter, TelemetryAdapter};
 use racing_wheel_engine::VirtualDevice;
 use racing_wheel_engine::ports::HidDevice;
 use racing_wheel_engine::safety::{FaultType, SafetyService, SafetyState};
 use racing_wheel_schemas::prelude::*;
-use racing_wheel_telemetry_adapters::{ForzaAdapter, TelemetryAdapter};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Scenario A: No device connected → service starts → enters waiting state

@@ -6,7 +6,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use racing_wheel_telemetry_adapters::f1_25::parse_car_telemetry;
+use openracing_telemetry_adapters::f1_25::parse_car_telemetry;
 
 fuzz_target!(|data: &[u8]| {
     // parse_car_telemetry takes (data, player_index: usize).

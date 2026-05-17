@@ -19,13 +19,13 @@
 use anyhow::Result;
 
 use openracing_filters::{DamperState, Frame as FilterFrame, damper_filter, torque_cap_filter};
+use openracing_telemetry_adapters::{
+    ACCAdapter, AssettoCorsaAdapter, ForzaAdapter, TelemetryAdapter,
+};
 use racing_wheel_engine::ports::HidDevice;
 use racing_wheel_engine::safety::{SafetyService, SafetyState};
 use racing_wheel_engine::{FFBMode, GameCompatibility, ModeSelectionPolicy, VirtualDevice};
 use racing_wheel_schemas::prelude::*;
-use racing_wheel_telemetry_adapters::{
-    ACCAdapter, AssettoCorsaAdapter, ForzaAdapter, TelemetryAdapter,
-};
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 

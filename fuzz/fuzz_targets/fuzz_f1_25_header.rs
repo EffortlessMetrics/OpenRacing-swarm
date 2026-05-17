@@ -6,7 +6,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use racing_wheel_telemetry_adapters::f1_25::parse_header;
+use openracing_telemetry_adapters::f1_25::parse_header;
 
 fuzz_target!(|data: &[u8]| {
     // Must never panic — errors are acceptable, panics are not.

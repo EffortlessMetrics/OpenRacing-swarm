@@ -1,6 +1,6 @@
 //! Deep tests for the RaceRoom Racing Experience telemetry adapter.
 
-use racing_wheel_telemetry_adapters::{RaceRoomAdapter, TelemetryAdapter, TelemetryValue};
+use openracing_telemetry_adapters::{RaceRoomAdapter, TelemetryAdapter, TelemetryValue};
 use std::time::Duration;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

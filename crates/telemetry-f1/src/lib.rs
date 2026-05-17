@@ -30,7 +30,7 @@
 //!
 //! ```rust,no_run
 //! use racing_wheel_telemetry_f1::F1NativeAdapter;
-//! use racing_wheel_telemetry_adapters::TelemetryAdapter;
+//! use openracing_telemetry_adapters::TelemetryAdapter;
 //!
 //! # #[tokio::main]
 //! # async fn main() -> anyhow::Result<()> {
@@ -42,9 +42,9 @@
 
 #![deny(static_mut_refs)]
 
-pub use racing_wheel_telemetry_adapters::TelemetryAdapter;
-pub use racing_wheel_telemetry_adapters::f1_native::F1NativeAdapter;
-pub use racing_wheel_telemetry_core::{NormalizedTelemetry, TelemetryFrame};
+pub use openracing_telemetry::{NormalizedTelemetry, TelemetryFrame};
+pub use openracing_telemetry_adapters::TelemetryAdapter;
+pub use openracing_telemetry_adapters::games::f1::F1NativeAdapter;
 
 #[cfg(test)]
 mod tests {

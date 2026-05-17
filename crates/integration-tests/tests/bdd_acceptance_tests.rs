@@ -13,6 +13,7 @@
 //! * **Real-Time Safety Interlocks** – fault conditions trigger motor shutdown
 //!   within defined timing budgets.
 
+use openracing_telemetry_config::{ConfigWriter, IRacingConfigWriter, TelemetryConfig};
 use racing_wheel_engine::policies::SafetyPolicy;
 use racing_wheel_hid_fanatec_protocol::{
     ids::report_ids as fanatec_report_ids, product_ids as fanatec_product_ids,
@@ -20,7 +21,6 @@ use racing_wheel_hid_fanatec_protocol::{
 use racing_wheel_hid_moza_protocol::{MozaInitState, product_ids as moza_product_ids};
 use racing_wheel_integration_tests::fanatec_virtual::FanatecScenario;
 use racing_wheel_integration_tests::moza_virtual::MozaScenario;
-use racing_wheel_telemetry_config_writers::{ConfigWriter, IRacingConfigWriter, TelemetryConfig};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 

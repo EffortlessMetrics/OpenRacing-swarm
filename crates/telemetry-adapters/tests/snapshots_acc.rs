@@ -2,7 +2,7 @@
 //!
 //! Three scenarios: normal race pace, formation lap, and pit stop.
 
-use racing_wheel_telemetry_adapters::{ACCAdapter, TelemetryAdapter};
+use openracing_telemetry_adapters::{ACCAdapter, TelemetryAdapter};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 

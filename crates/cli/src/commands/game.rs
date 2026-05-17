@@ -9,7 +9,7 @@ use crate::client::WheelClient;
 use crate::commands::GameCommands;
 use crate::error::CliError;
 use crate::output;
-use racing_wheel_telemetry_config::support::{GameSupport, load_default_matrix, normalize_game_id};
+use openracing_telemetry_config::support::{GameSupport, load_default_matrix, normalize_game_id};
 
 /// Execute game command
 pub async fn execute(cmd: &GameCommands, json: bool, endpoint: Option<&str>) -> Result<()> {

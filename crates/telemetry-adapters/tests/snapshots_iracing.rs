@@ -3,7 +3,7 @@
 //! Three scenarios: oval racing at high speed, road-course braking zone,
 //! and pit lane entry with pit-road flag.
 
-use racing_wheel_telemetry_adapters::{IRacingAdapter, TelemetryAdapter};
+use openracing_telemetry_adapters::{IRacingAdapter, TelemetryAdapter};
 
 mod helpers;
 use helpers::write_f32_le;

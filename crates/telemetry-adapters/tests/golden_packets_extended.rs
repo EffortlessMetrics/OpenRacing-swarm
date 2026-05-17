@@ -6,7 +6,7 @@
 mod helpers;
 
 use helpers::write_f32_le;
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     TelemetryAdapter,
     acc::ACCAdapter,
     beamng::BeamNGAdapter,

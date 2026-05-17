@@ -3,7 +3,7 @@
 //! Three scenarios: normal race (CarDash), standstill idle (Sled), and
 //! edge-case extreme values using the FH4-specific 324-byte packet.
 
-use racing_wheel_telemetry_adapters::{ForzaAdapter, ForzaHorizon4Adapter, TelemetryAdapter};
+use openracing_telemetry_adapters::{ForzaAdapter, ForzaHorizon4Adapter, TelemetryAdapter};
 
 mod helpers;
 use helpers::write_f32_le;

@@ -1,4 +1,4 @@
-# racing-wheel-telemetry-recorder
+# openracing-telemetry-recorder
 
 Small, focused crate for deterministic telemetry recordings and fixture generation.
 

@@ -4,11 +4,11 @@
 //! calculation, FFB derivation, and edge-case handling against the rF2
 //! SharedMemoryMapPlugin data structures.
 
-use racing_wheel_telemetry_adapters::rfactor2::{
+use openracing_telemetry_adapters::rfactor2::{
     GamePhase, RF2ForceFeedback, RF2ScoringHeader, RF2VehicleTelemetry, RF2WheelTelemetry,
     RFactor2Adapter,
 };
-use racing_wheel_telemetry_adapters::{TelemetryAdapter, TelemetryValue};
+use openracing_telemetry_adapters::{TelemetryAdapter, TelemetryValue};
 use std::time::Duration;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

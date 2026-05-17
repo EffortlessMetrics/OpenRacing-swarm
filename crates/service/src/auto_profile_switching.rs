@@ -8,7 +8,7 @@ use crate::game_telemetry_bridge::TelemetryAdapterControl;
 use crate::process_detection::{ProcessDetectionService, ProcessEvent};
 use crate::profile_service::ProfileService;
 use anyhow::Result;
-use racing_wheel_telemetry_config::support::load_default_matrix;
+use openracing_telemetry_config::support::load_default_matrix;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};

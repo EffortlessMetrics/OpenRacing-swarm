@@ -4741,6 +4741,71 @@ dependencies = [
 ]
 
 [[package]]
+name = "openracing-telemetry"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "openracing-telemetry-config",
+ "openracing-telemetry-recorder",
+ "proptest",
+ "racing-wheel-schemas",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "workspace-hack",
+]
+
+[[package]]
+name = "openracing-telemetry-adapters"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "insta",
+ "openracing-telemetry",
+ "proptest",
+ "quick-xml 0.37.5",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "winapi",
+ "workspace-hack",
+]
+
+[[package]]
+name = "openracing-telemetry-config"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "proptest",
+ "racing-wheel-telemetry-config-writers",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "tempfile",
+ "tracing",
+ "workspace-hack",
+]
+
+[[package]]
+name = "openracing-telemetry-recorder"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "racing-wheel-schemas",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "workspace-hack",
+]
+
+[[package]]
 name = "openracing-telemetry-streams"
 version = "0.1.0"
 dependencies = [
@@ -6044,6 +6109,9 @@ dependencies = [
  "openracing-pipeline",
  "openracing-plugin-abi",
  "openracing-profile",
+ "openracing-telemetry-adapters",
+ "openracing-telemetry-config",
+ "openracing-telemetry-recorder",
  "openracing-telemetry-streams",
  "openracing-test-helpers",
  "openracing-watchdog",
@@ -6068,12 +6136,8 @@ dependencies = [
  "racing-wheel-schemas",
  "racing-wheel-service",
  "racing-wheel-simplemotion-v2",
- "racing-wheel-telemetry-adapters",
  "racing-wheel-telemetry-bdd-metrics",
- "racing-wheel-telemetry-config",
- "racing-wheel-telemetry-config-writers",
  "racing-wheel-telemetry-integration",
- "racing-wheel-telemetry-recorder",
  "racing-wheel-telemetry-support",
  "rand 0.9.4",
  "regex",
@@ -6220,6 +6284,10 @@ dependencies = [
  "openracing-hid-common",
  "openracing-ipc",
  "openracing-profile-repository",
+ "openracing-telemetry",
+ "openracing-telemetry-adapters",
+ "openracing-telemetry-config",
+ "openracing-telemetry-recorder",
  "os_info",
  "prometheus",
  "proptest",
@@ -6229,10 +6297,6 @@ dependencies = [
  "racing-wheel-engine",
  "racing-wheel-hid-moza-protocol",
  "racing-wheel-schemas",
- "racing-wheel-telemetry-adapters",
- "racing-wheel-telemetry-config",
- "racing-wheel-telemetry-core",
- "racing-wheel-telemetry-recorder",
  "racing-wheel-telemetry-support",
  "rand 0.8.6",
  "semver",
@@ -6277,35 +6341,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "racing-wheel-telemetry-adapters"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "insta",
- "proptest",
- "quick-xml 0.37.5",
- "racing-wheel-telemetry-core",
- "serde",
- "serde_json",
- "serde_yaml_ng",
- "tempfile",
- "tokio",
- "tracing",
- "winapi",
- "workspace-hack",
-]
-
-[[package]]
 name = "racing-wheel-telemetry-ams2"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "insta",
+ "openracing-telemetry",
+ "openracing-telemetry-adapters",
  "proptest",
- "racing-wheel-telemetry-adapters",
- "racing-wheel-telemetry-core",
  "tokio",
  "tracing",
  "workspace-hack",
@@ -6315,21 +6359,6 @@ dependencies = [
 name = "racing-wheel-telemetry-bdd-metrics"
 version = "0.1.0"
 dependencies = [
- "workspace-hack",
-]
-
-[[package]]
-name = "racing-wheel-telemetry-config"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "proptest",
- "racing-wheel-telemetry-config-writers",
- "serde",
- "serde_json",
- "serde_yaml_ng",
- "tempfile",
- "tracing",
  "workspace-hack",
 ]
 
@@ -6356,33 +6385,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "racing-wheel-telemetry-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "proptest",
- "racing-wheel-schemas",
- "racing-wheel-telemetry-config",
- "racing-wheel-telemetry-recorder",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "workspace-hack",
-]
-
-[[package]]
 name = "racing-wheel-telemetry-f1"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "insta",
+ "openracing-telemetry",
+ "openracing-telemetry-adapters",
  "proptest",
- "racing-wheel-telemetry-adapters",
- "racing-wheel-telemetry-core",
  "tokio",
  "tracing",
  "workspace-hack",
@@ -6395,9 +6406,9 @@ dependencies = [
  "anyhow",
  "async-trait",
  "insta",
+ "openracing-telemetry",
+ "openracing-telemetry-adapters",
  "proptest",
- "racing-wheel-telemetry-adapters",
- "racing-wheel-telemetry-core",
  "tokio",
  "tracing",
  "workspace-hack",
@@ -6407,10 +6418,10 @@ dependencies = [
 name = "racing-wheel-telemetry-integration"
 version = "0.1.0"
 dependencies = [
- "racing-wheel-telemetry-adapters",
+ "openracing-telemetry-adapters",
+ "openracing-telemetry-recorder",
  "racing-wheel-telemetry-bdd-metrics",
  "racing-wheel-telemetry-rate-limiter",
- "racing-wheel-telemetry-recorder",
  "racing-wheel-telemetry-support",
  "tempfile",
  "tokio",
@@ -6424,9 +6435,9 @@ dependencies = [
  "anyhow",
  "async-trait",
  "insta",
+ "openracing-telemetry",
+ "openracing-telemetry-adapters",
  "proptest",
- "racing-wheel-telemetry-adapters",
- "racing-wheel-telemetry-core",
  "tokio",
  "tracing",
  "workspace-hack",
@@ -6439,9 +6450,9 @@ dependencies = [
  "anyhow",
  "async-trait",
  "insta",
+ "openracing-telemetry",
+ "openracing-telemetry-adapters",
  "proptest",
- "racing-wheel-telemetry-adapters",
- "racing-wheel-telemetry-core",
  "tokio",
  "tracing",
  "workspace-hack",
@@ -6454,9 +6465,9 @@ dependencies = [
  "anyhow",
  "async-trait",
  "insta",
+ "openracing-telemetry",
+ "openracing-telemetry-adapters",
  "proptest",
- "racing-wheel-telemetry-adapters",
- "racing-wheel-telemetry-core",
  "tokio",
  "tracing",
  "workspace-hack",
@@ -6467,12 +6478,12 @@ name = "racing-wheel-telemetry-orchestrator"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "racing-wheel-telemetry-adapters",
+ "openracing-telemetry-adapters",
+ "openracing-telemetry-config",
+ "openracing-telemetry-recorder",
  "racing-wheel-telemetry-bdd-metrics",
- "racing-wheel-telemetry-config-writers",
  "racing-wheel-telemetry-integration",
  "racing-wheel-telemetry-rate-limiter",
- "racing-wheel-telemetry-recorder",
  "racing-wheel-telemetry-support",
  "tempfile",
  "tokio",
@@ -6487,9 +6498,9 @@ dependencies = [
  "anyhow",
  "async-trait",
  "insta",
+ "openracing-telemetry",
+ "openracing-telemetry-adapters",
  "proptest",
- "racing-wheel-telemetry-adapters",
- "racing-wheel-telemetry-core",
  "tokio",
  "tracing",
  "workspace-hack",
@@ -6505,27 +6516,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "racing-wheel-telemetry-recorder"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "racing-wheel-schemas",
- "serde",
- "serde_json",
- "tempfile",
- "workspace-hack",
-]
-
-[[package]]
 name = "racing-wheel-telemetry-rennsport"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "insta",
+ "openracing-telemetry",
+ "openracing-telemetry-adapters",
  "proptest",
- "racing-wheel-telemetry-adapters",
- "racing-wheel-telemetry-core",
  "tokio",
  "tracing",
  "workspace-hack",
@@ -6538,9 +6537,9 @@ dependencies = [
  "anyhow",
  "async-trait",
  "insta",
+ "openracing-telemetry",
+ "openracing-telemetry-adapters",
  "proptest",
- "racing-wheel-telemetry-adapters",
- "racing-wheel-telemetry-core",
  "tokio",
  "tracing",
  "workspace-hack",
@@ -6563,9 +6562,9 @@ dependencies = [
  "anyhow",
  "async-trait",
  "insta",
+ "openracing-telemetry",
+ "openracing-telemetry-adapters",
  "proptest",
- "racing-wheel-telemetry-adapters",
- "racing-wheel-telemetry-core",
  "tokio",
  "tracing",
  "workspace-hack",
@@ -9931,12 +9930,12 @@ dependencies = [
  "jsonschema",
  "openracing-hardware-core",
  "openracing-pidff-common",
+ "openracing-telemetry-adapters",
+ "openracing-telemetry-config",
  "predicates",
  "racing-wheel-hid-capture",
  "racing-wheel-hid-moza-protocol",
  "racing-wheel-schemas",
- "racing-wheel-telemetry-adapters",
- "racing-wheel-telemetry-config",
  "rand 0.9.4",
  "regex",
  "serde",

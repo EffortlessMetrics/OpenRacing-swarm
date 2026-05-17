@@ -1,12 +1,12 @@
 [package]
-name = "racing-wheel-telemetry-adapters"
+name = "openracing-telemetry-adapters"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage = "https://github.com/EffortlessMetrics/OpenRacing"
-documentation = "https://docs.rs/racing-wheel-telemetry-adapters"
+documentation = "https://docs.rs/openracing-telemetry-adapters"
 publish = true
 description = "Game-specific telemetry adapters extracted into a standalone crate"
 readme = "README.md"
@@ -26,7 +26,7 @@ serde_yaml = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 quick-xml = { workspace = true }
-racing-wheel-telemetry-core = { path = "../telemetry-core", version = "0.1.0" }
+openracing-telemetry = { path = "../telemetry-core", version = "0.1.0" }
 workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 
 [dev-dependencies]

@@ -2,15 +2,15 @@
 //! game data to force feedback, including multi-game switching, timeout handling,
 //! rate limiting, recording, statistics, and game-specific quirk handling.
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     MockAdapter, NormalizedTelemetry, TelemetryAdapter, TelemetryFrame, adapter_factories,
 };
+use openracing_telemetry_recorder::{TelemetryRecorder, TestFixtureGenerator, TestScenario};
 use racing_wheel_telemetry_integration::{
     CoveragePolicy, compare_matrix_and_registry, compare_matrix_and_registry_with_policy,
     compare_runtime_registries_with_policies,
 };
 use racing_wheel_telemetry_rate_limiter::RateLimiter;
-use racing_wheel_telemetry_recorder::{TelemetryRecorder, TestFixtureGenerator, TestScenario};
 use racing_wheel_telemetry_support::{load_default_matrix, normalize_game_id};
 
 use std::time::Duration;

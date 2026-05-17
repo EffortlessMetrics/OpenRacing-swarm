@@ -1,13 +1,13 @@
-//! Comprehensive integration tests for the racing-wheel-telemetry-recorder crate.
+//! Comprehensive integration tests for the openracing-telemetry-recorder crate.
 //!
 //! Exercises recording session creation, data persistence, playback,
 //! fixture generation, and edge cases.
 
-use racing_wheel_schemas::telemetry::{NormalizedTelemetry, TelemetryFlags, TelemetryFrame};
-use racing_wheel_telemetry_recorder::{
+use openracing_telemetry_recorder::{
     RecordingMetadata, TelemetryPlayer, TelemetryRecorder, TelemetryRecording,
     TestFixtureGenerator, TestScenario,
 };
+use racing_wheel_schemas::telemetry::{NormalizedTelemetry, TelemetryFlags, TelemetryFrame};
 use tempfile::tempdir;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

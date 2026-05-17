@@ -2,7 +2,7 @@
 //!
 //! Three scenarios: normal driving, stationary idle, and edge-case maximum values.
 
-use racing_wheel_telemetry_adapters::{BeamNGAdapter, TelemetryAdapter};
+use openracing_telemetry_adapters::{BeamNGAdapter, TelemetryAdapter};
 
 mod helpers;
 use helpers::write_f32_le;

@@ -14,9 +14,9 @@ use std::time::Duration;
 use tempfile::TempDir;
 
 // ── Telemetry adapters + schemas ─────────────────────────────────────────────
+use openracing_telemetry_adapters::{MockAdapter, TelemetryAdapter, adapter_factories};
+use openracing_telemetry_config::matrix_game_id_set;
 use racing_wheel_schemas::prelude::*;
-use racing_wheel_telemetry_adapters::{MockAdapter, TelemetryAdapter, adapter_factories};
-use racing_wheel_telemetry_config::matrix_game_id_set;
 
 // ── Engine + filter types ────────────────────────────────────────────────────
 use openracing_filters::{
@@ -27,8 +27,8 @@ use racing_wheel_engine::safety::{FaultType, SafetyService};
 use racing_wheel_engine::{Frame as EngineFrame, Pipeline as EnginePipeline};
 
 // ── Recording/playback ───────────────────────────────────────────────────────
+use openracing_telemetry_recorder::{TelemetryPlayer, TelemetryRecorder};
 use racing_wheel_schemas::telemetry::TelemetryFrame;
-use racing_wheel_telemetry_recorder::{TelemetryPlayer, TelemetryRecorder};
 
 // ── Stream processing ────────────────────────────────────────────────────────
 use openracing_telemetry_streams::RateLimiter;

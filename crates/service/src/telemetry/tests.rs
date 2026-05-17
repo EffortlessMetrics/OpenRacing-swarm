@@ -5,7 +5,7 @@
 //! Requirements: GI-03, GI-04
 
 use crate::telemetry::*;
-use racing_wheel_telemetry_adapters::adapter_factories;
+use openracing_telemetry_adapters::adapter_factories;
 use racing_wheel_telemetry_support::load_default_matrix;
 use std::collections::HashSet;
 use std::time::Duration;

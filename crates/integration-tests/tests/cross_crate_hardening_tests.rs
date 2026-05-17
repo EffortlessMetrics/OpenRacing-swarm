@@ -14,9 +14,9 @@ use std::collections::HashSet;
 use uuid::Uuid;
 
 // ── Telemetry adapters + schemas ─────────────────────────────────────────────
+use openracing_telemetry_adapters::{MockAdapter, TelemetryAdapter, adapter_factories};
+use openracing_telemetry_config::{load_default_matrix, matrix_game_id_set};
 use racing_wheel_schemas::prelude::*;
-use racing_wheel_telemetry_adapters::{MockAdapter, TelemetryAdapter, adapter_factories};
-use racing_wheel_telemetry_config::{load_default_matrix, matrix_game_id_set};
 
 // ── Engine types ─────────────────────────────────────────────────────────────
 use racing_wheel_engine::safety::{FaultType, SafetyService};

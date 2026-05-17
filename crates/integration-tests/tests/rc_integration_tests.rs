@@ -7,6 +7,7 @@
 use anyhow::Result;
 use std::time::{Duration, Instant};
 
+use openracing_telemetry_adapters::adapter_factories;
 use racing_wheel_engine::ports::HidPort;
 use racing_wheel_engine::safety::{FaultType, SafetyService, SafetyState};
 use racing_wheel_engine::{
@@ -14,7 +15,6 @@ use racing_wheel_engine::{
     NegotiationResult, Pipeline, VirtualDevice, VirtualHidPort,
 };
 use racing_wheel_schemas::prelude::*;
-use racing_wheel_telemetry_adapters::adapter_factories;
 
 use racing_wheel_plugins::manifest::{
     Capability, EntryPoints, ManifestValidator, PluginConstraints, PluginManifest, PluginOperation,

@@ -5,7 +5,7 @@
 //!   - Automobilista 1: high-speed cornering with lateral G
 //!   - rFactor 2: stationary pit idle
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     Automobilista1Adapter, RFactor1Adapter, RFactor2Adapter, TelemetryAdapter,
     rfactor2::{RF2VehicleTelemetry, RF2WheelTelemetry},
 };

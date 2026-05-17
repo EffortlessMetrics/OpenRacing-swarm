@@ -3,8 +3,8 @@
 //! Exercises edge cases, boundary values, proptest fuzzing, and combined
 //! field interactions that go beyond the existing deep-test coverage.
 
+use openracing_telemetry_adapters::{IRacingAdapter, TelemetryAdapter, TelemetryValue};
 use proptest::prelude::*;
-use racing_wheel_telemetry_adapters::{IRacingAdapter, TelemetryAdapter, TelemetryValue};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 

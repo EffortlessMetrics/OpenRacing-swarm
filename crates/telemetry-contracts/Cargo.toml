@@ -8,7 +8,7 @@ authors.workspace = true
 repository.workspace = true
 homepage = "https://github.com/EffortlessMetrics/OpenRacing"
 documentation = "https://docs.rs/racing-wheel-telemetry-contracts"
-publish = true
+publish = false
 description = "Shared telemetry data contracts for OpenRacing"
 readme = "README.md"
 

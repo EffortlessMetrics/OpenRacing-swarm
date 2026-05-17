@@ -3,7 +3,7 @@
 //! Covers core telemetry types, event processing, event routing
 //! (connection state transitions), and error handling.
 
-use racing_wheel_telemetry_core::{
+use openracing_telemetry::{
     ConnectionState, ConnectionStateEvent, DisconnectionConfig, DisconnectionTracker,
     GameTelemetry, GameTelemetrySnapshot, NormalizedTelemetry, RateLimiter, RateLimiterStats,
     TelemetryError,
@@ -554,9 +554,9 @@ fn rate_limiter_stats_snapshot() -> TestResult {
 
 #[test]
 fn telemetry_now_ns_is_monotonic() -> TestResult {
-    let t1 = racing_wheel_telemetry_core::telemetry_now_ns();
+    let t1 = openracing_telemetry::telemetry_now_ns();
     std::thread::sleep(Duration::from_millis(1));
-    let t2 = racing_wheel_telemetry_core::telemetry_now_ns();
+    let t2 = openracing_telemetry::telemetry_now_ns();
     assert!(t2 >= t1, "timestamps should be monotonically increasing");
     Ok(())
 }

@@ -11,7 +11,7 @@
 mod helpers;
 
 use helpers::write_f32_le;
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     ForzaAdapter, NormalizedTelemetry, TelemetryAdapter, TelemetryFrame, adapter_factories,
     telemetry_now_ns,
 };

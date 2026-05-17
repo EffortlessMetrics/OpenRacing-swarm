@@ -9,7 +9,7 @@
 //!   trail-braking with heavy steering input.
 //! - **Service area**: vehicle stationary in pits, engine idling, no inputs.
 
-use racing_wheel_telemetry_adapters::{DirtRally2Adapter, TelemetryAdapter};
+use openracing_telemetry_adapters::{DirtRally2Adapter, TelemetryAdapter};
 
 mod helpers;
 use helpers::write_f32_le;

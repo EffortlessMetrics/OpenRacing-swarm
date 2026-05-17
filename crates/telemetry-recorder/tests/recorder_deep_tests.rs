@@ -1,14 +1,14 @@
-//! Deep integration tests for the racing-wheel-telemetry-recorder crate.
+//! Deep integration tests for the openracing-telemetry-recorder crate.
 //!
 //! Exercises recording start/stop, file format roundtrip, recording limits,
 //! metadata correctness, concurrent sessions, replay fidelity,
 //! and file integrity verification.
 
-use racing_wheel_schemas::telemetry::{NormalizedTelemetry, TelemetryFlags, TelemetryFrame};
-use racing_wheel_telemetry_recorder::{
+use openracing_telemetry_recorder::{
     RecordingMetadata, TelemetryPlayer, TelemetryRecorder, TelemetryRecording,
     TestFixtureGenerator, TestScenario,
 };
+use racing_wheel_schemas::telemetry::{NormalizedTelemetry, TelemetryFlags, TelemetryFrame};
 use tempfile::tempdir;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

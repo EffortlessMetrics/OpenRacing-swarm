@@ -13,10 +13,10 @@ use crate::integration::{
 use crate::rate_limiter::RateLimiter;
 use crate::{AdapterFactory, TelemetryAdapter, TelemetryReceiver};
 use anyhow::Result;
-use racing_wheel_telemetry_config::{
+use openracing_telemetry_config::{
     GameSupportMatrix, config_writer_factories, load_default_matrix, normalize_game_id,
 };
-use racing_wheel_telemetry_recorder::TelemetryRecorder;
+use openracing_telemetry_recorder::TelemetryRecorder;
 use tracing::{debug, warn};
 
 pub use crate::integration::RegistryCoverage;
@@ -285,7 +285,7 @@ impl TelemetryService {
 mod tests {
     use super::TelemetryService;
     use crate::bdd_metrics::{BddMatrixMetrics, MatrixParityPolicy};
-    use racing_wheel_telemetry_config::load_default_matrix;
+    use openracing_telemetry_config::load_default_matrix;
 
     #[test]
     fn telemetry_service_records_matrix_if_available() {

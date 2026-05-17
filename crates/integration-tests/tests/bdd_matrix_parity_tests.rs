@@ -9,8 +9,8 @@
 
 use tracing_test::traced_test;
 
-use racing_wheel_telemetry_adapters::adapter_factories;
-use racing_wheel_telemetry_config_writers::config_writer_factories;
+use openracing_telemetry_adapters::adapter_factories;
+use openracing_telemetry_config::config_writer_factories;
 use racing_wheel_telemetry_integration::{
     CoveragePolicy, compare_runtime_registries_with_policies,
 };

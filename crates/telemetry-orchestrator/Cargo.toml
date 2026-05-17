@@ -7,7 +7,7 @@ authors.workspace = true
 repository.workspace = true
 homepage = "https://github.com/EffortlessMetrics/OpenRacing"
 documentation = "https://docs.rs/racing-wheel-telemetry-orchestrator"
-publish = true
+publish = false
 description = "Matrix-driven telemetry adapter orchestration for OpenRacing"
 readme = "README.md"
 keywords = ["telemetry", "racing", "simulator", "orchestration", "adapters"]
@@ -19,12 +19,12 @@ normal = ["workspace-hack"]
 categories = ["game-development"]
 [dependencies]
 anyhow = { workspace = true }
-racing-wheel-telemetry-adapters = { path = "../telemetry-adapters", version = "0.1.0" }
+openracing-telemetry-adapters = { path = "../telemetry-adapters", version = "0.1.0" }
 racing-wheel-telemetry-bdd-metrics = { path = "../telemetry-bdd-metrics", version = "0.1.0" }
-racing-wheel-telemetry-config-writers = { path = "../telemetry-config-writers", version = "0.1.0" }
+openracing-telemetry-config = { path = "../telemetry-config", version = "0.1.0" }
 racing-wheel-telemetry-integration = { path = "../telemetry-integration", version = "0.1.0" }
 racing-wheel-telemetry-rate-limiter = { path = "../telemetry-rate-limiter", version = "0.1.0" }
-racing-wheel-telemetry-recorder = { path = "../telemetry-recorder", version = "0.1.0" }
+openracing-telemetry-recorder = { path = "../telemetry-recorder", version = "0.1.0" }
 racing-wheel-telemetry-support = { path = "../telemetry-support", version = "0.1.0" }
 tracing = { workspace = true }
 workspace-hack = { version = "0.1", path = "../../workspace-hack" }

@@ -3,7 +3,7 @@
 //! Three scenarios: race pace, braking zone, and pit stop.
 //! Packets use the AC RTCarInfo struct (328 bytes, little-endian UDP).
 
-use racing_wheel_telemetry_adapters::{AssettoCorsaAdapter, TelemetryAdapter};
+use openracing_telemetry_adapters::{AssettoCorsaAdapter, TelemetryAdapter};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 

@@ -4,7 +4,7 @@
 //! F1 Native 2024, Sébastien Loeb Rally (stub), rFactor 1 variants
 //! (GTR2, Race 07, GSC), Forza Horizon 4, Forza Horizon 5.
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     F1ManagerAdapter, F1NativeAdapter, ForzaHorizon4Adapter, ForzaHorizon5Adapter, RFactor1Adapter,
     SebLoebRallyAdapter, SimHubAdapter, TelemetryAdapter,
     f1_native::build_car_telemetry_packet_native, rfactor1::RFactor1Variant,

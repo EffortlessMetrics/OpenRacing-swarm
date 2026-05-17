@@ -8,7 +8,7 @@
 #[allow(dead_code)]
 mod helpers;
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     BeamNGAdapter, ForzaAdapter, GranTurismo7Adapter, IRacingAdapter, TelemetryAdapter,
 };
 use std::time::Duration;
@@ -185,7 +185,7 @@ mod iracing_verification {
 
 mod acc_verification {
     use super::*;
-    use racing_wheel_telemetry_adapters::acc::ACCAdapter;
+    use openracing_telemetry_adapters::acc::ACCAdapter;
 
     /// Default ACC broadcasting port is 9000.
     /// Source: Kunos ACC Broadcasting SDK v4 default port.
@@ -641,9 +641,9 @@ mod forza_verification {
 
 mod f1_verification {
     use super::*;
-    use racing_wheel_telemetry_adapters::f1::F1Adapter;
-    use racing_wheel_telemetry_adapters::f1_25;
-    use racing_wheel_telemetry_adapters::f1_native;
+    use openracing_telemetry_adapters::f1::F1Adapter;
+    use openracing_telemetry_adapters::f1_25;
+    use openracing_telemetry_adapters::f1_native;
 
     /// Default F1 UDP port is 20777.
     /// Source: EA Sports F1 UDP spec, standard since F1 2019.
@@ -757,7 +757,7 @@ mod f1_verification {
 
 mod gt7_verification {
     use super::*;
-    use racing_wheel_telemetry_adapters::gran_turismo_7;
+    use openracing_telemetry_adapters::gran_turismo_7;
 
     /// GT7 receives telemetry on port 33740.
     /// Source: Nenkai/PDTools `BindPortGT7 = 33740`.
@@ -1055,7 +1055,7 @@ mod cross_adapter_verification {
     /// All adapters return non-empty game IDs.
     #[test]
     fn all_game_ids_non_empty() {
-        use racing_wheel_telemetry_adapters::*;
+        use openracing_telemetry_adapters::*;
         let adapters: Vec<Box<dyn TelemetryAdapter>> = vec![
             Box::new(BeamNGAdapter::new()),
             Box::new(ForzaAdapter::new()),
@@ -1072,7 +1072,7 @@ mod cross_adapter_verification {
     /// All adapters have reasonable update rates (1ms ≤ rate ≤ 1000ms).
     #[test]
     fn update_rates_are_reasonable() {
-        use racing_wheel_telemetry_adapters::*;
+        use openracing_telemetry_adapters::*;
         use std::time::Duration;
         let adapters: Vec<Box<dyn TelemetryAdapter>> = vec![
             Box::new(BeamNGAdapter::new()),

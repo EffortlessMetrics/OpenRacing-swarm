@@ -129,5 +129,5 @@ Remove the game entry from `~/.openracing/configured_games.json` (or delete the 
 - Implementation: `crates/service/src/game_auto_configure.rs`
 - Implementation: `crates/service/src/game_telemetry_bridge.rs`
 - Integration point: `crates/service/src/auto_profile_switching.rs`
-- Support matrix: `racing-wheel-telemetry-config` crate (`load_default_matrix`, `normalize_game_id`)
+- Support matrix: `openracing-telemetry-config` crate (`load_default_matrix`, `normalize_game_id`)
 - Related ADRs: ADR-0002 (IPC Transport), ADR-0005 (Plugin Architecture)

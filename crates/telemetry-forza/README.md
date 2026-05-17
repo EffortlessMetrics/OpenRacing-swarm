@@ -42,7 +42,7 @@ In Forza Motorsport / Forza Horizon:
 
 ```rust,no_run
 use racing_wheel_telemetry_forza::ForzaAdapter;
-use racing_wheel_telemetry_adapters::TelemetryAdapter;
+use openracing_telemetry_adapters::TelemetryAdapter;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

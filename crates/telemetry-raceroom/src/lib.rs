@@ -1,5 +1,5 @@
 //! RaceRoom Experience telemetry adapter.
 #![deny(static_mut_refs)]
-pub use racing_wheel_telemetry_adapters::RaceRoomAdapter;
-pub use racing_wheel_telemetry_adapters::TelemetryAdapter;
-pub use racing_wheel_telemetry_core::{NormalizedTelemetry, TelemetryFrame};
+pub use openracing_telemetry::{NormalizedTelemetry, TelemetryFrame};
+pub use openracing_telemetry_adapters::TelemetryAdapter;
+pub use openracing_telemetry_adapters::games::raceroom::RaceRoomAdapter;

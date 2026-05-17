@@ -1,12 +1,12 @@
 [package]
-name = "racing-wheel-telemetry-recorder"
+name = "openracing-telemetry-recorder"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage = "https://github.com/EffortlessMetrics/OpenRacing"
-documentation = "https://docs.rs/racing-wheel-telemetry-recorder"
+documentation = "https://docs.rs/openracing-telemetry-recorder"
 publish = true
 description = "Telemetry recording, playback, and synthetic fixture generation for OpenRacing"
 readme = "README.md"

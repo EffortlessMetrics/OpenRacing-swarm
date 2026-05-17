@@ -28,7 +28,7 @@ All other packet IDs are silently discarded.
 
 ```rust,no_run
 use racing_wheel_telemetry_f1::F1NativeAdapter;
-use racing_wheel_telemetry_adapters::TelemetryAdapter;
+use openracing_telemetry_adapters::TelemetryAdapter;
 
 # #[tokio::main]
 # async fn main() -> anyhow::Result<()> {

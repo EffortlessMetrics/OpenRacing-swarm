@@ -7,8 +7,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use openracing_telemetry_adapters::adapter_factories;
 use racing_wheel_engine::hid::vendor::get_vendor_protocol;
-use racing_wheel_telemetry_adapters::adapter_factories;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 

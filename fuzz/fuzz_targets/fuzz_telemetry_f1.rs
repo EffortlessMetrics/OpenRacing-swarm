@@ -9,7 +9,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     F1_25Adapter, F1Adapter, F1ManagerAdapter, F1NativeAdapter, TelemetryAdapter,
 };
 

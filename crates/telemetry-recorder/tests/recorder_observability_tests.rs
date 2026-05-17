@@ -2,10 +2,10 @@
 //! replay at various speeds, different data rates, export format correctness,
 //! and concurrent recording safety.
 
-use racing_wheel_schemas::telemetry::{NormalizedTelemetry, TelemetryFrame};
-use racing_wheel_telemetry_recorder::{
+use openracing_telemetry_recorder::{
     TelemetryPlayer, TelemetryRecorder, TelemetryRecording, TestFixtureGenerator, TestScenario,
 };
+use racing_wheel_schemas::telemetry::{NormalizedTelemetry, TelemetryFrame};
 use tempfile::tempdir;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -180,7 +180,7 @@ mod replay_speeds {
     #[test]
     fn replay_empty_recording_immediately_finished() -> TestResult {
         let recording = TelemetryRecording {
-            metadata: racing_wheel_telemetry_recorder::RecordingMetadata {
+            metadata: openracing_telemetry_recorder::RecordingMetadata {
                 game_id: "test".to_string(),
                 timestamp: 0,
                 duration_seconds: 0.0,

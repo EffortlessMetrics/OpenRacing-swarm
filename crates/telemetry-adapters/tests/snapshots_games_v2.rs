@@ -4,7 +4,7 @@
 //! V-Rally 4, rFactor 1, Gran Turismo Sport, GRID Autosport, Gravel (SimHub),
 //! and Trackmania.
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     DakarDesertRallyAdapter, FlatOutAdapter, GravelAdapter, GridAutosportAdapter, NascarAdapter,
     RFactor1Adapter, TelemetryAdapter, TrackmaniaAdapter, VRally4Adapter, WrcKylotonnAdapter,
     gran_turismo_7, wrc_kylotonn::WrcKylotonnVariant,

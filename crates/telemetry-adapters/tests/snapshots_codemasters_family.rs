@@ -8,7 +8,7 @@
 //! binary packet (little-endian `f32` at known byte offsets).  DiRT 5 uses
 //! the Codemasters custom-UDP spec (mode 1, 15 fields × 4 bytes = 60 bytes).
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     Dirt3Adapter, Dirt4Adapter, Dirt5Adapter, DirtShowdownAdapter, Grid2019Adapter,
     GridAutosportAdapter, GridLegendsAdapter, RaceDriverGridAdapter, TelemetryAdapter,
 };

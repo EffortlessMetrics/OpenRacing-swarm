@@ -3,7 +3,7 @@
 //! Covers adapters NOT in v7: ACC, Assetto Corsa (original), BeamNG, LFS,
 //! F1 25, SimHub, WRC Generations, Project CARS 2.
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     ACCAdapter, AssettoCorsaAdapter, BeamNGAdapter, F1_25Adapter, LFSAdapter, PCars2Adapter,
     SimHubAdapter, TelemetryAdapter, WrcGenerationsAdapter,
 };
@@ -164,7 +164,7 @@ fn lfs_realistic_snapshot() -> TestResult {
 
 #[test]
 fn f1_25_realistic_snapshot() -> TestResult {
-    use racing_wheel_telemetry_adapters::f1_25::build_car_telemetry_packet;
+    use openracing_telemetry_adapters::f1_25::build_car_telemetry_packet;
 
     let adapter = F1_25Adapter::new();
     let raw = build_car_telemetry_packet(

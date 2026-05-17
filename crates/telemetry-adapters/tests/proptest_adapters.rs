@@ -5,15 +5,15 @@
 //! satisfies basic invariants (non-negative speed/RPM, clamped pedal inputs,
 //! reasonable gear range).
 
-use proptest::prelude::*;
-use racing_wheel_telemetry_adapters::codemasters_shared::{
+use openracing_telemetry_adapters::codemasters_shared::{
     self, MIN_PACKET_SIZE as CM_MIN_PACKET_SIZE,
 };
-use racing_wheel_telemetry_adapters::gran_turismo_7::{self, PACKET_SIZE as GT7_PACKET_SIZE};
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::gran_turismo_7::{self, PACKET_SIZE as GT7_PACKET_SIZE};
+use openracing_telemetry_adapters::{
     DirtRally2Adapter, F1Adapter, ForzaAdapter, GranTurismo7Adapter, NormalizedTelemetry,
     TelemetryAdapter,
 };
+use proptest::prelude::*;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

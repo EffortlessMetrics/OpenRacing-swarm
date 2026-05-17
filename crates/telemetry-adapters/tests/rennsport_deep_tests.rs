@@ -4,7 +4,7 @@
 //! FFB/slip-ratio clamping, gear encoding, and corrupted-packet handling against
 //! the 24-byte Rennsport UDP protocol (port 9000, identifier byte 0x52 'R').
 
-use racing_wheel_telemetry_adapters::{RennsportAdapter, TelemetryAdapter};
+use openracing_telemetry_adapters::{RennsportAdapter, TelemetryAdapter};
 use std::time::Duration;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

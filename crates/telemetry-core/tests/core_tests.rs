@@ -1,13 +1,11 @@
-//! Integration tests for the racing-wheel-telemetry-core crate.
+//! Integration tests for the openracing-telemetry crate.
 //!
 //! Covers: builder pattern, default values, extended map, TelemetryFlags,
 //! conversion utilities, and re-exported types.
 
 use std::time::Instant;
 
-use racing_wheel_telemetry_core::{
-    NormalizedTelemetry, TelemetryFlags, TelemetryFrame, TelemetryValue,
-};
+use openracing_telemetry::{NormalizedTelemetry, TelemetryFlags, TelemetryFrame, TelemetryValue};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -857,7 +855,7 @@ fn with_timestamp_creates_zeroed_with_given_time() -> TestResult {
 
 #[test]
 fn telemetry_field_coverage_serde_roundtrip() -> TestResult {
-    use racing_wheel_telemetry_core::contracts::{FlagCoverage, TelemetryFieldCoverage};
+    use openracing_telemetry::contracts::{FlagCoverage, TelemetryFieldCoverage};
 
     let coverage = TelemetryFieldCoverage {
         game_id: "acc".to_string(),

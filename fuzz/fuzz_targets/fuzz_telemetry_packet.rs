@@ -10,7 +10,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     ACC2Adapter, ACCAdapter, ACEvoAdapter, ACRallyAdapter, AMS2Adapter, AssettoCorsaAdapter,
     Automobilista1Adapter, BeamNGAdapter, DakarDesertRallyAdapter, Dirt3Adapter, Dirt4Adapter,
     Dirt5Adapter, DirtRally2Adapter, DirtShowdownAdapter, EAWRCAdapter, Ets2Adapter, F1_25Adapter,
@@ -83,25 +83,25 @@ fuzz_target!(|data: &[u8]| {
     // Variant-based adapters.
     let variant_adapters: Vec<Box<dyn TelemetryAdapter>> = vec![
         Box::new(Ets2Adapter::with_variant(
-            racing_wheel_telemetry_adapters::ets2::Ets2Variant::Ets2,
+            openracing_telemetry_adapters::ets2::Ets2Variant::Ets2,
         )),
         Box::new(Ets2Adapter::with_variant(
-            racing_wheel_telemetry_adapters::ets2::Ets2Variant::Ats,
+            openracing_telemetry_adapters::ets2::Ets2Variant::Ats,
         )),
         Box::new(MudRunnerAdapter::with_variant(
-            racing_wheel_telemetry_adapters::mudrunner::MudRunnerVariant::MudRunner,
+            openracing_telemetry_adapters::mudrunner::MudRunnerVariant::MudRunner,
         )),
         Box::new(MudRunnerAdapter::with_variant(
-            racing_wheel_telemetry_adapters::mudrunner::MudRunnerVariant::SnowRunner,
+            openracing_telemetry_adapters::mudrunner::MudRunnerVariant::SnowRunner,
         )),
         Box::new(RFactor1Adapter::with_variant(
-            racing_wheel_telemetry_adapters::rfactor1::RFactor1Variant::RFactor1,
+            openracing_telemetry_adapters::rfactor1::RFactor1Variant::RFactor1,
         )),
         Box::new(RFactor1Adapter::with_variant(
-            racing_wheel_telemetry_adapters::rfactor1::RFactor1Variant::Gtr2,
+            openracing_telemetry_adapters::rfactor1::RFactor1Variant::Gtr2,
         )),
         Box::new(WrcKylotonnAdapter::new(
-            racing_wheel_telemetry_adapters::wrc_kylotonn::WrcKylotonnVariant::Wrc9,
+            openracing_telemetry_adapters::wrc_kylotonn::WrcKylotonnVariant::Wrc9,
         )),
     ];
 

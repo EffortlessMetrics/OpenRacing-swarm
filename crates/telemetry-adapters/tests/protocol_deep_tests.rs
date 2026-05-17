@@ -18,9 +18,9 @@
 mod helpers;
 
 use helpers::write_f32_le;
-use racing_wheel_telemetry_adapters::codemasters_shared;
-use racing_wheel_telemetry_adapters::gran_turismo_7;
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::codemasters_shared;
+use openracing_telemetry_adapters::gran_turismo_7;
+use openracing_telemetry_adapters::{
     ACCAdapter, BeamNGAdapter, Dirt3Adapter, Dirt4Adapter, DirtRally2Adapter, ForzaAdapter,
     GranTurismo7Adapter, Grid2019Adapter, GridAutosportAdapter, GridLegendsAdapter, IRacingAdapter,
     LFSAdapter, NormalizedTelemetry, RaceDriverGridAdapter, TelemetryAdapter, TelemetryValue,
@@ -1490,7 +1490,7 @@ mod adapter_trait_compliance {
 
     #[test]
     fn all_factory_adapters_have_valid_ids() -> TestResult {
-        let factories = racing_wheel_telemetry_adapters::adapter_factories();
+        let factories = openracing_telemetry_adapters::adapter_factories();
         assert!(
             factories.len() >= 30,
             "expected 30+ adapters, got {}",
@@ -1616,7 +1616,7 @@ mod normalized_helpers {
         assert!(!default_t.has_active_flags());
 
         let yellow = NormalizedTelemetry::builder()
-            .flags(racing_wheel_telemetry_adapters::TelemetryFlags {
+            .flags(openracing_telemetry_adapters::TelemetryFlags {
                 yellow_flag: true,
                 ..Default::default()
             })

@@ -3,11 +3,11 @@
 //! Covers: recording lifecycle, file persistence round-trips, playback speed,
 //! progress tracking, fixture generation for all scenarios, edge cases.
 
-use racing_wheel_schemas::telemetry::{NormalizedTelemetry, TelemetryFrame};
-use racing_wheel_telemetry_recorder::{
+use openracing_telemetry_recorder::{
     RecordingMetadata, TelemetryPlayer, TelemetryRecorder, TelemetryRecording,
     TestFixtureGenerator, TestScenario,
 };
+use racing_wheel_schemas::telemetry::{NormalizedTelemetry, TelemetryFrame};
 use tempfile::tempdir;
 
 type R = Result<(), Box<dyn std::error::Error>>;

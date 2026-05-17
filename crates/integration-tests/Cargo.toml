@@ -18,13 +18,12 @@ racing-wheel-engine = { path = "../engine" }
 racing-wheel-plugins = { path = "../plugins" }
 racing-wheel-service = { path = "../service" }
 racing-wheel-schemas = { path = "../schemas" }
-racing-wheel-telemetry-adapters = { path = "../telemetry-adapters" }
-racing-wheel-telemetry-config = { path = "../telemetry-config" }
-racing-wheel-telemetry-config-writers = { path = "../telemetry-config-writers" }
+openracing-telemetry-adapters = { path = "../telemetry-adapters" }
+openracing-telemetry-config = { path = "../telemetry-config" }
 racing-wheel-telemetry-support = { path = "../telemetry-support" }
 racing-wheel-telemetry-integration = { path = "../telemetry-integration" }
 racing-wheel-telemetry-bdd-metrics = { path = "../telemetry-bdd-metrics" }
-racing-wheel-telemetry-recorder = { path = "../telemetry-recorder" }
+openracing-telemetry-recorder = { path = "../telemetry-recorder" }
 racing-wheel-hid-moza-protocol = { path = "../hid-moza-protocol" }
 racing-wheel-hid-fanatec-protocol = { path = "../hid-fanatec-protocol" }
 racing-wheel-hid-logitech-protocol = { path = "../hid-logitech-protocol" }

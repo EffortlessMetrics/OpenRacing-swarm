@@ -9,7 +9,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use racing_wheel_telemetry_recorder::TelemetryRecording;
+use openracing_telemetry_recorder::TelemetryRecording;
 
 fuzz_target!(|data: &[u8]| {
     // Attempt JSON deserialization from raw bytes.

@@ -7,7 +7,7 @@
 //!   - Truncated / malformed-packet tests (graceful `Err`, no panic)
 //!   - A proptest fuzz section (≥256 random-byte cases → never panics)
 
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     DakarDesertRallyAdapter, Dirt4Adapter, Ets2Adapter, FlatOutAdapter, LFSAdapter, PCars2Adapter,
     RennsportAdapter, TelemetryAdapter, WrcGenerationsAdapter, WreckfestAdapter, ets2::Ets2Variant,
 };

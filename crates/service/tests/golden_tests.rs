@@ -12,12 +12,12 @@ fn must<T, E: std::fmt::Debug>(r: Result<T, E>) -> T {
     }
 }
 
+use openracing_telemetry_config::support::matrix_game_ids;
 use racing_wheel_service::config_writers::{
     ACCConfigWriter, Dirt5ConfigWriter, F1_25ConfigWriter, F1ConfigWriter, IRacingConfigWriter,
 };
 use racing_wheel_service::game_service::*;
 use racing_wheel_service::telemetry::TelemetryService;
-use racing_wheel_telemetry_config::support::matrix_game_ids;
 use std::collections::HashSet;
 use std::path::Path;
 use tempfile::TempDir;

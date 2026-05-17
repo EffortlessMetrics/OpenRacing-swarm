@@ -5,7 +5,7 @@
 
 use std::collections::HashSet;
 
-use racing_wheel_telemetry_config::{
+use openracing_telemetry_config::{
     AutoDetectConfig, ConfigDiff, ConfigWriter, DiffOperation, GameSupport, GameSupportMatrix,
     GameSupportStatus, GameVersion, TELEMETRY_SUPPORT_MATRIX_YAML, TelemetryConfig,
     TelemetryFieldMapping, TelemetrySupport, config_writer_factories, load_default_matrix,

@@ -1,10 +1,10 @@
 //! Deep tests for the Gran Turismo 7 telemetry adapter (Salsa20 encrypted UDP).
 
-use racing_wheel_telemetry_adapters::gran_turismo_7::{
+use openracing_telemetry_adapters::gran_turismo_7::{
     Gt7PacketType, MAGIC, PACKET_SIZE, PACKET_SIZE_TYPE2, PACKET_SIZE_TYPE3, parse_decrypted,
     parse_decrypted_ext,
 };
-use racing_wheel_telemetry_adapters::{GranTurismo7Adapter, TelemetryAdapter, TelemetryValue};
+use openracing_telemetry_adapters::{GranTurismo7Adapter, TelemetryAdapter, TelemetryValue};
 use std::time::Duration;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

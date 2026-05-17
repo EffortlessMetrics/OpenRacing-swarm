@@ -6,7 +6,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use racing_wheel_telemetry_adapters::f1_25::parse_car_status;
+use openracing_telemetry_adapters::f1_25::parse_car_status;
 
 fuzz_target!(|data: &[u8]| {
     let player_index = if data.is_empty() {

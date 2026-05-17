@@ -8,7 +8,7 @@
 mod helpers;
 
 use helpers::write_f32_le;
-use racing_wheel_telemetry_adapters::{
+use openracing_telemetry_adapters::{
     codemasters_shared, dakar, flatout, le_mans_ultimate, nascar, pcars2, rennsport, rfactor1,
     simhub, trackmania, wreckfest, wtcr,
 };
@@ -573,7 +573,7 @@ fn golden_trackmania_minimal_json() -> TestResult {
 
 #[test]
 fn golden_all_factory_game_ids_match() -> TestResult {
-    for (id, factory) in racing_wheel_telemetry_adapters::adapter_factories() {
+    for (id, factory) in openracing_telemetry_adapters::adapter_factories() {
         let adapter = factory();
         assert_eq!(
             adapter.game_id(),

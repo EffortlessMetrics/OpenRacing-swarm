@@ -4,7 +4,7 @@
 //!   cargo +nightly fuzz run fuzz_ets2_udp
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use racing_wheel_telemetry_adapters::{Ets2Adapter, TelemetryAdapter};
+use openracing_telemetry_adapters::{Ets2Adapter, TelemetryAdapter};
 
 fuzz_target!(|data: &[u8]| {
     // Must never panic on arbitrary bytes — errors are expected, panics are not.
