@@ -1,8 +1,8 @@
 {
   "success": true,
   "command": "wheelctl moza pre-output-readiness",
-  "generated_at_utc": "2026-05-17T00:40:02Z",
-  "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+  "generated_at_utc": "2026-05-17T01:33:48Z",
+  "lane": "ci/hardware/moza-r5/2026-05-13",
   "stage": "pre_output_readiness",
   "ready_for_zero_torque": true,
   "ready_for_ffb": false,
@@ -94,17 +94,17 @@
     {
       "name": "moza_status",
       "status": "pass",
-      "details": "moza-status.json is observe-only and bound to ci\\hardware\\moza-r5\\2026-05-13"
+      "details": "moza-status.json is observe-only and bound to ci/hardware/moza-r5/2026-05-13"
     },
     {
       "name": "device_status",
       "status": "pass",
-      "details": "device-status.json is observe-only and bound to ci\\hardware\\moza-r5\\2026-05-13"
+      "details": "device-status.json is observe-only and bound to ci/hardware/moza-r5/2026-05-13"
     },
     {
       "name": "support_bundle",
       "status": "pass",
-      "details": "support-bundle.json is observe-only and bound to ci\\hardware\\moza-r5\\2026-05-13"
+      "details": "support-bundle.json is observe-only and bound to ci/hardware/moza-r5/2026-05-13"
     }
   ],
   "passive_verification": {

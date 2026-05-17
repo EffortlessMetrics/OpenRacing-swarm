@@ -6561,8 +6561,10 @@ fn native_visible_smoke_failed_real_receipt_action(lane: &Path) -> Option<String
             .get("intentional_profile_design")
             .and_then(|design| json_string(design, "status"))
             .unwrap_or("missing_profile_design");
+        let profile_plan_summary = native_visible_planned_profile_summary(&plan)
+            .unwrap_or_else(|| "planned_profile_details=missing".to_string());
         return Some(format!(
-            "Current native-visible frontier: native actuator response is recorded, but visible-motion remains unclaimed: movement_observed={movement_observed}, angle_delta_degrees={delta}, movement_threshold_degrees={threshold}. Final Stop All sent={stop_all_sent}, no direct report 0x20={no_direct}, no high torque={no_high_torque}. Follow-up plan exists at {NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE}: review_decision={review_decision}, profile_design_status={profile_design_status}, hardware_output_authorized={output_authorized}, force_escalation_authorized={force_escalation_authorized}. Do not run output until the follow-up requirements are complete and a fresh bench-clear is recorded for the exact next output command. Pit House, SimHub, and simulators are not required for this native diagnosis."
+            "Current native-visible frontier: native actuator response is recorded, but visible-motion remains unclaimed: movement_observed={movement_observed}, angle_delta_degrees={delta}, movement_threshold_degrees={threshold}. Final Stop All sent={stop_all_sent}, no direct report 0x20={no_direct}, no high torque={no_high_torque}. Follow-up plan exists at {NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE}: review_decision={review_decision}, profile_design_status={profile_design_status}, {profile_plan_summary}, hardware_output_authorized={output_authorized}, force_escalation_authorized={force_escalation_authorized}. Do not run output until the follow-up requirements are complete and a fresh bench-clear is recorded for the exact next output command. Pit House, SimHub, and simulators are not required for this native diagnosis."
         ));
     }
     Some(format!(
@@ -6586,6 +6588,25 @@ fn failed_real_native_visible_smoke_receipt(lane: &Path) -> Option<Value> {
 
 fn native_visible_follow_up_plan(lane: &Path) -> Option<Value> {
     read_json_value(lane, NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE).ok()
+}
+
+fn native_visible_planned_profile_summary(plan: &Value) -> Option<String> {
+    let design = plan.get("intentional_profile_design")?;
+    let selected = design.get("selected_next_profile")?;
+    let status = json_string(selected, "status")?;
+    let family = json_string(selected, "family")?;
+    let cli_support = json_string(selected, "current_cli_support").unwrap_or("missing");
+    let envelope = selected.get("expected_small_angle_envelope_degrees")?;
+    let min = json_f64(envelope, "min")?;
+    let max = json_f64(envelope, "max")?;
+    let exact_output_authorized = plan
+        .get("planned_next_output")
+        .and_then(|planned| json_bool(planned, "allowed"))
+        .unwrap_or(false);
+
+    Some(format!(
+        "planned_profile_status={status}, planned_profile_family={family}, planned_profile_cli_support={cli_support}, expected_small_angle_envelope_degrees={min:.3}..{max:.3}, exact_output_command_authorized={exact_output_authorized}"
+    ))
 }
 
 fn optional_bool_text(value: Option<bool>) -> String {
@@ -17591,7 +17612,31 @@ fn moza_receipt_template(kind: MozaReceiptTemplateKind) -> Value {
                         "status": "requires_separate_software_and_safety_plan",
                         "reason": "The current visible smoke command is capped at 5 percent and 2000 ms and implements only constant-low-force."
                     }
-                ]
+                ],
+                "selected_next_profile": {
+                    "status": "software_plan_recorded_no_output_authorized",
+                    "family": "bounded_shaped_pidff_micro_profile",
+                    "reason_previous_5_percent": "The 5 percent / 2000 ms PIDFF command produced actuator response above the response floor, so the next profile should target a small visible steering envelope instead of treating the prior run as dead output.",
+                    "current_cli_support": "not_implemented",
+                    "expected_small_angle_envelope_degrees": {
+                        "min": 1.0,
+                        "max": 3.0,
+                        "basis": "operator-visible target for the next reviewed command; this is not a pass claim and not an authorization to run output"
+                    },
+                    "profile_requirements": [
+                        "use only descriptor-proven PIDFF bounded-effect reports",
+                        "keep direct report 0x20 disabled",
+                        "keep high torque disabled",
+                        "record exact force, duration, pulse shape, return or cleanup behavior, and expected angle envelope before hardware output",
+                        "require final PIDFF Stop All cleanup",
+                        "preserve the existing response/visible-motion receipt before any replacement",
+                        "require a fresh bench-clear for the exact reviewed command"
+                    ]
+                },
+                "software_next_step": {
+                    "status": "required_before_output",
+                    "description": "Implement or review the exact bounded shaped PIDFF profile in software before any next visible-motion hardware attempt."
+                }
             },
             "required_before_next_output": [
                 {
@@ -32991,6 +33036,26 @@ mod tests {
         assert_eq!(json_u64(limits, "duration_ms_limit"), Some(2000));
         assert_eq!(json_bool(limits, "direct_report_0x20_allowed"), Some(false));
         assert_eq!(json_bool(limits, "high_torque_allowed"), Some(false));
+        let Some(selected_profile) = profile_design.get("selected_next_profile") else {
+            return Err("visible follow-up template missing selected_next_profile".into());
+        };
+        assert_eq!(
+            json_string(selected_profile, "status"),
+            Some("software_plan_recorded_no_output_authorized")
+        );
+        assert_eq!(
+            json_string(selected_profile, "family"),
+            Some("bounded_shaped_pidff_micro_profile")
+        );
+        assert_eq!(
+            json_string(selected_profile, "current_cli_support"),
+            Some("not_implemented")
+        );
+        let Some(envelope) = selected_profile.get("expected_small_angle_envelope_degrees") else {
+            return Err("visible follow-up template missing expected angle envelope".into());
+        };
+        assert_eq!(json_f64(envelope, "min"), Some(1.0));
+        assert_eq!(json_f64(envelope, "max"), Some(3.0));
         assert_eq!(json_bool(&telemetry, "success"), Some(false));
         assert_eq!(json_bool(&ffb, "success"), Some(false));
         assert_eq!(json_bool(&telemetry, "no_ffb_writes"), Some(true));
@@ -37228,6 +37293,12 @@ mod tests {
                 && actions.contains("review_decision=no_output_retry_authorized")
                 && actions
                     .contains("profile_design_status=profile_design_recorded_no_output_authorized")
+                && actions
+                    .contains("planned_profile_status=software_plan_recorded_no_output_authorized")
+                && actions.contains("planned_profile_family=bounded_shaped_pidff_micro_profile")
+                && actions.contains("planned_profile_cli_support=not_implemented")
+                && actions.contains("expected_small_angle_envelope_degrees=1.000..3.000")
+                && actions.contains("exact_output_command_authorized=false")
                 && actions.contains("hardware_output_authorized=false")
                 && actions
                     .contains("fresh bench-clear is recorded for the exact next output command"),

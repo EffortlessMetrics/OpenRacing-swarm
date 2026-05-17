@@ -62,7 +62,31 @@
         "status": "requires_separate_software_and_safety_plan",
         "reason": "The current visible smoke command is capped at 5 percent and 2000 ms and implements only constant-low-force."
       }
-    ]
+    ],
+    "selected_next_profile": {
+      "status": "software_plan_recorded_no_output_authorized",
+      "family": "bounded_shaped_pidff_micro_profile",
+      "reason_previous_5_percent": "The 5 percent / 2000 ms PIDFF command produced actuator response above the response floor, so the next profile should target a small visible steering envelope instead of treating the prior run as dead output.",
+      "current_cli_support": "not_implemented",
+      "expected_small_angle_envelope_degrees": {
+        "min": 1.0,
+        "max": 3.0,
+        "basis": "operator-visible target for the next reviewed command; this is not a pass claim and not an authorization to run output"
+      },
+      "profile_requirements": [
+        "use only descriptor-proven PIDFF bounded-effect reports",
+        "keep direct report 0x20 disabled",
+        "keep high torque disabled",
+        "record exact force, duration, pulse shape, return or cleanup behavior, and expected angle envelope before hardware output",
+        "require final PIDFF Stop All cleanup",
+        "preserve the existing response/visible-motion receipt before any replacement",
+        "require a fresh bench-clear for the exact reviewed command"
+      ]
+    },
+    "software_next_step": {
+      "status": "required_before_output",
+      "description": "Implement or review the exact bounded shaped PIDFF profile in software before any next visible-motion hardware attempt."
+    }
   },
   "planned_next_output": {
     "allowed": false,

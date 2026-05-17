@@ -1,8 +1,8 @@
 {
   "success": false,
   "command": "wheelctl moza verify-bundle",
-  "generated_at_utc": "2026-05-16T18:22:08Z",
-  "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+  "generated_at_utc": "2026-05-17T01:37:06Z",
+  "lane": "ci/hardware/moza-r5/2026-05-13",
   "requested_stage": "smoke_ready",
   "missing_artifacts": 3,
   "invalid_artifacts": 0,
@@ -272,7 +272,7 @@
     {
       "path": "native-actuator-visible-smoke.json",
       "kind": "json",
-      "required_stage": "smoke_ready",
+      "required_stage": "native_response_ready",
       "exists": true,
       "valid": true,
       "status": "pass",
@@ -286,7 +286,7 @@
       "valid": false,
       "status": "missing",
       "notes": [
-        "expected ci\\hardware\\moza-r5\\2026-05-13\\pit-house-coexistence.json"
+        "expected ci/hardware/moza-r5/2026-05-13\\pit-house-coexistence.json"
       ]
     },
     {
@@ -297,7 +297,7 @@
       "valid": false,
       "status": "missing",
       "notes": [
-        "expected ci\\hardware\\moza-r5\\2026-05-13\\simulator-telemetry-proof.json"
+        "expected ci/hardware/moza-r5/2026-05-13\\simulator-telemetry-proof.json"
       ]
     },
     {
@@ -308,7 +308,7 @@
       "valid": false,
       "status": "missing",
       "notes": [
-        "expected ci\\hardware\\moza-r5\\2026-05-13\\simulator-ffb-smoke.json"
+        "expected ci/hardware/moza-r5/2026-05-13\\simulator-ffb-smoke.json"
       ]
     }
   ],
@@ -316,7 +316,7 @@
     {
       "name": "lane_directory",
       "status": "pass",
-      "details": "found ci\\hardware\\moza-r5\\2026-05-13"
+      "details": "found ci/hardware/moza-r5/2026-05-13"
     },
     {
       "name": "manifest_no_overclaim",
@@ -326,7 +326,7 @@
     {
       "name": "manifest_r5_pid_consistency",
       "status": "pass",
-      "details": "manifest hardware.wheelbase_pid 0x0004 matches available lane R5 receipts: device-list.json:0x0004=1, moza-probe.json:0x0004=1, hid-list.json:0x0004=1, descriptor.json:0x0004=1, captures/r5-idle.jsonl:0x0004=1688, captures/r5-steering-sweep.jsonl:0x0004=4110, captures/r5-throttle-only-sweep.jsonl:0x0004=22387, captures/r5-brake-only-sweep.jsonl:0x0004=22854, captures/r5-clutch-only-sweep.jsonl:0x0004=22907, captures/r5-handbrake-only-sweep.jsonl:0x0004=23491, captures/r5-aggregated-idle-after-controls.jsonl:0x0004=2375, captures/ks-controls.jsonl:0x0004=22889, captures/es-controls.jsonl:0x0004=5514, fixture:r5_idle:0x0004=3632, fixture:r5_steering_sweep:0x0004=8476, fixture:r5_throttle_only_sweep:0x0004=45030, fixture:r5_brake_only_sweep:0x0004=45964, fixture:r5_clutch_only_sweep:0x0004=46070, fixture:r5_handbrake_only_sweep:0x0004=47238, fixture:r5_aggregated_idle_after_controls:0x0004=5006, fixture:ks_controls:0x0004=46034, fixture:es_controls:0x0004=11284, zero-torque-proof.json:0x0004, watchdog-proof.json:0x0004, disconnect-proof.json:0x0004, init-off.json:0x0004, init-standard.json:0x0004, low-torque-proof.json:0x0004, service-status:0x0004,0x0004,0x0004,0x0004; unavailable PID evidence is covered by stage artifact gates: [\"simulator-ffb-smoke.json:failed to read 'ci\\\\hardware\\\\moza-r5\\\\2026-05-13\\\\simulator-ffb-smoke.json'\", \"simulator-ffb-writer:failed to read 'ci\\\\hardware\\\\moza-r5\\\\2026-05-13\\\\simulator-ffb-smoke.json'\"]"
+      "details": "manifest hardware.wheelbase_pid 0x0004 matches available lane R5 receipts: device-list.json:0x0004=1, moza-probe.json:0x0004=1, hid-list.json:0x0004=1, descriptor.json:0x0004=1, captures/r5-idle.jsonl:0x0004=1688, captures/r5-steering-sweep.jsonl:0x0004=4110, captures/r5-throttle-only-sweep.jsonl:0x0004=22387, captures/r5-brake-only-sweep.jsonl:0x0004=22854, captures/r5-clutch-only-sweep.jsonl:0x0004=22907, captures/r5-handbrake-only-sweep.jsonl:0x0004=23491, captures/r5-aggregated-idle-after-controls.jsonl:0x0004=2375, captures/ks-controls.jsonl:0x0004=22889, captures/es-controls.jsonl:0x0004=5514, fixture:r5_idle:0x0004=3632, fixture:r5_steering_sweep:0x0004=8476, fixture:r5_throttle_only_sweep:0x0004=45030, fixture:r5_brake_only_sweep:0x0004=45964, fixture:r5_clutch_only_sweep:0x0004=46070, fixture:r5_handbrake_only_sweep:0x0004=47238, fixture:r5_aggregated_idle_after_controls:0x0004=5006, fixture:ks_controls:0x0004=46034, fixture:es_controls:0x0004=11284, zero-torque-proof.json:0x0004, watchdog-proof.json:0x0004, disconnect-proof.json:0x0004, init-off.json:0x0004, init-standard.json:0x0004, low-torque-proof.json:0x0004, service-status:0x0004,0x0004,0x0004,0x0004; unavailable PID evidence is covered by stage artifact gates: [\"simulator-ffb-smoke.json:failed to read 'ci/hardware/moza-r5/2026-05-13\\\\simulator-ffb-smoke.json'\", \"simulator-ffb-writer:failed to read 'ci/hardware/moza-r5/2026-05-13\\\\simulator-ffb-smoke.json'\"]"
     },
     {
       "name": "moza_r5_observed",
@@ -419,6 +419,11 @@
       "details": "native PIDFF actuator profile recorded 4 write attempt(s), including Stop All cleanup"
     },
     {
+      "name": "native_actuator_response_smoke",
+      "status": "pass",
+      "details": "native PIDFF actuator response smoke recorded 0.181 degree(s) of steering delta above the 0.100 degree response threshold; visible_success=Some(false)"
+    },
+    {
       "name": "native_actuator_visible_smoke",
       "status": "fail",
       "details": "success=false, command_ok=true, receipt_path_ok=true, selector_matches_lane_endpoint=true, confirmed=Some(true), no_hid_device_opened=Some(false), hardware_output_enabled=Some(true), no_feature_reports=Some(true), no_ffb_writes=Some(false), no_direct_torque_reports=Some(true), no_high_torque=Some(true), high_torque=Some(false), no_nonzero_above_limit=Some(true), no_out_of_scope=true, prior_actuator_profile_smoke_validated=Some(true), steering_proof_validated=Some(true), pidff_effect_setup_proven=Some(true), final_stop_all_attempted=Some(true), final_stop_all_sent=Some(true), movement_observed=Some(false), movement_delta_ok=false, post_stop_stable=Some(true), generated_at_valid=true, strategy_ok=true, max_percent=5, duration_ms=2000, steering_sample_count=992, angle_delta_degrees=0.18127718013275285, movement_threshold_degrees=1, post_stop_sample_count=124, write_attempts=4, writes_ok=4, write_errors=0, command_log_entries=4, command_log_no_direct_report=true, r5_device=true"
@@ -426,17 +431,17 @@
     {
       "name": "pit_house_coexistence",
       "status": "fail",
-      "details": "failed to read 'ci\\hardware\\moza-r5\\2026-05-13\\pit-house-coexistence.json'"
+      "details": "failed to read 'ci/hardware/moza-r5/2026-05-13\\pit-house-coexistence.json'"
     },
     {
       "name": "simulator_telemetry",
       "status": "fail",
-      "details": "failed to read 'ci\\hardware\\moza-r5\\2026-05-13\\simulator-telemetry-proof.json'"
+      "details": "failed to read 'ci/hardware/moza-r5/2026-05-13\\simulator-telemetry-proof.json'"
     },
     {
       "name": "simulator_ffb_bounded",
       "status": "fail",
-      "details": "failed to read 'ci\\hardware\\moza-r5\\2026-05-13\\simulator-ffb-smoke.json'"
+      "details": "failed to read 'ci/hardware/moza-r5/2026-05-13\\simulator-ffb-smoke.json'"
     }
   ],
   "endpoint_observations": [
@@ -611,10 +616,48 @@
     }
   ],
   "operator_actions": [
-    "Current smoke-ready frontier: native actuator visible-motion receipt exists but failed measured movement: movement_observed=false, angle_delta_degrees=0.181, movement_threshold_degrees=1.000. Final Stop All sent=true, no direct report 0x20=true, no high torque=true. Follow-up plan exists at native-actuator-visible-follow-up-plan.json: review_decision=no_output_retry_authorized, hardware_output_authorized=false, force_escalation_authorized=false. Do not run output until the follow-up requirements are complete and a fresh bench-clear is recorded for the exact next output command."
+    "Current native-visible frontier: native actuator response is recorded, but visible-motion remains unclaimed: movement_observed=false, angle_delta_degrees=0.181, movement_threshold_degrees=1.000. Final Stop All sent=true, no direct report 0x20=true, no high torque=true. Follow-up plan exists at native-actuator-visible-follow-up-plan.json: review_decision=no_output_retry_authorized, profile_design_status=profile_design_recorded_no_output_authorized, planned_profile_status=software_plan_recorded_no_output_authorized, planned_profile_family=bounded_shaped_pidff_micro_profile, planned_profile_cli_support=not_implemented, expected_small_angle_envelope_degrees=1.000..3.000, exact_output_command_authorized=false, hardware_output_authorized=false, force_escalation_authorized=false. Do not run output until the follow-up requirements are complete and a fresh bench-clear is recorded for the exact next output command. Pit House, SimHub, and simulators are not required for this native diagnosis."
   ],
-  "next_commands": [
-    "wheelctl moza pre-output-readiness --lane ci\\hardware\\moza-r5\\2026-05-13 --json-out ci\\hardware\\moza-r5\\2026-05-13\\pre-output-readiness.json --json"
+  "next_commands": [],
+  "blocked_safe_followups": [
+    {
+      "name": "pit_house_pre_mode_change_evidence",
+      "reason": "Visible-motion remains blocked, but Pit House closed/open-standard/open-direct/firmware-page observations and case receipts are no-output evidence work. Mode-change and parent coexistence proof remain deferred until simulator FFB exists.",
+      "hardware_output_enabled": false,
+      "no_hid_device_opened": true,
+      "no_ffb_writes": true,
+      "commands": [
+        "wheelctl moza pit-house-evidence --case open-standard --operator Steven --evidence 'Pit House open and idle; standard mode observed' --json-out ci/hardware/moza-r5/2026-05-13\\pit-house-evidence-open-standard.json",
+        "wheelctl moza pit-house-observation --case open-standard --evidence-kind process-window-snapshot --evidence-artifact pit-house-evidence-open-standard.json --operator Steven --evidence 'Pit House open and idle; standard mode observed' --json-out ci/hardware/moza-r5/2026-05-13\\pit-house-observation-open-standard.json",
+        "wheelctl moza pit-house-evidence --case open-direct --operator Steven --evidence 'Pit House open during direct request; OpenRacing warned or blocked' --json-out ci/hardware/moza-r5/2026-05-13\\pit-house-evidence-open-direct.json",
+        "wheelctl moza pit-house-observation --case open-direct --evidence-kind process-window-snapshot --evidence-artifact pit-house-evidence-open-direct.json --operator Steven --evidence 'Pit House open during direct request; OpenRacing warned or blocked' --json-out ci/hardware/moza-r5/2026-05-13\\pit-house-observation-open-direct.json",
+        "wheelctl moza pit-house-evidence --case firmware-page --operator Steven --evidence 'Pit House firmware/update page open; high-risk tests refused' --json-out ci/hardware/moza-r5/2026-05-13\\pit-house-evidence-firmware-page.json",
+        "wheelctl moza pit-house-observation --case firmware-page --evidence-kind process-window-snapshot --evidence-artifact pit-house-evidence-firmware-page.json --operator Steven --evidence 'Pit House firmware/update page open; high-risk tests refused' --json-out ci/hardware/moza-r5/2026-05-13\\pit-house-observation-firmware-page.json",
+        "wheelctl moza pit-house-case --lane ci/hardware/moza-r5/2026-05-13 --case open-standard --observation-artifact pit-house-observation-open-standard.json --evidence 'Pit House open standard case observed' --json-out ci/hardware/moza-r5/2026-05-13\\pit-house-open-standard.json",
+        "wheelctl moza pit-house-case --lane ci/hardware/moza-r5/2026-05-13 --case open-direct --observation-artifact pit-house-observation-open-direct.json --evidence 'Pit House open direct request warned or blocked' --json-out ci/hardware/moza-r5/2026-05-13\\pit-house-direct-blocked.json",
+        "wheelctl moza pit-house-case --lane ci/hardware/moza-r5/2026-05-13 --case firmware-page --observation-artifact pit-house-observation-firmware-page.json --evidence 'Pit House firmware/update page refusal observed' --json-out ci/hardware/moza-r5/2026-05-13\\pit-house-firmware-page.json"
+      ],
+      "notes": [
+        "Run pit-house-evidence first when the matching process/window snapshot artifact is missing.",
+        "pit-house-observation rejects wheelctl-generated snapshots that do not match the requested Pit House case.",
+        "Do not run pit-house-proof or claim full coexistence from these subcases alone."
+      ]
+    },
+    {
+      "name": "simulator_telemetry_only",
+      "reason": "Visible-motion remains blocked, but simulator telemetry recording is no-output evidence and can be prepared when a real SimHub/simulator source is available.",
+      "hardware_output_enabled": false,
+      "no_hid_device_opened": true,
+      "no_ffb_writes": true,
+      "commands": [
+        "wheelctl telemetry record --game simhub-bridge --telemetry-source simhub_bridge --live-simhub --port 5555 --out ci/hardware/moza-r5/2026-05-13\\simulator-telemetry-recording.jsonl --session-id simhub-bridge-2026-05-13 --duration-ms 30000",
+        "wheelctl moza simulator-telemetry-proof --lane ci/hardware/moza-r5/2026-05-13 --game simhub-bridge --telemetry-source simhub_bridge --recorder-artifact simulator-telemetry-recording.jsonl --duration-ms 30000 --json-out ci/hardware/moza-r5/2026-05-13\\simulator-telemetry-proof.json"
+      ],
+      "notes": [
+        "Use only with a real simulator or SimHub bridge source; fixtures and placeholders do not satisfy the gate.",
+        "Do not start wheeld or simulator-ffb-smoke from this blocked follow-up."
+      ]
+    }
   ],
   "no_hid_device_opened": true,
   "no_ffb_writes": true,
