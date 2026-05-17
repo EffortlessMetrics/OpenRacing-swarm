@@ -121,7 +121,7 @@ jobs:
             fi
 
             stage=$(
-              python3 -c 'import json, sys; state = json.load(open(sys.argv[1], encoding="utf-8")).get("completion_state"); mapping = {"passive_capture_ready": "passive", "zero_torque_ready": "zero", "openracing_control_ready": "openracing-control-ready", "real_hardware_smoke_ready": "smoke-ready"}; stage = mapping.get(state); print(stage) if stage else (_ for _ in ()).throw(SystemExit(f"unsupported or unpromoted completion_state: {state!r}"))' "$lane/manifest.json"
+              python3 -c 'import json, sys; state = json.load(open(sys.argv[1], encoding="utf-8")).get("completion_state"); mapping = {"passive_capture_ready": "passive", "zero_torque_ready": "zero", "openracing_control_ready": "openracing-control-ready", "native_response_ready": "native-response-ready", "real_hardware_smoke_ready": "smoke-ready"}; stage = mapping.get(state); print(stage) if stage else (_ for _ in ()).throw(SystemExit(f"unsupported or unpromoted completion_state: {state!r}"))' "$lane/manifest.json"
             )
 
             echo "Verifying $lane at stage $stage"

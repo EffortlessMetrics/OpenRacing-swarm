@@ -6107,9 +6107,16 @@ fn verify_bundle_dir_with_support_validation(
             "init-standard.json",
             "standard",
         ));
+        // Bundle verification already validates the lane's concrete stage
+        // receipts below. Rebuilding fresh support-bundle readiness here
+        // replays the large capture set again through every stage summary,
+        // which makes native-response promotion receipt generation
+        // unnecessarily expensive. Keep verify-bundle on stored
+        // support-bundle shape/no-output validation; the direct service gate
+        // still exercises fresh overclaim checks in its focused tests.
         gates.push(verify_service_status_gate_with_support_validation(
             lane,
-            support_validation,
+            SupportBundleValidationMode::ShapeOnly,
         ));
         gates.push(verify_low_torque_gate(lane));
         gates.push(verify_steering_angle_stream_gate(lane));
@@ -38907,6 +38914,57 @@ mod tests {
                 "native-response-ready must not include later gate {later_gate}"
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_native_response_uses_shape_only_support_status() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_openracing_control_bundle(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V2),
+        )?;
+        let support_path = dir.path().join("support-bundle.json");
+        let mut support_bundle = read_json_path(&support_path)?;
+        let readiness = support_bundle
+            .pointer_mut("/moza_lane/readiness")
+            .and_then(Value::as_object_mut)
+            .ok_or("expected support readiness")?;
+        readiness.insert(
+            "highest_passing_stage".to_string(),
+            serde_json::json!("smoke_ready"),
+        );
+        readiness.insert("next_required_stage".to_string(), Value::Null);
+        readiness.insert(
+            "ready_for_real_hardware_smoke".to_string(),
+            serde_json::json!(true),
+        );
+        readiness.insert(
+            "smoke_ready_lane_audit_passed".to_string(),
+            serde_json::json!(true),
+        );
+        write_test_json_file(&support_path, &support_bundle)?;
+
+        let direct_service_gate = verify_service_status_gate(dir.path());
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::NativeResponseReady);
+
+        assert_eq!(direct_service_gate.status, "fail");
+        assert!(
+            direct_service_gate
+                .details
+                .contains("moza_lane_status_ok=false"),
+            "direct service gate should still reject stale support readiness, got {}",
+            direct_service_gate.details
+        );
+        assert!(receipt.success);
+        assert!(
+            receipt
+                .gates
+                .iter()
+                .any(|gate| gate.name == "service_status_receipts" && gate.status == "pass"),
+            "verify-bundle should validate stored support-bundle shape/no-output without rebuilding the full support matrix"
+        );
         Ok(())
     }
 

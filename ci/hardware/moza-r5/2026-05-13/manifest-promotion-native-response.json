@@ -1,0 +1,47 @@
+{
+  "command": "wheelctl moza promote-manifest",
+  "completion_state": "native_response_ready",
+  "generated_at_utc": "2026-05-17T00:36:20Z",
+  "hardware_validated": true,
+  "high_torque_validated": false,
+  "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+  "manifest": "ci\\hardware\\moza-r5\\2026-05-13\\manifest.json",
+  "no_ffb_writes": true,
+  "no_firmware_or_dfu_commands": true,
+  "no_hid_device_opened": true,
+  "no_serial_config_commands": true,
+  "notes": [
+    "promote-manifest runs live bundle verification before changing manifest claims",
+    "post-promotion verification uses shape-only support bundle validation because manifest promotion intentionally changes the lane snapshot that support-bundle records",
+    "release_ready and high_torque_validated remain false"
+  ],
+  "previous_completion_state": "openracing_control_ready",
+  "previous_hardware_validated": true,
+  "previous_simulator_validated": false,
+  "release_ready": false,
+  "simulator_validated": false,
+  "stage": "native_response_ready",
+  "success": true,
+  "verification_after": {
+    "failed_gates": 0,
+    "invalid_artifacts": 0,
+    "missing_artifacts": 0,
+    "no_ffb_writes": true,
+    "no_firmware_or_dfu_commands": true,
+    "no_hid_device_opened": true,
+    "no_serial_config_commands": true,
+    "requested_stage": "native_response_ready",
+    "success": true
+  },
+  "verification_before": {
+    "failed_gates": 0,
+    "invalid_artifacts": 0,
+    "missing_artifacts": 0,
+    "no_ffb_writes": true,
+    "no_firmware_or_dfu_commands": true,
+    "no_hid_device_opened": true,
+    "no_serial_config_commands": true,
+    "requested_stage": "native_response_ready",
+    "success": true
+  }
+}
