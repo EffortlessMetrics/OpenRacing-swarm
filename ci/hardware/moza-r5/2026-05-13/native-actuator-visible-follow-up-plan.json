@@ -1,18 +1,89 @@
 {
-  "command": "wheelctl moza receipt-template",
+  "authorization_recorded": true,
+  "authorized_at_utc": "2026-05-17T05:04:14Z",
+  "authorized_by": "Steven",
+  "authorization_consumed": true,
+  "authorization_consumed_at_utc": "2026-05-17T05:04:23Z",
+  "authorization_consumed_by_receipt": "native-actuator-visible-smoke.json",
+  "bench_clear_evidence": "Steven stated 'bench clear' on 2026-05-17 for the exact bounded-shaped PIDFF micro-profile command: profile=bounded-shaped-pidff-micro-profile, strategy=pidff-bounded-effect, max-percent=5, duration-ms=2000, movement-threshold-degrees=1.",
+  "command": "wheelctl moza authorize-visible-output",
   "do_not_rerun_from_generated_guidance": true,
-  "evidence_status": "engineering_review_recorded",
+  "evidence_status": "exact_output_attempt_consumed_visible_motion_unproven",
+  "ffb_mode_review_evidence": "No-output readiness at 2026-05-17T05:01:59Z confirmed native_control_blocking_items=[] and native_actuator_response_proven=true; prior response receipt proved PIDFF writes and Stop All cleanup while avoiding direct 0x20/high torque/serial/firmware/DFU; no topology, power, or wheelbase-mode change was reported before this bench-clear.",
   "force_escalation_authorized": false,
   "generated_at_utc": "2026-05-16T18:16:51Z",
   "hardware_output_authorized": false,
+  "intentional_profile_design": {
+    "candidate_profiles": [
+      {
+        "duration_ms": 2000,
+        "max_percent": 5,
+        "name": "repeat_current_profile_after_specific_setup_fix",
+        "profile": "constant-low-force",
+        "status": "not_authorized",
+        "use_only_if": "Bench, setup, or FFB-mode review identifies a specific reason the previous 5 percent response stayed below the visible threshold."
+      },
+      {
+        "name": "higher_or_longer_profile",
+        "reason": "The current visible smoke command remains capped at 5 percent and 2000 ms; any higher or longer profile needs a separate software and safety plan.",
+        "status": "requires_separate_software_and_safety_plan"
+      }
+    ],
+    "current_cli_limits": {
+      "direct_report_0x20_allowed": false,
+      "duration_ms_limit": 2000,
+      "high_torque_allowed": false,
+      "max_percent_limit": 5,
+      "profile_options": [
+        "constant-low-force",
+        "bounded-shaped-pidff-micro-profile"
+      ],
+      "serial_firmware_dfu_allowed": false,
+      "strategy": "pidff-bounded-effect"
+    },
+    "objective": "Record the next visible-motion profile decision before any output command is authorized.",
+    "selected_next_profile": {
+      "command_profile": "bounded-shaped-pidff-micro-profile",
+      "current_cli_support": "implemented_pending_bench_clear",
+      "expected_small_angle_envelope_degrees": {
+        "basis": "operator-visible target for the next reviewed command; this is not a pass claim and not an authorization to run output",
+        "max": 3.0,
+        "min": 1.0
+      },
+      "family": "bounded_shaped_pidff_micro_profile",
+      "profile_requirements": [
+        "use only descriptor-proven PIDFF bounded-effect reports",
+        "keep direct report 0x20 disabled",
+        "keep high torque disabled",
+        "record exact force, duration, pulse shape, return or cleanup behavior, and expected angle envelope before hardware output",
+        "require final PIDFF Stop All cleanup",
+        "preserve the existing response/visible-motion receipt before any replacement",
+        "require a fresh bench-clear for the exact reviewed command"
+      ],
+      "profile_shape": {
+        "final_cleanup": "pidff_device_control_stop_all",
+        "outbound_duration_percent": 55,
+        "outbound_percent": "max_percent",
+        "return_duration_percent_of_remaining": 67,
+        "return_percent": "-0.5 * max_percent",
+        "settle_percent": 0
+      },
+      "reason_previous_5_percent": "The 5 percent / 2000 ms PIDFF command produced actuator response above the response floor, so the next profile should target a small visible steering envelope instead of treating the prior run as dead output.",
+      "reviewed_command_template": "wheelctl moza actuator-visible-smoke --device <r5> --lane ci/hardware/moza-r5/<date> --prior-actuator-proof ci/hardware/moza-r5/<date>/native-actuator-profile-smoke.json --steering-proof ci/hardware/moza-r5/<date>/steering-angle-stream-proof.json --profile bounded-shaped-pidff-micro-profile --strategy pidff-bounded-effect --max-percent 5 --duration-ms 2000 --movement-threshold-degrees 1 --confirm-actuator-visible --json-out ci/hardware/moza-r5/<date>/native-actuator-visible-smoke.json --json",
+      "status": "software_profile_implemented_no_output_authorized"
+    },
+    "software_next_step": {
+      "description": "The bounded shaped PIDFF micro-profile is available for dry-run/preflight; use wheelctl moza authorize-visible-output to record fresh bench-clear, preserve the response-only receipt, and authorize exactly one matching hardware-output command.",
+      "status": "implemented_no_output_authorized"
+    },
+    "status": "profile_design_recorded_no_output_authorized"
+  },
   "max_percent_limit": 5,
-  "review_decision": "no_output_retry_authorized",
-  "reviewed_at_utc": "2026-05-16T18:17:03Z",
-  "reviewed_by": "Codex",
   "notes": [
-    "Review artifact only: this file is not evidence that visible motion passed.",
-    "The failed visible-motion receipt is real hardware evidence and must be preserved before any later replacement.",
-    "No further hardware-output command is authorized by this artifact; use wheelctl moza authorize-visible-output only after bench/setup/FFB-mode review and a fresh bench-clear for the exact command."
+    "Authorization artifact only: this file is not evidence that visible motion passed.",
+    "The exact 5 percent / 2000 ms bounded-shaped PIDFF micro-profile authorization was consumed by native-actuator-visible-smoke.json.",
+    "The consumed run kept direct report 0x20, high torque, serial config, firmware, and DFU disabled and sent final PIDFF Stop All cleanup.",
+    "No further hardware-output command is authorized by this artifact; do not rerun, lengthen the profile, or attempt a controlled-angle move without a separate reviewed plan and fresh bench-clear."
   ],
   "observed_failure_summary": {
     "angle_delta_degrees": 0.18127718013275285,
@@ -22,103 +93,41 @@
     "no_direct_torque_reports": true,
     "no_high_torque": true,
     "post_stop_stable": true,
+    "preserved_receipt": "native-actuator-visible-smoke-response-only.json",
     "prior_actuator_profile_smoke_validated": true,
+    "prior_angle_delta_degrees": 0.18127718013275285,
     "steering_proof_validated": true,
-    "write_attempts": 4,
-    "writes_ok": 4,
-    "write_errors": 0
-  },
-  "response_classification": {
-    "classification": "actuator_response_recorded_visible_motion_unproven",
-    "interpretation": "The 5 percent / 2000 ms PIDFF run produced measurable steering response above the response floor, but it did not meet the operator-visible motion threshold.",
-    "response_threshold_degrees": 0.1,
-    "visible_threshold_degrees": 1.0
-  },
-  "intentional_profile_design": {
-    "status": "profile_design_recorded_no_output_authorized",
-    "objective": "Record the next visible-motion profile decision before any output command is authorized.",
-    "current_cli_limits": {
-      "profile_options": [
-        "constant-low-force",
-        "bounded-shaped-pidff-micro-profile"
-      ],
-      "strategy": "pidff-bounded-effect",
-      "max_percent_limit": 5,
-      "duration_ms_limit": 2000,
-      "direct_report_0x20_allowed": false,
-      "high_torque_allowed": false,
-      "serial_firmware_dfu_allowed": false
-    },
-    "candidate_profiles": [
-      {
-        "name": "repeat_current_profile_after_specific_setup_fix",
-        "status": "not_authorized",
-        "profile": "constant-low-force",
-        "max_percent": 5,
-        "duration_ms": 2000,
-        "use_only_if": "Bench, setup, or FFB-mode review identifies a specific reason the previous 5 percent response stayed below the visible threshold."
-      },
-      {
-        "name": "higher_or_longer_profile",
-        "status": "requires_separate_software_and_safety_plan",
-        "reason": "The current visible smoke command remains capped at 5 percent and 2000 ms; any higher or longer profile needs a separate software and safety plan."
-      }
-    ],
-    "selected_next_profile": {
-      "status": "software_profile_implemented_no_output_authorized",
-      "family": "bounded_shaped_pidff_micro_profile",
-      "reason_previous_5_percent": "The 5 percent / 2000 ms PIDFF command produced actuator response above the response floor, so the next profile should target a small visible steering envelope instead of treating the prior run as dead output.",
-      "current_cli_support": "implemented_pending_bench_clear",
-      "command_profile": "bounded-shaped-pidff-micro-profile",
-      "reviewed_command_template": "wheelctl moza actuator-visible-smoke --device <r5> --lane ci/hardware/moza-r5/<date> --prior-actuator-proof ci/hardware/moza-r5/<date>/native-actuator-profile-smoke.json --steering-proof ci/hardware/moza-r5/<date>/steering-angle-stream-proof.json --profile bounded-shaped-pidff-micro-profile --strategy pidff-bounded-effect --max-percent 5 --duration-ms 2000 --movement-threshold-degrees 1 --confirm-actuator-visible --json-out ci/hardware/moza-r5/<date>/native-actuator-visible-smoke.json --json",
-      "profile_shape": {
-        "outbound_percent": "max_percent",
-        "outbound_duration_percent": 55,
-        "return_percent": "-0.5 * max_percent",
-        "return_duration_percent_of_remaining": 67,
-        "settle_percent": 0,
-        "final_cleanup": "pidff_device_control_stop_all"
-      },
-      "expected_small_angle_envelope_degrees": {
-        "min": 1.0,
-        "max": 3.0,
-        "basis": "operator-visible target for the next reviewed command; this is not a pass claim and not an authorization to run output"
-      },
-      "profile_requirements": [
-        "use only descriptor-proven PIDFF bounded-effect reports",
-        "keep direct report 0x20 disabled",
-        "keep high torque disabled",
-        "record exact force, duration, pulse shape, return or cleanup behavior, and expected angle envelope before hardware output",
-        "require final PIDFF Stop All cleanup",
-        "preserve the existing response/visible-motion receipt before any replacement",
-        "require a fresh bench-clear for the exact reviewed command"
-      ]
-    },
-    "software_next_step": {
-      "status": "implemented_no_output_authorized",
-      "description": "The bounded shaped PIDFF micro-profile is available for dry-run/preflight; use wheelctl moza authorize-visible-output to record fresh bench-clear, preserve the response-only receipt, and authorize exactly one matching hardware-output command."
-    }
+    "write_attempts": 6,
+    "write_errors": 0,
+    "writes_ok": 6
   },
   "planned_next_output": {
     "allowed": false,
+    "authorized_at_utc": "2026-05-17T05:04:14Z",
     "command": "",
     "duration_ms": "not_authorized",
     "force_percent": "not_authorized",
+    "movement_threshold_degrees": 1.0,
     "must_preserve_failed_receipt": true,
-    "requires_fresh_bench_clear": true
+    "operator": "Steven",
+    "preserved_receipt": "native-actuator-visible-smoke-response-only.json",
+    "profile": "bounded-shaped-pidff-micro-profile",
+    "requires_fresh_bench_clear": true,
+    "strategy": "pidff-bounded-effect"
   },
   "prior_receipt": "native-actuator-visible-smoke.json",
+  "prior_receipt_preserved_artifact": "native-actuator-visible-smoke-response-only.json",
   "replacement_receipt": "native-actuator-visible-smoke.json",
   "required_before_next_output": [
     {
       "check": "bench_clearance",
-      "evidence": "Prior bench-clear was acknowledged before this review artifact existed and is not bound to an exact reviewed retry command.",
+      "evidence": "The prior bench-clear was consumed by the 5 percent / 2000 ms bounded-shaped PIDFF micro-profile attempt. A new exact-command bench-clear is required after a separate plan names the next output command.",
       "status": "pending"
     },
     {
       "check": "wheelbase_ffb_mode_and_vendor_state",
-      "evidence": "Failed receipt shows PIDFF writes and Stop All cleanup succeeded, but measured steering delta was 0.181 degrees below the 1.000 degree threshold; inspect bench setup and FFB/vendor state before any output.",
-      "status": "pending"
+      "evidence": "The 2026-05-17 bounded-shaped PIDFF micro-profile produced the same 0.181 degree measured delta with successful writes and Stop All cleanup; inspect wheelbase/vendor FFB state before authorizing another output attempt.",
+      "status": "pending_review_after_second_subdegree_response"
     },
     {
       "check": "steering_input_stream_still_valid",
@@ -127,16 +136,102 @@
     },
     {
       "check": "failed_receipt_preserved_before_replacement",
-      "evidence": "native-actuator-visible-smoke.json is committed as the failed real receipt; preserve or archive it before any deliberate replacement.",
-      "status": "current_failed_receipt_recorded"
+      "evidence": "Preserved current response-only receipt at ci/hardware/moza-r5/2026-05-13\\native-actuator-visible-smoke-response-only.json before authorizing replacement.",
+      "status": "passed"
     },
     {
       "check": "fresh_operator_bench_clear_for_exact_next_output_command",
-      "evidence": "No exact next output command is authorized in this artifact.",
+      "evidence": "The prior bench-clear was consumed by the 5 percent / 2000 ms bounded-shaped PIDFF micro-profile attempt. A new exact-command bench-clear is required after a separate plan names the next output command.",
       "status": "pending"
+    },
+    {
+      "check": "longer_duration_profile_plan",
+      "status": "pending",
+      "evidence": "Steven proposed 5 percent / 3000 ms and asked about 5 percent / 30000 ms after the failed 2000 ms attempt, but both exceed the current reviewed cap and are not authorized without a separate software and safety plan."
+    },
+    {
+      "check": "controlled_angle_profile_plan",
+      "status": "pending",
+      "evidence": "Steven named 90 degrees right and 90 degrees left to reset as the initial visible target. That is a later feedback-bounded angle profile, not a dwell extension of the current visible-smoke command."
     }
   ],
+  "response_classification": {
+    "classification": "actuator_response_recorded_visible_motion_unproven",
+    "interpretation": "The 5 percent / 2000 ms PIDFF run produced measurable steering response above the response floor, but it did not meet the operator-visible motion threshold.",
+    "response_threshold_degrees": 0.1,
+    "visible_threshold_degrees": 1.0
+  },
+  "review_decision": "authorized_output_consumed_visible_motion_unproven",
   "review_scope": "native_actuator_visible_motion_failure",
+  "reviewed_at_utc": "2026-05-16T18:17:03Z",
+  "reviewed_by": "Codex",
   "success": false,
-  "template": false
+  "template": false,
+  "last_output_attempt": {
+    "status": "visible_motion_unproven",
+    "receipt": "native-actuator-visible-smoke.json",
+    "preserved_prior_response_receipt": "native-actuator-visible-smoke-response-only.json",
+    "command": "wheelctl moza actuator-visible-smoke --device hid-0x346E-0x0004-if2-0x0001-0x0004 --lane ci/hardware/moza-r5/2026-05-13 --prior-actuator-proof ci/hardware/moza-r5/2026-05-13\\native-actuator-profile-smoke.json --steering-proof ci/hardware/moza-r5/2026-05-13\\steering-angle-stream-proof.json --profile bounded-shaped-pidff-micro-profile --strategy pidff-bounded-effect --max-percent 5 --duration-ms 2000 --movement-threshold-degrees 1 --confirm-actuator-visible --json-out ci/hardware/moza-r5/2026-05-13\\native-actuator-visible-smoke.json --json",
+    "profile": "bounded_shaped_pidff_micro_profile",
+    "strategy": "pidff_bounded_effect",
+    "max_percent": 5.0,
+    "duration_ms": 2000,
+    "movement_threshold_degrees": 1.0,
+    "angle_delta_degrees": 0.18127718013275285,
+    "movement_observed": false,
+    "steering_sample_count": 670,
+    "write_attempts": 6,
+    "writes_ok": 6,
+    "write_errors": 0,
+    "final_stop_all_sent": true,
+    "no_direct_torque_reports": true,
+    "no_high_torque": true,
+    "no_serial_config_commands": true,
+    "no_firmware_or_dfu_commands": true
+  },
+  "proposed_follow_up_profile": {
+    "requested_by": "Steven",
+    "requested_after_receipt": "native-actuator-visible-smoke.json",
+    "requested_force_percent": 5.0,
+    "requested_duration_ms": 3000,
+    "status": "requires_separate_software_and_safety_plan",
+    "authorized_for_output": false,
+    "reason": "The current visible smoke command and reviewed plan are capped at 5 percent and 2000 ms. A 3000 ms output profile is longer than the reviewed cap and must be planned separately before any hardware output.",
+    "safety_constraints": [
+      "no direct report 0x20",
+      "no high torque",
+      "no serial config",
+      "no firmware or DFU",
+      "fresh bench-clear for the exact reviewed command",
+      "single output attempt only"
+    ]
+  },
+  "proposed_follow_up_profiles": [
+    {
+      "requested_by": "Steven",
+      "requested_after_receipt": "native-actuator-visible-smoke.json",
+      "requested_force_percent": 5.0,
+      "requested_duration_ms": 3000,
+      "status": "requires_separate_software_and_safety_plan",
+      "authorized_for_output": false,
+      "reason": "Three seconds is longer than the reviewed 2000 ms cap and still uses open-loop dwell semantics."
+    },
+    {
+      "requested_by": "Steven",
+      "requested_after_receipt": "native-actuator-visible-smoke.json",
+      "requested_force_percent": 5.0,
+      "requested_duration_ms": 30000,
+      "status": "rejected_as_next_ramp",
+      "authorized_for_output": false,
+      "reason": "Thirty seconds is a sustained force dwell, not an angle-bounded visible-motion proof."
+    },
+    {
+      "requested_by": "Steven",
+      "requested_after_receipt": "native-actuator-visible-smoke.json",
+      "target": "90 degrees right, then 90 degrees left to reset",
+      "status": "requires_feedback_bounded_angle_profile_plan",
+      "authorized_for_output": false,
+      "reason": "A 90 degree right/left target should be implemented as a feedback-bounded angle profile with steering-sample stop guards, return-to-start cleanup, and staged smaller-angle receipts first."
+    }
+  ]
 }

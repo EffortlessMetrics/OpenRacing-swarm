@@ -1,12 +1,12 @@
 {
-  "success": true,
+  "success": false,
   "command": "wheelctl moza verify-bundle",
-  "generated_at_utc": "2026-05-17T05:17:24Z",
+  "generated_at_utc": "2026-05-17T05:17:50Z",
   "lane": "ci/hardware/moza-r5/2026-05-13",
-  "requested_stage": "native_response_ready",
+  "requested_stage": "native_visible_ready",
   "missing_artifacts": 0,
   "invalid_artifacts": 0,
-  "failed_gates": 0,
+  "failed_gates": 1,
   "artifacts": [
     {
       "path": "manifest.json",
@@ -288,7 +288,7 @@
     {
       "name": "manifest_no_overclaim",
       "status": "pass",
-      "details": "manifest validates against manifest.schema.json and is scoped to native_response_ready"
+      "details": "manifest validates against manifest.schema.json and is scoped to native_visible_ready"
     },
     {
       "name": "manifest_r5_pid_consistency",
@@ -389,6 +389,11 @@
       "name": "native_actuator_response_smoke",
       "status": "pass",
       "details": "native PIDFF actuator response smoke recorded 0.181 degree(s) of steering delta above the 0.100 degree response threshold; visible_success=Some(false)"
+    },
+    {
+      "name": "native_actuator_visible_smoke",
+      "status": "fail",
+      "details": "success=false, command_ok=true, receipt_path_ok=true, selector_matches_lane_endpoint=true, confirmed=Some(true), no_hid_device_opened=Some(false), hardware_output_enabled=Some(true), no_feature_reports=Some(true), no_ffb_writes=Some(false), no_direct_torque_reports=Some(true), no_high_torque=Some(true), high_torque=Some(false), no_nonzero_above_limit=Some(true), no_out_of_scope=true, prior_actuator_profile_smoke_validated=Some(true), steering_proof_validated=Some(true), pidff_effect_setup_proven=Some(true), final_stop_all_attempted=Some(true), final_stop_all_sent=Some(true), movement_observed=Some(false), movement_delta_ok=false, post_stop_stable=Some(true), generated_at_valid=true, strategy_ok=true, max_percent=5, duration_ms=2000, steering_sample_count=670, angle_delta_degrees=0.18127718013275285, movement_threshold_degrees=1, post_stop_sample_count=84, write_attempts=6, writes_ok=6, write_errors=0, command_log_entries=6, command_log_no_direct_report=true, r5_device=true"
     }
   ],
   "endpoint_observations": [

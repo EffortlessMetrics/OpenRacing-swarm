@@ -8,7 +8,7 @@ Use [moza-r5-artifact-checklist.md](moza-r5-artifact-checklist.md) before changi
 
 | Lane | Stack | Platform | Transport | Evidence stage | Steven hardware validated | Simulator validated | High torque validated | Release ready |
 |------|-------|----------|-----------|----------------|---------------------------|---------------------|-----------------------|---------------|
-| `moza-r5-windows-usb` | R5 + KS/ES + SR-P + HBP | Windows | HID only | OpenRacing control ready; 5 percent PIDFF response recorded; visible motion and external compatibility remain unclaimed | Bounded low torque plus actuator-response receipt | No | No | No |
+| `moza-r5-windows-usb` | R5 + KS/ES + SR-P + HBP | Windows | HID only | Native response ready; 5 percent PIDFF response recorded twice; visible motion and external compatibility remain unclaimed | Bounded low torque plus actuator-response receipts | No | No | No |
 
 ## Lane Detail: `moza-r5-windows-usb`
 
@@ -39,8 +39,8 @@ The checked-in `ci/hardware/moza-r5/2026-05-13/` lane currently supports only th
 - Staged `init-off.json` and `init-standard.json` receipts pass for the lane endpoint.
 - Bounded PIDFF low torque is proven at 1 percent for 150 ms with final Stop All cleanup.
 - The native 1 percent actuator-profile smoke proves the OpenRacing PIDFF output rail and Stop All cleanup path.
-- The 5 percent / 2000 ms PIDFF receipt measured about 0.181 degrees of steering delta with successful writes and Stop All cleanup, so it is actuator-response evidence above the response floor.
-- That same receipt remains below the 1 degree visible-motion threshold, so no visible-motion or smoke-ready success is claimed.
+- The preserved 5 percent / 2000 ms response-only PIDFF receipt and the 2026-05-17 bounded-shaped PIDFF micro-profile receipt each measured about 0.181 degrees of steering delta with successful writes and Stop All cleanup, so they are actuator-response evidence above the response floor.
+- Those receipts remain below the 1 degree visible-motion threshold, so no visible-motion or smoke-ready success is claimed. The consumed follow-up plan does not authorize 5 percent / 3000 ms, 5 percent / 30000 ms, or 90 degree right/left output; those require a separate feedback-bounded controlled-angle plan and fresh bench-clear.
 - No direct mode, direct report `0x20`, simulator output, SimHub validation, Pit House coexistence, high torque, or release readiness is claimed.
 
 ## Research Coverage Already Present

@@ -3065,6 +3065,20 @@ async fn actuator_visible_smoke(request: ActuatorVisibleSmokeRequest<'_>) -> Res
     receipt.set_receipt_path(json_out);
 
     write_json_receipt(json_out, &receipt)?;
+    if let Some(json_out) = json_out {
+        let receipt_value = serde_json::to_value(&receipt)?;
+        consume_native_visible_output_authorization(
+            lane,
+            selector,
+            profile,
+            strategy,
+            max_percent,
+            duration_ms,
+            movement_threshold_degrees,
+            json_out,
+            &receipt_value,
+        )?;
+    }
     print_actuator_visible_smoke_receipt(json, json_out, &receipt)?;
     if !receipt.success {
         return Err(receipt_failure(format!(
@@ -5930,6 +5944,144 @@ fn validate_native_visible_retry_authorization(
         movement_threshold_degrees,
         json_out,
     )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn consume_native_visible_output_authorization(
+    lane: &Path,
+    selector: &str,
+    profile: MozaActuatorProfile,
+    strategy: MozaLowTorqueStrategy,
+    max_percent: f32,
+    duration_ms: u64,
+    movement_threshold_degrees: f64,
+    json_out: &Path,
+    receipt: &Value,
+) -> Result<()> {
+    let plan_path = lane.join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE);
+    if !plan_path.is_file() {
+        return Ok(());
+    }
+
+    let mut plan = read_json_value(lane, NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE)?;
+    let planned_next_output = plan.get("planned_next_output").ok_or_else(|| {
+        anyhow!(
+            "{} is missing planned_next_output",
+            NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE
+        )
+    })?;
+    let allowed = json_bool(planned_next_output, "allowed") == Some(true);
+    let hardware_authorized = json_bool(&plan, "hardware_output_authorized") == Some(true);
+    if !allowed && !hardware_authorized {
+        return Ok(());
+    }
+
+    let command = json_string(planned_next_output, "command")
+        .map(str::trim)
+        .filter(|command| !command.is_empty())
+        .ok_or_else(|| anyhow!("planned_next_output.command is empty"))?;
+    validate_authorized_native_visible_command(
+        lane,
+        command,
+        selector,
+        profile,
+        strategy,
+        max_percent,
+        duration_ms,
+        movement_threshold_degrees,
+        json_out,
+    )?;
+
+    let visible_passed = json_bool(receipt, "success") == Some(true);
+    let evidence_status = if visible_passed {
+        "exact_output_attempt_consumed_visible_motion_proven"
+    } else {
+        "exact_output_attempt_consumed_visible_motion_unproven"
+    };
+    let review_decision = if visible_passed {
+        "authorized_output_consumed_visible_motion_proven"
+    } else {
+        "authorized_output_consumed_visible_motion_unproven"
+    };
+
+    plan["hardware_output_authorized"] = serde_json::json!(false);
+    plan["authorization_consumed"] = serde_json::json!(true);
+    plan["authorization_consumed_at_utc"] = serde_json::json!(now_utc());
+    plan["authorization_consumed_by_receipt"] =
+        serde_json::json!(lane_relative_or_display(lane, json_out));
+    plan["evidence_status"] = serde_json::json!(evidence_status);
+    plan["review_decision"] = serde_json::json!(review_decision);
+    plan["planned_next_output"]["allowed"] = serde_json::json!(false);
+    plan["planned_next_output"]["command"] = serde_json::json!("");
+    plan["planned_next_output"]["requires_fresh_bench_clear"] = serde_json::json!(true);
+    plan["planned_next_output"]["duration_ms"] = serde_json::json!("not_authorized");
+    plan["planned_next_output"]["force_percent"] = serde_json::json!("not_authorized");
+    plan["last_output_attempt"] = serde_json::json!({
+        "status": if visible_passed {
+            "visible_motion_proven"
+        } else {
+            "visible_motion_unproven"
+        },
+        "receipt": lane_relative_or_display(lane, json_out),
+        "profile": json_string(receipt, "profile"),
+        "strategy": json_string(receipt, "output_strategy"),
+        "max_percent": json_f64(receipt, "max_percent"),
+        "duration_ms": json_u64(receipt, "duration_ms"),
+        "movement_threshold_degrees": json_f64(receipt, "movement_threshold_degrees"),
+        "angle_delta_degrees": json_f64(receipt, "angle_delta_degrees"),
+        "movement_observed": json_bool(receipt, "movement_observed"),
+        "steering_sample_count": json_u64(receipt, "steering_sample_count"),
+        "write_attempts": json_u64(receipt, "write_attempts"),
+        "writes_ok": json_u64(receipt, "writes_ok"),
+        "write_errors": json_u64(receipt, "write_errors"),
+        "final_stop_all_sent": json_bool(receipt, "final_stop_all_sent"),
+        "post_stop_stable": json_bool(receipt, "post_stop_stable"),
+        "no_direct_torque_reports": json_bool(receipt, "no_direct_torque_reports"),
+        "no_high_torque": json_bool(receipt, "no_high_torque"),
+        "no_serial_config_commands": json_bool(receipt, "no_serial_config_commands"),
+        "no_firmware_or_dfu_commands": json_bool(receipt, "no_firmware_or_dfu_commands")
+    });
+    update_native_visible_consumed_authorization_checks(&mut plan, visible_passed);
+    plan["notes"] = serde_json::json!([
+        "Authorization artifact only: this file is not evidence that visible motion passed.",
+        "The exact authorized native visible-motion command has been consumed by the recorded output receipt.",
+        "No further hardware-output command is authorized by this artifact; use a separate reviewed plan and fresh bench-clear before any rerun, longer duration, higher force, or controlled-angle profile."
+    ]);
+
+    write_json_file(&plan_path, &plan)
+}
+
+fn update_native_visible_consumed_authorization_checks(plan: &mut Value, visible_passed: bool) {
+    let Some(checks) = plan
+        .get_mut("required_before_next_output")
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    for check in checks {
+        match json_string(check, "check") {
+            Some("bench_clearance")
+            | Some("fresh_operator_bench_clear_for_exact_next_output_command") => {
+                check["status"] = serde_json::json!("pending");
+                check["evidence"] = serde_json::json!(
+                    "The prior bench-clear was consumed by the recorded native visible-motion output attempt; a new exact-command bench-clear is required before any later output."
+                );
+            }
+            Some("wheelbase_ffb_mode_and_vendor_state") if visible_passed => {
+                check["status"] = serde_json::json!("not_required_after_visible_pass");
+                check["evidence"] = serde_json::json!(
+                    "The authorized output attempt passed the visible-motion gate; no follow-up output is authorized by this plan."
+                );
+            }
+            Some("wheelbase_ffb_mode_and_vendor_state") => {
+                check["status"] = serde_json::json!("pending_review_after_consumed_output");
+                check["evidence"] = serde_json::json!(
+                    "The authorized output attempt did not prove visible motion; review wheelbase FFB/vendor state and command semantics before planning any later output."
+                );
+            }
+            _ => {}
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -29145,8 +29297,10 @@ mod tests {
         assert!(matrix.contains("moza-r5-artifact-checklist.md"));
         assert!(ci_readme.contains("docs/hardware/moza-r5-artifact-checklist.md"));
 
-        assert!(matrix.contains("| `moza-r5-windows-usb` | R5 + KS/ES + SR-P + HBP | Windows | HID only | OpenRacing control ready; 5 percent PIDFF response recorded; visible motion and external compatibility remain unclaimed | Bounded low torque plus actuator-response receipt | No | No | No |"));
+        assert!(matrix.contains("| `moza-r5-windows-usb` | R5 + KS/ES + SR-P + HBP | Windows | HID only | Native response ready; 5 percent PIDFF response recorded twice; visible motion and external compatibility remain unclaimed | Bounded low torque plus actuator-response receipts | No | No | No |"));
         assert!(matrix.contains("no visible-motion or smoke-ready success is claimed"));
+        assert!(matrix.contains("does not authorize 5 percent / 3000 ms"));
+        assert!(matrix.contains("90 degree right/left output"));
         for non_claim in [
             "Direct mode or direct report `0x20` readiness",
             "Simulator-scale FFB output safety",
@@ -31908,6 +32062,20 @@ mod tests {
         .map(|error| error.to_string())
         .ok_or("expected max percent rejection")?;
         assert!(percent_message.contains("0.1..=5.0"));
+
+        let duration_message = validate_actuator_visible_smoke_args(
+            MozaActuatorProfile::BoundedShapedPidffMicroProfile,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.0,
+            30_000,
+            20,
+            1080.0,
+            1.0,
+        )
+        .err()
+        .map(|error| error.to_string())
+        .ok_or("expected long duration rejection")?;
+        assert!(duration_message.contains("1..=2000"));
         Ok(())
     }
 
@@ -32136,6 +32304,84 @@ mod tests {
             false,
         )?;
         assert_eq!(preflight.target_product_id, "0x0004");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn native_visible_output_consumes_single_use_authorization() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_native_actuator_visible_prerequisite_receipts(dir.path())?;
+        let visible_receipt_path = dir.path().join("native-actuator-visible-smoke.json");
+        let failed_receipt =
+            failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V1);
+        write_test_json_file(&visible_receipt_path, &failed_receipt)?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::VisibleMotionFollowUp),
+        )?;
+
+        authorize_visible_output(AuthorizeVisibleOutputRequest {
+            json: false,
+            lane: dir.path(),
+            selector: "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            operator: "Steven",
+            bench_clear_evidence: "Bench clear for the exact shaped PIDFF command.",
+            ffb_mode_evidence: "Wheelbase standard/PIDFF mode observed; no simulator FFB source active.",
+            prior_actuator_proof: Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            steering_proof: Some(&dir.path().join("steering-angle-stream-proof.json")),
+            profile: MozaActuatorProfile::BoundedShapedPidffMicroProfile,
+            strategy: MozaLowTorqueStrategy::PidffBoundedEffect,
+            max_percent: 5.0,
+            duration_ms: 2_000,
+            movement_threshold_degrees: 1.0,
+            preserve_receipt: None,
+            json_out: Some(&dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE)),
+            overwrite: false,
+        })
+        .await?;
+
+        consume_native_visible_output_authorization(
+            dir.path(),
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            MozaActuatorProfile::BoundedShapedPidffMicroProfile,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.0,
+            2_000,
+            1.0,
+            &visible_receipt_path,
+            &failed_receipt,
+        )?;
+
+        let plan = read_json_value(dir.path(), NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE)?;
+        assert_eq!(json_bool(&plan, "hardware_output_authorized"), Some(false));
+        assert_eq!(json_bool(&plan, "authorization_consumed"), Some(true));
+        assert_eq!(
+            json_string(&plan, "evidence_status"),
+            Some("exact_output_attempt_consumed_visible_motion_unproven")
+        );
+        let planned = plan
+            .get("planned_next_output")
+            .ok_or("expected planned_next_output")?;
+        assert_eq!(json_bool(planned, "allowed"), Some(false));
+        assert_eq!(json_bool(planned, "requires_fresh_bench_clear"), Some(true));
+
+        let message = validate_native_actuator_visible_smoke_preflight(
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            dir.path(),
+            Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            Some(&dir.path().join("steering-angle-stream-proof.json")),
+            Some(&visible_receipt_path),
+            MozaActuatorProfile::BoundedShapedPidffMicroProfile,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.0,
+            2_000,
+            1.0,
+            false,
+        )
+        .err()
+        .map(|error| error.to_string())
+        .ok_or("expected consumed authorization to block a second output")?;
+        assert!(message.contains("blocks another hardware-output attempt"));
         Ok(())
     }
 
