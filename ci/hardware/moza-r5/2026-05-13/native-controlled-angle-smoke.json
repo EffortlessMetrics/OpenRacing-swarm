@@ -4,7 +4,7 @@
   "command_log": [
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 25,
+      "elapsed_us": 20,
       "flags": 0,
       "kind": "pidff_set_effect_outbound",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -21,7 +21,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 93,
+      "elapsed_us": 88,
       "flags": 0,
       "kind": "pidff_set_constant_force_outbound",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -38,7 +38,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 99,
+      "elapsed_us": 95,
       "flags": 0,
       "kind": "pidff_effect_start_outbound",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -56,7 +56,7 @@
     },
     {
       "effect_magnitude_percent": 0.0,
-      "elapsed_us": 112,
+      "elapsed_us": 107,
       "flags": 0,
       "kind": "stop_all_at_target",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -74,7 +74,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 120,
+      "elapsed_us": 114,
       "flags": 0,
       "kind": "pidff_set_effect_return",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -91,7 +91,7 @@
     },
     {
       "effect_magnitude_percent": -5.0,
-      "elapsed_us": 129,
+      "elapsed_us": 123,
       "flags": 0,
       "kind": "pidff_set_constant_force_return",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -108,7 +108,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 135,
+      "elapsed_us": 129,
       "flags": 0,
       "kind": "pidff_effect_start_return",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -126,7 +126,7 @@
     },
     {
       "effect_magnitude_percent": 0.0,
-      "elapsed_us": 145,
+      "elapsed_us": 139,
       "flags": 0,
       "kind": "final_stop_all",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -189,7 +189,7 @@
   "dry_run": true,
   "duration_ms": 2000,
   "final_stop_all_required": true,
-  "generated_at_utc": "2026-05-17T18:13:37Z",
+  "generated_at_utc": "2026-05-17T20:13:15Z",
   "hardware_output_enabled": false,
   "high_torque": false,
   "lane": "ci/hardware/moza-r5/2026-05-13",
@@ -206,7 +206,7 @@
   "notes": [
     "Dry-run controlled-angle preflight only: this receipt opens no HID device and proves no motion.",
     "The profile is angle-bounded feedback control, not a longer open-loop dwell.",
-    "Actual hardware output remains unsupported by this command until a separate feedback writer is implemented, reviewed, and authorized.",
+    "Actual hardware output remains blocked unless a same-lane native-controlled-angle-authorization.json exactly matches one reviewed command.",
     "Pit House, SimHub, simulator telemetry, direct report 0x20, high torque, serial config, firmware, and DFU are outside this native controlled-angle path."
   ],
   "output_strategy": "pidff_bounded_effect",
@@ -264,5 +264,8 @@
     10.0,
     30.0,
     90.0
-  ]
+  ],
+  "write_attempts": 0,
+  "write_errors": 0,
+  "writes_ok": 0
 }

@@ -23847,7 +23847,7 @@ fn native_controlled_angle_smoke_dry_run_receipt(
         [
             "Dry-run controlled-angle preflight only: this receipt opens no HID device and proves no motion.",
             "The profile is angle-bounded feedback control, not a longer open-loop dwell.",
-            "Actual hardware output remains unsupported by this command until a separate feedback writer is implemented, reviewed, and authorized.",
+            "Actual hardware output remains blocked unless a same-lane native-controlled-angle-authorization.json exactly matches one reviewed command.",
             "Pit House, SimHub, simulator telemetry, direct report 0x20, high torque, serial config, firmware, and DFU are outside this native controlled-angle path."
         ]
     );
