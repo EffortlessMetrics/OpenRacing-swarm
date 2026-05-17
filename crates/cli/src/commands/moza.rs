@@ -23838,6 +23838,9 @@ fn native_controlled_angle_smoke_dry_run_receipt(
         ])
     );
     field!("planned_pidff_writes", planned_pidff_writes);
+    field!("write_attempts", 0_u64);
+    field!("writes_ok", 0_u64);
+    field!("write_errors", 0_u64);
     field!("command_log", command_log);
     field!(
         "notes",
@@ -35110,6 +35113,15 @@ mod tests {
         let gate = verify_native_actuator_visible_smoke_gate(dir.path());
         assert_eq!(gate.status, "fail");
         assert!(gate.details.contains("dry_run=Some(true)"));
+        assert_eq!(json_u64(&dry_run, "write_attempts"), Some(0));
+        assert_eq!(json_u64(&dry_run, "writes_ok"), Some(0));
+        assert_eq!(json_u64(&dry_run, "write_errors"), Some(0));
+        assert!(
+            gate.details.contains("write_errors=0")
+                && !gate.details.contains("write_errors=18446744073709551615"),
+            "dry-run verifier details should report explicit zero write errors: {}",
+            gate.details
+        );
         Ok(())
     }
 
