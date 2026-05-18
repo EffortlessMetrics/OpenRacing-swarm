@@ -39108,6 +39108,12 @@ mod tests {
             "expected attempt-03 controlled-angle gate pass: {}",
             gate.details
         );
+        let native_visible_gate = verify_native_actuator_visible_smoke_gate(dir.path());
+        assert_eq!(
+            native_visible_gate.status, "pass",
+            "expected attempt-03 controlled-angle receipt to satisfy native visible gate: {}",
+            native_visible_gate.details
+        );
         Ok(())
     }
 
