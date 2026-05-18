@@ -10579,6 +10579,9 @@ fn push_native_visible_next_commands(
                     lane_path_arg(lane, NATIVE_CONTROLLED_ANGLE_PLAN_FILE)
                 ));
             }
+            if native_controlled_angle_real_attempt_recorded(lane) {
+                return;
+            }
             let controlled_angle_dry_run_ready =
                 native_controlled_angle_first_rung_dry_run_ready(lane, &r5_selector);
             if controlled_angle_plan_ready && !controlled_angle_dry_run_ready {
@@ -10645,6 +10648,16 @@ fn push_native_visible_next_commands(
 fn native_controlled_angle_first_rung_ready_for_authorization(lane: &Path, selector: &str) -> bool {
     validate_native_controlled_angle_plan_artifact(lane).is_ok()
         && native_controlled_angle_first_rung_dry_run_ready(lane, selector)
+}
+
+fn native_controlled_angle_real_attempt_recorded(lane: &Path) -> bool {
+    let Ok(receipt) = read_json_value(lane, NATIVE_CONTROLLED_ANGLE_SMOKE_FILE) else {
+        return false;
+    };
+    json_string(&receipt, "command") == Some("wheelctl moza controlled-angle-smoke")
+        && json_bool(&receipt, "dry_run") == Some(false)
+        && json_bool(&receipt, "hardware_output_enabled") == Some(true)
+        && json_bool(&receipt, "actual_hardware_writes_supported") == Some(true)
 }
 
 fn native_controlled_angle_first_rung_dry_run_ready(lane: &Path, selector: &str) -> bool {
@@ -31185,6 +31198,23 @@ mod tests {
         )
     }
 
+    fn write_failed_controlled_angle_output_receipt(root: &Path, selector: &str) -> TestResult {
+        write_test_json_file(
+            &root.join(NATIVE_CONTROLLED_ANGLE_SMOKE_FILE),
+            &serde_json::json!({
+                "success": false,
+                "command": "wheelctl moza controlled-angle-smoke",
+                "generated_at_utc": now_utc(),
+                "receipt_path": root.join(NATIVE_CONTROLLED_ANGLE_SMOKE_FILE).display().to_string(),
+                "lane": root.display().to_string(),
+                "selector": selector,
+                "dry_run": false,
+                "hardware_output_enabled": true,
+                "actual_hardware_writes_supported": true
+            }),
+        )
+    }
+
     fn write_smoke_ready_bundle(root: &Path) -> TestResult {
         write_openracing_control_bundle(root)?;
         write_pit_house_artifacts(root)?;
@@ -44540,6 +44570,50 @@ mod tests {
                 "generated controlled-angle dry-run command failed to parse: {command}\n{error}"
             )
         })?;
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_native_visible_next_commands_stop_after_failed_controlled_angle_attempt()
+    -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_openracing_control_bundle(dir.path())?;
+        write_lane_audit_receipts(dir.path(), MozaBundleStage::Passive)?;
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V2),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::VisibleMotionFollowUp),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_CONTROLLED_ANGLE_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::ControlledAnglePlan),
+        )?;
+        write_test_json_file(
+            &dir.path().join("pre-output-readiness.json"),
+            &serde_json::to_value(pre_output_readiness_dir(dir.path()))?,
+        )?;
+        write_failed_controlled_angle_output_receipt(
+            dir.path(),
+            "hid-0x346E-0x0014-if2-0x0001-0x0004",
+        )?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::NativeVisibleReady);
+        let commands = receipt.next_commands.join("\n");
+
+        assert!(!receipt.success);
+        assert!(
+            receipt.next_commands.is_empty(),
+            "failed real controlled-angle attempts must be preserved and require a new reviewed plan, not generated overwrite guidance: {commands}"
+        );
+        assert!(
+            !commands.contains("controlled-angle-smoke")
+                && !commands.contains("authorize-controlled-angle-output")
+                && !commands.contains("--confirm-controlled-angle"),
+            "verifier must not emit another controlled-angle dry-run, authorization, or output command after a real attempt: {commands}"
+        );
         Ok(())
     }
 
