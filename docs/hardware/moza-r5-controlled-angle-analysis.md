@@ -1,6 +1,6 @@
 # Moza R5 Controlled-Angle Analysis
 
-This note classifies the first real controlled-angle attempt on Steven's Moza R5 lane. It is a no-output analysis artifact, not a new hardware run and not a readiness promotion.
+This note classifies the real controlled-angle attempts on Steven's Moza R5 lane. It is a no-output analysis artifact, not a new hardware run and not a readiness promotion.
 
 ## Source Evidence
 
@@ -13,6 +13,10 @@ The primary lane artifacts are:
 | [native-controlled-angle-plan.json](../../ci/hardware/moza-r5/2026-05-13/native-controlled-angle-plan.json) | Non-claiming controlled-angle design surface |
 | [native-visible-verification.json](../../ci/hardware/moza-r5/2026-05-13/native-visible-verification.json) | Verifier receipt showing native-visible still blocked |
 | [native-controlled-angle-failure-analysis.json](../../ci/hardware/moza-r5/2026-05-13/native-controlled-angle-failure-analysis.json) | This no-output analysis artifact |
+| [native-controlled-angle-retry-preflight.json](../../ci/hardware/moza-r5/2026-05-13/native-controlled-angle-retry-preflight.json) | No-output preflight for the reviewed retry profile |
+| [native-controlled-angle-retry-authorization.json](../../ci/hardware/moza-r5/2026-05-13/native-controlled-angle-retry-authorization.json) | Consumed exact authorization for the second attempt |
+| [native-controlled-angle-retry-smoke.json](../../ci/hardware/moza-r5/2026-05-13/native-controlled-angle-retry-smoke.json) | Preserved failed retry output receipt |
+| [native-controlled-angle-retry-failure-analysis.json](../../ci/hardware/moza-r5/2026-05-13/native-controlled-angle-retry-failure-analysis.json) | No-output retry analysis artifact |
 
 Related docs:
 
@@ -84,3 +88,26 @@ Do not use this analysis to authorize:
 - passive sniff artifacts as native readiness evidence
 
 Native visible motion remains blocked on the `native_actuator_visible_smoke` gate until a later authorized receipt reaches the visible threshold and satisfies the verifier.
+
+## Retry Result
+
+The second controlled-angle attempt used the reviewed
+`bounded-pidff-micro-step-v2` profile with the same `target_degrees=1`,
+`max_percent=5`, and `timeout_ms=2000` limits. It also failed as
+`safe_undertravel_retry_same_response_band`.
+
+| Field | Value | Reading |
+| --- | ---: | --- |
+| `angle_delta_degrees` | `0.18127718013275285` | Same measured response band as the first attempt |
+| `target_reached` | `false` | Native visible motion is still not proven |
+| `timeout_reached` | `true` | Retry did not reach target inside 2000 ms |
+| `writes_ok` | `33` | Retry profile increased PIDFF write count without write errors |
+| `write_errors` | `0` | No transport write failure indicated |
+| `steering_sample_count` | `690` | Feedback samples were available |
+| `final_stop_all_sent` | `true` | Cleanup path worked |
+| `post_stop_stable` | `true` | No runaway or post-stop instability indicated |
+
+The retry receipt is useful evidence, but it does not authorize a third
+attempt. The next work is no-output diagnosis of PIDFF effect semantics,
+operation ordering, and profile shape before any new authorization. Do not
+raise force, extend dwell, or move to larger angle targets from this receipt.
