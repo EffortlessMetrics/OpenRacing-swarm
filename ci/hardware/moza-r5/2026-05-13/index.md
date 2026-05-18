@@ -149,7 +149,7 @@ This index is diagnostic navigation only. It reads stored lane files, opens no H
 | `low-torque-proof.json` | `openracing_control_ready` | `pass` |
 | `steering-angle-stream-proof.json` | `openracing_control_ready` | `pass` |
 | `native-actuator-profile-smoke.json` | `openracing_control_ready` | `pass` |
-| `native-actuator-visible-smoke.json` | `smoke_ready` | `missing` |
+| `native-actuator-visible-smoke.json` | `native_response_ready` | `pass` |
 | `pit-house-coexistence.json` | `smoke_ready` | `missing` |
 | `simulator-telemetry-proof.json` | `smoke_ready` | `missing` |
 | `simulator-ffb-smoke.json` | `smoke_ready` | `missing` |
@@ -162,6 +162,12 @@ This index is diagnostic navigation only. It reads stored lane files, opens no H
 | `openracing-control-verification.json` | `openracing_control_ready` | `pass` |
 | `manifest-promotion-openracing-control.json` | `openracing_control_ready` | `pass` |
 | `lane-audit-openracing-control.json` | `openracing_control_ready` | `pass` |
+| `native-response-verification.json` | `native_response_ready` | `pass` |
+| `manifest-promotion-native-response.json` | `native_response_ready` | `pass` |
+| `lane-audit-native-response.json` | `native_response_ready` | `pass` |
+| `native-visible-verification.json` | `native_visible_ready` | `pass` |
+| `manifest-promotion-native-visible.json` | `native_visible_ready` | `missing` |
+| `lane-audit-native-visible.json` | `native_visible_ready` | `missing` |
 | `smoke-ready-verification.json` | `smoke_ready` | `pass` |
 | `manifest-promotion-smoke-ready.json` | `smoke_ready` | `missing` |
 | `lane-audit-smoke-ready.json` | `smoke_ready` | `missing` |
