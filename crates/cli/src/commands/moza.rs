@@ -100,6 +100,7 @@ const NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE: &str =
     "native-controlled-angle-attempt-03-authorization.json";
 const NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE: &str =
     "native-controlled-angle-attempt-03-smoke.json";
+const NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_BENCH_CLEAR_EVIDENCE: &str = "bench clear for exactly one Moza controlled-angle attempt 03: target 1 degree, max 5%, timeout 2000 ms, strategy pidff-bounded-effect, profile bounded-pidff-effect-lifecycle-v1, R5 stable, KS attached securely, hands clear, wheel clear, prior undertravel receipts preserved";
 const NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILES: &[&str] = &[
     NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE,
     NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE,
@@ -6781,6 +6782,18 @@ fn validate_controlled_angle_bench_clear_evidence(
     evidence: &str,
     profile: MozaControlledAngleProfile,
 ) -> Result<()> {
+    if matches!(
+        profile,
+        MozaControlledAngleProfile::BoundedPidffEffectLifecycleV1
+    ) {
+        if evidence.trim() != NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_BENCH_CLEAR_EVIDENCE {
+            return Err(anyhow!(
+                "--bench-clear-evidence must exactly match the pinned attempt-03 clearance phrase for bounded-pidff-effect-lifecycle-v1"
+            ));
+        }
+        return Ok(());
+    }
+
     let normalized = evidence.trim().to_ascii_lowercase();
     let mut missing = Vec::new();
 
@@ -39861,7 +39874,7 @@ mod tests {
             lane: dir.path(),
             selector,
             operator: "Steven",
-            bench_clear_evidence: "bench clear for exactly one Moza controlled-angle retry: target 1 degree, max 5%, timeout 2000 ms, strategy pidff-bounded-effect, profile bounded-pidff-effect-lifecycle-v1, R5 stable, KS attached securely, hands clear, wheel clear, prior failed receipt preserved",
+            bench_clear_evidence: NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_BENCH_CLEAR_EVIDENCE,
             prior_response_proof: Some(&dir.path().join("native-actuator-visible-smoke.json")),
             prior_actuator_proof: Some(&dir.path().join("native-actuator-profile-smoke.json")),
             steering_proof: Some(&dir.path().join("steering-angle-stream-proof.json")),
@@ -39881,6 +39894,10 @@ mod tests {
         assert_eq!(
             json_string(&receipt, "profile"),
             Some("bounded_pidff_effect_lifecycle_v1")
+        );
+        assert_eq!(
+            json_string(&receipt, "bench_clear_evidence"),
+            Some(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_BENCH_CLEAR_EVIDENCE)
         );
         assert_eq!(
             receipt
@@ -39996,6 +40013,25 @@ mod tests {
         assert!(error.contains("target 1 degree"));
         assert!(error.contains("hands clear"));
         assert!(error.contains("wheel clear"));
+        Ok(())
+    }
+
+    #[test]
+    fn attempt_03_bench_clear_evidence_requires_pinned_phrase() -> TestResult {
+        validate_controlled_angle_bench_clear_evidence(
+            NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_BENCH_CLEAR_EVIDENCE,
+            MozaControlledAngleProfile::BoundedPidffEffectLifecycleV1,
+        )?;
+
+        let legacy_retry_phrase = "bench clear for exactly one Moza controlled-angle retry: target 1 degree, max 5%, timeout 2000 ms, strategy pidff-bounded-effect, profile bounded-pidff-effect-lifecycle-v1, R5 stable, KS attached securely, hands clear, wheel clear, prior failed receipt preserved";
+        let error = validate_controlled_angle_bench_clear_evidence(
+            legacy_retry_phrase,
+            MozaControlledAngleProfile::BoundedPidffEffectLifecycleV1,
+        )
+        .err()
+        .map(|error| error.to_string())
+        .ok_or("expected legacy attempt-03 clearance phrase rejection")?;
+        assert!(error.contains("pinned attempt-03 clearance phrase"));
         Ok(())
     }
 
