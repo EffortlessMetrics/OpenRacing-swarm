@@ -38,4 +38,4 @@ This diagnosis does not authorize:
 - firmware or DFU
 - Pit House or SimHub as native prerequisites
 
-The next software step is the no-output [PIDFF lifecycle trace](moza-r5-pidff-lifecycle-trace.md). It reads the preserved receipts, decodes the set-effect / constant-force / effect-operation / Stop All sequence, and still carries no readiness claim. A later profile plan or hardware attempt still requires fresh review, command-bound bench clear, and exact authorization.
+The no-output [PIDFF lifecycle trace](moza-r5-pidff-lifecycle-trace.md) is now recorded as `native-pidff-lifecycle-trace.json`. It reads the preserved receipts, decodes the set-effect / constant-force / effect-operation / Stop All sequence, and still carries no readiness claim. The next software step is a trace-informed profile plan. A later hardware attempt still requires fresh review, command-bound bench clear, and exact authorization.

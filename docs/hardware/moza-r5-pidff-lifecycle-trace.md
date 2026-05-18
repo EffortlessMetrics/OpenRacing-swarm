@@ -10,7 +10,7 @@ Example:
 wheelctl moza pidff-lifecycle-trace `
   --lane ci/hardware/moza-r5/2026-05-13 `
   --receipt ci/hardware/moza-r5/2026-05-13/native-controlled-angle-retry-smoke.json `
-  --json-out target/moza-pidff-lifecycle-trace.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/native-pidff-lifecycle-trace.json `
   --md-out target/moza-pidff-lifecycle-trace.md `
   --json
 ```
@@ -37,3 +37,8 @@ controlled-angle attempt and the reviewed retry both stayed around 0.181277
 degrees, even though the retry increased bounded PIDFF writes from 5 to 33. The
 trace layer exists to determine whether those attempts changed the PIDFF
 lifecycle materially before any new profile or output attempt is reviewed.
+
+The `2026-05-13` lane now records the trace in
+`native-pidff-lifecycle-trace.json`. It classifies the retry as repeated
+setup/start/Stop-All cycles, compares the first attempt and retry as the same
+delta band despite lifecycle replay, and still authorizes no output.
