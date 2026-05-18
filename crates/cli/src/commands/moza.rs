@@ -15055,6 +15055,8 @@ struct StoredLaneVerificationStage {
     passive_success: bool,
     zero_success: bool,
     openracing_control_success: bool,
+    native_response_success: bool,
+    native_visible_success: bool,
     smoke_ready_success: bool,
     init_off_success: bool,
     init_standard_success: bool,
@@ -15065,6 +15067,10 @@ impl StoredLaneVerificationStage {
     fn highest_passing_stage(&self) -> &'static str {
         if self.smoke_ready_success {
             "smoke_ready"
+        } else if self.native_visible_success {
+            "native_visible_ready"
+        } else if self.native_response_success {
+            "native_response_ready"
         } else if self.openracing_control_success {
             "openracing_control_ready"
         } else if self.zero_success {
@@ -15079,8 +15085,12 @@ impl StoredLaneVerificationStage {
     fn next_required_stage(&self) -> &'static str {
         if self.smoke_ready_success {
             "none"
-        } else if self.openracing_control_success {
+        } else if self.native_visible_success {
             "smoke_ready"
+        } else if self.native_response_success {
+            "native_visible_ready"
+        } else if self.openracing_control_success {
+            "native_response_ready"
         } else if self.zero_success {
             "openracing_control_ready"
         } else if self.passive_success {
@@ -15093,6 +15103,10 @@ impl StoredLaneVerificationStage {
     fn safety_state(&self) -> &'static str {
         if self.smoke_ready_success {
             "lane_smoke_ready_receipts_observed"
+        } else if self.native_visible_success {
+            "lane_native_visible_receipts_observed"
+        } else if self.native_response_success {
+            "lane_native_response_receipts_observed"
         } else if self.openracing_control_success {
             "lane_openracing_control_receipts_observed"
         } else if self.low_torque_ready {
@@ -15114,6 +15128,10 @@ fn stored_lane_verification_stage(lane: &Path) -> StoredLaneVerificationStage {
     let zero = read_stored_verification_receipt(lane, MozaBundleStage::Zero);
     let openracing_control =
         read_stored_verification_receipt(lane, MozaBundleStage::OpenRacingControlReady);
+    let native_response =
+        read_stored_verification_receipt(lane, MozaBundleStage::NativeResponseReady);
+    let native_visible =
+        read_stored_verification_receipt(lane, MozaBundleStage::NativeVisibleReady);
     let smoke_ready = read_stored_verification_receipt(lane, MozaBundleStage::SmokeReady);
     let init_off_observed =
         verify_init_receipt_gate(lane, "init_off_handshake", "init-off.json", "off").status
@@ -15139,6 +15157,14 @@ fn stored_lane_verification_stage(lane: &Path) -> StoredLaneVerificationStage {
         .map(|receipt| receipt.success)
         .unwrap_or(false);
     let openracing_control_success = openracing_control
+        .as_ref()
+        .map(|receipt| receipt.success)
+        .unwrap_or(false);
+    let native_response_success = native_response
+        .as_ref()
+        .map(|receipt| receipt.success)
+        .unwrap_or(false);
+    let native_visible_success = native_visible
         .as_ref()
         .map(|receipt| receipt.success)
         .unwrap_or(false);
@@ -15171,6 +15197,8 @@ fn stored_lane_verification_stage(lane: &Path) -> StoredLaneVerificationStage {
         passive_success,
         zero_success,
         openracing_control_success,
+        native_response_success,
+        native_visible_success,
         smoke_ready_success,
         init_off_success,
         init_standard_success,
@@ -29847,6 +29875,85 @@ mod tests {
                 .safety_reason
                 .contains("next_required_stage=openracing_control_ready")
         );
+        assert!(!readiness.direct_mode_allowed);
+        assert!(!readiness.high_torque_allowed);
+        assert!(!readiness.safe_to_send_torque);
+        Ok(())
+    }
+
+    #[test]
+    fn device_status_lane_readiness_reports_native_response_without_enabling_torque() -> TestResult
+    {
+        let dir = tempfile::tempdir()?;
+        for stage in [
+            MozaBundleStage::Passive,
+            MozaBundleStage::Zero,
+            MozaBundleStage::OpenRacingControlReady,
+            MozaBundleStage::NativeResponseReady,
+        ] {
+            write_test_json_file(
+                &dir.path().join(verification_receipt_path(stage)),
+                &stored_verification_receipt(dir.path(), stage),
+            )?;
+        }
+        let mut native_visible =
+            stored_verification_receipt(dir.path(), MozaBundleStage::NativeVisibleReady);
+        native_visible["success"] = serde_json::json!(false);
+        native_visible["failed_gates"] = serde_json::json!(1);
+        native_visible["gates"] = serde_json::json!([
+            {"name": "native_actuator_visible_smoke", "status": "fail"}
+        ]);
+        write_test_json_file(
+            &dir.path().join(verification_receipt_path(
+                MozaBundleStage::NativeVisibleReady,
+            )),
+            &native_visible,
+        )?;
+        let device = crate::client::DeviceInfo {
+            id: "moza-r5".to_string(),
+            name: "Moza R5".to_string(),
+            source: None,
+            vendor_id: Some("0x346E".to_string()),
+            product_id: Some("0x0014".to_string()),
+            manufacturer: None,
+            product_string: None,
+            serial_number_present: None,
+            interface_number: None,
+            usage_page: None,
+            usage: None,
+            hid_path_present: None,
+            device_type: crate::client::DeviceType::WheelBase,
+            state: crate::client::DeviceState::Connected,
+            capabilities: crate::client::DeviceCapabilities::default(),
+        };
+        let moza = crate::client::MozaReadinessStatus::from_device(&device)
+            .ok_or("missing Moza status")?;
+        let mut status = crate::client::DeviceStatus {
+            device,
+            last_seen: chrono::Utc::now(),
+            active_faults: Vec::new(),
+            telemetry: crate::client::TelemetryData::default(),
+            moza: Some(moza),
+        };
+
+        apply_lane_readiness_to_device_status(&mut status, dir.path());
+
+        let readiness = status.moza.as_ref().ok_or("missing readiness")?;
+        assert_eq!(
+            readiness.safety_state,
+            "lane_native_response_receipts_observed"
+        );
+        assert!(
+            readiness
+                .safety_reason
+                .contains("highest_passing_stage=native_response_ready")
+        );
+        assert!(
+            readiness
+                .safety_reason
+                .contains("next_required_stage=native_visible_ready")
+        );
+        assert!(!readiness.ffb_ready);
         assert!(!readiness.direct_mode_allowed);
         assert!(!readiness.high_torque_allowed);
         assert!(!readiness.safe_to_send_torque);
