@@ -38,4 +38,4 @@ This diagnosis does not authorize:
 - firmware or DFU
 - Pit House or SimHub as native prerequisites
 
-The next artifact should be a software-only effect-lifecycle/profile plan with `planned_next_output.allowed=false`. A later hardware attempt still requires a fresh command-bound bench clear and exact authorization.
+The next software step is the no-output [PIDFF lifecycle trace](moza-r5-pidff-lifecycle-trace.md). It reads the preserved receipts, decodes the set-effect / constant-force / effect-operation / Stop All sequence, and still carries no readiness claim. A later profile plan or hardware attempt still requires fresh review, command-bound bench clear, and exact authorization.

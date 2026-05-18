@@ -2761,6 +2761,50 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_pidff_lifecycle_trace() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "pidff-lifecycle-trace",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
+            "--receipt",
+            "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-retry-smoke.json",
+            "--json-out",
+            "target/moza-pidff-lifecycle-trace.json",
+            "--md-out",
+            "target/moza-pidff-lifecycle-trace.md",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::PidffLifecycleTrace {
+                lane,
+                receipt,
+                json_out,
+                md_out,
+            }) => {
+                assert_eq!(
+                    lane.as_path().to_str(),
+                    Some("ci/hardware/moza-r5/2026-05-13")
+                );
+                assert_eq!(
+                    receipt.as_path().to_str(),
+                    Some("ci/hardware/moza-r5/2026-05-13/native-controlled-angle-retry-smoke.json")
+                );
+                assert_eq!(
+                    json_out.as_ref().and_then(|path| path.to_str()),
+                    Some("target/moza-pidff-lifecycle-trace.json")
+                );
+                assert_eq!(
+                    md_out.as_ref().and_then(|path| path.to_str()),
+                    Some("target/moza-pidff-lifecycle-trace.md")
+                );
+            }
+            _ => return Err("expected Moza PidffLifecycleTrace command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_authorize_controlled_angle_output() -> TestResult {
         let cli = parse_cli([
             "wheelctl",

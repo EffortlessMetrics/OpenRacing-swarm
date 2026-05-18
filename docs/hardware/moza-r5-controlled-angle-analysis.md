@@ -70,8 +70,8 @@ preserved. The retry used `bounded-pidff-micro-step-v2` and stayed in the same
 
 1. Preserve `native-controlled-angle-smoke.json` and `native-controlled-angle-retry-smoke.json`.
 2. Treat `native-pidff-semantics-diagnosis.json` as the current no-output diagnosis artifact.
-3. Inspect the PIDFF set-effect, set-constant-force, effect-start, Stop All, gain, duration, and device-control sequence.
-4. Produce a software-only effect-lifecycle/profile plan before any future exact authorization.
+3. Run the no-output PIDFF lifecycle trace command against the preserved receipts.
+4. Use the trace to inspect the set-effect, set-constant-force, effect-start, Stop All, gain, duration, and device-control sequence before any future exact authorization.
 5. Keep `native-controlled-angle-plan.json` non-claiming: `planned_next_output.allowed=false` and `hardware_output_authorized=false`.
 
 ## Forbidden Next Steps
@@ -112,9 +112,9 @@ The second controlled-angle attempt used the reviewed
 
 The retry receipt is useful evidence, but it does not authorize a third
 attempt. The no-output PIDFF semantics diagnosis is now recorded; the next work
-is a software-only effect-lifecycle/profile plan before any new authorization.
-Do not raise force, extend dwell, or move to larger angle targets from this
-receipt.
+is `wheelctl moza pidff-lifecycle-trace`, which decodes the command lifecycle
+from the preserved receipts without opening HID or sending writes. Do not raise
+force, extend dwell, or move to larger angle targets from this receipt.
 
 ## PIDFF Semantics Diagnosis
 
@@ -124,6 +124,7 @@ The no-output PIDFF diagnosis is now recorded in
 5 to 33 but did not increase measured steering delta beyond the same 0.181
 degree band.
 
-That artifact still authorizes no output. The next software work is a reviewed
-effect-lifecycle/profile plan that identifies the PIDFF operation-order,
+That artifact still authorizes no output. The next software work is the
+no-output [PIDFF lifecycle trace](moza-r5-pidff-lifecycle-trace.md), followed by
+a reviewed profile plan only after the trace identifies the operation-order,
 effect-lifecycle, gain/device-control, or block-allocation hypothesis to test.

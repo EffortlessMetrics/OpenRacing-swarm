@@ -236,6 +236,14 @@ struct ControlledAngleSmokeRequest<'a> {
     json_out: Option<&'a Path>,
 }
 
+struct PidffLifecycleTraceRequest<'a> {
+    json: bool,
+    lane: &'a Path,
+    receipt: &'a Path,
+    json_out: Option<&'a Path>,
+    md_out: Option<&'a Path>,
+}
+
 struct AuthorizeVisibleOutputRequest<'a> {
     json: bool,
     lane: &'a Path,
@@ -851,6 +859,21 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 dry_run: *dry_run,
                 confirm_controlled_angle: *confirm_controlled_angle,
                 json_out: json_out.as_deref(),
+            })
+            .await
+        }
+        MozaCommands::PidffLifecycleTrace {
+            lane,
+            receipt,
+            json_out,
+            md_out,
+        } => {
+            pidff_lifecycle_trace(PidffLifecycleTraceRequest {
+                json,
+                lane,
+                receipt,
+                json_out: json_out.as_deref(),
+                md_out: md_out.as_deref(),
             })
             .await
         }
@@ -3431,6 +3454,616 @@ async fn controlled_angle_smoke(request: ControlledAngleSmokeRequest<'_>) -> Res
     write_json_receipt(json_out, &receipt)?;
     print_controlled_angle_smoke_receipt(json, json_out, &receipt)?;
     Ok(())
+}
+
+async fn pidff_lifecycle_trace(request: PidffLifecycleTraceRequest<'_>) -> Result<()> {
+    let PidffLifecycleTraceRequest {
+        json,
+        lane,
+        receipt,
+        json_out,
+        md_out,
+    } = request;
+
+    let source_receipt = read_json_path(receipt).with_context(|| {
+        format!(
+            "failed to read PIDFF lifecycle source '{}'",
+            receipt.display()
+        )
+    })?;
+    let mut trace = build_pidff_lifecycle_trace(lane, receipt, &source_receipt)?;
+    trace.trace_path = json_out.map(|path| path.display().to_string());
+    write_json_receipt(json_out, &trace)?;
+    if let Some(path) = md_out {
+        write_text_file(path, &render_pidff_lifecycle_trace_markdown(&trace))?;
+    }
+    print_pidff_lifecycle_trace_receipt(json, json_out, md_out, &trace)
+}
+
+fn build_pidff_lifecycle_trace(
+    lane: &Path,
+    receipt_path: &Path,
+    source_receipt: &Value,
+) -> Result<PidffLifecycleTraceReceipt> {
+    validate_pidff_lifecycle_trace_source(source_receipt, receipt_path)?;
+    let records = decode_pidff_lifecycle_records(source_receipt)?;
+    let summary = summarize_pidff_lifecycle_records(&records);
+    let comparison = pidff_lifecycle_attempt_comparison(lane);
+
+    Ok(PidffLifecycleTraceReceipt {
+        success: true,
+        command: "wheelctl moza pidff-lifecycle-trace",
+        artifact_kind: "native_pidff_lifecycle_trace",
+        generated_at_utc: now_utc(),
+        trace_path: None,
+        lane: lane.display().to_string(),
+        source_receipt: receipt_path.display().to_string(),
+        source_command: json_string(source_receipt, "command").map(str::to_string),
+        source_profile: json_string(source_receipt, "profile").map(str::to_string),
+        source_profile_cli: json_string(source_receipt, "profile_cli").map(str::to_string),
+        source_success: json_bool(source_receipt, "success"),
+        source_target_reached: json_bool(source_receipt, "target_reached"),
+        source_angle_delta_degrees: json_f64(source_receipt, "angle_delta_degrees"),
+        source_writes_ok: json_u64(source_receipt, "writes_ok"),
+        source_write_errors: json_u64(source_receipt, "write_errors"),
+        source_final_stop_all_sent: json_bool(source_receipt, "final_stop_all_sent"),
+        source_post_stop_stable: json_bool(source_receipt, "post_stop_stable"),
+        source_hardware_output_enabled: json_bool(source_receipt, "hardware_output_enabled"),
+        hardware_output_authorized: false,
+        native_visible_claimed: false,
+        trace_openracing_hardware_output: false,
+        trace_no_hid_device_opened: true,
+        trace_no_feature_reports: true,
+        trace_no_output_reports: true,
+        trace_no_ffb_writes: true,
+        trace_no_serial_config_commands: true,
+        trace_no_firmware_or_dfu_commands: true,
+        readiness_claims: NonClaimingReadinessClaims::default(),
+        lifecycle_summary: summary,
+        lifecycle_records: records,
+        attempt_comparison: comparison,
+        notes: vec![
+            "This trace reads existing JSON receipts only; it does not open HID devices and does not send output, feature, serial, firmware, or DFU commands.".to_string(),
+            "A lifecycle trace is diagnosis evidence only and does not satisfy native-visible, smoke-ready, or release-ready gates.".to_string(),
+        ],
+    })
+}
+
+fn validate_pidff_lifecycle_trace_source(receipt: &Value, receipt_path: &Path) -> Result<()> {
+    if json_string(receipt, "command") != Some("wheelctl moza controlled-angle-smoke") {
+        return Err(anyhow!(
+            "PIDFF lifecycle trace requires a controlled-angle output receipt, got '{}'",
+            receipt_path.display()
+        ));
+    }
+    if json_bool(receipt, "dry_run") == Some(true) {
+        return Err(anyhow!(
+            "PIDFF lifecycle trace requires a real controlled-angle output receipt; '{}' is a dry-run",
+            receipt_path.display()
+        ));
+    }
+    if json_bool(receipt, "hardware_output_enabled") != Some(true) {
+        return Err(anyhow!(
+            "PIDFF lifecycle trace requires a receipt with hardware_output_enabled=true: '{}'",
+            receipt_path.display()
+        ));
+    }
+    if receipt
+        .get("command_log")
+        .and_then(Value::as_array)
+        .is_none()
+    {
+        return Err(anyhow!(
+            "PIDFF lifecycle trace requires command_log in '{}'",
+            receipt_path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn decode_pidff_lifecycle_records(receipt: &Value) -> Result<Vec<PidffLifecycleRecord>> {
+    let command_log = receipt
+        .get("command_log")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("PIDFF lifecycle trace requires command_log"))?;
+    let mut records = Vec::new();
+    let mut previous_elapsed_us = None;
+    for record in command_log {
+        if let Some(decoded) = decode_pidff_lifecycle_record(record, previous_elapsed_us)? {
+            previous_elapsed_us = decoded.elapsed_us;
+            records.push(decoded);
+        }
+    }
+    if records.is_empty() {
+        return Err(anyhow!(
+            "PIDFF lifecycle trace found command_log but no PIDFF lifecycle records"
+        ));
+    }
+    Ok(records)
+}
+
+fn decode_pidff_lifecycle_record(
+    record: &Value,
+    previous_elapsed_us: Option<u64>,
+) -> Result<Option<PidffLifecycleRecord>> {
+    let Some(payload_hex) = json_string(record, "payload_hex") else {
+        return Ok(None);
+    };
+    let payload = parse_hex_bytes(payload_hex).map_err(|error| {
+        anyhow!("failed to parse command_log payload_hex '{payload_hex}': {error}")
+    })?;
+    let Some(report_id_byte) = payload.first().copied() else {
+        return Ok(None);
+    };
+    if !pidff_lifecycle_report_id_is_known(report_id_byte) {
+        return Ok(None);
+    }
+
+    let elapsed_us = json_u64(record, "elapsed_us");
+    let elapsed_delta_us = elapsed_us
+        .zip(previous_elapsed_us)
+        .map(|(current, previous)| current as i64 - previous as i64);
+    let report_id = json_string(record, "report_id")
+        .map(str::to_string)
+        .unwrap_or_else(|| hex_u8(report_id_byte));
+    let report_len = json_u64(record, "report_len")
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(payload.len());
+
+    let mut decoded = PidffLifecycleRecord {
+        sequence: json_u64(record, "sequence"),
+        kind: json_string(record, "kind").map(str::to_string),
+        pidff_report: pidff_lifecycle_report_name(report_id_byte).to_string(),
+        report_id,
+        report_len,
+        payload_len: payload.len(),
+        payload_hex: payload_hex.to_string(),
+        elapsed_us,
+        elapsed_delta_us,
+        result: json_string(record, "result").map(str::to_string),
+        profile_phase: json_string(record, "profile_phase").map(str::to_string),
+        phase_duration_ms: json_u64(record, "phase_duration_ms"),
+        safety_classification: json_string(record, "safety_classification").map(str::to_string),
+        effect_block_index: None,
+        effect_type: None,
+        duration_ms: None,
+        gain: None,
+        direction_degrees: None,
+        magnitude_raw: None,
+        magnitude_percent: json_f64(record, "effect_magnitude_percent"),
+        operation: None,
+        loop_count: None,
+        device_control_command: None,
+        device_control_command_name: None,
+    };
+
+    match report_id_byte {
+        pidff::report_ids::SET_EFFECT => {
+            decoded.effect_block_index = payload.get(1).copied().map(u64::from);
+            decoded.effect_type = payload.get(2).copied().map(pidff_effect_type_name);
+            decoded.duration_ms = little_u16(&payload, 3).map(u64::from);
+            decoded.gain = payload.get(9).copied().map(u64::from);
+            decoded.direction_degrees =
+                little_u16(&payload, 11).map(|value| f64::from(value) / 100.0);
+        }
+        pidff::report_ids::SET_CONSTANT_FORCE => {
+            decoded.effect_block_index = payload.get(1).copied().map(u64::from);
+            decoded.magnitude_raw = little_i16(&payload, 2).map(i64::from);
+        }
+        pidff::report_ids::EFFECT_OPERATION => {
+            decoded.effect_block_index = payload.get(1).copied().map(u64::from);
+            decoded.operation = payload.get(2).copied().map(pidff_effect_operation_name);
+            decoded.loop_count = payload.get(3).copied().map(u64::from);
+        }
+        pidff::report_ids::DEVICE_CONTROL => {
+            decoded.device_control_command = payload.get(1).copied().map(hex_u8);
+            decoded.device_control_command_name = payload
+                .get(1)
+                .copied()
+                .map(pidff_device_control_command_name);
+        }
+        pidff::report_ids::BLOCK_FREE => {
+            decoded.effect_block_index = payload.get(1).copied().map(u64::from);
+            decoded.operation = Some("block_free".to_string());
+        }
+        pidff::report_ids::DEVICE_GAIN => {
+            decoded.gain = little_u16(&payload, 2).map(u64::from);
+        }
+        pidff::report_ids::CREATE_NEW_EFFECT => {
+            decoded.effect_type = payload.get(1).copied().map(pidff_effect_type_name);
+        }
+        _ => {}
+    }
+
+    Ok(Some(decoded))
+}
+
+fn summarize_pidff_lifecycle_records(records: &[PidffLifecycleRecord]) -> PidffLifecycleSummary {
+    let mut unique_effect_blocks = BTreeSet::new();
+    let mut unique_payload_shapes = BTreeSet::new();
+    let mut set_effect_count = 0_u64;
+    let mut set_constant_force_count = 0_u64;
+    let mut effect_operation_start_count = 0_u64;
+    let mut effect_operation_stop_count = 0_u64;
+    let mut device_control_stop_all_count = 0_u64;
+    let mut block_free_count = 0_u64;
+    let mut device_gain_count = 0_u64;
+    let mut create_new_effect_count = 0_u64;
+    let mut all_records_ok = true;
+    let mut final_stop_all_seen = false;
+    let mut stop_all_between_micro_steps = false;
+
+    for record in records {
+        if let Some(block) = record.effect_block_index {
+            unique_effect_blocks.insert(block);
+        }
+        unique_payload_shapes.insert(format!(
+            "{}:{}:{}",
+            record.report_id, record.report_len, record.payload_hex
+        ));
+        all_records_ok &= record.result.as_deref() == Some("ok");
+        match record.pidff_report.as_str() {
+            "set_effect" => set_effect_count += 1,
+            "set_constant_force" => set_constant_force_count += 1,
+            "effect_operation" => match record.operation.as_deref() {
+                Some("start") | Some("start_solo") => effect_operation_start_count += 1,
+                Some("stop") => effect_operation_stop_count += 1,
+                _ => {}
+            },
+            "device_control"
+                if record.device_control_command_name.as_deref() == Some("stop_all_effects") =>
+            {
+                device_control_stop_all_count += 1;
+                let kind = record.kind.as_deref().unwrap_or_default();
+                final_stop_all_seen |= kind == "final_stop_all";
+                stop_all_between_micro_steps |= kind != "final_stop_all";
+            }
+            "block_free" => block_free_count += 1,
+            "device_gain" => device_gain_count += 1,
+            "create_new_effect" => create_new_effect_count += 1,
+            _ => {}
+        }
+    }
+
+    let repeated_setup_cycles =
+        set_effect_count > 1 && set_constant_force_count > 1 && effect_operation_start_count > 1;
+    let lifecycle_sequence_classification =
+        if repeated_setup_cycles && stop_all_between_micro_steps {
+            "repeated_setup_start_stop_all_cycles"
+        } else if repeated_setup_cycles {
+            "repeated_setup_start_cycles"
+        } else if set_effect_count > 0
+            && set_constant_force_count > 0
+            && effect_operation_start_count > 0
+        {
+            "single_setup_start_cycle"
+        } else {
+            "incomplete_pidff_lifecycle"
+        }
+        .to_string();
+
+    PidffLifecycleSummary {
+        command_record_count: records.len() as u64,
+        pidff_record_count: records.len() as u64,
+        set_effect_count,
+        set_constant_force_count,
+        effect_operation_start_count,
+        effect_operation_stop_count,
+        device_control_stop_all_count,
+        block_free_count,
+        device_gain_count,
+        create_new_effect_count,
+        unique_effect_blocks: unique_effect_blocks.into_iter().collect(),
+        unique_payload_shapes: unique_payload_shapes.into_iter().collect(),
+        all_records_ok,
+        final_stop_all_seen,
+        stop_all_between_micro_steps,
+        repeated_setup_cycles,
+        lifecycle_sequence_classification,
+    }
+}
+
+fn pidff_lifecycle_attempt_comparison(lane: &Path) -> Option<PidffLifecycleAttemptComparison> {
+    let first_path = lane.join(NATIVE_CONTROLLED_ANGLE_SMOKE_FILE);
+    let retry_path = lane.join(NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE);
+    let first = read_json_path(&first_path).ok()?;
+    let retry = read_json_path(&retry_path).ok()?;
+    let first_trace = pidff_lifecycle_attempt_brief(&first_path, &first);
+    let retry_trace = pidff_lifecycle_attempt_brief(&retry_path, &retry);
+    let first_delta = first_trace.angle_delta_degrees;
+    let retry_delta = retry_trace.angle_delta_degrees;
+    let same_delta_band = first_delta
+        .zip(retry_delta)
+        .map(|(first, retry)| (first - retry).abs() <= 0.01)
+        .unwrap_or(false);
+    let write_count_changed = first_trace.writes_ok != retry_trace.writes_ok;
+    let lifecycle_record_count_changed =
+        first_trace.pidff_record_count != retry_trace.pidff_record_count;
+    let material_motion_changed = first_delta
+        .zip(retry_delta)
+        .map(|(first, retry)| (first - retry).abs() >= NATIVE_ACTUATOR_RESPONSE_MIN_DELTA_DEGREES)
+        .unwrap_or(false);
+    let classification = if same_delta_band && write_count_changed {
+        "same_delta_band_despite_lifecycle_replay"
+    } else if material_motion_changed {
+        "material_motion_difference"
+    } else {
+        "comparison_available"
+    }
+    .to_string();
+
+    Some(PidffLifecycleAttemptComparison {
+        first_attempt: first_trace,
+        retry_attempt: retry_trace,
+        both_attempts_same_delta_band: same_delta_band,
+        write_count_changed,
+        lifecycle_record_count_changed,
+        material_motion_changed,
+        classification,
+    })
+}
+
+fn pidff_lifecycle_attempt_brief(path: &Path, receipt: &Value) -> PidffLifecycleAttemptBrief {
+    let records = decode_pidff_lifecycle_records(receipt).unwrap_or_default();
+    let summary = summarize_pidff_lifecycle_records(&records);
+    PidffLifecycleAttemptBrief {
+        path: path.display().to_string(),
+        profile: json_string(receipt, "profile").map(str::to_string),
+        writes_ok: json_u64(receipt, "writes_ok"),
+        write_errors: json_u64(receipt, "write_errors"),
+        angle_delta_degrees: json_f64(receipt, "angle_delta_degrees"),
+        target_reached: json_bool(receipt, "target_reached"),
+        timeout_reached: json_bool(receipt, "timeout_reached"),
+        final_stop_all_sent: json_bool(receipt, "final_stop_all_sent"),
+        post_stop_stable: json_bool(receipt, "post_stop_stable"),
+        pidff_record_count: summary.pidff_record_count,
+        set_effect_count: summary.set_effect_count,
+        set_constant_force_count: summary.set_constant_force_count,
+        effect_operation_start_count: summary.effect_operation_start_count,
+        device_control_stop_all_count: summary.device_control_stop_all_count,
+        lifecycle_sequence_classification: summary.lifecycle_sequence_classification,
+    }
+}
+
+fn pidff_lifecycle_report_id_is_known(report_id: u8) -> bool {
+    matches!(
+        report_id,
+        pidff::report_ids::SET_EFFECT
+            | pidff::report_ids::SET_CONSTANT_FORCE
+            | pidff::report_ids::EFFECT_OPERATION
+            | pidff::report_ids::DEVICE_CONTROL
+            | pidff::report_ids::BLOCK_FREE
+            | pidff::report_ids::DEVICE_GAIN
+            | pidff::report_ids::CREATE_NEW_EFFECT
+    )
+}
+
+fn pidff_lifecycle_report_name(report_id: u8) -> &'static str {
+    match report_id {
+        pidff::report_ids::SET_EFFECT => "set_effect",
+        pidff::report_ids::SET_CONSTANT_FORCE => "set_constant_force",
+        pidff::report_ids::EFFECT_OPERATION => "effect_operation",
+        pidff::report_ids::DEVICE_CONTROL => "device_control",
+        pidff::report_ids::BLOCK_FREE => "block_free",
+        pidff::report_ids::DEVICE_GAIN => "device_gain",
+        pidff::report_ids::CREATE_NEW_EFFECT => "create_new_effect",
+        _ => "unknown",
+    }
+}
+
+fn pidff_effect_type_name(effect_type: u8) -> String {
+    match effect_type {
+        value if value == EffectType::Constant as u8 => "constant".to_string(),
+        value if value == EffectType::Ramp as u8 => "ramp".to_string(),
+        value if value == EffectType::Square as u8 => "square".to_string(),
+        value if value == EffectType::Sine as u8 => "sine".to_string(),
+        value if value == EffectType::Triangle as u8 => "triangle".to_string(),
+        value if value == EffectType::SawtoothUp as u8 => "sawtooth_up".to_string(),
+        value if value == EffectType::SawtoothDown as u8 => "sawtooth_down".to_string(),
+        value if value == EffectType::Spring as u8 => "spring".to_string(),
+        value if value == EffectType::Damper as u8 => "damper".to_string(),
+        value if value == EffectType::Inertia as u8 => "inertia".to_string(),
+        value if value == EffectType::Friction as u8 => "friction".to_string(),
+        value => format!("unknown_{}", hex_u8(value)),
+    }
+}
+
+fn pidff_effect_operation_name(operation: u8) -> String {
+    match operation {
+        value if value == EffectOp::Start as u8 => "start".to_string(),
+        value if value == EffectOp::StartSolo as u8 => "start_solo".to_string(),
+        value if value == EffectOp::Stop as u8 => "stop".to_string(),
+        value => format!("unknown_{}", hex_u8(value)),
+    }
+}
+
+fn pidff_device_control_command_name(command: u8) -> String {
+    match command {
+        pidff::device_control::ENABLE_ACTUATORS => "enable_actuators".to_string(),
+        pidff::device_control::DISABLE_ACTUATORS => "disable_actuators".to_string(),
+        pidff::device_control::STOP_ALL_EFFECTS => "stop_all_effects".to_string(),
+        pidff::device_control::DEVICE_RESET => "device_reset".to_string(),
+        pidff::device_control::DEVICE_PAUSE => "device_pause".to_string(),
+        pidff::device_control::DEVICE_CONTINUE => "device_continue".to_string(),
+        value => format!("unknown_{}", hex_u8(value)),
+    }
+}
+
+fn little_u16(payload: &[u8], start: usize) -> Option<u16> {
+    Some(u16::from_le_bytes([
+        *payload.get(start)?,
+        *payload.get(start + 1)?,
+    ]))
+}
+
+fn little_i16(payload: &[u8], start: usize) -> Option<i16> {
+    Some(i16::from_le_bytes([
+        *payload.get(start)?,
+        *payload.get(start + 1)?,
+    ]))
+}
+
+#[derive(Debug, Serialize)]
+struct PidffLifecycleTraceReceipt {
+    success: bool,
+    command: &'static str,
+    artifact_kind: &'static str,
+    generated_at_utc: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    trace_path: Option<String>,
+    lane: String,
+    source_receipt: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_command: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_profile_cli: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_success: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_target_reached: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_angle_delta_degrees: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_writes_ok: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_write_errors: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_final_stop_all_sent: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_post_stop_stable: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_hardware_output_enabled: Option<bool>,
+    hardware_output_authorized: bool,
+    native_visible_claimed: bool,
+    trace_openracing_hardware_output: bool,
+    trace_no_hid_device_opened: bool,
+    trace_no_feature_reports: bool,
+    trace_no_output_reports: bool,
+    trace_no_ffb_writes: bool,
+    trace_no_serial_config_commands: bool,
+    trace_no_firmware_or_dfu_commands: bool,
+    readiness_claims: NonClaimingReadinessClaims,
+    lifecycle_summary: PidffLifecycleSummary,
+    lifecycle_records: Vec<PidffLifecycleRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attempt_comparison: Option<PidffLifecycleAttemptComparison>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Default)]
+struct NonClaimingReadinessClaims {
+    satisfies_native_response_ready: bool,
+    satisfies_native_visible_ready: bool,
+    satisfies_smoke_ready: bool,
+    satisfies_release_ready: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct PidffLifecycleSummary {
+    command_record_count: u64,
+    pidff_record_count: u64,
+    set_effect_count: u64,
+    set_constant_force_count: u64,
+    effect_operation_start_count: u64,
+    effect_operation_stop_count: u64,
+    device_control_stop_all_count: u64,
+    block_free_count: u64,
+    device_gain_count: u64,
+    create_new_effect_count: u64,
+    unique_effect_blocks: Vec<u64>,
+    unique_payload_shapes: Vec<String>,
+    all_records_ok: bool,
+    final_stop_all_seen: bool,
+    stop_all_between_micro_steps: bool,
+    repeated_setup_cycles: bool,
+    lifecycle_sequence_classification: String,
+}
+
+#[derive(Debug, Serialize)]
+struct PidffLifecycleRecord {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sequence: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kind: Option<String>,
+    pidff_report: String,
+    report_id: String,
+    report_len: usize,
+    payload_len: usize,
+    payload_hex: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    elapsed_us: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    elapsed_delta_us: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    profile_phase: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    phase_duration_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    safety_classification: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effect_block_index: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effect_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    duration_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    gain: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    direction_degrees: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    magnitude_raw: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    magnitude_percent: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    operation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    loop_count: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    device_control_command: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    device_control_command_name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct PidffLifecycleAttemptComparison {
+    first_attempt: PidffLifecycleAttemptBrief,
+    retry_attempt: PidffLifecycleAttemptBrief,
+    both_attempts_same_delta_band: bool,
+    write_count_changed: bool,
+    lifecycle_record_count_changed: bool,
+    material_motion_changed: bool,
+    classification: String,
+}
+
+#[derive(Debug, Serialize)]
+struct PidffLifecycleAttemptBrief {
+    path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    writes_ok: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    write_errors: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    angle_delta_degrees: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target_reached: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    timeout_reached: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    final_stop_all_sent: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    post_stop_stable: Option<bool>,
+    pidff_record_count: u64,
+    set_effect_count: u64,
+    set_constant_force_count: u64,
+    effect_operation_start_count: u64,
+    device_control_stop_all_count: u64,
+    lifecycle_sequence_classification: String,
 }
 
 fn execute_pidff_bounded_low_torque_sequence<F>(
@@ -26372,6 +27005,15 @@ fn write_json_file<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     Ok(())
 }
 
+fn write_text_file(path: &Path, contents: &str) -> Result<()> {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create '{}'", parent.display()))?;
+    }
+    fs::write(path, contents).with_context(|| format!("failed to write '{}'", path.display()))?;
+    Ok(())
+}
+
 fn print_probe_receipt(json: bool, json_out: Option<&Path>, receipt: &ProbeReceipt) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(receipt)?);
@@ -26773,6 +27415,133 @@ fn print_controlled_angle_smoke_receipt(
         }
     }
     Ok(())
+}
+
+fn print_pidff_lifecycle_trace_receipt(
+    json: bool,
+    json_out: Option<&Path>,
+    md_out: Option<&Path>,
+    receipt: &PidffLifecycleTraceReceipt,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Moza PIDFF lifecycle trace decoded {} PIDFF record(s): classification={}, stop_all_count={}, no hardware output sent.",
+            receipt.lifecycle_summary.pidff_record_count,
+            receipt.lifecycle_summary.lifecycle_sequence_classification,
+            receipt.lifecycle_summary.device_control_stop_all_count
+        );
+        if let Some(path) = json_out {
+            println!("Receipt: {}", path.display());
+        }
+        if let Some(path) = md_out {
+            println!("Markdown: {}", path.display());
+        }
+    }
+    Ok(())
+}
+
+fn render_pidff_lifecycle_trace_markdown(receipt: &PidffLifecycleTraceReceipt) -> String {
+    let mut out = String::new();
+    out.push_str("# Moza PIDFF Lifecycle Trace\n\n");
+    out.push_str("This trace is no-output diagnosis evidence. It reads existing JSON receipts only and does not satisfy hardware readiness gates.\n\n");
+    out.push_str(&format!("Source receipt: `{}`\n", receipt.source_receipt));
+    out.push_str(&format!("Lane: `{}`\n", receipt.lane));
+    if let Some(profile) = &receipt.source_profile {
+        out.push_str(&format!("Profile: `{profile}`\n"));
+    }
+    if let Some(delta) = receipt.source_angle_delta_degrees {
+        out.push_str(&format!("Angle delta: `{delta}` degrees\n"));
+    }
+    out.push_str(&format!(
+        "Lifecycle classification: `{}`\n\n",
+        receipt.lifecycle_summary.lifecycle_sequence_classification
+    ));
+
+    out.push_str("## Summary\n\n");
+    out.push_str(&format!(
+        "- PIDFF records: `{}`\n",
+        receipt.lifecycle_summary.pidff_record_count
+    ));
+    out.push_str(&format!(
+        "- Set Effect: `{}`\n",
+        receipt.lifecycle_summary.set_effect_count
+    ));
+    out.push_str(&format!(
+        "- Set Constant Force: `{}`\n",
+        receipt.lifecycle_summary.set_constant_force_count
+    ));
+    out.push_str(&format!(
+        "- Effect Operation starts: `{}`\n",
+        receipt.lifecycle_summary.effect_operation_start_count
+    ));
+    out.push_str(&format!(
+        "- Device Control Stop All: `{}`\n",
+        receipt.lifecycle_summary.device_control_stop_all_count
+    ));
+    out.push_str(&format!(
+        "- Stop All between micro-steps: `{}`\n",
+        receipt.lifecycle_summary.stop_all_between_micro_steps
+    ));
+    out.push_str(&format!(
+        "- Final Stop All seen: `{}`\n\n",
+        receipt.lifecycle_summary.final_stop_all_seen
+    ));
+
+    if let Some(comparison) = &receipt.attempt_comparison {
+        out.push_str("## Attempt Comparison\n\n");
+        out.push_str(&format!(
+            "- Classification: `{}`\n",
+            comparison.classification
+        ));
+        out.push_str(&format!(
+            "- Same delta band: `{}`\n",
+            comparison.both_attempts_same_delta_band
+        ));
+        out.push_str(&format!(
+            "- Write count changed: `{}`\n",
+            comparison.write_count_changed
+        ));
+        out.push_str(&format!(
+            "- Lifecycle record count changed: `{}`\n\n",
+            comparison.lifecycle_record_count_changed
+        ));
+    }
+
+    out.push_str("## Records\n\n");
+    out.push_str("| Seq | PIDFF report | Kind | Block | Magnitude | Operation | Elapsed us |\n");
+    out.push_str("| ---: | --- | --- | ---: | ---: | --- | ---: |\n");
+    for record in &receipt.lifecycle_records {
+        let sequence = record
+            .sequence
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        let kind = record.kind.as_deref().unwrap_or("-");
+        let block = record
+            .effect_block_index
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        let magnitude = record
+            .magnitude_raw
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        let operation = record.operation.as_deref().unwrap_or("-");
+        let elapsed = record
+            .elapsed_us
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        out.push_str(&format!(
+            "| {sequence} | `{}` | `{kind}` | {block} | {magnitude} | `{operation}` | {elapsed} |\n",
+            record.pidff_report
+        ));
+    }
+    out.push_str("\n## Readiness Claims\n\n");
+    out.push_str("- native response ready: false\n");
+    out.push_str("- native visible ready: false\n");
+    out.push_str("- smoke ready: false\n");
+    out.push_str("- release ready: false\n");
+    out
 }
 
 fn print_bundle_verification_receipt(
@@ -31804,9 +32573,252 @@ mod tests {
                 "final_stop_all_sent": true,
                 "post_stop_stable": true,
                 "no_direct_torque_reports": true,
-                "abort_reason": "safety_timeout_before_target"
+                "abort_reason": "safety_timeout_before_target",
+                "command_log": sample_pidff_lifecycle_command_log(write_attempts)
             }),
         )
+    }
+
+    fn sample_pidff_lifecycle_command_log(write_attempts: u64) -> Vec<Value> {
+        let cycles = write_attempts.saturating_sub(1) / 4;
+        let mut records = Vec::new();
+        let mut sequence = 0_u64;
+        let mut elapsed_us = 1_000_u64;
+        for _ in 0..cycles {
+            records.push(serde_json::json!({
+                "sequence": sequence,
+                "kind": "pidff_set_effect_outbound_micro_step",
+                "elapsed_us": elapsed_us,
+                "low_torque_strategy": "pidff_bounded_effect",
+                "percent": 5.0,
+                "payload_hex": "010101FA000000000000000DFF052823000000000000",
+                "report_id": "0x01",
+                "report_len": 22,
+                "torque_raw": 0,
+                "flags": 0,
+                "motor_enabled": false,
+                "effect_magnitude_percent": 5.0,
+                "profile_phase": "outbound_setup",
+                "safety_classification": "pidff_effect_setup",
+                "result": "ok",
+                "bytes_written": 51
+            }));
+            sequence += 1;
+            elapsed_us += 1_000;
+            records.push(serde_json::json!({
+                "sequence": sequence,
+                "kind": "pidff_set_constant_force_outbound_micro_step",
+                "elapsed_us": elapsed_us,
+                "low_torque_strategy": "pidff_bounded_effect",
+                "percent": 5.0,
+                "payload_hex": "05016606",
+                "report_id": "0x05",
+                "report_len": 4,
+                "torque_raw": 1638,
+                "flags": 0,
+                "motor_enabled": true,
+                "effect_magnitude_percent": 5.0,
+                "profile_phase": "outbound",
+                "safety_classification": "bounded_low_torque_pidff",
+                "result": "ok",
+                "bytes_written": 51
+            }));
+            sequence += 1;
+            elapsed_us += 1_000;
+            records.push(serde_json::json!({
+                "sequence": sequence,
+                "kind": "pidff_effect_start_outbound_micro_step",
+                "elapsed_us": elapsed_us,
+                "low_torque_strategy": "pidff_bounded_effect",
+                "percent": 5.0,
+                "payload_hex": "0A010101",
+                "report_id": "0x0A",
+                "report_len": 4,
+                "torque_raw": 0,
+                "flags": 0,
+                "motor_enabled": true,
+                "effect_magnitude_percent": 5.0,
+                "profile_phase": "outbound_hold",
+                "phase_duration_ms": 250,
+                "safety_classification": "bounded_low_torque_pidff",
+                "result": "ok",
+                "bytes_written": 51
+            }));
+            sequence += 1;
+            elapsed_us += 250_000;
+            records.push(serde_json::json!({
+                "sequence": sequence,
+                "kind": "stop_all_after_outbound_micro_step",
+                "elapsed_us": elapsed_us,
+                "low_torque_strategy": "pidff_bounded_effect",
+                "percent": 0.0,
+                "payload_hex": "0C04",
+                "report_id": "0x0C",
+                "report_len": 2,
+                "torque_raw": 0,
+                "flags": 0,
+                "motor_enabled": false,
+                "effect_magnitude_percent": 0.0,
+                "pidff_device_control_command": "0x04",
+                "pidff_device_control_command_name": "stop_all_effects",
+                "safety_classification": "pidff_stop_all_cleanup",
+                "result": "ok",
+                "bytes_written": 51
+            }));
+            sequence += 1;
+            elapsed_us += 1_000;
+        }
+        records.push(serde_json::json!({
+            "sequence": sequence,
+            "kind": "final_stop_all",
+            "elapsed_us": elapsed_us,
+            "low_torque_strategy": "pidff_bounded_effect",
+            "percent": 0.0,
+            "payload_hex": "0C04",
+            "report_id": "0x0C",
+            "report_len": 2,
+            "torque_raw": 0,
+            "flags": 0,
+            "motor_enabled": false,
+            "effect_magnitude_percent": 0.0,
+            "pidff_device_control_command": "0x04",
+            "pidff_device_control_command_name": "stop_all_effects",
+            "safety_classification": "pidff_stop_all_cleanup",
+            "result": "ok",
+            "bytes_written": 51
+        }));
+        records
+    }
+
+    #[test]
+    fn pidff_lifecycle_trace_parses_retry_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let selector = "hid-0x346E-0x0004-if2-0x0001-0x0004";
+        write_failed_controlled_angle_output_receipt(dir.path(), selector)?;
+        write_failed_controlled_angle_retry_output_receipt(dir.path(), selector)?;
+        let retry_path = dir.path().join(NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE);
+        let retry = read_json_path(&retry_path)?;
+
+        let trace = build_pidff_lifecycle_trace(dir.path(), &retry_path, &retry)?;
+
+        assert!(trace.success);
+        assert!(!trace.hardware_output_authorized);
+        assert!(!trace.native_visible_claimed);
+        assert!(trace.trace_no_hid_device_opened);
+        assert_eq!(trace.lifecycle_summary.set_effect_count, 8);
+        assert_eq!(trace.lifecycle_summary.set_constant_force_count, 8);
+        assert_eq!(trace.lifecycle_summary.effect_operation_start_count, 8);
+        assert_eq!(trace.lifecycle_summary.device_control_stop_all_count, 9);
+        assert!(trace.lifecycle_summary.stop_all_between_micro_steps);
+        assert!(trace.lifecycle_summary.final_stop_all_seen);
+        assert_eq!(
+            trace.lifecycle_summary.lifecycle_sequence_classification,
+            "repeated_setup_start_stop_all_cycles"
+        );
+        let comparison = trace
+            .attempt_comparison
+            .ok_or("expected first/retry comparison")?;
+        assert!(comparison.both_attempts_same_delta_band);
+        assert!(comparison.write_count_changed);
+        assert_eq!(
+            comparison.classification,
+            "same_delta_band_despite_lifecycle_replay"
+        );
+        let constant_force = trace
+            .lifecycle_records
+            .iter()
+            .find(|record| record.pidff_report == "set_constant_force")
+            .ok_or("expected Set Constant Force record")?;
+        assert_eq!(constant_force.effect_block_index, Some(1));
+        assert_eq!(constant_force.magnitude_raw, Some(1638));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn pidff_lifecycle_trace_command_writes_json_and_markdown() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let selector = "hid-0x346E-0x0004-if2-0x0001-0x0004";
+        write_failed_controlled_angle_output_receipt(dir.path(), selector)?;
+        write_failed_controlled_angle_retry_output_receipt(dir.path(), selector)?;
+        let retry_path = dir.path().join(NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE);
+        let json_out = dir.path().join("native-pidff-lifecycle-trace.json");
+        let md_out = dir.path().join("native-pidff-lifecycle-trace.md");
+
+        pidff_lifecycle_trace(PidffLifecycleTraceRequest {
+            json: false,
+            lane: dir.path(),
+            receipt: &retry_path,
+            json_out: Some(&json_out),
+            md_out: Some(&md_out),
+        })
+        .await?;
+
+        let receipt = read_json_path(&json_out)?;
+        assert_eq!(
+            json_string(&receipt, "artifact_kind"),
+            Some("native_pidff_lifecycle_trace")
+        );
+        assert_eq!(
+            json_bool(&receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "native_visible_claimed"), Some(false));
+        let markdown = fs::read_to_string(&md_out)?;
+        assert!(markdown.contains("Moza PIDFF Lifecycle Trace"));
+        assert!(markdown.contains("set_constant_force"));
+        assert!(markdown.contains("native visible ready: false"));
+        Ok(())
+    }
+
+    #[test]
+    fn pidff_lifecycle_trace_artifact_does_not_satisfy_native_visible() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_openracing_control_bundle(dir.path())?;
+        write_lane_audit_receipts(dir.path(), MozaBundleStage::Passive)?;
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V2),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::VisibleMotionFollowUp),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_CONTROLLED_ANGLE_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::ControlledAnglePlan),
+        )?;
+        write_test_json_file(
+            &dir.path().join("pre-output-readiness.json"),
+            &serde_json::to_value(pre_output_readiness_dir(dir.path()))?,
+        )?;
+        let selector = "hid-0x346E-0x0014-if2-0x0001-0x0004";
+        write_failed_controlled_angle_output_receipt(dir.path(), selector)?;
+        write_failed_controlled_angle_retry_output_receipt(dir.path(), selector)?;
+        let retry_path = dir.path().join(NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE);
+        let retry = read_json_path(&retry_path)?;
+        let trace = build_pidff_lifecycle_trace(dir.path(), &retry_path, &retry)?;
+        write_test_json_file(
+            &dir.path().join("native-pidff-lifecycle-trace.json"),
+            &serde_json::to_value(trace)?,
+        )?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::NativeVisibleReady);
+        let commands = receipt.next_commands.join("\n");
+
+        assert!(!receipt.success);
+        assert!(
+            receipt
+                .gates
+                .iter()
+                .any(|gate| gate.name == "native_actuator_visible_smoke" && gate.status != "pass"),
+            "native-visible gate should remain blocked: {receipt:?}"
+        );
+        assert!(
+            !commands.contains("controlled-angle-smoke")
+                && !commands.contains("authorize-controlled-angle-output"),
+            "trace artifact must not unlock generated output commands: {commands}"
+        );
+        Ok(())
     }
 
     fn write_smoke_ready_bundle(root: &Path) -> TestResult {

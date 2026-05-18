@@ -1119,6 +1119,22 @@ pub enum MozaCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
+    /// Decode the PIDFF lifecycle recorded in a controlled-angle receipt without hardware output
+    PidffLifecycleTrace {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-13
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Controlled-angle output receipt to trace
+        #[arg(long)]
+        receipt: std::path::PathBuf,
+        /// Write the PIDFF lifecycle trace receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+        /// Write a Markdown PIDFF lifecycle trace summary
+        #[arg(long)]
+        md_out: Option<std::path::PathBuf>,
+    },
+
     /// Authorize one exact native visible-motion retry after fresh bench-clear
     AuthorizeVisibleOutput {
         /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-13
