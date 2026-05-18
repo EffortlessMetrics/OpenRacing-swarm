@@ -6528,7 +6528,8 @@ fn open_single_moza_device(
     api: &HidApi,
     selector: Option<&str>,
 ) -> Result<(hidapi::HidDevice, MozaDeviceRecord)> {
-    let mut selected: Option<(hidapi::HidDevice, MozaDeviceRecord)> = None;
+    let mut selected_info = None;
+    let mut selected_snapshot = None;
     let mut match_count = 0usize;
 
     for info in api.device_list() {
@@ -6542,25 +6543,41 @@ fn open_single_moza_device(
         }
 
         match_count += 1;
-        if match_count > 1 {
-            return Err(anyhow!(
-                "multiple Moza HID devices matched; pass --device with a HID path, PID, or VID:PID"
-            ));
+        if match_count == 1 {
+            selected_info = Some(info);
+            selected_snapshot = Some(snapshot);
         }
-
-        let device = info.open_device(api).with_context(|| {
-            format!(
-                "failed to open Moza HID device {} ({})",
-                snapshot.product_id, snapshot.path
-            )
-        })?;
-        selected = Some((device, snapshot));
     }
 
-    selected.ok_or_else(|| match selector {
+    validate_single_moza_match_count(match_count, selector)?;
+
+    let info = selected_info.ok_or_else(|| match selector {
         Some(value) => anyhow!("no Moza HID device matched selector '{value}'"),
         None => anyhow!("no Moza HID devices found"),
-    })
+    })?;
+    let snapshot =
+        selected_snapshot.ok_or_else(|| anyhow!("matched Moza HID device disappeared"))?;
+
+    let device = info.open_device(api).with_context(|| {
+        format!(
+            "failed to open Moza HID device {} ({})",
+            snapshot.product_id, snapshot.path
+        )
+    })?;
+    Ok((device, snapshot))
+}
+
+fn validate_single_moza_match_count(match_count: usize, selector: Option<&str>) -> Result<()> {
+    match match_count {
+        0 => Err(match selector {
+            Some(value) => anyhow!("no Moza HID device matched selector '{value}'"),
+            None => anyhow!("no Moza HID devices found"),
+        }),
+        1 => Ok(()),
+        _ => Err(anyhow!(
+            "multiple Moza HID devices matched; pass --device with an exact HID endpoint selector"
+        )),
+    }
 }
 
 fn validate_zero_torque_args(repeat: u32, hz: u32, watchdog_timeout_ms: u64) -> Result<()> {
@@ -34955,6 +34972,37 @@ mod tests {
             &device,
             Some("hid-0x346E-0x0014-if0-0x0001-0x0005")
         ));
+    }
+
+    #[test]
+    fn moza_device_open_selection_requires_single_unambiguous_match() -> TestResult {
+        validate_single_moza_match_count(1, Some("hid-0x346E-0x0014-if2-0x0001-0x0004"))?;
+
+        let ambiguous = validate_single_moza_match_count(2, Some("0x346E:0x0014"))
+            .err()
+            .ok_or("expected ambiguous selector rejection")?;
+        let message = ambiguous.to_string();
+        assert!(
+            message.contains("multiple Moza HID devices matched")
+                && message.contains("exact HID endpoint selector"),
+            "expected exact endpoint guidance for ambiguous output-capable matches: {message}"
+        );
+        assert!(
+            !message.contains("PID, or VID:PID"),
+            "ambiguous output-capable selection must not recommend broad PID/VID:PID selectors: {message}"
+        );
+
+        let missing =
+            validate_single_moza_match_count(0, Some("hid-0x346E-0x0014-if2-0x0001-0x0004"))
+                .err()
+                .ok_or("expected missing selector rejection")?;
+        assert!(
+            missing
+                .to_string()
+                .contains("no Moza HID device matched selector"),
+            "expected missing exact selector message: {missing}"
+        );
+        Ok(())
     }
 
     #[test]
