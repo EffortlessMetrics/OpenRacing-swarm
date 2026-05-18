@@ -34,6 +34,12 @@ to concrete receipts and confirms that the objective is still incomplete:
 native-visible, Pit House coexistence, simulator telemetry, bounded simulator
 FFB, and smoke-ready promotion remain missing.
 
+The latest pre-output and artifact-index receipts also surface diagnostic
+candidate-only R5 V1 extended slots for the brake, clutch, and handbrake
+captures. Those candidates keep the passive evidence navigable while preserving
+`input_semantic_mapping_complete=false`; they do not prove role-specific input
+semantics or readiness.
+
 ## Work item: activate-source-of-truth
 
 Status: completed
@@ -123,6 +129,59 @@ git diff --check
 ### Rollback
 
 Remove the audit doc and status-doc pointer. Do not touch lane receipts.
+
+## Work item: document-input-role-candidates
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: clear input-topology handoff while native-visible output is blocked
+Blocked by: n/a
+
+### Goal
+
+Record that brake, clutch, and handbrake are parser-visible through generic R5
+V1 extended fields while their role-specific semantic mapping is still
+diagnostic and incomplete.
+
+### Production delta
+
+Surface candidate-only slot metadata in pre-output readiness and artifact-index
+navigation, then update the completion audit and artifact checklist so the
+source-of-truth docs distinguish represented input topology from proven
+role-specific semantics.
+
+### Non-goals
+
+No hardware output, no authorization receipt, no native-visible promotion, no
+smoke-ready promotion, no role-specific semantic claim, and no parser remapping.
+
+### Acceptance
+
+- `pre-output-readiness.json` reports `input_semantic_mapping_complete=false`.
+- Brake, clutch, and handbrake generic-aux roles include candidate-only R5 V1
+  extended slots.
+- Candidate metadata has `readiness_claim=false`.
+- The completion audit calls the semantic mapping incomplete rather than
+  treating candidate slots as proof.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl input_role -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl moza -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove the candidate-only navigation fields and revert the docs. Do not alter
+the underlying passive input captures.
 
 ## Work item: attempt-03-authorization
 
