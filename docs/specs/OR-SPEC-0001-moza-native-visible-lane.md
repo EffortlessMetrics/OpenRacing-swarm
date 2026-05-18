@@ -53,6 +53,14 @@ bounded-pidff-effect-lifecycle-v1
 
 Attempt 03 remains blocked until a matching authorization receipt exists. The current preflight authorizes no output.
 
+The required command-bound bench-clear evidence for attempt 03 is:
+
+```text
+bench clear for exactly one Moza controlled-angle attempt 03: target 1 degree, max 5%, timeout 2000 ms, strategy pidff-bounded-effect, profile bounded-pidff-effect-lifecycle-v1, R5 stable, KS attached securely, hands clear, wheel clear, prior undertravel receipts preserved
+```
+
+Generic `bench clear` text is not sufficient for this attempt.
+
 ## Acceptance examples
 
 ### Current verifier failure

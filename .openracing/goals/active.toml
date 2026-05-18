@@ -119,6 +119,7 @@ plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-attempt-
 current_pointer = "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-preflight.json"
 claim_boundary = "May create one exact authorization receipt only after fresh command-bound bench-clear for attempt 03; still no motion claim."
 blocked_by = "Fresh command-bound bench-clear from the operator for attempt 03."
+required_bench_clear_evidence = "bench clear for exactly one Moza controlled-angle attempt 03: target 1 degree, max 5%, timeout 2000 ms, strategy pidff-bounded-effect, profile bounded-pidff-effect-lifecycle-v1, R5 stable, KS attached securely, hands clear, wheel clear, prior undertravel receipts preserved"
 commands = [
   "wheelctl moza pre-output-readiness --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-pre-output-before-attempt-03.json --json",
   "wheelctl moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-native-visible-before-attempt-03.json --json",

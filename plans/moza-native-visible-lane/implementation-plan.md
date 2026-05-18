@@ -261,6 +261,12 @@ Run no-output readiness and native-visible verification first. Then create
 `native-controlled-angle-attempt-03-authorization.json` only if the command shape
 matches the preflight and the operator evidence is command-bound.
 
+Required bench-clear evidence:
+
+```text
+bench clear for exactly one Moza controlled-angle attempt 03: target 1 degree, max 5%, timeout 2000 ms, strategy pidff-bounded-effect, profile bounded-pidff-effect-lifecycle-v1, R5 stable, KS attached securely, hands clear, wheel clear, prior undertravel receipts preserved
+```
+
 Expected command shape after fresh bench-clear:
 
 ```powershell
@@ -268,7 +274,7 @@ wheelctl moza authorize-controlled-angle-output `
   --lane ci/hardware/moza-r5/2026-05-13 `
   --device hid-0x346E-0x0004-if2-0x0001-0x0004 `
   --operator Steven `
-  --bench-clear-evidence "<fresh command-bound attempt-03 bench-clear>" `
+  --bench-clear-evidence "bench clear for exactly one Moza controlled-angle attempt 03: target 1 degree, max 5%, timeout 2000 ms, strategy pidff-bounded-effect, profile bounded-pidff-effect-lifecycle-v1, R5 stable, KS attached securely, hands clear, wheel clear, prior undertravel receipts preserved" `
   --prior-response-proof ci/hardware/moza-r5/2026-05-13/native-actuator-visible-smoke.json `
   --prior-actuator-proof ci/hardware/moza-r5/2026-05-13/native-actuator-profile-smoke.json `
   --steering-proof ci/hardware/moza-r5/2026-05-13/steering-angle-stream-proof.json `
