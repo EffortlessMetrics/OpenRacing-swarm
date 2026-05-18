@@ -1,7 +1,7 @@
 {
   "command": "wheelctl device status",
   "device_selector": "hid-0x346E-0x0004-if2-0x0001-0x0004",
-  "moza_lane": "ci\\hardware\\moza-r5\\2026-05-13",
+  "moza_lane": "ci/hardware/moza-r5/2026-05-13",
   "no_feature_reports": true,
   "no_ffb_writes": true,
   "no_firmware_or_dfu_commands": true,
@@ -39,7 +39,7 @@
       "usage_page": "0x0001",
       "vendor_id": "0x346E"
     },
-    "last_seen": "2026-05-16T14:59:03.153405900Z",
+    "last_seen": "2026-05-18T14:09:37.141321800Z",
     "moza": {
       "category": "wheelbase",
       "descriptor_crc32": "0x25345E0C",
@@ -49,13 +49,13 @@
       "ffb_ready": false,
       "high_torque_allowed": false,
       "init_state": "uninitialized",
-      "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+      "lane": "ci/hardware/moza-r5/2026-05-13",
       "model": "Moza R5",
       "output_capable": true,
       "product_id": "0x0004",
       "safe_to_send_torque": false,
-      "safety_reason": "stored Moza lane verification receipts report highest_passing_stage=openracing_control_ready, next_required_stage=smoke_ready; CLI status remains observe-only and torque output stays disabled until explicit service initialization is implemented",
-      "safety_state": "lane_openracing_control_receipts_observed"
+      "safety_reason": "stored Moza lane verification receipts report highest_passing_stage=native_response_ready, next_required_stage=native_visible_ready; CLI status remains observe-only and torque output stays disabled until explicit service initialization is implemented",
+      "safety_state": "lane_native_response_receipts_observed"
     },
     "telemetry": {
       "fault_flags": 0,

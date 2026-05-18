@@ -17336,6 +17336,8 @@ fn moza_status_reports_post_init_safe_state(moza: &Value) -> bool {
             "lane_init_handshakes_observed"
                 | "lane_low_torque_gate_receipts_observed"
                 | "lane_openracing_control_receipts_observed"
+                | "lane_native_response_receipts_observed"
+                | "lane_native_visible_receipts_observed"
         )
     ) && json_bool(moza, "ffb_ready") == Some(false)
         && json_bool(moza, "safe_to_send_torque") == Some(false)
@@ -49361,6 +49363,24 @@ mod tests {
         });
 
         assert!(moza_status_reports_post_init_safe_state(&status));
+    }
+
+    #[test]
+    fn post_init_service_status_accepts_native_observe_states() {
+        for safety_state in [
+            "lane_native_response_receipts_observed",
+            "lane_native_visible_receipts_observed",
+        ] {
+            let status = serde_json::json!({
+                "safety_state": safety_state,
+                "ffb_ready": false,
+                "safe_to_send_torque": false,
+                "direct_mode_allowed": false,
+                "high_torque_allowed": false
+            });
+
+            assert!(moza_status_reports_post_init_safe_state(&status));
+        }
     }
 
     #[test]

@@ -49,8 +49,8 @@
       "safety_reason": "status is observe-only; run explicit init, zero, and torque-test gates before any output"
     }
   ],
-  "generated_at_utc": "2026-05-16T14:59:01Z",
-  "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+  "generated_at_utc": "2026-05-18T14:14:58Z",
+  "lane": "ci/hardware/moza-r5/2026-05-13",
   "lane_status": {
     "artifact_index": [
       {
@@ -315,21 +315,19 @@
         "valid": true
       },
       {
-        "exists": false,
+        "exists": true,
         "kind": "json",
-        "notes": [
-          "expected ci\\hardware\\moza-r5\\2026-05-13\\native-actuator-visible-smoke.json"
-        ],
+        "notes": [],
         "path": "native-actuator-visible-smoke.json",
-        "required_stage": "smoke_ready",
-        "status": "missing",
-        "valid": false
+        "required_stage": "native_response_ready",
+        "status": "pass",
+        "valid": true
       },
       {
         "exists": false,
         "kind": "json",
         "notes": [
-          "expected ci\\hardware\\moza-r5\\2026-05-13\\pit-house-coexistence.json"
+          "expected ci/hardware/moza-r5/2026-05-13\\pit-house-coexistence.json"
         ],
         "path": "pit-house-coexistence.json",
         "required_stage": "smoke_ready",
@@ -340,7 +338,7 @@
         "exists": false,
         "kind": "json",
         "notes": [
-          "expected ci\\hardware\\moza-r5\\2026-05-13\\simulator-telemetry-proof.json"
+          "expected ci/hardware/moza-r5/2026-05-13\\simulator-telemetry-proof.json"
         ],
         "path": "simulator-telemetry-proof.json",
         "required_stage": "smoke_ready",
@@ -351,7 +349,7 @@
         "exists": false,
         "kind": "json",
         "notes": [
-          "expected ci\\hardware\\moza-r5\\2026-05-13\\simulator-ffb-smoke.json"
+          "expected ci/hardware/moza-r5/2026-05-13\\simulator-ffb-smoke.json"
         ],
         "path": "simulator-ffb-smoke.json",
         "required_stage": "smoke_ready",
@@ -443,6 +441,64 @@
         "exists": true,
         "kind": "json",
         "notes": [],
+        "path": "native-response-verification.json",
+        "required_stage": "native_response_ready",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "json",
+        "notes": [],
+        "path": "manifest-promotion-native-response.json",
+        "required_stage": "native_response_ready",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "json",
+        "notes": [],
+        "path": "lane-audit-native-response.json",
+        "required_stage": "native_response_ready",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": true,
+        "kind": "json",
+        "notes": [],
+        "path": "native-visible-verification.json",
+        "required_stage": "native_visible_ready",
+        "status": "pass",
+        "valid": true
+      },
+      {
+        "exists": false,
+        "kind": "json",
+        "notes": [
+          "expected ci/hardware/moza-r5/2026-05-13\\manifest-promotion-native-visible.json"
+        ],
+        "path": "manifest-promotion-native-visible.json",
+        "required_stage": "native_visible_ready",
+        "status": "missing",
+        "valid": false
+      },
+      {
+        "exists": false,
+        "kind": "json",
+        "notes": [
+          "expected ci/hardware/moza-r5/2026-05-13\\lane-audit-native-visible.json"
+        ],
+        "path": "lane-audit-native-visible.json",
+        "required_stage": "native_visible_ready",
+        "status": "missing",
+        "valid": false
+      },
+      {
+        "exists": true,
+        "kind": "json",
+        "notes": [],
         "path": "smoke-ready-verification.json",
         "required_stage": "smoke_ready",
         "status": "pass",
@@ -452,7 +508,7 @@
         "exists": false,
         "kind": "json",
         "notes": [
-          "expected ci\\hardware\\moza-r5\\2026-05-13\\manifest-promotion-smoke-ready.json"
+          "expected ci/hardware/moza-r5/2026-05-13\\manifest-promotion-smoke-ready.json"
         ],
         "path": "manifest-promotion-smoke-ready.json",
         "required_stage": "smoke_ready",
@@ -463,7 +519,7 @@
         "exists": false,
         "kind": "json",
         "notes": [
-          "expected ci\\hardware\\moza-r5\\2026-05-13\\lane-audit-smoke-ready.json"
+          "expected ci/hardware/moza-r5/2026-05-13\\lane-audit-smoke-ready.json"
         ],
         "path": "lane-audit-smoke-ready.json",
         "required_stage": "smoke_ready",
@@ -471,11 +527,11 @@
         "valid": false
       }
     ],
-    "generated_at_utc": "2026-05-16T14:59:01Z",
-    "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+    "generated_at_utc": "2026-05-18T14:14:58Z",
+    "lane": "ci/hardware/moza-r5/2026-05-13",
     "lane_directory_present": true,
     "manifest": {
-      "completion_state": "openracing_control_ready",
+      "completion_state": "native_response_ready",
       "hardware_validated": true,
       "high_torque_validated": false,
       "present": true,
@@ -489,34 +545,29 @@
     "readiness": {
       "claim_scope": "diagnostic_context_only",
       "external_compatibility_blocking_items": [
-        "native_actuator_visible_smoke",
         "pit_house_coexistence",
         "simulator_ffb_bounded",
         "simulator_telemetry"
       ],
       "first_blocking_stage": {
         "failed_gate_names": [
-          "native_actuator_visible_smoke",
-          "pit_house_coexistence",
-          "simulator_telemetry",
-          "simulator_ffb_bounded"
+          "native_actuator_visible_smoke"
         ],
-        "failed_gates": 4,
+        "failed_gates": 1,
         "invalid_artifact_paths": [],
         "invalid_artifacts": 0,
-        "missing_artifact_paths": [
-          "native-actuator-visible-smoke.json",
-          "pit-house-coexistence.json",
-          "simulator-telemetry-proof.json",
-          "simulator-ffb-smoke.json"
-        ],
-        "missing_artifacts": 4,
-        "requested_stage": "smoke_ready",
+        "missing_artifact_paths": [],
+        "missing_artifacts": 0,
+        "requested_stage": "native_visible_ready",
         "success": false
       },
-      "highest_passing_stage": "openracing_control_ready",
+      "highest_passing_stage": "native_response_ready",
+      "native_actuator_response_proven": true,
       "native_control_blocking_items": [],
-      "next_required_stage": "smoke_ready",
+      "native_response_lane_audit_passed": true,
+      "native_visible_lane_audit_passed": false,
+      "native_visible_motion_proven": false,
+      "next_required_stage": "native_visible_ready",
       "openracing_control_lane_audit_passed": true,
       "passive_lane_audit_passed": true,
       "ready_for_external_compatibility": false,
@@ -529,6 +580,28 @@
       "zero_lane_audit_passed": true
     },
     "verifications": {
+      "native_response_ready": {
+        "failed_gate_names": [],
+        "failed_gates": 0,
+        "invalid_artifact_paths": [],
+        "invalid_artifacts": 0,
+        "missing_artifact_paths": [],
+        "missing_artifacts": 0,
+        "requested_stage": "native_response_ready",
+        "success": true
+      },
+      "native_visible_ready": {
+        "failed_gate_names": [
+          "native_actuator_visible_smoke"
+        ],
+        "failed_gates": 1,
+        "invalid_artifact_paths": [],
+        "invalid_artifacts": 0,
+        "missing_artifact_paths": [],
+        "missing_artifacts": 0,
+        "requested_stage": "native_visible_ready",
+        "success": false
+      },
       "openracing_control_ready": {
         "failed_gate_names": [],
         "failed_gates": 0,
@@ -560,12 +633,11 @@
         "invalid_artifact_paths": [],
         "invalid_artifacts": 0,
         "missing_artifact_paths": [
-          "native-actuator-visible-smoke.json",
           "pit-house-coexistence.json",
           "simulator-telemetry-proof.json",
           "simulator-ffb-smoke.json"
         ],
-        "missing_artifacts": 4,
+        "missing_artifacts": 3,
         "requested_stage": "smoke_ready",
         "success": false
       },
@@ -591,6 +663,6 @@
     "status enumerates Moza HID identity and optional lane receipts only; it sends no feature reports or FFB output",
     "ffb_ready remains false until an explicit staged init receipt proves readiness"
   ],
-  "selector": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+  "selector": null,
   "success": true
 }
