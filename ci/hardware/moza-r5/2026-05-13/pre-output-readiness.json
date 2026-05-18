@@ -1,7 +1,7 @@
 {
   "success": true,
   "command": "wheelctl moza pre-output-readiness",
-  "generated_at_utc": "2026-05-18T15:24:03Z",
+  "generated_at_utc": "2026-05-18T19:38:23Z",
   "lane": "ci/hardware/moza-r5/2026-05-13",
   "stage": "pre_output_readiness",
   "ready_for_zero_torque": true,
@@ -10,6 +10,147 @@
   "ready_for_external_compatibility": false,
   "native_actuator_response_proven": true,
   "native_visible_motion_proven": false,
+  "input_semantic_mapping_complete": false,
+  "input_role_semantics": {
+    "blocks_native_control": false,
+    "blocks_native_visible": false,
+    "blocks_smoke_ready": false,
+    "generic_aux_role_count": 3,
+    "generic_aux_roles": [
+      {
+        "control": "brake",
+        "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
+        "missing_requirements": [],
+        "notes": [
+          "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
+        ],
+        "parser_visible": true,
+        "required": true,
+        "role": "brake",
+        "semantic_status": "generic_aux"
+      },
+      {
+        "control": "clutch",
+        "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
+        "missing_requirements": [],
+        "notes": [
+          "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
+        ],
+        "parser_visible": true,
+        "required": true,
+        "role": "clutch",
+        "semantic_status": "generic_aux"
+      },
+      {
+        "control": "handbrake",
+        "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
+        "missing_requirements": [],
+        "notes": [
+          "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
+        ],
+        "parser_visible": true,
+        "required": true,
+        "role": "handbrake",
+        "semantic_status": "generic_aux"
+      }
+    ],
+    "incomplete_role_count": 0,
+    "incomplete_roles": [],
+    "notes": [
+      "input role semantics are diagnostic navigation only; they do not open HID or send output",
+      "generic_aux means the capture showed parser-visible R5 extended-field movement, but the role-specific semantic mapping remains unproven",
+      "generic_aux evidence can keep passive artifacts valid while still marking input topology semantics as incomplete for product-quality follow-up"
+    ],
+    "passive_artifacts_remain_valid": true,
+    "readiness_claim": false,
+    "required_parser_visible_count": 7,
+    "required_role_count": 7,
+    "roles": [
+      {
+        "control": "brake",
+        "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
+        "missing_requirements": [],
+        "notes": [
+          "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
+        ],
+        "parser_visible": true,
+        "required": true,
+        "role": "brake",
+        "semantic_status": "generic_aux"
+      },
+      {
+        "control": "clutch",
+        "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
+        "missing_requirements": [],
+        "notes": [
+          "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
+        ],
+        "parser_visible": true,
+        "required": true,
+        "role": "clutch",
+        "semantic_status": "generic_aux"
+      },
+      {
+        "control": "es_rim_controls",
+        "evidence_capture": "captures/es-controls.jsonl",
+        "missing_requirements": [],
+        "notes": [],
+        "parser_visible": true,
+        "required": true,
+        "role": "rim_controls",
+        "semantic_status": "proven"
+      },
+      {
+        "control": "handbrake",
+        "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
+        "missing_requirements": [],
+        "notes": [
+          "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
+        ],
+        "parser_visible": true,
+        "required": true,
+        "role": "handbrake",
+        "semantic_status": "generic_aux"
+      },
+      {
+        "control": "ks_rim_controls",
+        "evidence_capture": "captures/ks-controls.jsonl",
+        "missing_requirements": [],
+        "notes": [],
+        "parser_visible": true,
+        "required": true,
+        "role": "rim_controls",
+        "semantic_status": "proven"
+      },
+      {
+        "control": "steering",
+        "evidence_capture": "captures/r5-steering-sweep.jsonl",
+        "missing_requirements": [],
+        "notes": [],
+        "parser_visible": true,
+        "required": true,
+        "role": "steering",
+        "semantic_status": "proven"
+      },
+      {
+        "control": "throttle",
+        "evidence_capture": "captures/r5-throttle-only-sweep.jsonl",
+        "missing_requirements": [],
+        "notes": [],
+        "parser_visible": true,
+        "required": true,
+        "role": "throttle",
+        "semantic_status": "proven"
+      }
+    ],
+    "semantic_status": "partial_generic_aux_mapping",
+    "source_artifact": "native-visible-verification.json",
+    "source_stage": "native_visible_ready",
+    "status_counts": {
+      "generic_aux": 3,
+      "proven": 4
+    }
+  },
   "blocking_items": [],
   "ffb_blocking_items": [
     "native_actuator_visible_smoke",
@@ -182,6 +323,7 @@
     "native_actuator_response_proven means bounded native PIDFF writes produced measured steering response above the response noise floor; it does not claim operator-visible motion",
     "native_visible_motion_proven remains a stricter native claim and is false until an intentionally reviewed visible-motion profile passes",
     "ready_for_external_compatibility tracks optional adapter/vendor-app surfaces such as simulator telemetry bridges and Pit House coexistence; it is not required for native control",
-    "ready_for_ffb is the legacy bounded simulator FFB preflight; keep it separate from native-control and release-readiness claims"
+    "ready_for_ffb is the legacy bounded simulator FFB preflight; keep it separate from native-control and release-readiness claims",
+    "input_role_semantics is diagnostic topology context; generic_aux mappings remain valid passive evidence but are not full role-specific semantic proof"
   ]
 }
