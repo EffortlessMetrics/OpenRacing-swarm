@@ -8401,7 +8401,9 @@ fn native_visible_smoke_failed_real_receipt_action(lane: &Path) -> Option<String
 }
 
 fn native_visible_authorization_guidance(lane: &Path) -> &'static str {
-    if native_controlled_angle_smoke_is_no_output_preflight(lane) {
+    if native_controlled_angle_smoke_is_real_output_attempt(lane) {
+        "A real controlled-angle attempt is already recorded; preserve native-controlled-angle-smoke.json and diagnose the profile/feedback loop before any new output plan. Update native-controlled-angle-plan.json with the reason the 1 degree target was not reached, then use wheelctl moza authorize-controlled-angle-output only after a separate reviewed exact command and fresh bench-clear; do not use the visible-output authorizer, extend dwell, raise force, or rerun from verifier guidance."
+    } else if native_controlled_angle_smoke_is_no_output_preflight(lane) {
         "Do not run output until fresh bench-clear is recorded for the exact 1 degree controlled-angle command via wheelctl moza authorize-controlled-angle-output, producing native-controlled-angle-authorization.json; no visible-output authorizer is required for this controlled-angle path."
     } else {
         "Do not run output until the follow-up requirements are complete and a fresh bench-clear is recorded for the exact next output command via wheelctl moza authorize-visible-output."
@@ -8440,10 +8442,15 @@ fn native_controlled_angle_smoke_artifact_summary(lane: &Path) -> String {
         let target_reached = json_bool(&receipt, "target_reached") == Some(true);
         let returned = json_bool(&receipt, "return_to_start_proven") == Some(true);
         let delta = optional_f64_text(json_f64(&receipt, "angle_delta_degrees"));
+        let abort_reason = json_string(&receipt, "abort_reason").unwrap_or("missing");
+        let timeout_reached = optional_bool_text(json_bool(&receipt, "timeout_reached"));
+        let overshoot = optional_bool_text(json_bool(&receipt, "overshoot_detected"));
+        let no_steering_samples = optional_bool_text(json_bool(&receipt, "no_steering_samples"));
+        let write_errors = optional_u64_text(json_u64(&receipt, "write_errors"));
         let stop_all = optional_bool_text(json_bool(&receipt, "final_stop_all_sent"));
         let no_direct = optional_bool_text(json_bool(&receipt, "no_direct_torque_reports"));
         return format!(
-            "controlled_angle_receipt_artifact={}, controlled_angle_target_degrees={target}, controlled_angle_delta_degrees={delta}, controlled_angle_motion_proven={motion_proven}, controlled_angle_target_reached={target_reached}, controlled_angle_return_to_start={returned}, controlled_angle_final_stop_all_sent={stop_all}, controlled_angle_no_direct_report_0x20={no_direct}",
+            "controlled_angle_receipt_artifact={}, controlled_angle_target_degrees={target}, controlled_angle_delta_degrees={delta}, controlled_angle_motion_proven={motion_proven}, controlled_angle_target_reached={target_reached}, controlled_angle_return_to_start={returned}, controlled_angle_abort_reason={abort_reason}, controlled_angle_timeout_reached={timeout_reached}, controlled_angle_overshoot_detected={overshoot}, controlled_angle_no_steering_samples={no_steering_samples}, controlled_angle_write_errors={write_errors}, controlled_angle_final_stop_all_sent={stop_all}, controlled_angle_no_direct_report_0x20={no_direct}",
             actual_gate.status
         );
     }
@@ -8484,6 +8491,16 @@ fn native_controlled_angle_smoke_is_no_output_preflight(lane: &Path) -> bool {
         && json_bool(&receipt, "actual_hardware_writes_supported") == Some(false)
         && json_bool(&receipt, "planned_next_output_allowed") == Some(false);
     command_ok && no_output_ok && motion_unclaimed
+}
+
+fn native_controlled_angle_smoke_is_real_output_attempt(lane: &Path) -> bool {
+    let Ok(receipt) = read_json_value(lane, NATIVE_CONTROLLED_ANGLE_SMOKE_FILE) else {
+        return false;
+    };
+    json_string(&receipt, "command") == Some("wheelctl moza controlled-angle-smoke")
+        && json_bool(&receipt, "dry_run") == Some(false)
+        && json_bool(&receipt, "hardware_output_enabled") == Some(true)
+        && json_bool(&receipt, "actual_hardware_writes_supported") == Some(true)
 }
 
 fn native_controlled_angle_ladder_degrees() -> [f64; 6] {
@@ -8658,6 +8675,12 @@ fn optional_f64_text(value: Option<f64>) -> String {
     value
         .filter(|value| value.is_finite())
         .map(|value| format!("{value:.3}"))
+        .unwrap_or_else(|| "missing".to_string())
+}
+
+fn optional_u64_text(value: Option<u64>) -> String {
+    value
+        .map(|value| value.to_string())
         .unwrap_or_else(|| "missing".to_string())
 }
 
@@ -31208,9 +31231,27 @@ mod tests {
                 "receipt_path": root.join(NATIVE_CONTROLLED_ANGLE_SMOKE_FILE).display().to_string(),
                 "lane": root.display().to_string(),
                 "selector": selector,
+                "confirmed": true,
                 "dry_run": false,
+                "preflight_only": false,
                 "hardware_output_enabled": true,
-                "actual_hardware_writes_supported": true
+                "actual_hardware_writes_supported": true,
+                "controlled_angle_motion_proven": false,
+                "movement_observed": false,
+                "target_degrees": 1.0,
+                "movement_threshold_degrees": 1.0,
+                "max_percent": 5.0,
+                "duration_ms": 2_000,
+                "angle_delta_degrees": 0.18127718013275285,
+                "target_reached": false,
+                "return_to_start_proven": false,
+                "timeout_reached": true,
+                "overshoot_detected": false,
+                "no_steering_samples": false,
+                "write_errors": 0,
+                "final_stop_all_sent": true,
+                "no_direct_torque_reports": true,
+                "abort_reason": "safety_timeout_before_target"
             }),
         )
     }
@@ -44613,6 +44654,24 @@ mod tests {
                 && !commands.contains("authorize-controlled-angle-output")
                 && !commands.contains("--confirm-controlled-angle"),
             "verifier must not emit another controlled-angle dry-run, authorization, or output command after a real attempt: {commands}"
+        );
+        let actions = receipt.operator_actions.join("\n");
+        assert!(
+            actions.contains("controlled_angle_abort_reason=safety_timeout_before_target")
+                && actions.contains("controlled_angle_timeout_reached=true")
+                && actions.contains("controlled_angle_write_errors=0"),
+            "operator action should classify the failed controlled-angle receipt: {actions}"
+        );
+        assert!(
+            actions.contains("native-controlled-angle-smoke.json")
+                && actions.contains("profile/feedback loop")
+                && actions.contains("native-controlled-angle-plan.json")
+                && actions.contains("authorize-controlled-angle-output"),
+            "operator action should point at preserving evidence and controlled-angle diagnosis: {actions}"
+        );
+        assert!(
+            !actions.contains("authorize-visible-output"),
+            "operator action must not send failed controlled-angle follow-up through the older visible-output authorizer: {actions}"
         );
         Ok(())
     }
