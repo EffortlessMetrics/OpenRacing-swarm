@@ -641,6 +641,19 @@ pub enum MozaCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
+    /// Render a no-output Markdown/JSON index of Moza lane artifacts
+    ArtifactIndex {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-13
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Write the artifact-index receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+        /// Write a Markdown lane artifact index
+        #[arg(long)]
+        md_out: Option<std::path::PathBuf>,
+    },
+
     /// Capture descriptor metadata for connected Moza HID devices
     Descriptor {
         /// Device selector: HID path, PID, or VID:PID

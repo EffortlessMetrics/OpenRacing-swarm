@@ -545,6 +545,14 @@ The smoke-ready verifier requires `moza-status.json`, `device-status.json`, and 
 
 The support bundle includes service-facing `device_statuses` snapshots plus a Moza section with an `artifact_index` for every required lane receipt/capture, including stored verification, manifest-promotion, and lane-audit receipts even when they are still missing, and a diagnostic `readiness` summary with `highest_passing_stage`, `next_required_stage`, `first_blocking_stage`, `ready_for_zero_torque`, `ready_for_low_torque`, `ready_for_native_control`, `native_actuator_response_proven`, `native_visible_motion_proven`, `ready_for_external_compatibility`, `ready_for_real_hardware_smoke`, lane-audit booleans, and `release_ready: false`. Each artifact-index entry must record the path, kind, required stage, existence/validity booleans, and a consistent `pass`, `missing`, or `invalid` status. `ready_for_zero_torque` requires the passive verifier, `lane-audit-passive.json`, and at least one implemented descriptor-trusted zero-output strategy; `ready_for_low_torque` requires either the descriptor/direct zero path for `direct_report_0x20` or the descriptor-proven PIDFF bounded-effect path with same-lane PIDFF zero and init receipts; `ready_for_native_control` tracks the OpenRacing-owned movement path and excludes SimHub/Pit House; `native_actuator_response_proven` and `native_visible_motion_proven` distinguish measured PIDFF response from operator-visible motion; `ready_for_external_compatibility` tracks simulator bridge and vendor-app coexistence gates; `ready_for_real_hardware_smoke` requires the smoke-ready verifier plus `lane-audit-smoke-ready.json`. This summary helps triage missing receipts and failed gates, but it is not a readiness promotion by itself.
 
+For a checked-in human artifact map, use the no-output renderer:
+
+```powershell
+wheelctl moza artifact-index --lane ci/hardware/moza-r5/<date> --md-out ci/hardware/moza-r5/<date>/index.md
+```
+
+`artifact-index` reads stored lane receipts and support/status diagnostics, groups artifacts by evidence area, and writes Markdown/JSON navigation only. It opens no HID device, sends no output or feature reports, creates no authorization receipt, and does not satisfy or promote any readiness gate.
+
 This command reads lane receipts only; it opens no HID device and sends no reports. The Moza section is diagnostic context for missing artifacts and failed gates, not a manifest promotion or compatibility claim.
 
 ## Claim Rules

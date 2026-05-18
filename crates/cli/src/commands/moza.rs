@@ -539,6 +539,11 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             )
             .await
         }
+        MozaCommands::ArtifactIndex {
+            lane,
+            json_out,
+            md_out,
+        } => artifact_index(json, lane, json_out.as_deref(), md_out.as_deref()).await,
         MozaCommands::Descriptor {
             device,
             descriptor_hex,
@@ -1257,6 +1262,60 @@ async fn status(
     let receipt = moza_status_receipt(devices, selector, lane);
     write_json_receipt(json_out, &receipt)?;
     print_status_receipt(json, json_out, &receipt)
+}
+
+async fn artifact_index(
+    json: bool,
+    lane: &Path,
+    json_out: Option<&Path>,
+    md_out: Option<&Path>,
+) -> Result<()> {
+    if !lane.is_dir() {
+        return Err(anyhow!(
+            "--lane must point at an existing Moza lane directory: {}",
+            lane.display()
+        ));
+    }
+
+    let support_status = stored_lane_artifact_index_status(lane);
+    let readiness = artifact_index_readiness_summary(lane, &support_status);
+    let lane_artifacts = discover_lane_artifacts(lane)?;
+    let frontier = moza_lane_frontier_label(lane, &support_status);
+    let receipt = serde_json::json!({
+        "success": true,
+        "command": "wheelctl moza artifact-index",
+        "artifact_kind": "moza_lane_artifact_index",
+        "generated_at_utc": now_utc(),
+        "lane": lane.display().to_string(),
+        "json_out": json_out.map(|path| path.display().to_string()),
+        "md_out": md_out.map(|path| path.display().to_string()),
+        "frontier": frontier,
+        "no_hid_device_opened": true,
+        "no_ffb_writes": true,
+        "no_output_reports": true,
+        "no_feature_reports": true,
+        "no_serial_config_commands": true,
+        "no_firmware_or_dfu_commands": true,
+        "hardware_output_authorized": false,
+        "native_visible_claimed": false,
+        "readiness_claims": NonClaimingReadinessClaims::default(),
+        "readiness": readiness,
+        "required_artifact_index": support_status
+            .get("artifact_index")
+            .cloned()
+            .unwrap_or_else(|| Value::Array(Vec::new())),
+        "lane_artifacts": lane_artifacts,
+        "notes": [
+            "artifact-index reads lane files only; it opens no HID device and sends no output, feature, serial, firmware, or DFU commands",
+            "artifact-index is diagnostic navigation only; it is not a readiness promotion and does not authorize hardware output"
+        ]
+    });
+
+    write_json_receipt(json_out, &receipt)?;
+    if let Some(path) = md_out {
+        write_text_file(path, &render_moza_lane_artifact_index_markdown(&receipt))?;
+    }
+    print_artifact_index_receipt(json, json_out, md_out, &receipt)
 }
 
 async fn descriptor(
@@ -12565,6 +12624,285 @@ fn audit_receipt_path(stage: MozaBundleStage) -> &'static str {
 
 pub(crate) fn support_bundle_status(lane: &Path) -> Value {
     support_bundle_status_with_support_validation(lane, SupportBundleValidationMode::ShapeOnly)
+}
+
+fn stored_lane_artifact_index_status(lane: &Path) -> Value {
+    if let Ok(receipt) = read_json_value(lane, "support-bundle.json")
+        && let Some(status) = receipt.get("moza_lane")
+    {
+        return status.clone();
+    }
+    if let Ok(receipt) = read_json_value(lane, "moza-status.json")
+        && let Some(status) = receipt.get("lane_status")
+    {
+        return status.clone();
+    }
+    serde_json::json!({
+        "lane": lane.display().to_string(),
+        "readiness": Value::Null,
+        "artifact_index": [],
+        "notes": [
+            "no stored support-bundle.json or moza-status.json lane diagnostics were available"
+        ]
+    })
+}
+
+fn artifact_index_readiness_summary(lane: &Path, support_status: &Value) -> Value {
+    let mut readiness = support_status
+        .get("readiness")
+        .filter(|value| value.is_object())
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let highest = stored_highest_passing_stage(lane);
+    if let Some(object) = readiness.as_object_mut() {
+        object.insert(
+            "highest_passing_stage".to_string(),
+            Value::String(highest.to_string()),
+        );
+        object.insert(
+            "next_required_stage".to_string(),
+            match next_stage_after(highest) {
+                Some(stage) => Value::String(stage.to_string()),
+                None => Value::Null,
+            },
+        );
+        object.insert(
+            "native_actuator_response_proven".to_string(),
+            Value::Bool(stored_verification_gate_passed(
+                lane,
+                MozaBundleStage::NativeResponseReady,
+                "native_actuator_response_smoke",
+            )),
+        );
+        object.insert(
+            "native_visible_motion_proven".to_string(),
+            Value::Bool(stored_verification_gate_passed(
+                lane,
+                MozaBundleStage::NativeVisibleReady,
+                "native_actuator_visible_smoke",
+            )),
+        );
+        object.insert("release_ready".to_string(), Value::Bool(false));
+        object.insert(
+            "claim_scope".to_string(),
+            Value::String("diagnostic_context_only".to_string()),
+        );
+        object.insert(
+            "source".to_string(),
+            Value::String("stored_verification_receipts".to_string()),
+        );
+    }
+    readiness
+}
+
+fn stored_highest_passing_stage(lane: &Path) -> &'static str {
+    [
+        (MozaBundleStage::SmokeReady, "smoke_ready"),
+        (MozaBundleStage::NativeVisibleReady, "native_visible_ready"),
+        (
+            MozaBundleStage::NativeResponseReady,
+            "native_response_ready",
+        ),
+        (
+            MozaBundleStage::OpenRacingControlReady,
+            "openracing_control_ready",
+        ),
+        (MozaBundleStage::Zero, "zero"),
+        (MozaBundleStage::Passive, "passive"),
+    ]
+    .into_iter()
+    .find_map(|(stage, label)| stored_verification_success(lane, stage).then_some(label))
+    .unwrap_or("none")
+}
+
+fn next_stage_after(stage: &str) -> Option<&'static str> {
+    match stage {
+        "none" => Some("passive"),
+        "passive" => Some("zero"),
+        "zero" => Some("openracing_control_ready"),
+        "openracing_control_ready" => Some("native_response_ready"),
+        "native_response_ready" => Some("native_visible_ready"),
+        "native_visible_ready" => Some("smoke_ready"),
+        "smoke_ready" => None,
+        _ => Some("passive"),
+    }
+}
+
+fn stored_verification_success(lane: &Path, stage: MozaBundleStage) -> bool {
+    read_json_value(lane, verification_receipt_path(stage))
+        .ok()
+        .and_then(|receipt| json_bool(&receipt, "success"))
+        == Some(true)
+}
+
+fn stored_verification_gate_passed(lane: &Path, stage: MozaBundleStage, gate_name: &str) -> bool {
+    let Ok(receipt) = read_json_value(lane, verification_receipt_path(stage)) else {
+        return false;
+    };
+    receipt
+        .get("gates")
+        .and_then(Value::as_array)
+        .map(|gates| {
+            gates.iter().any(|gate| {
+                json_string(gate, "name") == Some(gate_name)
+                    && json_string(gate, "status") == Some("pass")
+            })
+        })
+        .unwrap_or(false)
+}
+
+fn discover_lane_artifacts(lane: &Path) -> Result<Vec<Value>> {
+    let mut paths = Vec::new();
+    collect_lane_artifact_paths(lane, &mut paths)?;
+    paths.sort_by(|left, right| {
+        let left = lane_relative_or_display(lane, left);
+        let right = lane_relative_or_display(lane, right);
+        left.cmp(&right)
+    });
+
+    Ok(paths
+        .into_iter()
+        .filter_map(|path| lane_artifact_index_entry(lane, &path))
+        .collect())
+}
+
+fn collect_lane_artifact_paths(directory: &Path, paths: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in fs::read_dir(directory)
+        .with_context(|| format!("failed to read '{}'", directory.display()))?
+    {
+        let entry =
+            entry.with_context(|| format!("failed to read entry in '{}'", directory.display()))?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_lane_artifact_paths(&path, paths)?;
+        } else if lane_artifact_file_kind(&path).is_some() {
+            paths.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn lane_artifact_index_entry(lane: &Path, path: &Path) -> Option<Value> {
+    let kind = lane_artifact_file_kind(path)?;
+    let relative_path = lane_relative_or_display(lane, path);
+    let category = lane_artifact_category(&relative_path);
+    let metadata = fs::metadata(path).ok();
+    Some(serde_json::json!({
+        "path": relative_path,
+        "kind": kind,
+        "category": category,
+        "exists": true,
+        "size_bytes": metadata.as_ref().map(fs::Metadata::len),
+        "readiness_evidence": lane_artifact_readiness_evidence(&relative_path),
+    }))
+}
+
+fn lane_artifact_file_kind(path: &Path) -> Option<&'static str> {
+    match path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("json") => Some("json"),
+        Some("jsonl") => Some("jsonl"),
+        Some("md") => Some("markdown"),
+        _ => None,
+    }
+}
+
+fn lane_artifact_category(relative_path: &str) -> &'static str {
+    if relative_path == "index.md" || relative_path.contains("pre-output-readiness") {
+        return "support";
+    }
+    if relative_path.starts_with("captures/") {
+        return "passive";
+    }
+    if relative_path.starts_with("sniff/") || relative_path.contains("sniff") {
+        return "sniff";
+    }
+    if relative_path.contains("pit-house") {
+        return "pit_house";
+    }
+    if relative_path.contains("simulator") {
+        return "simulator";
+    }
+    if relative_path.contains("controlled-angle")
+        || relative_path.contains("pidff")
+        || relative_path.contains("visible")
+    {
+        return "native_visible";
+    }
+    if relative_path.contains("native-response") {
+        return "native_response";
+    }
+    if relative_path.contains("zero")
+        || relative_path.contains("watchdog")
+        || relative_path.contains("disconnect")
+    {
+        return "zero_safety";
+    }
+    if matches!(
+        relative_path,
+        "init-off.json"
+            | "init-standard.json"
+            | "low-torque-proof.json"
+            | "steering-angle-stream-proof.json"
+            | "steering-angle-stream.jsonl"
+            | "native-actuator-profile-smoke.json"
+    ) {
+        return "openracing_control";
+    }
+    if relative_path.contains("support-bundle")
+        || relative_path.contains("moza-status")
+        || relative_path.contains("device-status")
+    {
+        return "support";
+    }
+    if relative_path.contains("smoke-ready") {
+        return "smoke";
+    }
+    "passive"
+}
+
+fn lane_artifact_readiness_evidence(relative_path: &str) -> &'static str {
+    match lane_artifact_category(relative_path) {
+        "passive" => "passive_input_or_descriptor_evidence",
+        "zero_safety" => "zero_torque_safety_evidence",
+        "openracing_control" => "native_control_foundation_evidence",
+        "native_response" => "native_response_evidence",
+        "native_visible" => "native_visible_or_pidff_diagnosis_evidence",
+        "pit_house" => "external_compatibility_evidence",
+        "simulator" => "external_simulator_evidence",
+        "smoke" => "smoke_readiness_evidence",
+        "support" => "diagnostic_support_evidence",
+        "sniff" => "passive_protocol_research_evidence",
+        _ => "diagnostic_evidence",
+    }
+}
+
+fn moza_lane_frontier_label(lane: &Path, support_status: &Value) -> String {
+    if lane
+        .join(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE)
+        .is_file()
+    {
+        "controlled_angle_attempt_03_recorded".to_string()
+    } else if lane
+        .join(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_PREFLIGHT_FILE)
+        .is_file()
+    {
+        "repeated_safe_undertravel_attempt_03_preflight_recorded".to_string()
+    } else if lane.join(NATIVE_PIDFF_EFFECT_LIFECYCLE_PLAN_FILE).is_file() {
+        "pidff_effect_lifecycle_profile_planned".to_string()
+    } else if lane.join(NATIVE_PIDFF_SEMANTICS_DIAGNOSIS_FILE).is_file() {
+        "repeated_safe_undertravel".to_string()
+    } else {
+        support_status
+            .pointer("/readiness/highest_passing_stage")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string()
+    }
 }
 
 fn support_bundle_status_for_receipt_validation(lane: &Path) -> Value {
@@ -27475,6 +27813,163 @@ fn print_status_receipt(json: bool, json_out: Option<&Path>, receipt: &Value) ->
     Ok(())
 }
 
+fn print_artifact_index_receipt(
+    json: bool,
+    json_out: Option<&Path>,
+    md_out: Option<&Path>,
+    receipt: &Value,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        let count = receipt
+            .get("lane_artifacts")
+            .and_then(Value::as_array)
+            .map_or(0, Vec::len);
+        let frontier = json_string(receipt, "frontier").unwrap_or("unknown");
+        println!(
+            "Moza artifact index rendered {count} lane artifact(s); frontier={frontier}; no hardware output sent."
+        );
+        if let Some(path) = json_out {
+            println!("Receipt: {}", path.display());
+        }
+        if let Some(path) = md_out {
+            println!("Markdown: {}", path.display());
+        }
+    }
+    Ok(())
+}
+
+fn render_moza_lane_artifact_index_markdown(receipt: &Value) -> String {
+    let lane = json_string(receipt, "lane").unwrap_or("unknown");
+    let frontier = json_string(receipt, "frontier").unwrap_or("unknown");
+    let readiness = receipt.get("readiness").unwrap_or(&Value::Null);
+    let highest = readiness
+        .get("highest_passing_stage")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let next = readiness
+        .get("next_required_stage")
+        .and_then(Value::as_str)
+        .unwrap_or("none");
+    let native_response = readiness
+        .get("native_actuator_response_proven")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let native_visible = readiness
+        .get("native_visible_motion_proven")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let release_ready = readiness
+        .get("release_ready")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+
+    let mut out = String::new();
+    out.push_str("# Moza Lane Artifact Index\n\n");
+    out.push_str("This index is diagnostic navigation only. It reads stored lane files, opens no HID device, sends no output or feature reports, and does not authorize hardware output or promote readiness.\n\n");
+    out.push_str(&format!("- Lane: `{}`\n", markdown_escape(lane)));
+    out.push_str(&format!("- Frontier: `{}`\n", markdown_escape(frontier)));
+    out.push_str(&format!(
+        "- Highest passing stage: `{}`\n",
+        markdown_escape(highest)
+    ));
+    out.push_str(&format!(
+        "- Next required stage: `{}`\n",
+        markdown_escape(next)
+    ));
+    out.push_str(&format!(
+        "- Native actuator response proven: `{native_response}`\n"
+    ));
+    out.push_str(&format!(
+        "- Native visible motion proven: `{native_visible}`\n"
+    ));
+    out.push_str(&format!("- Release ready: `{release_ready}`\n\n"));
+
+    let mut grouped: BTreeMap<&str, Vec<&Value>> = BTreeMap::new();
+    if let Some(artifacts) = receipt.get("lane_artifacts").and_then(Value::as_array) {
+        for artifact in artifacts {
+            let category = json_string(artifact, "category").unwrap_or("diagnostic");
+            grouped.entry(category).or_default().push(artifact);
+        }
+    }
+
+    let category_order = [
+        ("passive", "Passive Enumeration And Input"),
+        ("zero_safety", "Zero, Watchdog, Disconnect"),
+        ("openracing_control", "OpenRacing Native Control Foundation"),
+        ("native_response", "Native Response"),
+        ("native_visible", "Native Visible And PIDFF Diagnosis"),
+        ("pit_house", "Pit House External Compatibility"),
+        ("simulator", "Simulator And FFB Smoke"),
+        ("smoke", "Smoke Promotion"),
+        ("support", "Support And Service Diagnostics"),
+        ("sniff", "Passive USB Sniffing"),
+    ];
+
+    for (category, title) in category_order.iter().copied() {
+        if let Some(artifacts) = grouped.get(category) {
+            push_artifact_markdown_table(&mut out, title, artifacts);
+        }
+    }
+    let remaining: Vec<_> = grouped
+        .iter()
+        .filter(|(category, _)| {
+            !category_order
+                .iter()
+                .any(|(known_category, _)| known_category == *category)
+        })
+        .flat_map(|(_, artifacts)| artifacts.iter().copied())
+        .collect();
+    if !remaining.is_empty() {
+        push_artifact_markdown_table(&mut out, "Other Lane Artifacts", &remaining);
+    }
+
+    out.push_str("## Required Support-Bundle Artifact Index\n\n");
+    out.push_str("| Path | Required Stage | Status |\n");
+    out.push_str("| --- | --- | --- |\n");
+    if let Some(artifacts) = receipt
+        .get("required_artifact_index")
+        .and_then(Value::as_array)
+    {
+        for artifact in artifacts {
+            let path = json_string(artifact, "path").unwrap_or("unknown");
+            let stage = json_string(artifact, "required_stage").unwrap_or("unknown");
+            let status = json_string(artifact, "status").unwrap_or("unknown");
+            out.push_str(&format!(
+                "| `{}` | `{}` | `{}` |\n",
+                markdown_escape(path),
+                markdown_escape(stage),
+                markdown_escape(status)
+            ));
+        }
+    }
+    out.push('\n');
+    out
+}
+
+fn push_artifact_markdown_table(out: &mut String, title: &str, artifacts: &[&Value]) {
+    out.push_str(&format!("## {title}\n\n"));
+    out.push_str("| Path | Kind | Evidence Role |\n");
+    out.push_str("| --- | --- | --- |\n");
+    for artifact in artifacts {
+        let path = json_string(artifact, "path").unwrap_or("unknown");
+        let kind = json_string(artifact, "kind").unwrap_or("unknown");
+        let evidence = json_string(artifact, "readiness_evidence").unwrap_or("diagnostic");
+        out.push_str(&format!(
+            "| `{}` | `{}` | `{}` |\n",
+            markdown_escape(path),
+            markdown_escape(kind),
+            markdown_escape(evidence)
+        ));
+    }
+    out.push('\n');
+}
+
+fn markdown_escape(value: &str) -> String {
+    value.replace('|', "\\|")
+}
+
 fn print_descriptor_receipt(
     json: bool,
     json_out: Option<&Path>,
@@ -29197,6 +29692,62 @@ mod tests {
                 requirement.relative_path
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn artifact_index_markdown_is_no_output_navigation() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path().join("captures"))?;
+        write_text_file(&dir.path().join("captures/r5-idle.jsonl"), "{}\n")?;
+        write_test_json_file(
+            &dir.path()
+                .join(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_PREFLIGHT_FILE),
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl moza controlled-angle-smoke",
+                "dry_run": true,
+                "hardware_output_enabled": false
+            }),
+        )?;
+
+        let support_status = support_bundle_status(dir.path());
+        let receipt = serde_json::json!({
+            "success": true,
+            "command": "wheelctl moza artifact-index",
+            "generated_at_utc": TEST_GENERATED_AT,
+            "lane": dir.path().display().to_string(),
+            "frontier": moza_lane_frontier_label(dir.path(), &support_status),
+            "no_hid_device_opened": true,
+            "no_ffb_writes": true,
+            "hardware_output_authorized": false,
+            "native_visible_claimed": false,
+            "readiness": support_status.get("readiness").cloned().unwrap_or(Value::Null),
+            "required_artifact_index": support_status
+                .get("artifact_index")
+                .cloned()
+                .unwrap_or_else(|| Value::Array(Vec::new())),
+            "lane_artifacts": discover_lane_artifacts(dir.path())?
+        });
+
+        let markdown = render_moza_lane_artifact_index_markdown(&receipt);
+        assert!(markdown.contains("diagnostic navigation only"));
+        assert!(markdown.contains("Native Visible And PIDFF Diagnosis"));
+        assert!(markdown.contains(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_PREFLIGHT_FILE));
+        assert!(markdown.contains("captures/r5-idle.jsonl"));
+        assert!(markdown.contains("repeated_safe_undertravel_attempt_03_preflight_recorded"));
+        assert_eq!(
+            receipt
+                .get("hardware_output_authorized")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            receipt
+                .get("native_visible_claimed")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
         Ok(())
     }
 

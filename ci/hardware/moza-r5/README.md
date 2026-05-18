@@ -420,6 +420,14 @@ Use the top-level `support-bundle --device <r5>` command for the lane artifact s
 
 The Moza section summarizes missing artifacts and failed gates across passive, zero, OpenRacing-control, and smoke-ready stages. It is diagnostic context only, not a readiness promotion.
 
+For human navigation, render the dated lane artifact index without touching hardware:
+
+```powershell
+wheelctl moza artifact-index --lane ci/hardware/moza-r5/YYYY-MM-DD --md-out ci/hardware/moza-r5/YYYY-MM-DD/index.md
+```
+
+The generated `index.md` groups stored artifacts by passive input, zero safety, OpenRacing native control, native response, native visible/PIDFF diagnosis, Pit House, simulator, smoke, support, and sniffing evidence. It reads existing lane files only, opens no HID device, sends no reports, creates no authorization receipt, and does not promote readiness.
+
 ## Hard Rules
 
 - Passive commands do not send FFB output, feature reports, or serial config.

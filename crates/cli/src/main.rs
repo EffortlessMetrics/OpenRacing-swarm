@@ -1633,6 +1633,43 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_artifact_index() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "artifact-index",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
+            "--json-out",
+            "target/moza-artifact-index.json",
+            "--md-out",
+            "ci/hardware/moza-r5/2026-05-13/index.md",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::ArtifactIndex {
+                lane,
+                json_out,
+                md_out,
+            }) => {
+                assert_eq!(
+                    lane.as_path().to_str(),
+                    Some("ci/hardware/moza-r5/2026-05-13")
+                );
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/moza-artifact-index.json")
+                );
+                assert_eq!(
+                    md_out.as_ref().and_then(|p| p.to_str()),
+                    Some("ci/hardware/moza-r5/2026-05-13/index.md")
+                );
+            }
+            _ => return Err("expected Moza ArtifactIndex command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_descriptor_with_device() -> TestResult {
         let cli = parse_cli([
             "wheelctl",
