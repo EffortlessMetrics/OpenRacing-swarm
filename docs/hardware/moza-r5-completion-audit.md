@@ -101,6 +101,10 @@ highest_passing_stage=native_response_ready
 next_required_stage=native_visible_ready
 hardware_output_authorized=false
 authorization_receipt_created=false
+next_operator_step.kind=awaiting_separate_attempt_03_authorization
+next_operator_step.required_authorization_receipt=native-controlled-angle-attempt-03-authorization.json
+next_operator_step.planned_output_receipt=native-controlled-angle-attempt-03-smoke.json
+next_operator_step.required_bench_clear_evidence=bench clear for exactly one Moza controlled-angle attempt 03: target 1 degree, max 5%, timeout 2000 ms, strategy pidff-bounded-effect, profile bounded-pidff-effect-lifecycle-v1, R5 stable, KS attached securely, hands clear, wheel clear, prior undertravel receipts preserved
 ```
 
 The current input-role semantic evidence remains diagnostic:

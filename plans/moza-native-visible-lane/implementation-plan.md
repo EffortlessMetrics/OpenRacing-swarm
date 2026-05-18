@@ -46,6 +46,11 @@ diagnostic artifacts without becoming readiness claims. This protects the
 current lane shape, where failed verifier receipts are intentionally preserved
 while native-visible and smoke-ready remain blocked.
 
+The bench wizard now surfaces the pinned attempt-03 bench-clear phrase, required
+profile, authorization receipt, and planned output receipt in its read-only
+operator packet. This is navigation only: the wizard still creates no
+authorization receipt, emits no output command, and makes no readiness claim.
+
 ## Work item: activate-source-of-truth
 
 Status: completed
@@ -240,6 +245,56 @@ git diff --check
 
 Remove only the added regression assertions. Do not remove or rewrite preserved
 failed verifier receipts.
+
+## Work item: surface-attempt-03-clearance-phrase
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: reliable operator handoff for attempt-03 authorization
+Blocked by: n/a
+
+### Goal
+
+Make the no-output bench wizard show the exact command-bound clearance phrase
+that the attempt-03 authorizer requires.
+
+### Production delta
+
+Add the pinned attempt-03 bench-clear phrase, required profile, authorization
+receipt, and planned output receipt to the `bench-wizard` next-operator-step
+payload and Markdown output.
+
+### Non-goals
+
+No authorization receipt, no hardware output, no HID open, no output command,
+no readiness promotion, and no change to the attempt-03 command shape.
+
+### Acceptance
+
+- `bench-wizard` reports `required_bench_clear_evidence` for the
+  `awaiting_separate_attempt_03_authorization` step.
+- Markdown includes the exact phrase in a text block.
+- The wizard still reports `hardware_output_allowed_now=false`,
+  `authorization_created_by_wizard=false`, and emits only safe no-output
+  commands.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl moza -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+git diff --check
+```
+
+### Rollback
+
+Remove only the operator-packet fields and assertions. Do not alter attempt-03
+receipts or authorization semantics.
 
 ## Work item: attempt-03-authorization
 
