@@ -30899,6 +30899,54 @@ mod tests {
         assert!(markdown.contains(
             "| `smoke-ready-verification.json` | `smoke_ready` | `pass` | `stage_failed` |"
         ));
+
+        let wizard_receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
+        assert_eq!(
+            json_bool(&wizard_receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&wizard_receipt, "native_visible_claimed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&wizard_receipt, "smoke_ready_claimed"),
+            Some(false)
+        );
+        let wizard_readiness = wizard_receipt
+            .get("readiness")
+            .ok_or("expected bench-wizard readiness")?;
+        assert_ne!(
+            wizard_readiness
+                .get("native_visible_motion_proven")
+                .and_then(Value::as_bool),
+            Some(true),
+            "bench-wizard must not convert a valid failed native-visible receipt into readiness"
+        );
+        assert_ne!(
+            wizard_readiness
+                .get("ready_for_real_hardware_smoke")
+                .and_then(Value::as_bool),
+            Some(true),
+            "bench-wizard must not convert a valid failed smoke receipt into readiness"
+        );
+        assert_eq!(
+            wizard_receipt
+                .pointer("/next_operator_step/kind")
+                .and_then(Value::as_str),
+            Some("refresh_readiness")
+        );
+        let active_blockers = wizard_receipt
+            .get("active_blockers")
+            .and_then(Value::as_array)
+            .ok_or("expected bench-wizard active blockers")?;
+        assert!(
+            active_blockers.iter().any(|blocker| {
+                json_string(blocker, "name") == Some("native_visible_motion")
+                    && json_string(blocker, "status") == Some("blocked")
+            }),
+            "bench-wizard must keep native visible blocked when the verifier receipt failed: {active_blockers:?}"
+        );
         Ok(())
     }
 
