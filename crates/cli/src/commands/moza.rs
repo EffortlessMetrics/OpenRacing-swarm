@@ -10319,6 +10319,9 @@ fn pre_output_readiness_dir(lane: &Path) -> PreOutputReadinessReceipt {
     let status_receipts_no_output = status_receipts.iter().all(|check| check.status == "pass");
 
     let role_evidence_complete = required_role_evidence_complete(&passive);
+    let input_role_semantics = moza_input_role_semantics_summary(lane);
+    let input_semantic_mapping_complete = json_string(&input_role_semantics, "semantic_status")
+        == Some("all_required_roles_semantically_proven");
     let native_actuator_response_gate = verify_native_actuator_response_smoke_gate(lane);
     let native_visible_motion_gate = verify_native_actuator_visible_smoke_gate(lane);
     let native_actuator_response_proven = native_actuator_response_gate.status == "pass";
@@ -10380,6 +10383,8 @@ fn pre_output_readiness_dir(lane: &Path) -> PreOutputReadinessReceipt {
         ready_for_external_compatibility,
         native_actuator_response_proven,
         native_visible_motion_proven,
+        input_semantic_mapping_complete,
+        input_role_semantics,
         blocking_items,
         ffb_blocking_items,
         native_control_blocking_items,
@@ -10420,6 +10425,7 @@ fn pre_output_readiness_dir(lane: &Path) -> PreOutputReadinessReceipt {
             "native_visible_motion_proven remains a stricter native claim and is false until an intentionally reviewed visible-motion profile passes".to_string(),
             "ready_for_external_compatibility tracks optional adapter/vendor-app surfaces such as simulator telemetry bridges and Pit House coexistence; it is not required for native control".to_string(),
             "ready_for_ffb is the legacy bounded simulator FFB preflight; keep it separate from native-control and release-readiness claims".to_string(),
+            "input_role_semantics is diagnostic topology context; generic_aux mappings remain valid passive evidence but are not full role-specific semantic proof".to_string(),
         ],
     }
 }
@@ -27484,6 +27490,8 @@ struct PreOutputReadinessReceipt {
     ready_for_external_compatibility: bool,
     native_actuator_response_proven: bool,
     native_visible_motion_proven: bool,
+    input_semantic_mapping_complete: bool,
+    input_role_semantics: Value,
     blocking_items: Vec<String>,
     ffb_blocking_items: Vec<String>,
     native_control_blocking_items: Vec<String>,
@@ -31292,6 +31300,104 @@ mod tests {
         assert!(pidff.descriptor_metadata_trusted);
         assert!(pidff.ready);
         assert!(pidff.blocking_items.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn pre_output_readiness_surfaces_generic_aux_input_semantics_without_readiness_blocker()
+    -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("passive-verification.json"),
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl moza verify-bundle",
+                "lane": dir.path().display().to_string(),
+                "requested_stage": "passive",
+                "missing_artifacts": 0,
+                "invalid_artifacts": 0,
+                "failed_gates": 0,
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "gates": [
+                    {"name": "lane_directory", "status": "pass"},
+                    {"name": "manifest_no_overclaim", "status": "pass"},
+                    {"name": "manifest_r5_pid_consistency", "status": "pass"},
+                    {"name": "moza_r5_observed", "status": "pass"},
+                    {"name": "moza_topology_observed", "status": "pass"},
+                    {"name": "descriptor_metadata", "status": "pass"},
+                    {"name": "passive_receipts_successful", "status": "pass"},
+                    {"name": "passive_receipts_no_ffb_writes", "status": "pass"},
+                    {"name": "passive_captures_parse", "status": "pass"},
+                    {"name": "parser_fixture_validation", "status": "pass"},
+                    {"name": "fixture_promotion", "status": "pass"}
+                ],
+                "role_evidence": [
+                    {
+                        "control": "brake",
+                        "role": "brake",
+                        "required": true,
+                        "semantic_status": "generic_aux",
+                        "parser_visible": true,
+                        "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
+                        "missing_requirements": [],
+                        "notes": [
+                            "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
+                        ]
+                    },
+                    {
+                        "control": "steering",
+                        "role": "steering",
+                        "required": true,
+                        "semantic_status": "proven",
+                        "parser_visible": true,
+                        "evidence_capture": "captures/r5-steering-sweep.jsonl",
+                        "missing_requirements": [],
+                        "notes": []
+                    }
+                ]
+            }),
+        )?;
+
+        let receipt = pre_output_readiness_dir(dir.path());
+
+        assert!(!receipt.input_semantic_mapping_complete);
+        let semantics = &receipt.input_role_semantics;
+        assert_eq!(
+            json_string(semantics, "semantic_status"),
+            Some("partial_generic_aux_mapping")
+        );
+        assert_eq!(json_u64(semantics, "required_role_count"), Some(2));
+        assert_eq!(
+            json_u64(semantics, "required_parser_visible_count"),
+            Some(2)
+        );
+        assert_eq!(json_u64(semantics, "generic_aux_role_count"), Some(1));
+        assert_eq!(json_bool(semantics, "blocks_native_control"), Some(false));
+        assert_eq!(json_bool(semantics, "blocks_native_visible"), Some(false));
+        assert_eq!(json_bool(semantics, "blocks_smoke_ready"), Some(false));
+        assert_eq!(json_bool(semantics, "readiness_claim"), Some(false));
+        assert!(
+            receipt
+                .passed_items
+                .iter()
+                .any(|item| item == "role_evidence_complete")
+        );
+        assert!(
+            !receipt
+                .blocking_items
+                .iter()
+                .any(|item| item == "input_semantic_mapping_complete")
+        );
+        assert!(
+            !receipt
+                .passed_items
+                .iter()
+                .any(|item| item == "input_semantic_mapping_complete")
+        );
         Ok(())
     }
 
