@@ -54,7 +54,8 @@ The existing attempt-03 preflight is no-output evidence only.
 | --- | --- | --- | --- |
 | Dated real hardware lane exists for Steven's Moza stack | `ci/hardware/moza-r5/2026-05-13/manifest.json`; `device-list.json`; `moza-probe.json`; `hid-list.json`; `descriptor.json`; verifier endpoint and role evidence | Pass | Manifest completion state is `native_response_ready`; release, simulator, and high-torque validation are false. |
 | R5 wheelbase observed | `verify-bundle --stage native-visible-ready`; gates `moza_r5_observed`, `manifest_r5_pid_consistency` | Pass | Current verifier found matching R5 `0x346E:0x0004` evidence across lane receipts and captures. |
-| KS/ES wheels, SR-P pedals, and HBP handbrake represented | Verifier `role_evidence`; captures `ks-controls.jsonl`, `es-controls.jsonl`, `r5-throttle-only-sweep.jsonl`, `r5-brake-only-sweep.jsonl`, `r5-clutch-only-sweep.jsonl`, `r5-handbrake-only-sweep.jsonl` | Pass with semantic caveats | KS, ES, steering, and throttle are parser-proven. Brake, clutch, and handbrake are backed by generic R5 V1 extended fields; semantic naming remains noted by verifier. |
+| KS/ES wheels, SR-P pedals, and HBP handbrake represented | Verifier `role_evidence`; captures `ks-controls.jsonl`, `es-controls.jsonl`, `r5-throttle-only-sweep.jsonl`, `r5-brake-only-sweep.jsonl`, `r5-clutch-only-sweep.jsonl`, `r5-handbrake-only-sweep.jsonl` | Pass with semantic caveats | KS, ES, steering, and throttle are parser-proven. Brake, clutch, and handbrake are parser-visible through generic R5 V1 extended fields; semantic naming remains unproven and diagnostic only. |
+| Input role semantic mapping complete | `pre-output-readiness.json` `input_semantic_mapping_complete=false`; `input_role_semantics`; `artifact-index` Input Role Semantics section | Partial | Six candidate-only R5 V1 extended slots are surfaced for brake, clutch, and handbrake. Four candidates are ambiguous across clutch/handbrake captures. Every candidate has `claim_status=candidate_only` and `readiness_claim=false`; these help navigation but do not prove role-specific semantics. |
 | Passive enumeration proven | `passive-verification.json`; `manifest-promotion-passive.json`; `lane-audit-passive.json`; verifier passive gates | Pass | Passive verifier and audit pass. |
 | Descriptor capture proven | `descriptor.json`; verifier gate `descriptor_metadata` | Pass | Descriptor metadata is complete for the R5 record. |
 | Input parsing proven | Passive capture files; verifier gate `passive_captures_parse` | Pass | Current verifier replayed 128215 passive capture reports through Moza parsers. |
@@ -100,6 +101,16 @@ highest_passing_stage=native_response_ready
 next_required_stage=native_visible_ready
 hardware_output_authorized=false
 authorization_receipt_created=false
+```
+
+The current input-role semantic evidence remains diagnostic:
+
+```text
+input_semantic_mapping_complete=false
+semantic_status=partial_generic_aux_mapping
+semantic_candidate_count=6
+ambiguous_semantic_candidate_count=4
+readiness_claim=false
 ```
 
 The current smoke-ready state is incomplete:
