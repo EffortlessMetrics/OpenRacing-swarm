@@ -37,6 +37,7 @@ status_docs = [
   "ci/hardware/moza-r5/2026-05-13/index.md",
   "docs/hardware/moza-r5-validation.md",
   "docs/hardware/moza-r5-artifact-checklist.md",
+  "docs/hardware/moza-r5-completion-audit.md",
   "docs/hardware/moza-validation-matrix.md",
   "docs/hardware/moza-r5-controlled-angle-analysis.md",
   "docs/hardware/moza-r5-pidff-lifecycle-trace.md",
@@ -54,6 +55,22 @@ claim_boundary = "Docs and source-of-truth metadata only; no hardware output, no
 commands = [
   "python scripts/policy_file.py",
   "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "record-completion-audit"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-record-completion-audit"
+current_pointer = "docs/hardware/moza-r5-completion-audit.md"
+claim_boundary = "Docs-only audit; no hardware output, no authorization receipt, no readiness promotion, and no new hardware artifact claim."
+commands = [
+  "python scripts/policy_file.py",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-bench-wizard-current.json --md-out target/moza-bench-wizard-current.md --json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-native-visible-current.json --json",
   "git diff --check",
 ]
 

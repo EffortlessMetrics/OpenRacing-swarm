@@ -29,6 +29,11 @@ undertravel evidence, not visible-motion proof.
 dry-run for `bounded-pidff-effect-lifecycle-v1`. No attempt-03 authorization or
 output receipt exists yet.
 
+`docs/hardware/moza-r5-completion-audit.md` maps the broader Moza lane objective
+to concrete receipts and confirms that the objective is still incomplete:
+native-visible, Pit House coexistence, simulator telemetry, bounded simulator
+FFB, and smoke-ready promotion remain missing.
+
 ## Work item: activate-source-of-truth
 
 Status: completed
@@ -72,6 +77,52 @@ git diff --check
 
 Remove the added source-of-truth files and restore `docs/NOW_NEXT_LATER.md` to
 the previous text.
+
+## Work item: record-completion-audit
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: clear no-output handoff while attempt-03 authorization is blocked
+Blocked by: n/a
+
+### Goal
+
+Record a prompt-to-artifact audit that maps the broad Moza lane objective to
+real checked-in receipts, verifier gates, and missing artifacts.
+
+### Production delta
+
+Add `docs/hardware/moza-r5-completion-audit.md` and link it from the active goal
+status docs.
+
+### Non-goals
+
+No hardware output, no authorization receipt, no readiness promotion, no
+hardware artifact replacement, and no output code change.
+
+### Acceptance
+
+- The audit restates the lane objective as concrete deliverables.
+- Every explicit objective area is mapped to artifact evidence.
+- Missing native-visible, Pit House, simulator, bounded simulator FFB, and
+  smoke-ready gates are called out as incomplete.
+- The audit does not rely on proxy status alone or claim completion.
+
+### Proof commands
+
+```powershell
+python scripts/policy_file.py
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-bench-wizard-current.json --md-out target/moza-bench-wizard-current.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-native-visible-current.json --json
+git diff --check
+```
+
+### Rollback
+
+Remove the audit doc and status-doc pointer. Do not touch lane receipts.
 
 ## Work item: attempt-03-authorization
 
