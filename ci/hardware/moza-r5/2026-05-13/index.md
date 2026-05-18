@@ -189,4 +189,6 @@ This section is diagnostic navigation only. `generic_aux` roles are valid parser
 | `smoke-ready-verification.json` | `smoke_ready` | `pass` | `stage_failed` |
 | `manifest-promotion-smoke-ready.json` | `smoke_ready` | `missing` | `artifact_only` |
 | `lane-audit-smoke-ready.json` | `smoke_ready` | `missing` | `artifact_only` |
+| `native-controlled-angle-attempt-03-authorization.json` | `native_visible_ready` | `missing` | `planned_missing` |
+| `native-controlled-angle-attempt-03-smoke.json` | `native_visible_ready` | `missing` | `planned_missing` |
 

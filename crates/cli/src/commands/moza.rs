@@ -12980,7 +12980,7 @@ fn artifact_navigation_status(lane: &Path) -> Value {
     } else {
         Value::Null
     };
-    let artifact_index: Vec<_> = lane_artifact_index_requirements()
+    let artifact_index: Vec<_> = artifact_navigation_requirements()
         .map(|requirement| check_bundle_artifact(lane, &requirement))
         .collect();
 
@@ -14051,6 +14051,25 @@ fn lane_artifact_index_requirements() -> impl Iterator<Item = BundleArtifactRequ
         .chain(stored_receipt_artifact_requirements().iter().copied())
 }
 
+fn artifact_navigation_requirements() -> impl Iterator<Item = BundleArtifactRequirement> {
+    lane_artifact_index_requirements()
+        .chain(attempt_03_planned_artifact_requirements().iter().copied())
+}
+
+fn attempt_03_planned_artifact_requirements() -> &'static [BundleArtifactRequirement] {
+    const REQUIREMENTS: &[BundleArtifactRequirement] = &[
+        BundleArtifactRequirement::json(
+            NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE,
+            MozaBundleStage::NativeVisibleReady,
+        ),
+        BundleArtifactRequirement::json(
+            NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE,
+            MozaBundleStage::NativeVisibleReady,
+        ),
+    ];
+    REQUIREMENTS
+}
+
 fn stored_receipt_artifact_requirements() -> &'static [BundleArtifactRequirement] {
     const REQUIREMENTS: &[BundleArtifactRequirement] = &[
         BundleArtifactRequirement::json("passive-verification.json", MozaBundleStage::Passive),
@@ -14117,6 +14136,7 @@ fn check_bundle_artifact(
 ) -> BundleArtifactCheck {
     let path = lane.join(requirement.relative_path);
     if !path.is_file() {
+        let (claim_status, claim_notes) = missing_bundle_artifact_claim_metadata(requirement);
         return BundleArtifactCheck {
             path: requirement.relative_path.to_string(),
             kind: requirement.kind.label().to_string(),
@@ -14125,8 +14145,8 @@ fn check_bundle_artifact(
             valid: false,
             line_count: None,
             status: "missing".to_string(),
-            claim_status: None,
-            claim_notes: Vec::new(),
+            claim_status,
+            claim_notes,
             notes: vec![format!("expected {}", path.display())],
         };
     }
@@ -14189,6 +14209,26 @@ fn check_bundle_artifact(
             },
         },
     }
+}
+
+fn missing_bundle_artifact_claim_metadata(
+    requirement: &BundleArtifactRequirement,
+) -> (Option<String>, Vec<String>) {
+    if matches!(
+        requirement.relative_path,
+        NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE
+            | NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE
+    ) {
+        return (
+            Some("planned_missing".to_string()),
+            vec![
+                "attempt_03_frontier_artifact_not_recorded".to_string(),
+                "native_visible_not_claimed".to_string(),
+                "no_authorization_or_output_created_by_artifact_index".to_string(),
+            ],
+        );
+    }
+    (None, Vec::new())
 }
 
 fn bundle_artifact_claim_metadata(
@@ -30860,6 +30900,77 @@ mod tests {
                 .and_then(Value::as_bool),
             Some(false)
         );
+        Ok(())
+    }
+
+    #[test]
+    fn artifact_index_marks_attempt_03_planned_artifacts_missing_without_claims() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        let selector = "hid-0x346E-0x0004-if2-0x0001-0x0004";
+        write_attempt_03_controlled_angle_dry_run_receipt(dir.path(), selector)?;
+
+        let receipt = moza_artifact_index_receipt(dir.path(), None, None)?;
+
+        assert_eq!(
+            json_bool(&receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "native_visible_claimed"), Some(false));
+        let artifact_index = receipt
+            .get("required_artifact_index")
+            .and_then(Value::as_array)
+            .ok_or("expected required_artifact_index array")?;
+        for path in [
+            NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE,
+            NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE,
+        ] {
+            let artifact = artifact_index
+                .iter()
+                .find(|artifact| artifact.get("path").and_then(Value::as_str) == Some(path))
+                .ok_or_else(|| format!("expected {path} in artifact index"))?;
+            assert_eq!(artifact.get("exists").and_then(Value::as_bool), Some(false));
+            assert_eq!(
+                artifact.get("status").and_then(Value::as_str),
+                Some("missing")
+            );
+            assert_eq!(
+                artifact.get("claim_status").and_then(Value::as_str),
+                Some("planned_missing")
+            );
+            let claim_notes = artifact
+                .get("claim_notes")
+                .and_then(Value::as_array)
+                .ok_or("expected claim notes for planned attempt-03 artifact")?;
+            for expected_note in [
+                "attempt_03_frontier_artifact_not_recorded",
+                "native_visible_not_claimed",
+                "no_authorization_or_output_created_by_artifact_index",
+            ] {
+                assert!(
+                    claim_notes
+                        .iter()
+                        .any(|note| note.as_str() == Some(expected_note)),
+                    "expected {path} claim notes to include {expected_note}: {claim_notes:?}"
+                );
+            }
+        }
+
+        let readiness = receipt.get("readiness").ok_or("expected readiness")?;
+        assert_ne!(
+            readiness
+                .get("native_visible_motion_proven")
+                .and_then(Value::as_bool),
+            Some(true),
+            "planned missing attempt-03 artifacts must not imply native visible readiness"
+        );
+        let markdown = render_moza_lane_artifact_index_markdown(&receipt);
+        assert!(markdown.contains(
+            "| `native-controlled-angle-attempt-03-authorization.json` | `native_visible_ready` | `missing` | `planned_missing` |"
+        ));
+        assert!(markdown.contains(
+            "| `native-controlled-angle-attempt-03-smoke.json` | `native_visible_ready` | `missing` | `planned_missing` |"
+        ));
         Ok(())
     }
 

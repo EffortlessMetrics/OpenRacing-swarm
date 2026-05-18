@@ -58,6 +58,12 @@ authorization is recorded and names `native-controlled-angle-attempt-03-smoke.js
 as the planned output receipt, while still emitting no output command and
 creating no authorization receipt itself.
 
+The artifact index now treats the attempt-03 authorization and output receipts
+as first-class planned frontier artifacts. Until they exist, the required table
+marks `native-controlled-angle-attempt-03-authorization.json` and
+`native-controlled-angle-attempt-03-smoke.json` as `planned_missing`, with
+`native_visible_not_claimed` preserved.
+
 ## Work item: activate-source-of-truth
 
 Status: completed
@@ -357,6 +363,59 @@ git diff --check
 
 Remove only the post-authorization wizard branch and regression test. Preserve
 any real attempt-03 authorization or output receipts if they exist.
+
+## Work item: surface-attempt-03-planned-artifacts
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: clear artifact-index navigation while attempt-03 is blocked
+Blocked by: n/a
+
+### Goal
+
+Make the artifact index explicitly show the planned attempt-03 authorization and
+output receipts before they exist, without making them readiness claims.
+
+### Production delta
+
+Extend artifact-index navigation requirements to include
+`native-controlled-angle-attempt-03-authorization.json` and
+`native-controlled-angle-attempt-03-smoke.json`. Missing entries render with
+`claim_status=planned_missing` and `native_visible_not_claimed`, and the checked
+in lane `index.md` is regenerated from `wheelctl moza artifact-index`.
+
+### Non-goals
+
+No authorization receipt, no hardware output, no HID open, no output command,
+no readiness promotion, no support-bundle gate expansion, and no change to the
+attempt-03 command shape.
+
+### Acceptance
+
+- Artifact-index required table includes both attempt-03 planned artifacts.
+- Missing planned artifacts use `claim_status=planned_missing`.
+- Native-visible readiness remains false.
+- Checked-in `ci/hardware/moza-r5/2026-05-13/index.md` matches the renderer.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl artifact_index -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl moza -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the planned artifact-index requirements and regenerate
+`ci/hardware/moza-r5/2026-05-13/index.md`. Do not alter any real attempt-03
+authorization or output receipts if they exist.
 
 ## Work item: attempt-03-authorization
 
