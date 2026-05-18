@@ -119,56 +119,56 @@ This index is diagnostic navigation only. It reads stored lane files, opens no H
 
 ## Required Support-Bundle Artifact Index
 
-| Path | Required Stage | Status |
-| --- | --- | --- |
-| `manifest.json` | `passive` | `pass` |
-| `device-list.json` | `passive` | `pass` |
-| `moza-probe.json` | `passive` | `pass` |
-| `hid-list.json` | `passive` | `pass` |
-| `hardware-doctor.json` | `passive` | `pass` |
-| `descriptor.json` | `passive` | `pass` |
-| `captures/r5-idle.jsonl` | `passive` | `pass` |
-| `captures/r5-steering-sweep.jsonl` | `passive` | `pass` |
-| `captures/r5-throttle-only-sweep.jsonl` | `passive` | `pass` |
-| `captures/r5-brake-only-sweep.jsonl` | `passive` | `pass` |
-| `captures/r5-clutch-only-sweep.jsonl` | `passive` | `pass` |
-| `captures/r5-handbrake-only-sweep.jsonl` | `passive` | `pass` |
-| `captures/r5-aggregated-idle-after-controls.jsonl` | `passive` | `pass` |
-| `captures/ks-controls.jsonl` | `passive` | `pass` |
-| `captures/es-controls.jsonl` | `passive` | `pass` |
-| `parser-fixture-validation.json` | `passive` | `pass` |
-| `fixture-promotion.json` | `passive` | `pass` |
-| `init-off.json` | `openracing_control_ready` | `pass` |
-| `init-standard.json` | `openracing_control_ready` | `pass` |
-| `moza-status.json` | `openracing_control_ready` | `pass` |
-| `device-status.json` | `openracing_control_ready` | `pass` |
-| `support-bundle.json` | `openracing_control_ready` | `pass` |
-| `zero-torque-proof.json` | `zero` | `pass` |
-| `watchdog-proof.json` | `zero` | `pass` |
-| `disconnect-proof.json` | `zero` | `pass` |
-| `low-torque-proof.json` | `openracing_control_ready` | `pass` |
-| `steering-angle-stream-proof.json` | `openracing_control_ready` | `pass` |
-| `native-actuator-profile-smoke.json` | `openracing_control_ready` | `pass` |
-| `native-actuator-visible-smoke.json` | `native_response_ready` | `pass` |
-| `pit-house-coexistence.json` | `smoke_ready` | `missing` |
-| `simulator-telemetry-proof.json` | `smoke_ready` | `missing` |
-| `simulator-ffb-smoke.json` | `smoke_ready` | `missing` |
-| `passive-verification.json` | `passive` | `pass` |
-| `manifest-promotion-passive.json` | `passive` | `pass` |
-| `lane-audit-passive.json` | `passive` | `pass` |
-| `zero-verification.json` | `zero` | `pass` |
-| `manifest-promotion-zero.json` | `zero` | `pass` |
-| `lane-audit-zero.json` | `zero` | `pass` |
-| `openracing-control-verification.json` | `openracing_control_ready` | `pass` |
-| `manifest-promotion-openracing-control.json` | `openracing_control_ready` | `pass` |
-| `lane-audit-openracing-control.json` | `openracing_control_ready` | `pass` |
-| `native-response-verification.json` | `native_response_ready` | `pass` |
-| `manifest-promotion-native-response.json` | `native_response_ready` | `pass` |
-| `lane-audit-native-response.json` | `native_response_ready` | `pass` |
-| `native-visible-verification.json` | `native_visible_ready` | `pass` |
-| `manifest-promotion-native-visible.json` | `native_visible_ready` | `missing` |
-| `lane-audit-native-visible.json` | `native_visible_ready` | `missing` |
-| `smoke-ready-verification.json` | `smoke_ready` | `pass` |
-| `manifest-promotion-smoke-ready.json` | `smoke_ready` | `missing` |
-| `lane-audit-smoke-ready.json` | `smoke_ready` | `missing` |
+| Path | Required Stage | Artifact Status | Claim Status |
+| --- | --- | --- | --- |
+| `manifest.json` | `passive` | `pass` | `artifact_only` |
+| `device-list.json` | `passive` | `pass` | `artifact_only` |
+| `moza-probe.json` | `passive` | `pass` | `artifact_only` |
+| `hid-list.json` | `passive` | `pass` | `artifact_only` |
+| `hardware-doctor.json` | `passive` | `pass` | `artifact_only` |
+| `descriptor.json` | `passive` | `pass` | `artifact_only` |
+| `captures/r5-idle.jsonl` | `passive` | `pass` | `artifact_only` |
+| `captures/r5-steering-sweep.jsonl` | `passive` | `pass` | `artifact_only` |
+| `captures/r5-throttle-only-sweep.jsonl` | `passive` | `pass` | `artifact_only` |
+| `captures/r5-brake-only-sweep.jsonl` | `passive` | `pass` | `artifact_only` |
+| `captures/r5-clutch-only-sweep.jsonl` | `passive` | `pass` | `artifact_only` |
+| `captures/r5-handbrake-only-sweep.jsonl` | `passive` | `pass` | `artifact_only` |
+| `captures/r5-aggregated-idle-after-controls.jsonl` | `passive` | `pass` | `artifact_only` |
+| `captures/ks-controls.jsonl` | `passive` | `pass` | `artifact_only` |
+| `captures/es-controls.jsonl` | `passive` | `pass` | `artifact_only` |
+| `parser-fixture-validation.json` | `passive` | `pass` | `artifact_only` |
+| `fixture-promotion.json` | `passive` | `pass` | `artifact_only` |
+| `init-off.json` | `openracing_control_ready` | `pass` | `artifact_only` |
+| `init-standard.json` | `openracing_control_ready` | `pass` | `artifact_only` |
+| `moza-status.json` | `openracing_control_ready` | `pass` | `artifact_only` |
+| `device-status.json` | `openracing_control_ready` | `pass` | `artifact_only` |
+| `support-bundle.json` | `openracing_control_ready` | `pass` | `artifact_only` |
+| `zero-torque-proof.json` | `zero` | `pass` | `artifact_only` |
+| `watchdog-proof.json` | `zero` | `pass` | `artifact_only` |
+| `disconnect-proof.json` | `zero` | `pass` | `artifact_only` |
+| `low-torque-proof.json` | `openracing_control_ready` | `pass` | `artifact_only` |
+| `steering-angle-stream-proof.json` | `openracing_control_ready` | `pass` | `artifact_only` |
+| `native-actuator-profile-smoke.json` | `openracing_control_ready` | `pass` | `artifact_only` |
+| `native-actuator-visible-smoke.json` | `native_response_ready` | `pass` | `artifact_only` |
+| `pit-house-coexistence.json` | `smoke_ready` | `missing` | `artifact_only` |
+| `simulator-telemetry-proof.json` | `smoke_ready` | `missing` | `artifact_only` |
+| `simulator-ffb-smoke.json` | `smoke_ready` | `missing` | `artifact_only` |
+| `passive-verification.json` | `passive` | `pass` | `stage_passed` |
+| `manifest-promotion-passive.json` | `passive` | `pass` | `promotion_applied` |
+| `lane-audit-passive.json` | `passive` | `pass` | `audit_passed` |
+| `zero-verification.json` | `zero` | `pass` | `stage_passed` |
+| `manifest-promotion-zero.json` | `zero` | `pass` | `promotion_applied` |
+| `lane-audit-zero.json` | `zero` | `pass` | `audit_passed` |
+| `openracing-control-verification.json` | `openracing_control_ready` | `pass` | `stage_passed` |
+| `manifest-promotion-openracing-control.json` | `openracing_control_ready` | `pass` | `promotion_applied` |
+| `lane-audit-openracing-control.json` | `openracing_control_ready` | `pass` | `audit_passed` |
+| `native-response-verification.json` | `native_response_ready` | `pass` | `stage_passed` |
+| `manifest-promotion-native-response.json` | `native_response_ready` | `pass` | `promotion_applied` |
+| `lane-audit-native-response.json` | `native_response_ready` | `pass` | `audit_passed` |
+| `native-visible-verification.json` | `native_visible_ready` | `pass` | `stage_failed` |
+| `manifest-promotion-native-visible.json` | `native_visible_ready` | `missing` | `artifact_only` |
+| `lane-audit-native-visible.json` | `native_visible_ready` | `missing` | `artifact_only` |
+| `smoke-ready-verification.json` | `smoke_ready` | `pass` | `stage_failed` |
+| `manifest-promotion-smoke-ready.json` | `smoke_ready` | `missing` | `artifact_only` |
+| `lane-audit-smoke-ready.json` | `smoke_ready` | `missing` | `artifact_only` |
 
