@@ -35,7 +35,7 @@
     "operator_goal": {
       "authorized_now": false,
       "eventual_target": "90 degrees right, then 90 degrees left to reset",
-      "next_authorizable_target": "the first ladder stage after implementation and review"
+      "next_authorizable_target": "one reviewed 1 degree retry after exact authorization and fresh bench-clear"
     },
     "profile_family": "feedback_bounded_controlled_angle",
     "promotion_rule": "Do not attempt a later ladder stage until the prior stage has a receipt with target reached, return-to-start cleanup, final Stop All, no direct report 0x20, no high torque, and no serial/firmware/DFU actions.",
@@ -144,7 +144,24 @@
         "target_degrees": 90
       }
     ],
-    "status": "requires_software_implementation_no_output_authorized",
+    "reviewed_retry_profile": {
+      "behavior": [
+        "repeat short bounded PIDFF micro-steps instead of one long dwell",
+        "sample steering after each micro-step",
+        "send PIDFF Stop All after each micro-step and at final cleanup",
+        "stop immediately on target reached, overshoot, stale samples, write error, or timeout",
+        "use a bounded return micro-step sequence only after the outbound target is reached"
+      ],
+      "hardware_output_authorized": false,
+      "max_percent": 5,
+      "profile": "bounded_pidff_micro_step_v2",
+      "profile_cli": "bounded-pidff-micro-step-v2",
+      "reason": "The preserved 1 degree attempt timed out safely at about 0.181 degrees with writes and cleanup working; the next software profile changes pulse shape and feedback sampling while keeping the same force and timeout ceiling.",
+      "status": "implemented_no_output_authorized",
+      "target_degrees": 1,
+      "timeout_ms": 2000
+    },
+    "status": "retry_profile_implemented_no_output_authorized",
     "target_ladder_degrees": [
       1,
       3,
@@ -154,9 +171,9 @@
       90
     ]
   },
-  "evidence_status": "engineering_review_pending",
+  "evidence_status": "retry_profile_reviewed_no_output_authorized",
   "force_escalation_authorized": false,
-  "generated_at_utc": "2026-05-17T06:13:22Z",
+  "generated_at_utc": "2026-05-18T03:04:50Z",
   "hardware_output_authorized": false,
   "no_feature_reports": true,
   "no_ffb_writes": true,
@@ -174,6 +191,7 @@
     "command": "",
     "duration_ms": "not_authorized",
     "force_percent": "not_authorized",
+    "profile": "not_authorized",
     "requires_fresh_bench_clear": true,
     "target_degrees": "not_authorized"
   },

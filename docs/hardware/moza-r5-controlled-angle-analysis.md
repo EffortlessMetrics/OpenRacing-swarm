@@ -58,13 +58,14 @@ The receipt does not indicate a write-path failure, unavailable steering feedbac
 
 ## Required Next Work
 
-The next step is no-output profile diagnosis:
+The no-output profile diagnosis is now recorded in the lane plan as
+`bounded-pidff-micro-step-v2`.
 
 1. Preserve `native-controlled-angle-smoke.json`.
 2. Inspect the PIDFF set-effect, set-constant-force, effect-start, and Stop All sequence.
-3. Design a revised bounded profile while keeping the first retry conservative: `target_degrees=1`, `max_percent=5`, `timeout_ms=2000`, feedback stop, overshoot guard, final Stop All, and post-stop stability recording.
-4. Update `native-controlled-angle-plan.json` with the diagnosis before any new authorization.
-5. Authorize exactly one second attempt only after a separate reviewed plan and fresh command-bound bench-clear.
+3. Use the revised bounded profile while keeping the first retry conservative: `target_degrees=1`, `max_percent=5`, `timeout_ms=2000`, repeated bounded PIDFF micro-steps, feedback stop, overshoot guard, final Stop All, and post-stop stability recording.
+4. Keep `native-controlled-angle-plan.json` non-claiming: `planned_next_output.allowed=false` and `hardware_output_authorized=false`.
+5. Authorize exactly one second attempt only after the reviewed profile lands and fresh command-bound bench-clear names `bounded-pidff-micro-step-v2`.
 
 ## Forbidden Next Steps
 

@@ -1087,6 +1087,9 @@ pub enum MozaCommands {
         /// Planned staged target angle in degrees; use the 1, 3, 5, 10, 30, 90 ladder
         #[arg(long, default_value = "1")]
         target_degrees: f64,
+        /// Reviewed controlled-angle profile variant
+        #[arg(long, value_enum, default_value_t = MozaControlledAngleProfile::BoundedPidffMicroStepV2)]
+        profile: MozaControlledAngleProfile,
         /// Planned maximum force percent, bounded to 0.1..=5.0
         #[arg(long, default_value = "5")]
         max_percent: f32,
@@ -1189,6 +1192,9 @@ pub enum MozaCommands {
         /// Planned controlled-angle target in degrees; first authorized rung is 1 degree
         #[arg(long, default_value = "1")]
         target_degrees: f64,
+        /// Reviewed controlled-angle profile variant
+        #[arg(long, value_enum, default_value_t = MozaControlledAngleProfile::BoundedPidffMicroStepV2)]
+        profile: MozaControlledAngleProfile,
         /// Planned output strategy; direct report 0x20 is not accepted
         #[arg(long, value_enum, default_value_t = MozaLowTorqueStrategy::PidffBoundedEffect)]
         strategy: MozaLowTorqueStrategy,
@@ -1510,6 +1516,12 @@ pub enum MozaActuatorProfile {
     ConstantLowForce,
     /// Bounded shaped PIDFF micro-profile for reviewed native visible-motion follow-up
     BoundedShapedPidffMicroProfile,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MozaControlledAngleProfile {
+    /// Reviewed bounded PIDFF micro-step retry profile for the 1 degree controlled-angle rung
+    BoundedPidffMicroStepV2,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]

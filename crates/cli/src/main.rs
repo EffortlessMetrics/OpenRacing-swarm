@@ -2647,6 +2647,8 @@ mod tests {
             "ci/hardware/moza-r5/2026-05-13/steering-angle-stream-proof.json",
             "--target-degrees",
             "1",
+            "--profile",
+            "bounded-pidff-micro-step-v2",
             "--max-percent",
             "5",
             "--strategy",
@@ -2660,6 +2662,7 @@ mod tests {
                 device,
                 lane,
                 target_degrees,
+                profile,
                 max_percent,
                 timeout_ms,
                 strategy,
@@ -2674,6 +2677,10 @@ mod tests {
                     Some("ci/hardware/moza-r5/2026-05-13")
                 );
                 assert!((*target_degrees - 1.0).abs() < f64::EPSILON);
+                assert_eq!(
+                    *profile,
+                    MozaControlledAngleProfile::BoundedPidffMicroStepV2
+                );
                 assert!((*max_percent - 5.0).abs() < f32::EPSILON);
                 assert_eq!(*timeout_ms, 2000);
                 assert_eq!(*strategy, MozaLowTorqueStrategy::PidffBoundedEffect);
@@ -2775,6 +2782,8 @@ mod tests {
             "ci/hardware/moza-r5/2026-05-13/steering-angle-stream-proof.json",
             "--target-degrees",
             "1",
+            "--profile",
+            "bounded-pidff-micro-step-v2",
             "--strategy",
             "pidff-bounded-effect",
             "--max-percent",
@@ -2790,6 +2799,7 @@ mod tests {
                 device,
                 operator,
                 target_degrees,
+                profile,
                 strategy,
                 max_percent,
                 timeout_ms,
@@ -2803,6 +2813,10 @@ mod tests {
                 assert_eq!(device, "hid-0x346E-0x0004-if2-0x0001-0x0004");
                 assert_eq!(operator, "Steven");
                 assert!((*target_degrees - 1.0).abs() < f64::EPSILON);
+                assert_eq!(
+                    *profile,
+                    MozaControlledAngleProfile::BoundedPidffMicroStepV2
+                );
                 assert_eq!(*strategy, MozaLowTorqueStrategy::PidffBoundedEffect);
                 assert!((*max_percent - 5.0).abs() < f32::EPSILON);
                 assert_eq!(*timeout_ms, 2000);
