@@ -2780,6 +2780,10 @@ mod tests {
             "ci/hardware/moza-r5/2026-05-13/native-actuator-profile-smoke.json",
             "--steering-proof",
             "ci/hardware/moza-r5/2026-05-13/steering-angle-stream-proof.json",
+            "--controlled-angle-preflight",
+            "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-retry-preflight.json",
+            "--planned-output",
+            "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-retry-smoke.json",
             "--target-degrees",
             "1",
             "--profile",
@@ -2791,13 +2795,15 @@ mod tests {
             "--timeout-ms",
             "2000",
             "--json-out",
-            "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-authorization.json",
+            "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-retry-authorization.json",
         ])?;
         match &cli.command {
             Commands::Moza(MozaCommands::AuthorizeControlledAngleOutput {
                 lane,
                 device,
                 operator,
+                controlled_angle_preflight,
+                planned_output,
                 target_degrees,
                 profile,
                 strategy,
@@ -2812,6 +2818,18 @@ mod tests {
                 );
                 assert_eq!(device, "hid-0x346E-0x0004-if2-0x0001-0x0004");
                 assert_eq!(operator, "Steven");
+                assert_eq!(
+                    controlled_angle_preflight
+                        .as_ref()
+                        .and_then(|path| path.to_str()),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-retry-preflight.json"
+                    )
+                );
+                assert_eq!(
+                    planned_output.as_ref().and_then(|path| path.to_str()),
+                    Some("ci/hardware/moza-r5/2026-05-13/native-controlled-angle-retry-smoke.json")
+                );
                 assert!((*target_degrees - 1.0).abs() < f64::EPSILON);
                 assert_eq!(
                     *profile,
@@ -2823,7 +2841,7 @@ mod tests {
                 assert_eq!(
                     json_out.as_ref().and_then(|path| path.to_str()),
                     Some(
-                        "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-authorization.json"
+                        "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-retry-authorization.json"
                     )
                 );
             }

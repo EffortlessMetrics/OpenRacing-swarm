@@ -65,7 +65,7 @@ The no-output profile diagnosis is now recorded in the lane plan as
 2. Inspect the PIDFF set-effect, set-constant-force, effect-start, and Stop All sequence.
 3. Use the revised bounded profile while keeping the first retry conservative: `target_degrees=1`, `max_percent=5`, `timeout_ms=2000`, repeated bounded PIDFF micro-steps, feedback stop, overshoot guard, final Stop All, and post-stop stability recording.
 4. Keep `native-controlled-angle-plan.json` non-claiming: `planned_next_output.allowed=false` and `hardware_output_authorized=false`.
-5. Authorize exactly one second attempt only after the reviewed profile lands and fresh command-bound bench-clear names `bounded-pidff-micro-step-v2`.
+5. For the second attempt, write no-output preflight evidence to `native-controlled-angle-retry-preflight.json`, authorize exactly one retry in `native-controlled-angle-retry-authorization.json`, and write the retry output to `native-controlled-angle-retry-smoke.json` only after fresh command-bound bench-clear names `bounded-pidff-micro-step-v2`.
 
 ## Forbidden Next Steps
 

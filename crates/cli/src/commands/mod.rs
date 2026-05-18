@@ -1084,6 +1084,9 @@ pub enum MozaCommands {
         /// Same-lane steering stream proof receipt from `wheelctl moza steering-stream-proof`
         #[arg(long)]
         steering_proof: Option<std::path::PathBuf>,
+        /// Same-lane exact authorization receipt; defaults to native-controlled-angle-authorization.json
+        #[arg(long)]
+        authorization_proof: Option<std::path::PathBuf>,
         /// Planned staged target angle in degrees; use the 1, 3, 5, 10, 30, 90 ladder
         #[arg(long, default_value = "1")]
         target_degrees: f64,
@@ -1189,6 +1192,12 @@ pub enum MozaCommands {
         /// Same-lane steering stream proof receipt for the planned run
         #[arg(long)]
         steering_proof: Option<std::path::PathBuf>,
+        /// Same-lane no-output controlled-angle dry-run preflight receipt
+        #[arg(long)]
+        controlled_angle_preflight: Option<std::path::PathBuf>,
+        /// Same-lane output receipt path that the exact authorized command must write
+        #[arg(long)]
+        planned_output: Option<std::path::PathBuf>,
         /// Planned controlled-angle target in degrees; first authorized rung is 1 degree
         #[arg(long, default_value = "1")]
         target_degrees: f64,

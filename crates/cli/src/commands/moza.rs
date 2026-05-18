@@ -85,6 +85,23 @@ const NATIVE_CONTROLLED_ANGLE_PLAN_FILE: &str = "native-controlled-angle-plan.js
 const NATIVE_CONTROLLED_ANGLE_SMOKE_FILE: &str = "native-controlled-angle-smoke.json";
 const NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE: &str =
     "native-controlled-angle-authorization.json";
+const NATIVE_CONTROLLED_ANGLE_RETRY_PREFLIGHT_FILE: &str =
+    "native-controlled-angle-retry-preflight.json";
+const NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE: &str =
+    "native-controlled-angle-retry-authorization.json";
+const NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE: &str = "native-controlled-angle-retry-smoke.json";
+const NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILES: &[&str] = &[
+    NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE,
+    NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE,
+];
+const NATIVE_CONTROLLED_ANGLE_OUTPUT_FILES: &[&str] = &[
+    NATIVE_CONTROLLED_ANGLE_SMOKE_FILE,
+    NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE,
+];
+const NATIVE_CONTROLLED_ANGLE_PREFLIGHT_FILES: &[&str] = &[
+    NATIVE_CONTROLLED_ANGLE_SMOKE_FILE,
+    NATIVE_CONTROLLED_ANGLE_RETRY_PREFLIGHT_FILE,
+];
 const NATIVE_CONTROLLED_ANGLE_FIRST_TARGET_DEGREES: f64 = 1.0;
 const NATIVE_CONTROLLED_ANGLE_FIRST_MAX_PERCENT: f32 = 5.0;
 const NATIVE_CONTROLLED_ANGLE_FIRST_MAX_DURATION_MS: u64 = 2_000;
@@ -203,6 +220,7 @@ struct ControlledAngleSmokeRequest<'a> {
     lane: &'a Path,
     prior_actuator_proof: Option<&'a Path>,
     steering_proof: Option<&'a Path>,
+    authorization_proof: Option<&'a Path>,
     target_degrees: f64,
     profile: MozaControlledAngleProfile,
     max_percent: f32,
@@ -243,6 +261,8 @@ struct AuthorizeControlledAngleOutputRequest<'a> {
     prior_response_proof: Option<&'a Path>,
     prior_actuator_proof: Option<&'a Path>,
     steering_proof: Option<&'a Path>,
+    controlled_angle_preflight: Option<&'a Path>,
+    planned_output: Option<&'a Path>,
     target_degrees: f64,
     profile: MozaControlledAngleProfile,
     strategy: MozaLowTorqueStrategy,
@@ -799,6 +819,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             lane,
             prior_actuator_proof,
             steering_proof,
+            authorization_proof,
             target_degrees,
             profile,
             max_percent,
@@ -816,6 +837,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 lane,
                 prior_actuator_proof: prior_actuator_proof.as_deref(),
                 steering_proof: steering_proof.as_deref(),
+                authorization_proof: authorization_proof.as_deref(),
                 target_degrees: *target_degrees,
                 profile: *profile,
                 max_percent: *max_percent,
@@ -874,6 +896,8 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             prior_response_proof,
             prior_actuator_proof,
             steering_proof,
+            controlled_angle_preflight,
+            planned_output,
             target_degrees,
             profile,
             strategy,
@@ -891,6 +915,8 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 prior_response_proof: prior_response_proof.as_deref(),
                 prior_actuator_proof: prior_actuator_proof.as_deref(),
                 steering_proof: steering_proof.as_deref(),
+                controlled_angle_preflight: controlled_angle_preflight.as_deref(),
+                planned_output: planned_output.as_deref(),
                 target_degrees: *target_degrees,
                 profile: *profile,
                 strategy: *strategy,
@@ -3234,6 +3260,7 @@ async fn controlled_angle_smoke(request: ControlledAngleSmokeRequest<'_>) -> Res
         lane,
         prior_actuator_proof,
         steering_proof,
+        authorization_proof,
         target_degrees,
         profile,
         max_percent,
@@ -3279,12 +3306,7 @@ async fn controlled_angle_smoke(request: ControlledAngleSmokeRequest<'_>) -> Res
         let json_out = json_out.ok_or_else(|| {
             anyhow!("--json-out is required before actual native controlled-angle writes")
         })?;
-        require_lane_artifact_path(
-            lane,
-            json_out,
-            NATIVE_CONTROLLED_ANGLE_SMOKE_FILE,
-            "--json-out",
-        )?;
+        controlled_angle_output_relative_path(lane, json_out, "--json-out")?;
         validate_native_controlled_angle_output_authorization(
             lane,
             selector,
@@ -3294,6 +3316,7 @@ async fn controlled_angle_smoke(request: ControlledAngleSmokeRequest<'_>) -> Res
             timeout_ms,
             strategy,
             json_out,
+            authorization_proof,
         )?;
 
         let api = HidApi::new().context("failed to initialize HID API")?;
@@ -3367,6 +3390,7 @@ async fn controlled_angle_smoke(request: ControlledAngleSmokeRequest<'_>) -> Res
             timeout_ms,
             strategy,
             json_out,
+            authorization_proof,
             &receipt_value,
         )?;
         print_controlled_angle_smoke_receipt(json, Some(json_out), &receipt_value)?;
@@ -4124,6 +4148,8 @@ async fn authorize_controlled_angle_output(
         prior_response_proof,
         prior_actuator_proof,
         steering_proof,
+        controlled_angle_preflight,
+        planned_output,
         target_degrees,
         profile,
         strategy,
@@ -4172,6 +4198,22 @@ async fn authorize_controlled_angle_output(
             "--steering-proof",
         )?;
     }
+    let preflight_file =
+        controlled_angle_preflight_relative_path(lane, controlled_angle_preflight)?;
+    let planned_output_file = match planned_output {
+        Some(path) => controlled_angle_output_relative_path(lane, path, "--planned-output")?,
+        None if preflight_file == NATIVE_CONTROLLED_ANGLE_RETRY_PREFLIGHT_FILE => {
+            NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE
+        }
+        None => NATIVE_CONTROLLED_ANGLE_SMOKE_FILE,
+    };
+    if planned_output_file == NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE
+        && controlled_angle_preflight.is_none()
+    {
+        return Err(anyhow!(
+            "--controlled-angle-preflight is required when --planned-output uses {NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE}; preserve {NATIVE_CONTROLLED_ANGLE_SMOKE_FILE} and use {NATIVE_CONTROLLED_ANGLE_RETRY_PREFLIGHT_FILE} for the no-output retry preflight"
+        ));
+    }
 
     let response_gate = verify_native_actuator_response_smoke_gate(lane);
     if response_gate.status != "pass" {
@@ -4184,6 +4226,7 @@ async fn authorize_controlled_angle_output(
     let controlled_angle_plan = validate_native_controlled_angle_plan_artifact(lane)?;
     let controlled_angle_preflight = validate_native_controlled_angle_dry_run_preflight(
         lane,
+        preflight_file,
         selector,
         target_degrees,
         profile,
@@ -4191,15 +4234,28 @@ async fn authorize_controlled_angle_output(
         max_percent,
     )?;
 
-    let expected_plan_path = lane.join(NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE);
+    let default_authorization_file =
+        if planned_output_file == NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE {
+            NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE
+        } else {
+            NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE
+        };
+    let expected_plan_path = lane.join(default_authorization_file);
     let plan_path = json_out
         .map(Path::to_path_buf)
         .unwrap_or_else(|| expected_plan_path.clone());
-    if !path_value_matches(&expected_plan_path, Some(&plan_path.display().to_string())) {
+    let authorization_file = require_one_of_lane_artifact_paths(
+        lane,
+        &plan_path,
+        NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILES,
+        "--json-out",
+    )?;
+    if authorization_file != default_authorization_file {
         return Err(anyhow!(
-            "--json-out '{}' must resolve to same-lane artifact '{}'",
+            "--json-out '{}' must resolve to same-lane artifact '{}' for planned output '{}'",
             plan_path.display(),
-            expected_plan_path.display()
+            expected_plan_path.display(),
+            lane.join(planned_output_file).display()
         ));
     }
     if plan_path.exists() && !overwrite {
@@ -4209,7 +4265,10 @@ async fn authorize_controlled_angle_output(
         ));
     }
 
-    let output_path = lane.join(NATIVE_CONTROLLED_ANGLE_SMOKE_FILE);
+    let output_path = lane.join(planned_output_file);
+    let authorization_proof_arg = (authorization_file
+        != NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE)
+        .then_some(authorization_file);
     let planned_command = native_controlled_angle_output_command(
         lane,
         selector,
@@ -4218,6 +4277,8 @@ async fn authorize_controlled_angle_output(
         strategy,
         max_percent,
         timeout_ms,
+        planned_output_file,
+        authorization_proof_arg,
     );
     validate_authorized_native_controlled_angle_command(
         lane,
@@ -4229,6 +4290,7 @@ async fn authorize_controlled_angle_output(
         timeout_ms,
         strategy,
         &output_path,
+        authorization_proof_arg,
     )?;
 
     let authorized_at = now_utc();
@@ -4274,7 +4336,7 @@ async fn authorize_controlled_angle_output(
             "review_scope": json_string(&controlled_angle_plan, "review_scope")
         },
         "controlled_angle_preflight_receipt": {
-            "path": NATIVE_CONTROLLED_ANGLE_SMOKE_FILE,
+            "path": preflight_file,
             "dry_run": json_bool(&controlled_angle_preflight, "dry_run"),
             "preflight_only": json_bool(&controlled_angle_preflight, "preflight_only"),
             "target_degrees": json_f64(&controlled_angle_preflight, "target_degrees"),
@@ -4297,7 +4359,8 @@ async fn authorize_controlled_angle_output(
             "prior_response_proof": "native-actuator-visible-smoke.json",
             "prior_actuator_proof": "native-actuator-profile-smoke.json",
             "steering_proof": "steering-angle-stream-proof.json",
-            "json_out": NATIVE_CONTROLLED_ANGLE_SMOKE_FILE,
+            "json_out": planned_output_file,
+            "authorization_proof": authorization_file,
             "operator": operator,
             "authorized_at_utc": authorized_at
         },
@@ -4315,7 +4378,7 @@ async fn authorize_controlled_angle_output(
             {
                 "check": "controlled_angle_dry_run_preflight",
                 "status": "passed",
-                "evidence": NATIVE_CONTROLLED_ANGLE_SMOKE_FILE
+                "evidence": preflight_file
             },
             {
                 "check": "fresh_operator_bench_clear_for_exact_controlled_angle_command",
@@ -6844,11 +6907,14 @@ fn validate_native_controlled_angle_output_authorization(
     timeout_ms: u64,
     strategy: MozaLowTorqueStrategy,
     json_out: &Path,
+    authorization_proof: Option<&Path>,
 ) -> Result<()> {
-    let plan = read_json_value(lane, NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE).with_context(|| {
+    let authorization_file =
+        controlled_angle_authorization_relative_path(lane, authorization_proof)?;
+    let plan = read_json_value(lane, authorization_file).with_context(|| {
         format!(
             "actual native controlled-angle writes require an exact same-lane authorization receipt at {}",
-            lane.join(NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE).display()
+            lane.join(authorization_file).display()
         )
     })?;
     let command_ok =
@@ -6856,12 +6922,9 @@ fn validate_native_controlled_angle_output_authorization(
     let authorization_recorded = json_bool(&plan, "authorization_recorded") == Some(true);
     let authorization_unused = json_bool(&plan, "authorization_consumed") != Some(true);
     let hardware_authorized = json_bool(&plan, "hardware_output_authorized") == Some(true);
-    let planned_next_output = plan.get("planned_next_output").ok_or_else(|| {
-        anyhow!(
-            "{} is missing planned_next_output",
-            NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE
-        )
-    })?;
+    let planned_next_output = plan
+        .get("planned_next_output")
+        .ok_or_else(|| anyhow!("{} is missing planned_next_output", authorization_file))?;
     let allowed = json_bool(planned_next_output, "allowed") == Some(true);
     let fresh_clear_recorded =
         json_bool(planned_next_output, "requires_fresh_bench_clear") == Some(false);
@@ -6881,6 +6944,10 @@ fn validate_native_controlled_angle_output_authorization(
         == Some(timeout_ms);
     let strategy_ok = json_string(planned_next_output, "strategy")
         == Some(low_torque_strategy_cli_name(strategy));
+    let output_file = controlled_angle_output_relative_path(lane, json_out, "--json-out")?;
+    let authorization_proof_arg = (authorization_file
+        != NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE)
+        .then_some(authorization_file);
 
     let command = json_string(planned_next_output, "command")
         .map(str::trim)
@@ -6895,6 +6962,8 @@ fn validate_native_controlled_angle_output_authorization(
             strategy,
             max_percent,
             timeout_ms,
+            output_file,
+            authorization_proof_arg,
         );
     validate_authorized_native_controlled_angle_command(
         lane,
@@ -6906,6 +6975,7 @@ fn validate_native_controlled_angle_output_authorization(
         timeout_ms,
         strategy,
         json_out,
+        authorization_proof_arg,
     )?;
 
     if command_ok
@@ -6925,7 +6995,7 @@ fn validate_native_controlled_angle_output_authorization(
     } else {
         Err(anyhow!(
             "{} does not authorize this exact native controlled-angle output request: command_ok={command_ok}, authorization_recorded={authorization_recorded}, authorization_unused={authorization_unused}, hardware_authorized={hardware_authorized}, allowed={allowed}, fresh_clear_recorded={fresh_clear_recorded}, target_ok={target_ok}, profile_ok={profile_ok}, max_percent_ok={max_percent_ok}, timeout_ok={timeout_ok}, strategy_ok={strategy_ok}, exact_command_text_ok={exact_command_text_ok}",
-            NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE
+            authorization_file
         ))
     }
 }
@@ -6940,20 +7010,20 @@ fn consume_native_controlled_angle_output_authorization(
     timeout_ms: u64,
     strategy: MozaLowTorqueStrategy,
     json_out: &Path,
+    authorization_proof: Option<&Path>,
     receipt: &Value,
 ) -> Result<()> {
-    let plan_path = lane.join(NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE);
+    let authorization_file =
+        controlled_angle_authorization_relative_path(lane, authorization_proof)?;
+    let plan_path = lane.join(authorization_file);
     if !plan_path.is_file() {
         return Ok(());
     }
 
-    let mut plan = read_json_value(lane, NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE)?;
-    let planned_next_output = plan.get("planned_next_output").ok_or_else(|| {
-        anyhow!(
-            "{} is missing planned_next_output",
-            NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE
-        )
-    })?;
+    let mut plan = read_json_value(lane, authorization_file)?;
+    let planned_next_output = plan
+        .get("planned_next_output")
+        .ok_or_else(|| anyhow!("{} is missing planned_next_output", authorization_file))?;
     let allowed = json_bool(planned_next_output, "allowed") == Some(true);
     let hardware_authorized = json_bool(&plan, "hardware_output_authorized") == Some(true);
     if !allowed && !hardware_authorized {
@@ -6963,6 +7033,9 @@ fn consume_native_controlled_angle_output_authorization(
         .map(str::trim)
         .filter(|command| !command.is_empty())
         .ok_or_else(|| anyhow!("planned_next_output.command is empty"))?;
+    let authorization_proof_arg = (authorization_file
+        != NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE)
+        .then_some(authorization_file);
     validate_authorized_native_controlled_angle_command(
         lane,
         command,
@@ -6973,6 +7046,7 @@ fn consume_native_controlled_angle_output_authorization(
         timeout_ms,
         strategy,
         json_out,
+        authorization_proof_arg,
     )?;
 
     let controlled_angle_passed = json_bool(receipt, "success") == Some(true);
@@ -7036,6 +7110,7 @@ fn validate_authorized_native_controlled_angle_command(
     timeout_ms: u64,
     strategy: MozaLowTorqueStrategy,
     json_out: &Path,
+    authorization_proof: Option<&str>,
 ) -> Result<()> {
     if command.contains('<') || command.contains('>') {
         return Err(anyhow!(
@@ -7072,6 +7147,12 @@ fn validate_authorized_native_controlled_angle_command(
     let confirm_ok = tokens.contains(&"--confirm-controlled-angle");
     let dry_run_absent = !tokens.contains(&"--dry-run");
     let json_out_ok = command_arg_path_matches(&tokens, "--json-out", json_out);
+    let authorization_proof_ok = match authorization_proof {
+        Some(relative_path) => {
+            command_arg_path_matches(&tokens, "--authorization-proof", &lane.join(relative_path))
+        }
+        None => !tokens.contains(&"--authorization-proof"),
+    };
     if command_prefix_ok
         && selector_ok
         && lane_ok
@@ -7085,11 +7166,12 @@ fn validate_authorized_native_controlled_angle_command(
         && confirm_ok
         && dry_run_absent
         && json_out_ok
+        && authorization_proof_ok
     {
         Ok(())
     } else {
         Err(anyhow!(
-            "planned_next_output.command does not match this native controlled-angle output request: command_prefix_ok={command_prefix_ok}, selector_ok={selector_ok}, lane_ok={lane_ok}, prior_ok={prior_ok}, steering_ok={steering_ok}, target_ok={target_ok}, profile_ok={profile_ok}, strategy_ok={strategy_ok}, max_percent_ok={max_percent_ok}, timeout_ok={timeout_ok}, confirm_ok={confirm_ok}, dry_run_absent={dry_run_absent}, json_out_ok={json_out_ok}"
+            "planned_next_output.command does not match this native controlled-angle output request: command_prefix_ok={command_prefix_ok}, selector_ok={selector_ok}, lane_ok={lane_ok}, prior_ok={prior_ok}, steering_ok={steering_ok}, target_ok={target_ok}, profile_ok={profile_ok}, strategy_ok={strategy_ok}, max_percent_ok={max_percent_ok}, timeout_ok={timeout_ok}, confirm_ok={confirm_ok}, dry_run_absent={dry_run_absent}, json_out_ok={json_out_ok}, authorization_proof_ok={authorization_proof_ok}"
         ))
     }
 }
@@ -7154,6 +7236,7 @@ fn native_visible_output_command(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn native_controlled_angle_output_command(
     lane: &Path,
     selector: &str,
@@ -7162,9 +7245,19 @@ fn native_controlled_angle_output_command(
     strategy: MozaLowTorqueStrategy,
     max_percent: f32,
     timeout_ms: u64,
+    json_out_relative_path: &str,
+    authorization_proof_relative_path: Option<&str>,
 ) -> String {
+    let authorization_proof = authorization_proof_relative_path
+        .map(|relative_path| {
+            format!(
+                " --authorization-proof {}",
+                lane_path_arg(lane, relative_path)
+            )
+        })
+        .unwrap_or_default();
     format!(
-        "wheelctl moza controlled-angle-smoke --device {} --lane {} --prior-actuator-proof {} --steering-proof {} --target-degrees {} --profile {} --max-percent {} --timeout-ms {} --strategy {} --confirm-controlled-angle --json-out {} --json",
+        "wheelctl moza controlled-angle-smoke --device {} --lane {} --prior-actuator-proof {} --steering-proof {} --target-degrees {} --profile {} --max-percent {} --timeout-ms {} --strategy {}{} --confirm-controlled-angle --json-out {} --json",
         command_arg(selector),
         command_arg(&lane.display().to_string()),
         lane_path_arg(lane, "native-actuator-profile-smoke.json"),
@@ -7174,7 +7267,8 @@ fn native_controlled_angle_output_command(
         compact_f32(max_percent),
         timeout_ms,
         low_torque_strategy_cli_name(strategy),
-        lane_path_arg(lane, NATIVE_CONTROLLED_ANGLE_SMOKE_FILE)
+        authorization_proof,
+        lane_path_arg(lane, json_out_relative_path)
     )
 }
 
@@ -7285,6 +7379,66 @@ fn require_lane_artifact_path(
             path.display(),
             lane.join(relative_path).display()
         ))
+    }
+}
+
+fn require_one_of_lane_artifact_paths(
+    lane: &Path,
+    path: &Path,
+    relative_paths: &[&'static str],
+    label: &str,
+) -> Result<&'static str> {
+    for relative_path in relative_paths {
+        if path_value_matches(&lane.join(relative_path), Some(&path.display().to_string())) {
+            return Ok(relative_path);
+        }
+    }
+    let allowed = relative_paths
+        .iter()
+        .map(|relative_path| lane.join(relative_path).display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    Err(anyhow!(
+        "{label} '{}' must resolve to one of these same-lane artifacts: {allowed}",
+        path.display()
+    ))
+}
+
+fn controlled_angle_authorization_relative_path(
+    lane: &Path,
+    authorization_proof: Option<&Path>,
+) -> Result<&'static str> {
+    match authorization_proof {
+        Some(path) => require_one_of_lane_artifact_paths(
+            lane,
+            path,
+            NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILES,
+            "--authorization-proof",
+        ),
+        None => Ok(NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE),
+    }
+}
+
+fn controlled_angle_output_relative_path(
+    lane: &Path,
+    output: &Path,
+    label: &str,
+) -> Result<&'static str> {
+    require_one_of_lane_artifact_paths(lane, output, NATIVE_CONTROLLED_ANGLE_OUTPUT_FILES, label)
+}
+
+fn controlled_angle_preflight_relative_path(
+    lane: &Path,
+    preflight: Option<&Path>,
+) -> Result<&'static str> {
+    match preflight {
+        Some(path) => require_one_of_lane_artifact_paths(
+            lane,
+            path,
+            NATIVE_CONTROLLED_ANGLE_PREFLIGHT_FILES,
+            "--controlled-angle-preflight",
+        ),
+        None => Ok(NATIVE_CONTROLLED_ANGLE_SMOKE_FILE),
     }
 }
 
@@ -8479,14 +8633,16 @@ fn native_visible_authorization_guidance(lane: &Path) -> String {
             .is_ok_and(|plan| native_controlled_angle_plan_retry_profile_ok(&plan))
         {
             return format!(
-                "A real controlled-angle attempt is already recorded and the reviewed retry profile is present in {NATIVE_CONTROLLED_ANGLE_PLAN_FILE}; preserve native-controlled-angle-smoke.json and use the bounded-pidff-micro-step-v2 profile/feedback loop only after a separate fresh command-bound bench-clear and exact wheelctl moza authorize-controlled-angle-output receipt. Do not use the visible-output authorizer, extend dwell, raise force, or rerun from verifier guidance."
+                "A real controlled-angle attempt is already recorded and the reviewed retry profile is present in {NATIVE_CONTROLLED_ANGLE_PLAN_FILE}; preserve {NATIVE_CONTROLLED_ANGLE_SMOKE_FILE}, generate a no-output retry preflight at {NATIVE_CONTROLLED_ANGLE_RETRY_PREFLIGHT_FILE}, and use the bounded-pidff-micro-step-v2 profile/feedback loop only after a separate fresh command-bound bench-clear plus an exact wheelctl moza authorize-controlled-angle-output receipt at {NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE}. The retry output must write {NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE}. Do not use the visible-output authorizer, extend dwell, raise force, or rerun from verifier guidance."
             );
         }
         format!(
-            "A real controlled-angle attempt is already recorded; preserve native-controlled-angle-smoke.json and diagnose the profile/feedback loop before any new output plan. Update {NATIVE_CONTROLLED_ANGLE_PLAN_FILE} with the reason the 1 degree target was not reached, then use wheelctl moza authorize-controlled-angle-output only after a separate reviewed exact command and fresh bench-clear; do not use the visible-output authorizer, extend dwell, raise force, or rerun from verifier guidance."
+            "A real controlled-angle attempt is already recorded; preserve {NATIVE_CONTROLLED_ANGLE_SMOKE_FILE} and diagnose the profile/feedback loop before any new output plan. Update {NATIVE_CONTROLLED_ANGLE_PLAN_FILE} with the reason the 1 degree target was not reached, then use wheelctl moza authorize-controlled-angle-output only after a separate reviewed exact command and fresh bench-clear; do not use the visible-output authorizer, extend dwell, raise force, or rerun from verifier guidance."
         )
     } else if native_controlled_angle_smoke_is_no_output_preflight(lane) {
-        "Do not run output until fresh bench-clear is recorded for the exact 1 degree controlled-angle command via wheelctl moza authorize-controlled-angle-output, producing native-controlled-angle-authorization.json; no visible-output authorizer is required for this controlled-angle path.".to_string()
+        format!(
+            "Do not run output until fresh bench-clear is recorded for the exact 1 degree controlled-angle command via wheelctl moza authorize-controlled-angle-output, producing {NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE}; no visible-output authorizer is required for this controlled-angle path."
+        )
     } else {
         "Do not run output until the follow-up requirements are complete and a fresh bench-clear is recorded for the exact next output command via wheelctl moza authorize-visible-output.".to_string()
     }
@@ -8661,21 +8817,22 @@ fn validate_native_controlled_angle_plan_artifact(lane: &Path) -> Result<Value> 
 
 fn validate_native_controlled_angle_dry_run_preflight(
     lane: &Path,
+    preflight_file: &str,
     selector: &str,
     target_degrees: f64,
     profile: MozaControlledAngleProfile,
     strategy: MozaLowTorqueStrategy,
     max_percent: f32,
 ) -> Result<Value> {
-    let receipt = read_json_value(lane, NATIVE_CONTROLLED_ANGLE_SMOKE_FILE).with_context(|| {
+    let receipt = read_json_value(lane, preflight_file).with_context(|| {
         format!(
             "native controlled-angle authorization requires a no-output dry-run preflight at {}",
-            lane.join(NATIVE_CONTROLLED_ANGLE_SMOKE_FILE).display()
+            lane.join(preflight_file).display()
         )
     })?;
     let command_ok =
         json_string(&receipt, "command") == Some("wheelctl moza controlled-angle-smoke");
-    let receipt_path_ok = receipt_path_matches(lane, &receipt, NATIVE_CONTROLLED_ANGLE_SMOKE_FILE);
+    let receipt_path_ok = receipt_path_matches(lane, &receipt, preflight_file);
     let selector_ok = json_string(&receipt, "selector") == Some(selector);
     let success = json_bool(&receipt, "success") == Some(true);
     let dry_run = json_bool(&receipt, "dry_run") == Some(true);
@@ -8734,7 +8891,7 @@ fn validate_native_controlled_angle_dry_run_preflight(
     } else {
         Err(anyhow!(
             "{} is not a matching no-output controlled-angle dry-run preflight: command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, selector_ok={selector_ok}, success={success}, dry_run={dry_run}, preflight_only={preflight_only}, hardware_output_enabled_false={hardware_output_enabled}, actual_hardware_writes_supported_false={actual_hardware_writes_supported}, no_hid_device_opened={no_hid_device_opened}, no_feature_reports={no_feature_reports}, no_output_reports={no_output_reports}, no_ffb_writes={no_ffb_writes}, no_direct_torque_reports={no_direct_torque_reports}, no_high_torque={no_high_torque}, high_torque_false={high_torque}, no_serial_config_commands={no_serial_config_commands}, no_firmware_or_dfu_commands={no_firmware_or_dfu_commands}, target_ok={target_ok}, profile_ok={profile_ok}, max_percent_ok={max_percent_ok}, strategy_ok={strategy_ok}, motion_unclaimed={motion_unclaimed}, no_out_of_scope={no_out_of_scope}",
-            NATIVE_CONTROLLED_ANGLE_SMOKE_FILE
+            preflight_file
         ))
     }
 }
@@ -10784,6 +10941,7 @@ fn native_controlled_angle_real_attempt_recorded(lane: &Path) -> bool {
 fn native_controlled_angle_first_rung_dry_run_ready(lane: &Path, selector: &str) -> bool {
     validate_native_controlled_angle_dry_run_preflight(
         lane,
+        NATIVE_CONTROLLED_ANGLE_SMOKE_FILE,
         selector,
         NATIVE_CONTROLLED_ANGLE_FIRST_TARGET_DEGREES,
         MozaControlledAngleProfile::BoundedPidffMicroStepV2,
@@ -16538,8 +16696,11 @@ fn verify_native_actuator_visible_smoke_gate(lane: &Path) -> BundleGateCheck {
     if visible_gate.status == "pass" {
         return visible_gate;
     }
-    let controlled_angle_path = lane.join(NATIVE_CONTROLLED_ANGLE_SMOKE_FILE);
-    if !controlled_angle_path.is_file() {
+    let controlled_angle_output_exists = NATIVE_CONTROLLED_ANGLE_OUTPUT_FILES
+        .iter()
+        .copied()
+        .any(|relative_path| lane.join(relative_path).is_file());
+    if !controlled_angle_output_exists {
         return visible_gate;
     }
     let controlled_angle_gate = verify_native_controlled_angle_smoke_gate(lane);
@@ -16674,7 +16835,36 @@ fn verify_native_actuator_visible_smoke_receipt_gate(lane: &Path) -> BundleGateC
 }
 
 fn verify_native_controlled_angle_smoke_gate(lane: &Path) -> BundleGateCheck {
-    let receipt = match read_json_value(lane, NATIVE_CONTROLLED_ANGLE_SMOKE_FILE) {
+    let mut failures = Vec::new();
+    for relative_path in NATIVE_CONTROLLED_ANGLE_OUTPUT_FILES.iter().copied() {
+        if !lane.join(relative_path).is_file() {
+            continue;
+        }
+        let gate = verify_native_controlled_angle_smoke_receipt_gate(lane, relative_path);
+        if gate.status == "pass" {
+            return gate;
+        }
+        failures.push(format!("{relative_path}: {}", gate.details));
+    }
+
+    if failures.is_empty() {
+        return BundleGateCheck::fail(
+            "native_controlled_angle_smoke",
+            format!(
+                "no controlled-angle output receipt found at {} or {}",
+                NATIVE_CONTROLLED_ANGLE_SMOKE_FILE, NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE
+            ),
+        );
+    }
+
+    BundleGateCheck::fail("native_controlled_angle_smoke", failures.join("; "))
+}
+
+fn verify_native_controlled_angle_smoke_receipt_gate(
+    lane: &Path,
+    relative_path: &str,
+) -> BundleGateCheck {
+    let receipt = match read_json_value(lane, relative_path) {
         Ok(value) => value,
         Err(e) => return BundleGateCheck::fail("native_controlled_angle_smoke", e.to_string()),
     };
@@ -16682,7 +16872,7 @@ fn verify_native_controlled_angle_smoke_gate(lane: &Path) -> BundleGateCheck {
     let success = json_bool(&receipt, "success") == Some(true);
     let command_ok =
         json_string(&receipt, "command") == Some("wheelctl moza controlled-angle-smoke");
-    let receipt_path_ok = receipt_path_matches(lane, &receipt, NATIVE_CONTROLLED_ANGLE_SMOKE_FILE);
+    let receipt_path_ok = receipt_path_matches(lane, &receipt, relative_path);
     let selector_matches_lane_endpoint = receipt_selector_matches_lane_endpoint(lane, &receipt);
     let confirmed = json_bool(&receipt, "confirmed");
     let dry_run = json_bool(&receipt, "dry_run");
@@ -30461,6 +30651,8 @@ mod tests {
                     strategy,
                     max_percent,
                     timeout_ms,
+                    NATIVE_CONTROLLED_ANGLE_SMOKE_FILE,
+                    None,
                 ),
                 "target_degrees": target_degrees,
                 "profile": controlled_angle_profile_name(profile),
@@ -35193,6 +35385,7 @@ mod tests {
             lane: dir.path(),
             prior_actuator_proof: Some(&dir.path().join("native-actuator-profile-smoke.json")),
             steering_proof: Some(&dir.path().join("steering-angle-stream-proof.json")),
+            authorization_proof: None,
             target_degrees: 1.0,
             profile: MozaControlledAngleProfile::BoundedPidffMicroStepV2,
             max_percent: 5.0,
@@ -35272,6 +35465,7 @@ mod tests {
             lane: dir.path(),
             prior_actuator_proof: Some(&dir.path().join("native-actuator-profile-smoke.json")),
             steering_proof: Some(&dir.path().join("steering-angle-stream-proof.json")),
+            authorization_proof: None,
             target_degrees: 1.0,
             profile: MozaControlledAngleProfile::BoundedPidffMicroStepV2,
             max_percent: 5.0,
@@ -35309,6 +35503,7 @@ mod tests {
             2_000,
             MozaLowTorqueStrategy::PidffBoundedEffect,
             &output,
+            None,
         )
         .err()
         .map(|error| error.to_string())
@@ -35329,6 +35524,7 @@ mod tests {
             2_000,
             MozaLowTorqueStrategy::PidffBoundedEffect,
             &output,
+            None,
         )
         .err()
         .map(|error| error.to_string())
@@ -35351,6 +35547,7 @@ mod tests {
             2_000,
             MozaLowTorqueStrategy::PidffBoundedEffect,
             &output,
+            None,
         )
         .err()
         .map(|error| error.to_string())
@@ -35371,6 +35568,7 @@ mod tests {
             2_000,
             MozaLowTorqueStrategy::PidffBoundedEffect,
             &output,
+            None,
         )?;
         Ok(())
     }
@@ -35393,6 +35591,7 @@ mod tests {
             lane: dir.path(),
             prior_actuator_proof: Some(&dir.path().join("native-actuator-profile-smoke.json")),
             steering_proof: Some(&dir.path().join("steering-angle-stream-proof.json")),
+            authorization_proof: None,
             target_degrees: 1.0,
             profile: MozaControlledAngleProfile::BoundedPidffMicroStepV2,
             max_percent: 5.0,
@@ -35416,6 +35615,8 @@ mod tests {
             prior_response_proof: Some(&dir.path().join("native-actuator-visible-smoke.json")),
             prior_actuator_proof: Some(&dir.path().join("native-actuator-profile-smoke.json")),
             steering_proof: Some(&dir.path().join("steering-angle-stream-proof.json")),
+            controlled_angle_preflight: None,
+            planned_output: None,
             target_degrees: 1.0,
             profile: MozaControlledAngleProfile::BoundedPidffMicroStepV2,
             strategy: MozaLowTorqueStrategy::PidffBoundedEffect,
@@ -35464,7 +35665,150 @@ mod tests {
             2_000,
             MozaLowTorqueStrategy::PidffBoundedEffect,
             &dir.path().join(NATIVE_CONTROLLED_ANGLE_SMOKE_FILE),
+            None,
         )?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn authorize_controlled_angle_retry_preserves_first_failed_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let selector = "hid-0x346E-0x0004-if2-0x0001-0x0004";
+        write_native_actuator_visible_prerequisite_receipts(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V1),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_CONTROLLED_ANGLE_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::ControlledAnglePlan),
+        )?;
+        write_failed_controlled_angle_output_receipt(dir.path(), selector)?;
+
+        let retry_preflight = dir
+            .path()
+            .join(NATIVE_CONTROLLED_ANGLE_RETRY_PREFLIGHT_FILE);
+        controlled_angle_smoke(ControlledAngleSmokeRequest {
+            json: false,
+            selector,
+            lane: dir.path(),
+            prior_actuator_proof: Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            steering_proof: Some(&dir.path().join("steering-angle-stream-proof.json")),
+            authorization_proof: None,
+            target_degrees: 1.0,
+            profile: MozaControlledAngleProfile::BoundedPidffMicroStepV2,
+            max_percent: 5.0,
+            timeout_ms: 2_000,
+            read_timeout_ms: 20,
+            degrees_of_rotation: 1080.0,
+            strategy: MozaLowTorqueStrategy::PidffBoundedEffect,
+            dry_run: true,
+            confirm_controlled_angle: false,
+            json_out: Some(&retry_preflight),
+        })
+        .await?;
+
+        let retry_authorization = dir
+            .path()
+            .join(NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE);
+        let retry_output = dir.path().join(NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE);
+        authorize_controlled_angle_output(AuthorizeControlledAngleOutputRequest {
+            json: false,
+            lane: dir.path(),
+            selector,
+            operator: "Steven",
+            bench_clear_evidence: "bench clear for exactly one Moza controlled-angle retry: target 1 degree, max 5%, timeout 2000 ms, strategy pidff-bounded-effect, profile bounded-pidff-micro-step-v2, R5 stable, KS attached securely, hands clear, wheel clear, prior failed receipt preserved",
+            prior_response_proof: Some(&dir.path().join("native-actuator-visible-smoke.json")),
+            prior_actuator_proof: Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            steering_proof: Some(&dir.path().join("steering-angle-stream-proof.json")),
+            controlled_angle_preflight: Some(&retry_preflight),
+            planned_output: Some(&retry_output),
+            target_degrees: 1.0,
+            profile: MozaControlledAngleProfile::BoundedPidffMicroStepV2,
+            strategy: MozaLowTorqueStrategy::PidffBoundedEffect,
+            max_percent: 5.0,
+            timeout_ms: 2_000,
+            json_out: Some(&retry_authorization),
+            overwrite: false,
+        })
+        .await?;
+
+        let first_receipt = read_json_path(&dir.path().join(NATIVE_CONTROLLED_ANGLE_SMOKE_FILE))?;
+        assert_eq!(json_bool(&first_receipt, "dry_run"), Some(false));
+        assert_eq!(
+            json_bool(&first_receipt, "hardware_output_enabled"),
+            Some(true)
+        );
+        assert_eq!(json_bool(&first_receipt, "target_reached"), Some(false));
+        assert_eq!(
+            json_f64(&first_receipt, "angle_delta_degrees"),
+            Some(0.18127718013275285)
+        );
+
+        let authorization = read_json_path(&retry_authorization)?;
+        let planned = authorization
+            .get("planned_next_output")
+            .ok_or("expected retry planned_next_output")?;
+        assert_eq!(
+            json_string(planned, "json_out"),
+            Some(NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE)
+        );
+        assert_eq!(
+            json_string(planned, "authorization_proof"),
+            Some(NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE)
+        );
+        let command = json_string(planned, "command").ok_or("expected retry planned command")?;
+        assert!(command.contains(NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE));
+        assert!(command.contains(NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE));
+        assert_eq!(
+            authorization
+                .get("controlled_angle_preflight_receipt")
+                .and_then(|receipt| json_string(receipt, "path")),
+            Some(NATIVE_CONTROLLED_ANGLE_RETRY_PREFLIGHT_FILE)
+        );
+        validate_native_controlled_angle_output_authorization(
+            dir.path(),
+            selector,
+            1.0,
+            MozaControlledAngleProfile::BoundedPidffMicroStepV2,
+            5.0,
+            2_000,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            &retry_output,
+            Some(&retry_authorization),
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn native_visible_gate_accepts_retry_controlled_angle_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let selector = "hid-0x346E-0x0004-if2-0x0001-0x0004";
+        let mut retry_receipt = successful_native_controlled_angle_receipt(dir.path())?;
+        write_failed_controlled_angle_output_receipt(dir.path(), selector)?;
+        retry_receipt["receipt_path"] = serde_json::json!(
+            dir.path()
+                .join(NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE)
+                .display()
+                .to_string()
+        );
+        write_test_json_file(
+            &dir.path().join(NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE),
+            &retry_receipt,
+        )?;
+
+        let controlled_gate = verify_native_controlled_angle_smoke_gate(dir.path());
+        assert_eq!(
+            controlled_gate.status, "pass",
+            "expected retry controlled-angle gate pass: {}",
+            controlled_gate.details
+        );
+        let native_visible_gate = verify_native_actuator_visible_smoke_gate(dir.path());
+        assert_eq!(
+            native_visible_gate.status, "pass",
+            "expected retry controlled-angle receipt to satisfy native visible gate: {}",
+            native_visible_gate.details
+        );
         Ok(())
     }
 
@@ -35480,6 +35824,8 @@ mod tests {
             prior_response_proof: None,
             prior_actuator_proof: None,
             steering_proof: None,
+            controlled_angle_preflight: None,
+            planned_output: None,
             target_degrees: 1.0,
             profile: MozaControlledAngleProfile::BoundedPidffMicroStepV2,
             strategy: MozaLowTorqueStrategy::PidffBoundedEffect,
