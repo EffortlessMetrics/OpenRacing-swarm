@@ -1275,6 +1275,19 @@ async fn artifact_index(
     json_out: Option<&Path>,
     md_out: Option<&Path>,
 ) -> Result<()> {
+    let receipt = moza_artifact_index_receipt(lane, json_out, md_out)?;
+    write_json_receipt(json_out, &receipt)?;
+    if let Some(path) = md_out {
+        write_text_file(path, &render_moza_lane_artifact_index_markdown(&receipt))?;
+    }
+    print_artifact_index_receipt(json, json_out, md_out, &receipt)
+}
+
+fn moza_artifact_index_receipt(
+    lane: &Path,
+    json_out: Option<&Path>,
+    md_out: Option<&Path>,
+) -> Result<Value> {
     if !lane.is_dir() {
         return Err(anyhow!(
             "--lane must point at an existing Moza lane directory: {}",
@@ -1282,11 +1295,11 @@ async fn artifact_index(
         ));
     }
 
-    let support_status = stored_lane_artifact_index_status(lane);
+    let support_status = support_bundle_status(lane);
     let readiness = artifact_index_readiness_summary(lane, &support_status);
     let lane_artifacts = discover_lane_artifacts(lane)?;
     let frontier = moza_lane_frontier_label(lane, &support_status);
-    let receipt = serde_json::json!({
+    Ok(serde_json::json!({
         "success": true,
         "command": "wheelctl moza artifact-index",
         "artifact_kind": "moza_lane_artifact_index",
@@ -1314,13 +1327,7 @@ async fn artifact_index(
             "artifact-index reads lane files only; it opens no HID device and sends no output, feature, serial, firmware, or DFU commands",
             "artifact-index is diagnostic navigation only; it is not a readiness promotion and does not authorize hardware output"
         ]
-    });
-
-    write_json_receipt(json_out, &receipt)?;
-    if let Some(path) = md_out {
-        write_text_file(path, &render_moza_lane_artifact_index_markdown(&receipt))?;
-    }
-    print_artifact_index_receipt(json, json_out, md_out, &receipt)
+    }))
 }
 
 async fn bench_wizard(
@@ -1349,7 +1356,7 @@ fn moza_bench_wizard_receipt(
         ));
     }
 
-    let support_status = stored_lane_artifact_index_status(lane);
+    let support_status = support_bundle_status(lane);
     let readiness = artifact_index_readiness_summary(lane, &support_status);
     let frontier = moza_lane_frontier_label(lane, &support_status);
     let next_operator_step = moza_bench_wizard_next_operator_step(lane, &readiness, &frontier);
@@ -12835,27 +12842,6 @@ fn audit_receipt_path(stage: MozaBundleStage) -> &'static str {
 
 pub(crate) fn support_bundle_status(lane: &Path) -> Value {
     support_bundle_status_with_support_validation(lane, SupportBundleValidationMode::ShapeOnly)
-}
-
-fn stored_lane_artifact_index_status(lane: &Path) -> Value {
-    if let Ok(receipt) = read_json_value(lane, "support-bundle.json")
-        && let Some(status) = receipt.get("moza_lane")
-    {
-        return status.clone();
-    }
-    if let Ok(receipt) = read_json_value(lane, "moza-status.json")
-        && let Some(status) = receipt.get("lane_status")
-    {
-        return status.clone();
-    }
-    serde_json::json!({
-        "lane": lane.display().to_string(),
-        "readiness": Value::Null,
-        "artifact_index": [],
-        "notes": [
-            "no stored support-bundle.json or moza-status.json lane diagnostics were available"
-        ]
-    })
 }
 
 fn artifact_index_readiness_summary(lane: &Path, support_status: &Value) -> Value {
@@ -30143,6 +30129,89 @@ mod tests {
         assert!(markdown.contains("read-only operator navigation"));
         assert!(markdown.contains("Safe No-Output Commands"));
         assert!(markdown.contains("Output is not authorized by this wizard"));
+        Ok(())
+    }
+
+    #[test]
+    fn artifact_index_and_bench_wizard_ignore_stale_embedded_lane_status() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &serde_json::json!({
+                "success": false,
+                "command": "wheelctl moza actuator-visible-smoke",
+                "movement_observed": true,
+                "angle_delta_degrees": 0.181277180132753,
+                "final_stop_all_sent": true
+            }),
+        )?;
+        write_test_json_file(
+            &dir.path().join("support-bundle.json"),
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl moza support-bundle",
+                "moza_lane": {
+                    "readiness": {
+                        "highest_passing_stage": "native_response_ready",
+                        "first_blocking_stage": {
+                            "requested_stage": "native-visible-ready",
+                            "missing_artifact_paths": ["native-actuator-visible-smoke.json"]
+                        }
+                    },
+                    "artifact_index": [
+                        {
+                            "path": "native-actuator-visible-smoke.json",
+                            "kind": "json",
+                            "required_stage": "native-visible-ready",
+                            "exists": false,
+                            "valid": false,
+                            "status": "missing"
+                        }
+                    ]
+                }
+            }),
+        )?;
+
+        let index_receipt = moza_artifact_index_receipt(dir.path(), None, None)?;
+        let artifact_index = index_receipt
+            .get("required_artifact_index")
+            .and_then(Value::as_array)
+            .ok_or("expected required_artifact_index array")?;
+        let visible_artifact = artifact_index
+            .iter()
+            .find(|artifact| {
+                artifact.get("path").and_then(Value::as_str)
+                    == Some("native-actuator-visible-smoke.json")
+            })
+            .ok_or("expected native visible artifact entry")?;
+        assert_eq!(
+            visible_artifact.get("exists").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            visible_artifact.get("status").and_then(Value::as_str),
+            Some("pass")
+        );
+
+        let wizard_receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
+        let empty_paths = Vec::new();
+        let missing_paths = wizard_receipt
+            .pointer("/readiness/first_blocking_stage/missing_artifact_paths")
+            .and_then(Value::as_array)
+            .unwrap_or(&empty_paths);
+        assert!(
+            !missing_paths
+                .iter()
+                .any(|path| path.as_str() == Some("native-actuator-visible-smoke.json")),
+            "bench wizard must not repeat stale support-bundle missing paths"
+        );
+        assert_eq!(
+            wizard_receipt
+                .pointer("/readiness/source")
+                .and_then(Value::as_str),
+            Some("stored_verification_receipts")
+        );
         Ok(())
     }
 
