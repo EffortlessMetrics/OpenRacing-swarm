@@ -2,6 +2,33 @@
 
 This file guides automated agents working in this repository. Follow it alongside `docs/DEVELOPMENT.md`.
 
+
+## Repo source-of-truth stack
+
+OpenRacing uses a linked source-of-truth stack:
+
+```text
+Roadmap → Proposal → Spec → ADR → Plan → Active goal → PR → Proof
+```
+
+Before changing files for source-of-truth-managed work, read:
+
+1. `docs/reference/SPEC_SYSTEM.md`
+2. `.openracing/goals/active.toml` when it exists
+3. the linked implementation plan
+4. the linked spec for the selected work item
+5. any linked ADRs
+
+Scope rules:
+
+- Work on exactly one plan work item per PR unless the user explicitly asks for a scaffold or lane setup.
+- Keep docs-only artifact PRs separate from runtime/code PRs unless the linked plan says otherwise.
+- Runtime/code PRs must link to the spec and plan item they implement.
+- Do not hand-edit generated status; run the generator/checker named by the plan.
+- Do not broaden public support claims without support-tier proof or an equivalent receipt pointer.
+- If adding a policy exception, update the relevant `policy/*.toml` ledger with owner, reason, coverage, and review date.
+- Stop and report instead of guessing when required source-of-truth links are missing or contradict the requested work.
+
 ## Project summary
 - OpenRacing is a Rust workspace for safety-critical, real-time force feedback.
 - The real-time (RT) path runs at 1kHz with strict latency and allocation rules.

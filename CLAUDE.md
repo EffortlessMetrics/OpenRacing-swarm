@@ -2,6 +2,25 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+
+## Repo Source-of-Truth Stack
+
+OpenRacing uses a linked source-of-truth stack:
+
+```text
+Roadmap → Proposal → Spec → ADR → Plan → Active goal → PR → Proof
+```
+
+Before making source-of-truth-managed changes, read:
+
+1. `docs/reference/SPEC_SYSTEM.md`
+2. `.openracing/goals/active.toml` when it exists
+3. the linked implementation plan
+4. the linked spec for the selected work item
+5. any linked ADRs
+
+Work on exactly one work item at a time. Do not create a new lane, mix proposal/spec/ADR/plan/runtime changes, hand-edit generated status, or claim success without proof unless the user or linked plan explicitly requires it. Stop and report when linked artifacts are missing, proof cannot run, generated status is dirty, unrelated staged files exist, or the requested work conflicts with an ADR.
+
 ## Project Overview
 
 OpenRacing is a high-performance, safety-critical racing wheel and force feedback simulation software built in Rust. The real-time (RT) path runs at 1kHz with strict latency and allocation rules. Plugins support both WASM (safe, sandboxed) and native (fast, RT) implementations.

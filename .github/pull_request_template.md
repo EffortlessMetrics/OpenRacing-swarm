@@ -3,6 +3,35 @@
 ## Summary
 Brief description of changes and motivation.
 
+
+## Source-of-Truth Links
+
+Proposal: n/a
+Spec: n/a
+ADR: n/a
+Plan item: n/a
+Active goal: n/a
+
+## Scope
+
+- [ ] Proposal / why
+- [ ] Spec / behavior contract
+- [ ] ADR / durable decision
+- [ ] Plan / sequencing
+- [ ] Active goal / current execution state
+- [ ] Runtime / implementation
+- [ ] Policy ledger
+- [ ] Support-tier update
+- [ ] Generated status / receipt
+
+## Claim Boundary
+
+What may be claimed after this PR? What may not be claimed yet?
+
+## Rollback
+
+How can this PR be reverted or disabled safely?
+
 ## Migration Notes
 **Required for all PRs that modify public APIs, schemas, or cross-crate interfaces**
 

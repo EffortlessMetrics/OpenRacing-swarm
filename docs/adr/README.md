@@ -46,3 +46,13 @@ This directory contains Architecture Decision Records for the Racing Wheel Softw
 - Use `template.md` as starting point for new ADRs
 - Validate ADR format with `cargo run -p openracing-tools --bin validate-adr -- --verbose`
 - Generate ADR index with `cargo run -p openracing-tools --bin generate-docs-index --`
+
+## Role in the source-of-truth stack
+
+ADRs are the **durable decision** layer:
+
+```text
+Roadmap -> Proposal -> Spec -> ADR -> Plan -> Active goal -> PR -> Proof
+```
+
+An ADR owns architectural or operating decisions that should still matter months later, along with context, consequences, rejected alternatives, and follow-up specs or plans. ADRs must not become task lists, live status reports, or implementation queues.
