@@ -13768,22 +13768,30 @@ fn check_bundle_artifact(
             valid: false,
             line_count: None,
             status: "missing".to_string(),
+            claim_status: None,
+            claim_notes: Vec::new(),
             notes: vec![format!("expected {}", path.display())],
         };
     }
 
     match requirement.kind {
         BundleArtifactKind::Json => match read_json_value(lane, requirement.relative_path) {
-            Ok(_) => BundleArtifactCheck {
-                path: requirement.relative_path.to_string(),
-                kind: requirement.kind.label().to_string(),
-                required_stage: stage_label(requirement.stage).to_string(),
-                exists: true,
-                valid: true,
-                line_count: None,
-                status: "pass".to_string(),
-                notes: Vec::new(),
-            },
+            Ok(value) => {
+                let (claim_status, claim_notes) =
+                    bundle_artifact_claim_metadata(requirement, &value);
+                BundleArtifactCheck {
+                    path: requirement.relative_path.to_string(),
+                    kind: requirement.kind.label().to_string(),
+                    required_stage: stage_label(requirement.stage).to_string(),
+                    exists: true,
+                    valid: true,
+                    line_count: None,
+                    status: "pass".to_string(),
+                    claim_status,
+                    claim_notes,
+                    notes: Vec::new(),
+                }
+            }
             Err(e) => BundleArtifactCheck {
                 path: requirement.relative_path.to_string(),
                 kind: requirement.kind.label().to_string(),
@@ -13792,6 +13800,8 @@ fn check_bundle_artifact(
                 valid: false,
                 line_count: None,
                 status: "invalid".to_string(),
+                claim_status: None,
+                claim_notes: Vec::new(),
                 notes: vec![e.to_string()],
             },
         },
@@ -13804,6 +13814,8 @@ fn check_bundle_artifact(
                 valid: true,
                 line_count: Some(line_count),
                 status: "pass".to_string(),
+                claim_status: None,
+                claim_notes: Vec::new(),
                 notes: Vec::new(),
             },
             Err(e) => BundleArtifactCheck {
@@ -13814,9 +13826,71 @@ fn check_bundle_artifact(
                 valid: false,
                 line_count: None,
                 status: "invalid".to_string(),
+                claim_status: None,
+                claim_notes: Vec::new(),
                 notes: vec![e.to_string()],
             },
         },
+    }
+}
+
+fn bundle_artifact_claim_metadata(
+    requirement: &BundleArtifactRequirement,
+    receipt: &Value,
+) -> (Option<String>, Vec<String>) {
+    let Some(command) = json_string(receipt, "command") else {
+        return (None, Vec::new());
+    };
+    let Some(success) = json_bool(receipt, "success") else {
+        return (None, Vec::new());
+    };
+
+    let mut notes = Vec::new();
+    if let Some(requested_stage) = json_string(receipt, "requested_stage") {
+        let expected_stage = stage_label(requirement.stage);
+        if requested_stage != expected_stage {
+            notes.push(format!(
+                "receipt requested_stage={requested_stage}, expected {expected_stage}"
+            ));
+        }
+    }
+
+    match command {
+        "wheelctl moza verify-bundle" => {
+            if !success {
+                if let Some(failed_gates) = json_u64(receipt, "failed_gates") {
+                    notes.push(format!("failed_gates={failed_gates}"));
+                }
+                if let Some(missing_artifacts) = json_u64(receipt, "missing_artifacts") {
+                    notes.push(format!("missing_artifacts={missing_artifacts}"));
+                }
+            }
+            (
+                Some(if success {
+                    "stage_passed".to_string()
+                } else {
+                    "stage_failed".to_string()
+                }),
+                notes,
+            )
+        }
+        "wheelctl moza promote-manifest" => (
+            Some(if success {
+                "promotion_applied".to_string()
+            } else {
+                "promotion_failed".to_string()
+            }),
+            notes,
+        ),
+        "wheelctl moza audit-lane" => (
+            Some(if success {
+                "audit_passed".to_string()
+            } else {
+                "audit_failed".to_string()
+            }),
+            notes,
+        ),
+        _ => (None, Vec::new()),
     }
 }
 
@@ -27375,6 +27449,10 @@ struct BundleArtifactCheck {
     #[serde(skip_serializing_if = "Option::is_none")]
     line_count: Option<usize>,
     status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    claim_status: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    claim_notes: Vec<String>,
     notes: Vec<String>,
 }
 
@@ -28181,8 +28259,8 @@ fn render_moza_lane_artifact_index_markdown(receipt: &Value) -> String {
     }
 
     out.push_str("## Required Support-Bundle Artifact Index\n\n");
-    out.push_str("| Path | Required Stage | Status |\n");
-    out.push_str("| --- | --- | --- |\n");
+    out.push_str("| Path | Required Stage | Artifact Status | Claim Status |\n");
+    out.push_str("| --- | --- | --- | --- |\n");
     if let Some(artifacts) = receipt
         .get("required_artifact_index")
         .and_then(Value::as_array)
@@ -28191,11 +28269,13 @@ fn render_moza_lane_artifact_index_markdown(receipt: &Value) -> String {
             let path = json_string(artifact, "path").unwrap_or("unknown");
             let stage = json_string(artifact, "required_stage").unwrap_or("unknown");
             let status = json_string(artifact, "status").unwrap_or("unknown");
+            let claim_status = json_string(artifact, "claim_status").unwrap_or("artifact_only");
             out.push_str(&format!(
-                "| `{}` | `{}` | `{}` |\n",
+                "| `{}` | `{}` | `{}` | `{}` |\n",
                 markdown_escape(path),
                 markdown_escape(stage),
-                markdown_escape(status)
+                markdown_escape(status),
+                markdown_escape(claim_status)
             ));
         }
     }
@@ -30167,6 +30247,76 @@ mod tests {
                 .and_then(Value::as_bool),
             Some(false)
         );
+        Ok(())
+    }
+
+    #[test]
+    fn artifact_index_separates_artifact_validity_from_stage_claim_status() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_test_json_file(
+            &dir.path().join("native-visible-verification.json"),
+            &serde_json::json!({
+                "success": false,
+                "command": "wheelctl moza verify-bundle",
+                "requested_stage": "native_visible_ready",
+                "failed_gates": 1,
+                "missing_artifacts": 0
+            }),
+        )?;
+        write_test_json_file(
+            &dir.path().join("smoke-ready-verification.json"),
+            &serde_json::json!({
+                "success": false,
+                "command": "wheelctl moza verify-bundle",
+                "requested_stage": "smoke_ready",
+                "failed_gates": 4,
+                "missing_artifacts": 3
+            }),
+        )?;
+
+        let receipt = moza_artifact_index_receipt(dir.path(), None, None)?;
+        let artifact_index = receipt
+            .get("required_artifact_index")
+            .and_then(Value::as_array)
+            .ok_or("expected required_artifact_index array")?;
+        for (path, failed_gates) in [
+            ("native-visible-verification.json", "failed_gates=1"),
+            ("smoke-ready-verification.json", "failed_gates=4"),
+        ] {
+            let artifact = artifact_index
+                .iter()
+                .find(|artifact| artifact.get("path").and_then(Value::as_str) == Some(path))
+                .ok_or_else(|| format!("expected {path} in artifact index"))?;
+            assert_eq!(
+                artifact.get("status").and_then(Value::as_str),
+                Some("pass"),
+                "{path} should remain a valid readable JSON artifact"
+            );
+            assert_eq!(
+                artifact.get("claim_status").and_then(Value::as_str),
+                Some("stage_failed"),
+                "{path} must not render as a passed readiness claim"
+            );
+            let claim_notes = artifact
+                .get("claim_notes")
+                .and_then(Value::as_array)
+                .ok_or("expected claim notes for failed verification")?;
+            assert!(
+                claim_notes
+                    .iter()
+                    .any(|note| note.as_str() == Some(failed_gates)),
+                "expected {path} claim notes to include {failed_gates}: {claim_notes:?}"
+            );
+        }
+
+        let markdown = render_moza_lane_artifact_index_markdown(&receipt);
+        assert!(markdown.contains("Artifact Status | Claim Status"));
+        assert!(markdown.contains(
+            "| `native-visible-verification.json` | `native_visible_ready` | `pass` | `stage_failed` |"
+        ));
+        assert!(markdown.contains(
+            "| `smoke-ready-verification.json` | `smoke_ready` | `pass` | `stage_failed` |"
+        ));
         Ok(())
     }
 
