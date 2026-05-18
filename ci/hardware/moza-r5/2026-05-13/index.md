@@ -20,11 +20,13 @@ This section is diagnostic navigation only. `generic_aux` roles are valid parser
 - Required parser-visible roles: `7`
 - Generic auxiliary roles: `3`
 
-| Control | Role | Evidence Capture | Semantic Status |
-| --- | --- | --- | --- |
-| `brake` | `brake` | `captures/r5-brake-only-sweep.jsonl` | `generic_aux` |
-| `clutch` | `clutch` | `captures/r5-clutch-only-sweep.jsonl` | `generic_aux` |
-| `handbrake` | `handbrake` | `captures/r5-handbrake-only-sweep.jsonl` | `generic_aux` |
+- Candidate-only extended slots: `6`
+
+| Control | Role | Evidence Capture | Semantic Status | Candidate Slots |
+| --- | --- | --- | --- | --- |
+| `brake` | `brake` | `captures/r5-brake-only-sweep.jsonl` | `generic_aux` | `r5_v1_extended_axis0_u16` |
+| `clutch` | `clutch` | `captures/r5-clutch-only-sweep.jsonl` | `generic_aux` | `r5_v1_extended_aux0_u16, r5_v1_extended_aux1_u16` |
+| `handbrake` | `handbrake` | `captures/r5-handbrake-only-sweep.jsonl` | `generic_aux` | `r5_v1_extended_aux0_u16, r5_v1_extended_aux1_u16, r5_v1_extended_axis1_u16` |
 
 ## Passive Enumeration And Input
 

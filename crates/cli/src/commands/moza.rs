@@ -13047,6 +13047,9 @@ fn moza_input_role_semantics_summary(lane: &Path) -> Value {
     let mut incomplete_roles = Vec::new();
     let mut required_role_count = 0usize;
     let mut required_parser_visible_count = 0usize;
+    let mut semantic_candidate_count = 0usize;
+    let mut ambiguous_semantic_candidate_count = 0usize;
+    let axis_controls = candidate_axis_controls_for_role_values(&selected_roles);
 
     for role in selected_roles {
         let required = json_bool(&role, "required").unwrap_or(false);
@@ -13065,6 +13068,16 @@ fn moza_input_role_semantics_summary(lane: &Path) -> Value {
             .map(|requirements| {
                 requirements
                     .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let moving_required_axes = role
+            .get("moving_required_axes")
+            .and_then(Value::as_array)
+            .map(|axes| {
+                axes.iter()
                     .filter_map(Value::as_str)
                     .map(str::to_string)
                     .collect::<Vec<_>>()
@@ -13089,6 +13102,24 @@ fn moza_input_role_semantics_summary(lane: &Path) -> Value {
                 required_parser_visible_count += 1;
             }
         }
+        let semantic_candidates = role
+            .get("semantic_candidates")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_else(|| {
+                semantic_candidate_values_for_role(
+                    &control,
+                    &role_name,
+                    evidence_capture.as_deref(),
+                    &moving_required_axes,
+                    &axis_controls,
+                )
+            });
+        semantic_candidate_count += semantic_candidates.len();
+        ambiguous_semantic_candidate_count += semantic_candidates
+            .iter()
+            .filter(|candidate| json_string(candidate, "confidence") == Some("ambiguous_candidate"))
+            .count();
 
         let entry = serde_json::json!({
             "control": control,
@@ -13097,7 +13128,9 @@ fn moza_input_role_semantics_summary(lane: &Path) -> Value {
             "semantic_status": semantic_status,
             "parser_visible": parser_visible,
             "evidence_capture": evidence_capture,
+            "moving_required_axes": moving_required_axes,
             "missing_requirements": missing_requirements,
+            "semantic_candidates": semantic_candidates,
             "notes": notes
         });
 
@@ -13133,6 +13166,8 @@ fn moza_input_role_semantics_summary(lane: &Path) -> Value {
         "required_parser_visible_count": required_parser_visible_count,
         "generic_aux_role_count": generic_aux_roles.len(),
         "incomplete_role_count": incomplete_roles.len(),
+        "semantic_candidate_count": semantic_candidate_count,
+        "ambiguous_semantic_candidate_count": ambiguous_semantic_candidate_count,
         "status_counts": status_counts,
         "generic_aux_roles": generic_aux_roles,
         "incomplete_roles": incomplete_roles,
@@ -13145,6 +13180,7 @@ fn moza_input_role_semantics_summary(lane: &Path) -> Value {
         "notes": [
             "input role semantics are diagnostic navigation only; they do not open HID or send output",
             "generic_aux means the capture showed parser-visible R5 extended-field movement, but the role-specific semantic mapping remains unproven",
+            "semantic_candidates name observed R5 V1 extended slots from isolated captures only; they are not readiness claims",
             "generic_aux evidence can keep passive artifacts valid while still marking input topology semantics as incomplete for product-quality follow-up"
         ]
     })
@@ -23631,8 +23667,20 @@ fn lane_role_evidence_entries(
             parser_visible: matches!(semantic_status, "proven" | "generic_aux"),
             moving_required_axes,
             missing_requirements,
+            semantic_candidates: Vec::new(),
             notes,
         });
+    }
+
+    let axis_controls = candidate_axis_controls_for_entries(&entries);
+    for entry in &mut entries {
+        entry.semantic_candidates = semantic_candidates_for_role(
+            &entry.control,
+            &entry.role,
+            entry.evidence_capture.as_deref(),
+            &entry.moving_required_axes,
+            &axis_controls,
+        );
     }
 
     entries
@@ -23675,6 +23723,7 @@ fn sync_role_status_receipt(lane: &Path, check: bool) -> Result<Value> {
             "parser_visible": entry.parser_visible,
             "moving_required_axes": entry.moving_required_axes,
             "missing_requirements": entry.missing_requirements,
+            "semantic_candidates": entry.semantic_candidates,
             "notes": entry.notes,
         }));
     }
@@ -23757,6 +23806,122 @@ fn role_semantic_status(
     }
 
     "proven"
+}
+
+fn candidate_axis_controls_for_entries(
+    entries: &[LaneRoleEvidenceEntry],
+) -> BTreeMap<String, Vec<String>> {
+    let mut axis_controls: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for entry in entries {
+        for axis in &entry.moving_required_axes {
+            if is_r5_v1_extended_candidate_axis(axis) {
+                axis_controls
+                    .entry(axis.clone())
+                    .or_default()
+                    .insert(entry.control.clone());
+            }
+        }
+    }
+    axis_controls
+        .into_iter()
+        .map(|(axis, controls)| (axis, controls.into_iter().collect()))
+        .collect()
+}
+
+fn candidate_axis_controls_for_role_values(roles: &[Value]) -> BTreeMap<String, Vec<String>> {
+    let mut axis_controls: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for role in roles {
+        let control = json_string(role, "control").unwrap_or("unknown");
+        if let Some(axes) = role.get("moving_required_axes").and_then(Value::as_array) {
+            for axis in axes.iter().filter_map(Value::as_str) {
+                if is_r5_v1_extended_candidate_axis(axis) {
+                    axis_controls
+                        .entry(axis.to_string())
+                        .or_default()
+                        .insert(control.to_string());
+                }
+            }
+        }
+    }
+    axis_controls
+        .into_iter()
+        .map(|(axis, controls)| (axis, controls.into_iter().collect()))
+        .collect()
+}
+
+fn is_r5_v1_extended_candidate_axis(axis: &str) -> bool {
+    axis.starts_with("r5_v1_extended_")
+}
+
+fn semantic_candidates_for_role(
+    control: &str,
+    role: &str,
+    evidence_capture: Option<&str>,
+    moving_required_axes: &[String],
+    axis_controls: &BTreeMap<String, Vec<String>>,
+) -> Vec<InputRoleSemanticCandidate> {
+    moving_required_axes
+        .iter()
+        .filter(|axis| is_r5_v1_extended_candidate_axis(axis))
+        .map(|axis| {
+            let ambiguous_with_controls = axis_controls
+                .get(axis)
+                .map(|controls| {
+                    controls
+                        .iter()
+                        .filter(|candidate_control| candidate_control.as_str() != control)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let confidence = if ambiguous_with_controls.is_empty() {
+                "isolated_candidate"
+            } else {
+                "ambiguous_candidate"
+            };
+            let notes = if ambiguous_with_controls.is_empty() {
+                vec![
+                    "candidate comes from an isolated role capture and is not a parser semantic mapping"
+                        .to_string(),
+                ]
+            } else {
+                vec![
+                    "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
+                        .to_string(),
+                ]
+            };
+            InputRoleSemanticCandidate {
+                control: control.to_string(),
+                role: role.to_string(),
+                axis: axis.clone(),
+                evidence_capture: evidence_capture.map(str::to_string),
+                confidence,
+                ambiguous_with_controls,
+                claim_status: "candidate_only",
+                readiness_claim: false,
+                notes,
+            }
+        })
+        .collect()
+}
+
+fn semantic_candidate_values_for_role(
+    control: &str,
+    role: &str,
+    evidence_capture: Option<&str>,
+    moving_required_axes: &[String],
+    axis_controls: &BTreeMap<String, Vec<String>>,
+) -> Vec<Value> {
+    semantic_candidates_for_role(
+        control,
+        role,
+        evidence_capture,
+        moving_required_axes,
+        axis_controls,
+    )
+    .into_iter()
+    .filter_map(|candidate| serde_json::to_value(candidate).ok())
+    .collect()
 }
 
 fn moving_required_axes(
@@ -24345,6 +24510,22 @@ struct LaneRoleEvidenceEntry {
     parser_visible: bool,
     moving_required_axes: Vec<String>,
     missing_requirements: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    semantic_candidates: Vec<InputRoleSemanticCandidate>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct InputRoleSemanticCandidate {
+    control: String,
+    role: String,
+    axis: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    evidence_capture: Option<String>,
+    confidence: &'static str,
+    ambiguous_with_controls: Vec<String>,
+    claim_status: &'static str,
+    readiness_claim: bool,
     notes: Vec<String>,
 }
 
@@ -28673,6 +28854,7 @@ fn push_input_role_semantics_markdown(out: &mut String, receipt: &Value) {
     let required_parser_visible_count =
         json_u64(summary, "required_parser_visible_count").unwrap_or(0);
     let generic_aux_role_count = json_u64(summary, "generic_aux_role_count").unwrap_or(0);
+    let semantic_candidate_count = json_u64(summary, "semantic_candidate_count").unwrap_or(0);
 
     out.push_str("## Input Role Semantics\n\n");
     out.push_str("This section is diagnostic navigation only. `generic_aux` roles are valid parser-visible passive evidence, but they are not fully role-specific semantic mappings.\n\n");
@@ -28691,23 +28873,39 @@ fn push_input_role_semantics_markdown(out: &mut String, receipt: &Value) {
     out.push_str(&format!(
         "- Generic auxiliary roles: `{generic_aux_role_count}`\n\n"
     ));
+    out.push_str(&format!(
+        "- Candidate-only extended slots: `{semantic_candidate_count}`\n\n"
+    ));
 
     if let Some(roles) = summary.get("generic_aux_roles").and_then(Value::as_array)
         && !roles.is_empty()
     {
-        out.push_str("| Control | Role | Evidence Capture | Semantic Status |\n");
-        out.push_str("| --- | --- | --- | --- |\n");
+        out.push_str("| Control | Role | Evidence Capture | Semantic Status | Candidate Slots |\n");
+        out.push_str("| --- | --- | --- | --- | --- |\n");
         for role in roles {
             let control = json_string(role, "control").unwrap_or("unknown");
             let role_name = json_string(role, "role").unwrap_or("unknown");
             let evidence = json_string(role, "evidence_capture").unwrap_or("unknown");
             let status = json_string(role, "semantic_status").unwrap_or("unknown");
+            let candidate_slots = role
+                .get("semantic_candidates")
+                .and_then(Value::as_array)
+                .map(|candidates| {
+                    candidates
+                        .iter()
+                        .filter_map(|candidate| json_string(candidate, "axis"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .filter(|slots| !slots.is_empty())
+                .unwrap_or_else(|| "none".to_string());
             out.push_str(&format!(
-                "| `{}` | `{}` | `{}` | `{}` |\n",
+                "| `{}` | `{}` | `{}` | `{}` | `{}` |\n",
                 markdown_escape(control),
                 markdown_escape(role_name),
                 markdown_escape(evidence),
-                markdown_escape(status)
+                markdown_escape(status),
+                markdown_escape(&candidate_slots)
             ));
         }
         out.push('\n');
@@ -30723,6 +30921,7 @@ mod tests {
                         "semantic_status": "generic_aux",
                         "parser_visible": true,
                         "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
+                        "moving_required_axes": ["r5_v1_extended_axis0_u16"],
                         "missing_requirements": [],
                         "notes": [
                             "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
@@ -30756,6 +30955,11 @@ mod tests {
             Some(2)
         );
         assert_eq!(json_u64(semantics, "generic_aux_role_count"), Some(1));
+        assert_eq!(json_u64(semantics, "semantic_candidate_count"), Some(1));
+        assert_eq!(
+            json_u64(semantics, "ambiguous_semantic_candidate_count"),
+            Some(0)
+        );
         assert_eq!(json_bool(semantics, "blocks_native_control"), Some(false));
         assert_eq!(json_bool(semantics, "blocks_native_visible"), Some(false));
         assert_eq!(json_bool(semantics, "readiness_claim"), Some(false));
@@ -30770,11 +30974,29 @@ mod tests {
             }),
             "expected brake to be surfaced as generic_aux: {generic_aux_roles:?}"
         );
+        let brake_role = generic_aux_roles
+            .iter()
+            .find(|role| json_string(role, "control") == Some("brake"))
+            .ok_or("expected brake generic_aux role")?;
+        let candidates = brake_role
+            .get("semantic_candidates")
+            .and_then(Value::as_array)
+            .ok_or("expected semantic_candidates")?;
+        assert!(
+            candidates.iter().any(|candidate| {
+                json_string(candidate, "axis") == Some("r5_v1_extended_axis0_u16")
+                    && json_string(candidate, "claim_status") == Some("candidate_only")
+                    && json_string(candidate, "confidence") == Some("isolated_candidate")
+                    && json_bool(candidate, "readiness_claim") == Some(false)
+            }),
+            "expected candidate-only brake axis metadata: {candidates:?}"
+        );
 
         let index_markdown = render_moza_lane_artifact_index_markdown(&index_receipt);
         assert!(index_markdown.contains("Input Role Semantics"));
         assert!(index_markdown.contains("generic_aux"));
         assert!(index_markdown.contains("captures/r5-brake-only-sweep.jsonl"));
+        assert!(index_markdown.contains("r5_v1_extended_axis0_u16"));
 
         let wizard_receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
         let wizard_semantics = wizard_receipt
@@ -31343,6 +31565,7 @@ mod tests {
                         "semantic_status": "generic_aux",
                         "parser_visible": true,
                         "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
+                        "moving_required_axes": ["r5_v1_extended_axis0_u16"],
                         "missing_requirements": [],
                         "notes": [
                             "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
@@ -31376,10 +31599,31 @@ mod tests {
             Some(2)
         );
         assert_eq!(json_u64(semantics, "generic_aux_role_count"), Some(1));
+        assert_eq!(json_u64(semantics, "semantic_candidate_count"), Some(1));
         assert_eq!(json_bool(semantics, "blocks_native_control"), Some(false));
         assert_eq!(json_bool(semantics, "blocks_native_visible"), Some(false));
         assert_eq!(json_bool(semantics, "blocks_smoke_ready"), Some(false));
         assert_eq!(json_bool(semantics, "readiness_claim"), Some(false));
+        let generic_aux_roles = semantics
+            .get("generic_aux_roles")
+            .and_then(Value::as_array)
+            .ok_or("expected generic_aux_roles")?;
+        let brake_role = generic_aux_roles
+            .iter()
+            .find(|role| json_string(role, "control") == Some("brake"))
+            .ok_or("expected brake generic_aux role")?;
+        let candidates = brake_role
+            .get("semantic_candidates")
+            .and_then(Value::as_array)
+            .ok_or("expected semantic_candidates")?;
+        assert!(
+            candidates.iter().any(|candidate| {
+                json_string(candidate, "axis") == Some("r5_v1_extended_axis0_u16")
+                    && json_string(candidate, "claim_status") == Some("candidate_only")
+                    && json_bool(candidate, "readiness_claim") == Some(false)
+            }),
+            "expected pre-output candidate-only brake metadata: {candidates:?}"
+        );
         assert!(
             receipt
                 .passed_items
@@ -48466,6 +48710,75 @@ mod tests {
                 .iter()
                 .any(|note| note.contains("semantic control naming remains unproven"))
         );
+    }
+
+    #[test]
+    fn input_role_candidates_keep_shared_extended_axes_diagnostic_only() -> TestResult {
+        let roles = vec![
+            serde_json::json!({
+                "control": "clutch",
+                "role": "clutch",
+                "moving_required_axes": ["r5_v1_extended_aux0_u16"]
+            }),
+            serde_json::json!({
+                "control": "handbrake",
+                "role": "handbrake",
+                "moving_required_axes": ["r5_v1_extended_aux0_u16", "r5_v1_extended_axis1_u16"]
+            }),
+        ];
+        let axis_controls = candidate_axis_controls_for_role_values(&roles);
+        let clutch_candidates = semantic_candidate_values_for_role(
+            "clutch",
+            "clutch",
+            Some("captures/r5-clutch-only-sweep.jsonl"),
+            &["r5_v1_extended_aux0_u16".to_string()],
+            &axis_controls,
+        );
+        let handbrake_candidates = semantic_candidate_values_for_role(
+            "handbrake",
+            "handbrake",
+            Some("captures/r5-handbrake-only-sweep.jsonl"),
+            &[
+                "r5_v1_extended_aux0_u16".to_string(),
+                "r5_v1_extended_axis1_u16".to_string(),
+            ],
+            &axis_controls,
+        );
+
+        let clutch_aux = clutch_candidates
+            .iter()
+            .find(|candidate| json_string(candidate, "axis") == Some("r5_v1_extended_aux0_u16"))
+            .ok_or("expected clutch aux0 candidate")?;
+        assert_eq!(
+            json_string(clutch_aux, "confidence"),
+            Some("ambiguous_candidate")
+        );
+        assert_eq!(
+            json_string(clutch_aux, "claim_status"),
+            Some("candidate_only")
+        );
+        assert_eq!(json_bool(clutch_aux, "readiness_claim"), Some(false));
+        let ambiguous_with = clutch_aux
+            .get("ambiguous_with_controls")
+            .and_then(Value::as_array)
+            .ok_or("expected ambiguous controls")?;
+        assert!(
+            ambiguous_with
+                .iter()
+                .any(|control| control.as_str() == Some("handbrake")),
+            "expected clutch aux0 candidate to name handbrake ambiguity: {ambiguous_with:?}"
+        );
+
+        let handbrake_axis = handbrake_candidates
+            .iter()
+            .find(|candidate| json_string(candidate, "axis") == Some("r5_v1_extended_axis1_u16"))
+            .ok_or("expected handbrake axis1 candidate")?;
+        assert_eq!(
+            json_string(handbrake_axis, "confidence"),
+            Some("isolated_candidate")
+        );
+        assert_eq!(json_bool(handbrake_axis, "readiness_claim"), Some(false));
+        Ok(())
     }
 
     #[test]

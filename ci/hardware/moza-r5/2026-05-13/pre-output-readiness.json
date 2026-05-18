@@ -1,7 +1,7 @@
 {
   "success": true,
   "command": "wheelctl moza pre-output-readiness",
-  "generated_at_utc": "2026-05-18T19:38:23Z",
+  "generated_at_utc": "2026-05-18T20:09:54Z",
   "lane": "ci/hardware/moza-r5/2026-05-13",
   "stage": "pre_output_readiness",
   "ready_for_zero_torque": true,
@@ -12,6 +12,7 @@
   "native_visible_motion_proven": false,
   "input_semantic_mapping_complete": false,
   "input_role_semantics": {
+    "ambiguous_semantic_candidate_count": 4,
     "blocks_native_control": false,
     "blocks_native_visible": false,
     "blocks_smoke_ready": false,
@@ -21,36 +22,140 @@
         "control": "brake",
         "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
         "missing_requirements": [],
+        "moving_required_axes": [
+          "r5_v1_extended_axis0_u16"
+        ],
         "notes": [
           "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
         ],
         "parser_visible": true,
         "required": true,
         "role": "brake",
+        "semantic_candidates": [
+          {
+            "ambiguous_with_controls": [],
+            "axis": "r5_v1_extended_axis0_u16",
+            "claim_status": "candidate_only",
+            "confidence": "isolated_candidate",
+            "control": "brake",
+            "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
+            "notes": [
+              "candidate comes from an isolated role capture and is not a parser semantic mapping"
+            ],
+            "readiness_claim": false,
+            "role": "brake"
+          }
+        ],
         "semantic_status": "generic_aux"
       },
       {
         "control": "clutch",
         "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
         "missing_requirements": [],
+        "moving_required_axes": [
+          "r5_v1_extended_aux0_u16",
+          "r5_v1_extended_aux1_u16"
+        ],
         "notes": [
           "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
         ],
         "parser_visible": true,
         "required": true,
         "role": "clutch",
+        "semantic_candidates": [
+          {
+            "ambiguous_with_controls": [
+              "handbrake"
+            ],
+            "axis": "r5_v1_extended_aux0_u16",
+            "claim_status": "candidate_only",
+            "confidence": "ambiguous_candidate",
+            "control": "clutch",
+            "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
+            "notes": [
+              "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
+            ],
+            "readiness_claim": false,
+            "role": "clutch"
+          },
+          {
+            "ambiguous_with_controls": [
+              "handbrake"
+            ],
+            "axis": "r5_v1_extended_aux1_u16",
+            "claim_status": "candidate_only",
+            "confidence": "ambiguous_candidate",
+            "control": "clutch",
+            "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
+            "notes": [
+              "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
+            ],
+            "readiness_claim": false,
+            "role": "clutch"
+          }
+        ],
         "semantic_status": "generic_aux"
       },
       {
         "control": "handbrake",
         "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
         "missing_requirements": [],
+        "moving_required_axes": [
+          "r5_v1_extended_aux0_u16",
+          "r5_v1_extended_aux1_u16",
+          "r5_v1_extended_axis1_u16"
+        ],
         "notes": [
           "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
         ],
         "parser_visible": true,
         "required": true,
         "role": "handbrake",
+        "semantic_candidates": [
+          {
+            "ambiguous_with_controls": [
+              "clutch"
+            ],
+            "axis": "r5_v1_extended_aux0_u16",
+            "claim_status": "candidate_only",
+            "confidence": "ambiguous_candidate",
+            "control": "handbrake",
+            "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
+            "notes": [
+              "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
+            ],
+            "readiness_claim": false,
+            "role": "handbrake"
+          },
+          {
+            "ambiguous_with_controls": [
+              "clutch"
+            ],
+            "axis": "r5_v1_extended_aux1_u16",
+            "claim_status": "candidate_only",
+            "confidence": "ambiguous_candidate",
+            "control": "handbrake",
+            "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
+            "notes": [
+              "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
+            ],
+            "readiness_claim": false,
+            "role": "handbrake"
+          },
+          {
+            "ambiguous_with_controls": [],
+            "axis": "r5_v1_extended_axis1_u16",
+            "claim_status": "candidate_only",
+            "confidence": "isolated_candidate",
+            "control": "handbrake",
+            "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
+            "notes": [
+              "candidate comes from an isolated role capture and is not a parser semantic mapping"
+            ],
+            "readiness_claim": false,
+            "role": "handbrake"
+          }
+        ],
         "semantic_status": "generic_aux"
       }
     ],
@@ -59,6 +164,7 @@
     "notes": [
       "input role semantics are diagnostic navigation only; they do not open HID or send output",
       "generic_aux means the capture showed parser-visible R5 extended-field movement, but the role-specific semantic mapping remains unproven",
+      "semantic_candidates name observed R5 V1 extended slots from isolated captures only; they are not readiness claims",
       "generic_aux evidence can keep passive artifacts valid while still marking input topology semantics as incomplete for product-quality follow-up"
     ],
     "passive_artifacts_remain_valid": true,
@@ -70,79 +176,203 @@
         "control": "brake",
         "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
         "missing_requirements": [],
+        "moving_required_axes": [
+          "r5_v1_extended_axis0_u16"
+        ],
         "notes": [
           "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
         ],
         "parser_visible": true,
         "required": true,
         "role": "brake",
+        "semantic_candidates": [
+          {
+            "ambiguous_with_controls": [],
+            "axis": "r5_v1_extended_axis0_u16",
+            "claim_status": "candidate_only",
+            "confidence": "isolated_candidate",
+            "control": "brake",
+            "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
+            "notes": [
+              "candidate comes from an isolated role capture and is not a parser semantic mapping"
+            ],
+            "readiness_claim": false,
+            "role": "brake"
+          }
+        ],
         "semantic_status": "generic_aux"
       },
       {
         "control": "clutch",
         "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
         "missing_requirements": [],
+        "moving_required_axes": [
+          "r5_v1_extended_aux0_u16",
+          "r5_v1_extended_aux1_u16"
+        ],
         "notes": [
           "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
         ],
         "parser_visible": true,
         "required": true,
         "role": "clutch",
+        "semantic_candidates": [
+          {
+            "ambiguous_with_controls": [
+              "handbrake"
+            ],
+            "axis": "r5_v1_extended_aux0_u16",
+            "claim_status": "candidate_only",
+            "confidence": "ambiguous_candidate",
+            "control": "clutch",
+            "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
+            "notes": [
+              "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
+            ],
+            "readiness_claim": false,
+            "role": "clutch"
+          },
+          {
+            "ambiguous_with_controls": [
+              "handbrake"
+            ],
+            "axis": "r5_v1_extended_aux1_u16",
+            "claim_status": "candidate_only",
+            "confidence": "ambiguous_candidate",
+            "control": "clutch",
+            "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
+            "notes": [
+              "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
+            ],
+            "readiness_claim": false,
+            "role": "clutch"
+          }
+        ],
         "semantic_status": "generic_aux"
       },
       {
         "control": "es_rim_controls",
         "evidence_capture": "captures/es-controls.jsonl",
         "missing_requirements": [],
+        "moving_required_axes": [
+          "buttons_any_u8"
+        ],
         "notes": [],
         "parser_visible": true,
         "required": true,
         "role": "rim_controls",
+        "semantic_candidates": [],
         "semantic_status": "proven"
       },
       {
         "control": "handbrake",
         "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
         "missing_requirements": [],
+        "moving_required_axes": [
+          "r5_v1_extended_aux0_u16",
+          "r5_v1_extended_aux1_u16",
+          "r5_v1_extended_axis1_u16"
+        ],
         "notes": [
           "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
         ],
         "parser_visible": true,
         "required": true,
         "role": "handbrake",
+        "semantic_candidates": [
+          {
+            "ambiguous_with_controls": [
+              "clutch"
+            ],
+            "axis": "r5_v1_extended_aux0_u16",
+            "claim_status": "candidate_only",
+            "confidence": "ambiguous_candidate",
+            "control": "handbrake",
+            "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
+            "notes": [
+              "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
+            ],
+            "readiness_claim": false,
+            "role": "handbrake"
+          },
+          {
+            "ambiguous_with_controls": [
+              "clutch"
+            ],
+            "axis": "r5_v1_extended_aux1_u16",
+            "claim_status": "candidate_only",
+            "confidence": "ambiguous_candidate",
+            "control": "handbrake",
+            "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
+            "notes": [
+              "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
+            ],
+            "readiness_claim": false,
+            "role": "handbrake"
+          },
+          {
+            "ambiguous_with_controls": [],
+            "axis": "r5_v1_extended_axis1_u16",
+            "claim_status": "candidate_only",
+            "confidence": "isolated_candidate",
+            "control": "handbrake",
+            "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
+            "notes": [
+              "candidate comes from an isolated role capture and is not a parser semantic mapping"
+            ],
+            "readiness_claim": false,
+            "role": "handbrake"
+          }
+        ],
         "semantic_status": "generic_aux"
       },
       {
         "control": "ks_rim_controls",
         "evidence_capture": "captures/ks-controls.jsonl",
         "missing_requirements": [],
+        "moving_required_axes": [
+          "buttons_any_u8",
+          "hat_u8",
+          "ks_buttons_any_u8",
+          "ks_hat_u8"
+        ],
         "notes": [],
         "parser_visible": true,
         "required": true,
         "role": "rim_controls",
+        "semantic_candidates": [],
         "semantic_status": "proven"
       },
       {
         "control": "steering",
         "evidence_capture": "captures/r5-steering-sweep.jsonl",
         "missing_requirements": [],
+        "moving_required_axes": [
+          "steering_u16"
+        ],
         "notes": [],
         "parser_visible": true,
         "required": true,
         "role": "steering",
+        "semantic_candidates": [],
         "semantic_status": "proven"
       },
       {
         "control": "throttle",
         "evidence_capture": "captures/r5-throttle-only-sweep.jsonl",
         "missing_requirements": [],
+        "moving_required_axes": [
+          "throttle_u16"
+        ],
         "notes": [],
         "parser_visible": true,
         "required": true,
         "role": "throttle",
+        "semantic_candidates": [],
         "semantic_status": "proven"
       }
     ],
+    "semantic_candidate_count": 6,
     "semantic_status": "partial_generic_aux_mapping",
     "source_artifact": "native-visible-verification.json",
     "source_stage": "native_visible_ready",
