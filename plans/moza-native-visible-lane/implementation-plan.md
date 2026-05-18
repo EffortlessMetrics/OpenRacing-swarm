@@ -40,6 +40,12 @@ captures. Those candidates keep the passive evidence navigable while preserving
 `input_semantic_mapping_complete=false`; they do not prove role-specific input
 semantics or readiness.
 
+The artifact-index and bench-wizard regression coverage now explicitly checks
+that valid failed native-visible and smoke-ready verifier receipts remain useful
+diagnostic artifacts without becoming readiness claims. This protects the
+current lane shape, where failed verifier receipts are intentionally preserved
+while native-visible and smoke-ready remain blocked.
+
 ## Work item: activate-source-of-truth
 
 Status: completed
@@ -182,6 +188,58 @@ git diff --check
 
 Remove the candidate-only navigation fields and revert the docs. Do not alter
 the underlying passive input captures.
+
+## Work item: harden-artifact-claim-boundaries
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: reliable operator navigation while failed verifier receipts are
+preserved
+Blocked by: n/a
+
+### Goal
+
+Ensure artifact navigation treats valid failed verifier receipts as diagnostic
+evidence only, not native-visible or smoke-ready success.
+
+### Production delta
+
+Extend the Moza artifact-index claim-status regression to cover bench-wizard
+readiness handling for the same failed native-visible and smoke-ready verifier
+fixtures.
+
+### Non-goals
+
+No hardware output, no authorization receipt, no hardware artifact replacement,
+no readiness promotion, and no change to verifier gate semantics.
+
+### Acceptance
+
+- `artifact-index` keeps valid failed native-visible and smoke-ready verifier
+  receipts at artifact status `pass` with claim status `stage_failed`.
+- `bench-wizard` keeps `native_visible_claimed=false`,
+  `smoke_ready_claimed=false`, `native_visible_motion_proven` not true, and
+  `ready_for_real_hardware_smoke` not true for those fixtures.
+- Native-visible remains an active blocker when the stored verifier failed.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl artifact_index -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl moza -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+git diff --check
+```
+
+### Rollback
+
+Remove only the added regression assertions. Do not remove or rewrite preserved
+failed verifier receipts.
 
 ## Work item: attempt-03-authorization
 
