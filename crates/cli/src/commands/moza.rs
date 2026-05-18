@@ -1299,6 +1299,7 @@ fn moza_artifact_index_receipt(
     let readiness = artifact_index_readiness_summary(lane, &support_status);
     let lane_artifacts = discover_lane_artifacts(lane)?;
     let frontier = moza_lane_frontier_label(lane, &support_status);
+    let input_role_semantics = moza_input_role_semantics_summary(lane);
     Ok(serde_json::json!({
         "success": true,
         "command": "wheelctl moza artifact-index",
@@ -1318,6 +1319,7 @@ fn moza_artifact_index_receipt(
         "native_visible_claimed": false,
         "readiness_claims": NonClaimingReadinessClaims::default(),
         "readiness": readiness,
+        "input_role_semantics": input_role_semantics,
         "required_artifact_index": support_status
             .get("artifact_index")
             .cloned()
@@ -1360,6 +1362,7 @@ fn moza_bench_wizard_receipt(
     let readiness = artifact_index_readiness_summary(lane, &support_status);
     let frontier = moza_lane_frontier_label(lane, &support_status);
     let next_operator_step = moza_bench_wizard_next_operator_step(lane, &readiness, &frontier);
+    let input_role_semantics = moza_input_role_semantics_summary(lane);
 
     Ok(serde_json::json!({
         "success": true,
@@ -1383,6 +1386,7 @@ fn moza_bench_wizard_receipt(
         "smoke_ready_claimed": false,
         "readiness_claims": NonClaimingReadinessClaims::default(),
         "readiness": readiness,
+        "input_role_semantics": input_role_semantics,
         "safe_no_output_commands": moza_bench_wizard_safe_no_output_commands(lane),
         "active_blockers": moza_bench_wizard_active_blockers(lane),
         "blocked_output_boundary": {
@@ -13000,6 +13004,144 @@ fn artifact_index_readiness_summary(lane: &Path, support_status: &Value) -> Valu
         );
     }
     readiness
+}
+
+fn moza_input_role_semantics_summary(lane: &Path) -> Value {
+    let source_stage_order = [
+        MozaBundleStage::NativeVisibleReady,
+        MozaBundleStage::NativeResponseReady,
+        MozaBundleStage::OpenRacingControlReady,
+        MozaBundleStage::Zero,
+        MozaBundleStage::Passive,
+    ];
+    let mut selected_stage = None;
+    let mut selected_path = None;
+    let mut selected_roles: Vec<Value> = Vec::new();
+
+    for stage in source_stage_order {
+        let path = verification_receipt_path(stage);
+        let Ok(receipt) = read_json_value(lane, path) else {
+            continue;
+        };
+        let Some(roles) = receipt.get("role_evidence").and_then(Value::as_array) else {
+            continue;
+        };
+        if roles.is_empty() {
+            continue;
+        }
+        selected_stage = Some(stage_label(stage));
+        selected_path = Some(path);
+        selected_roles = roles.clone();
+        break;
+    }
+
+    let mut status_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut roles = Vec::new();
+    let mut generic_aux_roles = Vec::new();
+    let mut incomplete_roles = Vec::new();
+    let mut required_role_count = 0usize;
+    let mut required_parser_visible_count = 0usize;
+
+    for role in selected_roles {
+        let required = json_bool(&role, "required").unwrap_or(false);
+        let parser_visible = json_bool(&role, "parser_visible").unwrap_or(false);
+        let semantic_status = json_string(&role, "semantic_status")
+            .unwrap_or("unknown")
+            .to_string();
+        let control = json_string(&role, "control")
+            .unwrap_or("unknown")
+            .to_string();
+        let role_name = json_string(&role, "role").unwrap_or("unknown").to_string();
+        let evidence_capture = json_string(&role, "evidence_capture").map(str::to_string);
+        let missing_requirements = role
+            .get("missing_requirements")
+            .and_then(Value::as_array)
+            .map(|requirements| {
+                requirements
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let notes = role
+            .get("notes")
+            .and_then(Value::as_array)
+            .map(|notes| {
+                notes
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        *status_counts.entry(semantic_status.clone()).or_default() += 1;
+        if required {
+            required_role_count += 1;
+            if parser_visible && missing_requirements.is_empty() {
+                required_parser_visible_count += 1;
+            }
+        }
+
+        let entry = serde_json::json!({
+            "control": control,
+            "role": role_name,
+            "required": required,
+            "semantic_status": semantic_status,
+            "parser_visible": parser_visible,
+            "evidence_capture": evidence_capture,
+            "missing_requirements": missing_requirements,
+            "notes": notes
+        });
+
+        if required && json_string(&entry, "semantic_status") == Some("generic_aux") {
+            generic_aux_roles.push(entry.clone());
+        }
+        if required
+            && matches!(
+                json_string(&entry, "semantic_status"),
+                Some("missing" | "unavailable" | "unknown")
+            )
+        {
+            incomplete_roles.push(entry.clone());
+        }
+        roles.push(entry);
+    }
+
+    let semantic_status = if selected_stage.is_none() {
+        "unavailable"
+    } else if !incomplete_roles.is_empty() {
+        "incomplete_role_mapping"
+    } else if !generic_aux_roles.is_empty() {
+        "partial_generic_aux_mapping"
+    } else {
+        "all_required_roles_semantically_proven"
+    };
+
+    serde_json::json!({
+        "source_stage": selected_stage,
+        "source_artifact": selected_path,
+        "semantic_status": semantic_status,
+        "required_role_count": required_role_count,
+        "required_parser_visible_count": required_parser_visible_count,
+        "generic_aux_role_count": generic_aux_roles.len(),
+        "incomplete_role_count": incomplete_roles.len(),
+        "status_counts": status_counts,
+        "generic_aux_roles": generic_aux_roles,
+        "incomplete_roles": incomplete_roles,
+        "roles": roles,
+        "passive_artifacts_remain_valid": true,
+        "blocks_native_control": false,
+        "blocks_native_visible": false,
+        "blocks_smoke_ready": false,
+        "readiness_claim": false,
+        "notes": [
+            "input role semantics are diagnostic navigation only; they do not open HID or send output",
+            "generic_aux means the capture showed parser-visible R5 extended-field movement, but the role-specific semantic mapping remains unproven",
+            "generic_aux evidence can keep passive artifacts valid while still marking input topology semantics as incomplete for product-quality follow-up"
+        ]
+    })
 }
 
 fn stored_highest_passing_stage(lane: &Path) -> &'static str {
@@ -28338,6 +28480,8 @@ fn render_moza_lane_artifact_index_markdown(receipt: &Value) -> String {
     ));
     out.push_str(&format!("- Release ready: `{release_ready}`\n\n"));
 
+    push_input_role_semantics_markdown(&mut out, receipt);
+
     let mut grouped: BTreeMap<&str, Vec<&Value>> = BTreeMap::new();
     if let Some(artifacts) = receipt.get("lane_artifacts").and_then(Value::as_array) {
         for artifact in artifacts {
@@ -28443,6 +28587,8 @@ fn render_moza_bench_wizard_markdown(receipt: &Value) -> String {
         markdown_escape(step_summary)
     ));
 
+    push_input_role_semantics_markdown(&mut out, receipt);
+
     out.push_str("## Safe No-Output Commands\n\n");
     out.push_str("| Name | Command |\n");
     out.push_str("| --- | --- |\n");
@@ -28503,6 +28649,61 @@ fn push_artifact_markdown_table(out: &mut String, title: &str, artifacts: &[&Val
         ));
     }
     out.push('\n');
+}
+
+fn push_input_role_semantics_markdown(out: &mut String, receipt: &Value) {
+    let Some(summary) = receipt.get("input_role_semantics") else {
+        return;
+    };
+    if summary.is_null() {
+        return;
+    }
+
+    let semantic_status = json_string(summary, "semantic_status").unwrap_or("unknown");
+    let source_artifact = json_string(summary, "source_artifact").unwrap_or("none");
+    let required_role_count = json_u64(summary, "required_role_count").unwrap_or(0);
+    let required_parser_visible_count =
+        json_u64(summary, "required_parser_visible_count").unwrap_or(0);
+    let generic_aux_role_count = json_u64(summary, "generic_aux_role_count").unwrap_or(0);
+
+    out.push_str("## Input Role Semantics\n\n");
+    out.push_str("This section is diagnostic navigation only. `generic_aux` roles are valid parser-visible passive evidence, but they are not fully role-specific semantic mappings.\n\n");
+    out.push_str(&format!(
+        "- Source artifact: `{}`\n",
+        markdown_escape(source_artifact)
+    ));
+    out.push_str(&format!(
+        "- Semantic status: `{}`\n",
+        markdown_escape(semantic_status)
+    ));
+    out.push_str(&format!("- Required roles: `{required_role_count}`\n"));
+    out.push_str(&format!(
+        "- Required parser-visible roles: `{required_parser_visible_count}`\n"
+    ));
+    out.push_str(&format!(
+        "- Generic auxiliary roles: `{generic_aux_role_count}`\n\n"
+    ));
+
+    if let Some(roles) = summary.get("generic_aux_roles").and_then(Value::as_array)
+        && !roles.is_empty()
+    {
+        out.push_str("| Control | Role | Evidence Capture | Semantic Status |\n");
+        out.push_str("| --- | --- | --- | --- |\n");
+        for role in roles {
+            let control = json_string(role, "control").unwrap_or("unknown");
+            let role_name = json_string(role, "role").unwrap_or("unknown");
+            let evidence = json_string(role, "evidence_capture").unwrap_or("unknown");
+            let status = json_string(role, "semantic_status").unwrap_or("unknown");
+            out.push_str(&format!(
+                "| `{}` | `{}` | `{}` | `{}` |\n",
+                markdown_escape(control),
+                markdown_escape(role_name),
+                markdown_escape(evidence),
+                markdown_escape(status)
+            ));
+        }
+        out.push('\n');
+    }
 }
 
 fn markdown_escape(value: &str) -> String {
@@ -30492,6 +30693,100 @@ mod tests {
         assert!(markdown.contains(
             "| `smoke-ready-verification.json` | `smoke_ready` | `pass` | `stage_failed` |"
         ));
+        Ok(())
+    }
+
+    #[test]
+    fn artifact_navigation_surfaces_generic_aux_input_roles_without_blocking_readiness()
+    -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("passive-verification.json"),
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl moza verify-bundle",
+                "requested_stage": "passive",
+                "role_evidence": [
+                    {
+                        "control": "brake",
+                        "role": "brake",
+                        "required": true,
+                        "semantic_status": "generic_aux",
+                        "parser_visible": true,
+                        "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
+                        "missing_requirements": [],
+                        "notes": [
+                            "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
+                        ]
+                    },
+                    {
+                        "control": "steering",
+                        "role": "steering",
+                        "required": true,
+                        "semantic_status": "proven",
+                        "parser_visible": true,
+                        "evidence_capture": "captures/r5-steering-sweep.jsonl",
+                        "missing_requirements": [],
+                        "notes": []
+                    }
+                ]
+            }),
+        )?;
+
+        let index_receipt = moza_artifact_index_receipt(dir.path(), None, None)?;
+        let semantics = index_receipt
+            .get("input_role_semantics")
+            .ok_or("expected input_role_semantics")?;
+        assert_eq!(
+            json_string(semantics, "semantic_status"),
+            Some("partial_generic_aux_mapping")
+        );
+        assert_eq!(json_u64(semantics, "required_role_count"), Some(2));
+        assert_eq!(
+            json_u64(semantics, "required_parser_visible_count"),
+            Some(2)
+        );
+        assert_eq!(json_u64(semantics, "generic_aux_role_count"), Some(1));
+        assert_eq!(json_bool(semantics, "blocks_native_control"), Some(false));
+        assert_eq!(json_bool(semantics, "blocks_native_visible"), Some(false));
+        assert_eq!(json_bool(semantics, "readiness_claim"), Some(false));
+        let generic_aux_roles = semantics
+            .get("generic_aux_roles")
+            .and_then(Value::as_array)
+            .ok_or("expected generic_aux_roles")?;
+        assert!(
+            generic_aux_roles.iter().any(|role| {
+                json_string(role, "control") == Some("brake")
+                    && json_string(role, "semantic_status") == Some("generic_aux")
+            }),
+            "expected brake to be surfaced as generic_aux: {generic_aux_roles:?}"
+        );
+
+        let index_markdown = render_moza_lane_artifact_index_markdown(&index_receipt);
+        assert!(index_markdown.contains("Input Role Semantics"));
+        assert!(index_markdown.contains("generic_aux"));
+        assert!(index_markdown.contains("captures/r5-brake-only-sweep.jsonl"));
+
+        let wizard_receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
+        let wizard_semantics = wizard_receipt
+            .get("input_role_semantics")
+            .ok_or("expected wizard input_role_semantics")?;
+        assert_eq!(
+            json_string(wizard_semantics, "semantic_status"),
+            Some("partial_generic_aux_mapping")
+        );
+        assert_eq!(
+            json_bool(&wizard_receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&wizard_receipt, "native_visible_claimed"),
+            Some(false)
+        );
+        let wizard_markdown = render_moza_bench_wizard_markdown(&wizard_receipt);
+        assert!(wizard_markdown.contains("Input Role Semantics"));
+        assert!(wizard_markdown.contains("valid parser-visible passive evidence"));
         Ok(())
     }
 

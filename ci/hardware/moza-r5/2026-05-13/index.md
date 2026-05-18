@@ -10,6 +10,22 @@ This index is diagnostic navigation only. It reads stored lane files, opens no H
 - Native visible motion proven: `false`
 - Release ready: `false`
 
+## Input Role Semantics
+
+This section is diagnostic navigation only. `generic_aux` roles are valid parser-visible passive evidence, but they are not fully role-specific semantic mappings.
+
+- Source artifact: `native-visible-verification.json`
+- Semantic status: `partial_generic_aux_mapping`
+- Required roles: `7`
+- Required parser-visible roles: `7`
+- Generic auxiliary roles: `3`
+
+| Control | Role | Evidence Capture | Semantic Status |
+| --- | --- | --- | --- |
+| `brake` | `brake` | `captures/r5-brake-only-sweep.jsonl` | `generic_aux` |
+| `clutch` | `clutch` | `captures/r5-clutch-only-sweep.jsonl` | `generic_aux` |
+| `handbrake` | `handbrake` | `captures/r5-handbrake-only-sweep.jsonl` | `generic_aux` |
+
 ## Passive Enumeration And Input
 
 | Path | Kind | Evidence Role |
