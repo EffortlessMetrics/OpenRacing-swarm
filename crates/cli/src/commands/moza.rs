@@ -1453,7 +1453,11 @@ fn moza_bench_wizard_next_operator_step(lane: &Path, readiness: &Value, frontier
             "kind": "awaiting_separate_attempt_03_authorization",
             "summary": "attempt 03 preflight is recorded; any real output requires a separate fresh command-bound bench-clear and exact authorization receipt outside this wizard",
             "hardware_output_allowed_now": false,
-            "authorization_created_by_wizard": false
+            "authorization_created_by_wizard": false,
+            "required_bench_clear_evidence": NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_BENCH_CLEAR_EVIDENCE,
+            "required_profile": controlled_angle_profile_cli_name(MozaControlledAngleProfile::BoundedPidffEffectLifecycleV1),
+            "required_authorization_receipt": NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE,
+            "planned_output_receipt": NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE
         });
     }
 
@@ -28832,6 +28836,15 @@ fn render_moza_bench_wizard_markdown(receipt: &Value) -> String {
 
     out.push_str("## Output Boundary\n\n");
     out.push_str("Output is not authorized by this wizard. Any real controlled-angle attempt needs a separate fresh command-bound bench-clear plus exact authorization receipt. Do not use this wizard as permission to rerun, raise force, extend dwell, run 30/90 degrees, use direct report 0x20, high torque, serial config, firmware, or DFU.\n\n");
+    if let Some(evidence) = step
+        .get("required_bench_clear_evidence")
+        .and_then(Value::as_str)
+    {
+        out.push_str(
+            "Required bench-clear evidence for the next separately authorized attempt:\n\n",
+        );
+        out.push_str(&format!("```text\n{}\n```\n\n", markdown_escape(evidence)));
+    }
     out
 }
 
@@ -31140,6 +31153,24 @@ mod tests {
                 && step_summary.contains("exact authorization receipt"),
             "bench wizard must keep output blocked on fresh clearance and exact authorization: {step_summary}"
         );
+        assert_eq!(
+            receipt
+                .pointer("/next_operator_step/required_bench_clear_evidence")
+                .and_then(Value::as_str),
+            Some(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_BENCH_CLEAR_EVIDENCE)
+        );
+        assert_eq!(
+            receipt
+                .pointer("/next_operator_step/required_authorization_receipt")
+                .and_then(Value::as_str),
+            Some(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE)
+        );
+        assert_eq!(
+            receipt
+                .pointer("/next_operator_step/planned_output_receipt")
+                .and_then(Value::as_str),
+            Some(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE)
+        );
         let active_blockers = receipt
             .get("active_blockers")
             .and_then(Value::as_array)
@@ -31175,6 +31206,7 @@ mod tests {
         assert!(markdown.contains("read-only operator navigation"));
         assert!(markdown.contains("Safe No-Output Commands"));
         assert!(markdown.contains("Output is not authorized by this wizard"));
+        assert!(markdown.contains(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_BENCH_CLEAR_EVIDENCE));
         Ok(())
     }
 
