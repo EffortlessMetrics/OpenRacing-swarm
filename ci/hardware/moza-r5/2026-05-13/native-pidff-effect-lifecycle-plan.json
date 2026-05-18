@@ -5,7 +5,7 @@
   "artifact_kind": "native_pidff_effect_lifecycle_plan",
   "generated_at_utc": "2026-05-18T08:19:48Z",
   "lane": "ci/hardware/moza-r5/2026-05-13",
-  "planning_status": "complete_no_output",
+  "planning_status": "implemented_no_output_preflight_supported",
   "evidence_status": "trace_informed_pidff_lifecycle_plan",
   "claim_ceiling": "software_plan_only",
   "classification": "hypothesis_backed_profile_plan_after_repeated_safe_undertravel",
@@ -62,7 +62,7 @@
   "profile": {
     "name": "bounded_pidff_effect_lifecycle_v1",
     "cli_name": "bounded-pidff-effect-lifecycle-v1",
-    "implementation_status": "not_implemented",
+    "implementation_status": "implemented_no_output_preflight_supported",
     "hardware_output_authorized": false,
     "reason": "The retry changed write count and repeated the current setup/start/Stop-All lifecycle, but it did not change the measured motion band. The next profile should test a different standard PIDFF effect lifecycle rather than more dwell or more force.",
     "hypothesis": "The R5 may need a standard PIDFF effect lifecycle with persistent effect state during the bounded attempt. Repeating Set Effect, Set Constant Force, Effect Operation Start, and Stop All may reset or prevent useful constant-force authority before visible steering displacement accumulates.",
@@ -93,8 +93,7 @@
     ]
   },
   "requires_before_any_output": [
-    "implement the bounded-pidff-effect-lifecycle-v1 profile in software",
-    "add or update dry-run/preflight receipt support for the exact profile",
+    "generate a no-output dry-run/preflight receipt for the exact profile",
     "make authorize-controlled-angle-output bind the exact profile, lane, device selector, target, max percent, timeout, prior receipts, preflight receipt, planned output path, and bench-clear evidence",
     "add tests that actual writes are rejected without exact authorization",
     "add tests that dry-run opens no HID and sends no writes",
@@ -134,7 +133,7 @@
   },
   "notes": [
     "This is a no-output plan artifact. It did not open a HID device and did not send output, feature, serial, firmware, or DFU commands.",
-    "The profile named here is not implemented and not authorized for hardware output.",
-    "Native visible motion remains unproven until a later reviewed implementation and exact authorization produce a passing receipt."
+    "The profile named here is implemented for software preflight support only and is not authorized for hardware output.",
+    "Native visible motion remains unproven until a later dry-run, exact authorization, and output receipt produce a passing receipt."
   ]
 }

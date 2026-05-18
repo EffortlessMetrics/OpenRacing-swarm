@@ -2697,6 +2697,54 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_controlled_angle_smoke_effect_lifecycle_dry_run() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "controlled-angle-smoke",
+            "--device",
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
+            "--target-degrees",
+            "1",
+            "--profile",
+            "bounded-pidff-effect-lifecycle-v1",
+            "--max-percent",
+            "5",
+            "--timeout-ms",
+            "2000",
+            "--strategy",
+            "pidff-bounded-effect",
+            "--dry-run",
+            "--json-out",
+            "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-preflight.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::ControlledAngleSmoke {
+                profile,
+                dry_run,
+                json_out,
+                ..
+            }) => {
+                assert_eq!(
+                    *profile,
+                    MozaControlledAngleProfile::BoundedPidffEffectLifecycleV1
+                );
+                assert!(*dry_run);
+                assert_eq!(
+                    json_out.as_ref().and_then(|path| path.to_str()),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-preflight.json"
+                    )
+                );
+            }
+            _ => return Err("expected Moza ControlledAngleSmoke command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_authorize_visible_output() -> TestResult {
         let cli = parse_cli([
             "wheelctl",
@@ -2886,6 +2934,75 @@ mod tests {
                     json_out.as_ref().and_then(|path| path.to_str()),
                     Some(
                         "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-retry-authorization.json"
+                    )
+                );
+            }
+            _ => return Err("expected Moza AuthorizeControlledAngleOutput command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_moza_authorize_controlled_angle_effect_lifecycle_attempt_03() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "authorize-controlled-angle-output",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
+            "--device",
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            "--operator",
+            "Steven",
+            "--bench-clear-evidence",
+            "bench clear for exactly one Moza controlled-angle retry: target 1 degree, max 5%, timeout 2000 ms, strategy pidff-bounded-effect, profile bounded-pidff-effect-lifecycle-v1, R5 stable, KS attached securely, hands clear, wheel clear, prior failed receipt preserved",
+            "--controlled-angle-preflight",
+            "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-preflight.json",
+            "--planned-output",
+            "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-smoke.json",
+            "--target-degrees",
+            "1",
+            "--profile",
+            "bounded-pidff-effect-lifecycle-v1",
+            "--strategy",
+            "pidff-bounded-effect",
+            "--max-percent",
+            "5",
+            "--timeout-ms",
+            "2000",
+            "--json-out",
+            "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-authorization.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::AuthorizeControlledAngleOutput {
+                profile,
+                controlled_angle_preflight,
+                planned_output,
+                json_out,
+                ..
+            }) => {
+                assert_eq!(
+                    *profile,
+                    MozaControlledAngleProfile::BoundedPidffEffectLifecycleV1
+                );
+                assert_eq!(
+                    controlled_angle_preflight
+                        .as_ref()
+                        .and_then(|path| path.to_str()),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-preflight.json"
+                    )
+                );
+                assert_eq!(
+                    planned_output.as_ref().and_then(|path| path.to_str()),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-smoke.json"
+                    )
+                );
+                assert_eq!(
+                    json_out.as_ref().and_then(|path| path.to_str()),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-authorization.json"
                     )
                 );
             }

@@ -1547,6 +1547,8 @@ pub enum MozaActuatorProfile {
 pub enum MozaControlledAngleProfile {
     /// Reviewed bounded PIDFF micro-step retry profile for the 1 degree controlled-angle rung
     BoundedPidffMicroStepV2,
+    /// Trace-informed PIDFF effect lifecycle profile for the next reviewed 1 degree attempt
+    BoundedPidffEffectLifecycleV1,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]

@@ -41,9 +41,19 @@ feedback samples unless a stop condition triggers, update bounded constant force
 while steering feedback moves toward the 1 degree target, then send final Stop
 All during cleanup.
 
-Before any output is allowed, the profile still needs software implementation,
-dry-run/preflight evidence, exact authorization binding, and tests. This plan
-authorizes no later hardware attempt; any future hardware output would also need
-fresh command-bound bench-clear. Direct report `0x20`, high torque, serial
-config, firmware, DFU, longer dwell, and larger angle targets remain forbidden
-by this plan.
+The profile is now implemented for software preflight and exact-command binding,
+but that still does not authorize hardware output. Before any output is allowed,
+operators must generate a no-output dry-run receipt, create a matching
+attempt-specific authorization receipt, and record fresh command-bound
+bench-clear. Use attempt-specific artifacts so the preserved first and retry
+receipts are not overwritten:
+
+```text
+native-controlled-angle-attempt-03-preflight.json
+native-controlled-angle-attempt-03-authorization.json
+native-controlled-angle-attempt-03-smoke.json
+```
+
+This plan authorizes no later hardware attempt. Direct report `0x20`, high
+torque, serial config, firmware, DFU, longer dwell, and larger angle targets
+remain forbidden by this plan.

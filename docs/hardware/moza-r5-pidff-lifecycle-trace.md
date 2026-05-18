@@ -45,5 +45,6 @@ delta band despite lifecycle replay, and still authorizes no output.
 
 The trace-informed [PIDFF effect lifecycle plan](moza-r5-pidff-effect-lifecycle-plan.md)
 is recorded separately as `native-pidff-effect-lifecycle-plan.json`. That plan
-names `bounded-pidff-effect-lifecycle-v1` as the next software profile to
-implement and preflight. It still authorizes no output.
+names `bounded-pidff-effect-lifecycle-v1`, which is now implemented for
+software preflight and exact-command binding only. It still authorizes no
+output.

@@ -127,5 +127,6 @@ degree band.
 
 Those artifacts still authorize no output. The reviewed
 [PIDFF effect lifecycle plan](moza-r5-pidff-effect-lifecycle-plan.md) names
-`bounded-pidff-effect-lifecycle-v1` as the next software profile to implement
-and preflight, but it is not an authorization receipt.
+`bounded-pidff-effect-lifecycle-v1` as the next software profile. It is
+implemented for no-output preflight and exact-command binding, but it is not an
+authorization receipt.
