@@ -13858,6 +13858,15 @@ fn bundle_artifact_claim_metadata(
     match command {
         "wheelctl moza verify-bundle" => {
             if !success {
+                match requirement.stage {
+                    MozaBundleStage::NativeVisibleReady => {
+                        notes.push("native_visible_not_claimed".to_string());
+                    }
+                    MozaBundleStage::SmokeReady => {
+                        notes.push("smoke_ready_not_claimed".to_string());
+                    }
+                    _ => {}
+                }
                 if let Some(failed_gates) = json_u64(receipt, "failed_gates") {
                     notes.push(format!("failed_gates={failed_gates}"));
                 }
@@ -30279,9 +30288,17 @@ mod tests {
             .get("required_artifact_index")
             .and_then(Value::as_array)
             .ok_or("expected required_artifact_index array")?;
-        for (path, failed_gates) in [
-            ("native-visible-verification.json", "failed_gates=1"),
-            ("smoke-ready-verification.json", "failed_gates=4"),
+        for (path, failed_gates, not_claimed_note) in [
+            (
+                "native-visible-verification.json",
+                "failed_gates=1",
+                "native_visible_not_claimed",
+            ),
+            (
+                "smoke-ready-verification.json",
+                "failed_gates=4",
+                "smoke_ready_not_claimed",
+            ),
         ] {
             let artifact = artifact_index
                 .iter()
@@ -30307,7 +30324,34 @@ mod tests {
                     .any(|note| note.as_str() == Some(failed_gates)),
                 "expected {path} claim notes to include {failed_gates}: {claim_notes:?}"
             );
+            assert!(
+                claim_notes
+                    .iter()
+                    .any(|note| note.as_str() == Some(not_claimed_note)),
+                "expected {path} claim notes to include {not_claimed_note}: {claim_notes:?}"
+            );
         }
+
+        assert_eq!(
+            json_bool(&receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "native_visible_claimed"), Some(false));
+        let readiness = receipt.get("readiness").ok_or("expected readiness")?;
+        assert_ne!(
+            readiness
+                .get("native_visible_motion_proven")
+                .and_then(Value::as_bool),
+            Some(true),
+            "valid failed native-visible verifier receipt must not become native-visible readiness"
+        );
+        assert_ne!(
+            readiness
+                .get("ready_for_real_hardware_smoke")
+                .and_then(Value::as_bool),
+            Some(true),
+            "valid failed smoke verifier receipt must not become smoke readiness"
+        );
 
         let markdown = render_moza_lane_artifact_index_markdown(&receipt);
         assert!(markdown.contains("Artifact Status | Claim Status"));
@@ -30355,6 +30399,7 @@ mod tests {
             Some(false)
         );
         assert_eq!(json_bool(&receipt, "native_visible_claimed"), Some(false));
+        assert_eq!(json_bool(&receipt, "smoke_ready_claimed"), Some(false));
         assert_eq!(
             json_string(&receipt, "frontier"),
             Some("repeated_safe_undertravel_attempt_03_preflight_recorded")
@@ -30364,6 +30409,31 @@ mod tests {
                 .pointer("/next_operator_step/kind")
                 .and_then(Value::as_str),
             Some("awaiting_separate_attempt_03_authorization")
+        );
+        let step_summary = receipt
+            .pointer("/next_operator_step/summary")
+            .and_then(Value::as_str)
+            .ok_or("expected next operator summary")?;
+        assert!(
+            step_summary.contains("attempt 03 preflight is recorded"),
+            "bench wizard must report the completed no-output attempt-03 preflight: {step_summary}"
+        );
+        assert!(
+            step_summary.contains("separate fresh command-bound bench-clear")
+                && step_summary.contains("exact authorization receipt"),
+            "bench wizard must keep output blocked on fresh clearance and exact authorization: {step_summary}"
+        );
+        let active_blockers = receipt
+            .get("active_blockers")
+            .and_then(Value::as_array)
+            .ok_or("expected active blockers")?;
+        assert!(
+            active_blockers.iter().any(|blocker| {
+                json_string(blocker, "name") == Some("native_visible_motion")
+                    && json_string(blocker, "blocking_stage") == Some("native_visible_ready")
+                    && json_string(blocker, "status") == Some("blocked")
+            }),
+            "bench wizard must keep native visible motion blocked: {active_blockers:?}"
         );
         let safe_commands = receipt
             .get("safe_no_output_commands")
