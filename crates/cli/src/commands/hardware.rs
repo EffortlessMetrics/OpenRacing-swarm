@@ -1827,7 +1827,7 @@ fn build_hardware_lane_status_receipt(lane: &Path) -> Result<HardwareLaneStatusR
             let present = artifacts.iter().filter(|artifact| artifact.present).count();
             let failed = artifacts
                 .iter()
-                .filter(|artifact| lane_artifact_explicit_failure(lane, artifact))
+                .filter(|artifact| lane_artifact_explicit_failure(lane, stage.id, artifact))
                 .count();
             let missing = artifacts.len().saturating_sub(present);
             HardwareLaneStageStatus {
@@ -2225,11 +2225,52 @@ fn stage_expected_artifacts(
             "receipt",
             "disconnect-proof.json",
         )],
-        "bounded_ffb" => vec![
+        "openracing_control_ready" => vec![
+            lane_artifact_status(lane, "receipt", "init-off.json"),
+            lane_artifact_status(lane, "receipt", "init-standard.json"),
+            lane_artifact_status(lane, "receipt", "moza-status.json"),
+            lane_artifact_status(lane, "receipt", "device-status.json"),
+            lane_artifact_status(lane, "receipt", "support-bundle.json"),
             lane_artifact_status(lane, "receipt", "low-torque-proof.json"),
+            lane_artifact_status(lane, "receipt", "steering-angle-stream-proof.json"),
+            lane_artifact_status(lane, "receipt", "native-actuator-profile-smoke.json"),
+            lane_artifact_status(lane, "receipt", "openracing-control-verification.json"),
+            lane_artifact_status(
+                lane,
+                "receipt",
+                "manifest-promotion-openracing-control.json",
+            ),
+            lane_artifact_status(lane, "receipt", "lane-audit-openracing-control.json"),
+        ],
+        "native_response_ready" => vec![
+            lane_artifact_status(lane, "receipt", "native-actuator-visible-smoke.json"),
+            lane_artifact_status(lane, "receipt", "native-response-verification.json"),
+            lane_artifact_status(lane, "receipt", "manifest-promotion-native-response.json"),
+            lane_artifact_status(lane, "receipt", "lane-audit-native-response.json"),
+        ],
+        "native_visible_ready" => vec![
+            lane_artifact_status(lane, "receipt", "native-visible-verification.json"),
+            lane_artifact_status(lane, "receipt", "manifest-promotion-native-visible.json"),
+            lane_artifact_status(lane, "receipt", "lane-audit-native-visible.json"),
+            lane_artifact_status(
+                lane,
+                "receipt",
+                "native-controlled-angle-attempt-03-smoke.json",
+            ),
+        ],
+        "external_compat_ready" => vec![
             lane_artifact_status(lane, "receipt", "pit-house-coexistence.json"),
             lane_artifact_status(lane, "receipt", "simulator-telemetry-proof.json"),
-            lane_artifact_status(lane, "receipt", "simulator-ffb-smoke.json"),
+        ],
+        "bounded_ffb" => vec![lane_artifact_status(
+            lane,
+            "receipt",
+            "simulator-ffb-smoke.json",
+        )],
+        "smoke_ready" => vec![
+            lane_artifact_status(lane, "receipt", "smoke-ready-verification.json"),
+            lane_artifact_status(lane, "receipt", "manifest-promotion-smoke-ready.json"),
+            lane_artifact_status(lane, "receipt", "lane-audit-smoke-ready.json"),
         ],
         "ffb_extended" => vec![
             lane_artifact_status(lane, "receipt", "simulator-ffb-smoke.json"),
@@ -2249,8 +2290,17 @@ fn lane_artifact_status(lane: &Path, kind: &str, rel: &str) -> HardwareLaneArtif
     }
 }
 
-fn lane_artifact_explicit_failure(lane: &Path, artifact: &HardwareLaneArtifactStatus) -> bool {
+fn lane_artifact_explicit_failure(
+    lane: &Path,
+    stage_id: &str,
+    artifact: &HardwareLaneArtifactStatus,
+) -> bool {
     if !artifact.present || artifact.kind != "receipt" {
+        return false;
+    }
+    if stage_id == "native_response_ready"
+        && artifact.relative_path == "native-actuator-visible-smoke.json"
+    {
         return false;
     }
     let Ok(value) = read_json_file::<serde_json::Value>(&lane.join(&artifact.relative_path)) else {
@@ -2384,6 +2434,16 @@ fn verifier_gate_stage_blocker(gate: &str) -> Option<&'static str> {
         | "parser_fixture_validation" => Some("passive"),
         "descriptor_metadata" => Some("descriptor_trust"),
         "fixture_promotion" => Some("fixture_promotion"),
+        "init_off_handshake"
+        | "init_standard_handshake"
+        | "service_status_receipts"
+        | "low_torque_bounded"
+        | "steering_angle_stream_proof"
+        | "native_actuator_profile_smoke" => Some("openracing_control_ready"),
+        "native_actuator_response_smoke" => Some("native_response_ready"),
+        "native_actuator_visible_smoke" => Some("native_visible_ready"),
+        "pit_house_coexistence" | "simulator_telemetry" => Some("external_compat_ready"),
+        "simulator_ffb_bounded" => Some("bounded_ffb"),
         _ => None,
     }
 }
@@ -2398,8 +2458,13 @@ fn lane_stage_order(stage: &str) -> Option<u8> {
         "zero_torque" => Some(5),
         "watchdog" => Some(6),
         "disconnect" => Some(7),
-        "bounded_ffb" => Some(8),
-        "ffb_extended" => Some(9),
+        "openracing_control_ready" => Some(8),
+        "native_response_ready" => Some(9),
+        "native_visible_ready" => Some(10),
+        "external_compat_ready" => Some(11),
+        "bounded_ffb" => Some(12),
+        "smoke_ready" => Some(13),
+        "ffb_extended" => Some(14),
         _ => None,
     }
 }
@@ -2453,8 +2518,13 @@ fn verifier_stage_with_order(stage: &str) -> Option<(&'static str, u8)> {
         "zero_torque" => Some(("zero_torque", 5)),
         "watchdog" => Some(("watchdog", 6)),
         "disconnect" => Some(("disconnect", 7)),
-        "bounded_ffb" => Some(("bounded_ffb", 8)),
-        "ffb_extended" => Some(("ffb_extended", 9)),
+        "openracing_control_ready" => Some(("openracing_control_ready", 8)),
+        "native_response_ready" => Some(("native_response_ready", 9)),
+        "native_visible_ready" => Some(("native_visible_ready", 10)),
+        "external_compat_ready" => Some(("external_compat_ready", 11)),
+        "bounded_ffb" => Some(("bounded_ffb", 12)),
+        "smoke_ready" => Some(("smoke_ready", 13)),
+        "ffb_extended" => Some(("ffb_extended", 14)),
         _ => None,
     }
 }
@@ -2591,9 +2661,19 @@ fn lane_status_safe_next_commands(
                 lane_path_arg(lane, "pre-output-readiness.json")
             ),
         ],
-        (_, "zero_torque" | "watchdog" | "disconnect" | "bounded_ffb" | "ffb_extended") => {
-            Vec::new()
-        }
+        (
+            _,
+            "zero_torque"
+            | "watchdog"
+            | "disconnect"
+            | "openracing_control_ready"
+            | "native_response_ready"
+            | "native_visible_ready"
+            | "external_compat_ready"
+            | "bounded_ffb"
+            | "smoke_ready"
+            | "ffb_extended",
+        ) => Vec::new(),
         _ => Vec::new(),
     }
 }
@@ -3221,17 +3301,100 @@ fn hardware_bringup_stages() -> Vec<HardwareBringupStage> {
             adapter_requirement_refs: vec!["disconnect_expectations"],
         },
         HardwareBringupStage {
-            id: "bounded_ffb",
+            id: "openracing_control_ready",
             order: 8,
-            purpose: "first real-force smoke under explicit force and duration caps",
+            purpose: "prove the OpenRacing-owned native control foundation before visible motion",
             required_artifacts: vec![
+                "init-off.json",
+                "init-standard.json",
                 "low-torque-proof.json",
-                "pit-house-coexistence.json",
-                "simulator-telemetry-proof.json",
-                "bounded FFB output log",
+                "steering-angle-stream-proof.json",
+                "native-actuator-profile-smoke.json",
+                "status/support receipts",
+                "openracing-control verification, promotion, and audit",
             ],
             required_gates: vec![
+                "init_off_handshake",
+                "init_standard_handshake",
+                "service_status_receipts",
+                "low_torque_bounded",
+                "steering_angle_stream_proof",
+                "native_actuator_profile_smoke",
+            ],
+            forbidden_actions: POST_PASSIVE_FORBIDDEN_ACTIONS.to_vec(),
+            next_commands: vec![
+                "run family native-control commands only through their verifier-generated gates",
+            ],
+            operator_actions: vec!["preserve native-control receipts and status/support evidence"],
+            ready_outputs: vec!["openracing_control_ready"],
+            adapter_requirement_refs: vec!["zero_torque_eligibility", "known_output_reports"],
+        },
+        HardwareBringupStage {
+            id: "native_response_ready",
+            order: 9,
+            purpose: "prove bounded native PIDFF output creates measurable steering response",
+            required_artifacts: vec![
+                "native-actuator-visible-smoke.json",
+                "native-response-verification.json",
+                "manifest-promotion-native-response.json",
+                "lane-audit-native-response.json",
+            ],
+            required_gates: vec!["native_actuator_response_smoke"],
+            forbidden_actions: POST_PASSIVE_FORBIDDEN_ACTIONS.to_vec(),
+            next_commands: vec![
+                "verify and promote native-response only after response receipt passes",
+            ],
+            operator_actions: vec!["do not claim visible motion from response-only movement"],
+            ready_outputs: vec!["native_response_ready"],
+            adapter_requirement_refs: vec!["native_response_evidence"],
+        },
+        HardwareBringupStage {
+            id: "native_visible_ready",
+            order: 10,
+            purpose: "prove operator-visible native controlled movement without external app prerequisites",
+            required_artifacts: vec![
+                "native-visible-verification.json",
+                "manifest-promotion-native-visible.json",
+                "lane-audit-native-visible.json",
+                "native controlled-angle output receipt",
+            ],
+            required_gates: vec!["native_actuator_visible_smoke"],
+            forbidden_actions: POST_PASSIVE_FORBIDDEN_ACTIONS.to_vec(),
+            next_commands: vec![
+                "authorize exactly one reviewed native visible-motion attempt only after command-bound bench-clear",
+            ],
+            operator_actions: vec!["stop after one output attempt and preserve the receipt"],
+            ready_outputs: vec!["native_visible_ready"],
+            adapter_requirement_refs: vec!["native_visible_evidence"],
+        },
+        HardwareBringupStage {
+            id: "external_compat_ready",
+            order: 11,
+            purpose: "prove external app and telemetry compatibility without making it a native-control prerequisite",
+            required_artifacts: vec![
+                "pit-house-coexistence.json",
+                "simulator-telemetry-proof.json",
+            ],
+            required_gates: vec!["pit_house_coexistence", "simulator_telemetry"],
+            forbidden_actions: COMMON_FORBIDDEN_ACTIONS.to_vec(),
+            next_commands: vec![
+                "record Pit House coexistence and simulator telemetry as external compatibility evidence",
+            ],
+            operator_actions: vec![
+                "do not use external compatibility receipts as native-control proof",
+            ],
+            ready_outputs: vec!["external_compat_ready"],
+            adapter_requirement_refs: vec!["external_compatibility_requirements"],
+        },
+        HardwareBringupStage {
+            id: "bounded_ffb",
+            order: 12,
+            purpose: "first real-force smoke under explicit force and duration caps",
+            required_artifacts: vec!["simulator-ffb-smoke.json", "bounded FFB output log"],
+            required_gates: vec![
                 "zero_watchdog_disconnect_passed",
+                "native_visible_ready",
+                "simulator_telemetry",
                 "low_force_cap",
                 "short_duration_cap",
                 "manual_operator_present",
@@ -3250,8 +3413,36 @@ fn hardware_bringup_stages() -> Vec<HardwareBringupStage> {
             adapter_requirement_refs: vec!["ffb_eligibility", "known_unsafe_surfaces"],
         },
         HardwareBringupStage {
+            id: "smoke_ready",
+            order: 13,
+            purpose: "promote the bounded hardware smoke lane after native, external, telemetry, and FFB gates pass",
+            required_artifacts: vec![
+                "smoke-ready-verification.json",
+                "manifest-promotion-smoke-ready.json",
+                "lane-audit-smoke-ready.json",
+            ],
+            required_gates: vec![
+                "native_visible_ready",
+                "pit_house_coexistence",
+                "simulator_telemetry",
+                "simulator_ffb_bounded",
+            ],
+            forbidden_actions: vec![
+                "release_ready_claim",
+                "high_torque_without_stage",
+                "firmware_dfu",
+                "serial_config_without_stage",
+            ],
+            next_commands: vec![
+                "promote smoke-ready only after verify-bundle --stage smoke-ready passes",
+            ],
+            operator_actions: vec!["audit all smoke-ready claims before promotion"],
+            ready_outputs: vec!["real_hardware_smoke_ready"],
+            adapter_requirement_refs: vec!["smoke_ready_requirements"],
+        },
+        HardwareBringupStage {
             id: "ffb_extended",
-            order: 9,
+            order: 14,
             purpose: "expand from smoke to longer simulator and effect coverage",
             required_artifacts: vec![
                 "simulator-ffb-smoke.json",
@@ -5352,10 +5543,18 @@ mod tests {
     }
 
     fn write_legacy_moza_manifest(lane: &Path, wheelbase: &str) -> TestResult {
+        write_legacy_moza_manifest_with_completion(lane, wheelbase, "passive_in_progress")
+    }
+
+    fn write_legacy_moza_manifest_with_completion(
+        lane: &Path,
+        wheelbase: &str,
+        completion_state: &str,
+    ) -> TestResult {
         fs::write(
             lane.join("manifest.json"),
             serde_json::to_string_pretty(&serde_json::json!({
-                "completion_state": "passive_in_progress",
+                "completion_state": completion_state,
                 "hardware": {
                     "wheelbase": wheelbase,
                     "wheelbase_pid": "0x0004"
@@ -6917,6 +7116,103 @@ mod tests {
                     && !command.contains("ffb")
                     && !command.contains("output"))
         );
+        Ok(())
+    }
+
+    #[test]
+    fn lane_status_points_native_response_lane_at_native_visible_frontier() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("legacy-moza-r5-lane");
+        fs::create_dir_all(lane.join("captures"))?;
+        write_legacy_moza_manifest_with_completion(&lane, "Moza R5", "native_response_ready")?;
+        for artifact in [
+            "device-list.json",
+            "hid-list.json",
+            "hardware-doctor.json",
+            "moza-probe.json",
+            "lane-capture-analysis.json",
+            "parser-fixture-validation.json",
+            "descriptor.json",
+            "fixture-promotion.json",
+            "lane-audit-passive.json",
+            "pre-output-readiness.json",
+            "zero-torque-proof.json",
+            "watchdog-proof.json",
+            "disconnect-proof.json",
+            "init-off.json",
+            "init-standard.json",
+            "moza-status.json",
+            "device-status.json",
+            "support-bundle.json",
+            "low-torque-proof.json",
+            "steering-angle-stream-proof.json",
+            "native-actuator-profile-smoke.json",
+            "openracing-control-verification.json",
+            "manifest-promotion-openracing-control.json",
+            "lane-audit-openracing-control.json",
+            "native-response-verification.json",
+            "manifest-promotion-native-response.json",
+            "lane-audit-native-response.json",
+        ] {
+            fs::write(lane.join(artifact), "{\"success\":true}\n")?;
+        }
+        // The first native-visible smoke receipt can fail the visible threshold
+        // while still proving the native response stage.
+        fs::write(
+            lane.join("native-actuator-visible-smoke.json"),
+            "{\"success\":false}\n",
+        )?;
+        write_passive_verification_receipt(
+            &lane,
+            &[
+                ("lane_directory", "pass"),
+                ("passive_captures_parse", "pass"),
+                ("descriptor_metadata", "pass"),
+                ("fixture_promotion", "pass"),
+            ],
+        )?;
+        fs::write(
+            lane.join("native-visible-verification.json"),
+            "{\"success\":false}\n",
+        )?;
+        for capture in [
+            "r5-steering-sweep.jsonl",
+            "r5-throttle-only-sweep.jsonl",
+            "r5-brake-only-sweep.jsonl",
+            "ks-controls.jsonl",
+        ] {
+            fs::write(lane.join("captures").join(capture), "{}\n")?;
+        }
+
+        let status = build_hardware_lane_status_receipt(&lane)?;
+        let native_response = status
+            .stages
+            .iter()
+            .find(|stage| stage.id == "native_response_ready")
+            .ok_or_else(|| io::Error::other("missing native response stage"))?;
+        let native_visible = status
+            .stages
+            .iter()
+            .find(|stage| stage.id == "native_visible_ready")
+            .ok_or_else(|| io::Error::other("missing native visible stage"))?;
+
+        assert_eq!(status.completion_state, "native_response_ready");
+        assert_eq!(status.next_blocked_stage, "native_visible_ready");
+        assert_eq!(native_response.artifacts_missing, 0);
+        assert_eq!(native_response.artifacts_failed, 0);
+        assert!(native_visible.artifacts_missing > 0);
+        assert_eq!(native_visible.artifacts_failed, 1);
+        assert!(
+            status
+                .blocking_items
+                .contains(&"native_visible_ready:failed_artifacts".to_string())
+        );
+        assert!(
+            status
+                .blocking_items
+                .contains(&"native_visible_ready:missing_artifacts".to_string())
+        );
+        assert!(status.safe_next_commands.is_empty());
         Ok(())
     }
 

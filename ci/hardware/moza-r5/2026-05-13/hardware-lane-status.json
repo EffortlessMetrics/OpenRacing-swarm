@@ -1,27 +1,28 @@
 {
   "success": true,
   "command": "wheelctl hardware lane status",
-  "generated_at_utc": "2026-05-15T18:28:39Z",
+  "generated_at_utc": "2026-05-18T14:59:21Z",
   "no_hid_device_opened": true,
   "no_ffb_writes": true,
   "no_output_reports": true,
   "no_feature_reports": true,
   "no_serial_config_commands": true,
   "no_firmware_or_dfu_commands": true,
-  "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+  "lane": "ci/hardware/moza-r5/2026-05-13",
   "manifest_source": "manifest.json",
   "family": "moza-r5",
   "topology": "wheelbase_hub",
-  "completion_state": "zero_torque_ready",
+  "completion_state": "native_response_ready",
   "scaffold_required": false,
   "scaffold_complete": false,
   "evidence_claims_validated": false,
   "ready_for_zero_torque": false,
   "ready_for_ffb": false,
-  "next_blocked_stage": "bounded_ffb",
+  "next_blocked_stage": "native_visible_ready",
   "safe_next_commands": [],
   "blocking_items": [
-    "bounded_ffb:missing_artifacts",
+    "native_visible_ready:failed_artifacts",
+    "native_visible_ready:missing_artifacts",
     "verifier_receipts_not_evaluated_by_status"
   ],
   "verifier_receipt": {
@@ -364,26 +365,153 @@
       ]
     },
     {
-      "id": "bounded_ffb",
+      "id": "openracing_control_ready",
       "order": 8,
-      "purpose": "first real-force smoke under explicit force and duration caps",
-      "artifacts_present": 0,
-      "artifacts_missing": 4,
+      "purpose": "prove the OpenRacing-owned native control foundation before visible motion",
+      "artifacts_present": 11,
+      "artifacts_missing": 0,
       "artifacts_failed": 0,
       "expected_artifacts": [
         {
           "kind": "receipt",
+          "relative_path": "device-status.json",
+          "present": true
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "init-off.json",
+          "present": true
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "init-standard.json",
+          "present": true
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "lane-audit-openracing-control.json",
+          "present": true
+        },
+        {
+          "kind": "receipt",
           "relative_path": "low-torque-proof.json",
+          "present": true
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "manifest-promotion-openracing-control.json",
+          "present": true
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "moza-status.json",
+          "present": true
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "native-actuator-profile-smoke.json",
+          "present": true
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "openracing-control-verification.json",
+          "present": true
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "steering-angle-stream-proof.json",
+          "present": true
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "support-bundle.json",
+          "present": true
+        }
+      ],
+      "gate_status": "not_validated_by_status",
+      "notes": [
+        "status inventories artifact presence only; run the family verifier for evidence claims"
+      ]
+    },
+    {
+      "id": "native_response_ready",
+      "order": 9,
+      "purpose": "prove bounded native PIDFF output creates measurable steering response",
+      "artifacts_present": 4,
+      "artifacts_missing": 0,
+      "artifacts_failed": 0,
+      "expected_artifacts": [
+        {
+          "kind": "receipt",
+          "relative_path": "lane-audit-native-response.json",
+          "present": true
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "manifest-promotion-native-response.json",
+          "present": true
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "native-actuator-visible-smoke.json",
+          "present": true
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "native-response-verification.json",
+          "present": true
+        }
+      ],
+      "gate_status": "not_validated_by_status",
+      "notes": [
+        "status inventories artifact presence only; run the family verifier for evidence claims"
+      ]
+    },
+    {
+      "id": "native_visible_ready",
+      "order": 10,
+      "purpose": "prove operator-visible native controlled movement without external app prerequisites",
+      "artifacts_present": 1,
+      "artifacts_missing": 3,
+      "artifacts_failed": 1,
+      "expected_artifacts": [
+        {
+          "kind": "receipt",
+          "relative_path": "lane-audit-native-visible.json",
           "present": false
         },
+        {
+          "kind": "receipt",
+          "relative_path": "manifest-promotion-native-visible.json",
+          "present": false
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "native-controlled-angle-attempt-03-smoke.json",
+          "present": false
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "native-visible-verification.json",
+          "present": true
+        }
+      ],
+      "gate_status": "not_validated_by_status",
+      "notes": [
+        "status inventories artifact presence only; run the family verifier for evidence claims"
+      ]
+    },
+    {
+      "id": "external_compat_ready",
+      "order": 11,
+      "purpose": "prove external app and telemetry compatibility without making it a native-control prerequisite",
+      "artifacts_present": 0,
+      "artifacts_missing": 2,
+      "artifacts_failed": 0,
+      "expected_artifacts": [
         {
           "kind": "receipt",
           "relative_path": "pit-house-coexistence.json",
-          "present": false
-        },
-        {
-          "kind": "receipt",
-          "relative_path": "simulator-ffb-smoke.json",
           "present": false
         },
         {
@@ -398,8 +526,56 @@
       ]
     },
     {
+      "id": "bounded_ffb",
+      "order": 12,
+      "purpose": "first real-force smoke under explicit force and duration caps",
+      "artifacts_present": 0,
+      "artifacts_missing": 1,
+      "artifacts_failed": 0,
+      "expected_artifacts": [
+        {
+          "kind": "receipt",
+          "relative_path": "simulator-ffb-smoke.json",
+          "present": false
+        }
+      ],
+      "gate_status": "not_validated_by_status",
+      "notes": [
+        "status inventories artifact presence only; run the family verifier for evidence claims"
+      ]
+    },
+    {
+      "id": "smoke_ready",
+      "order": 13,
+      "purpose": "promote the bounded hardware smoke lane after native, external, telemetry, and FFB gates pass",
+      "artifacts_present": 1,
+      "artifacts_missing": 2,
+      "artifacts_failed": 1,
+      "expected_artifacts": [
+        {
+          "kind": "receipt",
+          "relative_path": "lane-audit-smoke-ready.json",
+          "present": false
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "manifest-promotion-smoke-ready.json",
+          "present": false
+        },
+        {
+          "kind": "receipt",
+          "relative_path": "smoke-ready-verification.json",
+          "present": true
+        }
+      ],
+      "gate_status": "not_validated_by_status",
+      "notes": [
+        "status inventories artifact presence only; run the family verifier for evidence claims"
+      ]
+    },
+    {
       "id": "ffb_extended",
-      "order": 9,
+      "order": 14,
       "purpose": "expand from smoke to longer simulator and effect coverage",
       "artifacts_present": 0,
       "artifacts_missing": 2,
