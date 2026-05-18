@@ -92,6 +92,7 @@ const NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE: &str =
 const NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE: &str = "native-controlled-angle-retry-smoke.json";
 const NATIVE_CONTROLLED_ANGLE_RETRY_FAILURE_ANALYSIS_FILE: &str =
     "native-controlled-angle-retry-failure-analysis.json";
+const NATIVE_PIDFF_SEMANTICS_DIAGNOSIS_FILE: &str = "native-pidff-semantics-diagnosis.json";
 const NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILES: &[&str] = &[
     NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE,
     NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE,
@@ -8663,8 +8664,14 @@ fn native_visible_authorization_guidance(lane: &Path) -> String {
                 .ok()
                 .and_then(|analysis| json_string(&analysis, "classification").map(str::to_string))
                 .unwrap_or_else(|| "missing_retry_failure_analysis".to_string());
+        let semantics_diagnosis = native_pidff_semantics_diagnosis_artifact_summary(lane);
+        let next_step = if semantics_diagnosis.contains("present_no_output") {
+            "The no-output PIDFF semantics/profile diagnosis is recorded; do not authorize output from it. The next work is a separate software-only reviewed profile/lifecycle plan that names what PIDFF operation-order or effect-lifecycle change will be tested before any later exact authorization."
+        } else {
+            "Create a new no-output PIDFF semantics/profile diagnosis before any later exact authorization."
+        };
         return format!(
-            "A real controlled-angle retry is already recorded at {NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE}; preserve {NATIVE_CONTROLLED_ANGLE_SMOKE_FILE}, {NATIVE_CONTROLLED_ANGLE_RETRY_PREFLIGHT_FILE}, {NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE}, and {NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE}. The retry did not prove visible motion: target_reached={target_reached}, timeout_reached={timeout_reached}, angle_delta_degrees={delta}, writes_ok={writes_ok}, write_errors={write_errors}, final_stop_all_sent={final_stop_all_sent}, retry_failure_classification={analysis_status}. Do not generate a third preflight, authorization, or output command from verifier guidance; create a new no-output PIDFF semantics/profile diagnosis before any later exact authorization. Do not extend dwell, raise force, attempt 30/90 degrees, use direct report 0x20, or use the visible-output authorizer."
+            "A real controlled-angle retry is already recorded at {NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE}; preserve {NATIVE_CONTROLLED_ANGLE_SMOKE_FILE}, {NATIVE_CONTROLLED_ANGLE_RETRY_PREFLIGHT_FILE}, {NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE}, and {NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE}. The retry did not prove visible motion: target_reached={target_reached}, timeout_reached={timeout_reached}, angle_delta_degrees={delta}, writes_ok={writes_ok}, write_errors={write_errors}, final_stop_all_sent={final_stop_all_sent}, retry_failure_classification={analysis_status}. {semantics_diagnosis}. Do not generate a third preflight, authorization, or output command from verifier guidance; {next_step} Do not extend dwell, raise force, attempt 30/90 degrees, use direct report 0x20, or use the visible-output authorizer."
         );
     }
     if native_controlled_angle_smoke_is_real_output_attempt(lane) {
@@ -8776,6 +8783,38 @@ fn native_controlled_angle_retry_smoke_artifact_summary(lane: &Path) -> String {
     format!(
         "controlled_angle_retry_receipt_artifact={}, controlled_angle_retry_command_ok={command_ok}, controlled_angle_retry_target_degrees={target}, controlled_angle_retry_delta_degrees={delta}, controlled_angle_retry_target_reached={target_reached}, controlled_angle_retry_timeout_reached={timeout_reached}, controlled_angle_retry_abort_reason={abort_reason}, controlled_angle_retry_write_attempts={write_attempts}, controlled_angle_retry_writes_ok={writes_ok}, controlled_angle_retry_write_errors={write_errors}, controlled_angle_retry_final_stop_all_sent={stop_all}, controlled_angle_retry_post_stop_stable={post_stop_stable}, controlled_angle_retry_no_direct_report_0x20={no_direct}",
         actual_gate.status
+    )
+}
+
+fn native_pidff_semantics_diagnosis_artifact_summary(lane: &Path) -> String {
+    let Ok(diagnosis) = read_json_value(lane, NATIVE_PIDFF_SEMANTICS_DIAGNOSIS_FILE) else {
+        return "pidff_semantics_diagnosis_artifact=missing".to_string();
+    };
+    let success = json_bool(&diagnosis, "success") == Some(true);
+    let no_output = json_bool(&diagnosis, "hardware_output_performed_by_analysis") == Some(false)
+        && json_bool(&diagnosis, "new_authorization_created") == Some(false)
+        && json_bool(&diagnosis, "openracing_hardware_output") == Some(false)
+        && json_bool(&diagnosis, "no_hid_device_opened") == Some(true)
+        && json_bool(&diagnosis, "no_feature_reports") == Some(true)
+        && json_bool(&diagnosis, "no_output_reports") == Some(true)
+        && json_bool(&diagnosis, "no_ffb_writes") == Some(true)
+        && json_bool(&diagnosis, "no_direct_torque_reports") == Some(true)
+        && json_bool(&diagnosis, "no_high_torque") == Some(true)
+        && diagnosis
+            .get("planned_next_output")
+            .and_then(|planned| json_bool(planned, "allowed"))
+            == Some(false)
+        && no_out_of_scope_device_commands(&diagnosis);
+    let status = if success && no_output {
+        "present_no_output"
+    } else {
+        "present_needs_review"
+    };
+    let classification = json_string(&diagnosis, "classification").unwrap_or("missing");
+    let recommended_next_plan =
+        json_string(&diagnosis, "recommended_next_plan").unwrap_or("missing_recommended_next_plan");
+    format!(
+        "pidff_semantics_diagnosis_artifact={status}, pidff_semantics_classification={classification}, pidff_semantics_recommended_next_plan={recommended_next_plan}, pidff_semantics_no_output_ok={no_output}"
     )
 }
 
@@ -45461,6 +45500,100 @@ mod tests {
         assert!(
             !actions.contains("authorize-visible-output"),
             "operator action must not send retry follow-up through the older visible-output authorizer: {actions}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_native_visible_reports_recorded_pidff_semantics_diagnosis() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_openracing_control_bundle(dir.path())?;
+        write_lane_audit_receipts(dir.path(), MozaBundleStage::Passive)?;
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V2),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::VisibleMotionFollowUp),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_CONTROLLED_ANGLE_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::ControlledAnglePlan),
+        )?;
+        write_test_json_file(
+            &dir.path().join("pre-output-readiness.json"),
+            &serde_json::to_value(pre_output_readiness_dir(dir.path()))?,
+        )?;
+        let selector = "hid-0x346E-0x0014-if2-0x0001-0x0004";
+        write_failed_controlled_angle_output_receipt(dir.path(), selector)?;
+        write_failed_controlled_angle_retry_output_receipt(dir.path(), selector)?;
+        write_test_json_file(
+            &dir.path()
+                .join(NATIVE_CONTROLLED_ANGLE_RETRY_FAILURE_ANALYSIS_FILE),
+            &serde_json::json!({
+                "success": true,
+                "command": "manual native controlled-angle retry failure analysis",
+                "classification": "safe_undertravel_retry_same_response_band",
+                "hardware_output_performed_by_analysis": false,
+                "new_authorization_created": false,
+                "planned_next_output": {
+                    "allowed": false
+                }
+            }),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_PIDFF_SEMANTICS_DIAGNOSIS_FILE),
+            &serde_json::json!({
+                "success": true,
+                "command": "manual native PIDFF semantics diagnosis",
+                "classification": "same_response_band_despite_micro_step_replay",
+                "recommended_next_plan": "software_only_effect_lifecycle_plan",
+                "hardware_output_performed_by_analysis": false,
+                "new_authorization_created": false,
+                "openracing_hardware_output": false,
+                "no_hid_device_opened": true,
+                "no_feature_reports": true,
+                "no_output_reports": true,
+                "no_ffb_writes": true,
+                "no_direct_torque_reports": true,
+                "no_high_torque": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "planned_next_output": {
+                    "allowed": false
+                }
+            }),
+        )?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::NativeVisibleReady);
+        let commands = receipt.next_commands.join("\n");
+
+        assert!(!receipt.success);
+        assert!(
+            receipt.next_commands.is_empty(),
+            "recorded PIDFF diagnosis must still not generate output commands: {commands}"
+        );
+        let actions = receipt.operator_actions.join("\n");
+        assert!(
+            actions.contains("pidff_semantics_diagnosis_artifact=present_no_output")
+                && actions.contains(
+                    "pidff_semantics_classification=same_response_band_despite_micro_step_replay"
+                )
+                && actions.contains(
+                    "pidff_semantics_recommended_next_plan=software_only_effect_lifecycle_plan"
+                )
+                && actions.contains("The no-output PIDFF semantics/profile diagnosis is recorded"),
+            "operator action should report the recorded PIDFF semantics diagnosis: {actions}"
+        );
+        assert!(
+            !actions.contains("Create a new no-output PIDFF semantics/profile diagnosis"),
+            "operator action should not request a diagnosis that is already recorded: {actions}"
+        );
+        assert!(
+            !commands.contains("controlled-angle-smoke")
+                && !commands.contains("authorize-controlled-angle-output"),
+            "diagnosis must not unlock generated output commands: {commands}"
         );
         Ok(())
     }

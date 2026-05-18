@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "success": true,
+  "command": "manual native PIDFF semantics diagnosis",
+  "artifact_kind": "native_pidff_semantics_diagnosis",
+  "analysis_kind": "native_pidff_semantics_profile_diagnosis",
+  "generated_at_utc": "2026-05-18T06:35:00Z",
+  "lane": "ci/hardware/moza-r5/2026-05-13",
+  "analysis_status": "complete_no_output",
+  "evidence_status": "pidff_semantics_profile_diagnosis",
+  "claim_ceiling": "software_diagnosis_only",
+  "classification": "same_response_band_despite_micro_step_replay",
+  "recommended_next_plan": "software_only_effect_lifecycle_plan",
+  "hardware_output_performed_by_analysis": false,
+  "new_authorization_created": false,
+  "receipt_replaced": false,
+  "openracing_hardware_output": false,
+  "no_hid_device_opened": true,
+  "no_feature_reports": true,
+  "no_output_reports": true,
+  "no_ffb_writes": true,
+  "no_direct_torque_reports": true,
+  "no_high_torque": true,
+  "high_torque": false,
+  "no_serial_config_commands": true,
+  "no_firmware_or_dfu_commands": true,
+  "source_receipts": [
+    {
+      "path": "low-torque-proof.json",
+      "sha256": "C5229C3D29DAE3CB872EBF17BFF0700E2DFD46986B3AFE6D5C57537C012CA39D",
+      "reading": "PIDFF set-effect, set-constant-force, effect-start, and final Stop All were accepted as a bounded low-torque proof."
+    },
+    {
+      "path": "native-actuator-visible-smoke.json",
+      "sha256": "12A4B79D01B159CFFBA505D6CA5E7C4D738B7431AE8D38A19E67B2400215ACAF",
+      "reading": "The bounded shaped visible-motion profile wrote successfully and measured 0.18127718013275285 degrees, below the 1 degree visible threshold."
+    },
+    {
+      "path": "native-controlled-angle-smoke.json",
+      "sha256": "4028105BB8FE882ADEE2F20E5FA92DBE35D31356C31ED94B7988E1EAB74D05CE",
+      "reading": "The first 1 degree controlled-angle attempt sent five PIDFF writes and timed out at 0.18127718013275285 degrees."
+    },
+    {
+      "path": "native-controlled-angle-retry-smoke.json",
+      "sha256": "3DEBDAF6F168A7D3CB5B2D64BB2DDAA4924EEA175E840D2F63ACEBF57E1DA919",
+      "reading": "The retry sent 33 PIDFF writes using bounded-pidff-micro-step-v2 and remained in the same 0.18127718013275285 degree response band."
+    }
+  ],
+  "receipt_comparison": {
+    "first_controlled_angle_delta_degrees": 0.18127718013275285,
+    "retry_controlled_angle_delta_degrees": 0.18127718013275285,
+    "retry_delta_improvement_degrees": 0.0,
+    "first_controlled_angle_writes_ok": 5,
+    "retry_writes_ok": 33,
+    "retry_write_multiplier": 6.6,
+    "write_errors": 0,
+    "steering_feedback_available": true,
+    "final_stop_all_sent": true,
+    "post_stop_stable": true
+  },
+  "observed_pidff_sequences": {
+    "low_torque": [
+      "0x01 set effect block 1 constant duration 150 ms gain 3 direction 9000",
+      "0x05 set constant force block 1 magnitude 328",
+      "0x0A effect operation start block 1 loop count 1",
+      "0x0C device control Stop All"
+    ],
+    "first_controlled_angle": [
+      "0x01 set effect block 1 constant duration 2000 ms gain 13 direction 9000",
+      "0x05 set constant force block 1 magnitude 1638",
+      "0x0A effect operation start block 1 loop count 1",
+      "0x0C device control Stop All after outbound attempt",
+      "0x0C final Stop All"
+    ],
+    "retry_micro_step_v2": [
+      "8 outbound repetitions of set effect duration 250 ms, set constant force magnitude 1638, effect start loop count 1, then Stop All",
+      "1 final Stop All",
+      "no return-leg PIDFF writes because the outbound 1 degree target was never reached"
+    ]
+  },
+  "diagnosis": {
+    "same_response_band": true,
+    "transport_write_path_indicated_ok": true,
+    "steering_feedback_path_indicated_ok": true,
+    "cleanup_path_indicated_ok": true,
+    "micro_step_replay_changed_write_count_not_motion": true,
+    "open_loop_dwell_supported_by_evidence": false,
+    "force_escalation_supported_by_evidence": false,
+    "likely_semantics_questions": [
+      "whether block index 1 is sufficient without an explicit Create New Effect / Block Load lifecycle on this R5 state",
+      "whether Stop All after every 250 ms micro-step prevents accumulation of visible steering displacement",
+      "whether the device expects actuator enable, device gain, or effect restart ordering before constant force updates have authority",
+      "whether direction, gain, duration, or loop count is interpreted differently by the R5 firmware than the current descriptor-derived assumption"
+    ],
+    "not_indicated_by_receipts": [
+      "HID write failure",
+      "steering sample failure",
+      "overshoot",
+      "wrong-way motion",
+      "post-stop instability",
+      "cleanup failure"
+    ]
+  },
+  "required_no_output_next_work": [
+    "design a software-only effect-lifecycle plan before any third output attempt",
+    "evaluate whether a future profile should test a different PIDFF operation order, effect lifecycle, gain/device-control setup, or block allocation strategy",
+    "keep target_degrees=1, max_percent=5, and timeout_ms<=2000 unless a separate safety review explicitly changes them",
+    "record a new reviewed plan artifact with planned_next_output.allowed=false before any future authorization",
+    "require fresh command-bound bench clear and exact authorization only after the software plan lands"
+  ],
+  "forbidden_next_steps": [
+    "blind third run",
+    "force escalation",
+    "dwell extension",
+    "30 degree test",
+    "90 degree test",
+    "direct report 0x20",
+    "high torque",
+    "serial config",
+    "firmware or DFU",
+    "Pit House or SimHub as native prerequisites",
+    "using passive sniff artifacts as native readiness evidence"
+  ],
+  "claim_guards": {
+    "native_visible_motion_claimed": false,
+    "native_visible_ready_claimed": false,
+    "smoke_ready_claimed": false,
+    "release_ready_claimed": false,
+    "third_attempt_authorized": false,
+    "force_escalation_authorized": false,
+    "dwell_extension_authorized": false,
+    "planned_next_output_allowed": false
+  },
+  "readiness_claims": {
+    "satisfies_native_response_ready": false,
+    "satisfies_native_visible_ready": false,
+    "satisfies_smoke_ready": false,
+    "satisfies_release_ready": false
+  },
+  "planned_next_output": {
+    "allowed": false,
+    "profile": "not_authorized",
+    "target_degrees": "not_authorized",
+    "max_percent": "not_authorized",
+    "timeout_ms": "not_authorized",
+    "requires_new_reviewed_plan": true,
+    "requires_fresh_command_bound_bench_clear": true
+  },
+  "notes": [
+    "This artifact is no-output diagnosis only. It did not open a HID device and did not send output, feature, serial, firmware, or DFU commands.",
+    "The retry evidence suggests that replaying the same 5 percent constant-force PIDFF lifecycle more often did not increase steering displacement.",
+    "Native visible motion remains unproven until a later reviewed and authorized receipt reaches the visible-motion threshold and satisfies the verifier."
+  ]
+}

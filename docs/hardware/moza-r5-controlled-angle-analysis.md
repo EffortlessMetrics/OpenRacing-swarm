@@ -17,12 +17,14 @@ The primary lane artifacts are:
 | [native-controlled-angle-retry-authorization.json](../../ci/hardware/moza-r5/2026-05-13/native-controlled-angle-retry-authorization.json) | Consumed exact authorization for the second attempt |
 | [native-controlled-angle-retry-smoke.json](../../ci/hardware/moza-r5/2026-05-13/native-controlled-angle-retry-smoke.json) | Preserved failed retry output receipt |
 | [native-controlled-angle-retry-failure-analysis.json](../../ci/hardware/moza-r5/2026-05-13/native-controlled-angle-retry-failure-analysis.json) | No-output retry analysis artifact |
+| [native-pidff-semantics-diagnosis.json](../../ci/hardware/moza-r5/2026-05-13/native-pidff-semantics-diagnosis.json) | No-output PIDFF semantics/profile diagnosis |
 
 Related docs:
 
 - [Moza R5 artifact checklist](moza-r5-artifact-checklist.md)
 - [Moza R5 validation runbook](moza-r5-validation.md)
 - [Moza validation matrix](moza-validation-matrix.md)
+- [PIDFF semantics diagnosis](moza-r5-pidff-semantics-diagnosis.md)
 - [Moza R5 live testing roadmap](moza-r5-live-testing-roadmap.md)
 - [Moza R5 simulator smoke](moza-r5-simulator-smoke.md)
 - [Moza R5 lane README](../../ci/hardware/moza-r5/README.md)
@@ -62,14 +64,15 @@ The receipt does not indicate a write-path failure, unavailable steering feedbac
 
 ## Required Next Work
 
-The no-output profile diagnosis is now recorded in the lane plan as
-`bounded-pidff-micro-step-v2`.
+The first controlled-angle receipt and the reviewed retry receipt are both
+preserved. The retry used `bounded-pidff-micro-step-v2` and stayed in the same
+0.181 degree response band despite increasing PIDFF write count from 5 to 33.
 
-1. Preserve `native-controlled-angle-smoke.json`.
-2. Inspect the PIDFF set-effect, set-constant-force, effect-start, and Stop All sequence.
-3. Use the revised bounded profile while keeping the first retry conservative: `target_degrees=1`, `max_percent=5`, `timeout_ms=2000`, repeated bounded PIDFF micro-steps, feedback stop, overshoot guard, final Stop All, and post-stop stability recording.
-4. Keep `native-controlled-angle-plan.json` non-claiming: `planned_next_output.allowed=false` and `hardware_output_authorized=false`.
-5. For the second attempt, write no-output preflight evidence to `native-controlled-angle-retry-preflight.json`, authorize exactly one retry in `native-controlled-angle-retry-authorization.json`, and write the retry output to `native-controlled-angle-retry-smoke.json` only after fresh command-bound bench-clear names `bounded-pidff-micro-step-v2`.
+1. Preserve `native-controlled-angle-smoke.json` and `native-controlled-angle-retry-smoke.json`.
+2. Treat `native-pidff-semantics-diagnosis.json` as the current no-output diagnosis artifact.
+3. Inspect the PIDFF set-effect, set-constant-force, effect-start, Stop All, gain, duration, and device-control sequence.
+4. Produce a software-only effect-lifecycle/profile plan before any future exact authorization.
+5. Keep `native-controlled-angle-plan.json` non-claiming: `planned_next_output.allowed=false` and `hardware_output_authorized=false`.
 
 ## Forbidden Next Steps
 
@@ -108,6 +111,19 @@ The second controlled-angle attempt used the reviewed
 | `post_stop_stable` | `true` | No runaway or post-stop instability indicated |
 
 The retry receipt is useful evidence, but it does not authorize a third
-attempt. The next work is no-output diagnosis of PIDFF effect semantics,
-operation ordering, and profile shape before any new authorization. Do not
-raise force, extend dwell, or move to larger angle targets from this receipt.
+attempt. The no-output PIDFF semantics diagnosis is now recorded; the next work
+is a software-only effect-lifecycle/profile plan before any new authorization.
+Do not raise force, extend dwell, or move to larger angle targets from this
+receipt.
+
+## PIDFF Semantics Diagnosis
+
+The no-output PIDFF diagnosis is now recorded in
+`native-pidff-semantics-diagnosis.json`. It classifies the current evidence as
+`same_response_band_despite_micro_step_replay`: the retry increased writes from
+5 to 33 but did not increase measured steering delta beyond the same 0.181
+degree band.
+
+That artifact still authorizes no output. The next software work is a reviewed
+effect-lifecycle/profile plan that identifies the PIDFF operation-order,
+effect-lifecycle, gain/device-control, or block-allocation hypothesis to test.
