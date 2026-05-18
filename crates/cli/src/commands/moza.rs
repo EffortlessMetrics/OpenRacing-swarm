@@ -90,6 +90,8 @@ const NATIVE_CONTROLLED_ANGLE_RETRY_PREFLIGHT_FILE: &str =
 const NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE: &str =
     "native-controlled-angle-retry-authorization.json";
 const NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE: &str = "native-controlled-angle-retry-smoke.json";
+const NATIVE_CONTROLLED_ANGLE_RETRY_FAILURE_ANALYSIS_FILE: &str =
+    "native-controlled-angle-retry-failure-analysis.json";
 const NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILES: &[&str] = &[
     NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE,
     NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE,
@@ -8617,9 +8619,11 @@ fn native_visible_smoke_failed_real_receipt_action(lane: &Path) -> Option<String
         let controlled_angle_artifact_summary = native_controlled_angle_plan_artifact_summary(lane);
         let controlled_angle_preflight_summary =
             native_controlled_angle_smoke_artifact_summary(lane);
+        let controlled_angle_retry_summary =
+            native_controlled_angle_retry_smoke_artifact_summary(lane);
         let authorization_guidance = native_visible_authorization_guidance(lane);
         return Some(format!(
-            "Current native-visible frontier: native actuator response is recorded, but visible-motion remains unclaimed: movement_observed={movement_observed}, angle_delta_degrees={delta}, movement_threshold_degrees={threshold}. Final Stop All sent={stop_all_sent}, no direct report 0x20={no_direct}, no high torque={no_high_torque}. Follow-up plan exists at {NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE}: review_decision={review_decision}, profile_design_status={profile_design_status}, {profile_plan_summary}, {controlled_angle_artifact_summary}, {controlled_angle_preflight_summary}, hardware_output_authorized={output_authorized}, force_escalation_authorized={force_escalation_authorized}. {authorization_guidance} Pit House, SimHub, and simulators are not required for this native diagnosis."
+            "Current native-visible frontier: native actuator response is recorded, but visible-motion remains unclaimed: movement_observed={movement_observed}, angle_delta_degrees={delta}, movement_threshold_degrees={threshold}. Final Stop All sent={stop_all_sent}, no direct report 0x20={no_direct}, no high torque={no_high_torque}. Follow-up plan exists at {NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE}: review_decision={review_decision}, profile_design_status={profile_design_status}, {profile_plan_summary}, {controlled_angle_artifact_summary}, {controlled_angle_preflight_summary}, {controlled_angle_retry_summary}, hardware_output_authorized={output_authorized}, force_escalation_authorized={force_escalation_authorized}. {authorization_guidance} Pit House, SimHub, and simulators are not required for this native diagnosis."
         ));
     }
     Some(format!(
@@ -8628,6 +8632,41 @@ fn native_visible_smoke_failed_real_receipt_action(lane: &Path) -> Option<String
 }
 
 fn native_visible_authorization_guidance(lane: &Path) -> String {
+    if native_controlled_angle_retry_smoke_is_real_output_attempt(lane) {
+        let retry = read_json_value(lane, NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE).ok();
+        let delta = retry
+            .as_ref()
+            .map(|receipt| optional_f64_text(json_f64(receipt, "angle_delta_degrees")))
+            .unwrap_or("missing".to_string());
+        let target_reached = retry
+            .as_ref()
+            .map(|receipt| optional_bool_text(json_bool(receipt, "target_reached")))
+            .unwrap_or("missing".to_string());
+        let timeout_reached = retry
+            .as_ref()
+            .map(|receipt| optional_bool_text(json_bool(receipt, "timeout_reached")))
+            .unwrap_or("missing".to_string());
+        let writes_ok = retry
+            .as_ref()
+            .map(|receipt| optional_u64_text(json_u64(receipt, "writes_ok")))
+            .unwrap_or("missing".to_string());
+        let write_errors = retry
+            .as_ref()
+            .map(|receipt| optional_u64_text(json_u64(receipt, "write_errors")))
+            .unwrap_or("missing".to_string());
+        let final_stop_all_sent = retry
+            .as_ref()
+            .map(|receipt| optional_bool_text(json_bool(receipt, "final_stop_all_sent")))
+            .unwrap_or("missing".to_string());
+        let analysis_status =
+            read_json_value(lane, NATIVE_CONTROLLED_ANGLE_RETRY_FAILURE_ANALYSIS_FILE)
+                .ok()
+                .and_then(|analysis| json_string(&analysis, "classification").map(str::to_string))
+                .unwrap_or_else(|| "missing_retry_failure_analysis".to_string());
+        return format!(
+            "A real controlled-angle retry is already recorded at {NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE}; preserve {NATIVE_CONTROLLED_ANGLE_SMOKE_FILE}, {NATIVE_CONTROLLED_ANGLE_RETRY_PREFLIGHT_FILE}, {NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE}, and {NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE}. The retry did not prove visible motion: target_reached={target_reached}, timeout_reached={timeout_reached}, angle_delta_degrees={delta}, writes_ok={writes_ok}, write_errors={write_errors}, final_stop_all_sent={final_stop_all_sent}, retry_failure_classification={analysis_status}. Do not generate a third preflight, authorization, or output command from verifier guidance; create a new no-output PIDFF semantics/profile diagnosis before any later exact authorization. Do not extend dwell, raise force, attempt 30/90 degrees, use direct report 0x20, or use the visible-output authorizer."
+        );
+    }
     if native_controlled_angle_smoke_is_real_output_attempt(lane) {
         if read_json_value(lane, NATIVE_CONTROLLED_ANGLE_PLAN_FILE)
             .is_ok_and(|plan| native_controlled_angle_plan_retry_profile_ok(&plan))
@@ -8713,6 +8752,33 @@ fn native_controlled_angle_smoke_artifact_summary(lane: &Path) -> String {
     )
 }
 
+fn native_controlled_angle_retry_smoke_artifact_summary(lane: &Path) -> String {
+    let Ok(receipt) = read_json_value(lane, NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE) else {
+        return "controlled_angle_retry_receipt_artifact=missing".to_string();
+    };
+    let command_ok =
+        json_string(&receipt, "command") == Some("wheelctl moza controlled-angle-smoke");
+    let target = optional_f64_text(json_f64(&receipt, "target_degrees"));
+    let delta = optional_f64_text(json_f64(&receipt, "angle_delta_degrees"));
+    let target_reached = optional_bool_text(json_bool(&receipt, "target_reached"));
+    let timeout_reached = optional_bool_text(json_bool(&receipt, "timeout_reached"));
+    let abort_reason = json_string(&receipt, "abort_reason").unwrap_or("missing");
+    let write_attempts = optional_u64_text(json_u64(&receipt, "write_attempts"));
+    let writes_ok = optional_u64_text(json_u64(&receipt, "writes_ok"));
+    let write_errors = optional_u64_text(json_u64(&receipt, "write_errors"));
+    let stop_all = optional_bool_text(json_bool(&receipt, "final_stop_all_sent"));
+    let post_stop_stable = optional_bool_text(json_bool(&receipt, "post_stop_stable"));
+    let no_direct = optional_bool_text(json_bool(&receipt, "no_direct_torque_reports"));
+    let actual_gate = verify_native_controlled_angle_smoke_receipt_gate(
+        lane,
+        NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE,
+    );
+    format!(
+        "controlled_angle_retry_receipt_artifact={}, controlled_angle_retry_command_ok={command_ok}, controlled_angle_retry_target_degrees={target}, controlled_angle_retry_delta_degrees={delta}, controlled_angle_retry_target_reached={target_reached}, controlled_angle_retry_timeout_reached={timeout_reached}, controlled_angle_retry_abort_reason={abort_reason}, controlled_angle_retry_write_attempts={write_attempts}, controlled_angle_retry_writes_ok={writes_ok}, controlled_angle_retry_write_errors={write_errors}, controlled_angle_retry_final_stop_all_sent={stop_all}, controlled_angle_retry_post_stop_stable={post_stop_stable}, controlled_angle_retry_no_direct_report_0x20={no_direct}",
+        actual_gate.status
+    )
+}
+
 fn native_controlled_angle_smoke_is_no_output_preflight(lane: &Path) -> bool {
     let Ok(receipt) = read_json_value(lane, NATIVE_CONTROLLED_ANGLE_SMOKE_FILE) else {
         return false;
@@ -8733,7 +8799,18 @@ fn native_controlled_angle_smoke_is_no_output_preflight(lane: &Path) -> bool {
 }
 
 fn native_controlled_angle_smoke_is_real_output_attempt(lane: &Path) -> bool {
-    let Ok(receipt) = read_json_value(lane, NATIVE_CONTROLLED_ANGLE_SMOKE_FILE) else {
+    native_controlled_angle_output_is_real_output_attempt(lane, NATIVE_CONTROLLED_ANGLE_SMOKE_FILE)
+}
+
+fn native_controlled_angle_retry_smoke_is_real_output_attempt(lane: &Path) -> bool {
+    native_controlled_angle_output_is_real_output_attempt(
+        lane,
+        NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE,
+    )
+}
+
+fn native_controlled_angle_output_is_real_output_attempt(lane: &Path, relative_path: &str) -> bool {
+    let Ok(receipt) = read_json_value(lane, relative_path) else {
         return false;
     };
     json_string(&receipt, "command") == Some("wheelctl moza controlled-angle-smoke")
@@ -31626,13 +31703,41 @@ mod tests {
     }
 
     fn write_failed_controlled_angle_output_receipt(root: &Path, selector: &str) -> TestResult {
+        write_failed_controlled_angle_output_receipt_at(
+            root,
+            selector,
+            NATIVE_CONTROLLED_ANGLE_SMOKE_FILE,
+        )
+    }
+
+    fn write_failed_controlled_angle_retry_output_receipt(
+        root: &Path,
+        selector: &str,
+    ) -> TestResult {
+        write_failed_controlled_angle_output_receipt_at(
+            root,
+            selector,
+            NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE,
+        )
+    }
+
+    fn write_failed_controlled_angle_output_receipt_at(
+        root: &Path,
+        selector: &str,
+        relative_path: &str,
+    ) -> TestResult {
+        let write_attempts = if relative_path == NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE {
+            33_u64
+        } else {
+            5_u64
+        };
         write_test_json_file(
-            &root.join(NATIVE_CONTROLLED_ANGLE_SMOKE_FILE),
+            &root.join(relative_path),
             &serde_json::json!({
                 "success": false,
                 "command": "wheelctl moza controlled-angle-smoke",
                 "generated_at_utc": now_utc(),
-                "receipt_path": root.join(NATIVE_CONTROLLED_ANGLE_SMOKE_FILE).display().to_string(),
+                "receipt_path": root.join(relative_path).display().to_string(),
                 "lane": root.display().to_string(),
                 "selector": selector,
                 "confirmed": true,
@@ -31654,8 +31759,11 @@ mod tests {
                 "timeout_reached": true,
                 "overshoot_detected": false,
                 "no_steering_samples": false,
+                "write_attempts": write_attempts,
+                "writes_ok": write_attempts,
                 "write_errors": 0,
                 "final_stop_all_sent": true,
+                "post_stop_stable": true,
                 "no_direct_torque_reports": true,
                 "abort_reason": "safety_timeout_before_target"
             }),
@@ -45271,6 +45379,88 @@ mod tests {
         assert!(
             !actions.contains("authorize-visible-output"),
             "operator action must not send failed controlled-angle follow-up through the older visible-output authorizer: {actions}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_native_visible_next_commands_stop_after_failed_controlled_angle_retry()
+    -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_openracing_control_bundle(dir.path())?;
+        write_lane_audit_receipts(dir.path(), MozaBundleStage::Passive)?;
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V2),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::VisibleMotionFollowUp),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_CONTROLLED_ANGLE_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::ControlledAnglePlan),
+        )?;
+        write_test_json_file(
+            &dir.path().join("pre-output-readiness.json"),
+            &serde_json::to_value(pre_output_readiness_dir(dir.path()))?,
+        )?;
+        let selector = "hid-0x346E-0x0014-if2-0x0001-0x0004";
+        write_failed_controlled_angle_output_receipt(dir.path(), selector)?;
+        write_failed_controlled_angle_retry_output_receipt(dir.path(), selector)?;
+        write_test_json_file(
+            &dir.path()
+                .join(NATIVE_CONTROLLED_ANGLE_RETRY_FAILURE_ANALYSIS_FILE),
+            &serde_json::json!({
+                "success": true,
+                "command": "manual native controlled-angle retry failure analysis",
+                "classification": "safe_undertravel_retry_same_response_band",
+                "hardware_output_performed_by_analysis": false,
+                "new_authorization_created": false,
+                "planned_next_output": {
+                    "allowed": false
+                }
+            }),
+        )?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::NativeVisibleReady);
+        let commands = receipt.next_commands.join("\n");
+
+        assert!(!receipt.success);
+        assert!(
+            receipt.next_commands.is_empty(),
+            "failed controlled-angle retry must require PIDFF diagnosis, not generated commands: {commands}"
+        );
+        assert!(
+            !commands.contains("controlled-angle-smoke")
+                && !commands.contains("authorize-controlled-angle-output")
+                && !commands.contains("--confirm-controlled-angle"),
+            "verifier must not emit third preflight, authorization, or output after retry failure: {commands}"
+        );
+        let actions = receipt.operator_actions.join("\n");
+        assert!(
+            actions.contains(NATIVE_CONTROLLED_ANGLE_SMOKE_FILE)
+                && actions.contains(NATIVE_CONTROLLED_ANGLE_RETRY_PREFLIGHT_FILE)
+                && actions.contains(NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE)
+                && actions.contains(NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE),
+            "operator action should preserve first and retry artifacts: {actions}"
+        );
+        assert!(
+            actions.contains("safe_undertravel_retry_same_response_band")
+                && actions.contains("controlled_angle_retry_delta_degrees=0.181")
+                && actions.contains("controlled_angle_retry_writes_ok=33")
+                && actions.contains("PIDFF semantics/profile diagnosis"),
+            "operator action should classify retry undertravel and point at PIDFF diagnosis: {actions}"
+        );
+        assert!(
+            !actions.contains("generate a no-output retry preflight")
+                && !actions.contains("The retry output must write")
+                && !actions.contains("Do not run output until fresh bench-clear"),
+            "operator action must not reuse pre-retry authorization guidance: {actions}"
+        );
+        assert!(
+            !actions.contains("authorize-visible-output"),
+            "operator action must not send retry follow-up through the older visible-output authorizer: {actions}"
         );
         Ok(())
     }
