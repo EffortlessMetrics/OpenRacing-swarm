@@ -128,6 +128,24 @@ commands = [
 ]
 
 [[work_item]]
+id = "harden-attempt-03-authorization-handoff"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-harden-attempt-03-authorization-handoff"
+current_pointer = "crates/cli/src/commands/moza.rs"
+claim_boundary = "Bench-wizard navigation only; a recorded attempt-03 authorization is surfaced as a separate handoff state without emitting output commands, creating authorization receipts, or claiming native-visible readiness."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl bench_wizard -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl controlled_angle -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl moza -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "attempt-03-authorization"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

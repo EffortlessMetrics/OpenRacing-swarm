@@ -12,7 +12,7 @@ One-screen execution plan for OpenRacing. Updated each sprint.
 
 - **Moza native-visible frontier** - the R5 lane is `native_response_ready`; two 1 degree controlled-angle attempts failed safely in the same ~0.181277 degree response band, `native-controlled-angle-attempt-03-preflight.json` records a no-output `bounded-pidff-effect-lifecycle-v1` dry-run, and no output is authorized
 - **Moza source-of-truth activation** - use `.openracing/goals/active.toml`, `docs/proposals/OR-PROP-0001-moza-native-visible-lane.md`, `docs/specs/OR-SPEC-0001-moza-native-visible-lane.md`, and `plans/moza-native-visible-lane/implementation-plan.md` as the current lane rail
-- **Moza no-output operator navigation** - use `wheelctl moza artifact-index`, `wheelctl moza bench-wizard`, and `wheelctl moza verify-bundle --stage native-visible-ready` to inspect the blocked frontier; the bench wizard now shows the exact attempt-03 bench-clear phrase, but it still creates no authorization or output permission
+- **Moza no-output operator navigation** - use `wheelctl moza artifact-index`, `wheelctl moza bench-wizard`, and `wheelctl moza verify-bundle --stage native-visible-ready` to inspect the blocked frontier; the bench wizard now shows the exact attempt-03 bench-clear phrase and the post-authorization handoff state, but it still creates no authorization or output permission
 - **Service API completion** — implement `WheelService::game_service()` and `plugin_service()` accessors; re-enable blocked integration tests
 
 ## NEXT (Queued — next 2–4 sprints)

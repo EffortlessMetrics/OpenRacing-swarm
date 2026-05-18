@@ -1445,6 +1445,19 @@ fn moza_bench_wizard_next_operator_step(lane: &Path, readiness: &Value, frontier
         });
     }
 
+    if native_controlled_angle_attempt_03_authorization_is_recorded(lane) {
+        return serde_json::json!({
+            "kind": "awaiting_separate_attempt_03_output",
+            "summary": "attempt 03 authorization is recorded; this wizard remains read-only and emits no output command, so run the separately authorized controlled-angle command only if the bench state still matches the recorded clearance",
+            "hardware_output_allowed_now": false,
+            "authorization_created_by_wizard": false,
+            "authorization_receipt_recorded": true,
+            "required_profile": controlled_angle_profile_cli_name(MozaControlledAngleProfile::BoundedPidffEffectLifecycleV1),
+            "authorization_receipt": NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE,
+            "planned_output_receipt": NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE
+        });
+    }
+
     if lane
         .join(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_PREFLIGHT_FILE)
         .is_file()
@@ -9950,6 +9963,39 @@ fn native_controlled_angle_attempt_03_preflight_is_no_output_preflight(lane: &Pa
         && profile_ok
         && effect_lifecycle_plan_ok
         && no_out_of_scope_device_commands(&receipt)
+}
+
+fn native_controlled_angle_attempt_03_authorization_is_recorded(lane: &Path) -> bool {
+    let Ok(receipt) = read_json_value(lane, NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE)
+    else {
+        return false;
+    };
+    let planned = receipt.get("planned_next_output").unwrap_or(&Value::Null);
+    json_string(&receipt, "command") == Some("wheelctl moza authorize-controlled-angle-output")
+        && json_bool(&receipt, "authorization_recorded") == Some(true)
+        && json_bool(&receipt, "authorization_consumed") != Some(true)
+        && json_bool(&receipt, "hardware_output_authorized") == Some(true)
+        && json_bool(&receipt, "force_escalation_authorized") == Some(false)
+        && json_bool(&receipt, "no_hid_device_opened") == Some(true)
+        && json_bool(&receipt, "no_feature_reports") == Some(true)
+        && json_bool(&receipt, "no_output_reports") == Some(true)
+        && json_bool(&receipt, "no_ffb_writes") == Some(true)
+        && json_bool(&receipt, "no_direct_torque_reports") == Some(true)
+        && json_bool(&receipt, "no_high_torque") == Some(true)
+        && json_bool(&receipt, "no_serial_config_commands") == Some(true)
+        && json_bool(&receipt, "no_firmware_or_dfu_commands") == Some(true)
+        && json_string(&receipt, "profile_cli")
+            == Some(controlled_angle_profile_cli_name(
+                MozaControlledAngleProfile::BoundedPidffEffectLifecycleV1,
+            ))
+        && json_bool(planned, "allowed") == Some(true)
+        && json_string(planned, "json_out") == Some(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE)
+        && json_string(planned, "authorization_proof")
+            == Some(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE)
+        && json_string(planned, "profile_cli")
+            == Some(controlled_angle_profile_cli_name(
+                MozaControlledAngleProfile::BoundedPidffEffectLifecycleV1,
+            ))
 }
 
 fn native_controlled_angle_output_is_real_output_attempt(lane: &Path, relative_path: &str) -> bool {
@@ -28845,6 +28891,21 @@ fn render_moza_bench_wizard_markdown(receipt: &Value) -> String {
         );
         out.push_str(&format!("```text\n{}\n```\n\n", markdown_escape(evidence)));
     }
+    if let Some(authorization) = step.get("authorization_receipt").and_then(Value::as_str) {
+        out.push_str(&format!(
+            "- Recorded authorization receipt: `{}`\n",
+            markdown_escape(authorization)
+        ));
+    }
+    if let Some(planned_output) = step.get("planned_output_receipt").and_then(Value::as_str) {
+        out.push_str(&format!(
+            "- Planned output receipt: `{}`\n",
+            markdown_escape(planned_output)
+        ));
+    }
+    if step.get("authorization_receipt").is_some() || step.get("planned_output_receipt").is_some() {
+        out.push('\n');
+    }
     out
 }
 
@@ -31207,6 +31268,101 @@ mod tests {
         assert!(markdown.contains("Safe No-Output Commands"));
         assert!(markdown.contains("Output is not authorized by this wizard"));
         assert!(markdown.contains(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_BENCH_CLEAR_EVIDENCE));
+        Ok(())
+    }
+
+    #[test]
+    fn bench_wizard_reports_attempt_03_authorization_without_emitting_output() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        let selector = "hid-0x346E-0x0004-if2-0x0001-0x0004";
+        write_attempt_03_controlled_angle_dry_run_receipt(dir.path(), selector)?;
+        write_attempt_03_controlled_angle_authorization_receipt(dir.path(), selector)?;
+
+        let receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
+
+        assert_eq!(json_bool(&receipt, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&receipt, "no_ffb_writes"), Some(true));
+        assert_eq!(
+            json_bool(&receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "authorization_receipt_created"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "native_visible_claimed"), Some(false));
+        assert_eq!(
+            receipt
+                .pointer("/next_operator_step/kind")
+                .and_then(Value::as_str),
+            Some("awaiting_separate_attempt_03_output")
+        );
+        assert_eq!(
+            receipt
+                .pointer("/next_operator_step/authorization_receipt_recorded")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            receipt
+                .pointer("/next_operator_step/hardware_output_allowed_now")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            receipt
+                .pointer("/next_operator_step/authorization_receipt")
+                .and_then(Value::as_str),
+            Some(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE)
+        );
+        assert_eq!(
+            receipt
+                .pointer("/next_operator_step/planned_output_receipt")
+                .and_then(Value::as_str),
+            Some(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE)
+        );
+        assert_eq!(
+            receipt
+                .pointer("/next_operator_step/required_profile")
+                .and_then(Value::as_str),
+            Some(controlled_angle_profile_cli_name(
+                MozaControlledAngleProfile::BoundedPidffEffectLifecycleV1,
+            ))
+        );
+        let step_summary = receipt
+            .pointer("/next_operator_step/summary")
+            .and_then(Value::as_str)
+            .ok_or("expected next operator summary")?;
+        assert!(
+            step_summary.contains("authorization is recorded")
+                && step_summary.contains("emits no output command"),
+            "bench wizard must name the post-authorization handoff without granting output itself: {step_summary}"
+        );
+        let safe_commands = receipt
+            .get("safe_no_output_commands")
+            .and_then(Value::as_array)
+            .ok_or("expected safe_no_output_commands")?;
+        for command in safe_commands {
+            assert_eq!(
+                command.get("output_enabled").and_then(Value::as_bool),
+                Some(false)
+            );
+            let command_text = json_string(command, "command").unwrap_or("");
+            assert!(
+                !command_text.contains("authorize-controlled-angle-output"),
+                "bench wizard must not emit authorization commands: {command_text}"
+            );
+            assert!(
+                !command_text.contains("--confirm-controlled-angle"),
+                "bench wizard must not emit output commands: {command_text}"
+            );
+        }
+        let markdown = render_moza_bench_wizard_markdown(&receipt);
+        assert!(markdown.contains("Recorded authorization receipt"));
+        assert!(markdown.contains(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE));
+        assert!(markdown.contains("Planned output receipt"));
+        assert!(markdown.contains(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE));
         Ok(())
     }
 
@@ -35250,6 +35406,65 @@ mod tests {
                     "hardware_output_authorized": false,
                     "planned_next_output_allowed": false,
                     "native_visible_claimed": false
+                }
+            }),
+        )
+    }
+
+    fn write_attempt_03_controlled_angle_authorization_receipt(
+        root: &Path,
+        selector: &str,
+    ) -> TestResult {
+        let profile = MozaControlledAngleProfile::BoundedPidffEffectLifecycleV1;
+        let strategy = MozaLowTorqueStrategy::PidffBoundedEffect;
+        write_test_json_file(
+            &root.join(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE),
+            &serde_json::json!({
+                "success": false,
+                "command": "wheelctl moza authorize-controlled-angle-output",
+                "generated_at_utc": TEST_LOW_TORQUE_GENERATED_AT,
+                "lane": root.display().to_string(),
+                "selector": selector,
+                "authorization_recorded": true,
+                "authorization_consumed": false,
+                "hardware_output_authorized": true,
+                "force_escalation_authorized": false,
+                "authorized_by": "Steven",
+                "bench_clear_evidence": NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_BENCH_CLEAR_EVIDENCE,
+                "profile": controlled_angle_profile_name(profile),
+                "profile_cli": controlled_angle_profile_cli_name(profile),
+                "no_hid_device_opened": true,
+                "no_feature_reports": true,
+                "no_output_reports": true,
+                "no_ffb_writes": true,
+                "no_direct_torque_reports": true,
+                "no_high_torque": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "planned_next_output": {
+                    "allowed": true,
+                    "requires_fresh_bench_clear": false,
+                    "command": native_controlled_angle_output_command(
+                        root,
+                        selector,
+                        NATIVE_CONTROLLED_ANGLE_FIRST_TARGET_DEGREES,
+                        profile,
+                        strategy,
+                        NATIVE_CONTROLLED_ANGLE_FIRST_MAX_PERCENT,
+                        NATIVE_CONTROLLED_ANGLE_FIRST_MAX_DURATION_MS,
+                        NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE,
+                        Some(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE),
+                    ),
+                    "target_degrees": NATIVE_CONTROLLED_ANGLE_FIRST_TARGET_DEGREES,
+                    "max_percent": NATIVE_CONTROLLED_ANGLE_FIRST_MAX_PERCENT,
+                    "force_percent": NATIVE_CONTROLLED_ANGLE_FIRST_MAX_PERCENT,
+                    "timeout_ms": NATIVE_CONTROLLED_ANGLE_FIRST_MAX_DURATION_MS,
+                    "duration_ms": NATIVE_CONTROLLED_ANGLE_FIRST_MAX_DURATION_MS,
+                    "strategy": low_torque_strategy_cli_name(strategy),
+                    "json_out": NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE,
+                    "authorization_proof": NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE,
+                    "profile": controlled_angle_profile_name(profile),
+                    "profile_cli": controlled_angle_profile_cli_name(profile)
                 }
             }),
         )

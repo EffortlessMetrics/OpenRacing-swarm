@@ -51,6 +51,13 @@ profile, authorization receipt, and planned output receipt in its read-only
 operator packet. This is navigation only: the wizard still creates no
 authorization receipt, emits no output command, and makes no readiness claim.
 
+The bench wizard also has a distinct post-authorization, pre-output handoff
+state. If `native-controlled-angle-attempt-03-authorization.json` exists and the
+attempt-03 output receipt is still missing, the wizard reports that the separate
+authorization is recorded and names `native-controlled-angle-attempt-03-smoke.json`
+as the planned output receipt, while still emitting no output command and
+creating no authorization receipt itself.
+
 ## Work item: activate-source-of-truth
 
 Status: completed
@@ -295,6 +302,61 @@ git diff --check
 
 Remove only the operator-packet fields and assertions. Do not alter attempt-03
 receipts or authorization semantics.
+
+## Work item: harden-attempt-03-authorization-handoff
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: clear operator handoff after attempt-03 authorization is recorded
+Blocked by: n/a
+
+### Goal
+
+Teach the read-only bench wizard to distinguish the state where the exact
+attempt-03 authorization receipt exists but the planned output receipt has not
+been recorded.
+
+### Production delta
+
+Add a bench-wizard next-operator-step branch for
+`awaiting_separate_attempt_03_output`. It validates the recorded attempt-03
+authorization shape, names `native-controlled-angle-attempt-03-authorization.json`
+and `native-controlled-angle-attempt-03-smoke.json`, and keeps the wizard from
+emitting authorization or hardware-output commands.
+
+### Non-goals
+
+No authorization receipt, no hardware output, no HID open, no output command,
+no readiness promotion, and no change to the attempt-03 output command shape.
+
+### Acceptance
+
+- A synthetic lane with attempt-03 preflight and authorization receipts reports
+  `next_operator_step.kind=awaiting_separate_attempt_03_output`.
+- The wizard still reports `hardware_output_authorized=false` and
+  `authorization_receipt_created=false`.
+- The wizard safe command list contains no `authorize-controlled-angle-output`
+  or `--confirm-controlled-angle` command.
+- Markdown names the recorded authorization receipt and planned output receipt.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl controlled_angle -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl moza -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+git diff --check
+```
+
+### Rollback
+
+Remove only the post-authorization wizard branch and regression test. Preserve
+any real attempt-03 authorization or output receipts if they exist.
 
 ## Work item: attempt-03-authorization
 
