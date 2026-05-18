@@ -59,7 +59,7 @@ The only valid lane completion states are:
 
 ## Lane Artifact Names
 
-The support bundle artifact index should expose these lane artifacts. The manifest artifact map remains backward-compatible with existing dated lanes; new stored native-stage verification, promotion, and audit receipts are lane artifacts even when older manifests do not list dedicated artifact-map keys for them.
+The support bundle artifact index should expose these lane artifacts. The manifest artifact map remains backward-compatible with existing dated lanes; new stored native-stage verification, promotion, and audit receipts are lane artifacts even when older manifests do not list dedicated artifact-map keys for them. Keep artifact validity separate from claim status: a failed verifier receipt can be a valid preserved artifact, but its claim status must remain `stage_failed` and must not be read as readiness success.
 
 ```text
 manifest.json
