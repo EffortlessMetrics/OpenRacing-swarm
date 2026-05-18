@@ -8473,13 +8473,22 @@ fn native_visible_smoke_failed_real_receipt_action(lane: &Path) -> Option<String
     ))
 }
 
-fn native_visible_authorization_guidance(lane: &Path) -> &'static str {
+fn native_visible_authorization_guidance(lane: &Path) -> String {
     if native_controlled_angle_smoke_is_real_output_attempt(lane) {
-        "A real controlled-angle attempt is already recorded; preserve native-controlled-angle-smoke.json and diagnose the profile/feedback loop before any new output plan. Update native-controlled-angle-plan.json with the reason the 1 degree target was not reached, then use wheelctl moza authorize-controlled-angle-output only after a separate reviewed exact command and fresh bench-clear; do not use the visible-output authorizer, extend dwell, raise force, or rerun from verifier guidance."
+        if read_json_value(lane, NATIVE_CONTROLLED_ANGLE_PLAN_FILE)
+            .is_ok_and(|plan| native_controlled_angle_plan_retry_profile_ok(&plan))
+        {
+            return format!(
+                "A real controlled-angle attempt is already recorded and the reviewed retry profile is present in {NATIVE_CONTROLLED_ANGLE_PLAN_FILE}; preserve native-controlled-angle-smoke.json and use the bounded-pidff-micro-step-v2 profile/feedback loop only after a separate fresh command-bound bench-clear and exact wheelctl moza authorize-controlled-angle-output receipt. Do not use the visible-output authorizer, extend dwell, raise force, or rerun from verifier guidance."
+            );
+        }
+        format!(
+            "A real controlled-angle attempt is already recorded; preserve native-controlled-angle-smoke.json and diagnose the profile/feedback loop before any new output plan. Update {NATIVE_CONTROLLED_ANGLE_PLAN_FILE} with the reason the 1 degree target was not reached, then use wheelctl moza authorize-controlled-angle-output only after a separate reviewed exact command and fresh bench-clear; do not use the visible-output authorizer, extend dwell, raise force, or rerun from verifier guidance."
+        )
     } else if native_controlled_angle_smoke_is_no_output_preflight(lane) {
-        "Do not run output until fresh bench-clear is recorded for the exact 1 degree controlled-angle command via wheelctl moza authorize-controlled-angle-output, producing native-controlled-angle-authorization.json; no visible-output authorizer is required for this controlled-angle path."
+        "Do not run output until fresh bench-clear is recorded for the exact 1 degree controlled-angle command via wheelctl moza authorize-controlled-angle-output, producing native-controlled-angle-authorization.json; no visible-output authorizer is required for this controlled-angle path.".to_string()
     } else {
-        "Do not run output until the follow-up requirements are complete and a fresh bench-clear is recorded for the exact next output command via wheelctl moza authorize-visible-output."
+        "Do not run output until the follow-up requirements are complete and a fresh bench-clear is recorded for the exact next output command via wheelctl moza authorize-visible-output.".to_string()
     }
 }
 
@@ -44905,8 +44914,13 @@ mod tests {
             actions.contains("native-controlled-angle-smoke.json")
                 && actions.contains("profile/feedback loop")
                 && actions.contains("native-controlled-angle-plan.json")
+                && actions.contains("bounded-pidff-micro-step-v2")
                 && actions.contains("authorize-controlled-angle-output"),
             "operator action should point at preserving evidence and controlled-angle diagnosis: {actions}"
+        );
+        assert!(
+            !actions.contains("Update native-controlled-angle-plan.json"),
+            "operator action should not ask for another plan update when the reviewed retry profile is already present: {actions}"
         );
         assert!(
             !actions.contains("authorize-visible-output"),
