@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "success": true,
+  "command": "manual native PIDFF effect lifecycle plan",
+  "artifact_kind": "native_pidff_effect_lifecycle_plan",
+  "generated_at_utc": "2026-05-18T08:19:48Z",
+  "lane": "ci/hardware/moza-r5/2026-05-13",
+  "planning_status": "complete_no_output",
+  "evidence_status": "trace_informed_pidff_lifecycle_plan",
+  "claim_ceiling": "software_plan_only",
+  "classification": "hypothesis_backed_profile_plan_after_repeated_safe_undertravel",
+  "hardware_output_authorized": false,
+  "planned_next_output_allowed": false,
+  "native_visible_claimed": false,
+  "new_authorization_created": false,
+  "receipt_replaced": false,
+  "openracing_hardware_output": false,
+  "no_hid_device_opened": true,
+  "no_feature_reports": true,
+  "no_output_reports": true,
+  "no_ffb_writes": true,
+  "no_direct_torque_reports": true,
+  "no_high_torque": true,
+  "high_torque": false,
+  "no_serial_config_commands": true,
+  "no_firmware_or_dfu_commands": true,
+  "source_artifacts": [
+    {
+      "path": "native-controlled-angle-smoke.json",
+      "sha256": "4028105BB8FE882ADEE2F20E5FA92DBE35D31356C31ED94B7988E1EAB74D05CE",
+      "reading": "First 1 degree controlled-angle attempt timed out safely at 0.18127718013275285 degrees with 5 successful bounded PIDFF writes, final Stop All, and stable post-stop behavior."
+    },
+    {
+      "path": "native-controlled-angle-retry-smoke.json",
+      "sha256": "3DEBDAF6F168A7D3CB5B2D64BB2DDAA4924EEA175E840D2F63ACEBF57E1DA919",
+      "reading": "Reviewed bounded-pidff-micro-step-v2 retry timed out safely at the same 0.18127718013275285 degree band with 33 successful bounded PIDFF writes, final Stop All, and stable post-stop behavior."
+    },
+    {
+      "path": "native-pidff-semantics-diagnosis.json",
+      "sha256": "74C44952B1DCE9FCF2A7C5BF449F4E45F827DCE0A8A4EE89D40F4880D727E772",
+      "reading": "No-output diagnosis classifies the state as same_response_band_despite_micro_step_replay and requires software-only effect lifecycle planning before any future authorization."
+    },
+    {
+      "path": "native-pidff-lifecycle-trace.json",
+      "sha256": "74B13594C1324ECCFC0B0195AB3BA1A92C1A8C5B18266F4929A5D19BC41A0711",
+      "reading": "No-output trace decodes the retry as repeated setup/start/Stop-All cycles and compares the first attempt and retry as the same delta band despite lifecycle replay."
+    }
+  ],
+  "trace_findings": {
+    "first_attempt_lifecycle_sequence_classification": "single_setup_start_cycle",
+    "retry_lifecycle_sequence_classification": "repeated_setup_start_stop_all_cycles",
+    "retry_set_effect_count": 8,
+    "retry_set_constant_force_count": 8,
+    "retry_effect_operation_start_count": 8,
+    "retry_device_control_stop_all_count": 9,
+    "retry_device_gain_count": 0,
+    "retry_create_new_effect_count": 0,
+    "both_attempts_same_delta_band": true,
+    "write_count_changed": true,
+    "material_motion_changed": false
+  },
+  "profile": {
+    "name": "bounded_pidff_effect_lifecycle_v1",
+    "cli_name": "bounded-pidff-effect-lifecycle-v1",
+    "implementation_status": "not_implemented",
+    "hardware_output_authorized": false,
+    "reason": "The retry changed write count and repeated the current setup/start/Stop-All lifecycle, but it did not change the measured motion band. The next profile should test a different standard PIDFF effect lifecycle rather than more dwell or more force.",
+    "hypothesis": "The R5 may need a standard PIDFF effect lifecycle with persistent effect state during the bounded attempt. Repeating Set Effect, Set Constant Force, Effect Operation Start, and Stop All may reset or prevent useful constant-force authority before visible steering displacement accumulates.",
+    "proposed_lifecycle": [
+      "validate steering samples and starting angle before any output",
+      "prepare one standard PIDFF effect lifecycle for effect block 1 before the outbound attempt",
+      "avoid Stop All between short feedback samples unless a stop condition triggers",
+      "start the effect once, then use bounded constant-force updates while steering feedback moves toward the 1 degree target",
+      "stop immediately on target reached, timeout, overshoot, wrong-way motion, stale steering samples, write error, or operator abort",
+      "send final PIDFF Device Control Stop All exactly once at cleanup and record post-stop stability"
+    ],
+    "unchanged_caps": {
+      "target_degrees": 1,
+      "max_percent": 5,
+      "timeout_ms": 2000,
+      "strategy": "pidff-bounded-effect",
+      "direct_report_0x20_allowed": false,
+      "high_torque_allowed": false,
+      "serial_config_allowed": false,
+      "firmware_or_dfu_allowed": false
+    },
+    "standard_pidff_questions_to_answer_in_implementation": [
+      "whether the existing Set Effect payload has the intended gain, direction, duration, and trigger fields for this R5 receipt shape",
+      "whether Device Gain or Create New Effect should remain omitted or be added only if supported by descriptor-backed standard PIDFF evidence",
+      "whether effect block 1 reuse is sufficient without explicit block allocation on this device state",
+      "whether constant-force updates after one Effect Operation Start produce a different response than repeated start/Stop All cycles",
+      "whether final Stop All cleanup remains ordered last and post-stop stable"
+    ]
+  },
+  "requires_before_any_output": [
+    "implement the bounded-pidff-effect-lifecycle-v1 profile in software",
+    "add or update dry-run/preflight receipt support for the exact profile",
+    "make authorize-controlled-angle-output bind the exact profile, lane, device selector, target, max percent, timeout, prior receipts, preflight receipt, planned output path, and bench-clear evidence",
+    "add tests that actual writes are rejected without exact authorization",
+    "add tests that dry-run opens no HID and sends no writes",
+    "add tests that final Stop All is required and direct report 0x20, high torque, serial config, firmware, and DFU remain rejected",
+    "record a fresh command-bound bench-clear only after the software implementation and review land"
+  ],
+  "planned_next_output": {
+    "allowed": false,
+    "profile": "not_authorized",
+    "target_degrees": "not_authorized",
+    "max_percent": "not_authorized",
+    "timeout_ms": "not_authorized",
+    "requires_new_software_implementation": true,
+    "requires_exact_authorization": true,
+    "requires_fresh_command_bound_bench_clear": true
+  },
+  "forbidden_next_steps": [
+    "blind third controlled-angle run",
+    "longer dwell",
+    "force escalation",
+    "3 degree target",
+    "5 degree target",
+    "30 degree target",
+    "90 degree target",
+    "direct report 0x20",
+    "high torque",
+    "serial config",
+    "firmware or DFU",
+    "using Pit House or SimHub as native prerequisites",
+    "using passive sniff artifacts as native readiness evidence"
+  ],
+  "readiness_claims": {
+    "satisfies_native_response_ready": false,
+    "satisfies_native_visible_ready": false,
+    "satisfies_smoke_ready": false,
+    "satisfies_release_ready": false
+  },
+  "notes": [
+    "This is a no-output plan artifact. It did not open a HID device and did not send output, feature, serial, firmware, or DFU commands.",
+    "The profile named here is not implemented and not authorized for hardware output.",
+    "Native visible motion remains unproven until a later reviewed implementation and exact authorization produce a passing receipt."
+  ]
+}

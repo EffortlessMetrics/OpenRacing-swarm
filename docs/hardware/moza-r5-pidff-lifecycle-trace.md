@@ -42,3 +42,8 @@ The `2026-05-13` lane now records the trace in
 `native-pidff-lifecycle-trace.json`. It classifies the retry as repeated
 setup/start/Stop-All cycles, compares the first attempt and retry as the same
 delta band despite lifecycle replay, and still authorizes no output.
+
+The trace-informed [PIDFF effect lifecycle plan](moza-r5-pidff-effect-lifecycle-plan.md)
+is recorded separately as `native-pidff-effect-lifecycle-plan.json`. That plan
+names `bounded-pidff-effect-lifecycle-v1` as the next software profile to
+implement and preflight. It still authorizes no output.

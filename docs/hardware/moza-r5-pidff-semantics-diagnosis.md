@@ -17,7 +17,7 @@ The retry changed write count, not motion. It recorded `writes_ok=33`, `write_er
 
 The transport path is not the obvious blocker. The receipts show successful PIDFF writes, feedback samples, and cleanup. The blocker is more likely PIDFF effect semantics, wheelbase state, or profile authority inside the current 5 percent envelope.
 
-Important questions before any third attempt:
+Important questions before any future hardware authorization:
 
 - Does this R5 state require a different effect lifecycle, such as explicit effect allocation, block load validation, or block free handling?
 - Does Stop All after every 250 ms micro-step prevent the wheel from accumulating visible movement?
@@ -38,4 +38,4 @@ This diagnosis does not authorize:
 - firmware or DFU
 - Pit House or SimHub as native prerequisites
 
-The no-output [PIDFF lifecycle trace](moza-r5-pidff-lifecycle-trace.md) is now recorded as `native-pidff-lifecycle-trace.json`. It reads the preserved receipts, decodes the set-effect / constant-force / effect-operation / Stop All sequence, and still carries no readiness claim. The next software step is a trace-informed profile plan. A later hardware attempt still requires fresh review, command-bound bench clear, and exact authorization.
+The no-output [PIDFF lifecycle trace](moza-r5-pidff-lifecycle-trace.md) is now recorded as `native-pidff-lifecycle-trace.json`. It reads the preserved receipts, decodes the set-effect / constant-force / effect-operation / Stop All sequence, and still carries no readiness claim. The trace-informed [PIDFF effect lifecycle plan](moza-r5-pidff-effect-lifecycle-plan.md) is recorded as `ci/hardware/moza-r5/2026-05-13/native-pidff-effect-lifecycle-plan.json`; it names `bounded-pidff-effect-lifecycle-v1` for software implementation and preflight, not output. A later hardware attempt still requires fresh review, command-bound bench clear, and exact authorization.

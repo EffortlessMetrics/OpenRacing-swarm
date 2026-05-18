@@ -72,7 +72,8 @@ preserved. The retry used `bounded-pidff-micro-step-v2` and stayed in the same
 2. Treat `native-pidff-semantics-diagnosis.json` as the current no-output diagnosis artifact.
 3. Treat `native-pidff-lifecycle-trace.json` as the current decoded lifecycle artifact.
 4. Use the trace to inspect the set-effect, set-constant-force, effect-start, Stop All, gain, duration, and device-control sequence before any future exact authorization.
-5. Keep `native-controlled-angle-plan.json` non-claiming: `planned_next_output.allowed=false` and `hardware_output_authorized=false`.
+5. Treat `native-pidff-effect-lifecycle-plan.json` as the current no-output profile plan.
+6. Keep `native-controlled-angle-plan.json` non-claiming: `planned_next_output.allowed=false` and `hardware_output_authorized=false`.
 
 ## Forbidden Next Steps
 
@@ -124,6 +125,7 @@ The no-output PIDFF diagnosis is now recorded in
 5 to 33 but did not increase measured steering delta beyond the same 0.181
 degree band.
 
-Those artifacts still authorize no output. The next software work is a reviewed
-profile plan only after the trace identifies the operation-order,
-effect-lifecycle, gain/device-control, or block-allocation hypothesis to test.
+Those artifacts still authorize no output. The reviewed
+[PIDFF effect lifecycle plan](moza-r5-pidff-effect-lifecycle-plan.md) names
+`bounded-pidff-effect-lifecycle-v1` as the next software profile to implement
+and preflight, but it is not an authorization receipt.
