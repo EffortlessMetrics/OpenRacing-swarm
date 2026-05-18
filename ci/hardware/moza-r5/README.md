@@ -428,6 +428,14 @@ wheelctl moza artifact-index --lane ci/hardware/moza-r5/YYYY-MM-DD --md-out ci/h
 
 The generated `index.md` groups stored artifacts by passive input, zero safety, OpenRacing native control, native response, native visible/PIDFF diagnosis, Pit House, simulator, smoke, support, and sniffing evidence. It reads existing lane files only, opens no HID device, sends no reports, creates no authorization receipt, and does not promote readiness.
 
+For operator-facing next-step navigation, render the no-output bench wizard:
+
+```powershell
+wheelctl moza bench-wizard --lane ci/hardware/moza-r5/YYYY-MM-DD --json-out target/moza-bench-wizard.json --md-out target/moza-bench-wizard.md --json
+```
+
+The bench wizard reads stored lane artifacts and summarizes the current frontier, safe no-output refresh commands, active blockers, and the output boundary. It does not open HID, create authorization receipts, generate hardware-output commands, satisfy `native-visible-ready`, or treat Pit House/SimHub/simulator evidence as native-control prerequisites.
+
 ## Hard Rules
 
 - Passive commands do not send FFB output, feature reports, or serial config.

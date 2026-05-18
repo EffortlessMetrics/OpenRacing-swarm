@@ -654,6 +654,19 @@ pub enum MozaCommands {
         md_out: Option<std::path::PathBuf>,
     },
 
+    /// Render a no-output Moza bench frontier plan
+    BenchWizard {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-13
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Write the bench-wizard receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+        /// Write a Markdown bench-wizard plan
+        #[arg(long)]
+        md_out: Option<std::path::PathBuf>,
+    },
+
     /// Capture descriptor metadata for connected Moza HID devices
     Descriptor {
         /// Device selector: HID path, PID, or VID:PID

@@ -1670,6 +1670,43 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_bench_wizard() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "bench-wizard",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
+            "--json-out",
+            "target/moza-bench-wizard.json",
+            "--md-out",
+            "target/moza-bench-wizard.md",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::BenchWizard {
+                lane,
+                json_out,
+                md_out,
+            }) => {
+                assert_eq!(
+                    lane.as_path().to_str(),
+                    Some("ci/hardware/moza-r5/2026-05-13")
+                );
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/moza-bench-wizard.json")
+                );
+                assert_eq!(
+                    md_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/moza-bench-wizard.md")
+                );
+            }
+            _ => return Err("expected Moza BenchWizard command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_descriptor_with_device() -> TestResult {
         let cli = parse_cli([
             "wheelctl",

@@ -553,6 +553,14 @@ wheelctl moza artifact-index --lane ci/hardware/moza-r5/<date> --md-out ci/hardw
 
 `artifact-index` reads stored lane receipts and support/status diagnostics, groups artifacts by evidence area, and writes Markdown/JSON navigation only. It opens no HID device, sends no output or feature reports, creates no authorization receipt, and does not satisfy or promote any readiness gate.
 
+For operator-facing no-output navigation, use:
+
+```powershell
+wheelctl moza bench-wizard --lane ci/hardware/moza-r5/<date> --json-out target/moza-bench-wizard.json --md-out target/moza-bench-wizard.md --json
+```
+
+`bench-wizard` reads stored lane artifacts, summarizes the current frontier and next operator step, lists safe no-output refresh commands, and records active blockers. It is not an interactive hardware runner: it does not open HID, does not write output or feature reports, does not create a controlled-angle authorization receipt, and does not generate permission to rerun, extend dwell, raise force, run 30/90 degrees, use direct report `0x20`, high torque, serial config, firmware, or DFU.
+
 This command reads lane receipts only; it opens no HID device and sends no reports. The Moza section is diagnostic context for missing artifacts and failed gates, not a manifest promotion or compatibility claim.
 
 ## Claim Rules

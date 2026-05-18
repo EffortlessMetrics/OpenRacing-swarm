@@ -544,6 +544,11 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             json_out,
             md_out,
         } => artifact_index(json, lane, json_out.as_deref(), md_out.as_deref()).await,
+        MozaCommands::BenchWizard {
+            lane,
+            json_out,
+            md_out,
+        } => bench_wizard(json, lane, json_out.as_deref(), md_out.as_deref()).await,
         MozaCommands::Descriptor {
             device,
             descriptor_hex,
@@ -1316,6 +1321,212 @@ async fn artifact_index(
         write_text_file(path, &render_moza_lane_artifact_index_markdown(&receipt))?;
     }
     print_artifact_index_receipt(json, json_out, md_out, &receipt)
+}
+
+async fn bench_wizard(
+    json: bool,
+    lane: &Path,
+    json_out: Option<&Path>,
+    md_out: Option<&Path>,
+) -> Result<()> {
+    let receipt = moza_bench_wizard_receipt(lane, json_out, md_out)?;
+    write_json_receipt(json_out, &receipt)?;
+    if let Some(path) = md_out {
+        write_text_file(path, &render_moza_bench_wizard_markdown(&receipt))?;
+    }
+    print_bench_wizard_receipt(json, json_out, md_out, &receipt)
+}
+
+fn moza_bench_wizard_receipt(
+    lane: &Path,
+    json_out: Option<&Path>,
+    md_out: Option<&Path>,
+) -> Result<Value> {
+    if !lane.is_dir() {
+        return Err(anyhow!(
+            "--lane must point at an existing Moza lane directory: {}",
+            lane.display()
+        ));
+    }
+
+    let support_status = stored_lane_artifact_index_status(lane);
+    let readiness = artifact_index_readiness_summary(lane, &support_status);
+    let frontier = moza_lane_frontier_label(lane, &support_status);
+    let next_operator_step = moza_bench_wizard_next_operator_step(lane, &readiness, &frontier);
+
+    Ok(serde_json::json!({
+        "success": true,
+        "command": "wheelctl moza bench-wizard",
+        "artifact_kind": "moza_bench_wizard",
+        "generated_at_utc": now_utc(),
+        "lane": lane.display().to_string(),
+        "json_out": json_out.map(|path| path.display().to_string()),
+        "md_out": md_out.map(|path| path.display().to_string()),
+        "frontier": frontier,
+        "next_operator_step": next_operator_step,
+        "no_hid_device_opened": true,
+        "no_ffb_writes": true,
+        "no_output_reports": true,
+        "no_feature_reports": true,
+        "no_serial_config_commands": true,
+        "no_firmware_or_dfu_commands": true,
+        "hardware_output_authorized": false,
+        "authorization_receipt_created": false,
+        "native_visible_claimed": false,
+        "smoke_ready_claimed": false,
+        "readiness_claims": NonClaimingReadinessClaims::default(),
+        "readiness": readiness,
+        "safe_no_output_commands": moza_bench_wizard_safe_no_output_commands(lane),
+        "active_blockers": moza_bench_wizard_active_blockers(lane),
+        "blocked_output_boundary": {
+            "output_allowed": false,
+            "authorization_allowed_from_wizard": false,
+            "reason": "bench-wizard is a read-only planner; it does not create authorization receipts or hardware output commands",
+            "requires_separate_fresh_command_bound_bench_clear": true,
+            "requires_exact_authorization_receipt": true,
+            "forbidden_without_new_plan": [
+                "blind rerun",
+                "force escalation",
+                "longer dwell",
+                "30 degree target",
+                "90 degree target",
+                "direct report 0x20",
+                "high torque",
+                "serial config",
+                "firmware or DFU"
+            ]
+        },
+        "next_milestones": [
+            "native_visible_ready",
+            "controlled_movement_ladder",
+            "pit_house_coexistence",
+            "simulator_telemetry",
+            "bounded_simulator_ffb_smoke",
+            "smoke_ready"
+        ],
+        "notes": [
+            "bench-wizard reads stored lane files only; it opens no HID device and sends no output, feature, serial, firmware, or DFU commands",
+            "bench-wizard is operator navigation only; it is not readiness promotion and does not authorize hardware output",
+            "Pit House, SimHub, simulator telemetry, and passive sniff artifacts remain external compatibility or support evidence, not native-control prerequisites"
+        ]
+    }))
+}
+
+fn moza_bench_wizard_next_operator_step(lane: &Path, readiness: &Value, frontier: &str) -> Value {
+    let native_visible = readiness
+        .get("native_visible_motion_proven")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let native_response = readiness
+        .get("native_actuator_response_proven")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+
+    if lane
+        .join(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE)
+        .is_file()
+    {
+        return serde_json::json!({
+            "kind": "no_output_analysis_required",
+            "summary": "attempt 03 output is recorded; preserve all attempt receipts and classify the result before any future profile plan",
+            "hardware_output_allowed_now": false
+        });
+    }
+
+    if lane
+        .join(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_PREFLIGHT_FILE)
+        .is_file()
+    {
+        return serde_json::json!({
+            "kind": "awaiting_separate_attempt_03_authorization",
+            "summary": "attempt 03 preflight is recorded; any real output requires a separate fresh command-bound bench-clear and exact authorization receipt outside this wizard",
+            "hardware_output_allowed_now": false,
+            "authorization_created_by_wizard": false
+        });
+    }
+
+    if native_visible {
+        return serde_json::json!({
+            "kind": "native_visible_recorded",
+            "summary": "native-visible evidence is recorded; plan the controlled-movement ladder with fresh authorization per rung",
+            "hardware_output_allowed_now": false
+        });
+    }
+
+    if native_response || frontier.contains("undertravel") || frontier.contains("pidff") {
+        return serde_json::json!({
+            "kind": "continue_native_visible_diagnosis",
+            "summary": "native response is proven but native visible motion is not; keep the next work on reviewed PIDFF lifecycle/profile diagnosis or separately authorized attempt output",
+            "hardware_output_allowed_now": false
+        });
+    }
+
+    serde_json::json!({
+        "kind": "refresh_readiness",
+        "summary": "refresh no-output readiness and verifier receipts before selecting the next lane action",
+        "hardware_output_allowed_now": false
+    })
+}
+
+fn moza_bench_wizard_safe_no_output_commands(lane: &Path) -> Vec<Value> {
+    let lane_arg = command_arg(&lane.display().to_string());
+    vec![
+        serde_json::json!({
+            "name": "refresh_pre_output_readiness",
+            "output_enabled": false,
+            "command": format!(
+                "wheelctl moza pre-output-readiness --lane {lane_arg} --json-out target/moza-pre-output-current.json --json"
+            )
+        }),
+        serde_json::json!({
+            "name": "verify_native_visible_frontier",
+            "output_enabled": false,
+            "expected_failure_ok": true,
+            "command": format!(
+                "wheelctl moza verify-bundle --lane {lane_arg} --stage native-visible-ready --json-out target/moza-native-visible-current.json --json"
+            )
+        }),
+        serde_json::json!({
+            "name": "refresh_artifact_index",
+            "output_enabled": false,
+            "command": format!(
+                "wheelctl moza artifact-index --lane {lane_arg} --json-out target/moza-artifact-index.json --md-out target/moza-artifact-index.md"
+            )
+        }),
+    ]
+}
+
+fn moza_bench_wizard_active_blockers(lane: &Path) -> Vec<Value> {
+    let mut blockers = Vec::new();
+    if !stored_verification_gate_passed(
+        lane,
+        MozaBundleStage::NativeVisibleReady,
+        "native_actuator_visible_smoke",
+    ) {
+        blockers.push(serde_json::json!({
+            "name": "native_visible_motion",
+            "scope": "native",
+            "blocking_stage": "native_visible_ready",
+            "status": "blocked",
+            "summary": "no passing same-lane visible-motion receipt exists"
+        }));
+    }
+    for (name, path) in [
+        ("pit_house_coexistence", "pit-house-coexistence.json"),
+        ("simulator_telemetry", "simulator-telemetry-proof.json"),
+        ("simulator_ffb_bounded", "simulator-ffb-smoke.json"),
+    ] {
+        if !lane.join(path).is_file() {
+            blockers.push(serde_json::json!({
+                "name": name,
+                "scope": "external_smoke",
+                "blocking_stage": "smoke_ready",
+                "status": "missing",
+                "artifact": path
+            }));
+        }
+    }
+    blockers
 }
 
 async fn descriptor(
@@ -27840,6 +28051,34 @@ fn print_artifact_index_receipt(
     Ok(())
 }
 
+fn print_bench_wizard_receipt(
+    json: bool,
+    json_out: Option<&Path>,
+    md_out: Option<&Path>,
+    receipt: &Value,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        let frontier = json_string(receipt, "frontier").unwrap_or("unknown");
+        let next = receipt
+            .get("next_operator_step")
+            .and_then(|step| step.get("kind"))
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        println!(
+            "Moza bench wizard rendered frontier={frontier}; next={next}; no hardware output authorized."
+        );
+        if let Some(path) = json_out {
+            println!("Receipt: {}", path.display());
+        }
+        if let Some(path) = md_out {
+            println!("Markdown: {}", path.display());
+        }
+    }
+    Ok(())
+}
+
 fn render_moza_lane_artifact_index_markdown(receipt: &Value) -> String {
     let lane = json_string(receipt, "lane").unwrap_or("unknown");
     let frontier = json_string(receipt, "frontier").unwrap_or("unknown");
@@ -27945,6 +28184,91 @@ fn render_moza_lane_artifact_index_markdown(receipt: &Value) -> String {
         }
     }
     out.push('\n');
+    out
+}
+
+fn render_moza_bench_wizard_markdown(receipt: &Value) -> String {
+    let lane = json_string(receipt, "lane").unwrap_or("unknown");
+    let frontier = json_string(receipt, "frontier").unwrap_or("unknown");
+    let readiness = receipt.get("readiness").unwrap_or(&Value::Null);
+    let highest = readiness
+        .get("highest_passing_stage")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let next_stage = readiness
+        .get("next_required_stage")
+        .and_then(Value::as_str)
+        .unwrap_or("none");
+    let step = receipt.get("next_operator_step").unwrap_or(&Value::Null);
+    let step_kind = step
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let step_summary = step
+        .get("summary")
+        .and_then(Value::as_str)
+        .unwrap_or("No next step summary recorded.");
+
+    let mut out = String::new();
+    out.push_str("# Moza Bench Wizard\n\n");
+    out.push_str("This wizard is read-only operator navigation. It reads stored lane artifacts, opens no HID device, sends no output or feature reports, creates no authorization receipt, and does not promote readiness.\n\n");
+    out.push_str(&format!("- Lane: `{}`\n", markdown_escape(lane)));
+    out.push_str(&format!("- Frontier: `{}`\n", markdown_escape(frontier)));
+    out.push_str(&format!(
+        "- Highest passing stage: `{}`\n",
+        markdown_escape(highest)
+    ));
+    out.push_str(&format!(
+        "- Next required stage: `{}`\n",
+        markdown_escape(next_stage)
+    ));
+    out.push_str(&format!(
+        "- Next operator step: `{}` - {}\n\n",
+        markdown_escape(step_kind),
+        markdown_escape(step_summary)
+    ));
+
+    out.push_str("## Safe No-Output Commands\n\n");
+    out.push_str("| Name | Command |\n");
+    out.push_str("| --- | --- |\n");
+    if let Some(commands) = receipt
+        .get("safe_no_output_commands")
+        .and_then(Value::as_array)
+    {
+        for command in commands {
+            let name = json_string(command, "name").unwrap_or("unknown");
+            let command_text = json_string(command, "command").unwrap_or("");
+            out.push_str(&format!(
+                "| `{}` | `{}` |\n",
+                markdown_escape(name),
+                markdown_escape(command_text)
+            ));
+        }
+    }
+    out.push('\n');
+
+    out.push_str("## Active Blockers\n\n");
+    out.push_str("| Name | Scope | Stage | Status |\n");
+    out.push_str("| --- | --- | --- | --- |\n");
+    if let Some(blockers) = receipt.get("active_blockers").and_then(Value::as_array) {
+        for blocker in blockers {
+            let name = json_string(blocker, "name").unwrap_or("unknown");
+            let scope = json_string(blocker, "scope").unwrap_or("unknown");
+            let stage = json_string(blocker, "blocking_stage").unwrap_or("unknown");
+            let status = json_string(blocker, "status").unwrap_or("unknown");
+            out.push_str(&format!(
+                "| `{}` | `{}` | `{}` | `{}` |\n",
+                markdown_escape(name),
+                markdown_escape(scope),
+                markdown_escape(stage),
+                markdown_escape(status)
+            ));
+        }
+    }
+    out.push('\n');
+
+    out.push_str("## Output Boundary\n\n");
+    out.push_str("Output is not authorized by this wizard. Any real controlled-angle attempt needs a separate fresh command-bound bench-clear plus exact authorization receipt. Do not use this wizard as permission to rerun, raise force, extend dwell, run 30/90 degrees, use direct report 0x20, high torque, serial config, firmware, or DFU.\n\n");
     out
 }
 
@@ -29748,6 +30072,77 @@ mod tests {
                 .and_then(Value::as_bool),
             Some(false)
         );
+        Ok(())
+    }
+
+    #[test]
+    fn bench_wizard_is_no_output_frontier_navigation() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        write_test_json_file(
+            &dir.path()
+                .join(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_PREFLIGHT_FILE),
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl moza controlled-angle-smoke",
+                "dry_run": true,
+                "hardware_output_enabled": false,
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "profile_cli": "bounded-pidff-effect-lifecycle-v1"
+            }),
+        )?;
+
+        let receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
+
+        assert_eq!(
+            json_string(&receipt, "command"),
+            Some("wheelctl moza bench-wizard")
+        );
+        assert_eq!(json_bool(&receipt, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&receipt, "no_ffb_writes"), Some(true));
+        assert_eq!(
+            json_bool(&receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "authorization_receipt_created"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "native_visible_claimed"), Some(false));
+        assert_eq!(
+            json_string(&receipt, "frontier"),
+            Some("repeated_safe_undertravel_attempt_03_preflight_recorded")
+        );
+        assert_eq!(
+            receipt
+                .pointer("/next_operator_step/kind")
+                .and_then(Value::as_str),
+            Some("awaiting_separate_attempt_03_authorization")
+        );
+        let safe_commands = receipt
+            .get("safe_no_output_commands")
+            .and_then(Value::as_array)
+            .ok_or("expected safe_no_output_commands")?;
+        for command in safe_commands {
+            assert_eq!(
+                command.get("output_enabled").and_then(Value::as_bool),
+                Some(false)
+            );
+            let command_text = json_string(command, "command").unwrap_or("");
+            assert!(
+                !command_text.contains("authorize-controlled-angle-output"),
+                "bench wizard must not emit authorization commands: {command_text}"
+            );
+            assert!(
+                !command_text.contains("--confirm-controlled-angle"),
+                "bench wizard must not emit output commands: {command_text}"
+            );
+        }
+        let markdown = render_moza_bench_wizard_markdown(&receipt);
+        assert!(markdown.contains("read-only operator navigation"));
+        assert!(markdown.contains("Safe No-Output Commands"));
+        assert!(markdown.contains("Output is not authorized by this wizard"));
         Ok(())
     }
 
