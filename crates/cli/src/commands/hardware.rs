@@ -3548,7 +3548,7 @@ fn moza_r5_adapter_contract() -> HardwareFamilyAdapterContract {
         ],
         output_capability: "R5 wheelbase is output-capable, but output is locked behind explicit endpoint selection and staged receipts",
         zero_torque_eligibility: "requires passive verify/audit, descriptor CRC, fixture promotion, pre-output readiness, and zero report 0x20 encoder",
-        ffb_eligibility: "requires zero-torque, watchdog, disconnect, low-torque, Pit House, and simulator telemetry receipts",
+        ffb_eligibility: "native bounded FFB requires zero-torque, watchdog, disconnect, low-torque, native-visible, and simulator telemetry receipts; Pit House is external compatibility for smoke-ready, not a native FFB prerequisite",
         known_unsafe_surfaces: vec![
             "nonzero_torque",
             "direct_mode",
@@ -6760,6 +6760,23 @@ mod tests {
                 .adapter
                 .default_logical_controls
                 .contains(&"clutch_optional")
+        );
+        assert!(
+            moza.adapter.ffb_eligibility.contains("native-visible")
+                && moza.adapter.ffb_eligibility.contains("simulator telemetry"),
+            "Moza bounded FFB eligibility must name native-visible and simulator telemetry gates: {}",
+            moza.adapter.ffb_eligibility
+        );
+        assert!(
+            moza.adapter
+                .ffb_eligibility
+                .contains("Pit House is external compatibility")
+                && !moza
+                    .adapter
+                    .ffb_eligibility
+                    .contains("requires zero-torque, watchdog, disconnect, low-torque, Pit House"),
+            "Moza native FFB eligibility must not make Pit House a native prerequisite: {}",
+            moza.adapter.ffb_eligibility
         );
         Ok(())
     }
