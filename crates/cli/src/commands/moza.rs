@@ -1295,7 +1295,7 @@ fn moza_artifact_index_receipt(
         ));
     }
 
-    let support_status = support_bundle_status(lane);
+    let support_status = artifact_navigation_status(lane);
     let readiness = artifact_index_readiness_summary(lane, &support_status);
     let lane_artifacts = discover_lane_artifacts(lane)?;
     let frontier = moza_lane_frontier_label(lane, &support_status);
@@ -1356,7 +1356,7 @@ fn moza_bench_wizard_receipt(
         ));
     }
 
-    let support_status = support_bundle_status(lane);
+    let support_status = artifact_navigation_status(lane);
     let readiness = artifact_index_readiness_summary(lane, &support_status);
     let frontier = moza_lane_frontier_label(lane, &support_status);
     let next_operator_step = moza_bench_wizard_next_operator_step(lane, &readiness, &frontier);
@@ -12842,6 +12842,99 @@ fn audit_receipt_path(stage: MozaBundleStage) -> &'static str {
 
 pub(crate) fn support_bundle_status(lane: &Path) -> Value {
     support_bundle_status_with_support_validation(lane, SupportBundleValidationMode::ShapeOnly)
+}
+
+fn artifact_navigation_status(lane: &Path) -> Value {
+    let passive = pre_output_stored_verification_receipt(lane, MozaBundleStage::Passive);
+    let zero = pre_output_stored_verification_receipt(lane, MozaBundleStage::Zero);
+    let openracing_control =
+        pre_output_stored_verification_receipt(lane, MozaBundleStage::OpenRacingControlReady);
+    let native_response =
+        pre_output_stored_verification_receipt(lane, MozaBundleStage::NativeResponseReady);
+    let native_visible =
+        pre_output_stored_verification_receipt(lane, MozaBundleStage::NativeVisibleReady);
+    let smoke_ready = pre_output_stored_verification_receipt(lane, MozaBundleStage::SmokeReady);
+    let passive_audit_passed = stored_lane_audit_receipt_passed(lane, MozaBundleStage::Passive);
+    let zero_audit_passed = stored_lane_audit_receipt_passed(lane, MozaBundleStage::Zero);
+    let openracing_control_audit_passed =
+        stored_lane_audit_receipt_passed(lane, MozaBundleStage::OpenRacingControlReady);
+    let native_response_audit_passed =
+        stored_lane_audit_receipt_passed(lane, MozaBundleStage::NativeResponseReady);
+    let native_visible_audit_passed =
+        stored_lane_audit_receipt_passed(lane, MozaBundleStage::NativeVisibleReady);
+    let smoke_ready_audit_passed =
+        stored_lane_audit_receipt_passed(lane, MozaBundleStage::SmokeReady);
+    let init_handshakes_pass = pre_output_gate_passed(&openracing_control, "init_off_handshake")
+        && pre_output_gate_passed(&openracing_control, "init_standard_handshake");
+    let native_control_blocking_items = pre_output_native_control_blocking_items(
+        &zero,
+        &openracing_control,
+        zero_audit_passed,
+        openracing_control_audit_passed,
+    );
+    let external_compatibility_blocking_items =
+        pre_output_external_compatibility_blocking_items(&smoke_ready, smoke_ready_audit_passed);
+    let highest_passing_stage = stored_highest_passing_stage(lane);
+    let first_blocking_stage = if !passive.success {
+        pre_output_verification_summary(&passive)
+    } else if !zero.success {
+        pre_output_verification_summary(&zero)
+    } else if !openracing_control.success {
+        pre_output_verification_summary(&openracing_control)
+    } else if !native_response.success {
+        pre_output_verification_summary(&native_response)
+    } else if !native_visible.success {
+        pre_output_verification_summary(&native_visible)
+    } else if !smoke_ready.success {
+        pre_output_verification_summary(&smoke_ready)
+    } else {
+        Value::Null
+    };
+    let artifact_index: Vec<_> = lane_artifact_index_requirements()
+        .map(|requirement| check_bundle_artifact(lane, &requirement))
+        .collect();
+
+    serde_json::json!({
+        "artifact_index": artifact_index,
+        "readiness": {
+            "highest_passing_stage": highest_passing_stage,
+            "next_required_stage": next_stage_after(highest_passing_stage),
+            "ready_for_zero_torque": passive.success && passive_audit_passed,
+            "ready_for_low_torque": support_ready_for_low_torque(
+                lane,
+                zero.success,
+                zero_audit_passed,
+                init_handshakes_pass,
+            ),
+            "ready_for_native_control": native_control_blocking_items.is_empty(),
+            "native_control_blocking_items": native_control_blocking_items,
+            "native_actuator_response_proven": pre_output_gate_passed(
+                &native_response,
+                "native_actuator_response_smoke",
+            ),
+            "native_visible_motion_proven": pre_output_gate_passed(
+                &native_visible,
+                "native_actuator_visible_smoke",
+            ),
+            "ready_for_external_compatibility": external_compatibility_blocking_items.is_empty(),
+            "external_compatibility_blocking_items": external_compatibility_blocking_items,
+            "ready_for_real_hardware_smoke": smoke_ready.success && smoke_ready_audit_passed,
+            "passive_lane_audit_passed": passive_audit_passed,
+            "zero_lane_audit_passed": zero_audit_passed,
+            "openracing_control_lane_audit_passed": openracing_control_audit_passed,
+            "native_response_lane_audit_passed": native_response_audit_passed,
+            "native_visible_lane_audit_passed": native_visible_audit_passed,
+            "smoke_ready_lane_audit_passed": smoke_ready_audit_passed,
+            "release_ready": false,
+            "first_blocking_stage": first_blocking_stage,
+            "claim_scope": "diagnostic_context_only",
+            "source": "stored_verification_receipts"
+        },
+        "notes": [
+            "artifact navigation status reads stored lane receipts only; it does not rebuild full support-bundle verification",
+            "artifact navigation status is diagnostic context, not readiness promotion"
+        ]
+    })
 }
 
 fn artifact_index_readiness_summary(lane: &Path, support_status: &Value) -> Value {
@@ -30255,6 +30348,27 @@ mod tests {
                 .get("native_visible_claimed")
                 .and_then(Value::as_bool),
             Some(false)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn checked_in_moza_lane_index_matches_artifact_index_renderer() -> TestResult {
+        let lane =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ci/hardware/moza-r5/2026-05-13");
+        let expected = fs::read_to_string(lane.join("index.md"))?;
+        let mut receipt = moza_artifact_index_receipt(&lane, None, None)?;
+        if let Some(object) = receipt.as_object_mut() {
+            object.insert(
+                "lane".to_string(),
+                Value::String("ci/hardware/moza-r5/2026-05-13".to_string()),
+            );
+        }
+
+        let rendered = render_moza_lane_artifact_index_markdown(&receipt);
+        assert_eq!(
+            rendered, expected,
+            "ci/hardware/moza-r5/2026-05-13/index.md must be regenerated with wheelctl moza artifact-index"
         );
         Ok(())
     }
