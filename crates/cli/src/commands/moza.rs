@@ -9348,6 +9348,11 @@ fn native_visible_authorization_guidance(lane: &Path) -> String {
             "A real controlled-angle attempt 03 is already recorded at {NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE}; preserve {NATIVE_CONTROLLED_ANGLE_SMOKE_FILE}, {NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE}, {NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_PREFLIGHT_FILE}, {NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE}, and {NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE}. Attempt 03 result: target_reached={target_reached}, timeout_reached={timeout_reached}, angle_delta_degrees={delta}, writes_ok={writes_ok}, write_errors={write_errors}, final_stop_all_sent={final_stop_all_sent}. Do not generate another preflight, authorization, or output command from verifier guidance; classify the attempt with a no-output analysis before any future profile plan. Do not extend dwell, raise force, attempt 30/90 degrees, use direct report 0x20, or use the visible-output authorizer."
         );
     }
+    if native_controlled_angle_attempt_03_preflight_is_no_output_preflight(lane) {
+        return format!(
+            "The no-output controlled-angle attempt 03 preflight is recorded at {NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_PREFLIGHT_FILE} for profile bounded-pidff-effect-lifecycle-v1; preserve {NATIVE_CONTROLLED_ANGLE_SMOKE_FILE}, {NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE}, and {NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_PREFLIGHT_FILE}. This preflight opens no HID device, sends no writes, proves no motion, and does not authorize output. Any attempt 03 output still requires fresh command-bound bench-clear plus an exact wheelctl moza authorize-controlled-angle-output receipt at {NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE}, and the authorized command must write {NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE}. Do not generate authorization or output from verifier guidance; do not extend dwell, raise force, attempt 30/90 degrees, use direct report 0x20, or use the visible-output authorizer."
+        );
+    }
     if native_controlled_angle_retry_smoke_is_real_output_attempt(lane) {
         let retry = read_json_value(lane, NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE).ok();
         let delta = retry
@@ -9568,6 +9573,68 @@ fn native_controlled_angle_attempt_03_smoke_is_real_output_attempt(lane: &Path) 
         lane,
         NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE,
     )
+}
+
+fn native_controlled_angle_attempt_03_preflight_is_no_output_preflight(lane: &Path) -> bool {
+    let Ok(receipt) = read_json_value(lane, NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_PREFLIGHT_FILE)
+    else {
+        return false;
+    };
+    let command_ok =
+        json_string(&receipt, "command") == Some("wheelctl moza controlled-angle-smoke");
+    let receipt_path_ok = receipt_path_matches(
+        lane,
+        &receipt,
+        NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_PREFLIGHT_FILE,
+    );
+    let profile_ok = json_string(&receipt, "profile")
+        == Some(controlled_angle_profile_name(
+            MozaControlledAngleProfile::BoundedPidffEffectLifecycleV1,
+        ));
+    let effect_lifecycle_plan_ok = receipt
+        .get("pidff_effect_lifecycle_plan_artifact")
+        .map(|artifact| {
+            json_string(artifact, "path") == Some(NATIVE_PIDFF_EFFECT_LIFECYCLE_PLAN_FILE)
+                && json_bool(artifact, "no_output_ok") == Some(true)
+                && json_bool(artifact, "profile_ok") == Some(true)
+                && json_bool(artifact, "hardware_output_authorized") == Some(false)
+                && json_bool(artifact, "planned_next_output_allowed") == Some(false)
+                && json_bool(artifact, "native_visible_claimed") == Some(false)
+        })
+        .unwrap_or(false);
+    command_ok
+        && receipt_path_ok
+        && json_bool(&receipt, "success") == Some(true)
+        && json_bool(&receipt, "dry_run") == Some(true)
+        && json_bool(&receipt, "preflight_only") == Some(true)
+        && json_bool(&receipt, "hardware_output_enabled") == Some(false)
+        && json_bool(&receipt, "actual_hardware_writes_supported") == Some(false)
+        && json_bool(&receipt, "no_hid_device_opened") == Some(true)
+        && json_bool(&receipt, "no_feature_reports") == Some(true)
+        && json_bool(&receipt, "no_output_reports") == Some(true)
+        && json_bool(&receipt, "no_ffb_writes") == Some(true)
+        && json_bool(&receipt, "no_direct_torque_reports") == Some(true)
+        && json_bool(&receipt, "no_high_torque") == Some(true)
+        && json_bool(&receipt, "high_torque") == Some(false)
+        && json_bool(&receipt, "no_serial_config_commands") == Some(true)
+        && json_bool(&receipt, "no_firmware_or_dfu_commands") == Some(true)
+        && json_bool(&receipt, "controlled_angle_motion_proven") == Some(false)
+        && json_bool(&receipt, "planned_next_output_allowed") == Some(false)
+        && json_u64(&receipt, "write_attempts") == Some(0)
+        && json_u64(&receipt, "writes_ok") == Some(0)
+        && json_u64(&receipt, "write_errors") == Some(0)
+        && json_f64(&receipt, "target_degrees")
+            == Some(NATIVE_CONTROLLED_ANGLE_FIRST_TARGET_DEGREES)
+        && json_f64(&receipt, "max_percent")
+            == Some(f64::from(NATIVE_CONTROLLED_ANGLE_FIRST_MAX_PERCENT))
+        && json_u64(&receipt, "duration_ms") == Some(NATIVE_CONTROLLED_ANGLE_FIRST_MAX_DURATION_MS)
+        && json_string(&receipt, "output_strategy")
+            == Some(low_torque_strategy_name(
+                MozaLowTorqueStrategy::PidffBoundedEffect,
+            ))
+        && profile_ok
+        && effect_lifecycle_plan_ok
+        && no_out_of_scope_device_commands(&receipt)
 }
 
 fn native_controlled_angle_output_is_real_output_attempt(lane: &Path, relative_path: &str) -> bool {
@@ -32923,6 +32990,58 @@ mod tests {
         )
     }
 
+    fn write_attempt_03_controlled_angle_dry_run_receipt(
+        root: &Path,
+        selector: &str,
+    ) -> TestResult {
+        write_test_json_file(
+            &root.join(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_PREFLIGHT_FILE),
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl moza controlled-angle-smoke",
+                "generated_at_utc": now_utc(),
+                "receipt_path": root.join(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_PREFLIGHT_FILE).display().to_string(),
+                "lane": root.display().to_string(),
+                "selector": selector,
+                "profile": "bounded_pidff_effect_lifecycle_v1",
+                "profile_cli": "bounded-pidff-effect-lifecycle-v1",
+                "output_strategy": "pidff_bounded_effect",
+                "target_degrees": 1.0,
+                "max_percent": 5.0,
+                "duration_ms": 2_000,
+                "safety_timeout_ms": 2_000,
+                "dry_run": true,
+                "preflight_only": true,
+                "hardware_output_enabled": false,
+                "actual_hardware_writes_supported": false,
+                "controlled_angle_motion_proven": false,
+                "planned_next_output_allowed": false,
+                "no_hid_device_opened": true,
+                "no_feature_reports": true,
+                "no_output_reports": true,
+                "no_ffb_writes": true,
+                "no_direct_torque_reports": true,
+                "no_high_torque": true,
+                "high_torque": false,
+                "no_nonzero_above_limit": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "write_attempts": 0,
+                "writes_ok": 0,
+                "write_errors": 0,
+                "pidff_effect_lifecycle_plan_artifact": {
+                    "path": NATIVE_PIDFF_EFFECT_LIFECYCLE_PLAN_FILE,
+                    "artifact_kind": "native_pidff_effect_lifecycle_plan",
+                    "no_output_ok": true,
+                    "profile_ok": true,
+                    "hardware_output_authorized": false,
+                    "planned_next_output_allowed": false,
+                    "native_visible_claimed": false
+                }
+            }),
+        )
+    }
+
     fn write_failed_controlled_angle_output_receipt(root: &Path, selector: &str) -> TestResult {
         write_failed_controlled_angle_output_receipt_at(
             root,
@@ -47399,6 +47518,111 @@ mod tests {
             !commands.contains("controlled-angle-smoke")
                 && !commands.contains("authorize-controlled-angle-output"),
             "diagnosis must not unlock generated output commands: {commands}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_native_visible_reports_recorded_attempt_03_preflight() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_openracing_control_bundle(dir.path())?;
+        write_lane_audit_receipts(dir.path(), MozaBundleStage::Passive)?;
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V2),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::VisibleMotionFollowUp),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_CONTROLLED_ANGLE_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::ControlledAnglePlan),
+        )?;
+        write_test_json_file(
+            &dir.path().join("pre-output-readiness.json"),
+            &serde_json::to_value(pre_output_readiness_dir(dir.path()))?,
+        )?;
+        let selector = "hid-0x346E-0x0014-if2-0x0001-0x0004";
+        write_failed_controlled_angle_output_receipt(dir.path(), selector)?;
+        write_failed_controlled_angle_retry_output_receipt(dir.path(), selector)?;
+        write_test_json_file(
+            &dir.path()
+                .join(NATIVE_CONTROLLED_ANGLE_RETRY_FAILURE_ANALYSIS_FILE),
+            &serde_json::json!({
+                "success": true,
+                "command": "manual native controlled-angle retry failure analysis",
+                "classification": "safe_undertravel_retry_same_response_band",
+                "hardware_output_performed_by_analysis": false,
+                "new_authorization_created": false,
+                "planned_next_output": {
+                    "allowed": false
+                }
+            }),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_PIDFF_SEMANTICS_DIAGNOSIS_FILE),
+            &serde_json::json!({
+                "success": true,
+                "command": "manual native PIDFF semantics diagnosis",
+                "classification": "same_response_band_despite_micro_step_replay",
+                "recommended_next_plan": "software_only_effect_lifecycle_plan",
+                "hardware_output_performed_by_analysis": false,
+                "new_authorization_created": false,
+                "openracing_hardware_output": false,
+                "no_hid_device_opened": true,
+                "no_feature_reports": true,
+                "no_output_reports": true,
+                "no_ffb_writes": true,
+                "no_direct_torque_reports": true,
+                "no_high_torque": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "planned_next_output": {
+                    "allowed": false
+                }
+            }),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_PIDFF_EFFECT_LIFECYCLE_PLAN_FILE),
+            &native_pidff_effect_lifecycle_plan_artifact(),
+        )?;
+        write_attempt_03_controlled_angle_dry_run_receipt(dir.path(), selector)?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::NativeVisibleReady);
+        let commands = receipt.next_commands.join("\n");
+
+        assert!(!receipt.success);
+        assert!(
+            receipt.next_commands.is_empty(),
+            "attempt-03 preflight must not generate output commands: {commands}"
+        );
+        let actions = receipt.operator_actions.join("\n");
+        assert!(
+            actions.contains("attempt 03 preflight is recorded")
+                && actions.contains(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_PREFLIGHT_FILE)
+                && actions.contains("opens no HID device")
+                && actions.contains("sends no writes")
+                && actions.contains("does not authorize output"),
+            "operator action should report the no-output attempt-03 preflight: {actions}"
+        );
+        assert!(
+            actions.contains(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE)
+                && actions.contains(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE)
+                && actions.contains("fresh command-bound bench-clear"),
+            "operator action should name the later exact authorization path without generating it: {actions}"
+        );
+        assert!(
+            !commands.contains("controlled-angle-smoke")
+                && !commands.contains("authorize-controlled-angle-output")
+                && !commands.contains("--confirm-controlled-angle"),
+            "verifier must not emit attempt-03 preflight, authorization, or output commands: {commands}"
+        );
+        assert!(
+            !actions.contains(
+                "The next work is a separate software-only reviewed profile/lifecycle plan"
+            ),
+            "operator action should not request the already completed effect-lifecycle plan after attempt-03 preflight exists: {actions}"
         );
         Ok(())
     }
