@@ -10,22 +10,24 @@ One-screen execution plan for OpenRacing. Updated each sprint.
 
 ## NOW (Active — this sprint)
 
-- **Moza passive lane** - plug in R5, KS, SR-P, HBP; run `wheelctl moza probe`, `hid-capture list`, descriptor capture, and passive input captures; verify with `wheelctl moza verify-bundle --stage passive`
-- **Moza parser fixtures** - promote real captures only after aggregate `wheelctl moza validate-captures`; keep raw HID path and serial data out of fixtures
+- **Moza native-visible frontier** - the R5 lane is `native_response_ready`; two 1 degree controlled-angle attempts failed safely in the same ~0.181277 degree response band, `native-controlled-angle-attempt-03-preflight.json` records a no-output `bounded-pidff-effect-lifecycle-v1` dry-run, and no output is authorized
+- **Moza source-of-truth activation** - use `.openracing/goals/active.toml`, `docs/proposals/OR-PROP-0001-moza-native-visible-lane.md`, `docs/specs/OR-SPEC-0001-moza-native-visible-lane.md`, and `plans/moza-native-visible-lane/implementation-plan.md` as the current lane rail
+- **Moza no-output operator navigation** - use `wheelctl moza artifact-index`, `wheelctl moza bench-wizard`, and `wheelctl moza verify-bundle --stage native-visible-ready` to inspect the blocked frontier; do not treat dry-runs, sniffing, Pit House, SimHub, or simulator evidence as native-visible proof
 - **Service API completion** — implement `WheelService::game_service()` and `plugin_service()` accessors; re-enable blocked integration tests
 
 ## NEXT (Queued — next 2–4 sprints)
 
-- **Moza zero-torque proof** - send only report `0x20` zero payloads, require final zero, watchdog, and disconnect receipts; verify with `wheelctl moza verify-bundle --stage zero`
-- **Moza gated low-torque output** - only after a passing real zero proof and `--confirm-low-torque`; cap the first ladder at 2%, keep high torque disabled, and record final zero
-- **Moza Pit House coexistence** - test Pit House closed/open/mode-change/update-page cases separately before direct-mode smoke
-- **One simulator telemetry path** - validate one real game or SimHub bridge before bounded sim-to-Moza FFB smoke
+- **Moza attempt-03 authorization** - only after fresh command-bound bench-clear, create one exact authorization for target 1 degree, max 5%, timeout 2000 ms, strategy `pidff-bounded-effect`, profile `bounded-pidff-effect-lifecycle-v1`, preserving all prior receipts
+- **Moza attempt-03 output** - run exactly one authorized controlled-angle attempt, preserve the receipt, and either promote `native_visible_ready` if the verifier passes or stop and analyze if it fails
+- **Moza Pit House coexistence** - external compatibility only; test closed/open/mode-change/update-page cases separately and do not make Pit House a native-control prerequisite
+- **One simulator telemetry path** - telemetry-only first, no FFB writes, before bounded sim-to-Moza FFB smoke
 - **Mutation testing expansion** — extend `cargo-mutants` to protocol encoding and telemetry paths
 - **macOS IOKit HID driver** — start actual device I/O on macOS
 
 ## LATER (Backlog — future work)
 
-- **Moza real-hardware smoke ready** - only after passive, zero, low-torque, Pit House, watchdog, disconnect, simulator telemetry, and bounded simulator FFB receipts pass
+- **Moza controlled movement ladder** - after `native_visible_ready`, continue one authorized rung at a time: 1 degree repeat, 3, 5, 10, 30, 90 right, and 90 return
+- **Moza real-hardware smoke ready** - only after native-visible, controlled movement confidence, Pit House coexistence, simulator telemetry, bounded simulator FFB, support bundle, manifest promotion, and lane audit receipts pass
 - **Extended Validation & Soak** — 1hr continuous bounded FFB, disconnect/reconnect stress, V1 vs V2 firmware, Standard vs Direct FFB comparison
 - **Phase 12: Multi-Vendor Verification** — Fanatec, Logitech, Thrustmaster HIL; protocol research; 48hr soak; community capture program
 - **Cloud integration** — profile sharing and cross-machine sync

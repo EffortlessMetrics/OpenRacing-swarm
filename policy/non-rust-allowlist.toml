@@ -219,6 +219,15 @@ covered_by = [
 ]
 
 [[allow]]
+glob = ".openracing/goals/*.toml"
+kind = "active_goal_manifest"
+owner = "core"
+surface = "tooling"
+classification = "config"
+reason = "Machine-readable active source-of-truth lane manifests."
+covered_by = ["python scripts/policy_file.py"]
+
+[[allow]]
 glob = "docs/**/*.md"
 kind = "design_doc"
 owner = "core"

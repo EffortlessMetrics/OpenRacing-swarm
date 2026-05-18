@@ -1,0 +1,100 @@
+id = "moza-native-visible-lane"
+title = "Moza R5 native visible motion lane"
+status = "active"
+owner = "hardware"
+created = "2026-05-18"
+
+proposal = "docs/proposals/OR-PROP-0001-moza-native-visible-lane.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md"
+
+specs = [
+  "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md",
+]
+
+adrs = [
+  "docs/adr/0009-hardware-validation-evidence-state-machine.md",
+]
+
+objective = """
+Move the Moza R5 lane from native_response_ready to native_visible_ready using receipt-backed, exact-command hardware attempts while keeping PIDFF diagnosis, passive sniffing, Pit House, SimHub, simulator telemetry, and simulator FFB claim boundaries explicit.
+"""
+
+end_state = [
+  "A same-lane native visible-motion receipt passes the native_actuator_visible_smoke gate.",
+  "The lane manifest, verifier receipt, and audit record native_visible_ready without smoke-ready, release-ready, high-torque, simulator, or vendor-app claims.",
+  "Further controlled movement, external compatibility, simulator telemetry, and bounded simulator FFB remain separately gated work.",
+]
+
+claim_boundaries = [
+  "This active goal does not authorize hardware output.",
+  "No direct report 0x20, high torque, serial config, firmware, or DFU is in scope.",
+  "Pit House, SimHub, simulator evidence, and passive USB sniff artifacts are not native-control prerequisites.",
+  "Dry-runs, lifecycle traces, plans, indexes, and bench-wizard receipts do not satisfy native-visible readiness.",
+]
+
+status_docs = [
+  "docs/NOW_NEXT_LATER.md",
+  "ci/hardware/moza-r5/2026-05-13/index.md",
+  "docs/hardware/moza-r5-validation.md",
+  "docs/hardware/moza-r5-artifact-checklist.md",
+  "docs/hardware/moza-validation-matrix.md",
+  "docs/hardware/moza-r5-controlled-angle-analysis.md",
+  "docs/hardware/moza-r5-pidff-lifecycle-trace.md",
+  "docs/hardware/moza-r5-pidff-effect-lifecycle-plan.md",
+]
+
+[[work_item]]
+id = "activate-source-of-truth"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-activate-source-of-truth"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/index.md"
+claim_boundary = "Docs and source-of-truth metadata only; no hardware output, no authorization receipt, and no readiness promotion."
+commands = [
+  "python scripts/policy_file.py",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "attempt-03-authorization"
+status = "blocked"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-attempt-03-authorization"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-preflight.json"
+claim_boundary = "May create one exact authorization receipt only after fresh command-bound bench-clear for attempt 03; still no motion claim."
+blocked_by = "Fresh command-bound bench-clear from the operator for attempt 03."
+commands = [
+  "wheelctl moza pre-output-readiness --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-pre-output-before-attempt-03.json --json",
+  "wheelctl moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-native-visible-before-attempt-03.json --json",
+]
+
+[[work_item]]
+id = "attempt-03-output"
+status = "blocked"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-attempt-03-output"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-authorization.json"
+claim_boundary = "May run exactly one authorized 1 degree, 5 percent, 2000 ms controlled-angle attempt using bounded-pidff-effect-lifecycle-v1; no rerun or escalation."
+blocked_by = "A matching attempt-03 authorization receipt."
+commands = [
+  "wheelctl moza controlled-angle-smoke --device hid-0x346E-0x0004-if2-0x0001-0x0004 --lane ci/hardware/moza-r5/2026-05-13 --prior-actuator-proof ci/hardware/moza-r5/2026-05-13/native-actuator-profile-smoke.json --steering-proof ci/hardware/moza-r5/2026-05-13/steering-angle-stream-proof.json --authorization-proof ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-authorization.json --target-degrees 1 --profile bounded-pidff-effect-lifecycle-v1 --max-percent 5 --timeout-ms 2000 --strategy pidff-bounded-effect --confirm-controlled-angle --json-out ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-smoke.json --json",
+]
+
+[[work_item]]
+id = "native-visible-promotion"
+status = "blocked"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-native-visible-promotion"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-smoke.json"
+claim_boundary = "May promote native_visible_ready only if the verifier accepts real visible motion; no smoke-ready or release-ready claim."
+blocked_by = "A passing native-visible hardware receipt."
+commands = [
+  "wheelctl moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out ci/hardware/moza-r5/2026-05-13/native-visible-verification.json --json",
+  "wheelctl moza promote-manifest --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out ci/hardware/moza-r5/2026-05-13/manifest-promotion-native-visible.json --json",
+  "wheelctl moza audit-lane --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out ci/hardware/moza-r5/2026-05-13/lane-audit-native-visible.json --json",
+]
