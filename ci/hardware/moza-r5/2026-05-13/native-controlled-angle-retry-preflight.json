@@ -4,7 +4,7 @@
   "command_log": [
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 59,
+      "elapsed_us": 51,
       "flags": 0,
       "kind": "pidff_set_effect_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -21,7 +21,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 134,
+      "elapsed_us": 114,
       "flags": 0,
       "kind": "pidff_set_constant_force_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -38,7 +38,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 141,
+      "elapsed_us": 121,
       "flags": 0,
       "kind": "pidff_effect_start_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -56,7 +56,7 @@
     },
     {
       "effect_magnitude_percent": 0.0,
-      "elapsed_us": 152,
+      "elapsed_us": 131,
       "flags": 0,
       "kind": "stop_all_after_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -74,7 +74,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 160,
+      "elapsed_us": 138,
       "flags": 0,
       "kind": "pidff_set_effect_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -91,7 +91,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 169,
+      "elapsed_us": 147,
       "flags": 0,
       "kind": "pidff_set_constant_force_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -108,7 +108,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 175,
+      "elapsed_us": 153,
       "flags": 0,
       "kind": "pidff_effect_start_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -126,7 +126,7 @@
     },
     {
       "effect_magnitude_percent": 0.0,
-      "elapsed_us": 181,
+      "elapsed_us": 159,
       "flags": 0,
       "kind": "stop_all_after_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -144,7 +144,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 187,
+      "elapsed_us": 165,
       "flags": 0,
       "kind": "pidff_set_effect_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -161,7 +161,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 196,
+      "elapsed_us": 175,
       "flags": 0,
       "kind": "pidff_set_constant_force_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -178,7 +178,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 203,
+      "elapsed_us": 181,
       "flags": 0,
       "kind": "pidff_effect_start_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -196,7 +196,7 @@
     },
     {
       "effect_magnitude_percent": 0.0,
-      "elapsed_us": 209,
+      "elapsed_us": 187,
       "flags": 0,
       "kind": "stop_all_after_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -214,7 +214,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 215,
+      "elapsed_us": 193,
       "flags": 0,
       "kind": "pidff_set_effect_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -231,7 +231,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 224,
+      "elapsed_us": 202,
       "flags": 0,
       "kind": "pidff_set_constant_force_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -248,7 +248,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 229,
+      "elapsed_us": 208,
       "flags": 0,
       "kind": "pidff_effect_start_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -266,7 +266,7 @@
     },
     {
       "effect_magnitude_percent": 0.0,
-      "elapsed_us": 236,
+      "elapsed_us": 214,
       "flags": 0,
       "kind": "stop_all_after_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -284,7 +284,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 242,
+      "elapsed_us": 220,
       "flags": 0,
       "kind": "pidff_set_effect_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -301,7 +301,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 251,
+      "elapsed_us": 229,
       "flags": 0,
       "kind": "pidff_set_constant_force_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -318,7 +318,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 257,
+      "elapsed_us": 234,
       "flags": 0,
       "kind": "pidff_effect_start_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -336,7 +336,7 @@
     },
     {
       "effect_magnitude_percent": 0.0,
-      "elapsed_us": 267,
+      "elapsed_us": 241,
       "flags": 0,
       "kind": "stop_all_after_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -354,7 +354,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 273,
+      "elapsed_us": 247,
       "flags": 0,
       "kind": "pidff_set_effect_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -371,7 +371,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 282,
+      "elapsed_us": 256,
       "flags": 0,
       "kind": "pidff_set_constant_force_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -388,7 +388,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 288,
+      "elapsed_us": 262,
       "flags": 0,
       "kind": "pidff_effect_start_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -406,7 +406,7 @@
     },
     {
       "effect_magnitude_percent": 0.0,
-      "elapsed_us": 294,
+      "elapsed_us": 268,
       "flags": 0,
       "kind": "stop_all_after_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -424,7 +424,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 300,
+      "elapsed_us": 274,
       "flags": 0,
       "kind": "pidff_set_effect_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -441,7 +441,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 314,
+      "elapsed_us": 282,
       "flags": 0,
       "kind": "pidff_set_constant_force_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -458,7 +458,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 320,
+      "elapsed_us": 293,
       "flags": 0,
       "kind": "pidff_effect_start_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -476,7 +476,7 @@
     },
     {
       "effect_magnitude_percent": 0.0,
-      "elapsed_us": 334,
+      "elapsed_us": 299,
       "flags": 0,
       "kind": "stop_all_after_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -494,7 +494,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 341,
+      "elapsed_us": 305,
       "flags": 0,
       "kind": "pidff_set_effect_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -511,7 +511,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 350,
+      "elapsed_us": 314,
       "flags": 0,
       "kind": "pidff_set_constant_force_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -528,7 +528,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 356,
+      "elapsed_us": 320,
       "flags": 0,
       "kind": "pidff_effect_start_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -546,7 +546,7 @@
     },
     {
       "effect_magnitude_percent": 0.0,
-      "elapsed_us": 362,
+      "elapsed_us": 326,
       "flags": 0,
       "kind": "stop_all_after_outbound_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -564,7 +564,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 373,
+      "elapsed_us": 332,
       "flags": 0,
       "kind": "pidff_set_effect_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -581,7 +581,7 @@
     },
     {
       "effect_magnitude_percent": -5.0,
-      "elapsed_us": 384,
+      "elapsed_us": 341,
       "flags": 0,
       "kind": "pidff_set_constant_force_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -598,7 +598,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 390,
+      "elapsed_us": 347,
       "flags": 0,
       "kind": "pidff_effect_start_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -616,7 +616,7 @@
     },
     {
       "effect_magnitude_percent": 0.0,
-      "elapsed_us": 397,
+      "elapsed_us": 353,
       "flags": 0,
       "kind": "stop_all_after_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -634,7 +634,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 403,
+      "elapsed_us": 362,
       "flags": 0,
       "kind": "pidff_set_effect_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -651,7 +651,7 @@
     },
     {
       "effect_magnitude_percent": -5.0,
-      "elapsed_us": 412,
+      "elapsed_us": 370,
       "flags": 0,
       "kind": "pidff_set_constant_force_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -668,7 +668,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 418,
+      "elapsed_us": 378,
       "flags": 0,
       "kind": "pidff_effect_start_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -686,7 +686,7 @@
     },
     {
       "effect_magnitude_percent": 0.0,
-      "elapsed_us": 424,
+      "elapsed_us": 384,
       "flags": 0,
       "kind": "stop_all_after_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -704,7 +704,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 430,
+      "elapsed_us": 390,
       "flags": 0,
       "kind": "pidff_set_effect_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -721,7 +721,7 @@
     },
     {
       "effect_magnitude_percent": -5.0,
-      "elapsed_us": 438,
+      "elapsed_us": 399,
       "flags": 0,
       "kind": "pidff_set_constant_force_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -738,7 +738,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 444,
+      "elapsed_us": 405,
       "flags": 0,
       "kind": "pidff_effect_start_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -756,7 +756,7 @@
     },
     {
       "effect_magnitude_percent": 0.0,
-      "elapsed_us": 451,
+      "elapsed_us": 419,
       "flags": 0,
       "kind": "stop_all_after_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -774,7 +774,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 463,
+      "elapsed_us": 426,
       "flags": 0,
       "kind": "pidff_set_effect_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -791,7 +791,7 @@
     },
     {
       "effect_magnitude_percent": -5.0,
-      "elapsed_us": 474,
+      "elapsed_us": 435,
       "flags": 0,
       "kind": "pidff_set_constant_force_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -808,7 +808,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 480,
+      "elapsed_us": 441,
       "flags": 0,
       "kind": "pidff_effect_start_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -826,7 +826,7 @@
     },
     {
       "effect_magnitude_percent": 0.0,
-      "elapsed_us": 487,
+      "elapsed_us": 447,
       "flags": 0,
       "kind": "stop_all_after_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -844,7 +844,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 492,
+      "elapsed_us": 453,
       "flags": 0,
       "kind": "pidff_set_effect_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -861,7 +861,7 @@
     },
     {
       "effect_magnitude_percent": -5.0,
-      "elapsed_us": 505,
+      "elapsed_us": 462,
       "flags": 0,
       "kind": "pidff_set_constant_force_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -878,7 +878,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 511,
+      "elapsed_us": 467,
       "flags": 0,
       "kind": "pidff_effect_start_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -896,7 +896,7 @@
     },
     {
       "effect_magnitude_percent": 0.0,
-      "elapsed_us": 517,
+      "elapsed_us": 480,
       "flags": 0,
       "kind": "stop_all_after_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -914,7 +914,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 524,
+      "elapsed_us": 487,
       "flags": 0,
       "kind": "pidff_set_effect_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -931,7 +931,7 @@
     },
     {
       "effect_magnitude_percent": -5.0,
-      "elapsed_us": 533,
+      "elapsed_us": 496,
       "flags": 0,
       "kind": "pidff_set_constant_force_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -948,7 +948,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 539,
+      "elapsed_us": 502,
       "flags": 0,
       "kind": "pidff_effect_start_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -966,7 +966,7 @@
     },
     {
       "effect_magnitude_percent": 0.0,
-      "elapsed_us": 545,
+      "elapsed_us": 508,
       "flags": 0,
       "kind": "stop_all_after_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -984,7 +984,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 551,
+      "elapsed_us": 516,
       "flags": 0,
       "kind": "pidff_set_effect_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -1001,7 +1001,7 @@
     },
     {
       "effect_magnitude_percent": -5.0,
-      "elapsed_us": 565,
+      "elapsed_us": 524,
       "flags": 0,
       "kind": "pidff_set_constant_force_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -1018,7 +1018,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 572,
+      "elapsed_us": 530,
       "flags": 0,
       "kind": "pidff_effect_start_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -1036,7 +1036,7 @@
     },
     {
       "effect_magnitude_percent": 0.0,
-      "elapsed_us": 579,
+      "elapsed_us": 536,
       "flags": 0,
       "kind": "stop_all_after_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -1054,7 +1054,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 585,
+      "elapsed_us": 542,
       "flags": 0,
       "kind": "pidff_set_effect_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -1071,7 +1071,7 @@
     },
     {
       "effect_magnitude_percent": -5.0,
-      "elapsed_us": 594,
+      "elapsed_us": 551,
       "flags": 0,
       "kind": "pidff_set_constant_force_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -1088,7 +1088,7 @@
     },
     {
       "effect_magnitude_percent": 5.0,
-      "elapsed_us": 600,
+      "elapsed_us": 557,
       "flags": 0,
       "kind": "pidff_effect_start_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -1106,7 +1106,7 @@
     },
     {
       "effect_magnitude_percent": 0.0,
-      "elapsed_us": 606,
+      "elapsed_us": 569,
       "flags": 0,
       "kind": "stop_all_after_return_micro_step",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -1124,7 +1124,7 @@
     },
     {
       "effect_magnitude_percent": 0.0,
-      "elapsed_us": 612,
+      "elapsed_us": 576,
       "flags": 0,
       "kind": "final_stop_all",
       "low_torque_strategy": "pidff_bounded_effect",
@@ -1188,7 +1188,7 @@
   "dry_run": true,
   "duration_ms": 2000,
   "final_stop_all_required": true,
-  "generated_at_utc": "2026-05-18T05:30:44Z",
+  "generated_at_utc": "2026-05-18T05:45:15Z",
   "hardware_output_enabled": false,
   "high_torque": false,
   "lane": "ci/hardware/moza-r5/2026-05-13",
