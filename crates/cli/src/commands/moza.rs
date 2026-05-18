@@ -10571,15 +10571,17 @@ fn push_native_visible_next_commands(
                     lane_path_arg(lane, NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE)
                 ));
             }
-            if !lane.join(NATIVE_CONTROLLED_ANGLE_PLAN_FILE).exists() {
+            let controlled_angle_plan_ready =
+                validate_native_controlled_angle_plan_artifact(lane).is_ok();
+            if !controlled_angle_plan_ready {
                 commands.push(format!(
                     "wheelctl moza receipt-template --kind controlled-angle-plan --json-out {} --json",
                     lane_path_arg(lane, NATIVE_CONTROLLED_ANGLE_PLAN_FILE)
                 ));
             }
-            if lane.join(NATIVE_CONTROLLED_ANGLE_PLAN_FILE).exists()
-                && !lane.join(NATIVE_CONTROLLED_ANGLE_SMOKE_FILE).exists()
-            {
+            let controlled_angle_dry_run_ready =
+                native_controlled_angle_first_rung_dry_run_ready(lane, &r5_selector);
+            if controlled_angle_plan_ready && !controlled_angle_dry_run_ready {
                 let target_degrees = compact_f64(NATIVE_CONTROLLED_ANGLE_FIRST_TARGET_DEGREES);
                 let max_percent = compact_f32(NATIVE_CONTROLLED_ANGLE_FIRST_MAX_PERCENT);
                 let timeout_ms = NATIVE_CONTROLLED_ANGLE_FIRST_MAX_DURATION_MS;
@@ -10595,6 +10597,17 @@ fn push_native_visible_next_commands(
                     "wheelctl moza pre-output-readiness --lane {lane_arg} --json-out {} --json",
                     lane_path_arg(lane, "pre-output-readiness.json")
                 ));
+            } else if native_controlled_angle_first_rung_ready_for_authorization(lane, &r5_selector)
+                && !lane
+                    .join(NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE)
+                    .exists()
+            {
+                push_native_controlled_angle_authorization_next_command(
+                    lane,
+                    &r5_selector,
+                    &lane_arg,
+                    commands,
+                );
             }
             return;
         }
@@ -10627,6 +10640,43 @@ fn push_native_visible_next_commands(
             )
         ));
     }
+}
+
+fn native_controlled_angle_first_rung_ready_for_authorization(lane: &Path, selector: &str) -> bool {
+    validate_native_controlled_angle_plan_artifact(lane).is_ok()
+        && native_controlled_angle_first_rung_dry_run_ready(lane, selector)
+}
+
+fn native_controlled_angle_first_rung_dry_run_ready(lane: &Path, selector: &str) -> bool {
+    validate_native_controlled_angle_dry_run_preflight(
+        lane,
+        selector,
+        NATIVE_CONTROLLED_ANGLE_FIRST_TARGET_DEGREES,
+        MozaLowTorqueStrategy::PidffBoundedEffect,
+        NATIVE_CONTROLLED_ANGLE_FIRST_MAX_PERCENT,
+    )
+    .is_ok()
+}
+
+fn push_native_controlled_angle_authorization_next_command(
+    lane: &Path,
+    r5_selector: &str,
+    lane_arg: &str,
+    commands: &mut Vec<String>,
+) {
+    let target_degrees = compact_f64(NATIVE_CONTROLLED_ANGLE_FIRST_TARGET_DEGREES);
+    let max_percent = compact_f32(NATIVE_CONTROLLED_ANGLE_FIRST_MAX_PERCENT);
+    let timeout_ms = NATIVE_CONTROLLED_ANGLE_FIRST_MAX_DURATION_MS;
+    let bench_clear_evidence = command_arg(
+        "bench clear for exactly one Moza controlled-angle run: target 1 degree, max 5%, timeout 2000 ms, strategy pidff-bounded-effect, R5 stable, KS attached securely, hands clear, wheel clear",
+    );
+    commands.push(format!(
+        "wheelctl moza authorize-controlled-angle-output --lane {lane_arg} --device {r5_selector} --operator Steven --bench-clear-evidence {bench_clear_evidence} --prior-response-proof {} --prior-actuator-proof {} --steering-proof {} --target-degrees {target_degrees} --max-percent {max_percent} --timeout-ms {timeout_ms} --strategy pidff-bounded-effect --json-out {} --json",
+        lane_path_arg(lane, "native-actuator-visible-smoke.json"),
+        lane_path_arg(lane, "native-actuator-profile-smoke.json"),
+        lane_path_arg(lane, "steering-angle-stream-proof.json"),
+        lane_path_arg(lane, NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE)
+    ));
 }
 
 fn push_external_smoke_ready_next_commands(
@@ -31101,6 +31151,40 @@ mod tests {
         Ok(())
     }
 
+    fn write_controlled_angle_dry_run_receipt(root: &Path, selector: &str) -> TestResult {
+        write_test_json_file(
+            &root.join(NATIVE_CONTROLLED_ANGLE_SMOKE_FILE),
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl moza controlled-angle-smoke",
+                "generated_at_utc": now_utc(),
+                "receipt_path": root.join(NATIVE_CONTROLLED_ANGLE_SMOKE_FILE).display().to_string(),
+                "lane": root.display().to_string(),
+                "selector": selector,
+                "output_strategy": "pidff_bounded_effect",
+                "target_degrees": 1.0,
+                "max_percent": 5.0,
+                "duration_ms": 2_000,
+                "safety_timeout_ms": 2_000,
+                "dry_run": true,
+                "preflight_only": true,
+                "hardware_output_enabled": false,
+                "actual_hardware_writes_supported": false,
+                "controlled_angle_motion_proven": false,
+                "planned_next_output_allowed": false,
+                "no_hid_device_opened": true,
+                "no_feature_reports": true,
+                "no_output_reports": true,
+                "no_ffb_writes": true,
+                "no_direct_torque_reports": true,
+                "no_high_torque": true,
+                "high_torque": false,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true
+            }),
+        )
+    }
+
     fn write_smoke_ready_bundle(root: &Path) -> TestResult {
         write_openracing_control_bundle(root)?;
         write_pit_house_artifacts(root)?;
@@ -41871,30 +41955,18 @@ mod tests {
             "after controlled-angle planning is recorded, guidance should allow only the no-output controlled-angle preflight: {commands}"
         );
 
-        write_test_json_file(
-            &dir.path().join(NATIVE_CONTROLLED_ANGLE_SMOKE_FILE),
-            &serde_json::json!({
-                "success": true,
-                "command": "wheelctl moza controlled-angle-smoke",
-                "dry_run": true,
-                "hardware_output_enabled": false,
-                "no_hid_device_opened": true,
-                "no_ffb_writes": true,
-                "no_output_reports": true,
-                "no_feature_reports": true,
-                "no_serial_config_commands": true,
-                "no_firmware_or_dfu_commands": true,
-                "controlled_angle_motion_proven": false,
-                "actual_hardware_writes_supported": false,
-                "planned_next_output_allowed": false,
-                "target_degrees": 1.0
-            }),
-        )?;
+        write_controlled_angle_dry_run_receipt(dir.path(), "hid-0x346E-0x0014-if2-0x0001-0x0004")?;
         let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::SmokeReady);
         let commands = receipt.next_commands.join("\n");
         assert!(
-            receipt.next_commands.is_empty(),
-            "after response-only visible-motion review, no-output readiness, controlled-angle planning, and no-output preflight are recorded, guidance should stop instead of authorizing output: {commands}"
+            commands.contains("wheelctl moza authorize-controlled-angle-output")
+                && commands.contains("--target-degrees 1")
+                && commands.contains("--max-percent 5")
+                && commands.contains("--timeout-ms 2000")
+                && commands.contains(NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE)
+                && !commands.contains("wheelctl moza controlled-angle-smoke")
+                && !commands.contains("--confirm-controlled-angle"),
+            "after response-only visible-motion review, no-output readiness, controlled-angle planning, and valid no-output preflight are recorded, guidance should authorize exactly one controlled-angle attempt without running output: {commands}"
         );
         let action_text = receipt.operator_actions.join("\n");
         assert!(
@@ -44342,6 +44414,132 @@ mod tests {
                 "native-visible-ready must not require external compatibility gate {external_gate}"
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_native_visible_next_commands_authorize_controlled_angle_after_preflight()
+    -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_openracing_control_bundle(dir.path())?;
+        write_lane_audit_receipts(dir.path(), MozaBundleStage::Passive)?;
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V2),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::VisibleMotionFollowUp),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_CONTROLLED_ANGLE_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::ControlledAnglePlan),
+        )?;
+        write_test_json_file(
+            &dir.path().join("pre-output-readiness.json"),
+            &serde_json::to_value(pre_output_readiness_dir(dir.path()))?,
+        )?;
+        write_controlled_angle_dry_run_receipt(dir.path(), "hid-0x346E-0x0014-if2-0x0001-0x0004")?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::NativeVisibleReady);
+        let commands = receipt.next_commands.join("\n");
+
+        assert!(!receipt.success);
+        assert!(
+            commands.contains("wheelctl moza authorize-controlled-angle-output"),
+            "native-visible next_commands should surface the exact no-output authorization step after dry-run preflight: {commands}"
+        );
+        assert!(
+            commands.contains("--target-degrees 1")
+                && commands.contains("--max-percent 5")
+                && commands.contains("--timeout-ms 2000")
+                && commands.contains("--strategy pidff-bounded-effect")
+                && commands.contains(NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE)
+                && commands.contains("native-actuator-visible-smoke.json")
+                && commands.contains("native-actuator-profile-smoke.json")
+                && commands.contains("steering-angle-stream-proof.json"),
+            "authorization next_command should be exact-command/lane/proof bound: {commands}"
+        );
+        assert!(
+            commands.contains("bench clear for exactly one Moza controlled-angle run")
+                && commands.contains("hands clear")
+                && commands.contains("wheel clear"),
+            "authorization next_command should carry command-bound bench-clear evidence text: {commands}"
+        );
+        assert!(
+            !commands.contains("wheelctl moza actuator-visible-smoke")
+                && !commands.contains("wheelctl moza controlled-angle-smoke")
+                && !commands.contains("--confirm-controlled-angle")
+                && !commands.contains("--confirm-actuator-visible"),
+            "native-visible next_commands must not run hardware output directly: {commands}"
+        );
+
+        let command = receipt
+            .next_commands
+            .iter()
+            .find(|command| command.contains("authorize-controlled-angle-output"))
+            .ok_or("missing controlled-angle authorization next command")?;
+        let args = split_generated_command(&command_with_test_placeholders(command))?;
+        parse_cli(args).map_err(|error| {
+            format!("generated controlled-angle authorization command failed to parse: {command}\n{error}")
+        })?;
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_native_visible_next_commands_regenerates_mismatched_controlled_angle_preflight()
+    -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_openracing_control_bundle(dir.path())?;
+        write_lane_audit_receipts(dir.path(), MozaBundleStage::Passive)?;
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V2),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::VisibleMotionFollowUp),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_CONTROLLED_ANGLE_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::ControlledAnglePlan),
+        )?;
+        write_test_json_file(
+            &dir.path().join("pre-output-readiness.json"),
+            &serde_json::to_value(pre_output_readiness_dir(dir.path()))?,
+        )?;
+        write_controlled_angle_dry_run_receipt(dir.path(), "hid-0x346E-0x0004-if2-0x0001-0x0004")?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::NativeVisibleReady);
+        let commands = receipt.next_commands.join("\n");
+
+        assert!(!receipt.success);
+        assert!(
+            commands.contains("wheelctl moza controlled-angle-smoke")
+                && commands.contains("--dry-run"),
+            "mismatched controlled-angle preflight should regenerate the dry-run receipt: {commands}"
+        );
+        assert!(
+            commands.contains("--device hid-0x346E-0x0014-if2-0x0001-0x0004"),
+            "regenerated dry-run command should use the lane endpoint selector: {commands}"
+        );
+        assert!(
+            !commands.contains("authorize-controlled-angle-output")
+                && !commands.contains("--confirm-controlled-angle"),
+            "invalid dry-run preflight must not authorize or run hardware output: {commands}"
+        );
+
+        let command = receipt
+            .next_commands
+            .iter()
+            .find(|command| command.contains("controlled-angle-smoke"))
+            .ok_or("missing controlled-angle dry-run next command")?;
+        let args = split_generated_command(&command_with_test_placeholders(command))?;
+        parse_cli(args).map_err(|error| {
+            format!(
+                "generated controlled-angle dry-run command failed to parse: {command}\n{error}"
+            )
+        })?;
         Ok(())
     }
 
