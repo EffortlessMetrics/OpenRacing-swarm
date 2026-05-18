@@ -614,6 +614,66 @@ mod tests {
     }
 
     #[test]
+    fn parse_hardware_sniff_bundle() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "--json",
+            "hardware",
+            "sniff-bundle",
+            "--plan",
+            "target/sniff/pit-house-open-idle/sniff-plan.json",
+            "--receipt",
+            "target/sniff/pit-house-open-idle/sniff-receipt.json",
+            "--summary",
+            "target/sniff/pit-house-open-idle/sniff-summary.json",
+            "--operator-notes",
+            "target/sniff/pit-house-open-idle/operator-notes.md",
+            "--include-pcapng",
+            "target/sniff/pit-house-open-idle/capture.pcapng",
+            "--out",
+            "target/sniff/pit-house-open-idle/openracing-sniff-bundle.zip",
+        ])?;
+        assert!(cli.json);
+        match &cli.command {
+            Commands::Hardware(HardwareCommands::SniffBundle {
+                plan,
+                receipt,
+                summary,
+                operator_notes,
+                include_pcapng,
+                out,
+            }) => {
+                assert_eq!(
+                    plan.to_str(),
+                    Some("target/sniff/pit-house-open-idle/sniff-plan.json")
+                );
+                assert_eq!(
+                    receipt.to_str(),
+                    Some("target/sniff/pit-house-open-idle/sniff-receipt.json")
+                );
+                assert_eq!(
+                    summary.to_str(),
+                    Some("target/sniff/pit-house-open-idle/sniff-summary.json")
+                );
+                assert_eq!(
+                    operator_notes.to_str(),
+                    Some("target/sniff/pit-house-open-idle/operator-notes.md")
+                );
+                assert_eq!(
+                    include_pcapng.as_ref().and_then(|p| p.to_str()),
+                    Some("target/sniff/pit-house-open-idle/capture.pcapng")
+                );
+                assert_eq!(
+                    out.to_str(),
+                    Some("target/sniff/pit-house-open-idle/openracing-sniff-bundle.zip")
+                );
+            }
+            _ => return Err("expected Hardware SniffBundle command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_hardware_lane_init() -> TestResult {
         let cli = parse_cli([
             "wheelctl",

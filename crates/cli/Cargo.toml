@@ -52,6 +52,7 @@ crc32fast = { workspace = true }
 sha2 = "0.10.9"
 hidapi = { workspace = true }
 jsonschema = { workspace = true }
+zip = { workspace = true }
 workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 
 [dev-dependencies]

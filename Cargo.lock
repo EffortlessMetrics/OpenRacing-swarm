@@ -9950,6 +9950,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "workspace-hack",
+ "zip 7.2.0",
 ]
 
 [[package]]

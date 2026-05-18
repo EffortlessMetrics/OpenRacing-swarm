@@ -440,6 +440,28 @@ pub enum HardwareCommands {
         md_out: Option<std::path::PathBuf>,
     },
 
+    /// Create a non-claiming passive USB sniff evidence bundle ZIP
+    SniffBundle {
+        /// Sniff plan JSON artifact to include
+        #[arg(long)]
+        plan: std::path::PathBuf,
+        /// Sniff receipt JSON artifact to include
+        #[arg(long)]
+        receipt: std::path::PathBuf,
+        /// Sniff summary JSON artifact to include
+        #[arg(long)]
+        summary: std::path::PathBuf,
+        /// Operator notes Markdown artifact to include
+        #[arg(long)]
+        operator_notes: std::path::PathBuf,
+        /// Optional raw pcapng capture to include after hash validation
+        #[arg(long)]
+        include_pcapng: Option<std::path::PathBuf>,
+        /// Output ZIP bundle path
+        #[arg(long)]
+        out: std::path::PathBuf,
+    },
+
     /// Scaffold a hardware validation lane from a device-family rail adapter
     #[command(subcommand)]
     Lane(Box<HardwareLaneCommands>),

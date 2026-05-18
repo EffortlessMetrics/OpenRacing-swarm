@@ -94,7 +94,7 @@ ci/hardware/sniffing/sniff-summary.schema.json
 ci/hardware/sniffing/sniff-bundle-manifest.schema.json
 ```
 
-Planned command names are:
+Command names are:
 
 ```text
 wheelctl hardware sniff-plan
@@ -103,8 +103,9 @@ wheelctl hardware sniff-summary
 wheelctl hardware sniff-bundle
 ```
 
-These commands are not implemented by this specification PR. The schemas define
-the evidence shape that later command work must produce.
+The commands emit artifacts that conform to these schemas. Every artifact remains
+passive protocol-research/support evidence only and does not satisfy OpenRacing
+hardware readiness gates.
 
 ## Local And Committed Paths
 

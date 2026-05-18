@@ -18,6 +18,7 @@ use openracing_hardware_core::{DeviceCapabilityRegistry, DeviceFamily};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
 use crate::commands::{
     HardwareCommands, HardwareLaneCommands, HardwareSniffCaptureTool, HardwareSniffPlatformHint,
@@ -92,6 +93,24 @@ pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
                 max_samples_per_report: *max_samples_per_report,
             };
             sniff_summary(json, &request, json_out.as_deref(), md_out.as_deref()).await
+        }
+        HardwareCommands::SniffBundle {
+            plan,
+            receipt,
+            summary,
+            operator_notes,
+            include_pcapng,
+            out,
+        } => {
+            let request = HardwareSniffBundleRequest {
+                plan,
+                receipt,
+                summary,
+                operator_notes,
+                include_pcapng: include_pcapng.as_deref(),
+                out,
+            };
+            sniff_bundle(json, &request).await
         }
         HardwareCommands::Lane(command) => execute_lane(command, json).await,
     }
@@ -232,6 +251,11 @@ async fn sniff_summary(
         write_text_file(path, &render_sniff_summary_markdown(&summary))?;
     }
     print_sniff_summary(json, json_out, md_out, &summary)
+}
+
+async fn sniff_bundle(json: bool, request: &HardwareSniffBundleRequest<'_>) -> Result<()> {
+    let manifest = build_hardware_sniff_bundle(request)?;
+    print_sniff_bundle(json, request.out, &manifest)
 }
 
 fn build_hardware_sniff_plan(
@@ -621,6 +645,193 @@ fn build_hardware_sniff_summary_from_tshark_json(
         readiness_claims: HardwareSniffReadinessClaims::none(),
         notes,
     })
+}
+
+fn build_hardware_sniff_bundle(
+    request: &HardwareSniffBundleRequest<'_>,
+) -> Result<HardwareSniffBundleManifest> {
+    let _plan = read_and_validate_sniff_plan(request.plan)?;
+    let receipt = read_and_validate_sniff_receipt(request.receipt)?;
+    let summary = read_and_validate_sniff_summary(request.summary)?;
+    let plan_path_text = required_path_display(request.plan, "plan")?;
+    if receipt.plan_path != plan_path_text {
+        anyhow::bail!(
+            "sniff receipt '{}' was created for plan '{}' but bundle supplied plan '{}'",
+            request.receipt.display(),
+            receipt.plan_path,
+            plan_path_text
+        );
+    }
+    if summary.pcapng_sha256 != receipt.pcapng_sha256 {
+        anyhow::bail!(
+            "sniff summary '{}' pcapng_sha256 does not match sniff receipt '{}'",
+            request.summary.display(),
+            request.receipt.display()
+        );
+    }
+
+    let mut entries = Vec::new();
+    entries.push(SniffBundleZipEntry::bytes(
+        sniff_bundle_path("README.md"),
+        render_sniff_bundle_readme(request.include_pcapng.is_some()).into_bytes(),
+    ));
+    entries.push(SniffBundleZipEntry::bytes(
+        sniff_bundle_path("sniff-plan.json"),
+        read_required_artifact(request.plan, "sniff plan")?,
+    ));
+    entries.push(SniffBundleZipEntry::bytes(
+        sniff_bundle_path("sniff-receipt.json"),
+        read_required_artifact(request.receipt, "sniff receipt")?,
+    ));
+    entries.push(SniffBundleZipEntry::bytes(
+        sniff_bundle_path("sniff-summary.json"),
+        read_required_artifact(request.summary, "sniff summary")?,
+    ));
+    entries.push(SniffBundleZipEntry::bytes(
+        sniff_bundle_path("operator-notes.md"),
+        read_required_artifact(request.operator_notes, "operator notes")?,
+    ));
+    entries.push(SniffBundleZipEntry::bytes(
+        sniff_bundle_path("pcapng-sha256.txt"),
+        format!("{}\n", receipt.pcapng_sha256).into_bytes(),
+    ));
+
+    if let Some(pcapng) = request.include_pcapng {
+        let pcapng_path_text = required_pcapng_path_display(pcapng)?;
+        if receipt.pcapng_path != pcapng_path_text {
+            anyhow::bail!(
+                "raw pcapng '{}' does not match sniff receipt pcapng_path '{}'",
+                pcapng.display(),
+                receipt.pcapng_path
+            );
+        }
+        let (raw_sha256, raw_size_bytes) = hash_existing_pcapng(pcapng)?;
+        if raw_sha256 != receipt.pcapng_sha256 {
+            anyhow::bail!(
+                "raw pcapng '{}' sha256 {raw_sha256} does not match sniff receipt pcapng_sha256 {}",
+                pcapng.display(),
+                receipt.pcapng_sha256
+            );
+        }
+        if raw_size_bytes != receipt.pcapng_size_bytes {
+            anyhow::bail!(
+                "raw pcapng '{}' size {raw_size_bytes} does not match sniff receipt pcapng_size_bytes {}",
+                pcapng.display(),
+                receipt.pcapng_size_bytes
+            );
+        }
+        entries.push(SniffBundleZipEntry::file(
+            sniff_bundle_path("capture.pcapng"),
+            pcapng.to_path_buf(),
+            raw_sha256,
+        ));
+    }
+
+    let artifacts = entries
+        .iter()
+        .map(|entry| HardwareSniffBundleArtifactHash {
+            path: entry.archive_path.clone(),
+            sha256: entry.sha256.clone(),
+        })
+        .collect();
+    let manifest = HardwareSniffBundleManifest {
+        schema_version: 1,
+        success: true,
+        command: "wheelctl hardware sniff-bundle",
+        generated_at_utc: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        bundle_kind: SNIFF_BUNDLE_KIND,
+        includes_raw_pcapng: request.include_pcapng.is_some(),
+        artifacts,
+        evidence_status: SNIFF_EVIDENCE_STATUS,
+        native_control_evidence: false,
+        openracing_hardware_output: false,
+        external_app_may_have_sent_output: true,
+        satisfies_native_response_ready: false,
+        satisfies_native_visible_ready: false,
+        satisfies_smoke_ready: false,
+        satisfies_release_ready: false,
+        readiness_claims: HardwareSniffReadinessClaims::none(),
+    };
+
+    write_sniff_bundle_zip(request.out, &entries, &manifest)?;
+    Ok(manifest)
+}
+
+fn render_sniff_bundle_readme(includes_raw_pcapng: bool) -> String {
+    let raw_capture_line = if includes_raw_pcapng {
+        "- capture.pcapng is included because --include-pcapng was supplied."
+    } else {
+        "- capture.pcapng is not included; pcapng-sha256.txt records the receipt hash only."
+    };
+    format!(
+        "# OpenRacing Passive USB Sniff Bundle\n\n\
+This bundle packages passive USB sniff artifacts for protocol research and support review.\n\n\
+Non-claiming invariants:\n\
+- OpenRacing native control evidence is false.\n\
+- OpenRacing hardware output is false.\n\
+- Native response, native visible, smoke, and release readiness claims are false.\n\
+- External applications may have sent output during the observed session.\n\
+{raw_capture_line}\n"
+    )
+}
+
+fn write_sniff_bundle_zip(
+    out: &Path,
+    entries: &[SniffBundleZipEntry],
+    manifest: &HardwareSniffBundleManifest,
+) -> Result<()> {
+    if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create '{}'", parent.display()))?;
+    }
+
+    let file = File::create(out)
+        .with_context(|| format!("failed to create sniff bundle '{}'", out.display()))?;
+    let mut zip = ZipWriter::new(file);
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Deflated)
+        .compression_level(Some(6));
+
+    for entry in entries {
+        zip.start_file(&entry.archive_path, options)
+            .with_context(|| format!("failed to start ZIP entry '{}'", entry.archive_path))?;
+        match &entry.source {
+            SniffBundleZipSource::Bytes(bytes) => {
+                zip.write_all(bytes).with_context(|| {
+                    format!("failed to write ZIP entry '{}'", entry.archive_path)
+                })?;
+            }
+            SniffBundleZipSource::File(path) => {
+                let mut file = File::open(path)
+                    .with_context(|| format!("failed to open '{}'", path.display()))?;
+                io::copy(&mut file, &mut zip).with_context(|| {
+                    format!("failed to copy '{}' into sniff bundle", path.display())
+                })?;
+            }
+        }
+    }
+
+    let manifest_json =
+        serde_json::to_vec_pretty(manifest).context("failed to serialize sniff bundle manifest")?;
+    let manifest_path = sniff_bundle_path("sniff-bundle-manifest.json");
+    zip.start_file(&manifest_path, options)
+        .with_context(|| format!("failed to start ZIP entry '{manifest_path}'"))?;
+    zip.write_all(&manifest_json)
+        .context("failed to write sniff bundle manifest")?;
+    zip.finish()
+        .context("failed to finish sniff bundle ZIP archive")?;
+    Ok(())
+}
+
+fn sniff_bundle_path(file_name: &str) -> String {
+    format!("{SNIFF_BUNDLE_ROOT}/{file_name}")
+}
+
+fn read_required_artifact(path: &Path, label: &str) -> Result<Vec<u8>> {
+    if !path.is_file() {
+        anyhow::bail!("{label} artifact not found: {}", path.display());
+    }
+    fs::read(path).with_context(|| format!("failed to read {label} artifact '{}'", path.display()))
 }
 
 fn parse_tshark_usb_packets(tshark_json: &str) -> Result<Vec<TsharkUsbPacket>> {
@@ -1049,6 +1260,141 @@ fn read_and_validate_sniff_plan(path: &Path) -> Result<StoredHardwareSniffPlan> 
         );
     }
     Ok(plan)
+}
+
+fn read_and_validate_sniff_receipt(path: &Path) -> Result<StoredHardwareSniffReceipt> {
+    let receipt: StoredHardwareSniffReceipt = read_json_file(path)?;
+    if receipt.schema_version != 1 {
+        anyhow::bail!(
+            "sniff receipt '{}' has unsupported schema_version {}; expected 1",
+            path.display(),
+            receipt.schema_version
+        );
+    }
+    if receipt.command != "wheelctl hardware sniff-receipt" {
+        anyhow::bail!(
+            "sniff receipt '{}' was not produced by wheelctl hardware sniff-receipt",
+            path.display()
+        );
+    }
+    if receipt.evidence_status != SNIFF_EVIDENCE_STATUS {
+        anyhow::bail!(
+            "sniff receipt '{}' has evidence_status '{}'; expected '{}'",
+            path.display(),
+            receipt.evidence_status,
+            SNIFF_EVIDENCE_STATUS
+        );
+    }
+    if !receipt.success {
+        anyhow::bail!(
+            "sniff receipt '{}' did not succeed; refresh the receipt before creating a bundle",
+            path.display()
+        );
+    }
+    required_text(&receipt.generated_at_utc, "generated-at-utc")?;
+    required_text(&receipt.plan_path, "plan-path")?;
+    required_pcapng_path_display(Path::new(&receipt.pcapng_path))?;
+    if receipt.pcapng_size_bytes == 0 {
+        anyhow::bail!(
+            "sniff receipt '{}' has pcapng_size_bytes 0; expected a non-empty capture",
+            path.display()
+        );
+    }
+    required_text(&receipt.operator, "operator")?;
+    required_text(&receipt.app, "app")?;
+    validate_sniff_scenario(&receipt.scenario)
+        .with_context(|| format!("sniff receipt '{}' has invalid scenario", path.display()))?;
+    required_text(&receipt.device_note, "device-note")?;
+    required_text(&receipt.evidence, "evidence")?;
+    validate_sniff_sha256(&receipt.pcapng_sha256, "sniff receipt pcapng_sha256").with_context(
+        || {
+            format!(
+                "sniff receipt '{}' has invalid pcapng_sha256",
+                path.display()
+            )
+        },
+    )?;
+    if receipt.native_control_evidence
+        || receipt.openracing_hardware_output
+        || receipt.openracing_hid_device_opened
+        || receipt.openracing_ffb_writes
+        || receipt.openracing_output_reports
+        || receipt.openracing_feature_reports
+        || receipt.openracing_serial_config_commands
+        || receipt.openracing_firmware_or_dfu_commands
+        || !receipt.external_app_observed
+        || !receipt.external_app_may_have_sent_output
+        || receipt.satisfies_native_response_ready
+        || receipt.satisfies_native_visible_ready
+        || receipt.satisfies_smoke_ready
+        || receipt.satisfies_release_ready
+        || !receipt.readiness_claims.all_false()
+    {
+        anyhow::bail!(
+            "sniff receipt '{}' violates passive sniff invariants; sniff bundles require non-claiming receipt evidence",
+            path.display()
+        );
+    }
+    Ok(receipt)
+}
+
+fn read_and_validate_sniff_summary(path: &Path) -> Result<StoredHardwareSniffSummary> {
+    let summary: StoredHardwareSniffSummary = read_json_file(path)?;
+    if summary.schema_version != 1 {
+        anyhow::bail!(
+            "sniff summary '{}' has unsupported schema_version {}; expected 1",
+            path.display(),
+            summary.schema_version
+        );
+    }
+    if summary.command != "wheelctl hardware sniff-summary" {
+        anyhow::bail!(
+            "sniff summary '{}' was not produced by wheelctl hardware sniff-summary",
+            path.display()
+        );
+    }
+    if summary.evidence_status != SNIFF_EVIDENCE_STATUS {
+        anyhow::bail!(
+            "sniff summary '{}' has evidence_status '{}'; expected '{}'",
+            path.display(),
+            summary.evidence_status,
+            SNIFF_EVIDENCE_STATUS
+        );
+    }
+    let _summary_success = summary.success;
+    validate_sniff_sha256(&summary.pcapng_sha256, "sniff summary pcapng_sha256").with_context(
+        || {
+            format!(
+                "sniff summary '{}' has invalid pcapng_sha256",
+                path.display()
+            )
+        },
+    )?;
+    if summary.native_control_evidence
+        || summary.openracing_hardware_output
+        || !summary.external_app_may_have_sent_output
+        || summary.satisfies_native_response_ready
+        || summary.satisfies_native_visible_ready
+        || summary.satisfies_smoke_ready
+        || summary.satisfies_release_ready
+        || !summary.readiness_claims.all_false()
+    {
+        anyhow::bail!(
+            "sniff summary '{}' violates passive sniff invariants; sniff bundles require non-claiming summary evidence",
+            path.display()
+        );
+    }
+    Ok(summary)
+}
+
+fn validate_sniff_sha256(value: &str, field: &str) -> Result<()> {
+    if value.len() != 64 || !value.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        anyhow::bail!("{field} must be a 64-character sha256 hex digest");
+    }
+    if value.chars().any(|ch| ch.is_ascii_uppercase()) {
+        anyhow::bail!("{field} must use lowercase sha256 hex");
+    }
+    Ok(())
 }
 
 fn required_text(value: &str, field: &str) -> Result<String> {
@@ -3847,6 +4193,31 @@ fn print_sniff_summary(
     Ok(())
 }
 
+fn print_sniff_bundle(
+    json: bool,
+    out: &Path,
+    manifest: &HardwareSniffBundleManifest,
+) -> Result<()> {
+    if json {
+        write_stdout_line(&serde_json::to_string_pretty(manifest)?)?;
+        return Ok(());
+    }
+
+    write_stdout_line(&format!(
+        "Passive USB sniff bundle created: {}",
+        out.display()
+    ))?;
+    write_stdout_line(&format!(
+        "Artifacts: {}; raw pcapng included: {}",
+        manifest.artifacts.len(),
+        manifest.includes_raw_pcapng
+    ))?;
+    write_stdout_line(
+        "Non-claiming: native response, native visible, smoke, release, and OpenRacing hardware output are false.",
+    )?;
+    Ok(())
+}
+
 fn print_doctor_receipt(
     json: bool,
     json_out: Option<&Path>,
@@ -4038,6 +4409,8 @@ fn hex_u8(value: u8) -> String {
 
 const SNIFF_CAPTURE_KIND: &str = "software_usb_urb_capture";
 const SNIFF_EVIDENCE_STATUS: &str = "passive_external_usb_observation";
+const SNIFF_BUNDLE_ROOT: &str = "openracing-sniff-bundle";
+const SNIFF_BUNDLE_KIND: &str = "openracing_passive_usb_sniff_bundle";
 const DEFAULT_SNIFF_MAX_SAMPLES_PER_REPORT: usize = 3;
 const MAX_SNIFF_MAX_SAMPLES_PER_REPORT: usize = 32;
 const SNIFF_ALLOWED_ACTIONS: &[&str] = &[
@@ -4088,6 +4461,16 @@ struct HardwareSniffSummaryRequest<'a> {
     interface: Option<u16>,
     include_payload_samples: bool,
     max_samples_per_report: Option<usize>,
+}
+
+#[derive(Debug)]
+struct HardwareSniffBundleRequest<'a> {
+    plan: &'a Path,
+    receipt: &'a Path,
+    summary: &'a Path,
+    operator_notes: &'a Path,
+    include_pcapng: Option<&'a Path>,
+    out: &'a Path,
 }
 
 #[derive(Debug, Clone)]
@@ -4184,6 +4567,64 @@ struct HardwareSniffSummaryArtifact {
     satisfies_release_ready: bool,
     readiness_claims: HardwareSniffReadinessClaims,
     notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct HardwareSniffBundleManifest {
+    schema_version: u32,
+    success: bool,
+    command: &'static str,
+    generated_at_utc: String,
+    bundle_kind: &'static str,
+    includes_raw_pcapng: bool,
+    artifacts: Vec<HardwareSniffBundleArtifactHash>,
+    evidence_status: &'static str,
+    native_control_evidence: bool,
+    openracing_hardware_output: bool,
+    external_app_may_have_sent_output: bool,
+    satisfies_native_response_ready: bool,
+    satisfies_native_visible_ready: bool,
+    satisfies_smoke_ready: bool,
+    satisfies_release_ready: bool,
+    readiness_claims: HardwareSniffReadinessClaims,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct HardwareSniffBundleArtifactHash {
+    path: String,
+    sha256: String,
+}
+
+#[derive(Debug)]
+struct SniffBundleZipEntry {
+    archive_path: String,
+    source: SniffBundleZipSource,
+    sha256: String,
+}
+
+impl SniffBundleZipEntry {
+    fn bytes(archive_path: String, bytes: Vec<u8>) -> Self {
+        let sha256 = sha256_hex(&bytes);
+        Self {
+            archive_path,
+            source: SniffBundleZipSource::Bytes(bytes),
+            sha256,
+        }
+    }
+
+    fn file(archive_path: String, path: PathBuf, sha256: String) -> Self {
+        Self {
+            archive_path,
+            source: SniffBundleZipSource::File(path),
+            sha256,
+        }
+    }
+}
+
+#[derive(Debug)]
+enum SniffBundleZipSource {
+    Bytes(Vec<u8>),
+    File(PathBuf),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -4366,6 +4807,56 @@ struct StoredHardwareSniffPlan {
     scenario: String,
     operator: String,
     device_note: String,
+    evidence_status: String,
+    native_control_evidence: bool,
+    openracing_hardware_output: bool,
+    external_app_may_have_sent_output: bool,
+    satisfies_native_response_ready: bool,
+    satisfies_native_visible_ready: bool,
+    satisfies_smoke_ready: bool,
+    satisfies_release_ready: bool,
+    readiness_claims: HardwareSniffReadinessClaims,
+}
+
+#[derive(Debug, Deserialize)]
+struct StoredHardwareSniffReceipt {
+    schema_version: u32,
+    success: bool,
+    command: String,
+    generated_at_utc: String,
+    plan_path: String,
+    pcapng_path: String,
+    pcapng_sha256: String,
+    pcapng_size_bytes: u64,
+    operator: String,
+    app: String,
+    scenario: String,
+    device_note: String,
+    evidence: String,
+    evidence_status: String,
+    native_control_evidence: bool,
+    openracing_hardware_output: bool,
+    openracing_hid_device_opened: bool,
+    openracing_ffb_writes: bool,
+    openracing_output_reports: bool,
+    openracing_feature_reports: bool,
+    openracing_serial_config_commands: bool,
+    openracing_firmware_or_dfu_commands: bool,
+    external_app_observed: bool,
+    external_app_may_have_sent_output: bool,
+    satisfies_native_response_ready: bool,
+    satisfies_native_visible_ready: bool,
+    satisfies_smoke_ready: bool,
+    satisfies_release_ready: bool,
+    readiness_claims: HardwareSniffReadinessClaims,
+}
+
+#[derive(Debug, Deserialize)]
+struct StoredHardwareSniffSummary {
+    schema_version: u32,
+    success: bool,
+    command: String,
+    pcapng_sha256: String,
     evidence_status: String,
     native_control_evidence: bool,
     openracing_hardware_output: bool,
@@ -5134,6 +5625,385 @@ mod tests {
             assert!(!receipt.satisfies_smoke_ready);
             assert!(!receipt.satisfies_release_ready);
             assert!(receipt.readiness_claims.all_false());
+            Ok(())
+        }
+    }
+
+    mod hardware_sniff_bundle {
+        use super::*;
+        use std::path::{Path, PathBuf};
+
+        struct BundleFixturePaths {
+            plan: PathBuf,
+            receipt: PathBuf,
+            summary: PathBuf,
+            operator_notes: PathBuf,
+            pcapng: PathBuf,
+            out: PathBuf,
+        }
+
+        fn sniff_schema_path(file_name: &str) -> PathBuf {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../ci/hardware/sniffing")
+                .join(file_name)
+        }
+
+        fn assert_schema_valid(file_name: &str, value: &serde_json::Value) -> TestResult {
+            let schema_text = fs::read_to_string(sniff_schema_path(file_name))?;
+            let schema: serde_json::Value = serde_json::from_str(&schema_text)?;
+            let validator = jsonschema::Validator::new(&schema)?;
+            if let Err(error) = validator.validate(value) {
+                return Err(format!("{file_name} validation failed: {error}").into());
+            }
+            Ok(())
+        }
+
+        fn sample_plan(lane: &Path) -> Result<HardwareSniffPlanArtifact> {
+            let capture_tools = vec![
+                HardwareSniffCaptureTool::Wireshark,
+                HardwareSniffCaptureTool::UsbPcap,
+                HardwareSniffCaptureTool::Tshark,
+            ];
+            build_hardware_sniff_plan(&HardwareSniffPlanRequest {
+                family: "moza-r5",
+                scenario: HardwareSniffScenario::PitHouseOpenIdle,
+                lane,
+                operator: "Steven",
+                device_note: "R5 V2 with KS rim, SR-P pedals, and HBP handbrake",
+                capture_tools: &capture_tools,
+                platform_hint: Some(HardwareSniffPlatformHint::Windows),
+            })
+        }
+
+        fn sample_summary(pcapng_sha256: String) -> HardwareSniffSummaryArtifact {
+            HardwareSniffSummaryArtifact {
+                schema_version: 1,
+                success: true,
+                command: "wheelctl hardware sniff-summary",
+                generated_at_utc: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+                pcapng_sha256,
+                reason: None,
+                tool: HardwareSniffSummaryTool {
+                    tshark_present: true,
+                    tshark_version: Some("TShark synthetic fixture".to_string()),
+                },
+                filters: HardwareSniffSummaryFilters {
+                    vendor_id: Some("0x346E".to_string()),
+                    product_id: Some("0x0014".to_string()),
+                    interface_number: Some(2),
+                },
+                matched_packets: 1,
+                usb_transfer_summary: HardwareSniffUsbTransferSummary {
+                    host_to_device: 0,
+                    device_to_host: 1,
+                    control: 0,
+                    interrupt: 1,
+                },
+                observed_devices: vec![HardwareSniffObservedDevice {
+                    vendor_id: "0x346E".to_string(),
+                    product_id: "0x0014".to_string(),
+                    interfaces: vec![2],
+                    endpoints: vec!["0x81".to_string()],
+                }],
+                observed_reports: vec![HardwareSniffObservedReport {
+                    direction: "device_to_host".to_string(),
+                    report_id: "0x05".to_string(),
+                    count: 1,
+                    payload_sample_count: 1,
+                    payload_sha256_examples: vec![sha256_hex(b"synthetic report payload")],
+                    payload_hex_samples: None,
+                }],
+                descriptor_candidates: Vec::new(),
+                evidence_status: SNIFF_EVIDENCE_STATUS,
+                native_control_evidence: false,
+                openracing_hardware_output: false,
+                external_app_may_have_sent_output: true,
+                satisfies_native_response_ready: false,
+                satisfies_native_visible_ready: false,
+                satisfies_smoke_ready: false,
+                satisfies_release_ready: false,
+                readiness_claims: HardwareSniffReadinessClaims::none(),
+                notes: vec![
+                    "passive sniff summary is protocol research/support evidence only".to_string(),
+                ],
+            }
+        }
+
+        fn write_bundle_fixture(dir: &Path, pcapng_bytes: &[u8]) -> Result<BundleFixturePaths> {
+            let pcapng = dir.join("capture.pcapng");
+            fs::write(&pcapng, pcapng_bytes)?;
+
+            let plan = sample_plan(dir)?;
+            let plan_path = dir.join("sniff-plan.json");
+            write_json_file(&plan_path, &plan)?;
+
+            let receipt = build_hardware_sniff_receipt(&HardwareSniffReceiptRequest {
+                plan: &plan_path,
+                pcapng: Some(&pcapng),
+                operator: None,
+                app: "MOZA Pit House",
+                scenario: None,
+                device_note: None,
+                evidence: "Pit House was open and idle while host-side USB URBs were captured.",
+            })?;
+            let receipt_path = dir.join("sniff-receipt.json");
+            write_json_file(&receipt_path, &receipt)?;
+
+            let summary = sample_summary(receipt.pcapng_sha256.clone());
+            let summary_path = dir.join("sniff-summary.json");
+            write_json_file(&summary_path, &summary)?;
+
+            let operator_notes = dir.join("operator-notes.md");
+            fs::write(
+                &operator_notes,
+                "# Operator Notes\n\nPassive USB observation fixture.\n",
+            )?;
+
+            Ok(BundleFixturePaths {
+                plan: plan_path,
+                receipt: receipt_path,
+                summary: summary_path,
+                operator_notes,
+                pcapng,
+                out: dir.join("openracing-sniff-bundle.zip"),
+            })
+        }
+
+        fn build_bundle(
+            paths: &BundleFixturePaths,
+            include_raw: bool,
+        ) -> Result<HardwareSniffBundleManifest> {
+            build_hardware_sniff_bundle(&HardwareSniffBundleRequest {
+                plan: &paths.plan,
+                receipt: &paths.receipt,
+                summary: &paths.summary,
+                operator_notes: &paths.operator_notes,
+                include_pcapng: include_raw.then_some(paths.pcapng.as_path()),
+                out: &paths.out,
+            })
+        }
+
+        fn zip_entry_names(path: &Path) -> Result<Vec<String>> {
+            let file = File::open(path)?;
+            let mut archive = zip::ZipArchive::new(file)?;
+            let mut names = Vec::new();
+            for index in 0..archive.len() {
+                let entry = archive.by_index(index)?;
+                names.push(entry.name().to_string());
+            }
+            Ok(names)
+        }
+
+        fn read_zip_entry(path: &Path, name: &str) -> Result<Vec<u8>> {
+            let file = File::open(path)?;
+            let mut archive = zip::ZipArchive::new(file)?;
+            let mut entry = archive.by_name(name)?;
+            let mut bytes = Vec::new();
+            entry.read_to_end(&mut bytes)?;
+            Ok(bytes)
+        }
+
+        #[test]
+        fn sniff_bundle_excludes_raw_pcapng_by_default() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = write_bundle_fixture(dir.path(), b"synthetic pcapng bytes")?;
+
+            let manifest = build_bundle(&paths, false)?;
+            let names = zip_entry_names(&paths.out)?;
+
+            assert!(!manifest.includes_raw_pcapng);
+            assert!(!names.contains(&sniff_bundle_path("capture.pcapng")));
+            assert!(names.contains(&sniff_bundle_path("README.md")));
+            assert!(names.contains(&sniff_bundle_path("sniff-plan.json")));
+            assert!(names.contains(&sniff_bundle_path("sniff-receipt.json")));
+            assert!(names.contains(&sniff_bundle_path("sniff-summary.json")));
+            assert!(names.contains(&sniff_bundle_path("operator-notes.md")));
+            assert!(names.contains(&sniff_bundle_path("pcapng-sha256.txt")));
+            assert!(names.contains(&sniff_bundle_path("sniff-bundle-manifest.json")));
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_bundle_includes_raw_pcapng_only_when_requested() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = write_bundle_fixture(dir.path(), b"synthetic pcapng bytes")?;
+
+            let _manifest_without_raw = build_bundle(&paths, false)?;
+            let default_names = zip_entry_names(&paths.out)?;
+            assert!(!default_names.contains(&sniff_bundle_path("capture.pcapng")));
+
+            let manifest_with_raw = build_bundle(&paths, true)?;
+            let requested_names = zip_entry_names(&paths.out)?;
+            let capture_path = sniff_bundle_path("capture.pcapng");
+            let capture_bytes = read_zip_entry(&paths.out, &capture_path)?;
+
+            assert!(manifest_with_raw.includes_raw_pcapng);
+            assert!(requested_names.contains(&capture_path));
+            assert_eq!(capture_bytes, b"synthetic pcapng bytes");
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_bundle_manifest_hashes_all_artifacts() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = write_bundle_fixture(dir.path(), b"synthetic pcapng bytes")?;
+
+            let manifest = build_bundle(&paths, true)?;
+            let manifest_path = sniff_bundle_path("sniff-bundle-manifest.json");
+            let mut zip_hashes = BTreeMap::new();
+            for name in zip_entry_names(&paths.out)? {
+                if name == manifest_path {
+                    continue;
+                }
+                let bytes = read_zip_entry(&paths.out, &name)?;
+                zip_hashes.insert(name, sha256_hex(&bytes));
+            }
+            let manifest_hashes = manifest
+                .artifacts
+                .iter()
+                .map(|artifact| (artifact.path.clone(), artifact.sha256.clone()))
+                .collect::<BTreeMap<_, _>>();
+
+            assert!(!manifest_hashes.contains_key(&manifest_path));
+            assert_eq!(manifest_hashes, zip_hashes);
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_bundle_manifest_is_non_claiming() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = write_bundle_fixture(dir.path(), b"synthetic pcapng bytes")?;
+
+            let manifest = build_bundle(&paths, false)?;
+            let value = serde_json::to_value(&manifest)?;
+            assert_schema_valid("sniff-bundle-manifest.schema.json", &value)?;
+
+            assert_eq!(manifest.bundle_kind, SNIFF_BUNDLE_KIND);
+            assert_eq!(manifest.evidence_status, SNIFF_EVIDENCE_STATUS);
+            assert!(!manifest.native_control_evidence);
+            assert!(!manifest.openracing_hardware_output);
+            assert!(manifest.external_app_may_have_sent_output);
+            assert!(!manifest.satisfies_native_response_ready);
+            assert!(!manifest.satisfies_native_visible_ready);
+            assert!(!manifest.satisfies_smoke_ready);
+            assert!(!manifest.satisfies_release_ready);
+            assert!(manifest.readiness_claims.all_false());
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_bundle_accepts_zero_match_summary() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let pcapng_bytes = b"synthetic pcapng bytes";
+            let paths = write_bundle_fixture(dir.path(), pcapng_bytes)?;
+            let mut summary = sample_summary(sha256_hex(pcapng_bytes));
+            summary.success = false;
+            summary.reason = Some("no USB packets matched the requested filters".to_string());
+            summary.matched_packets = 0;
+            summary.usb_transfer_summary = HardwareSniffUsbTransferSummary {
+                host_to_device: 0,
+                device_to_host: 0,
+                control: 0,
+                interrupt: 0,
+            };
+            summary.observed_devices.clear();
+            summary.observed_reports.clear();
+            summary.descriptor_candidates.clear();
+
+            let summary_value = serde_json::to_value(&summary)?;
+            assert_schema_valid("sniff-summary.schema.json", &summary_value)?;
+            write_json_file(&paths.summary, &summary)?;
+
+            let manifest = build_bundle(&paths, false)?;
+            let bundled_summary: serde_json::Value = serde_json::from_slice(&read_zip_entry(
+                &paths.out,
+                &sniff_bundle_path("sniff-summary.json"),
+            )?)?;
+
+            assert!(manifest.success);
+            assert!(!manifest.includes_raw_pcapng);
+            assert_eq!(
+                bundled_summary.get("success"),
+                Some(&serde_json::json!(false))
+            );
+            assert_eq!(
+                bundled_summary.get("reason"),
+                Some(&serde_json::json!(
+                    "no USB packets matched the requested filters"
+                ))
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn rejects_raw_pcapng_hash_mismatch() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = write_bundle_fixture(dir.path(), b"original pcapng bytes")?;
+            fs::write(&paths.pcapng, b"changed pcapng bytes")?;
+
+            let error = match build_bundle(&paths, true) {
+                Ok(_) => return Err("raw pcapng hash mismatch should be rejected".into()),
+                Err(error) => error.to_string(),
+            };
+
+            assert!(error.contains("does not match sniff receipt"), "{error}");
+            Ok(())
+        }
+
+        #[test]
+        fn rejects_receipt_plan_path_mismatch() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = write_bundle_fixture(dir.path(), b"synthetic pcapng bytes")?;
+            let mut receipt: serde_json::Value =
+                serde_json::from_slice(&fs::read(&paths.receipt)?)?;
+            receipt["plan_path"] = serde_json::json!("target/sniff/other/sniff-plan.json");
+            write_json_file(&paths.receipt, &receipt)?;
+
+            let error = match build_bundle(&paths, false) {
+                Ok(_) => return Err("receipt plan_path mismatch should be rejected".into()),
+                Err(error) => error.to_string(),
+            };
+
+            assert!(error.contains("was created for plan"), "{error}");
+            Ok(())
+        }
+
+        #[test]
+        fn rejects_raw_pcapng_path_mismatch() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = write_bundle_fixture(dir.path(), b"synthetic pcapng bytes")?;
+            let mut receipt: serde_json::Value =
+                serde_json::from_slice(&fs::read(&paths.receipt)?)?;
+            receipt["pcapng_path"] = serde_json::json!("target/sniff/other/capture.pcapng");
+            write_json_file(&paths.receipt, &receipt)?;
+
+            let error = match build_bundle(&paths, true) {
+                Ok(_) => return Err("raw pcapng path mismatch should be rejected".into()),
+                Err(error) => error.to_string(),
+            };
+
+            assert!(
+                error.contains("does not match sniff receipt pcapng_path"),
+                "{error}"
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn rejects_raw_pcapng_size_mismatch() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = write_bundle_fixture(dir.path(), b"synthetic pcapng bytes")?;
+            let mut receipt: serde_json::Value =
+                serde_json::from_slice(&fs::read(&paths.receipt)?)?;
+            receipt["pcapng_size_bytes"] = serde_json::json!(1);
+            write_json_file(&paths.receipt, &receipt)?;
+
+            let error = match build_bundle(&paths, true) {
+                Ok(_) => return Err("raw pcapng size mismatch should be rejected".into()),
+                Err(error) => error.to_string(),
+            };
+
+            assert!(error.contains("pcapng_size_bytes"), "{error}");
             Ok(())
         }
     }

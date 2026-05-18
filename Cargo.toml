@@ -181,6 +181,7 @@ crc32fast = "1.5.0"
 
 # Schema and validation
 jsonschema = "0.40.2"
+zip = "7.2.0"
 
 # Testing
 criterion = "0.8.2"
