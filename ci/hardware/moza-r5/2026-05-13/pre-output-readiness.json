@@ -1,7 +1,7 @@
 {
   "success": true,
   "command": "wheelctl moza pre-output-readiness",
-  "generated_at_utc": "2026-05-18T20:09:54Z",
+  "generated_at_utc": "2026-05-19T02:31:18Z",
   "lane": "ci/hardware/moza-r5/2026-05-13",
   "stage": "pre_output_readiness",
   "ready_for_zero_torque": true,
@@ -373,12 +373,120 @@
       }
     ],
     "semantic_candidate_count": 6,
+    "semantic_mapping_complete": false,
     "semantic_status": "partial_generic_aux_mapping",
     "source_artifact": "native-visible-verification.json",
     "source_stage": "native_visible_ready",
     "status_counts": {
       "generic_aux": 3,
       "proven": 4
+    },
+    "unproven_required_role_count": 3
+  },
+  "pit_house_compatibility": {
+    "artifact_kind": "pit_house_external_compatibility_navigation",
+    "availability_artifact": "pit-house-availability.json",
+    "availability_artifact_exists": true,
+    "availability_receipt_valid": true,
+    "availability_status": "not_installed_or_not_running",
+    "blocks_native_control": false,
+    "blocks_native_visible": false,
+    "blocks_smoke_ready": true,
+    "claim_scope": "external_compatibility_navigation_only",
+    "coexistence_artifact": "pit-house-coexistence.json",
+    "coexistence_gate_details": "failed to read 'ci/hardware/moza-r5/2026-05-13\\pit-house-coexistence.json'",
+    "coexistence_gate_status": "fail",
+    "missing_case_count": 4,
+    "missing_cases": [
+      "pit_house_open_idle_standard",
+      "pit_house_open_direct",
+      "pit_house_mode_change_during_run",
+      "pit_house_firmware_update_page_open"
+    ],
+    "no_feature_reports": true,
+    "no_ffb_writes": true,
+    "no_firmware_or_dfu_commands": true,
+    "no_hid_device_opened": true,
+    "no_output_reports": true,
+    "no_serial_config_commands": true,
+    "notes": [
+      "Pit House compatibility is external smoke evidence only; it is not a native-control prerequisite.",
+      "Availability and case receipts are navigation evidence until pit-house-coexistence.json passes the verifier.",
+      "If Pit House is absent, keep open-state cases and smoke-ready blocked instead of fabricating evidence."
+    ],
+    "observation_only_cases": [],
+    "pit_house_available": false,
+    "pit_house_coexistence_claimed": false,
+    "readiness_claim": false,
+    "recorded_case_count": 1,
+    "recorded_cases": [
+      {
+        "case": "pit_house_closed",
+        "case_artifact": "pit-house-closed.json",
+        "case_recorded": true,
+        "label": "closed",
+        "observation_artifact": "pit-house-observation-closed.json",
+        "observation_recorded": true,
+        "readiness_claim": false
+      }
+    ],
+    "required_case_count": 5
+  },
+  "simulator_compatibility": {
+    "artifact_kind": "simulator_external_compatibility_navigation",
+    "blocks_native_control": false,
+    "blocks_native_visible": false,
+    "blocks_smoke_ready": true,
+    "bounded_ffb": {
+      "artifact": "simulator-ffb-smoke.json",
+      "artifact_exists": false,
+      "bounded_simulator_ffb_claimed": false,
+      "claim_status": "missing",
+      "final_zero_sent": null,
+      "game": null,
+      "gate_details": "failed to read 'ci/hardware/moza-r5/2026-05-13\\simulator-ffb-smoke.json'",
+      "gate_status": "fail",
+      "hardware_output_enabled": null,
+      "max_output_percent": null,
+      "output_log_artifact": null,
+      "readiness_claim": false,
+      "telemetry_source": null
+    },
+    "bounded_simulator_ffb_claimed": false,
+    "claim_scope": "external_compatibility_navigation_only",
+    "missing_artifacts": [
+      "simulator-telemetry-proof.json",
+      "simulator-ffb-smoke.json"
+    ],
+    "no_feature_reports": true,
+    "no_ffb_writes": true,
+    "no_firmware_or_dfu_commands": true,
+    "no_hid_device_opened": true,
+    "no_output_reports": true,
+    "no_serial_config_commands": true,
+    "notes": [
+      "Simulator telemetry and bounded simulator FFB are smoke/external compatibility evidence; they are not native-control prerequisites.",
+      "Telemetry-only proof must remain no-output and cannot satisfy bounded FFB by itself.",
+      "Bounded simulator FFB can claim smoke evidence only after the telemetry gate and all safety prerequisites pass."
+    ],
+    "readiness_claim": false,
+    "recorded_artifact_count": 0,
+    "required_artifact_count": 2,
+    "simulator_telemetry_claimed": false,
+    "telemetry": {
+      "artifact": "simulator-telemetry-proof.json",
+      "artifact_exists": false,
+      "claim_status": "missing",
+      "game": null,
+      "gate_details": "failed to read 'ci/hardware/moza-r5/2026-05-13\\simulator-telemetry-proof.json'",
+      "gate_status": "fail",
+      "hardware_output_enabled": null,
+      "no_ffb_writes": null,
+      "normalized_snapshot_count": null,
+      "readiness_claim": false,
+      "recorder_artifact": null,
+      "simulator_telemetry_claimed": false,
+      "telemetry_source": null
     }
   },
   "blocking_items": [],
