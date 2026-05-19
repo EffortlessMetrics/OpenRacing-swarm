@@ -13471,15 +13471,19 @@ fn moza_input_role_semantics_summary(lane: &Path) -> Value {
     } else {
         "all_required_roles_semantically_proven"
     };
+    let semantic_mapping_complete = semantic_status == "all_required_roles_semantically_proven";
+    let unproven_required_role_count = generic_aux_roles.len() + incomplete_roles.len();
 
     serde_json::json!({
         "source_stage": selected_stage,
         "source_artifact": selected_path,
         "semantic_status": semantic_status,
+        "semantic_mapping_complete": semantic_mapping_complete,
         "required_role_count": required_role_count,
         "required_parser_visible_count": required_parser_visible_count,
         "generic_aux_role_count": generic_aux_roles.len(),
         "incomplete_role_count": incomplete_roles.len(),
+        "unproven_required_role_count": unproven_required_role_count,
         "semantic_candidate_count": semantic_candidate_count,
         "ambiguous_semantic_candidate_count": ambiguous_semantic_candidate_count,
         "status_counts": status_counts,
@@ -29236,6 +29240,10 @@ fn push_input_role_semantics_markdown(out: &mut String, receipt: &Value) {
     let required_parser_visible_count =
         json_u64(summary, "required_parser_visible_count").unwrap_or(0);
     let generic_aux_role_count = json_u64(summary, "generic_aux_role_count").unwrap_or(0);
+    let semantic_mapping_complete =
+        json_bool(summary, "semantic_mapping_complete").unwrap_or(false);
+    let unproven_required_role_count =
+        json_u64(summary, "unproven_required_role_count").unwrap_or(generic_aux_role_count);
     let semantic_candidate_count = json_u64(summary, "semantic_candidate_count").unwrap_or(0);
 
     out.push_str("## Input Role Semantics\n\n");
@@ -29251,6 +29259,12 @@ fn push_input_role_semantics_markdown(out: &mut String, receipt: &Value) {
     out.push_str(&format!("- Required roles: `{required_role_count}`\n"));
     out.push_str(&format!(
         "- Required parser-visible roles: `{required_parser_visible_count}`\n"
+    ));
+    out.push_str(&format!(
+        "- Role-specific semantic mapping complete: `{semantic_mapping_complete}`\n"
+    ));
+    out.push_str(&format!(
+        "- Unproven required role semantics: `{unproven_required_role_count}`\n"
     ));
     out.push_str(&format!(
         "- Generic auxiliary roles: `{generic_aux_role_count}`\n\n"
@@ -31596,12 +31610,17 @@ mod tests {
             json_string(semantics, "semantic_status"),
             Some("partial_generic_aux_mapping")
         );
+        assert_eq!(
+            json_bool(semantics, "semantic_mapping_complete"),
+            Some(false)
+        );
         assert_eq!(json_u64(semantics, "required_role_count"), Some(2));
         assert_eq!(
             json_u64(semantics, "required_parser_visible_count"),
             Some(2)
         );
         assert_eq!(json_u64(semantics, "generic_aux_role_count"), Some(1));
+        assert_eq!(json_u64(semantics, "unproven_required_role_count"), Some(1));
         assert_eq!(json_u64(semantics, "semantic_candidate_count"), Some(1));
         assert_eq!(
             json_u64(semantics, "ambiguous_semantic_candidate_count"),
@@ -31642,6 +31661,14 @@ mod tests {
         let index_markdown = render_moza_lane_artifact_index_markdown(&index_receipt);
         assert!(index_markdown.contains("Input Role Semantics"));
         assert!(index_markdown.contains("generic_aux"));
+        assert!(
+            index_markdown.contains("Role-specific semantic mapping complete: `false`"),
+            "generic_aux input evidence must not render as complete semantic mapping: {index_markdown}"
+        );
+        assert!(
+            index_markdown.contains("Unproven required role semantics: `1`"),
+            "generic_aux input evidence must count as unproven role semantics: {index_markdown}"
+        );
         assert!(index_markdown.contains("captures/r5-brake-only-sweep.jsonl"));
         assert!(index_markdown.contains("r5_v1_extended_axis0_u16"));
 
@@ -31654,6 +31681,14 @@ mod tests {
             Some("partial_generic_aux_mapping")
         );
         assert_eq!(
+            json_bool(wizard_semantics, "semantic_mapping_complete"),
+            Some(false)
+        );
+        assert_eq!(
+            json_u64(wizard_semantics, "unproven_required_role_count"),
+            Some(1)
+        );
+        assert_eq!(
             json_bool(&wizard_receipt, "hardware_output_authorized"),
             Some(false)
         );
@@ -31664,6 +31699,66 @@ mod tests {
         let wizard_markdown = render_moza_bench_wizard_markdown(&wizard_receipt);
         assert!(wizard_markdown.contains("Input Role Semantics"));
         assert!(wizard_markdown.contains("valid parser-visible passive evidence"));
+        Ok(())
+    }
+
+    #[test]
+    fn artifact_navigation_marks_input_semantics_complete_only_when_roles_are_proven() -> TestResult
+    {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("passive-verification.json"),
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl moza verify-bundle",
+                "requested_stage": "passive",
+                "role_evidence": [
+                    {
+                        "control": "steering",
+                        "role": "steering",
+                        "required": true,
+                        "semantic_status": "proven",
+                        "parser_visible": true,
+                        "evidence_capture": "captures/r5-steering-sweep.jsonl",
+                        "missing_requirements": [],
+                        "notes": []
+                    },
+                    {
+                        "control": "throttle",
+                        "role": "throttle",
+                        "required": true,
+                        "semantic_status": "proven",
+                        "parser_visible": true,
+                        "evidence_capture": "captures/r5-throttle-only-sweep.jsonl",
+                        "missing_requirements": [],
+                        "notes": []
+                    }
+                ]
+            }),
+        )?;
+
+        let receipt = moza_artifact_index_receipt(dir.path(), None, None)?;
+        let semantics = receipt
+            .get("input_role_semantics")
+            .ok_or("expected input_role_semantics")?;
+        assert_eq!(
+            json_string(semantics, "semantic_status"),
+            Some("all_required_roles_semantically_proven")
+        );
+        assert_eq!(
+            json_bool(semantics, "semantic_mapping_complete"),
+            Some(true)
+        );
+        assert_eq!(json_u64(semantics, "unproven_required_role_count"), Some(0));
+        assert_eq!(json_u64(semantics, "generic_aux_role_count"), Some(0));
+        assert_eq!(json_u64(semantics, "incomplete_role_count"), Some(0));
+
+        let markdown = render_moza_lane_artifact_index_markdown(&receipt);
+        assert!(
+            markdown.contains("Role-specific semantic mapping complete: `true`"),
+            "all-proven input evidence should render semantic mapping complete: {markdown}"
+        );
         Ok(())
     }
 

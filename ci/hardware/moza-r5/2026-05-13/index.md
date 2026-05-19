@@ -18,6 +18,8 @@ This section is diagnostic navigation only. `generic_aux` roles are valid parser
 - Semantic status: `partial_generic_aux_mapping`
 - Required roles: `7`
 - Required parser-visible roles: `7`
+- Role-specific semantic mapping complete: `false`
+- Unproven required role semantics: `3`
 - Generic auxiliary roles: `3`
 
 - Candidate-only extended slots: `6`
