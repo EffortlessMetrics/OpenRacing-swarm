@@ -1303,6 +1303,7 @@ fn moza_artifact_index_receipt(
     let input_role_semantics = moza_input_role_semantics_summary(lane);
     let pit_house_compatibility = moza_pit_house_compatibility_summary(lane);
     let simulator_compatibility = moza_simulator_compatibility_summary(lane);
+    let passive_sniff_navigation = moza_passive_sniff_navigation_summary(lane);
     Ok(serde_json::json!({
         "success": true,
         "command": "wheelctl moza artifact-index",
@@ -1325,6 +1326,7 @@ fn moza_artifact_index_receipt(
         "input_role_semantics": input_role_semantics,
         "pit_house_compatibility": pit_house_compatibility,
         "simulator_compatibility": simulator_compatibility,
+        "passive_sniff_navigation": passive_sniff_navigation,
         "required_artifact_index": support_status
             .get("artifact_index")
             .cloned()
@@ -1370,6 +1372,7 @@ fn moza_bench_wizard_receipt(
     let input_role_semantics = moza_input_role_semantics_summary(lane);
     let pit_house_compatibility = moza_pit_house_compatibility_summary(lane);
     let simulator_compatibility = moza_simulator_compatibility_summary(lane);
+    let passive_sniff_navigation = moza_passive_sniff_navigation_summary(lane);
 
     Ok(serde_json::json!({
         "success": true,
@@ -1396,6 +1399,7 @@ fn moza_bench_wizard_receipt(
         "input_role_semantics": input_role_semantics,
         "pit_house_compatibility": pit_house_compatibility,
         "simulator_compatibility": simulator_compatibility,
+        "passive_sniff_navigation": passive_sniff_navigation,
         "safe_no_output_commands": moza_bench_wizard_safe_no_output_commands(lane),
         "active_blockers": moza_bench_wizard_active_blockers(lane),
         "blocked_output_boundary": {
@@ -1760,6 +1764,181 @@ fn moza_simulator_compatibility_summary(lane: &Path) -> Value {
             "Bounded simulator FFB can claim smoke evidence only after the telemetry gate and all safety prerequisites pass."
         ]
     })
+}
+
+fn moza_passive_sniff_navigation_summary(lane: &Path) -> Value {
+    let mut scenarios = Vec::new();
+    let mut recorded_scenarios = Vec::new();
+    let mut missing_scenarios = Vec::new();
+    for (scenario, label, focus, warning) in moza_passive_sniff_navigation_requirements() {
+        let committed_dir = moza_passive_sniff_committed_dir(lane, scenario);
+        let plan_artifact = committed_dir.join("sniff-plan.json");
+        let receipt_artifact = committed_dir.join("sniff-receipt.json");
+        let summary_artifact = committed_dir.join("sniff-summary.json");
+        let bundle_manifest_artifact = committed_dir.join("sniff-bundle-manifest.json");
+        let plan_status =
+            passive_sniff_artifact_status(&plan_artifact, "wheelctl hardware sniff-plan");
+        let receipt_status =
+            passive_sniff_artifact_status(&receipt_artifact, "wheelctl hardware sniff-receipt");
+        let summary_status =
+            passive_sniff_artifact_status(&summary_artifact, "wheelctl hardware sniff-summary");
+        let bundle_manifest_status = passive_sniff_artifact_status(
+            &bundle_manifest_artifact,
+            "wheelctl hardware sniff-bundle",
+        );
+        let scenario_recorded = matches!(plan_status, "present_non_claiming")
+            && matches!(receipt_status, "present_non_claiming")
+            && matches!(summary_status, "present_non_claiming");
+        let scenario_status = if scenario_recorded {
+            recorded_scenarios.push(Value::String((*scenario).to_string()));
+            "summary_recorded"
+        } else {
+            missing_scenarios.push(Value::String((*scenario).to_string()));
+            if plan_artifact.is_file() || receipt_artifact.is_file() || summary_artifact.is_file() {
+                "partial_or_unaccepted"
+            } else {
+                "missing"
+            }
+        };
+        scenarios.push(serde_json::json!({
+            "scenario": scenario,
+            "label": label,
+            "focus": focus,
+            "warning": warning,
+            "status": scenario_status,
+            "recorded": scenario_recorded,
+            "navigation_blocker_only": !scenario_recorded,
+            "plan_artifact": plan_artifact.display().to_string(),
+            "plan_status": plan_status,
+            "receipt_artifact": receipt_artifact.display().to_string(),
+            "receipt_status": receipt_status,
+            "summary_artifact": summary_artifact.display().to_string(),
+            "summary_status": summary_status,
+            "bundle_manifest_artifact": bundle_manifest_artifact.display().to_string(),
+            "bundle_manifest_status": bundle_manifest_status,
+            "readiness_claim": false,
+            "blocks_native_control": false,
+            "blocks_native_visible": false,
+            "blocks_smoke_ready": false,
+        }));
+    }
+    let required_scenario_count = moza_passive_sniff_navigation_requirements().len() as u64;
+    let recorded_scenario_count = recorded_scenarios.len() as u64;
+    serde_json::json!({
+        "artifact_kind": "moza_passive_sniff_navigation",
+        "claim_scope": "protocol_research_support_navigation_only",
+        "evidence_status": "passive_external_usb_observation",
+        "protocol_research_only": true,
+        "support_evidence_only": true,
+        "native_control_evidence": false,
+        "openracing_hardware_output": false,
+        "external_app_may_have_sent_output": true,
+        "required_scenario_count": required_scenario_count,
+        "recorded_scenario_count": recorded_scenario_count,
+        "missing_scenario_count": required_scenario_count.saturating_sub(recorded_scenario_count),
+        "recorded_scenarios": recorded_scenarios,
+        "missing_scenarios": missing_scenarios,
+        "scenarios": scenarios,
+        "recommended_local_root": "target/sniff",
+        "recommended_committed_root": moza_passive_sniff_committed_root(lane)
+            .map(|path| path.display().to_string()),
+        "blocks_native_control": false,
+        "blocks_native_visible": false,
+        "blocks_smoke_ready": false,
+        "readiness_claim": false,
+        "satisfies_native_response_ready": false,
+        "satisfies_native_visible_ready": false,
+        "satisfies_smoke_ready": false,
+        "satisfies_release_ready": false,
+        "no_hid_device_opened": true,
+        "no_ffb_writes": true,
+        "no_output_reports": true,
+        "no_feature_reports": true,
+        "no_serial_config_commands": true,
+        "no_firmware_or_dfu_commands": true,
+        "notes": [
+            "Passive USB sniffing is protocol research/support navigation only; it is not OpenRacing hardware output.",
+            "Missing sniff scenarios do not block native response, native visible motion, smoke-ready, or release-ready gates.",
+            "External apps observed during sniffing may send output, but that traffic is not OpenRacing output evidence."
+        ]
+    })
+}
+
+fn passive_sniff_artifact_status(path: &Path, expected_command: &str) -> &'static str {
+    if !path.is_file() {
+        return "missing";
+    }
+    match read_json_path(path) {
+        Ok(value) if passive_sniff_artifact_is_non_claiming(&value, expected_command) => {
+            "present_non_claiming"
+        }
+        Ok(_) => "present_not_accepted",
+        Err(_) => "invalid_json",
+    }
+}
+
+fn passive_sniff_artifact_is_non_claiming(value: &Value, expected_command: &str) -> bool {
+    json_string(value, "command") == Some(expected_command)
+        && json_bool(value, "native_control_evidence") == Some(false)
+        && json_bool(value, "openracing_hardware_output") == Some(false)
+        && json_bool(value, "satisfies_native_response_ready") == Some(false)
+        && json_bool(value, "satisfies_native_visible_ready") == Some(false)
+        && json_bool(value, "satisfies_smoke_ready") == Some(false)
+        && json_bool(value, "satisfies_release_ready") == Some(false)
+}
+
+fn moza_passive_sniff_committed_dir(lane: &Path, scenario: &str) -> PathBuf {
+    moza_passive_sniff_committed_root(lane)
+        .unwrap_or_else(|| lane.join("sniff"))
+        .join(scenario)
+}
+
+fn moza_passive_sniff_committed_root(lane: &Path) -> Option<PathBuf> {
+    let date = lane.file_name()?.to_str()?;
+    let family_dir = lane.parent()?;
+    let family = family_dir.file_name()?.to_str()?;
+    let hardware_root = family_dir.parent()?;
+    if hardware_root.file_name().and_then(|name| name.to_str()) != Some("hardware") {
+        return None;
+    }
+    Some(hardware_root.join("sniff").join(family).join(date))
+}
+
+fn moza_passive_sniff_navigation_requirements()
+-> &'static [(&'static str, &'static str, &'static str, &'static str)] {
+    const SCENARIOS: &[(&str, &str, &str, &str)] = &[
+        (
+            "pit-house-open-idle",
+            "Pit House open idle",
+            "vendor-app baseline traffic",
+            "do not open firmware or update pages",
+        ),
+        (
+            "pit-house-setting-change",
+            "Pit House setting change",
+            "feature/output behavior around one explicit setting",
+            "record the exact setting and restore it if changed",
+        ),
+        (
+            "simhub-open-idle",
+            "SimHub open idle",
+            "SimHub discovery and idle polling",
+            "no OpenRacing native-control dependency",
+        ),
+        (
+            "simhub-output-session",
+            "SimHub output session",
+            "external output pattern from SimHub",
+            "external output only; not OpenRacing FFB proof",
+        ),
+        (
+            "simulator-session-start-stop",
+            "Simulator session start/stop",
+            "external simulator lifecycle traffic",
+            "not OpenRacing FFB proof",
+        ),
+    ];
+    SCENARIOS
 }
 
 fn simulator_navigation_claim_status(artifact_exists: bool, gate_passed: bool) -> &'static str {
@@ -29036,6 +29215,7 @@ fn render_moza_lane_artifact_index_markdown(receipt: &Value) -> String {
     push_input_role_semantics_markdown(&mut out, receipt);
     push_pit_house_compatibility_markdown(&mut out, receipt);
     push_simulator_compatibility_markdown(&mut out, receipt);
+    push_passive_sniff_navigation_markdown(&mut out, receipt);
 
     let mut grouped: BTreeMap<&str, Vec<&Value>> = BTreeMap::new();
     if let Some(artifacts) = receipt.get("lane_artifacts").and_then(Value::as_array) {
@@ -29145,6 +29325,7 @@ fn render_moza_bench_wizard_markdown(receipt: &Value) -> String {
     push_input_role_semantics_markdown(&mut out, receipt);
     push_pit_house_compatibility_markdown(&mut out, receipt);
     push_simulator_compatibility_markdown(&mut out, receipt);
+    push_passive_sniff_navigation_markdown(&mut out, receipt);
 
     out.push_str("## Safe No-Output Commands\n\n");
     out.push_str("| Name | Command |\n");
@@ -29447,6 +29628,57 @@ fn push_simulator_compatibility_markdown(out: &mut String, receipt: &Value) {
             markdown_escape(gate_status),
             markdown_escape(claim_status)
         ));
+    }
+    out.push('\n');
+}
+
+fn push_passive_sniff_navigation_markdown(out: &mut String, receipt: &Value) {
+    let Some(summary) = receipt.get("passive_sniff_navigation") else {
+        return;
+    };
+    if summary.is_null() {
+        return;
+    }
+
+    let recorded_scenario_count = json_u64(summary, "recorded_scenario_count").unwrap_or(0);
+    let required_scenario_count = json_u64(summary, "required_scenario_count").unwrap_or(0);
+    let readiness_claim = json_bool(summary, "readiness_claim").unwrap_or(false);
+    let blocks_native_control = json_bool(summary, "blocks_native_control").unwrap_or(false);
+    let blocks_native_visible = json_bool(summary, "blocks_native_visible").unwrap_or(false);
+    let blocks_smoke_ready = json_bool(summary, "blocks_smoke_ready").unwrap_or(false);
+
+    out.push_str("## Passive USB Sniffing\n\n");
+    out.push_str("This section is protocol research/support navigation only. Passive sniff artifacts do not authorize output, do not satisfy native-visible or smoke-ready gates, and are not required for native OpenRacing control.\n\n");
+    out.push_str(&format!(
+        "- Recorded scenarios: `{recorded_scenario_count}` / `{required_scenario_count}`\n"
+    ));
+    out.push_str(&format!("- Readiness claim: `{readiness_claim}`\n"));
+    out.push_str(&format!(
+        "- Blocks native control: `{blocks_native_control}`\n"
+    ));
+    out.push_str(&format!(
+        "- Blocks native visible: `{blocks_native_visible}`\n"
+    ));
+    out.push_str(&format!("- Blocks smoke-ready: `{blocks_smoke_ready}`\n\n"));
+
+    out.push_str("| Scenario | Status | Plan | Receipt | Summary |\n");
+    out.push_str("| --- | --- | --- | --- | --- |\n");
+    if let Some(scenarios) = summary.get("scenarios").and_then(Value::as_array) {
+        for scenario in scenarios {
+            let name = json_string(scenario, "scenario").unwrap_or("unknown");
+            let status = json_string(scenario, "status").unwrap_or("unknown");
+            let plan_status = json_string(scenario, "plan_status").unwrap_or("unknown");
+            let receipt_status = json_string(scenario, "receipt_status").unwrap_or("unknown");
+            let summary_status = json_string(scenario, "summary_status").unwrap_or("unknown");
+            out.push_str(&format!(
+                "| `{}` | `{}` | `{}` | `{}` | `{}` |\n",
+                markdown_escape(name),
+                markdown_escape(status),
+                markdown_escape(plan_status),
+                markdown_escape(receipt_status),
+                markdown_escape(summary_status)
+            ));
+        }
     }
     out.push('\n');
 }
@@ -31996,6 +32228,153 @@ mod tests {
         let wizard_markdown = render_moza_bench_wizard_markdown(&wizard_receipt);
         assert!(wizard_markdown.contains("Simulator Compatibility"));
         assert!(wizard_markdown.contains("not required for native OpenRacing control"));
+        Ok(())
+    }
+
+    #[test]
+    fn artifact_navigation_surfaces_passive_sniffing_without_claims() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+
+        let receipt = moza_artifact_index_receipt(dir.path(), None, None)?;
+        let sniff = receipt
+            .get("passive_sniff_navigation")
+            .ok_or("expected passive_sniff_navigation summary")?;
+        assert_eq!(
+            json_string(sniff, "claim_scope"),
+            Some("protocol_research_support_navigation_only")
+        );
+        assert_eq!(
+            json_string(sniff, "evidence_status"),
+            Some("passive_external_usb_observation")
+        );
+        assert_eq!(json_bool(sniff, "native_control_evidence"), Some(false));
+        assert_eq!(json_bool(sniff, "openracing_hardware_output"), Some(false));
+        assert_eq!(json_bool(sniff, "readiness_claim"), Some(false));
+        assert_eq!(
+            json_bool(sniff, "satisfies_native_visible_ready"),
+            Some(false)
+        );
+        assert_eq!(json_bool(sniff, "satisfies_smoke_ready"), Some(false));
+        assert_eq!(json_bool(sniff, "blocks_native_control"), Some(false));
+        assert_eq!(json_bool(sniff, "blocks_native_visible"), Some(false));
+        assert_eq!(json_bool(sniff, "blocks_smoke_ready"), Some(false));
+        assert_eq!(json_u64(sniff, "required_scenario_count"), Some(5));
+        assert_eq!(json_u64(sniff, "recorded_scenario_count"), Some(0));
+
+        let missing = sniff
+            .get("missing_scenarios")
+            .and_then(Value::as_array)
+            .ok_or("expected missing passive sniff scenarios")?;
+        assert!(
+            missing
+                .iter()
+                .any(|scenario| scenario.as_str() == Some("pit-house-open-idle")),
+            "expected Pit House open-idle sniff scenario to be missing navigation only: {missing:?}"
+        );
+
+        let scenarios = sniff
+            .get("scenarios")
+            .and_then(Value::as_array)
+            .ok_or("expected passive sniff scenarios")?;
+        let pit_house_open_idle = scenarios
+            .iter()
+            .find(|scenario| json_string(scenario, "scenario") == Some("pit-house-open-idle"))
+            .ok_or("expected pit-house-open-idle scenario")?;
+        assert_eq!(json_string(pit_house_open_idle, "status"), Some("missing"));
+        assert_eq!(
+            json_bool(pit_house_open_idle, "navigation_blocker_only"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(pit_house_open_idle, "blocks_native_visible"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(pit_house_open_idle, "readiness_claim"),
+            Some(false)
+        );
+
+        let markdown = render_moza_lane_artifact_index_markdown(&receipt);
+        assert!(markdown.contains("Passive USB Sniffing"));
+        assert!(markdown.contains("protocol research/support navigation only"));
+        assert!(markdown.contains("do not authorize output"));
+        assert!(
+            markdown.contains(
+                "| `pit-house-open-idle` | `missing` | `missing` | `missing` | `missing` |"
+            )
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn bench_wizard_surfaces_passive_sniffing_without_claims() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        write_passive_sniff_artifacts(dir.path(), "pit-house-open-idle")?;
+
+        let receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
+        let sniff = receipt
+            .get("passive_sniff_navigation")
+            .ok_or("expected wizard passive_sniff_navigation summary")?;
+        assert_eq!(json_bool(sniff, "readiness_claim"), Some(false));
+        assert_eq!(json_bool(sniff, "blocks_native_control"), Some(false));
+        assert_eq!(json_bool(sniff, "blocks_native_visible"), Some(false));
+        assert_eq!(json_bool(sniff, "blocks_smoke_ready"), Some(false));
+        assert_eq!(json_u64(sniff, "required_scenario_count"), Some(5));
+        assert_eq!(json_u64(sniff, "recorded_scenario_count"), Some(1));
+        assert_eq!(
+            json_bool(&receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "authorization_receipt_created"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "native_visible_claimed"), Some(false));
+        assert_eq!(json_bool(&receipt, "smoke_ready_claimed"), Some(false));
+
+        let scenarios = sniff
+            .get("scenarios")
+            .and_then(Value::as_array)
+            .ok_or("expected passive sniff scenarios")?;
+        let recorded = scenarios
+            .iter()
+            .find(|scenario| json_string(scenario, "scenario") == Some("pit-house-open-idle"))
+            .ok_or("expected recorded pit-house-open-idle scenario")?;
+        assert_eq!(json_string(recorded, "status"), Some("summary_recorded"));
+        assert_eq!(
+            json_string(recorded, "plan_status"),
+            Some("present_non_claiming")
+        );
+        assert_eq!(
+            json_string(recorded, "receipt_status"),
+            Some("present_non_claiming")
+        );
+        assert_eq!(
+            json_string(recorded, "summary_status"),
+            Some("present_non_claiming")
+        );
+        assert_eq!(json_bool(recorded, "blocks_native_visible"), Some(false));
+        assert_eq!(json_bool(recorded, "readiness_claim"), Some(false));
+
+        let missing = sniff
+            .get("missing_scenarios")
+            .and_then(Value::as_array)
+            .ok_or("expected missing passive sniff scenarios")?;
+        assert!(
+            missing
+                .iter()
+                .any(|scenario| scenario.as_str() == Some("simhub-output-session")),
+            "expected missing SimHub sniff scenario to remain navigation-only: {missing:?}"
+        );
+        let markdown = render_moza_bench_wizard_markdown(&receipt);
+        assert!(markdown.contains("Passive USB Sniffing"));
+        assert!(markdown.contains("protocol research/support navigation only"));
+        assert!(markdown.contains("do not authorize output"));
+        assert!(markdown.contains(
+            "| `pit-house-open-idle` | `summary_recorded` | `present_non_claiming` | `present_non_claiming` | `present_non_claiming` |"
+        ));
         Ok(())
     }
 
@@ -36120,6 +36499,129 @@ mod tests {
         write_test_json_file(
             &root.join("simulator-telemetry-proof.json"),
             &simulator_telemetry_receipt(),
+        )?;
+        Ok(())
+    }
+
+    fn write_passive_sniff_artifacts(root: &Path, scenario: &str) -> TestResult {
+        let sniff_dir = moza_passive_sniff_committed_dir(root, scenario);
+        fs::create_dir_all(&sniff_dir)?;
+        write_test_json_file(
+            &sniff_dir.join("sniff-plan.json"),
+            &serde_json::json!({
+                "schema_version": 1,
+                "success": true,
+                "command": "wheelctl hardware sniff-plan",
+                "generated_at_utc": "2026-05-18T00:00:00Z",
+                "family": "moza",
+                "scenario": scenario,
+                "lane": root.display().to_string(),
+                "operator": "Steven",
+                "device_note": "R5 + KS connected",
+                "capture_kind": "software_usb_urb_capture",
+                "capture_tools": ["wireshark", "usbpcap", "tshark"],
+                "platform_hint": "windows",
+                "allowed_actions": ["observe USB traffic"],
+                "forbidden_actions": ["run OpenRacing output commands"],
+                "evidence_status": "passive_external_usb_observation",
+                "native_control_evidence": false,
+                "openracing_hardware_output": false,
+                "external_app_may_have_sent_output": true,
+                "satisfies_native_response_ready": false,
+                "satisfies_native_visible_ready": false,
+                "satisfies_smoke_ready": false,
+                "satisfies_release_ready": false,
+                "readiness_claims": {
+                    "satisfies_native_response_ready": false,
+                    "satisfies_native_visible_ready": false,
+                    "satisfies_smoke_ready": false,
+                    "satisfies_release_ready": false
+                },
+                "notes": ["protocol research/support evidence only"]
+            }),
+        )?;
+        write_test_json_file(
+            &sniff_dir.join("sniff-receipt.json"),
+            &serde_json::json!({
+                "schema_version": 1,
+                "success": true,
+                "command": "wheelctl hardware sniff-receipt",
+                "generated_at_utc": "2026-05-18T00:00:00Z",
+                "plan_path": sniff_dir.join("sniff-plan.json").display().to_string(),
+                "pcapng_path": sniff_dir.join("capture.pcapng").display().to_string(),
+                "pcapng_sha256": "8f14e45fceea167a5a36dedd4bea2543",
+                "pcapng_size_bytes": 128,
+                "operator": "Steven",
+                "app": "Pit House",
+                "scenario": scenario,
+                "device_note": "R5 + KS connected",
+                "evidence": "passive USB sniff fixture",
+                "evidence_status": "passive_external_usb_observation",
+                "native_control_evidence": false,
+                "openracing_hardware_output": false,
+                "openracing_hid_device_opened": false,
+                "openracing_ffb_writes": false,
+                "openracing_output_reports": false,
+                "openracing_feature_reports": false,
+                "openracing_serial_config_commands": false,
+                "openracing_firmware_or_dfu_commands": false,
+                "external_app_observed": true,
+                "external_app_may_have_sent_output": true,
+                "satisfies_native_response_ready": false,
+                "satisfies_native_visible_ready": false,
+                "satisfies_smoke_ready": false,
+                "satisfies_release_ready": false,
+                "readiness_claims": {
+                    "satisfies_native_response_ready": false,
+                    "satisfies_native_visible_ready": false,
+                    "satisfies_smoke_ready": false,
+                    "satisfies_release_ready": false
+                }
+            }),
+        )?;
+        write_test_json_file(
+            &sniff_dir.join("sniff-summary.json"),
+            &serde_json::json!({
+                "schema_version": 1,
+                "success": true,
+                "command": "wheelctl hardware sniff-summary",
+                "generated_at_utc": "2026-05-18T00:00:00Z",
+                "pcapng_sha256": "8f14e45fceea167a5a36dedd4bea2543",
+                "tool": {
+                    "tshark_present": true,
+                    "tshark_version": "fixture"
+                },
+                "filters": {
+                    "vendor_id": "0x346E",
+                    "product_id": "0x0004",
+                    "interface_number": null
+                },
+                "matched_packets": 1,
+                "usb_transfer_summary": {
+                    "host_to_device": 0,
+                    "device_to_host": 1,
+                    "control": 0,
+                    "interrupt": 1
+                },
+                "observed_devices": [],
+                "observed_reports": [],
+                "descriptor_candidates": [],
+                "evidence_status": "passive_external_usb_observation",
+                "native_control_evidence": false,
+                "openracing_hardware_output": false,
+                "external_app_may_have_sent_output": true,
+                "satisfies_native_response_ready": false,
+                "satisfies_native_visible_ready": false,
+                "satisfies_smoke_ready": false,
+                "satisfies_release_ready": false,
+                "readiness_claims": {
+                    "satisfies_native_response_ready": false,
+                    "satisfies_native_visible_ready": false,
+                    "satisfies_smoke_ready": false,
+                    "satisfies_release_ready": false
+                },
+                "notes": ["passive protocol research only"]
+            }),
         )?;
         Ok(())
     }

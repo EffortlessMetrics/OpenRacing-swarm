@@ -62,6 +62,24 @@ This section is external-smoke navigation only. Simulator telemetry and bounded 
 | `simulator_telemetry` | `simulator-telemetry-proof.json` | `fail` | `missing` |
 | `simulator_ffb_bounded` | `simulator-ffb-smoke.json` | `fail` | `missing` |
 
+## Passive USB Sniffing
+
+This section is protocol research/support navigation only. Passive sniff artifacts do not authorize output, do not satisfy native-visible or smoke-ready gates, and are not required for native OpenRacing control.
+
+- Recorded scenarios: `0` / `5`
+- Readiness claim: `false`
+- Blocks native control: `false`
+- Blocks native visible: `false`
+- Blocks smoke-ready: `false`
+
+| Scenario | Status | Plan | Receipt | Summary |
+| --- | --- | --- | --- | --- |
+| `pit-house-open-idle` | `missing` | `missing` | `missing` | `missing` |
+| `pit-house-setting-change` | `missing` | `missing` | `missing` | `missing` |
+| `simhub-open-idle` | `missing` | `missing` | `missing` | `missing` |
+| `simhub-output-session` | `missing` | `missing` | `missing` | `missing` |
+| `simulator-session-start-stop` | `missing` | `missing` | `missing` | `missing` |
+
 ## Passive Enumeration And Input
 
 | Path | Kind | Evidence Role |

@@ -600,6 +600,67 @@ Remove only the simulator compatibility summary fields, renderer section, and
 tests. Do not alter any simulator receipts, attempt-03 artifacts, authorization
 logic, or verifier gates.
 
+## Work item: surface-passive-sniff-navigation
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: clearer protocol-research navigation while native-visible is blocked
+Blocked by: n/a
+
+### Goal
+
+Make the no-output navigation surfaces show passive USB sniff scenarios for Pit
+House, SimHub, and simulator protocol research without making sniff artifacts a
+native-control prerequisite or converting support evidence into readiness
+claims.
+
+### Production delta
+
+`wheelctl moza artifact-index` and `wheelctl moza bench-wizard` now include a
+`passive_sniff_navigation` summary. It lists the planned passive sniff
+scenarios, detects non-claiming plan/receipt/summary artifacts when present, and
+keeps missing scenarios as navigation-only work with `readiness_claim=false`,
+`blocks_native_control=false`, `blocks_native_visible=false`, and
+`blocks_smoke_ready=false`.
+
+### Non-goals
+
+No hardware output, no HID open, no USBPcap/Wireshark capture, no raw pcapng
+commit, no sniff bundle generation, no authorization receipt, and no
+native-visible or smoke-ready promotion.
+
+### Acceptance
+
+- The artifact index and bench wizard surface Pit House, SimHub, and simulator
+  passive sniff scenarios separately from native-visible readiness.
+- Missing sniff scenarios are navigation-only gaps and never native-visible or
+  smoke-ready blockers.
+- Present sniff artifacts must be non-claiming before they are displayed as
+  recorded.
+- Markdown renderers state that passive sniffing is protocol research/support
+  navigation only and does not authorize output.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl passive_sniff -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl artifact_index -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the passive sniff navigation summary fields, renderer section, and
+tests. Do not alter sniff schemas, sniff command behavior, hardware artifacts,
+attempt-03 artifacts, authorization logic, or verifier gates.
+
 ## Work item: attempt-03-authorization
 
 Status: blocked
