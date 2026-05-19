@@ -2828,6 +2828,51 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_controlled_angle_smoke_closed_loop_dry_run() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "controlled-angle-smoke",
+            "--device",
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
+            "--target-degrees",
+            "1",
+            "--profile",
+            "closed-loop-pidff-angle-v1",
+            "--max-percent",
+            "5",
+            "--timeout-ms",
+            "2000",
+            "--strategy",
+            "pidff-bounded-effect",
+            "--dry-run",
+            "--json-out",
+            "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-closed-loop-preflight.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::ControlledAngleSmoke {
+                profile,
+                dry_run,
+                json_out,
+                ..
+            }) => {
+                assert_eq!(*profile, MozaControlledAngleProfile::ClosedLoopPidffAngleV1);
+                assert!(*dry_run);
+                assert_eq!(
+                    json_out.as_ref().and_then(|path| path.to_str()),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-closed-loop-preflight.json"
+                    )
+                );
+            }
+            _ => return Err("expected Moza ControlledAngleSmoke command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_authorize_visible_output() -> TestResult {
         let cli = parse_cli([
             "wheelctl",

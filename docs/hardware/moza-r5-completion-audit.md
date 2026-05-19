@@ -44,14 +44,17 @@ path is proven, but native visible motion is still blocked. Smoke-ready is also
 blocked by missing Pit House coexistence, simulator telemetry, and bounded
 simulator FFB receipts.
 
-Attempt 03 has now run exactly once and failed safely. The consumed
-authorization, output receipt, native-visible verifier, and no-output failure
-analysis are preserved. No further hardware output is authorized; the next work
-is no-output Moza vendor-specific enable/control path investigation before any
-future output family is proposed. The standard PIDFF path diagnosis records that
-three bounded standard-PIDFF-family controlled-angle attempts remained in the
-same undertravel band. The vendor-control investigation now has plan-only
-passive sniff artifacts for Pit House, SimHub, and simulator sessions.
+Attempt 03 and the later closed-loop controlled-angle attempt have each run
+exactly once and failed safely. The consumed authorizations, output receipts,
+native-visible verifier, and no-output failure analyses are preserved. No
+further hardware output is authorized; the next work is no-output Moza
+vendor-specific enable/control path investigation before any future output
+family is proposed. The standard PIDFF path diagnosis records that three
+bounded standard-PIDFF-family controlled-angle attempts remained in the same
+undertravel band, and the closed-loop attempt records that feedback-bounded
+PIDFF control also stayed below the visible-motion threshold. The vendor-control
+investigation now has plan-only passive sniff artifacts for Pit House, SimHub,
+and simulator sessions.
 
 ## Prompt-To-Artifact Checklist
 
@@ -69,14 +72,15 @@ passive sniff artifacts for Pit House, SimHub, and simulator sessions.
 | Watchdog proof exists | `watchdog-proof.json`; verifier gate `watchdog_zero_output` | Pass | Watchdog proof injected timeout and sent final zero. |
 | Disconnect proof exists | `disconnect-proof.json`; verifier gate `disconnect_final_zero` | Pass | Disconnect proof observed HID write failure and attempted final zero with zero-only payloads. |
 | Low-torque proof exists | `low-torque-proof.json`; verifier gate `low_torque_bounded`; `openracing-control-verification.json` | Pass | Bounded PIDFF low-torque proof and OpenRacing native control foundation are present. |
-| Final-zero / Stop All cleanup paths proven for current native attempts | `native-actuator-profile-smoke.json`; `native-controlled-angle-smoke.json`; `native-controlled-angle-retry-smoke.json`; `native-controlled-angle-attempt-03-smoke.json`; verifier gate details | Partial pass | Native response and all three controlled-angle undertravel attempts sent cleanup successfully. Smoke-level final-zero / bounded FFB cleanup remains unproven until simulator FFB smoke exists. |
+| Final-zero / Stop All cleanup paths proven for current native attempts | `native-actuator-profile-smoke.json`; `native-controlled-angle-smoke.json`; `native-controlled-angle-retry-smoke.json`; `native-controlled-angle-attempt-03-smoke.json`; `native-controlled-angle-closed-loop-smoke.json`; verifier gate details | Partial pass | Native response, all three pre-closed-loop controlled-angle undertravel attempts, and the closed-loop attempt sent cleanup successfully. Smoke-level final-zero / bounded FFB cleanup remains unproven until simulator FFB smoke exists. |
 | Native actuator response proven | `native-actuator-visible-smoke.json`; `native-response-verification.json`; pre-output readiness | Pass | Response gate records about 0.181 degrees above the 0.100 degree response threshold. |
-| Native visible motion proven | `native-visible-verification.json`; current `verify-bundle --stage native-visible-ready` | Missing | Current verifier fails `native_actuator_visible_smoke`; all three controlled-angle attempts remain below the 1 degree visible threshold. |
+| Native visible motion proven | `native-visible-verification.json`; current `verify-bundle --stage native-visible-ready` | Missing | Current verifier fails `native_actuator_visible_smoke`; all controlled-angle attempts, including the closed-loop attempt, remain below the 1 degree visible threshold. |
 | Attempt-03 profile planned without output | `native-pidff-effect-lifecycle-plan.json`; `native-controlled-angle-attempt-03-preflight.json` | Pass as no-output preparation | Profile `bounded-pidff-effect-lifecycle-v1` is preflighted with `dry_run=true`, zero writes, and `hardware_output_enabled=false`. It authorizes no output. |
 | Attempt-03 authorization exists | `native-controlled-angle-attempt-03-authorization.json` | Pass, consumed | Exact command-bound authorization was recorded and consumed by the single attempt-03 output receipt; it authorizes no further output. |
 | Attempt-03 output receipt exists | `native-controlled-angle-attempt-03-smoke.json` | Pass as safe failed evidence | Attempt 03 sent four bounded PIDFF effect-lifecycle writes, reached 0.181277 degrees, timed out before target, sent final Stop All, stayed post-stop stable, and recorded zero write errors. It is not visible-motion proof. |
 | Attempt-03 failure analysis exists | `native-controlled-angle-attempt-03-failure-analysis.json` | Pass as no-output classification | Analysis classifies safe undertravel in the same response band and keeps rerun, force escalation, native-visible, smoke-ready, and release-ready claims false. |
 | Standard PIDFF path diagnosis exists | `native-pidff-standard-path-diagnosis.json`; [Moza R5 Standard PIDFF Path Diagnosis](moza-r5-standard-pidff-path-diagnosis.md) | Pass as no-output architecture diagnosis | Diagnosis classifies `standard_pidff_controlled_angle_path_ineffective_in_current_r5_mode`, preserves all three controlled-angle receipts, keeps `planned_next_output.allowed=false`, and identifies no-output vendor-specific protocol investigation as next. |
+| Closed-loop controlled-angle path exists | `native-controlled-angle-closed-loop-preflight.json`; `native-controlled-angle-closed-loop-authorization.json`; `native-controlled-angle-closed-loop-smoke.json`; `native-controlled-angle-closed-loop-failure-analysis.json` | Pass as safe failed evidence | The closed-loop attempt used `closed-loop-pidff-angle-v1`, wrote 672 bounded PIDFF reports with zero write errors, sent final Stop All/final zero, stayed post-stop stable, and timed out before target at `angle_delta_degrees=0.13183794918745662`. It is not visible-motion proof and authorizes no further output. |
 | Pit House compatibility navigation is current | `pre-output-readiness.json`, `artifact-index`, and `bench-wizard` `pit_house_compatibility`; `ci/hardware/moza-r5/2026-05-13/index.md` Pit House Compatibility section | Pass as non-claiming navigation | The lane records `pit_house_available=false`, `recorded_case_count=1/5`, `pit_house_coexistence_claimed=false`, `readiness_claim=false`, `blocks_native_control=false`, and `blocks_native_visible=false`. Missing open/direct/mode-change/firmware-page cases remain external smoke blockers. |
 | Pit House coexistence proven | `pit-house-coexistence.json`; smoke-ready verifier | Missing | `pit-house-availability.json` is non-claiming availability evidence only. Coexistence matrix is not proven. |
 | Simulator compatibility navigation is current | `pre-output-readiness.json`, `artifact-index`, and `bench-wizard` `simulator_compatibility`; `ci/hardware/moza-r5/2026-05-13/index.md` Simulator Compatibility section | Pass as non-claiming navigation | The lane records `recorded_artifact_count=0/2`, `simulator_telemetry_claimed=false`, `bounded_simulator_ffb_claimed=false`, `readiness_claim=false`, `blocks_native_control=false`, and `blocks_native_visible=false`. Missing telemetry and bounded FFB artifacts remain external smoke blockers. |
@@ -106,7 +110,7 @@ no_ffb_writes=true
 The current `bench-wizard` result is diagnostic only:
 
 ```text
-frontier=controlled_angle_attempt_03_recorded
+frontier=closed_loop_undertravel_recorded
 highest_passing_stage=native_response_ready
 next_required_stage=native_visible_ready
 hardware_output_authorized=false
@@ -114,6 +118,9 @@ authorization_receipt_created=false
 attempt_03.authorization=native-controlled-angle-attempt-03-authorization.json consumed
 attempt_03.output=native-controlled-angle-attempt-03-smoke.json safe_undertravel
 attempt_03.analysis=native-controlled-angle-attempt-03-failure-analysis.json complete_no_output
+closed_loop.authorization=native-controlled-angle-closed-loop-authorization.json consumed
+closed_loop.output=native-controlled-angle-closed-loop-smoke.json safe_undertravel
+closed_loop.analysis=native-controlled-angle-closed-loop-failure-analysis.json complete_no_output
 ```
 
 The current input-role semantic evidence remains diagnostic:

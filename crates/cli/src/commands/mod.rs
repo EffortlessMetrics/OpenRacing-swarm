@@ -1578,6 +1578,8 @@ pub enum MozaControlledAngleProfile {
     BoundedPidffMicroStepV2,
     /// Trace-informed PIDFF effect lifecycle profile for the next reviewed 1 degree attempt
     BoundedPidffEffectLifecycleV1,
+    /// Closed-loop PIDFF angle controller that recomputes bounded force from steering error
+    ClosedLoopPidffAngleV1,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]

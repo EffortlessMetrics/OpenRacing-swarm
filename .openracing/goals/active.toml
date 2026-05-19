@@ -418,12 +418,31 @@ commands = [
 ]
 
 [[work_item]]
+id = "closed-loop-native-motion-ladder"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-closed-loop-native-motion-ladder"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-closed-loop-smoke.json"
+claim_boundary = "Exactly one authorized 1 degree, 5 percent, 2000 ms closed-loop controlled-angle attempt ran and failed safely; no rerun, force escalation, native-visible, smoke-ready, or release-ready claim."
+blocked_by = "n/a"
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl controlled_angle -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl native_visible -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
 adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
 plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-native-visible-promotion"
-current_pointer = "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-smoke.json"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-closed-loop-smoke.json"
 claim_boundary = "May promote native_visible_ready only if the verifier accepts real visible motion; no smoke-ready or release-ready claim."
 blocked_by = "A passing native-visible hardware receipt."
 commands = [

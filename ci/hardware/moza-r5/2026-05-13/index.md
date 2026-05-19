@@ -3,7 +3,7 @@
 This index is diagnostic navigation only. It reads stored lane files, opens no HID device, sends no output or feature reports, and does not authorize hardware output or promote readiness.
 
 - Lane: `ci/hardware/moza-r5/2026-05-13`
-- Frontier: `controlled_angle_attempt_03_recorded`
+- Frontier: `closed_loop_undertravel_recorded`
 - Highest passing stage: `native_response_ready`
 - Next required stage: `native_visible_ready`
 - Native actuator response proven: `true`
@@ -153,6 +153,10 @@ This section is protocol research/support navigation only. Passive sniff artifac
 | `native-controlled-angle-attempt-03-preflight.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 | `native-controlled-angle-attempt-03-smoke.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 | `native-controlled-angle-authorization.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
+| `native-controlled-angle-closed-loop-authorization.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
+| `native-controlled-angle-closed-loop-failure-analysis.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
+| `native-controlled-angle-closed-loop-preflight.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
+| `native-controlled-angle-closed-loop-smoke.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 | `native-controlled-angle-failure-analysis.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 | `native-controlled-angle-plan.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 | `native-controlled-angle-retry-authorization.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
@@ -247,4 +251,8 @@ This section is protocol research/support navigation only. Passive sniff artifac
 | `lane-audit-smoke-ready.json` | `smoke_ready` | `missing` | `artifact_only` |
 | `native-controlled-angle-attempt-03-authorization.json` | `native_visible_ready` | `pass` | `artifact_only` |
 | `native-controlled-angle-attempt-03-smoke.json` | `native_visible_ready` | `pass` | `artifact_only` |
+| `native-controlled-angle-closed-loop-preflight.json` | `native_visible_ready` | `pass` | `artifact_only` |
+| `native-controlled-angle-closed-loop-authorization.json` | `native_visible_ready` | `pass` | `artifact_only` |
+| `native-controlled-angle-closed-loop-smoke.json` | `native_visible_ready` | `pass` | `artifact_only` |
+| `native-controlled-angle-closed-loop-failure-analysis.json` | `native_visible_ready` | `pass` | `artifact_only` |
 

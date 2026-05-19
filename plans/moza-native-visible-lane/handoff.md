@@ -19,24 +19,31 @@ Current verified state:
 - `native_actuator_response_proven=true`
 - `native_visible_motion_proven=false`
 - `native_control_blocking_items=[]`
-- `frontier=controlled_angle_attempt_03_recorded`
+- `frontier=closed_loop_undertravel_recorded`
 - `hardware_output_authorized=false`
 
-The first 1 degree controlled-angle attempt, the reviewed retry, and attempt 03
-all failed safely in the same response band, about `0.181277` degrees. Attempt
-03 used `bounded-pidff-effect-lifecycle-v1`, consumed the exact command-bound
-authorization, sent four bounded PIDFF writes, timed out before target, sent
-final Stop All, stayed post-stop stable, and recorded no direct report `0x20`,
-no high torque, no serial config, and no firmware or DFU.
+The first 1 degree controlled-angle attempt, the reviewed retry, attempt 03,
+and the closed-loop attempt all failed safely below the visible-motion
+threshold. Attempt 03 used `bounded-pidff-effect-lifecycle-v1`, consumed the
+exact command-bound authorization, sent four bounded PIDFF writes, timed out
+before target, sent final Stop All, stayed post-stop stable, and recorded no
+direct report `0x20`, no high torque, no serial config, and no firmware or DFU.
+The closed-loop attempt used `closed-loop-pidff-angle-v1`, consumed its exact
+command-bound authorization, recomputed bounded PIDFF force from live
+steering-angle error, sent 672 bounded reports with zero write errors, timed out
+at `angle_delta_degrees=0.13183794918745662`, sent final Stop All/final zero,
+and stayed post-stop stable.
 
 `native-controlled-angle-attempt-03-failure-analysis.json` classifies attempt 03
 as safe undertravel and keeps native visible motion unclaimed.
 `native-pidff-standard-path-diagnosis.json` classifies the standard PIDFF
 controlled-angle path as ineffective in the current R5 device mode after three
-same-band undertravel attempts. Five passive sniff plan artifacts now exist
-under `ci/hardware/sniff/moza-r5/2026-05-13`; they are plan-only protocol
-research artifacts, not receipts or readiness claims. No further hardware output
-is authorized.
+same-band undertravel attempts. `native-controlled-angle-closed-loop-failure-analysis.json`
+classifies the feedback-bounded attempt as safe undertravel and keeps native
+visible motion unclaimed. Five passive sniff plan artifacts now exist under
+`ci/hardware/sniff/moza-r5/2026-05-13`; they are plan-only protocol research
+artifacts, not receipts or readiness claims. No further hardware output is
+authorized.
 
 ## Completion Audit Summary
 
@@ -51,6 +58,8 @@ The broader Moza objective remains incomplete:
 | Attempt-03 output | `native-controlled-angle-attempt-03-smoke.json` | Recorded safe undertravel |
 | Attempt-03 analysis | `native-controlled-angle-attempt-03-failure-analysis.json` | Recorded no-output classification |
 | Standard PIDFF path diagnosis | `native-pidff-standard-path-diagnosis.json` | Recorded no-output architecture diagnosis |
+| Closed-loop controlled-angle output | `native-controlled-angle-closed-loop-smoke.json` | Recorded safe undertravel |
+| Closed-loop failure analysis | `native-controlled-angle-closed-loop-failure-analysis.json` | Recorded no-output classification |
 | Vendor-control sniff plans | `ci/hardware/sniff/moza-r5/2026-05-13/*/sniff-plan.json` | Plan-only, non-claiming |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |
 | Simulator telemetry | `simulator-telemetry-proof.json` | Missing |
@@ -63,29 +72,23 @@ mapping remains diagnostic with `readiness_claim=false`.
 
 ## Required Next Event
 
-The next native-visible step is to run the planned passive USB sniff captures
-and generate non-claiming `sniff-receipt.json` and `sniff-summary.json`
-artifacts. `wheelctl moza bench-wizard` and native-visible verifier guidance
-now surface the first command-bound no-output handoff for `pit-house-open-idle`:
-generate the receipt from the saved local pcapng, summarize it with
-`wheelctl hardware sniff-summary`, and optionally bundle summary evidence
-without committing raw pcapng. The generated sniff receipt, summary, and bundle
-command strings are parse-validated by the bench-wizard test guard. Bench-wizard
-also renders an external capture checklist that keeps USBPcap/Wireshark/tshark
-capture operator-owned, names `target/sniff/pit-house-open-idle/capture.pcapng`,
-and repeats the firmware/DFU/driver-change boundary. Preserve all
-three controlled-angle undertravel receipts and the attempt-03 authorization,
-smoke, verification, analysis, standard-PIDFF diagnosis, and sniff plan
-artifacts. Do not create another authorization or output receipt from verifier
-guidance. Any future output family requires decoded protocol evidence, a
-reviewed vendor-control plan, fresh command-bound bench clear, and a new exact
-authorization.
+The next native-visible step is no-output Moza vendor-specific protocol
+investigation before any future output family. Passive USB sniff captures may
+produce non-claiming `sniff-receipt.json`, `sniff-summary.json`, and bundle
+manifest artifacts, but those are protocol/coexistence evidence, not native
+readiness evidence. Preserve all four controlled-angle undertravel receipts and
+their authorization, smoke, verification, analysis, standard-PIDFF diagnosis,
+closed-loop failure analysis, and sniff plan artifacts. Do not create another
+authorization or output receipt from verifier guidance. Any future output family
+requires decoded protocol evidence, a reviewed vendor-control plan, fresh
+command-bound bench clear, and a new exact authorization.
 
 ## Do Not Do
 
 - Do not create another authorization receipt from this handoff.
 - Do not run hardware output.
-- Do not rerun attempt 03 or either previous 1 degree attempt.
+- Do not rerun attempt 03, the closed-loop attempt, or either previous 1 degree
+  attempt.
 - Do not keep iterating standard PIDFF profile variants without new protocol
   evidence.
 - Do not raise force, extend dwell, or jump to 3, 5, 30, or 90 degrees.

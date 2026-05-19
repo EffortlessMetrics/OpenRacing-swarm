@@ -18,6 +18,9 @@ The primary lane artifacts are:
 | [native-controlled-angle-retry-smoke.json](../../ci/hardware/moza-r5/2026-05-13/native-controlled-angle-retry-smoke.json) | Preserved failed retry output receipt |
 | [native-controlled-angle-retry-failure-analysis.json](../../ci/hardware/moza-r5/2026-05-13/native-controlled-angle-retry-failure-analysis.json) | No-output retry analysis artifact |
 | [native-pidff-semantics-diagnosis.json](../../ci/hardware/moza-r5/2026-05-13/native-pidff-semantics-diagnosis.json) | No-output PIDFF semantics/profile diagnosis |
+| [native-controlled-angle-closed-loop-preflight.json](../../ci/hardware/moza-r5/2026-05-13/native-controlled-angle-closed-loop-preflight.json) | No-output closed-loop 1 degree profile preflight |
+| [native-controlled-angle-closed-loop-smoke.json](../../ci/hardware/moza-r5/2026-05-13/native-controlled-angle-closed-loop-smoke.json) | Preserved failed closed-loop output receipt |
+| [native-controlled-angle-closed-loop-failure-analysis.json](../../ci/hardware/moza-r5/2026-05-13/native-controlled-angle-closed-loop-failure-analysis.json) | No-output closed-loop failure analysis |
 
 Related docs:
 
@@ -130,3 +133,32 @@ Those artifacts still authorize no output. The reviewed
 `bounded-pidff-effect-lifecycle-v1` as the next software profile. It is
 implemented for no-output preflight and exact-command binding, but it is not an
 authorization receipt.
+
+## Closed-Loop Native Preflight
+
+The current no-output successor profile is `closed-loop-pidff-angle-v1`,
+recorded in `native-controlled-angle-closed-loop-preflight.json`. It is still
+bounded to `target_degrees=1`, `max_percent=5`, `timeout_ms=2000`, and
+`strategy=pidff-bounded-effect`.
+
+Unlike the earlier open-loop or fixed-lifecycle attempts, this profile samples
+the start angle, computes target error from live steering feedback, recomputes
+conservative PIDFF constant-force commands from that error, returns toward the
+start angle, and sends final Stop All. The preflight opened no HID device, sent
+no output reports, and wrote no FFB commands; it proves only software planning
+and receipt shape.
+
+The first real closed-loop attempt is now preserved as
+`native-controlled-angle-closed-loop-smoke.json`. It still failed safely as
+undertravel: `target_reached=false`, `timeout_reached=true`,
+`angle_delta_degrees=0.13183794918745662`, `writes_ok=672`,
+`write_errors=0`, `final_stop_all_sent=true`, `final_zero_sent=true`, and
+`post_stop_stable=true`. The no-output classification is recorded in
+`native-controlled-angle-closed-loop-failure-analysis.json`.
+
+Pit House, SimHub, and simulator telemetry are not prerequisites for this
+native-control path. They remain separate coexistence and external-compatibility
+evidence. The closed-loop receipt did not promote `native-visible-ready`; the
+verifier still fails until real hardware evidence reaches the visible-motion
+threshold. Further output requires new protocol evidence, a reviewed plan, fresh
+command-bound bench-clear, and a new exact authorization.

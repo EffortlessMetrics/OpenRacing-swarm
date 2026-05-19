@@ -19,13 +19,13 @@ The current frontier is:
 
 ```text
 native_response_ready
--> controlled_angle_attempt_03_recorded
+-> closed_loop_undertravel_recorded
 -> native_visible_ready still blocked
 ```
 
 ## Required behavior
 
-The lane MUST preserve the first controlled-angle receipt, the reviewed retry receipt, attempt 03, their authorization receipts, and their failure analysis artifacts. These attempts are evidence because they show bounded PIDFF writes, steering feedback, final Stop All cleanup, and post-stop stability, but they MUST NOT satisfy native visible motion because all stayed below the 1 degree visible threshold.
+The lane MUST preserve the first controlled-angle receipt, the reviewed retry receipt, attempt 03, the closed-loop attempt, their authorization receipts, and their failure analysis artifacts. These attempts are evidence because they show bounded PIDFF writes, steering feedback, final Stop All cleanup, final zero where implemented, and post-stop stability, but they MUST NOT satisfy native visible motion because all stayed below the 1 degree visible threshold.
 
 The lane MUST keep `native_visible_motion_proven=false` until a same-lane visible-motion receipt passes the verifier. A dry-run, preflight, plan, lifecycle trace, artifact index, bench wizard receipt, passive sniff bundle, Pit House receipt, SimHub receipt, simulator telemetry proof, or simulator FFB smoke receipt MUST NOT satisfy native-visible readiness.
 
@@ -61,11 +61,40 @@ bench clear for exactly one Moza controlled-angle attempt 03: target 1 degree, m
 
 Generic `bench clear` text is not sufficient for this attempt.
 
+## Current closed-loop contract
+
+The closed-loop profile is based on:
+
+- `native-controlled-angle-closed-loop-preflight.json`
+- `native-controlled-angle-closed-loop-authorization.json`
+- `native-controlled-angle-closed-loop-smoke.json`
+- `native-controlled-angle-closed-loop-failure-analysis.json`
+
+The only closed-loop profile named by the current lane is:
+
+```text
+closed-loop-pidff-angle-v1
+```
+
+The closed-loop attempt has been run exactly once. Its authorization is
+consumed, the smoke receipt records safe undertravel after 672 successful
+bounded PIDFF writes, final Stop All/final zero, and no write errors, and the
+failure analysis classifies `safe_undertravel_closed_loop_pidff_no_visible_motion`.
+This is not visible-motion proof, and it authorizes no further output.
+
+The command-bound bench-clear evidence consumed by the closed-loop attempt was:
+
+```text
+bench clear from operator for exactly one Moza controlled-angle retry: target 1 degree, max 5%, timeout 2000 ms, strategy pidff-bounded-effect, profile closed-loop-pidff-angle-v1, R5 stable, KS attached securely, hands clear, wheel clear, prior failed receipt preserved
+```
+
+Generic `bench clear` text is not sufficient for this attempt.
+
 ## Acceptance examples
 
 ### Current verifier failure
 
-Given the current lane, `wheelctl moza verify-bundle --stage native-visible-ready` SHOULD fail because the native visible motion gate is still blocked after attempt 03. The failure SHOULD NOT include a generated output command.
+Given the current lane, `wheelctl moza verify-bundle --stage native-visible-ready` SHOULD fail because the native visible motion gate is still blocked after the closed-loop attempt. The failure SHOULD NOT include a generated output command.
 
 ### Passing visible-motion receipt
 
@@ -73,13 +102,14 @@ Given a future same-lane receipt with target reached, visible threshold met, no 
 
 ### Non-claiming diagnostics
 
-Given `native-pidff-lifecycle-trace.json`, `native-pidff-effect-lifecycle-plan.json`, `native-pidff-standard-path-diagnosis.json`, `native-controlled-angle-attempt-03-preflight.json`, `native-controlled-angle-attempt-03-authorization.json`, the failed `native-controlled-angle-attempt-03-smoke.json`, `native-controlled-angle-attempt-03-failure-analysis.json`, `index.md`, or a bench-wizard receipt, the verifier MUST keep native-visible blocked unless a real output receipt also passes.
+Given `native-pidff-lifecycle-trace.json`, `native-pidff-effect-lifecycle-plan.json`, `native-pidff-standard-path-diagnosis.json`, `native-controlled-angle-attempt-03-preflight.json`, `native-controlled-angle-attempt-03-authorization.json`, the failed `native-controlled-angle-attempt-03-smoke.json`, `native-controlled-angle-attempt-03-failure-analysis.json`, the closed-loop preflight, authorization, failed smoke, failure analysis, `index.md`, or a bench-wizard receipt, the verifier MUST keep native-visible blocked unless a real output receipt also passes.
 
-Given the standard PIDFF diagnosis, the next investigation path MUST be
-no-output Moza vendor-specific enable/control research. It MAY sniff Pit House
-or SimHub, decode vendor reports, map report IDs, identify enable/gain/mode
-handshakes, and design a reviewed vendor-control plan, but it MUST NOT create an
-authorization receipt or hardware-output receipt by itself.
+Given the standard PIDFF diagnosis and recorded closed-loop undertravel, the
+next investigation path MUST be no-output Moza vendor-specific enable/control
+research before any future output family. It MAY sniff Pit House or SimHub,
+decode vendor reports, map report IDs, identify enable/gain/mode handshakes, and
+design a reviewed vendor-control plan, but it MUST NOT create an authorization
+receipt or hardware-output receipt by itself.
 
 Given plan-only passive sniff artifacts under
 `ci/hardware/sniff/moza-r5/<date>/`, artifact-index MAY surface the plans as

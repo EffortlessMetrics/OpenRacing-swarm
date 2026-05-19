@@ -13,17 +13,19 @@ Blocked handoff: plans/moza-native-visible-lane/handoff.md
 
 The Moza R5 lane at `ci/hardware/moza-r5/2026-05-13` is `native_response_ready`.
 The artifact index records frontier
-`controlled_angle_attempt_03_recorded`, highest passing stage
+`closed_loop_undertravel_recorded`, highest passing stage
 `native_response_ready`, next required stage `native_visible_ready`,
 `native_actuator_response_proven=true`, `native_visible_motion_proven=false`,
 and `release_ready=false`.
 
-Three real controlled-angle output receipts are preserved. The first 1 degree
+Four real controlled-angle output receipts are preserved. The first 1 degree
 attempt sent five bounded PIDFF writes, the reviewed retry sent 33 bounded PIDFF
-writes, and attempt 03 sent four bounded PIDFF effect-lifecycle writes. All had
-zero write errors, final Stop All sent, post-stop stability, and about 0.181277
-degrees of steering delta. They are useful safe undertravel evidence, not
-visible-motion proof.
+writes, attempt 03 sent four bounded PIDFF effect-lifecycle writes, and the
+closed-loop attempt sent 672 bounded PIDFF writes recomputed from live
+steering-angle error. All had zero write errors, final cleanup, and post-stop
+stability. The first three stayed around 0.181277 degrees of steering delta; the
+closed-loop attempt ended at `angle_delta_degrees=0.13183794918745662`. They
+are useful safe undertravel evidence, not visible-motion proof.
 
 `native-pidff-lifecycle-trace.json`,
 `native-pidff-effect-lifecycle-plan.json`, and
@@ -34,6 +36,14 @@ software-only dry-run for `bounded-pidff-effect-lifecycle-v1`. The matching
 `native-controlled-angle-attempt-03-smoke.json` records safe undertravel, and
 `native-controlled-angle-attempt-03-failure-analysis.json` records the no-output
 classification. No further hardware output is authorized.
+
+`native-controlled-angle-closed-loop-preflight.json` records the no-output
+software preflight for `closed-loop-pidff-angle-v1`. The matching
+`native-controlled-angle-closed-loop-authorization.json` is recorded and
+consumed, `native-controlled-angle-closed-loop-smoke.json` records safe
+undertravel after 672 successful bounded PIDFF writes, and
+`native-controlled-angle-closed-loop-failure-analysis.json` records the
+no-output classification. No further hardware output is authorized.
 
 `docs/hardware/moza-r5-completion-audit.md` maps the broader Moza lane objective
 to concrete receipts and confirms that the objective is still incomplete:
@@ -1273,6 +1283,64 @@ git diff --check
 Revert only the `sniff-bundle --json-out` CLI plumbing, generated handoff
 command update, focused tests, and this plan entry. Do not remove sniff plans,
 receipts, summaries, raw local captures, or controlled-angle evidence.
+
+## Work item: closed-loop-native-motion-ladder
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: next no-output protocol investigation
+Blocked by: n/a
+
+### Goal
+
+Replace blind standard-PIDFF-family retry guidance with one bounded
+feedback-driven `closed-loop-pidff-angle-v1` rung that samples steering angle,
+computes torque from target error, clamps force, records observed motion, and
+always performs final cleanup.
+
+### Production delta
+
+`wheelctl moza controlled-angle-smoke` supports
+`closed-loop-pidff-angle-v1`. The current lane records its no-output preflight,
+exact consumed authorization, real hardware output receipt, and no-output
+failure analysis. The attempt wrote 672 bounded PIDFF reports with zero write
+errors, sent final Stop All/final zero, and failed safely below the 1 degree
+visible-motion threshold.
+
+### Non-goals
+
+No native-visible promotion, no rerun permission, no force escalation, no
+longer dwell, no 3/5/30/90 degree attempt, no direct report `0x20`, no high
+torque, no serial config, no firmware/DFU, and no Pit House, SimHub, simulator,
+or passive sniff prerequisite for native control.
+
+### Acceptance
+
+- The preflight opens no HID device and sends no reports.
+- The real attempt is bound to exact authorization and consumes it.
+- The output receipt records commanded target, torque envelope, observed angle,
+  stop reason, write accounting, and final-zero proof.
+- The failure analysis keeps native-visible and smoke-ready unclaimed and
+  requires no-output protocol evidence before any future output plan.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl controlled_angle -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl native_visible -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the closed-loop profile code, tests, docs, and closed-loop lane
+artifacts. Do not remove earlier attempt receipts or passive sniff plans.
 
 ## Work item: native-visible-promotion
 

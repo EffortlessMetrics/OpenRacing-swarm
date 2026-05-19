@@ -102,25 +102,39 @@ const NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE: &str =
 const NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE: &str =
     "native-controlled-angle-attempt-03-smoke.json";
 const NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_BENCH_CLEAR_EVIDENCE: &str = "bench clear for exactly one Moza controlled-angle attempt 03: target 1 degree, max 5%, timeout 2000 ms, strategy pidff-bounded-effect, profile bounded-pidff-effect-lifecycle-v1, R5 stable, KS attached securely, hands clear, wheel clear, prior undertravel receipts preserved";
+const NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_PREFLIGHT_FILE: &str =
+    "native-controlled-angle-closed-loop-preflight.json";
+const NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_AUTHORIZATION_FILE: &str =
+    "native-controlled-angle-closed-loop-authorization.json";
+const NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE: &str =
+    "native-controlled-angle-closed-loop-smoke.json";
+const NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_FAILURE_ANALYSIS_FILE: &str =
+    "native-controlled-angle-closed-loop-failure-analysis.json";
 const NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILES: &[&str] = &[
     NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE,
     NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE,
     NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE,
+    NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_AUTHORIZATION_FILE,
 ];
 const NATIVE_CONTROLLED_ANGLE_OUTPUT_FILES: &[&str] = &[
     NATIVE_CONTROLLED_ANGLE_SMOKE_FILE,
     NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE,
     NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE,
+    NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE,
 ];
 const NATIVE_CONTROLLED_ANGLE_PREFLIGHT_FILES: &[&str] = &[
     NATIVE_CONTROLLED_ANGLE_SMOKE_FILE,
     NATIVE_CONTROLLED_ANGLE_RETRY_PREFLIGHT_FILE,
     NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_PREFLIGHT_FILE,
+    NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_PREFLIGHT_FILE,
 ];
 const NATIVE_CONTROLLED_ANGLE_FIRST_TARGET_DEGREES: f64 = 1.0;
 const NATIVE_CONTROLLED_ANGLE_FIRST_MAX_PERCENT: f32 = 5.0;
 const NATIVE_CONTROLLED_ANGLE_FIRST_MAX_DURATION_MS: u64 = 2_000;
 const NATIVE_CONTROLLED_ANGLE_RETURN_TOLERANCE_DEGREES: f64 = 0.25;
+const NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_GAIN_PERCENT_PER_DEGREE: f64 = 5.0;
+const NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_MIN_ACTIVE_PERCENT: f32 = 0.5;
+const NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_DEADBAND_DEGREES: f64 = 0.0;
 const R5_V1_LIVE_OUTPUT_REPORTS: &[(&str, usize)] = &[
     ("0x01", 22),
     ("0x02", 14),
@@ -414,6 +428,7 @@ fn controlled_angle_profile_name(profile: MozaControlledAngleProfile) -> &'stati
         MozaControlledAngleProfile::BoundedPidffEffectLifecycleV1 => {
             "bounded_pidff_effect_lifecycle_v1"
         }
+        MozaControlledAngleProfile::ClosedLoopPidffAngleV1 => "closed_loop_pidff_angle_v1",
     }
 }
 
@@ -423,6 +438,7 @@ fn controlled_angle_profile_cli_name(profile: MozaControlledAngleProfile) -> &'s
         MozaControlledAngleProfile::BoundedPidffEffectLifecycleV1 => {
             "bounded-pidff-effect-lifecycle-v1"
         }
+        MozaControlledAngleProfile::ClosedLoopPidffAngleV1 => "closed-loop-pidff-angle-v1",
     }
 }
 
@@ -430,6 +446,7 @@ fn controlled_angle_profile_json_name_is_allowed(profile: &str) -> bool {
     [
         MozaControlledAngleProfile::BoundedPidffMicroStepV2,
         MozaControlledAngleProfile::BoundedPidffEffectLifecycleV1,
+        MozaControlledAngleProfile::ClosedLoopPidffAngleV1,
     ]
     .iter()
     .any(|allowed| profile == controlled_angle_profile_name(*allowed))
@@ -5825,6 +5842,9 @@ async fn authorize_controlled_angle_output(
         None if preflight_file == NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_PREFLIGHT_FILE => {
             NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE
         }
+        None if preflight_file == NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_PREFLIGHT_FILE => {
+            NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE
+        }
         None => NATIVE_CONTROLLED_ANGLE_SMOKE_FILE,
     };
     if planned_output_file != NATIVE_CONTROLLED_ANGLE_SMOKE_FILE
@@ -5865,6 +5885,8 @@ async fn authorize_controlled_angle_output(
             NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE
         } else if planned_output_file == NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE {
             NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE
+        } else if planned_output_file == NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE {
+            NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_AUTHORIZATION_FILE
         } else {
             NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE
         };
@@ -6025,6 +6047,25 @@ async fn authorize_controlled_angle_output(
     if let Some(plan) = effect_lifecycle_plan.as_ref() {
         receipt["pidff_effect_lifecycle_plan_artifact"] =
             native_pidff_effect_lifecycle_plan_summary(plan);
+    }
+    if matches!(profile, MozaControlledAngleProfile::ClosedLoopPidffAngleV1) {
+        receipt["closed_loop_controller"] = serde_json::json!({
+            "algorithm": "proportional_angle_error_pidff_constant_force",
+            "torque_command_source": "steering_angle_error",
+            "target_delta_degrees": target_degrees,
+            "return_target_delta_degrees": 0.0,
+            "max_percent": max_percent,
+            "min_active_percent": NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_MIN_ACTIVE_PERCENT,
+            "proportional_gain_percent_per_degree": NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_GAIN_PERCENT_PER_DEGREE,
+            "deadband_degrees": NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_DEADBAND_DEGREES,
+            "planned_feedback_inputs": [
+                "start_angle_degrees",
+                "current_angle_degrees",
+                "target_angle_degrees",
+                "error_degrees"
+            ],
+            "planned_stop_reason": "target, return, safety timeout, stale samples, wrong-way guard, overshoot guard, HID error, or final cleanup"
+        });
     }
     receipt["controlled_angle_preflight_receipt"]["profile"] =
         serde_json::json!(json_string(&controlled_angle_preflight, "profile"));
@@ -10291,6 +10332,55 @@ fn native_visible_smoke_failed_real_receipt_action(lane: &Path) -> Option<String
 }
 
 fn native_visible_authorization_guidance(lane: &Path) -> String {
+    if native_controlled_angle_closed_loop_smoke_is_real_output_attempt(lane) {
+        let receipt = read_json_value(lane, NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE).ok();
+        let delta = receipt
+            .as_ref()
+            .map(|receipt| optional_f64_text(json_f64(receipt, "angle_delta_degrees")))
+            .unwrap_or("missing".to_string());
+        let target_reached = receipt
+            .as_ref()
+            .map(|receipt| optional_bool_text(json_bool(receipt, "target_reached")))
+            .unwrap_or("missing".to_string());
+        let timeout_reached = receipt
+            .as_ref()
+            .map(|receipt| optional_bool_text(json_bool(receipt, "timeout_reached")))
+            .unwrap_or("missing".to_string());
+        let abort_reason = receipt
+            .as_ref()
+            .and_then(|receipt| json_string(receipt, "abort_reason"))
+            .unwrap_or("missing");
+        let writes_ok = receipt
+            .as_ref()
+            .map(|receipt| optional_u64_text(json_u64(receipt, "writes_ok")))
+            .unwrap_or("missing".to_string());
+        let write_errors = receipt
+            .as_ref()
+            .map(|receipt| optional_u64_text(json_u64(receipt, "write_errors")))
+            .unwrap_or("missing".to_string());
+        let final_stop_all_sent = receipt
+            .as_ref()
+            .map(|receipt| optional_bool_text(json_bool(receipt, "final_stop_all_sent")))
+            .unwrap_or("missing".to_string());
+        let final_zero_sent = receipt
+            .as_ref()
+            .map(|receipt| optional_bool_text(json_bool(receipt, "final_zero_sent")))
+            .unwrap_or("missing".to_string());
+        let next_analysis = if lane
+            .join(NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_FAILURE_ANALYSIS_FILE)
+            .is_file()
+        {
+            format!(
+                "The no-output closed-loop failure analysis is recorded at {NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_FAILURE_ANALYSIS_FILE}; next required work is no-output Moza vendor-specific protocol evidence before any future output plan."
+            )
+        } else {
+            "Create a no-output closed-loop failure analysis and require new protocol evidence before any future output plan.".to_string()
+        };
+        return format!(
+            "A real closed-loop controlled-angle attempt is already recorded at {NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE}; preserve {NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_PREFLIGHT_FILE}, {NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_AUTHORIZATION_FILE}, and {NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE}. Closed-loop result: target_reached={target_reached}, timeout_reached={timeout_reached}, abort_reason={abort_reason}, angle_delta_degrees={delta}, writes_ok={writes_ok}, write_errors={write_errors}, final_stop_all_sent={final_stop_all_sent}, final_zero_sent={final_zero_sent}. This is safe undertravel evidence, not native-visible readiness. Do not generate another preflight, authorization, or output command from verifier guidance; {next_analysis} Do not extend dwell, raise force, attempt 3/5/30/90 degrees, use direct report 0x20, high torque, serial config, firmware, DFU, Pit House, SimHub, or a simulator as a native-control prerequisite."
+        );
+    }
+
     if native_controlled_angle_attempt_03_smoke_is_real_output_attempt(lane) {
         let attempt = read_json_value(lane, NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE).ok();
         let delta = attempt
@@ -10399,19 +10489,41 @@ fn native_visible_standard_pidff_diagnosis_guidance(lane: &Path) -> Option<Strin
         return None;
     }
 
-    if let Some(step) = moza_passive_sniff_next_operator_step(lane) {
-        let scenario = json_string(&step, "scenario").unwrap_or("first planned passive sniff");
-        let receipt_artifact =
-            json_string(&step, "receipt_artifact").unwrap_or("sniff-receipt.json");
-        let summary_artifact =
-            json_string(&step, "summary_artifact").unwrap_or("sniff-summary.json");
+    if native_controlled_angle_closed_loop_smoke_is_real_output_attempt(lane) {
+        let receipt = read_json_value(lane, NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE).ok();
+        let delta = receipt
+            .as_ref()
+            .map(|receipt| optional_f64_text(json_f64(receipt, "angle_delta_degrees")))
+            .unwrap_or("missing".to_string());
+        let target_reached = receipt
+            .as_ref()
+            .map(|receipt| optional_bool_text(json_bool(receipt, "target_reached")))
+            .unwrap_or("missing".to_string());
+        let timeout_reached = receipt
+            .as_ref()
+            .map(|receipt| optional_bool_text(json_bool(receipt, "timeout_reached")))
+            .unwrap_or("missing".to_string());
+        let final_zero_sent = receipt
+            .as_ref()
+            .map(|receipt| optional_bool_text(json_bool(receipt, "final_zero_sent")))
+            .unwrap_or("missing".to_string());
         return Some(format!(
-            "The standard PIDFF path diagnosis is recorded at {NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE}; no further standard-PIDFF output is authorized. Next evidence is no-output passive USB sniffing for {scenario}. Run `wheelctl moza bench-wizard` for the command-bound receipt and summary handoff targeting {receipt_artifact} and {summary_artifact}. Do not extend dwell, raise force, attempt 3/5/30/90 degrees, use direct report 0x20, high torque, serial config, firmware, or DFU."
+            "The standard PIDFF path diagnosis is recorded at {NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE}, and the follow-up closed-loop output receipt is recorded at {NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE}. Closed-loop native visible motion is still unproven: target_reached={target_reached}, timeout_reached={timeout_reached}, angle_delta_degrees={delta}, final_zero_sent={final_zero_sent}. Preserve the receipt and write no-output analysis before any future protocol plan; no further output is authorized by verifier guidance."
+        ));
+    }
+
+    if lane
+        .join(NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_PREFLIGHT_FILE)
+        .is_file()
+    {
+        return Some(format!(
+            "The standard PIDFF path diagnosis is recorded at {NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE}; no further fixed standard-PIDFF output is authorized. A no-output closed-loop controller preflight is recorded at {NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_PREFLIGHT_FILE}; any real output still requires fresh command-bound bench-clear plus an exact authorization at {NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_AUTHORIZATION_FILE}, and the output receipt must be {NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE}. Pit House, SimHub, and simulators remain coexistence or telemetry evidence, not native-control prerequisites. Do not extend dwell, raise force, attempt 3/5/30/90 degrees, use direct report 0x20, high torque, serial config, firmware, or DFU."
         ));
     }
 
     Some(format!(
-        "The standard PIDFF path diagnosis is recorded at {NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE}; no further standard-PIDFF output is authorized. If all planned passive sniff summaries are recorded, decode vendor reports, map report IDs, and identify enable/gain/mode handshakes before any reviewed vendor-control plan. Do not extend dwell, raise force, attempt 3/5/30/90 degrees, use direct report 0x20, high torque, serial config, firmware, or DFU."
+        "The standard PIDFF path diagnosis is recorded at {NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE}; no further fixed standard-PIDFF output is authorized. Next native-control evidence is a no-output closed-loop controller preflight at {NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_PREFLIGHT_FILE} using --profile {}. Pit House, SimHub, and simulators remain coexistence or telemetry evidence, not native-control prerequisites. Do not extend dwell, raise force, attempt 3/5/30/90 degrees, use direct report 0x20, high torque, serial config, firmware, or DFU.",
+        controlled_angle_profile_cli_name(MozaControlledAngleProfile::ClosedLoopPidffAngleV1)
     ))
 }
 
@@ -10573,6 +10685,13 @@ fn native_controlled_angle_attempt_03_smoke_is_real_output_attempt(lane: &Path) 
     native_controlled_angle_output_is_real_output_attempt(
         lane,
         NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE,
+    )
+}
+
+fn native_controlled_angle_closed_loop_smoke_is_real_output_attempt(lane: &Path) -> bool {
+    native_controlled_angle_output_is_real_output_attempt(
+        lane,
+        NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE,
     )
 }
 
@@ -12989,6 +13108,7 @@ fn native_controlled_angle_real_attempt_recorded(lane: &Path) -> bool {
     native_controlled_angle_smoke_is_real_output_attempt(lane)
         || native_controlled_angle_retry_smoke_is_real_output_attempt(lane)
         || native_controlled_angle_attempt_03_smoke_is_real_output_attempt(lane)
+        || native_controlled_angle_closed_loop_smoke_is_real_output_attempt(lane)
 }
 
 fn native_controlled_angle_first_rung_dry_run_ready(lane: &Path, selector: &str) -> bool {
@@ -14113,7 +14233,9 @@ fn lane_artifact_readiness_evidence(relative_path: &str) -> &'static str {
 }
 
 fn moza_lane_frontier_label(lane: &Path, support_status: &Value) -> String {
-    if lane
+    if native_controlled_angle_closed_loop_smoke_is_real_output_attempt(lane) {
+        "closed_loop_undertravel_recorded".to_string()
+    } else if lane
         .join(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE)
         .is_file()
     {
@@ -14731,6 +14853,7 @@ fn lane_artifact_index_requirements() -> impl Iterator<Item = BundleArtifactRequ
 fn artifact_navigation_requirements() -> impl Iterator<Item = BundleArtifactRequirement> {
     lane_artifact_index_requirements()
         .chain(attempt_03_planned_artifact_requirements().iter().copied())
+        .chain(closed_loop_frontier_artifact_requirements().iter().copied())
 }
 
 fn attempt_03_planned_artifact_requirements() -> &'static [BundleArtifactRequirement] {
@@ -14741,6 +14864,28 @@ fn attempt_03_planned_artifact_requirements() -> &'static [BundleArtifactRequire
         ),
         BundleArtifactRequirement::json(
             NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE,
+            MozaBundleStage::NativeVisibleReady,
+        ),
+    ];
+    REQUIREMENTS
+}
+
+fn closed_loop_frontier_artifact_requirements() -> &'static [BundleArtifactRequirement] {
+    const REQUIREMENTS: &[BundleArtifactRequirement] = &[
+        BundleArtifactRequirement::json(
+            NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_PREFLIGHT_FILE,
+            MozaBundleStage::NativeVisibleReady,
+        ),
+        BundleArtifactRequirement::json(
+            NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_AUTHORIZATION_FILE,
+            MozaBundleStage::NativeVisibleReady,
+        ),
+        BundleArtifactRequirement::json(
+            NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE,
+            MozaBundleStage::NativeVisibleReady,
+        ),
+        BundleArtifactRequirement::json(
+            NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_FAILURE_ANALYSIS_FILE,
             MozaBundleStage::NativeVisibleReady,
         ),
     ];
@@ -14895,11 +15040,26 @@ fn missing_bundle_artifact_claim_metadata(
         requirement.relative_path,
         NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE
             | NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE
+            | NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_PREFLIGHT_FILE
+            | NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_AUTHORIZATION_FILE
+            | NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE
+            | NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_FAILURE_ANALYSIS_FILE
     ) {
+        let frontier_note = if matches!(
+            requirement.relative_path,
+            NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_PREFLIGHT_FILE
+                | NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_AUTHORIZATION_FILE
+                | NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE
+                | NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_FAILURE_ANALYSIS_FILE
+        ) {
+            "closed_loop_frontier_artifact_not_recorded"
+        } else {
+            "attempt_03_frontier_artifact_not_recorded"
+        };
         return (
             Some("planned_missing".to_string()),
             vec![
-                "attempt_03_frontier_artifact_not_recorded".to_string(),
+                frontier_note.to_string(),
                 "native_visible_not_claimed".to_string(),
                 "no_authorization_or_output_created_by_artifact_index".to_string(),
             ],
@@ -23536,6 +23696,26 @@ fn native_controlled_angle_profile_plan_value() -> Value {
             ],
             "hardware_output_authorized": false
         },
+        "reviewed_closed_loop_profile": {
+            "profile": controlled_angle_profile_name(MozaControlledAngleProfile::ClosedLoopPidffAngleV1),
+            "profile_cli": controlled_angle_profile_cli_name(MozaControlledAngleProfile::ClosedLoopPidffAngleV1),
+            "status": "implemented_no_output_authorized",
+            "preflight_receipt": NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_PREFLIGHT_FILE,
+            "authorization_receipt": NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_AUTHORIZATION_FILE,
+            "output_receipt": NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE,
+            "target_degrees": 1,
+            "max_percent": 5,
+            "timeout_ms": 2000,
+            "reason": "The prior standard PIDFF-family attempts accepted writes and cleanup but under-traveled; the next native-control profile computes bounded force from live steering angle error instead of replaying fixed force or dwell.",
+            "behavior": [
+                "sample start angle before first nonzero output",
+                "compute target error from each steering sample",
+                "write bounded PIDFF constant-force updates from the current error sign and magnitude",
+                "record the commanded torque envelope and observed max angle",
+                "send final PIDFF Stop All on target, return, timeout, stale samples, wrong-way guard, overshoot guard, write error, or read error"
+            ],
+            "hardware_output_authorized": false
+        },
         "objective": "Move to a relative steering target and return to the start angle using live steering feedback, not open-loop dwell duration.",
         "current_force_percent_limit": 5,
         "open_loop_dwell_allowed": false,
@@ -26271,6 +26451,82 @@ impl NativeActuatorVisibleSmokeReceipt {
 }
 
 #[derive(Debug, Serialize)]
+struct ControlledAngleClosedLoopController {
+    algorithm: &'static str,
+    torque_command_source: &'static str,
+    target_delta_degrees: f64,
+    return_target_delta_degrees: f64,
+    max_percent: f32,
+    min_active_percent: f32,
+    proportional_gain_percent_per_degree: f64,
+    deadband_degrees: f64,
+    update_count: u64,
+    sample_count: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    commanded_min_percent: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    commanded_max_percent: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    observed_max_abs_delta_degrees: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stop_reason: Option<String>,
+}
+
+impl ControlledAngleClosedLoopController {
+    fn new(target_degrees: f64, max_percent: f32) -> Self {
+        Self {
+            algorithm: "proportional_angle_error_pidff_constant_force",
+            torque_command_source: "steering_angle_error",
+            target_delta_degrees: target_degrees,
+            return_target_delta_degrees: 0.0,
+            max_percent,
+            min_active_percent: NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_MIN_ACTIVE_PERCENT,
+            proportional_gain_percent_per_degree:
+                NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_GAIN_PERCENT_PER_DEGREE,
+            deadband_degrees: NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_DEADBAND_DEGREES,
+            update_count: 0,
+            sample_count: 0,
+            commanded_min_percent: None,
+            commanded_max_percent: None,
+            observed_max_abs_delta_degrees: None,
+            stop_reason: None,
+        }
+    }
+
+    fn record_sample(&mut self, commanded_percent: f32, observed_abs_delta_degrees: f64) {
+        self.sample_count = self.sample_count.saturating_add(1);
+        if commanded_percent != 0.0 {
+            self.update_count = self.update_count.saturating_add(1);
+        }
+        self.commanded_min_percent = Some(
+            self.commanded_min_percent
+                .map_or(commanded_percent, |value| value.min(commanded_percent)),
+        );
+        self.commanded_max_percent = Some(
+            self.commanded_max_percent
+                .map_or(commanded_percent, |value| value.max(commanded_percent)),
+        );
+        self.observed_max_abs_delta_degrees = Some(
+            self.observed_max_abs_delta_degrees
+                .map_or(observed_abs_delta_degrees, |value| {
+                    value.max(observed_abs_delta_degrees)
+                }),
+        );
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct ControlledAngleClosedLoopSample {
+    sequence: u64,
+    leg: &'static str,
+    angle_degrees: f64,
+    target_angle_degrees: f64,
+    error_degrees: f64,
+    commanded_percent: f32,
+    observed_abs_delta_degrees: f64,
+}
+
+#[derive(Debug, Serialize)]
 struct NativeControlledAngleSmokeReceipt {
     success: bool,
     command: &'static str,
@@ -26358,6 +26614,10 @@ struct NativeControlledAngleSmokeReceipt {
     final_zero_error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     abort_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    closed_loop_controller: Option<ControlledAngleClosedLoopController>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    closed_loop_samples: Vec<ControlledAngleClosedLoopSample>,
     command_log: Vec<LowTorqueCommandRecord>,
     notes: Vec<String>,
 }
@@ -26452,6 +26712,12 @@ impl NativeControlledAngleSmokeReceipt {
             final_stop_all_sent: false,
             final_zero_error: None,
             abort_reason: None,
+            closed_loop_controller: matches!(
+                profile,
+                MozaControlledAngleProfile::ClosedLoopPidffAngleV1
+            )
+            .then(|| ControlledAngleClosedLoopController::new(target_degrees, max_percent)),
+            closed_loop_samples: Vec::new(),
             command_log: Vec::new(),
             notes: vec![
                 "controlled-angle smoke is native OpenRacing movement control and does not depend on Pit House, SimHub, or a simulator".to_string(),
@@ -26556,6 +26822,7 @@ impl NativeControlledAngleSmokeReceipt {
     }
 
     fn finish_success(&mut self) {
+        self.finish_closed_loop_controller_summary();
         self.success = self.confirmed
             && self.hardware_output_enabled
             && !self.no_hid_device_opened
@@ -26599,6 +26866,49 @@ impl NativeControlledAngleSmokeReceipt {
         self.angle_start_degrees
             .map(|start_degrees| angle_degrees - start_degrees)
     }
+
+    fn record_closed_loop_sample(
+        &mut self,
+        leg: &'static str,
+        angle_degrees: f64,
+        target_angle_degrees: f64,
+        commanded_percent: f32,
+    ) {
+        let sequence = self.closed_loop_samples.len().min(u64::MAX as usize) as u64;
+        let error_degrees = target_angle_degrees - angle_degrees;
+        let observed_abs_delta_degrees = self
+            .delta_from_start(angle_degrees)
+            .map(f64::abs)
+            .unwrap_or(0.0);
+        if let Some(controller) = &mut self.closed_loop_controller {
+            controller.record_sample(commanded_percent, observed_abs_delta_degrees);
+        }
+        self.closed_loop_samples
+            .push(ControlledAngleClosedLoopSample {
+                sequence,
+                leg,
+                angle_degrees,
+                target_angle_degrees,
+                error_degrees,
+                commanded_percent,
+                observed_abs_delta_degrees,
+            });
+    }
+
+    fn finish_closed_loop_controller_summary(&mut self) {
+        if let Some(controller) = &mut self.closed_loop_controller {
+            let stop_reason = self.abort_reason.clone().unwrap_or_else(|| {
+                if self.target_reached && self.return_to_start_proven {
+                    "target_and_return_observed".to_string()
+                } else if self.target_reached {
+                    "target_observed_return_unproven".to_string()
+                } else {
+                    "target_unproven".to_string()
+                }
+            });
+            controller.stop_reason = Some(stop_reason);
+        }
+    }
 }
 
 fn execute_pidff_controlled_angle_feedback_sequence<F, R>(
@@ -26631,7 +26941,228 @@ fn execute_pidff_controlled_angle_feedback_sequence<F, R>(
                 &mut read_angle,
             );
         }
+        MozaControlledAngleProfile::ClosedLoopPidffAngleV1 => {
+            execute_pidff_controlled_angle_closed_loop_v1_sequence(
+                receipt,
+                started_at,
+                sleep_before_cleanup,
+                &mut write,
+                &mut read_angle,
+            );
+        }
     }
+}
+
+fn execute_pidff_controlled_angle_closed_loop_v1_sequence<F, R>(
+    receipt: &mut NativeControlledAngleSmokeReceipt,
+    started_at: Instant,
+    sleep_before_cleanup: bool,
+    write: &mut F,
+    read_angle: &mut R,
+) where
+    F: FnMut(&[u8]) -> std::result::Result<usize, String>,
+    R: FnMut() -> std::result::Result<SteeringAngleSample, String>,
+{
+    let mut sequence = receipt.command_log.len().min(u32::MAX as usize) as u32;
+    if !sample_controlled_start_angle(receipt, sleep_before_cleanup, read_angle) {
+        receipt
+            .abort_reason
+            .get_or_insert_with(|| "pre_angle_unavailable".to_string());
+        write_controlled_stop_all(receipt, &mut sequence, started_at, "final_stop_all", write);
+        sample_controlled_post_stop_window(receipt, sleep_before_cleanup, read_angle);
+        return;
+    }
+
+    let Some(start_angle) = receipt.angle_start_degrees else {
+        receipt
+            .abort_reason
+            .get_or_insert_with(|| "pre_angle_unavailable".to_string());
+        write_controlled_stop_all(receipt, &mut sequence, started_at, "final_stop_all", write);
+        sample_controlled_post_stop_window(receipt, sleep_before_cleanup, read_angle);
+        return;
+    };
+    let target_angle = start_angle + receipt.target_degrees;
+    let deadline = Instant::now() + Duration::from_millis(receipt.duration_ms.min(2_000));
+    let initial_percent = controlled_angle_closed_loop_percent_for_error(
+        target_angle - start_angle,
+        receipt.max_percent,
+    );
+
+    for report in pidff_controlled_angle_closed_loop_v1_start_reports(
+        receipt.max_percent,
+        receipt.duration_ms,
+        initial_percent,
+    ) {
+        if !write_controlled_pidff_report(receipt, &mut sequence, started_at, &report, write) {
+            write_controlled_stop_all(receipt, &mut sequence, started_at, "final_stop_all", write);
+            sample_controlled_post_stop_window(receipt, sleep_before_cleanup, read_angle);
+            return;
+        }
+    }
+    receipt.record_closed_loop_sample("outbound", start_angle, target_angle, initial_percent);
+
+    run_controlled_angle_closed_loop_leg(
+        receipt,
+        &mut sequence,
+        started_at,
+        sleep_before_cleanup,
+        read_angle,
+        write,
+        "outbound",
+        deadline,
+        target_angle,
+        false,
+    );
+
+    if receipt.target_reached && receipt.abort_reason.is_none() {
+        run_controlled_angle_closed_loop_leg(
+            receipt,
+            &mut sequence,
+            started_at,
+            sleep_before_cleanup,
+            read_angle,
+            write,
+            "return",
+            deadline,
+            start_angle,
+            true,
+        );
+    }
+
+    write_controlled_stop_all(receipt, &mut sequence, started_at, "final_stop_all", write);
+    sample_controlled_post_stop_window(receipt, sleep_before_cleanup, read_angle);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_controlled_angle_closed_loop_leg<F, R>(
+    receipt: &mut NativeControlledAngleSmokeReceipt,
+    sequence: &mut u32,
+    started_at: Instant,
+    sleep_before_cleanup: bool,
+    read_angle: &mut R,
+    write: &mut F,
+    leg: &'static str,
+    deadline: Instant,
+    target_angle_degrees: f64,
+    return_leg: bool,
+) where
+    F: FnMut(&[u8]) -> std::result::Result<usize, String>,
+    R: FnMut() -> std::result::Result<SteeringAngleSample, String>,
+{
+    let before_samples = receipt.steering_sample_count;
+    let max_iterations = controlled_angle_closed_loop_max_iterations(receipt.duration_ms);
+    let mut iterations = 0_u64;
+
+    loop {
+        if sleep_before_cleanup {
+            if Instant::now() >= deadline {
+                break;
+            }
+        } else if iterations >= max_iterations {
+            break;
+        }
+        iterations = iterations.saturating_add(1);
+
+        let sample = match read_angle() {
+            Ok(SteeringAngleSample::Angle(angle)) => angle,
+            Ok(SteeringAngleSample::Rejected) => {
+                receipt.record_rejected_steering_report();
+                continue;
+            }
+            Ok(SteeringAngleSample::NoData) => continue,
+            Err(error) => {
+                receipt.abort_reason = Some(format!("hid_read_error: {error}"));
+                break;
+            }
+        };
+
+        if return_leg {
+            receipt.record_return_angle(sample);
+        } else {
+            receipt.record_outbound_angle(sample);
+        }
+
+        let leg_complete = (!return_leg && receipt.target_reached)
+            || (return_leg && receipt.return_to_start_proven);
+        let error_degrees = target_angle_degrees - sample;
+        let commanded_percent = if leg_complete {
+            0.0
+        } else {
+            controlled_angle_closed_loop_percent_for_error(error_degrees, receipt.max_percent)
+        };
+        receipt.record_closed_loop_sample(leg, sample, target_angle_degrees, commanded_percent);
+
+        if !return_leg && controlled_angle_wrong_way_outbound(receipt, sample) {
+            receipt.wrong_way_motion_detected = true;
+            receipt
+                .abort_reason
+                .get_or_insert_with(|| "wrong_way_motion_guard_triggered".to_string());
+        }
+        if receipt.abort_reason.is_some() || receipt.overshoot_detected {
+            break;
+        }
+        if leg_complete {
+            break;
+        }
+
+        let report = pidff_controlled_angle_closed_loop_force_report(
+            leg,
+            commanded_percent,
+            receipt.duration_ms,
+        );
+        if !write_controlled_pidff_report(receipt, sequence, started_at, &report, write) {
+            break;
+        }
+    }
+
+    if receipt.steering_sample_count == before_samples {
+        receipt.no_steering_samples = true;
+        receipt.abort_reason.get_or_insert_with(|| {
+            if return_leg {
+                "no_steering_samples_during_return".to_string()
+            } else {
+                "no_steering_samples_after_output".to_string()
+            }
+        });
+    } else if !return_leg && !receipt.target_reached && receipt.abort_reason.is_none() {
+        receipt.timeout_reached = true;
+        receipt.abort_reason = Some("safety_timeout_before_target".to_string());
+    } else if return_leg && !receipt.return_to_start_proven && receipt.abort_reason.is_none() {
+        receipt.timeout_reached = true;
+        receipt.abort_reason = Some("safety_timeout_before_return_to_start".to_string());
+    }
+}
+
+fn controlled_angle_closed_loop_max_iterations(timeout_ms: u64) -> u64 {
+    timeout_ms.div_ceil(20).clamp(1, 128)
+}
+
+fn controlled_angle_closed_loop_percent_for_error(error_degrees: f64, max_percent: f32) -> f32 {
+    if !error_degrees.is_finite()
+        || error_degrees.abs() <= NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_DEADBAND_DEGREES
+    {
+        return 0.0;
+    }
+    let sign = if error_degrees.is_sign_negative() {
+        -1.0
+    } else {
+        1.0
+    };
+    let active_min = NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_MIN_ACTIVE_PERCENT.min(max_percent);
+    let magnitude = (error_degrees.abs()
+        * NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_GAIN_PERCENT_PER_DEGREE)
+        .clamp(f64::from(active_min), f64::from(max_percent));
+    (sign * magnitude) as f32
+}
+
+fn controlled_angle_wrong_way_outbound(
+    receipt: &NativeControlledAngleSmokeReceipt,
+    angle_degrees: f64,
+) -> bool {
+    receipt
+        .delta_from_start(angle_degrees)
+        .map(|delta| delta < -receipt.return_tolerance_degrees)
+        .unwrap_or(false)
 }
 
 fn execute_pidff_controlled_angle_effect_lifecycle_v1_sequence<F, R>(
@@ -27270,6 +27801,28 @@ fn native_controlled_angle_smoke_dry_run_receipt(
             native_pidff_effect_lifecycle_plan_summary(plan)
         );
     }
+    if matches!(profile, MozaControlledAngleProfile::ClosedLoopPidffAngleV1) {
+        field!(
+            "closed_loop_controller",
+            serde_json::json!({
+                "algorithm": "proportional_angle_error_pidff_constant_force",
+                "torque_command_source": "steering_angle_error",
+                "target_delta_degrees": target_degrees,
+                "return_target_delta_degrees": 0.0,
+                "max_percent": max_percent,
+                "min_active_percent": NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_MIN_ACTIVE_PERCENT,
+                "proportional_gain_percent_per_degree": NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_GAIN_PERCENT_PER_DEGREE,
+                "deadband_degrees": NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_DEADBAND_DEGREES,
+                "planned_feedback_inputs": [
+                    "start_angle_degrees",
+                    "current_angle_degrees",
+                    "target_angle_degrees",
+                    "error_degrees"
+                ],
+                "planned_stop_reason": "target, return, safety timeout, stale samples, wrong-way guard, overshoot guard, HID error, or final cleanup"
+            })
+        );
+    }
     field!(
         "stop_conditions",
         [
@@ -27393,6 +27946,24 @@ fn pidff_controlled_angle_plan_reports(
             );
             reports.extend(pidff_controlled_angle_effect_lifecycle_v1_return_reports(
                 max_percent,
+                timeout_ms,
+            ));
+            reports
+        }
+        MozaControlledAngleProfile::ClosedLoopPidffAngleV1 => {
+            let mut reports = pidff_controlled_angle_closed_loop_v1_start_reports(
+                max_percent,
+                timeout_ms,
+                max_percent,
+            );
+            reports.push(pidff_controlled_angle_closed_loop_force_report(
+                "outbound",
+                max_percent,
+                timeout_ms,
+            ));
+            reports.push(pidff_controlled_angle_closed_loop_force_report(
+                "return",
+                -max_percent,
                 timeout_ms,
             ));
             reports
@@ -27560,6 +28131,79 @@ fn pidff_controlled_angle_effect_lifecycle_v1_return_reports(
         )
         .with_profile_phase("effect_lifecycle_return_force", Some(timeout_ms.min(2_000))),
     ]
+}
+
+fn pidff_controlled_angle_closed_loop_v1_start_reports(
+    max_percent: f32,
+    timeout_ms: u64,
+    initial_percent: f32,
+) -> Vec<PidffLowTorqueReport> {
+    let duration = timeout_ms.min(u64::from(u16::MAX)) as u16;
+    let gain = pidff_gain_for_percent(max_percent);
+
+    vec![
+        PidffLowTorqueReport::new(
+            "pidff_set_effect_closed_loop_v1_setup",
+            max_percent,
+            r5_v1_pidff_set_effect_payload(
+                PIDFF_LOW_TORQUE_EFFECT_BLOCK_INDEX,
+                EffectType::Constant as u8,
+                duration,
+                gain,
+                PIDFF_LOW_TORQUE_DIRECTION_X,
+                PIDFF_LOW_TORQUE_DIRECTION_Y,
+            )
+            .to_vec(),
+            0,
+            false,
+            PIDFF_EFFECT_SETUP_CLASSIFICATION,
+        )
+        .with_profile_phase("closed_loop_setup", None),
+        pidff_controlled_angle_closed_loop_force_report("outbound", initial_percent, timeout_ms),
+        PidffLowTorqueReport::new(
+            "pidff_effect_start_closed_loop_v1",
+            max_percent,
+            pidff::encode_effect_operation(
+                PIDFF_LOW_TORQUE_EFFECT_BLOCK_INDEX,
+                EffectOp::Start,
+                PIDFF_LOW_TORQUE_LOOP_COUNT,
+            )
+            .to_vec(),
+            0,
+            true,
+            PIDFF_BOUNDED_EFFECT_CLASSIFICATION,
+        )
+        .with_profile_phase("closed_loop_active", Some(timeout_ms.min(2_000))),
+    ]
+}
+
+fn pidff_controlled_angle_closed_loop_force_report(
+    leg: &'static str,
+    percent: f32,
+    timeout_ms: u64,
+) -> PidffLowTorqueReport {
+    let magnitude = pidff_signed_constant_force_for_percent(percent);
+    let (kind, phase) = if leg == "return" {
+        (
+            "pidff_set_constant_force_closed_loop_v1_return",
+            "closed_loop_return_force",
+        )
+    } else {
+        (
+            "pidff_set_constant_force_closed_loop_v1_outbound",
+            "closed_loop_outbound_force",
+        )
+    };
+
+    PidffLowTorqueReport::new(
+        kind,
+        percent,
+        pidff::encode_set_constant_force(PIDFF_LOW_TORQUE_EFFECT_BLOCK_INDEX, magnitude).to_vec(),
+        magnitude,
+        percent != 0.0,
+        PIDFF_BOUNDED_EFFECT_CLASSIFICATION,
+    )
+    .with_profile_phase(phase, Some(timeout_ms.min(2_000)))
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -37584,6 +38228,48 @@ mod tests {
         )
     }
 
+    fn write_failed_controlled_angle_closed_loop_output_receipt(
+        root: &Path,
+        selector: &str,
+    ) -> TestResult {
+        let path = root.join(NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE);
+        let write_attempts = 672_u64;
+        write_failed_controlled_angle_output_receipt_at(
+            root,
+            selector,
+            NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE,
+        )?;
+        let mut receipt = read_json_path(&path)?;
+        receipt["profile"] = serde_json::json!(controlled_angle_profile_name(
+            MozaControlledAngleProfile::ClosedLoopPidffAngleV1
+        ));
+        receipt["profile_cli"] = serde_json::json!(controlled_angle_profile_cli_name(
+            MozaControlledAngleProfile::ClosedLoopPidffAngleV1
+        ));
+        receipt["angle_delta_degrees"] = serde_json::json!(0.13183794918745662);
+        receipt["write_attempts"] = serde_json::json!(write_attempts);
+        receipt["writes_ok"] = serde_json::json!(write_attempts);
+        receipt["final_zero_sent"] = serde_json::json!(true);
+        receipt["closed_loop_controller"] = serde_json::json!({
+            "algorithm": "proportional_angle_error_pidff_constant_force",
+            "torque_command_source": "steering_angle_error",
+            "target_delta_degrees": 1.0,
+            "return_target_delta_degrees": 0.0,
+            "max_percent": 5.0,
+            "min_active_percent": NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_MIN_ACTIVE_PERCENT,
+            "proportional_gain_percent_per_degree": NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_GAIN_PERCENT_PER_DEGREE,
+            "deadband_degrees": NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_DEADBAND_DEGREES,
+            "commanded_max_percent": 5.0,
+            "observed_max_abs_delta_degrees": 0.13183794918745662,
+            "stop_reason": "safety_timeout_before_target"
+        });
+        receipt["command_log"] =
+            serde_json::json!(sample_pidff_lifecycle_command_log(write_attempts));
+        receipt["command_log"][0]["kind"] =
+            serde_json::json!("pidff_set_effect_closed_loop_v1_setup");
+        write_test_json_file(&path, &receipt)
+    }
+
     fn write_failed_controlled_angle_output_receipt_at(
         root: &Path,
         selector: &str,
@@ -41782,6 +42468,131 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn controlled_angle_closed_loop_controller_bounds_force_from_error() -> TestResult {
+        let assert_percent = |actual: f32, expected: f32| -> TestResult {
+            assert!(
+                (actual - expected).abs() <= f32::EPSILON,
+                "expected {expected}, got {actual}"
+            );
+            Ok(())
+        };
+        assert_percent(
+            controlled_angle_closed_loop_percent_for_error(1.0, 5.0),
+            5.0,
+        )?;
+        assert_percent(
+            controlled_angle_closed_loop_percent_for_error(10.0, 5.0),
+            5.0,
+        )?;
+        assert_percent(
+            controlled_angle_closed_loop_percent_for_error(-1.0, 5.0),
+            -5.0,
+        )?;
+        assert_percent(
+            controlled_angle_closed_loop_percent_for_error(0.02, 5.0),
+            NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_MIN_ACTIVE_PERCENT,
+        )?;
+        assert_percent(
+            controlled_angle_closed_loop_percent_for_error(0.0, 5.0),
+            0.0,
+        )?;
+        assert_percent(
+            controlled_angle_closed_loop_percent_for_error(1.0, 0.1),
+            0.1,
+        )?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn controlled_angle_closed_loop_dry_run_records_controller_without_output() -> TestResult
+    {
+        let dir = tempfile::tempdir()?;
+        write_native_actuator_visible_prerequisite_receipts(dir.path())?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_CONTROLLED_ANGLE_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::ControlledAnglePlan),
+        )?;
+        let output = dir
+            .path()
+            .join(NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_PREFLIGHT_FILE);
+
+        controlled_angle_smoke(ControlledAngleSmokeRequest {
+            json: false,
+            selector: "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            lane: dir.path(),
+            prior_actuator_proof: Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            steering_proof: Some(&dir.path().join("steering-angle-stream-proof.json")),
+            authorization_proof: None,
+            target_degrees: 1.0,
+            profile: MozaControlledAngleProfile::ClosedLoopPidffAngleV1,
+            max_percent: 5.0,
+            timeout_ms: 2_000,
+            read_timeout_ms: 20,
+            degrees_of_rotation: 1080.0,
+            strategy: MozaLowTorqueStrategy::PidffBoundedEffect,
+            dry_run: true,
+            confirm_controlled_angle: false,
+            json_out: Some(&output),
+        })
+        .await?;
+
+        let receipt = read_json_path(&output)?;
+        assert_eq!(json_bool(&receipt, "success"), Some(true));
+        assert_eq!(json_bool(&receipt, "dry_run"), Some(true));
+        assert_eq!(json_bool(&receipt, "hardware_output_enabled"), Some(false));
+        assert_eq!(json_bool(&receipt, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&receipt, "no_output_reports"), Some(true));
+        assert_eq!(json_bool(&receipt, "no_ffb_writes"), Some(true));
+        assert_eq!(
+            json_bool(&receipt, "controlled_angle_motion_proven"),
+            Some(false)
+        );
+        assert_eq!(
+            json_string(&receipt, "profile"),
+            Some("closed_loop_pidff_angle_v1")
+        );
+        let controller = receipt
+            .get("closed_loop_controller")
+            .ok_or("expected closed-loop controller receipt")?;
+        assert_eq!(
+            json_string(controller, "torque_command_source"),
+            Some("steering_angle_error")
+        );
+        assert_eq!(json_f64(controller, "target_delta_degrees"), Some(1.0));
+        assert_eq!(json_f64(controller, "max_percent"), Some(5.0));
+        let command_log = receipt
+            .get("command_log")
+            .and_then(Value::as_array)
+            .ok_or("expected closed-loop command log")?;
+        assert!(command_log.iter().any(|record| {
+            json_string(record, "kind") == Some("pidff_set_effect_closed_loop_v1_setup")
+        }));
+        assert!(command_log.iter().any(|record| {
+            json_string(record, "kind") == Some("pidff_set_constant_force_closed_loop_v1_outbound")
+        }));
+        assert!(command_log.iter().any(|record| {
+            json_string(record, "kind") == Some("pidff_set_constant_force_closed_loop_v1_return")
+        }));
+        assert!(command_log.iter().any(|record| {
+            json_string(record, "kind") == Some("final_stop_all")
+                && json_string(record, "payload_hex") == Some("0C04")
+        }));
+        assert_eq!(json_u64(&receipt, "write_attempts"), Some(0));
+        assert_eq!(json_u64(&receipt, "writes_ok"), Some(0));
+        assert_eq!(json_u64(&receipt, "write_errors"), Some(0));
+
+        let gate = verify_native_controlled_angle_smoke_gate(dir.path());
+        assert_eq!(gate.status, "fail");
+        assert!(
+            gate.details
+                .contains("no controlled-angle output receipt found"),
+            "closed-loop dry-run preflight must not satisfy the output gate: {}",
+            gate.details
+        );
+        Ok(())
+    }
+
     #[tokio::test]
     async fn controlled_angle_smoke_actual_rejects_without_authorization() -> TestResult {
         let dir = tempfile::tempdir()?;
@@ -42567,6 +43378,199 @@ mod tests {
             "expected attempt-03 controlled-angle receipt to satisfy native visible gate: {}",
             native_visible_gate.details
         );
+        Ok(())
+    }
+
+    #[test]
+    fn execute_pidff_closed_loop_angle_sequence_recomputes_force_from_feedback() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_native_actuator_visible_prerequisite_receipts(dir.path())?;
+        let preflight = validate_native_actuator_visible_smoke_preflight(
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            dir.path(),
+            Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            Some(&dir.path().join("steering-angle-stream-proof.json")),
+            Some(
+                &dir.path()
+                    .join(NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE),
+            ),
+            MozaActuatorProfile::BoundedShapedPidffMicroProfile,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.0,
+            2_000,
+            1.0,
+            true,
+        )?;
+        let mut receipt = NativeControlledAngleSmokeReceipt::new(
+            "hid-0x346E-0x0004-if2-0x0001-0x0004".to_string(),
+            dir.path(),
+            synthetic_moza_device_record(product_ids::R5_V1),
+            preflight,
+            1.0,
+            MozaControlledAngleProfile::ClosedLoopPidffAngleV1,
+            5.0,
+            2_000,
+            20,
+            1080.0,
+            false,
+        );
+        let mut samples = std::collections::VecDeque::from([
+            SteeringAngleSample::Angle(0.0),
+            SteeringAngleSample::Angle(0.4),
+            SteeringAngleSample::Angle(1.1),
+            SteeringAngleSample::Angle(0.7),
+            SteeringAngleSample::Angle(0.2),
+            SteeringAngleSample::Angle(0.0),
+            SteeringAngleSample::Angle(0.01),
+        ]);
+
+        execute_pidff_controlled_angle_feedback_sequence(
+            &mut receipt,
+            MozaControlledAngleProfile::ClosedLoopPidffAngleV1,
+            Instant::now(),
+            false,
+            |payload| Ok(payload.len()),
+            || Ok(samples.pop_front().unwrap_or(SteeringAngleSample::NoData)),
+        );
+        receipt.finish_success();
+        receipt.set_receipt_path(Some(
+            &dir.path()
+                .join(NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE),
+        ));
+        let receipt = serde_json::to_value(receipt)?;
+        write_test_json_file(
+            &dir.path()
+                .join(NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE),
+            &receipt,
+        )?;
+
+        assert_eq!(json_bool(&receipt, "success"), Some(true));
+        assert_eq!(
+            json_string(&receipt, "profile"),
+            Some("closed_loop_pidff_angle_v1")
+        );
+        assert_eq!(json_bool(&receipt, "target_reached"), Some(true));
+        assert_eq!(json_bool(&receipt, "return_to_start_proven"), Some(true));
+        assert_eq!(json_bool(&receipt, "final_stop_all_sent"), Some(true));
+        assert_eq!(json_bool(&receipt, "post_stop_stable"), Some(true));
+        let controller = receipt
+            .get("closed_loop_controller")
+            .ok_or("expected closed-loop controller")?;
+        assert_eq!(json_u64(controller, "sample_count"), Some(5));
+        assert_eq!(json_u64(controller, "update_count"), Some(3));
+        assert_eq!(
+            json_string(controller, "stop_reason"),
+            Some("target_and_return_observed")
+        );
+        let samples = receipt
+            .get("closed_loop_samples")
+            .and_then(Value::as_array)
+            .ok_or("expected closed-loop samples")?;
+        assert!(samples.iter().any(|sample| {
+            json_string(sample, "leg") == Some("outbound")
+                && json_f64(sample, "commanded_percent") == Some(3.0)
+        }));
+        assert!(samples.iter().any(|sample| {
+            json_string(sample, "leg") == Some("return")
+                && json_f64(sample, "commanded_percent") == Some(-3.5)
+        }));
+        let records = receipt
+            .get("command_log")
+            .and_then(Value::as_array)
+            .ok_or("expected closed-loop command log")?;
+        assert!(records.iter().any(|record| {
+            json_string(record, "kind") == Some("pidff_set_effect_closed_loop_v1_setup")
+        }));
+        assert!(records.iter().any(|record| {
+            json_string(record, "kind") == Some("pidff_effect_start_closed_loop_v1")
+        }));
+        assert!(records.iter().any(|record| {
+            json_string(record, "kind") == Some("pidff_set_constant_force_closed_loop_v1_outbound")
+                && json_f64(record, "percent") == Some(3.0)
+        }));
+        assert!(records.iter().any(|record| {
+            json_string(record, "kind") == Some("pidff_set_constant_force_closed_loop_v1_return")
+                && json_f64(record, "percent") == Some(-3.5)
+        }));
+        let gate = verify_native_controlled_angle_smoke_gate(dir.path());
+        assert_eq!(
+            gate.status, "pass",
+            "expected closed-loop controlled-angle gate pass: {}",
+            gate.details
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn execute_pidff_closed_loop_angle_sequence_fails_closed_on_undertravel() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_native_actuator_visible_prerequisite_receipts(dir.path())?;
+        let preflight = validate_native_actuator_visible_smoke_preflight(
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            dir.path(),
+            Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            Some(&dir.path().join("steering-angle-stream-proof.json")),
+            Some(
+                &dir.path()
+                    .join(NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE),
+            ),
+            MozaActuatorProfile::BoundedShapedPidffMicroProfile,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.0,
+            2_000,
+            1.0,
+            true,
+        )?;
+        let mut receipt = NativeControlledAngleSmokeReceipt::new(
+            "hid-0x346E-0x0004-if2-0x0001-0x0004".to_string(),
+            dir.path(),
+            synthetic_moza_device_record(product_ids::R5_V1),
+            preflight,
+            1.0,
+            MozaControlledAngleProfile::ClosedLoopPidffAngleV1,
+            5.0,
+            2_000,
+            20,
+            1080.0,
+            false,
+        );
+        let mut samples = std::collections::VecDeque::from([
+            SteeringAngleSample::Angle(0.0),
+            SteeringAngleSample::Angle(0.05),
+            SteeringAngleSample::Angle(0.08),
+            SteeringAngleSample::Angle(0.1),
+            SteeringAngleSample::Angle(0.12),
+            SteeringAngleSample::Angle(0.13),
+            SteeringAngleSample::Angle(0.13),
+        ]);
+
+        execute_pidff_controlled_angle_feedback_sequence(
+            &mut receipt,
+            MozaControlledAngleProfile::ClosedLoopPidffAngleV1,
+            Instant::now(),
+            false,
+            |payload| Ok(payload.len()),
+            || Ok(samples.pop_front().unwrap_or(SteeringAngleSample::NoData)),
+        );
+        receipt.finish_success();
+        let receipt = serde_json::to_value(receipt)?;
+
+        assert_eq!(json_bool(&receipt, "success"), Some(false));
+        assert_eq!(json_bool(&receipt, "target_reached"), Some(false));
+        assert_eq!(json_bool(&receipt, "timeout_reached"), Some(true));
+        assert_eq!(
+            json_bool(&receipt, "controlled_angle_motion_proven"),
+            Some(false)
+        );
+        let controller = receipt
+            .get("closed_loop_controller")
+            .ok_or("expected closed-loop controller")?;
+        assert_eq!(
+            json_string(controller, "stop_reason"),
+            Some("safety_timeout_before_target")
+        );
+        assert_eq!(json_bool(&receipt, "final_stop_all_sent"), Some(true));
+        assert_eq!(json_u64(&receipt, "write_errors"), Some(0));
         Ok(())
     }
 
@@ -52280,8 +53284,8 @@ mod tests {
     }
 
     #[test]
-    fn verify_bundle_native_visible_points_diagnosed_attempt_03_to_passive_sniffing() -> TestResult
-    {
+    fn verify_bundle_native_visible_points_diagnosed_attempt_03_to_closed_loop_preflight()
+    -> TestResult {
         let dir = tempfile::tempdir()?;
         write_openracing_control_bundle(dir.path())?;
         write_lane_audit_receipts(dir.path(), MozaBundleStage::Passive)?;
@@ -52316,8 +53320,6 @@ mod tests {
                 }
             }),
         )?;
-        write_passive_sniff_plan_artifact(dir.path(), "pit-house-open-idle")?;
-
         let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::NativeVisibleReady);
         let actions = receipt.operator_actions.join("\n");
 
@@ -52328,14 +53330,123 @@ mod tests {
         );
         assert!(
             actions.contains("standard PIDFF path diagnosis is recorded")
-                && actions.contains("no further standard-PIDFF output is authorized")
-                && actions.contains("pit-house-open-idle")
-                && actions.contains("wheelctl moza bench-wizard"),
-            "operator action should point at passive sniffing after standard PIDFF diagnosis: {actions}"
+                && actions.contains("no further fixed standard-PIDFF output is authorized")
+                && actions.contains(NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_PREFLIGHT_FILE)
+                && actions.contains("closed-loop-pidff-angle-v1")
+                && actions.contains("not native-control prerequisites"),
+            "operator action should point at the native closed-loop preflight after standard PIDFF diagnosis: {actions}"
         );
         assert!(
             !actions.contains("classify the attempt with a no-output analysis"),
             "operator action should not request stale attempt-03 classification after diagnosis exists: {actions}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_native_visible_stops_after_failed_closed_loop_output() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_openracing_control_bundle(dir.path())?;
+        write_lane_audit_receipts(dir.path(), MozaBundleStage::Passive)?;
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V2),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::VisibleMotionFollowUp),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_CONTROLLED_ANGLE_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::ControlledAnglePlan),
+        )?;
+        let selector = "hid-0x346E-0x0014-if2-0x0001-0x0004";
+        write_failed_controlled_angle_closed_loop_output_receipt(dir.path(), selector)?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::NativeVisibleReady);
+        let commands = receipt.next_commands.join("\n");
+
+        assert!(!receipt.success);
+        assert!(
+            receipt.next_commands.is_empty(),
+            "closed-loop undertravel must not generate verifier output commands: {commands}"
+        );
+        let actions = receipt.operator_actions.join("\n");
+        assert!(
+            actions.contains("real closed-loop controlled-angle attempt")
+                && actions.contains(NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_PREFLIGHT_FILE)
+                && actions.contains(NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_AUTHORIZATION_FILE)
+                && actions.contains(NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE)
+                && actions.contains("target_reached=false")
+                && actions.contains("final_zero_sent=true"),
+            "operator action should preserve and classify closed-loop undertravel: {actions}"
+        );
+        assert!(
+            actions.contains("not native-visible readiness")
+                && actions.contains("no-output closed-loop failure analysis")
+                && actions.contains("new protocol evidence"),
+            "operator action should avoid overclaiming or immediate rerun guidance: {actions}"
+        );
+        assert!(
+            !commands.contains("controlled-angle-smoke")
+                && !commands.contains("authorize-controlled-angle-output")
+                && !commands.contains("--confirm-controlled-angle"),
+            "verifier must not emit closed-loop rerun, authorization, or output commands: {commands}"
+        );
+        assert!(
+            !actions.contains("Next native-control evidence is a no-output closed-loop"),
+            "operator action must not repeat stale pre-output closed-loop guidance: {actions}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_native_visible_reports_recorded_closed_loop_failure_analysis() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_openracing_control_bundle(dir.path())?;
+        write_lane_audit_receipts(dir.path(), MozaBundleStage::Passive)?;
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V2),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::VisibleMotionFollowUp),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_CONTROLLED_ANGLE_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::ControlledAnglePlan),
+        )?;
+        let selector = "hid-0x346E-0x0014-if2-0x0001-0x0004";
+        write_failed_controlled_angle_closed_loop_output_receipt(dir.path(), selector)?;
+        write_test_json_file(
+            &dir.path()
+                .join(NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_FAILURE_ANALYSIS_FILE),
+            &serde_json::json!({
+                "success": true,
+                "command": "manual native controlled-angle closed-loop failure analysis",
+                "analysis_status": "complete_no_output",
+                "hardware_output_performed_by_analysis": false,
+                "new_authorization_created": false,
+                "planned_next_output": {
+                    "allowed": false
+                }
+            }),
+        )?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::NativeVisibleReady);
+        let actions = receipt.operator_actions.join("\n");
+
+        assert!(!receipt.success);
+        assert!(
+            actions.contains("closed-loop failure analysis is recorded")
+                && actions.contains(NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_FAILURE_ANALYSIS_FILE)
+                && actions.contains("no-output Moza vendor-specific protocol evidence"),
+            "operator action should report recorded closed-loop analysis: {actions}"
+        );
+        assert!(
+            !actions.contains("Create a no-output closed-loop failure analysis"),
+            "operator action should not request the already recorded analysis: {actions}"
         );
         Ok(())
     }

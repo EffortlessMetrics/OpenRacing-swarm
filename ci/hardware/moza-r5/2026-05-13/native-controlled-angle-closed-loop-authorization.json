@@ -1,0 +1,125 @@
+{
+  "authorization_consumed": true,
+  "authorization_consumed_at_utc": "2026-05-19T14:58:15Z",
+  "authorization_consumed_by_receipt": "native-controlled-angle-closed-loop-smoke.json",
+  "authorization_recorded": true,
+  "authorized_by": "Steven",
+  "bench_clear_evidence": "bench clear from operator for exactly one Moza controlled-angle retry: target 1 degree, max 5%, timeout 2000 ms, strategy pidff-bounded-effect, profile closed-loop-pidff-angle-v1, R5 stable, KS attached securely, hands clear, wheel clear, prior failed receipt preserved",
+  "command": "wheelctl moza authorize-controlled-angle-output",
+  "controlled_angle_plan_artifact": {
+    "command_ok": true,
+    "ladder_ok": true,
+    "no_output_ok": true,
+    "path": "native-controlled-angle-plan.json",
+    "retry_profile_ok": true,
+    "review_scope": "native_controlled_angle_profile_design"
+  },
+  "controlled_angle_preflight_receipt": {
+    "dry_run": true,
+    "max_percent": 5.0,
+    "no_ffb_writes": true,
+    "no_hid_device_opened": true,
+    "no_output_reports": true,
+    "path": "native-controlled-angle-closed-loop-preflight.json",
+    "preflight_only": true,
+    "profile": "closed_loop_pidff_angle_v1",
+    "safety_timeout_ms": 2000,
+    "target_degrees": 1.0
+  },
+  "evidence_status": "exact_output_attempt_consumed_controlled_angle_unproven",
+  "force_escalation_authorized": false,
+  "generated_at_utc": "2026-05-19T14:58:04Z",
+  "hardware_output_authorized": false,
+  "high_torque": false,
+  "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+  "last_output_attempt": {
+    "angle_delta_degrees": 0.13183794918745662,
+    "duration_ms": 2000,
+    "final_stop_all_sent": true,
+    "max_percent": 5.0,
+    "no_direct_torque_reports": true,
+    "no_firmware_or_dfu_commands": true,
+    "no_high_torque": true,
+    "no_serial_config_commands": true,
+    "post_stop_stable": true,
+    "profile": "closed_loop_pidff_angle_v1",
+    "receipt": "native-controlled-angle-closed-loop-smoke.json",
+    "return_to_start_proven": false,
+    "status": "controlled_angle_motion_unproven",
+    "target_degrees": 1.0,
+    "target_reached": false,
+    "write_attempts": 672,
+    "write_errors": 0,
+    "writes_ok": 672
+  },
+  "no_direct_torque_reports": true,
+  "no_feature_reports": true,
+  "no_ffb_writes": true,
+  "no_firmware_or_dfu_commands": true,
+  "no_hid_device_opened": true,
+  "no_high_torque": true,
+  "no_output_reports": true,
+  "no_serial_config_commands": true,
+  "notes": [
+    "Authorization artifact only: this file is not evidence that controlled-angle motion passed.",
+    "The exact authorized native controlled-angle command has been consumed by the recorded output receipt.",
+    "No further hardware-output command is authorized by this artifact."
+  ],
+  "planned_next_output": {
+    "allowed": false,
+    "authorization_proof": "native-controlled-angle-closed-loop-authorization.json",
+    "authorized_at_utc": "2026-05-19T14:58:04Z",
+    "command": "",
+    "duration_ms": 2000,
+    "force_percent": 5.0,
+    "json_out": "native-controlled-angle-closed-loop-smoke.json",
+    "max_percent": "not_authorized",
+    "operator": "Steven",
+    "prior_actuator_proof": "native-actuator-profile-smoke.json",
+    "prior_response_proof": "native-actuator-visible-smoke.json",
+    "profile": "closed_loop_pidff_angle_v1",
+    "profile_cli": "closed-loop-pidff-angle-v1",
+    "requires_fresh_bench_clear": true,
+    "steering_proof": "steering-angle-stream-proof.json",
+    "strategy": "pidff-bounded-effect",
+    "target_degrees": "not_authorized",
+    "timeout_ms": "not_authorized"
+  },
+  "prior_response_receipt": {
+    "angle_delta_degrees": 0.18127718013275285,
+    "final_stop_all_sent": true,
+    "gate": "pass",
+    "movement_observed": false,
+    "movement_threshold_degrees": 1.0,
+    "no_direct_torque_reports": true,
+    "no_high_torque": true,
+    "path": "native-actuator-visible-smoke.json",
+    "post_stop_stable": true
+  },
+  "profile": "closed_loop_pidff_angle_v1",
+  "profile_cli": "closed-loop-pidff-angle-v1",
+  "required_before_output": [
+    {
+      "check": "native_actuator_response_smoke",
+      "evidence": "native PIDFF actuator response smoke recorded 0.181 degree(s) of steering delta above the 0.100 degree response threshold; visible_success=Some(false)",
+      "status": "passed"
+    },
+    {
+      "check": "controlled_angle_plan",
+      "evidence": "native-controlled-angle-plan.json",
+      "status": "passed"
+    },
+    {
+      "check": "controlled_angle_dry_run_preflight",
+      "evidence": "native-controlled-angle-closed-loop-preflight.json",
+      "status": "passed"
+    },
+    {
+      "check": "fresh_operator_bench_clear_for_exact_controlled_angle_command",
+      "evidence": "bench clear from operator for exactly one Moza controlled-angle retry: target 1 degree, max 5%, timeout 2000 ms, strategy pidff-bounded-effect, profile closed-loop-pidff-angle-v1, R5 stable, KS attached securely, hands clear, wheel clear, prior failed receipt preserved",
+      "status": "passed"
+    }
+  ],
+  "selector": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+  "success": false
+}

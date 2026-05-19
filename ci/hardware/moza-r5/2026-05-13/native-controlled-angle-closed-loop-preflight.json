@@ -1,0 +1,258 @@
+{
+  "actual_hardware_writes_supported": false,
+  "closed_loop_controller": {
+    "algorithm": "proportional_angle_error_pidff_constant_force",
+    "deadband_degrees": 0.0,
+    "max_percent": 5.0,
+    "min_active_percent": 0.5,
+    "planned_feedback_inputs": [
+      "start_angle_degrees",
+      "current_angle_degrees",
+      "target_angle_degrees",
+      "error_degrees"
+    ],
+    "planned_stop_reason": "target, return, safety timeout, stale samples, wrong-way guard, overshoot guard, HID error, or final cleanup",
+    "proportional_gain_percent_per_degree": 5.0,
+    "return_target_delta_degrees": 0.0,
+    "target_delta_degrees": 1.0,
+    "torque_command_source": "steering_angle_error"
+  },
+  "command": "wheelctl moza controlled-angle-smoke",
+  "command_log": [
+    {
+      "effect_magnitude_percent": 5.0,
+      "elapsed_us": 38,
+      "flags": 0,
+      "kind": "pidff_set_effect_closed_loop_v1_setup",
+      "low_torque_strategy": "pidff_bounded_effect",
+      "motor_enabled": false,
+      "payload_hex": "010101D0070000000000000DFF052823000000000000",
+      "percent": 5.0,
+      "profile_phase": "closed_loop_setup",
+      "report_id": "0x01",
+      "report_len": 22,
+      "result": "planned",
+      "safety_classification": "pidff_effect_setup",
+      "sequence": 0,
+      "torque_raw": 0
+    },
+    {
+      "effect_magnitude_percent": 5.0,
+      "elapsed_us": 116,
+      "flags": 0,
+      "kind": "pidff_set_constant_force_closed_loop_v1_outbound",
+      "low_torque_strategy": "pidff_bounded_effect",
+      "motor_enabled": true,
+      "payload_hex": "05016606",
+      "percent": 5.0,
+      "phase_duration_ms": 2000,
+      "profile_phase": "closed_loop_outbound_force",
+      "report_id": "0x05",
+      "report_len": 4,
+      "result": "planned",
+      "safety_classification": "bounded_low_torque_pidff",
+      "sequence": 1,
+      "torque_raw": 1638
+    },
+    {
+      "effect_magnitude_percent": 5.0,
+      "elapsed_us": 132,
+      "flags": 0,
+      "kind": "pidff_effect_start_closed_loop_v1",
+      "low_torque_strategy": "pidff_bounded_effect",
+      "motor_enabled": true,
+      "payload_hex": "0A010101",
+      "percent": 5.0,
+      "phase_duration_ms": 2000,
+      "profile_phase": "closed_loop_active",
+      "report_id": "0x0A",
+      "report_len": 4,
+      "result": "planned",
+      "safety_classification": "bounded_low_torque_pidff",
+      "sequence": 2,
+      "torque_raw": 0
+    },
+    {
+      "effect_magnitude_percent": 5.0,
+      "elapsed_us": 138,
+      "flags": 0,
+      "kind": "pidff_set_constant_force_closed_loop_v1_outbound",
+      "low_torque_strategy": "pidff_bounded_effect",
+      "motor_enabled": true,
+      "payload_hex": "05016606",
+      "percent": 5.0,
+      "phase_duration_ms": 2000,
+      "profile_phase": "closed_loop_outbound_force",
+      "report_id": "0x05",
+      "report_len": 4,
+      "result": "planned",
+      "safety_classification": "bounded_low_torque_pidff",
+      "sequence": 3,
+      "torque_raw": 1638
+    },
+    {
+      "effect_magnitude_percent": -5.0,
+      "elapsed_us": 145,
+      "flags": 0,
+      "kind": "pidff_set_constant_force_closed_loop_v1_return",
+      "low_torque_strategy": "pidff_bounded_effect",
+      "motor_enabled": true,
+      "payload_hex": "05019AF9",
+      "percent": -5.0,
+      "phase_duration_ms": 2000,
+      "profile_phase": "closed_loop_return_force",
+      "report_id": "0x05",
+      "report_len": 4,
+      "result": "planned",
+      "safety_classification": "bounded_low_torque_pidff",
+      "sequence": 4,
+      "torque_raw": -1638
+    },
+    {
+      "effect_magnitude_percent": 0.0,
+      "elapsed_us": 155,
+      "flags": 0,
+      "kind": "final_stop_all",
+      "low_torque_strategy": "pidff_bounded_effect",
+      "motor_enabled": false,
+      "payload_hex": "0C04",
+      "percent": 0.0,
+      "pidff_device_control_command": "0x04",
+      "pidff_device_control_command_name": "stop_all_effects",
+      "report_id": "0x0C",
+      "report_len": 2,
+      "result": "planned",
+      "safety_classification": "planned_pidff_stop_all",
+      "sequence": 5,
+      "torque_raw": 0
+    }
+  ],
+  "control_mode": "feedback_bounded_controlled_angle",
+  "controlled_angle_motion_proven": false,
+  "controlled_angle_plan_artifact": {
+    "command_ok": true,
+    "generated_at_utc": "2026-05-18T03:04:50Z",
+    "ladder_ok": true,
+    "no_output_ok": true,
+    "path": "native-controlled-angle-plan.json",
+    "retry_profile_ok": true,
+    "review_scope": "native_controlled_angle_profile_design"
+  },
+  "degrees_of_rotation": 1080.0,
+  "device": {
+    "descriptor_source": "dry_run",
+    "feature_report_ids": [
+      "0x11",
+      "0x12",
+      "0x13",
+      "0xAF"
+    ],
+    "feature_reports": [],
+    "input_report_lengths": [
+      42
+    ],
+    "output_capable": true,
+    "output_report_ids": [
+      "0x20"
+    ],
+    "output_reports": [
+      {
+        "report_id": "0x20",
+        "report_len": 8
+      }
+    ],
+    "path": "dry-run",
+    "product_category": "wheelbase",
+    "product_id": "0x0004",
+    "product_name": "Moza R5",
+    "r5_wheelbase_pid": true,
+    "report_metadata_source": "protocol_expected",
+    "serial_number_present": false,
+    "topology_hint": "wheelbase_aggregated",
+    "vendor_id": "0x346E"
+  },
+  "dry_run": true,
+  "duration_ms": 2000,
+  "final_stop_all_required": true,
+  "generated_at_utc": "2026-05-19T14:50:31Z",
+  "hardware_output_enabled": false,
+  "high_torque": false,
+  "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+  "max_percent": 5.0,
+  "no_direct_torque_reports": true,
+  "no_feature_reports": true,
+  "no_ffb_writes": true,
+  "no_firmware_or_dfu_commands": true,
+  "no_hid_device_opened": true,
+  "no_high_torque": true,
+  "no_nonzero_above_limit": true,
+  "no_output_reports": true,
+  "no_serial_config_commands": true,
+  "notes": [
+    "Dry-run controlled-angle preflight only: this receipt opens no HID device and proves no motion.",
+    "The profile is angle-bounded feedback control, not a longer open-loop dwell.",
+    "Actual hardware output remains blocked unless a same-lane native-controlled-angle-authorization.json exactly matches one reviewed command.",
+    "Pit House, SimHub, simulator telemetry, direct report 0x20, high torque, serial config, firmware, and DFU are outside this native controlled-angle path."
+  ],
+  "output_strategy": "pidff_bounded_effect",
+  "planned_next_output_allowed": false,
+  "planned_phases": [
+    {
+      "hardware_output_enabled": false,
+      "name": "sample_start_angle",
+      "required_before_first_pidff_write": true
+    },
+    {
+      "max_percent": 5.0,
+      "name": "outbound_to_target",
+      "stop_all_on_exit": false,
+      "target_delta_degrees": 1.0
+    },
+    {
+      "max_percent": 5.0,
+      "name": "return_to_start",
+      "stop_all_on_exit": false,
+      "target_delta_degrees": -1.0
+    },
+    {
+      "name": "final_stop_all",
+      "required": true
+    }
+  ],
+  "planned_pidff_writes": 6,
+  "preflight_only": true,
+  "prior_actuator_generated_at": "2026-05-16T05:49:14Z",
+  "prior_actuator_profile_smoke_validated": true,
+  "profile": "closed_loop_pidff_angle_v1",
+  "profile_cli": "closed-loop-pidff-angle-v1",
+  "read_timeout_ms": 20,
+  "receipt_path": "ci\\hardware\\moza-r5\\2026-05-13\\native-controlled-angle-closed-loop-preflight.json",
+  "return_to_start_required": true,
+  "safety_timeout_ms": 2000,
+  "selector": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+  "steering_generated_at": "2026-05-16T04:52:56Z",
+  "steering_proof_validated": true,
+  "stop_conditions": [
+    "target_angle_reached",
+    "return_to_start_reached",
+    "safety_timeout",
+    "stale_steering_samples",
+    "wrong_way_motion",
+    "velocity_guard",
+    "hid_write_error",
+    "hid_read_error"
+  ],
+  "success": true,
+  "target_degrees": 1.0,
+  "target_ladder_degrees": [
+    1.0,
+    3.0,
+    5.0,
+    10.0,
+    30.0,
+    90.0
+  ],
+  "write_attempts": 0,
+  "write_errors": 0,
+  "writes_ok": 0
+}
