@@ -58,9 +58,12 @@ No new ADR is required for this source-of-truth activation because the durable v
 
 1. Activate source-of-truth docs and metadata.
 2. Preserve the consumed attempt-03 authorization and safe failed output receipt.
-3. Require no-output protocol diagnosis before any future output family is proposed.
+3. Record the no-output standard PIDFF path diagnosis after three same-band
+   undertravel attempts.
 4. Promote native-visible only if the verifier accepts the receipt.
-5. Continue controlled movement and external/simulator work as separate receipt-gated lanes.
+5. Continue no-output Moza vendor-specific control investigation before any
+   future output family.
+6. Continue controlled movement and external/simulator work as separate receipt-gated lanes.
 
 ## Evidence plan
 

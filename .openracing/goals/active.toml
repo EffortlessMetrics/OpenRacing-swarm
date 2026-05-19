@@ -43,6 +43,7 @@ status_docs = [
   "docs/hardware/moza-r5-controlled-angle-analysis.md",
   "docs/hardware/moza-r5-pidff-lifecycle-trace.md",
   "docs/hardware/moza-r5-pidff-effect-lifecycle-plan.md",
+  "docs/hardware/moza-r5-standard-pidff-path-diagnosis.md",
   "plans/moza-native-visible-lane/handoff.md",
 ]
 
@@ -280,6 +281,23 @@ blocked_by = "n/a"
 commands = [
   "cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out ci/hardware/moza-r5/2026-05-13/native-visible-verification.json --json",
   "cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-artifact-index-after-attempt-03.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "standard-pidff-path-diagnosis"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-standard-pidff-path-diagnosis"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/native-pidff-standard-path-diagnosis.json"
+claim_boundary = "No-output protocol architecture diagnosis only; preserves all three undertravel receipts without creating authorization, output, native-visible, smoke-ready, or release-ready claims."
+blocked_by = "n/a"
+commands = [
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-native-visible-after-standard-pidff-diagnosis.json --json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-artifact-index-after-standard-pidff-diagnosis.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json",
   "cargo run --locked -p openracing-tools --bin package-surface -- --check",
   "python scripts/policy_file.py",
   "git diff --check",

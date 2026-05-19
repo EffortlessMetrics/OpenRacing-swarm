@@ -51,7 +51,7 @@ The only profile named by the current no-output preflight is:
 bounded-pidff-effect-lifecycle-v1
 ```
 
-Attempt 03 has been run exactly once. `native-controlled-angle-attempt-03-authorization.json` is consumed, `native-controlled-angle-attempt-03-smoke.json` records safe undertravel, and `native-controlled-angle-attempt-03-failure-analysis.json` records the no-output classification. The attempt authorizes no further output.
+Attempt 03 has been run exactly once. `native-controlled-angle-attempt-03-authorization.json` is consumed, `native-controlled-angle-attempt-03-smoke.json` records safe undertravel, `native-controlled-angle-attempt-03-failure-analysis.json` records the no-output attempt classification, and `native-pidff-standard-path-diagnosis.json` records the standard PIDFF controlled-angle path diagnosis. The attempt authorizes no further output.
 
 The command-bound bench-clear evidence consumed by attempt 03 was:
 
@@ -73,7 +73,13 @@ Given a future same-lane receipt with target reached, visible threshold met, no 
 
 ### Non-claiming diagnostics
 
-Given `native-pidff-lifecycle-trace.json`, `native-pidff-effect-lifecycle-plan.json`, `native-controlled-angle-attempt-03-preflight.json`, `native-controlled-angle-attempt-03-authorization.json`, the failed `native-controlled-angle-attempt-03-smoke.json`, `native-controlled-angle-attempt-03-failure-analysis.json`, `index.md`, or a bench-wizard receipt, the verifier MUST keep native-visible blocked unless a real output receipt also passes.
+Given `native-pidff-lifecycle-trace.json`, `native-pidff-effect-lifecycle-plan.json`, `native-pidff-standard-path-diagnosis.json`, `native-controlled-angle-attempt-03-preflight.json`, `native-controlled-angle-attempt-03-authorization.json`, the failed `native-controlled-angle-attempt-03-smoke.json`, `native-controlled-angle-attempt-03-failure-analysis.json`, `index.md`, or a bench-wizard receipt, the verifier MUST keep native-visible blocked unless a real output receipt also passes.
+
+Given the standard PIDFF diagnosis, the next investigation path MUST be
+no-output Moza vendor-specific enable/control research. It MAY sniff Pit House
+or SimHub, decode vendor reports, map report IDs, identify enable/gain/mode
+handshakes, and design a reviewed vendor-control plan, but it MUST NOT create an
+authorization receipt or hardware-output receipt by itself.
 
 Given a stored verifier receipt that is syntactically valid but failed its requested stage, the artifact index MAY mark the file itself as `pass`, but it MUST expose the claim status as `stage_failed`. Artifact validity MUST NOT be treated as native-visible readiness.
 

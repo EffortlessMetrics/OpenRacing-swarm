@@ -25,10 +25,11 @@ zero write errors, final Stop All sent, post-stop stability, and about 0.181277
 degrees of steering delta. They are useful safe undertravel evidence, not
 visible-motion proof.
 
-`native-pidff-lifecycle-trace.json` and
-`native-pidff-effect-lifecycle-plan.json` record the no-output PIDFF diagnosis.
-`native-controlled-angle-attempt-03-preflight.json` records the software-only
-dry-run for `bounded-pidff-effect-lifecycle-v1`. The matching
+`native-pidff-lifecycle-trace.json`,
+`native-pidff-effect-lifecycle-plan.json`, and
+`native-pidff-standard-path-diagnosis.json` record the no-output PIDFF
+diagnosis. `native-controlled-angle-attempt-03-preflight.json` records the
+software-only dry-run for `bounded-pidff-effect-lifecycle-v1`. The matching
 `native-controlled-angle-attempt-03-authorization.json` is recorded and consumed,
 `native-controlled-angle-attempt-03-smoke.json` records safe undertravel, and
 `native-controlled-angle-attempt-03-failure-analysis.json` records the no-output
@@ -851,6 +852,65 @@ git diff --check
 Do not remove the attempt-03 receipts. If wording needs correction, add a
 corrective analysis/doc patch that preserves the hardware evidence.
 
+## Work item: standard-pidff-path-diagnosis
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: Moza vendor-specific enable/control path investigation
+Blocked by: n/a
+
+### Goal
+
+Record a no-output protocol architecture diagnosis after three bounded
+standard-PIDFF-family controlled-angle attempts all failed safely in the same
+undertravel band.
+
+### Production delta
+
+Added `native-pidff-standard-path-diagnosis.json` and
+`docs/hardware/moza-r5-standard-pidff-path-diagnosis.md`. The diagnosis
+classifies the standard PIDFF controlled-angle path as
+`standard_pidff_controlled_angle_path_ineffective_in_current_r5_mode`, preserves
+all three hardware receipts, keeps native-visible and smoke-ready claims false,
+and records Moza vendor-specific enable/control path investigation as the next
+no-output research branch.
+
+### Non-goals
+
+No hardware output, no authorization receipt, no rerun, no force increase, no
+longer dwell, no 3/5/30/90 degree target, no direct report `0x20`, no high
+torque, no serial config, no firmware, no DFU, and no readiness promotion.
+
+### Acceptance
+
+- Diagnosis records that transport writes, steering feedback, cleanup, and
+  post-stop stability work.
+- Diagnosis records that standard PIDFF writes are accepted but the effect
+  lifecycle still does not produce visible controlled motion.
+- `native_visible_claimed=false`, `smoke_ready_claimed=false`, and
+  `planned_next_output.allowed=false`.
+- Native-visible remains blocked on `native_actuator_visible_smoke`.
+- Next work is no-output vendor-specific protocol investigation before any
+  future output plan.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-native-visible-after-standard-pidff-diagnosis.json --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-artifact-index-after-standard-pidff-diagnosis.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Do not remove the controlled-angle receipts. If wording needs correction, add a
+corrective no-output diagnosis/doc patch that preserves the hardware evidence
+and keeps planned output disallowed.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
@@ -858,7 +918,7 @@ Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
 Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
 Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
 Blocks: controlled movement ladder
-Blocked by: passing attempt-03 native-visible receipt
+Blocked by: passing native-visible receipt from a future reviewed and authorized output family
 
 ### Goal
 
@@ -896,8 +956,13 @@ receipt and demotes the manifest with analysis. Do not erase evidence.
 
 ## Later work
 
+- Investigate the Moza vendor-specific enable/control path with no output first:
+  sniff Pit House or SimHub, decode vendor reports, map report IDs, identify
+  enable/gain/mode handshakes, and design a reviewed vendor-control plan before
+  considering any output attempt.
 - Repeat 1 degree, then 3, 5, 10, 30, 90 right, and 90 return controlled
-  movement in separately authorized rungs.
+  movement only after new protocol evidence justifies a future output family and
+  each rung has separate authorization.
 - Refresh no-output KS/SR-P/HBP input captures as needed.
 - Use passive USB sniffing for Pit House, SimHub, and simulator protocol
   research without readiness claims.

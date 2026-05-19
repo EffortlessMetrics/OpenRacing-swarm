@@ -47,7 +47,10 @@ simulator FFB receipts.
 Attempt 03 has now run exactly once and failed safely. The consumed
 authorization, output receipt, native-visible verifier, and no-output failure
 analysis are preserved. No further hardware output is authorized; the next work
-is no-output protocol diagnosis before any future output family is proposed.
+is no-output Moza vendor-specific enable/control path investigation before any
+future output family is proposed. The standard PIDFF path diagnosis records that
+three bounded standard-PIDFF-family controlled-angle attempts remained in the
+same undertravel band.
 
 ## Prompt-To-Artifact Checklist
 
@@ -72,6 +75,7 @@ is no-output protocol diagnosis before any future output family is proposed.
 | Attempt-03 authorization exists | `native-controlled-angle-attempt-03-authorization.json` | Pass, consumed | Exact command-bound authorization was recorded and consumed by the single attempt-03 output receipt; it authorizes no further output. |
 | Attempt-03 output receipt exists | `native-controlled-angle-attempt-03-smoke.json` | Pass as safe failed evidence | Attempt 03 sent four bounded PIDFF effect-lifecycle writes, reached 0.181277 degrees, timed out before target, sent final Stop All, stayed post-stop stable, and recorded zero write errors. It is not visible-motion proof. |
 | Attempt-03 failure analysis exists | `native-controlled-angle-attempt-03-failure-analysis.json` | Pass as no-output classification | Analysis classifies safe undertravel in the same response band and keeps rerun, force escalation, native-visible, smoke-ready, and release-ready claims false. |
+| Standard PIDFF path diagnosis exists | `native-pidff-standard-path-diagnosis.json`; [Moza R5 Standard PIDFF Path Diagnosis](moza-r5-standard-pidff-path-diagnosis.md) | Pass as no-output architecture diagnosis | Diagnosis classifies `standard_pidff_controlled_angle_path_ineffective_in_current_r5_mode`, preserves all three controlled-angle receipts, keeps `planned_next_output.allowed=false`, and identifies no-output vendor-specific protocol investigation as next. |
 | Pit House compatibility navigation is current | `pre-output-readiness.json`, `artifact-index`, and `bench-wizard` `pit_house_compatibility`; `ci/hardware/moza-r5/2026-05-13/index.md` Pit House Compatibility section | Pass as non-claiming navigation | The lane records `pit_house_available=false`, `recorded_case_count=1/5`, `pit_house_coexistence_claimed=false`, `readiness_claim=false`, `blocks_native_control=false`, and `blocks_native_visible=false`. Missing open/direct/mode-change/firmware-page cases remain external smoke blockers. |
 | Pit House coexistence proven | `pit-house-coexistence.json`; smoke-ready verifier | Missing | `pit-house-availability.json` is non-claiming availability evidence only. Coexistence matrix is not proven. |
 | Simulator compatibility navigation is current | `pre-output-readiness.json`, `artifact-index`, and `bench-wizard` `simulator_compatibility`; `ci/hardware/moza-r5/2026-05-13/index.md` Simulator Compatibility section | Pass as non-claiming navigation | The lane records `recorded_artifact_count=0/2`, `simulator_telemetry_claimed=false`, `bounded_simulator_ffb_claimed=false`, `readiness_claim=false`, `blocks_native_control=false`, and `blocks_native_visible=false`. Missing telemetry and bounded FFB artifacts remain external smoke blockers. |
@@ -157,8 +161,9 @@ failed gates:
 
 ## Missing Work
 
-1. No-output protocol architecture diagnosis for why the standard PIDFF effect
-   lifecycle remains in the same undertravel band.
+1. No-output Moza vendor-specific enable/control path investigation: sniff Pit
+   House / SimHub, decode vendor reports, map report IDs, identify
+   enable/gain/mode handshakes, and design a reviewed plan.
 2. A reviewed future-output plan only if new protocol evidence justifies a new
    output family.
 3. If a future receipt passes, native-visible verifier, manifest promotion, and

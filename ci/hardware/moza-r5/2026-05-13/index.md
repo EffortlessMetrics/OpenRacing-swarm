@@ -163,6 +163,7 @@ This section is protocol research/support navigation only. Passive sniff artifac
 | `native-pidff-effect-lifecycle-plan.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 | `native-pidff-lifecycle-trace.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 | `native-pidff-semantics-diagnosis.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
+| `native-pidff-standard-path-diagnosis.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 | `native-visible-verification.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 
 ## Pit House External Compatibility

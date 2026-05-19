@@ -30,8 +30,10 @@ final Stop All, stayed post-stop stable, and recorded no direct report `0x20`,
 no high torque, no serial config, and no firmware or DFU.
 
 `native-controlled-angle-attempt-03-failure-analysis.json` classifies attempt 03
-as safe undertravel and keeps native visible motion unclaimed. No further
-hardware output is authorized.
+as safe undertravel and keeps native visible motion unclaimed.
+`native-pidff-standard-path-diagnosis.json` classifies the standard PIDFF
+controlled-angle path as ineffective in the current R5 device mode after three
+same-band undertravel attempts. No further hardware output is authorized.
 
 ## Completion Audit Summary
 
@@ -45,6 +47,7 @@ The broader Moza objective remains incomplete:
 | Attempt-03 authorization | `native-controlled-angle-attempt-03-authorization.json` | Recorded and consumed |
 | Attempt-03 output | `native-controlled-angle-attempt-03-smoke.json` | Recorded safe undertravel |
 | Attempt-03 analysis | `native-controlled-angle-attempt-03-failure-analysis.json` | Recorded no-output classification |
+| Standard PIDFF path diagnosis | `native-pidff-standard-path-diagnosis.json` | Recorded no-output architecture diagnosis |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |
 | Simulator telemetry | `simulator-telemetry-proof.json` | Missing |
 | Bounded simulator FFB | `simulator-ffb-smoke.json` | Missing |
@@ -56,17 +59,21 @@ mapping remains diagnostic with `readiness_claim=false`.
 
 ## Required Next Event
 
-The next native-visible step is no-output protocol diagnosis. Preserve the
-attempt-03 authorization, smoke, verification, and analysis receipts. Do not
-create another authorization or output receipt from verifier guidance. Any future
-output family requires a reviewed no-output plan, fresh command-bound bench
-clear, and a new exact authorization.
+The next native-visible step is no-output Moza vendor-specific enable/control
+path investigation. Preserve all three controlled-angle undertravel receipts and
+the attempt-03 authorization, smoke, verification, analysis, and standard-PIDFF
+diagnosis artifacts. Do not create another authorization or output receipt from
+verifier guidance. Any future output family requires new protocol evidence, a
+reviewed vendor-control plan, fresh command-bound bench clear, and a new exact
+authorization.
 
 ## Do Not Do
 
 - Do not create another authorization receipt from this handoff.
 - Do not run hardware output.
 - Do not rerun attempt 03 or either previous 1 degree attempt.
+- Do not keep iterating standard PIDFF profile variants without new protocol
+  evidence.
 - Do not raise force, extend dwell, or jump to 3, 5, 30, or 90 degrees.
 - Do not use direct report `0x20`.
 - Do not use high torque.
