@@ -6,6 +6,7 @@ created = "2026-05-18"
 
 proposal = "docs/proposals/OR-PROP-0001-moza-native-visible-lane.md"
 plan = "plans/moza-native-visible-lane/implementation-plan.md"
+handoff = "plans/moza-native-visible-lane/handoff.md"
 
 specs = [
   "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md",
@@ -42,6 +43,7 @@ status_docs = [
   "docs/hardware/moza-r5-controlled-angle-analysis.md",
   "docs/hardware/moza-r5-pidff-lifecycle-trace.md",
   "docs/hardware/moza-r5-pidff-effect-lifecycle-plan.md",
+  "plans/moza-native-visible-lane/handoff.md",
 ]
 
 [[work_item]]

@@ -7,6 +7,7 @@ Linked specs:
 - docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
 Linked ADRs: docs/adr/0009-hardware-validation-evidence-state-machine.md
 Active goal: .openracing/goals/active.toml
+Blocked handoff: plans/moza-native-visible-lane/handoff.md
 
 ## Current state
 
@@ -69,6 +70,10 @@ extended-slot details that the readiness and artifact-index renderers surface.
 `lane-capture-analysis.json` and `role-status-sync.json` identify brake,
 clutch, and handbrake candidates as diagnostic only with `readiness_claim=false`;
 they still leave role-specific input semantics incomplete.
+
+The current blocked-state handoff is
+`plans/moza-native-visible-lane/handoff.md`. Use it when no active goal work
+item is ready; do not invent new no-output work just to keep the lane moving.
 
 ## Work item: activate-source-of-truth
 
