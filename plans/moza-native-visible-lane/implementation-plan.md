@@ -1218,6 +1218,62 @@ git diff --check
 Revert only the checklist helper, Markdown rendering, focused assertions, and
 this plan entry. Do not remove sniff plan artifacts or hardware receipts.
 
+## Work item: passive-sniff-bundle-json-out
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: checked-in passive sniff bundle manifest receipts
+Blocked by: n/a
+
+### Goal
+
+Make passive sniff bundle manifests writable as ordinary JSON artifacts outside
+the local ZIP bundle.
+
+### Production delta
+
+`wheelctl hardware sniff-bundle` now accepts `--json-out` and writes the same
+non-claiming bundle manifest JSON that is embedded in the ZIP. The Moza bench
+wizard generated `bundle_sniff_evidence` command includes `--json-out` pointed
+at the scenario's `sniff-bundle-manifest.json` path, so later capture evidence
+can review the manifest without opening the local ZIP.
+
+### Non-goals
+
+No hardware output, no OpenRacing HID open, no pcap capture, no raw pcap
+commit, no sniff receipt, no sniff summary, no checked-in bundle artifact, no
+authorization receipt, no native-visible promotion, and no smoke-ready
+promotion.
+
+### Acceptance
+
+- `hardware sniff-bundle --json-out` writes a schema-compatible non-claiming
+  manifest.
+- Generated bench-wizard sniff-bundle commands parse and include `--json-out`.
+- Passive sniff navigation still reports `readiness_claim=false`.
+- No readiness, native-control, authorization, or output claim changes.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_bundle -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl passive_sniff -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl parse_hardware_sniff_bundle -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the `sniff-bundle --json-out` CLI plumbing, generated handoff
+command update, focused tests, and this plan entry. Do not remove sniff plans,
+receipts, summaries, raw local captures, or controlled-angle evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

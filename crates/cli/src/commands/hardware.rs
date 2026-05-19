@@ -101,6 +101,7 @@ pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
             operator_notes,
             include_pcapng,
             out,
+            json_out,
         } => {
             let request = HardwareSniffBundleRequest {
                 plan,
@@ -110,7 +111,7 @@ pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
                 include_pcapng: include_pcapng.as_deref(),
                 out,
             };
-            sniff_bundle(json, &request).await
+            sniff_bundle(json, &request, json_out.as_deref()).await
         }
         HardwareCommands::Lane(command) => execute_lane(command, json).await,
     }
@@ -253,9 +254,14 @@ async fn sniff_summary(
     print_sniff_summary(json, json_out, md_out, &summary)
 }
 
-async fn sniff_bundle(json: bool, request: &HardwareSniffBundleRequest<'_>) -> Result<()> {
+async fn sniff_bundle(
+    json: bool,
+    request: &HardwareSniffBundleRequest<'_>,
+    json_out: Option<&Path>,
+) -> Result<()> {
     let manifest = build_hardware_sniff_bundle(request)?;
-    print_sniff_bundle(json, request.out, &manifest)
+    write_json_receipt(json_out, &manifest)?;
+    print_sniff_bundle(json, request.out, json_out, &manifest)
 }
 
 fn build_hardware_sniff_plan(
@@ -4387,6 +4393,7 @@ fn print_sniff_summary(
 fn print_sniff_bundle(
     json: bool,
     out: &Path,
+    json_out: Option<&Path>,
     manifest: &HardwareSniffBundleManifest,
 ) -> Result<()> {
     if json {
@@ -4406,6 +4413,9 @@ fn print_sniff_bundle(
     write_stdout_line(
         "Non-claiming: native response, native visible, smoke, release, and OpenRacing hardware output are false.",
     )?;
+    if let Some(path) = json_out {
+        write_stdout_line(&format!("JSON manifest: {}", path.display()))?;
+    }
     Ok(())
 }
 
@@ -6087,6 +6097,44 @@ mod tests {
             assert!(!manifest.satisfies_smoke_ready);
             assert!(!manifest.satisfies_release_ready);
             assert!(manifest.readiness_claims.all_false());
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn sniff_bundle_writes_json_manifest_when_requested() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = write_bundle_fixture(dir.path(), b"synthetic pcapng bytes")?;
+            let json_out = dir.path().join("sniff-bundle-manifest.json");
+            let request = HardwareSniffBundleRequest {
+                plan: &paths.plan,
+                receipt: &paths.receipt,
+                summary: &paths.summary,
+                operator_notes: &paths.operator_notes,
+                include_pcapng: None,
+                out: &paths.out,
+            };
+
+            sniff_bundle(false, &request, Some(&json_out)).await?;
+
+            let value: serde_json::Value = read_json_file(&json_out)?;
+            assert_schema_valid("sniff-bundle-manifest.schema.json", &value)?;
+            assert_eq!(
+                value.get("command").and_then(serde_json::Value::as_str),
+                Some("wheelctl hardware sniff-bundle")
+            );
+            assert_eq!(
+                value
+                    .get("openracing_hardware_output")
+                    .and_then(serde_json::Value::as_bool),
+                Some(false)
+            );
+            assert_eq!(
+                value
+                    .get("satisfies_native_visible_ready")
+                    .and_then(serde_json::Value::as_bool),
+                Some(false)
+            );
+            assert!(paths.out.is_file());
             Ok(())
         }
 

@@ -398,6 +398,26 @@ commands = [
 ]
 
 [[work_item]]
+id = "passive-sniff-bundle-json-out"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-passive-sniff-bundle-json-out"
+current_pointer = "crates/cli/src/commands/hardware.rs"
+claim_boundary = "No-output artifact packaging only; adds a separate sniff bundle manifest JSON writer without opening HID, creating authorization, emitting output, or making readiness claims."
+blocked_by = "n/a"
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl sniff_bundle -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl passive_sniff -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl parse_hardware_sniff_bundle -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

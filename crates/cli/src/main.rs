@@ -632,6 +632,8 @@ mod tests {
             "target/sniff/pit-house-open-idle/capture.pcapng",
             "--out",
             "target/sniff/pit-house-open-idle/openracing-sniff-bundle.zip",
+            "--json-out",
+            "ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-bundle-manifest.json",
         ])?;
         assert!(cli.json);
         match &cli.command {
@@ -642,6 +644,7 @@ mod tests {
                 operator_notes,
                 include_pcapng,
                 out,
+                json_out,
             }) => {
                 assert_eq!(
                     plan.to_str(),
@@ -666,6 +669,12 @@ mod tests {
                 assert_eq!(
                     out.to_str(),
                     Some("target/sniff/pit-house-open-idle/openracing-sniff-bundle.zip")
+                );
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some(
+                        "ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-bundle-manifest.json"
+                    )
                 );
             }
             _ => return Err("expected Hardware SniffBundle command".into()),

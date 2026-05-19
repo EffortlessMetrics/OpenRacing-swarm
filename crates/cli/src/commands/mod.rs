@@ -460,6 +460,9 @@ pub enum HardwareCommands {
         /// Output ZIP bundle path
         #[arg(long)]
         out: std::path::PathBuf,
+        /// Write the sniff bundle manifest JSON artifact to this file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
     },
 
     /// Scaffold a hardware validation lane from a device-family rail adapter
