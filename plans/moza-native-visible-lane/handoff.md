@@ -65,12 +65,17 @@ mapping remains diagnostic with `readiness_claim=false`.
 
 The next native-visible step is to run the planned passive USB sniff captures
 and generate non-claiming `sniff-receipt.json` and `sniff-summary.json`
-artifacts. Preserve all three controlled-angle undertravel receipts and the
-attempt-03 authorization, smoke, verification, analysis, standard-PIDFF
-diagnosis, and sniff plan artifacts. Do not create another authorization or
-output receipt from verifier guidance. Any future output family requires decoded
-protocol evidence, a reviewed vendor-control plan, fresh command-bound bench
-clear, and a new exact authorization.
+artifacts. `wheelctl moza bench-wizard` and native-visible verifier guidance
+now surface the first command-bound no-output handoff for `pit-house-open-idle`:
+generate the receipt from the saved local pcapng, summarize it with
+`wheelctl hardware sniff-summary`, and optionally bundle summary evidence
+without committing raw pcapng. Preserve all
+three controlled-angle undertravel receipts and the attempt-03 authorization,
+smoke, verification, analysis, standard-PIDFF diagnosis, and sniff plan
+artifacts. Do not create another authorization or output receipt from verifier
+guidance. Any future output family requires decoded protocol evidence, a
+reviewed vendor-control plan, fresh command-bound bench clear, and a new exact
+authorization.
 
 ## Do Not Do
 
@@ -108,6 +113,12 @@ cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index `
   --lane ci/hardware/moza-r5/2026-05-13 `
   --json-out target/moza-artifact-index-current.json `
   --md-out ci/hardware/moza-r5/2026-05-13/index.md `
+  --json
+
+cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard `
+  --lane ci/hardware/moza-r5/2026-05-13 `
+  --json-out target/moza-bench-wizard-current.json `
+  --md-out target/moza-bench-wizard-current.md `
   --json
 ```
 

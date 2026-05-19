@@ -979,6 +979,70 @@ Remove only the plan-only sniff artifacts and documentation. Do not remove
 controlled-angle receipts, PIDFF diagnoses, verifier receipts, or safety
 evidence.
 
+## Work item: bench-wizard-vendor-sniff-next-step
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: command-bound passive sniff capture handoff
+Blocked by: n/a
+
+### Goal
+
+Make the read-only bench wizard stop pointing at stale attempt-03
+classification once `native-pidff-standard-path-diagnosis.json` exists. The
+next operator step must instead point to the first plan-only passive sniff
+scenario that needs a `sniff-receipt.json` and `sniff-summary.json`.
+
+### Production delta
+
+Updated `wheelctl moza bench-wizard` so `next_operator_step.kind` becomes
+`capture_passive_vendor_sniff` for the current lane. The step records the
+planned scenario, local pcapng path, committed receipt/summary paths, and
+command-bound no-output `wheelctl hardware sniff-receipt`, `sniff-summary`, and
+`sniff-bundle` commands. Markdown output now renders those next-step commands.
+The native-visible verifier guidance also stops asking for stale attempt-03
+classification once the standard-PIDFF diagnosis exists and points to the same
+passive sniff handoff.
+
+### Non-goals
+
+No hardware output, no authorization receipt, no HID open, no OpenRacing HID
+output or feature reports, no pcap capture, no sniff receipt, no sniff summary,
+no raw pcap commit, no native-visible promotion, and no smoke-ready promotion.
+
+### Acceptance
+
+- With attempt-03 output and standard-PIDFF diagnosis present, bench wizard
+  reports `next_operator_step.kind=capture_passive_vendor_sniff`.
+- Native-visible verifier operator actions no longer request attempt-03
+  classification after the standard-PIDFF diagnosis exists.
+- The first current scenario is `pit-house-open-idle`.
+- The step includes command-bound `wheelctl hardware sniff-receipt`,
+  `wheelctl hardware sniff-summary`, and `wheelctl hardware sniff-bundle`
+  commands.
+- The step keeps `hardware_output_allowed_now=false` and
+  `no_openracing_output=true`.
+- `verify-bundle --stage native-visible-ready` remains blocked on
+  `native_actuator_visible_smoke`.
+
+### Proof commands
+
+```powershell
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-bench-wizard-after-sniff-next.json --md-out target/moza-bench-wizard-after-sniff-next.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-native-visible-after-bench-wizard-sniff-next.json --json
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the bench-wizard next-step and Markdown rendering changes plus this
+plan entry. Do not remove any sniff plan artifacts or hardware receipts.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

@@ -55,6 +55,12 @@ recorded as passive external observation only, not OpenRacing output.
 
 ## Next Evidence Needed
 
+Run `wheelctl moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13` to get
+the current command-bound no-output handoff. With the current plan-only state,
+the wizard points first at `pit-house-open-idle` and emits the exact
+`wheelctl hardware sniff-receipt`, `sniff-summary`, and `sniff-bundle` commands
+for that scenario.
+
 For each planned scenario:
 
 1. Capture host-side USB URBs with USBPcap/Wireshark or `tshark`.

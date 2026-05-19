@@ -12,7 +12,7 @@ One-screen execution plan for OpenRacing. Updated each sprint.
 
 - **Moza native-visible frontier** - the R5 lane is `native_response_ready`; three 1 degree controlled-angle attempts, including `bounded-pidff-effect-lifecycle-v1` attempt 03, failed safely in the same ~0.181277 degree response band, and `native-pidff-standard-path-diagnosis.json` records that the standard PIDFF path is ineffective in the current R5 mode
 - **Moza source-of-truth activation** - use `.openracing/goals/active.toml`, `docs/proposals/OR-PROP-0001-moza-native-visible-lane.md`, `docs/specs/OR-SPEC-0001-moza-native-visible-lane.md`, and `plans/moza-native-visible-lane/implementation-plan.md` as the current lane rail
-- **Moza no-output operator navigation** - use `wheelctl moza artifact-index`, `wheelctl moza bench-wizard`, and `wheelctl moza verify-bundle --stage native-visible-ready` to inspect the blocked frontier; the surfaces show attempt-03 handoff, Pit House, simulator, and passive USB sniff navigation, but still create no authorization, output permission, or readiness claim
+- **Moza no-output operator navigation** - use `wheelctl moza artifact-index`, `wheelctl moza bench-wizard`, and `wheelctl moza verify-bundle --stage native-visible-ready` to inspect the blocked frontier; the wizard now points from the completed standard-PIDFF diagnosis to command-bound passive sniff receipt/summary handoff for `pit-house-open-idle`, but still creates no authorization, output permission, or readiness claim
 - **Service API completion** — implement `WheelService::game_service()` and `plugin_service()` accessors; re-enable blocked integration tests
 
 ## NEXT (Queued — next 2–4 sprints)

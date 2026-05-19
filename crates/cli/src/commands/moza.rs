@@ -93,6 +93,7 @@ const NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE: &str = "native-controlled-angle-
 const NATIVE_CONTROLLED_ANGLE_RETRY_FAILURE_ANALYSIS_FILE: &str =
     "native-controlled-angle-retry-failure-analysis.json";
 const NATIVE_PIDFF_SEMANTICS_DIAGNOSIS_FILE: &str = "native-pidff-semantics-diagnosis.json";
+const NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE: &str = "native-pidff-standard-path-diagnosis.json";
 const NATIVE_PIDFF_EFFECT_LIFECYCLE_PLAN_FILE: &str = "native-pidff-effect-lifecycle-plan.json";
 const NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_PREFLIGHT_FILE: &str =
     "native-controlled-angle-attempt-03-preflight.json";
@@ -1446,10 +1447,33 @@ fn moza_bench_wizard_next_operator_step(lane: &Path, readiness: &Value, frontier
         .and_then(Value::as_bool)
         .unwrap_or(false);
 
+    if native_visible {
+        return serde_json::json!({
+            "kind": "native_visible_recorded",
+            "summary": "native-visible evidence is recorded; plan the controlled-movement ladder with fresh authorization per rung",
+            "hardware_output_allowed_now": false
+        });
+    }
+
     if lane
         .join(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE)
         .is_file()
     {
+        if lane
+            .join(NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE)
+            .is_file()
+        {
+            if let Some(step) = moza_passive_sniff_next_operator_step(lane) {
+                return step;
+            }
+            return serde_json::json!({
+                "kind": "decode_vendor_reports_no_output",
+                "summary": "standard PIDFF path diagnosis and planned passive sniff summaries are recorded; decode vendor reports, map report IDs, and identify enable/gain/mode handshakes before any reviewed vendor-control plan",
+                "hardware_output_allowed_now": false,
+                "authorization_created_by_wizard": false,
+                "no_openracing_output": true
+            });
+        }
         return serde_json::json!({
             "kind": "no_output_analysis_required",
             "summary": "attempt 03 output is recorded; preserve all attempt receipts and classify the result before any future profile plan",
@@ -1486,14 +1510,6 @@ fn moza_bench_wizard_next_operator_step(lane: &Path, readiness: &Value, frontier
         });
     }
 
-    if native_visible {
-        return serde_json::json!({
-            "kind": "native_visible_recorded",
-            "summary": "native-visible evidence is recorded; plan the controlled-movement ladder with fresh authorization per rung",
-            "hardware_output_allowed_now": false
-        });
-    }
-
     if native_response || frontier.contains("undertravel") || frontier.contains("pidff") {
         return serde_json::json!({
             "kind": "continue_native_visible_diagnosis",
@@ -1507,6 +1523,114 @@ fn moza_bench_wizard_next_operator_step(lane: &Path, readiness: &Value, frontier
         "summary": "refresh no-output readiness and verifier receipts before selecting the next lane action",
         "hardware_output_allowed_now": false
     })
+}
+
+fn moza_passive_sniff_next_operator_step(lane: &Path) -> Option<Value> {
+    for (scenario, label, _focus, warning) in moza_passive_sniff_navigation_requirements() {
+        let committed_dir = moza_passive_sniff_committed_dir(lane, scenario);
+        let plan_artifact = committed_dir.join("sniff-plan.json");
+        let receipt_artifact = committed_dir.join("sniff-receipt.json");
+        let summary_artifact = committed_dir.join("sniff-summary.json");
+        let bundle_manifest_artifact = committed_dir.join("sniff-bundle-manifest.json");
+        let plan_status =
+            passive_sniff_artifact_status(&plan_artifact, "wheelctl hardware sniff-plan");
+        if !matches!(plan_status, "present_non_claiming") {
+            continue;
+        }
+        let receipt_status =
+            passive_sniff_artifact_status(&receipt_artifact, "wheelctl hardware sniff-receipt");
+        let summary_status =
+            passive_sniff_artifact_status(&summary_artifact, "wheelctl hardware sniff-summary");
+        if matches!(receipt_status, "present_non_claiming")
+            && matches!(summary_status, "present_non_claiming")
+        {
+            continue;
+        }
+
+        let local_dir = PathBuf::from("target").join("sniff").join(scenario);
+        let local_pcapng = local_dir.join("capture.pcapng");
+        let local_summary_md = local_dir.join("sniff-summary.md");
+        let local_operator_notes = local_dir.join("operator-notes.md");
+        let local_bundle = local_dir.join("openracing-sniff-bundle.zip");
+        let app = moza_passive_sniff_external_app(scenario);
+        let evidence = format!(
+            "operator-recorded passive USB capture for {scenario}; OpenRacing opened no HID device and sent no output, feature, serial, firmware, or DFU commands"
+        );
+
+        return Some(serde_json::json!({
+            "kind": "capture_passive_vendor_sniff",
+            "summary": format!(
+                "standard PIDFF path diagnosis is recorded; next evidence is the {label} passive USB capture, followed by non-claiming sniff receipt and summary artifacts"
+            ),
+            "scenario": scenario,
+            "label": label,
+            "warning": warning,
+            "hardware_output_allowed_now": false,
+            "authorization_created_by_wizard": false,
+            "no_openracing_output": true,
+            "no_hid_device_opened_by_openracing": true,
+            "plan_artifact": plan_artifact.display().to_string(),
+            "receipt_artifact": receipt_artifact.display().to_string(),
+            "summary_artifact": summary_artifact.display().to_string(),
+            "bundle_manifest_artifact": bundle_manifest_artifact.display().to_string(),
+            "local_pcapng": local_pcapng.display().to_string(),
+            "commands": [
+                {
+                    "name": "record_sniff_receipt",
+                    "output_enabled": false,
+                    "command": format!(
+                        "wheelctl hardware sniff-receipt --plan {} --pcapng {} --operator Steven --app {} --scenario {} --evidence {} --json-out {}",
+                        command_arg(&plan_artifact.display().to_string()),
+                        command_arg(&local_pcapng.display().to_string()),
+                        command_arg(app),
+                        command_arg(scenario),
+                        command_arg(&evidence),
+                        command_arg(&receipt_artifact.display().to_string())
+                    )
+                },
+                {
+                    "name": "summarize_sniff_capture",
+                    "output_enabled": false,
+                    "command": format!(
+                        "wheelctl hardware sniff-summary --pcapng {} --vendor {} --product {} --json-out {} --md-out {}",
+                        command_arg(&local_pcapng.display().to_string()),
+                        MOZA_VENDOR_HEX,
+                        hex_u16(product_ids::R5_V1),
+                        command_arg(&summary_artifact.display().to_string()),
+                        command_arg(&local_summary_md.display().to_string())
+                    )
+                },
+                {
+                    "name": "bundle_sniff_evidence",
+                    "output_enabled": false,
+                    "requires_operator_notes": true,
+                    "command": format!(
+                        "wheelctl hardware sniff-bundle --plan {} --receipt {} --summary {} --operator-notes {} --out {}",
+                        command_arg(&plan_artifact.display().to_string()),
+                        command_arg(&receipt_artifact.display().to_string()),
+                        command_arg(&summary_artifact.display().to_string()),
+                        command_arg(&local_operator_notes.display().to_string()),
+                        command_arg(&local_bundle.display().to_string())
+                    )
+                }
+            ],
+            "notes": [
+                "commands are no-output OpenRacing artifact commands; the pcapng capture itself is created by USBPcap/Wireshark/tshark outside OpenRacing",
+                "do not commit raw pcapng unless separate review approves raw capture, size, sensitivity, and operator consent",
+                "sniff receipt, summary, and bundle artifacts remain protocol research/support evidence only"
+            ]
+        }));
+    }
+    None
+}
+
+fn moza_passive_sniff_external_app(scenario: &str) -> &'static str {
+    match scenario {
+        "pit-house-open-idle" | "pit-house-setting-change" => "MOZA Pit House",
+        "simhub-open-idle" | "simhub-output-session" => "SimHub",
+        "simulator-session-start-stop" => "external simulator or bridge",
+        _ => "external USB observer",
+    }
 }
 
 fn moza_bench_wizard_safe_no_output_commands(lane: &Path) -> Vec<Value> {
@@ -10102,8 +10226,12 @@ fn native_visible_authorization_guidance(lane: &Path) -> String {
             .as_ref()
             .map(|receipt| optional_bool_text(json_bool(receipt, "final_stop_all_sent")))
             .unwrap_or("missing".to_string());
+        let next_guidance =
+            native_visible_standard_pidff_diagnosis_guidance(lane).unwrap_or_else(|| {
+                "Do not generate another preflight, authorization, or output command from verifier guidance; classify the attempt with a no-output analysis before any future profile plan. Do not extend dwell, raise force, attempt 30/90 degrees, use direct report 0x20, or use the visible-output authorizer.".to_string()
+            });
         return format!(
-            "A real controlled-angle attempt 03 is already recorded at {NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE}; preserve {NATIVE_CONTROLLED_ANGLE_SMOKE_FILE}, {NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE}, {NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_PREFLIGHT_FILE}, {NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE}, and {NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE}. Attempt 03 result: target_reached={target_reached}, timeout_reached={timeout_reached}, angle_delta_degrees={delta}, writes_ok={writes_ok}, write_errors={write_errors}, final_stop_all_sent={final_stop_all_sent}. Do not generate another preflight, authorization, or output command from verifier guidance; classify the attempt with a no-output analysis before any future profile plan. Do not extend dwell, raise force, attempt 30/90 degrees, use direct report 0x20, or use the visible-output authorizer."
+            "A real controlled-angle attempt 03 is already recorded at {NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE}; preserve {NATIVE_CONTROLLED_ANGLE_SMOKE_FILE}, {NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE}, {NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_PREFLIGHT_FILE}, {NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_AUTHORIZATION_FILE}, and {NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE}. Attempt 03 result: target_reached={target_reached}, timeout_reached={timeout_reached}, angle_delta_degrees={delta}, writes_ok={writes_ok}, write_errors={write_errors}, final_stop_all_sent={final_stop_all_sent}. {next_guidance}"
         );
     }
     if native_controlled_angle_attempt_03_preflight_is_no_output_preflight(lane) {
@@ -10170,6 +10298,30 @@ fn native_visible_authorization_guidance(lane: &Path) -> String {
     } else {
         "Do not run output until the follow-up requirements are complete and a fresh bench-clear is recorded for the exact next output command via wheelctl moza authorize-visible-output.".to_string()
     }
+}
+
+fn native_visible_standard_pidff_diagnosis_guidance(lane: &Path) -> Option<String> {
+    if !lane
+        .join(NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE)
+        .is_file()
+    {
+        return None;
+    }
+
+    if let Some(step) = moza_passive_sniff_next_operator_step(lane) {
+        let scenario = json_string(&step, "scenario").unwrap_or("first planned passive sniff");
+        let receipt_artifact =
+            json_string(&step, "receipt_artifact").unwrap_or("sniff-receipt.json");
+        let summary_artifact =
+            json_string(&step, "summary_artifact").unwrap_or("sniff-summary.json");
+        return Some(format!(
+            "The standard PIDFF path diagnosis is recorded at {NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE}; no further standard-PIDFF output is authorized. Next evidence is no-output passive USB sniffing for {scenario}. Run `wheelctl moza bench-wizard` for the command-bound receipt and summary handoff targeting {receipt_artifact} and {summary_artifact}. Do not extend dwell, raise force, attempt 3/5/30/90 degrees, use direct report 0x20, high torque, serial config, firmware, or DFU."
+        ));
+    }
+
+    Some(format!(
+        "The standard PIDFF path diagnosis is recorded at {NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE}; no further standard-PIDFF output is authorized. If all planned passive sniff summaries are recorded, decode vendor reports, map report IDs, and identify enable/gain/mode handshakes before any reviewed vendor-control plan. Do not extend dwell, raise force, attempt 3/5/30/90 degrees, use direct report 0x20, high torque, serial config, firmware, or DFU."
+    ))
 }
 
 fn native_controlled_angle_plan_artifact_summary(lane: &Path) -> String {
@@ -12743,13 +12895,9 @@ fn push_native_visible_next_commands(
 }
 
 fn native_controlled_angle_real_attempt_recorded(lane: &Path) -> bool {
-    let Ok(receipt) = read_json_value(lane, NATIVE_CONTROLLED_ANGLE_SMOKE_FILE) else {
-        return false;
-    };
-    json_string(&receipt, "command") == Some("wheelctl moza controlled-angle-smoke")
-        && json_bool(&receipt, "dry_run") == Some(false)
-        && json_bool(&receipt, "hardware_output_enabled") == Some(true)
-        && json_bool(&receipt, "actual_hardware_writes_supported") == Some(true)
+    native_controlled_angle_smoke_is_real_output_attempt(lane)
+        || native_controlled_angle_retry_smoke_is_real_output_attempt(lane)
+        || native_controlled_angle_attempt_03_smoke_is_real_output_attempt(lane)
 }
 
 fn native_controlled_angle_first_rung_dry_run_ready(lane: &Path, selector: &str) -> bool {
@@ -29321,6 +29469,7 @@ fn render_moza_bench_wizard_markdown(receipt: &Value) -> String {
         markdown_escape(step_kind),
         markdown_escape(step_summary)
     ));
+    push_next_operator_step_commands_markdown(&mut out, step);
 
     push_input_role_semantics_markdown(&mut out, receipt);
     push_pit_house_compatibility_markdown(&mut out, receipt);
@@ -29679,6 +29828,29 @@ fn push_passive_sniff_navigation_markdown(out: &mut String, receipt: &Value) {
                 markdown_escape(summary_status)
             ));
         }
+    }
+    out.push('\n');
+}
+
+fn push_next_operator_step_commands_markdown(out: &mut String, step: &Value) {
+    let Some(commands) = step.get("commands").and_then(Value::as_array) else {
+        return;
+    };
+    if commands.is_empty() {
+        return;
+    }
+
+    out.push_str("### Next Operator Commands\n\n");
+    out.push_str("| Name | Command |\n");
+    out.push_str("| --- | --- |\n");
+    for command in commands {
+        let name = json_string(command, "name").unwrap_or("unknown");
+        let command_text = json_string(command, "command").unwrap_or("");
+        out.push_str(&format!(
+            "| `{}` | `{}` |\n",
+            markdown_escape(name),
+            markdown_escape(command_text)
+        ));
     }
     out.push('\n');
 }
@@ -32375,6 +32547,71 @@ mod tests {
         assert!(markdown.contains(
             "| `pit-house-open-idle` | `summary_recorded` | `present_non_claiming` | `present_non_claiming` | `present_non_claiming` |"
         ));
+        Ok(())
+    }
+
+    #[test]
+    fn bench_wizard_points_diagnosed_attempt_03_to_passive_sniff_capture() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        let selector = "hid-0x346E-0x0004-if2-0x0001-0x0004";
+        write_failed_controlled_angle_output_receipt_at(
+            dir.path(),
+            selector,
+            NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE,
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE),
+            &serde_json::json!({
+                "schema_version": 1,
+                "success": true,
+                "command": "wheelctl moza standard-pidff-path-diagnosis",
+                "classification": "standard_pidff_controlled_angle_path_ineffective_in_current_r5_mode",
+                "native_visible_claimed": false,
+                "smoke_ready_claimed": false,
+                "planned_next_output": {
+                    "allowed": false
+                }
+            }),
+        )?;
+        write_passive_sniff_plan_artifact(dir.path(), "pit-house-open-idle")?;
+
+        let receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
+        let step = receipt
+            .get("next_operator_step")
+            .ok_or("expected next operator step")?;
+        assert_eq!(
+            json_string(step, "kind"),
+            Some("capture_passive_vendor_sniff")
+        );
+        assert_eq!(json_string(step, "scenario"), Some("pit-house-open-idle"));
+        assert_eq!(json_bool(step, "hardware_output_allowed_now"), Some(false));
+        assert_eq!(json_bool(step, "no_openracing_output"), Some(true));
+
+        let commands = step
+            .get("commands")
+            .and_then(Value::as_array)
+            .ok_or("expected sniff next-step commands")?;
+        assert!(commands.iter().any(|command| {
+            json_string(command, "name") == Some("record_sniff_receipt")
+                && json_string(command, "command")
+                    .is_some_and(|text| text.contains("wheelctl hardware sniff-receipt"))
+        }));
+        assert!(commands.iter().any(|command| {
+            json_string(command, "name") == Some("summarize_sniff_capture")
+                && json_string(command, "command")
+                    .is_some_and(|text| text.contains("wheelctl hardware sniff-summary"))
+        }));
+        assert!(commands.iter().any(|command| {
+            json_string(command, "name") == Some("bundle_sniff_evidence")
+                && json_bool(command, "requires_operator_notes") == Some(true)
+        }));
+
+        let markdown = render_moza_bench_wizard_markdown(&receipt);
+        assert!(markdown.contains("capture_passive_vendor_sniff"));
+        assert!(markdown.contains("wheelctl hardware sniff-receipt"));
+        assert!(markdown.contains("wheelctl hardware sniff-summary"));
+        assert!(markdown.contains("do not authorize output"));
         Ok(())
     }
 
@@ -36503,7 +36740,7 @@ mod tests {
         Ok(())
     }
 
-    fn write_passive_sniff_artifacts(root: &Path, scenario: &str) -> TestResult {
+    fn write_passive_sniff_plan_artifact(root: &Path, scenario: &str) -> TestResult {
         let sniff_dir = moza_passive_sniff_committed_dir(root, scenario);
         fs::create_dir_all(&sniff_dir)?;
         write_test_json_file(
@@ -36539,7 +36776,13 @@ mod tests {
                 },
                 "notes": ["protocol research/support evidence only"]
             }),
-        )?;
+        )
+    }
+
+    fn write_passive_sniff_artifacts(root: &Path, scenario: &str) -> TestResult {
+        let sniff_dir = moza_passive_sniff_committed_dir(root, scenario);
+        fs::create_dir_all(&sniff_dir)?;
+        write_passive_sniff_plan_artifact(root, scenario)?;
         write_test_json_file(
             &sniff_dir.join("sniff-receipt.json"),
             &serde_json::json!({
@@ -51766,6 +52009,67 @@ mod tests {
                 "The next work is a separate software-only reviewed profile/lifecycle plan"
             ),
             "operator action should not request the already completed effect-lifecycle plan after attempt-03 preflight exists: {actions}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_native_visible_points_diagnosed_attempt_03_to_passive_sniffing() -> TestResult
+    {
+        let dir = tempfile::tempdir()?;
+        write_openracing_control_bundle(dir.path())?;
+        write_lane_audit_receipts(dir.path(), MozaBundleStage::Passive)?;
+        write_test_json_file(
+            &dir.path().join("native-actuator-visible-smoke.json"),
+            &failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V2),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::VisibleMotionFollowUp),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_CONTROLLED_ANGLE_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::ControlledAnglePlan),
+        )?;
+        let selector = "hid-0x346E-0x0014-if2-0x0001-0x0004";
+        write_failed_controlled_angle_output_receipt_at(
+            dir.path(),
+            selector,
+            NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE,
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE),
+            &serde_json::json!({
+                "success": true,
+                "command": "manual standard PIDFF path diagnosis",
+                "classification": "standard_pidff_controlled_angle_path_ineffective_in_current_r5_mode",
+                "native_visible_claimed": false,
+                "smoke_ready_claimed": false,
+                "planned_next_output": {
+                    "allowed": false
+                }
+            }),
+        )?;
+        write_passive_sniff_plan_artifact(dir.path(), "pit-house-open-idle")?;
+
+        let receipt = verify_bundle_dir(dir.path(), MozaBundleStage::NativeVisibleReady);
+        let actions = receipt.operator_actions.join("\n");
+
+        assert!(!receipt.success);
+        assert!(
+            receipt.next_commands.is_empty(),
+            "diagnosed attempt-03 undertravel must not emit verifier output commands"
+        );
+        assert!(
+            actions.contains("standard PIDFF path diagnosis is recorded")
+                && actions.contains("no further standard-PIDFF output is authorized")
+                && actions.contains("pit-house-open-idle")
+                && actions.contains("wheelctl moza bench-wizard"),
+            "operator action should point at passive sniffing after standard PIDFF diagnosis: {actions}"
+        );
+        assert!(
+            !actions.contains("classify the attempt with a no-output analysis"),
+            "operator action should not request stale attempt-03 classification after diagnosis exists: {actions}"
         );
         Ok(())
     }
