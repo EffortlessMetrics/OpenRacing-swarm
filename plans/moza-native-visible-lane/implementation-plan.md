@@ -1342,6 +1342,66 @@ git diff --check
 Revert only the closed-loop profile code, tests, docs, and closed-loop lane
 artifacts. Do not remove earlier attempt receipts or passive sniff plans.
 
+## Work item: passive-sniff-report-classification
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: passive vendor-control evidence review before any future output family
+Blocked by: n/a
+
+### Goal
+
+Make `wheelctl hardware sniff-summary` classify observed passive USB report IDs
+so Pit House, SimHub, and simulator captures can distinguish standard PIDFF
+traffic from vendor/device-specific host-to-device candidates.
+
+### Production delta
+
+The summary receipt now includes per-report classification and a top-level
+classification summary. Host-to-device report IDs matching the standard PIDFF
+output/control set are labeled as standard PIDFF; other host-to-device report
+IDs are conservative vendor/device-specific decode candidates; device-to-host
+reports are input/status traffic. The `tshark` JSON reader now asks for the
+full JSON tree so descriptor-only packets are not hidden by protocol-layer
+filters.
+
+### Non-goals
+
+No hardware output, no OpenRacing HID open, no pcap capture, no raw pcap
+commit, no sniff receipt, no checked-in capture evidence, no authorization
+receipt, no native-visible promotion, no smoke-ready promotion, no vendor
+output plan, no serial config, no firmware, and no DFU.
+
+### Acceptance
+
+- `sniff-summary.schema.json` requires per-report classification and a
+  non-claiming classification summary.
+- Unknown host-to-device reports are marked as decode candidates, not native
+  control evidence.
+- Standard PIDFF report IDs are labeled but do not create readiness claims.
+- Device-to-host reports are classified as input/status.
+- Full `tshark -T json` descriptor trees remain parseable.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl hardware_sniff_summary -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl sniff_summary -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the sniff-summary classification fields, schema expansion, focused
+tests, and this plan entry. Do not remove sniff plans or controlled-angle
+evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

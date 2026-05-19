@@ -117,6 +117,13 @@ Given plan-only passive sniff artifacts under
 `sniff-receipt.json` and `sniff-summary.json` artifacts exist. Plan-only sniff
 artifacts MUST NOT satisfy native-visible, smoke-ready, or release-ready gates.
 
+Given a passive `sniff-summary.json`, report classification MAY identify
+standard PIDFF output/control report IDs, vendor/device-specific
+host-to-device decode candidates, and device-to-host input/status reports. This
+classification is protocol navigation only; it MUST keep
+`native_control_evidence=false`, MUST NOT create readiness claims, and MUST NOT
+authorize a future output plan by itself.
+
 Given a stored verifier receipt that is syntactically valid but failed its requested stage, the artifact index MAY mark the file itself as `pass`, but it MUST expose the claim status as `stage_failed`. Artifact validity MUST NOT be treated as native-visible readiness.
 
 ## Proof requirements

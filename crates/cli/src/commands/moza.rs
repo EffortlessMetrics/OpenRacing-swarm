@@ -31126,8 +31126,11 @@ fn render_pidff_lifecycle_trace_markdown(receipt: &PidffLifecycleTraceReceipt) -
     out.push_str("| Seq | PIDFF report | Kind | Block | Magnitude | Operation | Elapsed us |\n");
     out.push_str("| ---: | --- | --- | ---: | ---: | --- | ---: |\n");
     for record in &receipt.lifecycle_records {
-        let sequence = record
-            .sequence
+        let PidffLifecycleRecord {
+            sequence: record_sequence,
+            ..
+        } = record;
+        let sequence = record_sequence
             .map(|value| value.to_string())
             .unwrap_or_else(|| "-".to_string());
         let kind = record.kind.as_deref().unwrap_or("-");

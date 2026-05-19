@@ -16,6 +16,7 @@
     "usb_transfer_summary",
     "observed_devices",
     "observed_reports",
+    "report_classification_summary",
     "descriptor_candidates",
     "evidence_status",
     "native_control_evidence",
@@ -168,6 +169,7 @@
         "required": [
           "direction",
           "report_id",
+          "classification",
           "count",
           "payload_sample_count",
           "payload_sha256_examples"
@@ -179,6 +181,45 @@
           },
           "report_id": {
             "$ref": "#/$defs/hex8"
+          },
+          "classification": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "category",
+              "label",
+              "vendor_specific_candidate",
+              "native_control_evidence",
+              "notes"
+            ],
+            "properties": {
+              "category": {
+                "type": "string",
+                "enum": [
+                  "standard_pidff_output_report",
+                  "vendor_or_device_specific_output_candidate",
+                  "input_or_status_report"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
+              "vendor_specific_candidate": {
+                "type": "boolean"
+              },
+              "native_control_evidence": {
+                "type": "boolean",
+                "const": false
+              },
+              "notes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
           },
           "count": {
             "type": "integer",
@@ -200,6 +241,75 @@
               "type": "string",
               "pattern": "^([0-9A-Fa-f]{2})( [0-9A-Fa-f]{2})*$"
             }
+          }
+        }
+      }
+    },
+    "report_classification_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "standard_pidff_output_report_count",
+        "vendor_or_device_specific_output_candidate_count",
+        "input_or_status_report_count",
+        "host_to_device_report_ids",
+        "standard_pidff_output_report_ids",
+        "vendor_or_device_specific_output_candidate_report_ids",
+        "decode_recommended",
+        "native_control_evidence",
+        "readiness_claim",
+        "notes"
+      ],
+      "properties": {
+        "standard_pidff_output_report_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "vendor_or_device_specific_output_candidate_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "input_or_status_report_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "host_to_device_report_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/hex8"
+          },
+          "uniqueItems": true
+        },
+        "standard_pidff_output_report_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/hex8"
+          },
+          "uniqueItems": true
+        },
+        "vendor_or_device_specific_output_candidate_report_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/hex8"
+          },
+          "uniqueItems": true
+        },
+        "decode_recommended": {
+          "type": "boolean"
+        },
+        "native_control_evidence": {
+          "type": "boolean",
+          "const": false
+        },
+        "readiness_claim": {
+          "type": "boolean",
+          "const": false
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
           }
         }
       }
