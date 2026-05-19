@@ -64,6 +64,12 @@ marks `native-controlled-angle-attempt-03-authorization.json` and
 `native-controlled-angle-attempt-03-smoke.json` as `planned_missing`, with
 `native_visible_not_claimed` preserved.
 
+The stored input analysis artifacts now include the same candidate-only R5 V1
+extended-slot details that the readiness and artifact-index renderers surface.
+`lane-capture-analysis.json` and `role-status-sync.json` identify brake,
+clutch, and handbrake candidates as diagnostic only with `readiness_claim=false`;
+they still leave role-specific input semantics incomplete.
+
 ## Work item: activate-source-of-truth
 
 Status: completed
@@ -416,6 +422,63 @@ git diff --check
 Remove only the planned artifact-index requirements and regenerate
 `ci/hardware/moza-r5/2026-05-13/index.md`. Do not alter any real attempt-03
 authorization or output receipts if they exist.
+
+## Work item: refresh-input-semantic-candidate-artifacts
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: current no-output input-topology evidence while native-visible is blocked
+Blocked by: n/a
+
+### Goal
+
+Refresh the checked-in no-output input analysis receipts so they record the
+candidate-only R5 V1 extended slots for brake, clutch, and handbrake.
+
+### Production delta
+
+Regenerate `lane-capture-analysis.json` and `role-status-sync.json` with the
+current analyzer. The refreshed receipts include `semantic_candidates` for the
+generic-aux roles and keep every candidate at `readiness_claim=false`. The
+artifact index renderer was re-run; the checked-in `index.md` already matched
+the current output.
+
+### Non-goals
+
+No hardware output, no HID open, no authorization receipt, no output receipt,
+no native-visible promotion, no parser remapping, and no role-specific semantic
+claim for SR-P or HBP controls.
+
+### Acceptance
+
+- `lane-capture-analysis.json` includes semantic candidates for brake, clutch,
+  and handbrake generic-aux roles.
+- `role-status-sync.json` reports `stale_control_count=0` and
+  `manifest_written=false`.
+- Candidate metadata remains diagnostic-only with `readiness_claim=false`.
+- Passive verification still passes.
+- Native-visible remains blocked separately by the visible-motion gate.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- moza analyze-lane --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/lane-capture-analysis.json --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza sync-role-status --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/role-status-sync.json --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-artifact-index-input-semantics.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza sync-role-status --lane ci/hardware/moza-r5/2026-05-13 --check --json-out target/moza-role-status-check.json --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage passive --json-out target/moza-passive-after-input-semantics-refresh.json --json
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Restore only the previous generated analysis receipts. Do not alter the
+underlying passive captures, manifest topology, attempt-03 preflight,
+authorization, or output receipts.
 
 ## Work item: attempt-03-authorization
 

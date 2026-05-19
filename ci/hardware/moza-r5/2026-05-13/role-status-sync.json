@@ -3,11 +3,11 @@
   "check_only": false,
   "command": "wheelctl moza sync-role-status",
   "failed_captures": [],
-  "generated_at_utc": "2026-05-14T21:50:44Z",
-  "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+  "generated_at_utc": "2026-05-18T23:51:13Z",
+  "lane": "ci/hardware/moza-r5/2026-05-13",
   "lane_analysis_success": true,
   "manifest": "manifest.json",
-  "manifest_written": true,
+  "manifest_written": false,
   "missing_control_evidence": [],
   "no_feature_reports": true,
   "no_ffb_writes": true,
@@ -22,7 +22,7 @@
     "lane_analysis_success may remain false while missing roles are recorded honestly"
   ],
   "role_count": 7,
-  "stale_control_count": 1,
+  "stale_control_count": 0,
   "status_updates": [
     {
       "changed": false,
@@ -41,6 +41,21 @@
       "parser_visible": true,
       "required": true,
       "role": "brake",
+      "semantic_candidates": [
+        {
+          "ambiguous_with_controls": [],
+          "axis": "r5_v1_extended_axis0_u16",
+          "claim_status": "candidate_only",
+          "confidence": "isolated_candidate",
+          "control": "brake",
+          "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
+          "notes": [
+            "candidate comes from an isolated role capture and is not a parser semantic mapping"
+          ],
+          "readiness_claim": false,
+          "role": "brake"
+        }
+      ],
       "source_endpoint": "moza-r5-if2"
     },
     {
@@ -61,6 +76,38 @@
       "parser_visible": true,
       "required": true,
       "role": "clutch",
+      "semantic_candidates": [
+        {
+          "ambiguous_with_controls": [
+            "handbrake"
+          ],
+          "axis": "r5_v1_extended_aux0_u16",
+          "claim_status": "candidate_only",
+          "confidence": "ambiguous_candidate",
+          "control": "clutch",
+          "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
+          "notes": [
+            "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
+          ],
+          "readiness_claim": false,
+          "role": "clutch"
+        },
+        {
+          "ambiguous_with_controls": [
+            "handbrake"
+          ],
+          "axis": "r5_v1_extended_aux1_u16",
+          "claim_status": "candidate_only",
+          "confidence": "ambiguous_candidate",
+          "control": "clutch",
+          "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
+          "notes": [
+            "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
+          ],
+          "readiness_claim": false,
+          "role": "clutch"
+        }
+      ],
       "source_endpoint": "moza-r5-if2"
     },
     {
@@ -78,6 +125,7 @@
       "parser_visible": true,
       "required": true,
       "role": "rim_controls",
+      "semantic_candidates": [],
       "source_endpoint": "moza-r5-if2"
     },
     {
@@ -99,6 +147,51 @@
       "parser_visible": true,
       "required": true,
       "role": "handbrake",
+      "semantic_candidates": [
+        {
+          "ambiguous_with_controls": [
+            "clutch"
+          ],
+          "axis": "r5_v1_extended_aux0_u16",
+          "claim_status": "candidate_only",
+          "confidence": "ambiguous_candidate",
+          "control": "handbrake",
+          "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
+          "notes": [
+            "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
+          ],
+          "readiness_claim": false,
+          "role": "handbrake"
+        },
+        {
+          "ambiguous_with_controls": [
+            "clutch"
+          ],
+          "axis": "r5_v1_extended_aux1_u16",
+          "claim_status": "candidate_only",
+          "confidence": "ambiguous_candidate",
+          "control": "handbrake",
+          "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
+          "notes": [
+            "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
+          ],
+          "readiness_claim": false,
+          "role": "handbrake"
+        },
+        {
+          "ambiguous_with_controls": [],
+          "axis": "r5_v1_extended_axis1_u16",
+          "claim_status": "candidate_only",
+          "confidence": "isolated_candidate",
+          "control": "handbrake",
+          "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
+          "notes": [
+            "candidate comes from an isolated role capture and is not a parser semantic mapping"
+          ],
+          "readiness_claim": false,
+          "role": "handbrake"
+        }
+      ],
       "source_endpoint": "moza-r5-if2"
     },
     {
@@ -119,6 +212,7 @@
       "parser_visible": true,
       "required": true,
       "role": "rim_controls",
+      "semantic_candidates": [],
       "source_endpoint": "moza-r5-if2"
     },
     {
@@ -136,10 +230,11 @@
       "parser_visible": true,
       "required": true,
       "role": "steering",
+      "semantic_candidates": [],
       "source_endpoint": "moza-r5-if2"
     },
     {
-      "changed": true,
+      "changed": false,
       "connection": "wheelbase_hub",
       "control": "throttle",
       "evidence_capture": "captures/r5-throttle-only-sweep.jsonl",
@@ -149,10 +244,11 @@
       ],
       "new_semantic_status": "proven",
       "notes": [],
-      "old_semantic_status": "missing",
+      "old_semantic_status": "proven",
       "parser_visible": true,
       "required": true,
       "role": "throttle",
+      "semantic_candidates": [],
       "source_endpoint": "moza-r5-if2"
     }
   ],
