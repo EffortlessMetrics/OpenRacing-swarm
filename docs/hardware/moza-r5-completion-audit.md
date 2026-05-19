@@ -50,7 +50,8 @@ analysis are preserved. No further hardware output is authorized; the next work
 is no-output Moza vendor-specific enable/control path investigation before any
 future output family is proposed. The standard PIDFF path diagnosis records that
 three bounded standard-PIDFF-family controlled-angle attempts remained in the
-same undertravel band.
+same undertravel band. The vendor-control investigation now has plan-only
+passive sniff artifacts for Pit House, SimHub, and simulator sessions.
 
 ## Prompt-To-Artifact Checklist
 
@@ -79,7 +80,7 @@ same undertravel band.
 | Pit House compatibility navigation is current | `pre-output-readiness.json`, `artifact-index`, and `bench-wizard` `pit_house_compatibility`; `ci/hardware/moza-r5/2026-05-13/index.md` Pit House Compatibility section | Pass as non-claiming navigation | The lane records `pit_house_available=false`, `recorded_case_count=1/5`, `pit_house_coexistence_claimed=false`, `readiness_claim=false`, `blocks_native_control=false`, and `blocks_native_visible=false`. Missing open/direct/mode-change/firmware-page cases remain external smoke blockers. |
 | Pit House coexistence proven | `pit-house-coexistence.json`; smoke-ready verifier | Missing | `pit-house-availability.json` is non-claiming availability evidence only. Coexistence matrix is not proven. |
 | Simulator compatibility navigation is current | `pre-output-readiness.json`, `artifact-index`, and `bench-wizard` `simulator_compatibility`; `ci/hardware/moza-r5/2026-05-13/index.md` Simulator Compatibility section | Pass as non-claiming navigation | The lane records `recorded_artifact_count=0/2`, `simulator_telemetry_claimed=false`, `bounded_simulator_ffb_claimed=false`, `readiness_claim=false`, `blocks_native_control=false`, and `blocks_native_visible=false`. Missing telemetry and bounded FFB artifacts remain external smoke blockers. |
-| Passive USB sniff navigation is current | `artifact-index` and `bench-wizard` `passive_sniff_navigation`; `ci/hardware/moza-r5/2026-05-13/index.md` Passive USB Sniffing section | Pass as non-claiming navigation | The lane records 0/5 passive sniff scenarios, `readiness_claim=false`, `blocks_native_control=false`, `blocks_native_visible=false`, and `blocks_smoke_ready=false`. Missing sniff scenarios are protocol-research/support navigation only, not native or smoke gates. |
+| Passive USB sniff navigation is current | `artifact-index` and `bench-wizard` `passive_sniff_navigation`; `ci/hardware/moza-r5/2026-05-13/index.md` Passive USB Sniffing section | Pass as non-claiming navigation | The lane records plan-only artifacts for 5/5 passive sniff scenarios. They are `present_non_claiming` but still `partial_or_unaccepted` until pcap receipts and summaries exist. `readiness_claim=false`, `blocks_native_control=false`, `blocks_native_visible=false`, and `blocks_smoke_ready=false`. |
 | Simulator telemetry proof exists | `simulator-telemetry-proof.json`; smoke-ready verifier | Missing | No real simulator telemetry receipt exists. |
 | Bounded sim-to-Moza FFB smoke exists | `simulator-ffb-smoke.json`; smoke-ready verifier | Missing | No bounded simulator FFB receipt or output log exists. |
 | Smoke-ready verification passes | `smoke-ready-verification.json`; current smoke-ready verifier state | Missing | Current smoke-ready verification fails native visible motion, Pit House coexistence, simulator telemetry, and simulator FFB. |
@@ -161,8 +162,8 @@ failed gates:
 
 ## Missing Work
 
-1. No-output Moza vendor-specific enable/control path investigation: sniff Pit
-   House / SimHub, decode vendor reports, map report IDs, identify
+1. Capture the planned passive USB sniff scenarios, generate non-claiming
+   receipts and summaries, decode vendor reports, map report IDs, identify
    enable/gain/mode handshakes, and design a reviewed plan.
 2. A reviewed future-output plan only if new protocol evidence justifies a new
    output family.

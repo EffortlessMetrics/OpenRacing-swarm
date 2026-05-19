@@ -74,11 +74,11 @@ This section is protocol research/support navigation only. Passive sniff artifac
 
 | Scenario | Status | Plan | Receipt | Summary |
 | --- | --- | --- | --- | --- |
-| `pit-house-open-idle` | `missing` | `missing` | `missing` | `missing` |
-| `pit-house-setting-change` | `missing` | `missing` | `missing` | `missing` |
-| `simhub-open-idle` | `missing` | `missing` | `missing` | `missing` |
-| `simhub-output-session` | `missing` | `missing` | `missing` | `missing` |
-| `simulator-session-start-stop` | `missing` | `missing` | `missing` | `missing` |
+| `pit-house-open-idle` | `partial_or_unaccepted` | `present_non_claiming` | `missing` | `missing` |
+| `pit-house-setting-change` | `partial_or_unaccepted` | `present_non_claiming` | `missing` | `missing` |
+| `simhub-open-idle` | `partial_or_unaccepted` | `present_non_claiming` | `missing` | `missing` |
+| `simhub-output-session` | `partial_or_unaccepted` | `present_non_claiming` | `missing` | `missing` |
+| `simulator-session-start-stop` | `partial_or_unaccepted` | `present_non_claiming` | `missing` | `missing` |
 
 ## Passive Enumeration And Input
 

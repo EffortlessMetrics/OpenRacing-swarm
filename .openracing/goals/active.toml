@@ -44,6 +44,7 @@ status_docs = [
   "docs/hardware/moza-r5-pidff-lifecycle-trace.md",
   "docs/hardware/moza-r5-pidff-effect-lifecycle-plan.md",
   "docs/hardware/moza-r5-standard-pidff-path-diagnosis.md",
+  "docs/hardware/moza-r5-vendor-control-investigation.md",
   "plans/moza-native-visible-lane/handoff.md",
 ]
 
@@ -298,6 +299,28 @@ blocked_by = "n/a"
 commands = [
   "cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-native-visible-after-standard-pidff-diagnosis.json --json",
   "cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-artifact-index-after-standard-pidff-diagnosis.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "vendor-control-sniff-plans"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-vendor-control-sniff-plans"
+current_pointer = "ci/hardware/sniff/moza-r5/2026-05-13"
+claim_boundary = "No-output passive sniff planning only; creates non-claiming plan artifacts without pcap receipts, summaries, authorization, output, native-visible, smoke-ready, or release-ready claims."
+blocked_by = "n/a"
+commands = [
+  "cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-plan --family moza-r5 --scenario pit-house-open-idle --lane ci/hardware/moza-r5/2026-05-13 --operator Steven --device-note <device-note> --capture-tool usbpcap --capture-tool wireshark --capture-tool tshark --platform-hint windows --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-plan.json --json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-plan --family moza-r5 --scenario pit-house-setting-change --lane ci/hardware/moza-r5/2026-05-13 --operator Steven --device-note <device-note> --capture-tool usbpcap --capture-tool wireshark --capture-tool tshark --platform-hint windows --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-plan.json --json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-plan --family moza-r5 --scenario simhub-open-idle --lane ci/hardware/moza-r5/2026-05-13 --operator Steven --device-note <device-note> --capture-tool usbpcap --capture-tool wireshark --capture-tool tshark --platform-hint windows --json-out ci/hardware/sniff/moza-r5/2026-05-13/simhub-open-idle/sniff-plan.json --json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-plan --family moza-r5 --scenario simhub-output-session --lane ci/hardware/moza-r5/2026-05-13 --operator Steven --device-note <device-note> --capture-tool usbpcap --capture-tool wireshark --capture-tool tshark --platform-hint windows --json-out ci/hardware/sniff/moza-r5/2026-05-13/simhub-output-session/sniff-plan.json --json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-plan --family moza-r5 --scenario simulator-session-start-stop --lane ci/hardware/moza-r5/2026-05-13 --operator Steven --device-note <device-note> --capture-tool usbpcap --capture-tool wireshark --capture-tool tshark --platform-hint windows --json-out ci/hardware/sniff/moza-r5/2026-05-13/simulator-session-start-stop/sniff-plan.json --json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-artifact-index-after-vendor-sniff-plans.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-native-visible-after-vendor-sniff-plans.json --json",
   "cargo run --locked -p openracing-tools --bin package-surface -- --check",
   "python scripts/policy_file.py",
   "git diff --check",

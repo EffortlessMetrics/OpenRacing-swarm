@@ -40,6 +40,11 @@ to concrete receipts and confirms that the objective is still incomplete:
 native-visible, Pit House coexistence, simulator telemetry, bounded simulator
 FFB, and smoke-ready promotion remain missing.
 
+`ci/hardware/sniff/moza-r5/2026-05-13` now contains plan-only passive USB sniff
+artifacts for Pit House, SimHub, and simulator protocol research. The artifact
+index marks those plans as `present_non_claiming`; each scenario remains
+`partial_or_unaccepted` until a matching pcap receipt and summary exist.
+
 The latest pre-output and artifact-index receipts also surface diagnostic
 candidate-only R5 V1 extended slots for the brake, clutch, and handbrake
 captures. Those candidates keep the passive evidence navigable while preserving
@@ -911,6 +916,69 @@ Do not remove the controlled-angle receipts. If wording needs correction, add a
 corrective no-output diagnosis/doc patch that preserves the hardware evidence
 and keeps planned output disallowed.
 
+## Work item: vendor-control-sniff-plans
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: passive vendor USB captures and report decoding
+Blocked by: n/a
+
+### Goal
+
+Materialize the no-output sniff plan artifacts for the Moza vendor-specific
+enable/control investigation identified by the standard PIDFF diagnosis.
+
+### Production delta
+
+Added five `wheelctl hardware sniff-plan` JSON artifacts under
+`ci/hardware/sniff/moza-r5/2026-05-13`:
+
+- `pit-house-open-idle/sniff-plan.json`
+- `pit-house-setting-change/sniff-plan.json`
+- `simhub-open-idle/sniff-plan.json`
+- `simhub-output-session/sniff-plan.json`
+- `simulator-session-start-stop/sniff-plan.json`
+
+Added `docs/hardware/moza-r5-vendor-control-investigation.md` to define the
+plan-only state, claim ceiling, forbidden actions, and the next evidence needed
+before vendor report decoding or a reviewed vendor-control plan.
+
+### Non-goals
+
+No hardware output, no OpenRacing HID output reports, no OpenRacing HID feature
+reports, no pcap capture, no sniff receipt, no sniff summary, no raw pcap commit,
+no authorization receipt, no native-visible promotion, no smoke-ready promotion,
+no serial config, no firmware, and no DFU.
+
+### Acceptance
+
+- Each plan has `command=wheelctl hardware sniff-plan`.
+- Each plan has `native_control_evidence=false`,
+  `openracing_hardware_output=false`,
+  `satisfies_native_visible_ready=false`, and `satisfies_smoke_ready=false`.
+- Artifact index reports each plan as `present_non_claiming`.
+- Scenarios remain `partial_or_unaccepted` until `sniff-receipt.json` and
+  `sniff-summary.json` exist.
+- Native-visible remains blocked on `native_actuator_visible_smoke`.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-artifact-index-after-vendor-sniff-plans.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-native-visible-after-vendor-sniff-plans.json --json
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the plan-only sniff artifacts and documentation. Do not remove
+controlled-angle receipts, PIDFF diagnoses, verifier receipts, or safety
+evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
@@ -956,10 +1024,10 @@ receipt and demotes the manifest with analysis. Do not erase evidence.
 
 ## Later work
 
-- Investigate the Moza vendor-specific enable/control path with no output first:
-  sniff Pit House or SimHub, decode vendor reports, map report IDs, identify
-  enable/gain/mode handshakes, and design a reviewed vendor-control plan before
-  considering any output attempt.
+- Capture the planned passive USB sniff scenarios, generate non-claiming
+  sniff receipts and summaries, then decode vendor reports, map report IDs,
+  identify enable/gain/mode handshakes, and design a reviewed vendor-control
+  plan before considering any output attempt.
 - Repeat 1 degree, then 3, 5, 10, 30, 90 right, and 90 return controlled
   movement only after new protocol evidence justifies a future output family and
   each rung has separate authorization.

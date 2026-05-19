@@ -17,7 +17,7 @@ One-screen execution plan for OpenRacing. Updated each sprint.
 
 ## NEXT (Queued — next 2–4 sprints)
 
-- **Moza vendor-specific control investigation** - no-output first: sniff Pit House / SimHub, decode vendor reports, map report IDs, identify enable/gain/mode handshakes, and design a reviewed vendor-control plan before proposing any future output family
+- **Moza vendor-specific control investigation** - no-output sniff plans are recorded for Pit House, SimHub, and simulator sessions; next capture those scenarios, generate non-claiming receipts/summaries, decode vendor reports, and only then design a reviewed vendor-control plan
 - **Moza Pit House coexistence** - external compatibility only; test closed/open/mode-change/update-page cases separately and do not make Pit House a native-control prerequisite
 - **Moza passive USB sniff support evidence** - optional protocol research for Pit House, SimHub, and simulator traffic; summary-only by default, no raw pcapng unless reviewed, and never a native or smoke-ready gate
 - **One simulator telemetry path** - telemetry-only first, no FFB writes, before bounded sim-to-Moza FFB smoke

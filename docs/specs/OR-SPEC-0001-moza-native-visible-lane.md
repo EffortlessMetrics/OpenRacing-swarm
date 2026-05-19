@@ -81,6 +81,12 @@ or SimHub, decode vendor reports, map report IDs, identify enable/gain/mode
 handshakes, and design a reviewed vendor-control plan, but it MUST NOT create an
 authorization receipt or hardware-output receipt by itself.
 
+Given plan-only passive sniff artifacts under
+`ci/hardware/sniff/moza-r5/<date>/`, artifact-index MAY surface the plans as
+`present_non_claiming`, but it MUST keep the scenario unrecorded until matching
+`sniff-receipt.json` and `sniff-summary.json` artifacts exist. Plan-only sniff
+artifacts MUST NOT satisfy native-visible, smoke-ready, or release-ready gates.
+
 Given a stored verifier receipt that is syntactically valid but failed its requested stage, the artifact index MAY mark the file itself as `pass`, but it MUST expose the claim status as `stage_failed`. Artifact validity MUST NOT be treated as native-visible readiness.
 
 ## Proof requirements

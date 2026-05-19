@@ -33,7 +33,10 @@ no high torque, no serial config, and no firmware or DFU.
 as safe undertravel and keeps native visible motion unclaimed.
 `native-pidff-standard-path-diagnosis.json` classifies the standard PIDFF
 controlled-angle path as ineffective in the current R5 device mode after three
-same-band undertravel attempts. No further hardware output is authorized.
+same-band undertravel attempts. Five passive sniff plan artifacts now exist
+under `ci/hardware/sniff/moza-r5/2026-05-13`; they are plan-only protocol
+research artifacts, not receipts or readiness claims. No further hardware output
+is authorized.
 
 ## Completion Audit Summary
 
@@ -48,6 +51,7 @@ The broader Moza objective remains incomplete:
 | Attempt-03 output | `native-controlled-angle-attempt-03-smoke.json` | Recorded safe undertravel |
 | Attempt-03 analysis | `native-controlled-angle-attempt-03-failure-analysis.json` | Recorded no-output classification |
 | Standard PIDFF path diagnosis | `native-pidff-standard-path-diagnosis.json` | Recorded no-output architecture diagnosis |
+| Vendor-control sniff plans | `ci/hardware/sniff/moza-r5/2026-05-13/*/sniff-plan.json` | Plan-only, non-claiming |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |
 | Simulator telemetry | `simulator-telemetry-proof.json` | Missing |
 | Bounded simulator FFB | `simulator-ffb-smoke.json` | Missing |
@@ -59,13 +63,14 @@ mapping remains diagnostic with `readiness_claim=false`.
 
 ## Required Next Event
 
-The next native-visible step is no-output Moza vendor-specific enable/control
-path investigation. Preserve all three controlled-angle undertravel receipts and
-the attempt-03 authorization, smoke, verification, analysis, and standard-PIDFF
-diagnosis artifacts. Do not create another authorization or output receipt from
-verifier guidance. Any future output family requires new protocol evidence, a
-reviewed vendor-control plan, fresh command-bound bench clear, and a new exact
-authorization.
+The next native-visible step is to run the planned passive USB sniff captures
+and generate non-claiming `sniff-receipt.json` and `sniff-summary.json`
+artifacts. Preserve all three controlled-angle undertravel receipts and the
+attempt-03 authorization, smoke, verification, analysis, standard-PIDFF
+diagnosis, and sniff plan artifacts. Do not create another authorization or
+output receipt from verifier guidance. Any future output family requires decoded
+protocol evidence, a reviewed vendor-control plan, fresh command-bound bench
+clear, and a new exact authorization.
 
 ## Do Not Do
 
@@ -80,6 +85,8 @@ authorization.
 - Do not run serial config, firmware, or DFU flows.
 - Do not treat Pit House, SimHub, simulator, or passive sniff evidence as native
   OpenRacing motion proof.
+- Do not commit raw `.pcapng` captures unless a separate review approves the
+  raw capture, size, sensitivity, and operator consent.
 
 ## Verification Commands
 
