@@ -32616,6 +32616,76 @@ mod tests {
     }
 
     #[test]
+    fn bench_wizard_sniff_next_operator_commands_parse() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        let selector = "hid-0x346E-0x0004-if2-0x0001-0x0004";
+        write_failed_controlled_angle_output_receipt_at(
+            dir.path(),
+            selector,
+            NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE,
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE),
+            &serde_json::json!({
+                "schema_version": 1,
+                "success": true,
+                "command": "wheelctl moza standard-pidff-path-diagnosis",
+                "classification": "standard_pidff_controlled_angle_path_ineffective_in_current_r5_mode",
+                "native_visible_claimed": false,
+                "smoke_ready_claimed": false,
+                "planned_next_output": {
+                    "allowed": false
+                }
+            }),
+        )?;
+        write_passive_sniff_plan_artifact(dir.path(), "pit-house-open-idle")?;
+
+        let receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
+        let step = receipt
+            .get("next_operator_step")
+            .ok_or("expected next operator step")?;
+        let commands = step
+            .get("commands")
+            .and_then(Value::as_array)
+            .ok_or("expected sniff next-step commands")?;
+        let mut names = Vec::new();
+
+        for command in commands {
+            let name = json_string(command, "name").ok_or("missing command name")?;
+            let command_text = json_string(command, "command").ok_or("missing command text")?;
+            assert_eq!(json_bool(command, "output_enabled"), Some(false));
+            assert!(
+                command_text.starts_with("wheelctl hardware "),
+                "sniff handoff commands must stay in the no-output hardware namespace: {command_text}"
+            );
+            assert!(
+                !command_text.contains("authorize")
+                    && !command_text.contains("controlled-angle-smoke")
+                    && !command_text.contains("--confirm"),
+                "sniff handoff commands must not look like output or authorization commands: {command_text}"
+            );
+            let args = split_generated_command(command_text)?;
+            parse_cli(args).map_err(|error| {
+                format!(
+                    "generated bench-wizard sniff command failed to parse: {command_text}\n{error}"
+                )
+            })?;
+            names.push(name.to_string());
+        }
+
+        assert_eq!(
+            names,
+            vec![
+                "record_sniff_receipt".to_string(),
+                "summarize_sniff_capture".to_string(),
+                "bundle_sniff_evidence".to_string()
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
     fn simulator_navigation_suppresses_unaccepted_receipt_output_fields() -> TestResult {
         let dir = tempfile::tempdir()?;
         fs::create_dir_all(dir.path())?;

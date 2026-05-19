@@ -1043,6 +1043,64 @@ git diff --check
 Revert only the bench-wizard next-step and Markdown rendering changes plus this
 plan entry. Do not remove any sniff plan artifacts or hardware receipts.
 
+## Work item: bench-wizard-sniff-command-validation
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: command-bound passive sniff handoff reliability
+Blocked by: n/a
+
+### Goal
+
+Make the current no-output passive sniff handoff self-checking: the
+bench-wizard-generated `wheelctl hardware sniff-receipt`, `sniff-summary`, and
+`sniff-bundle` command strings must parse through the real CLI parser before
+they are trusted as operator handoff text.
+
+### Production delta
+
+Added a focused `bench_wizard_sniff_next_operator_commands_parse` unit test that
+constructs the diagnosed attempt-03 frontier, asks bench-wizard for the first
+passive sniff next step, and parses each generated handoff command with the
+same generated-command splitter and `clap` parser used for verifier
+`next_commands`. The test also asserts these commands stay in the no-output
+`wheelctl hardware` namespace and do not contain authorization or
+controlled-angle output tokens.
+
+### Non-goals
+
+No production behavior change, no hardware output, no authorization receipt, no
+HID open, no pcap capture, no sniff receipt, no sniff summary, no bundle
+artifact, no raw pcap commit, no native-visible promotion, and no smoke-ready
+promotion.
+
+### Acceptance
+
+- The diagnosed attempt-03 bench-wizard next step still emits exactly the
+  `record_sniff_receipt`, `summarize_sniff_capture`, and
+  `bundle_sniff_evidence` handoff commands.
+- Each generated command parses through `wheelctl`.
+- Each generated command reports `output_enabled=false`.
+- The command text contains no authorization or controlled-angle output token.
+
+### Proof commands
+
+```powershell
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_sniff_next_operator_commands_parse -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-bench-wizard-after-sniff-command-validation.json --md-out target/moza-bench-wizard-after-sniff-command-validation.md --json
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the command-parse test and this plan entry. Do not remove any sniff
+plan artifacts or hardware receipts.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

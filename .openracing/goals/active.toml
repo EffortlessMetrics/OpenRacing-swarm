@@ -345,6 +345,24 @@ commands = [
 ]
 
 [[work_item]]
+id = "bench-wizard-sniff-command-validation"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-bench-wizard-sniff-command-validation"
+current_pointer = "wheelctl moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13"
+claim_boundary = "No-output test guard only; parse-validates generated passive sniff receipt, summary, and bundle handoff commands without opening HID, creating authorization, emitting output, or making readiness claims."
+blocked_by = "n/a"
+commands = [
+  "cargo test --locked -p wheelctl --bin wheelctl bench_wizard_sniff_next_operator_commands_parse -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl bench_wizard -- --nocapture",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-bench-wizard-after-sniff-command-validation.json --md-out target/moza-bench-wizard-after-sniff-command-validation.md --json",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
