@@ -1301,6 +1301,7 @@ fn moza_artifact_index_receipt(
     let lane_artifacts = discover_lane_artifacts(lane)?;
     let frontier = moza_lane_frontier_label(lane, &support_status);
     let input_role_semantics = moza_input_role_semantics_summary(lane);
+    let pit_house_compatibility = moza_pit_house_compatibility_summary(lane);
     Ok(serde_json::json!({
         "success": true,
         "command": "wheelctl moza artifact-index",
@@ -1321,6 +1322,7 @@ fn moza_artifact_index_receipt(
         "readiness_claims": NonClaimingReadinessClaims::default(),
         "readiness": readiness,
         "input_role_semantics": input_role_semantics,
+        "pit_house_compatibility": pit_house_compatibility,
         "required_artifact_index": support_status
             .get("artifact_index")
             .cloned()
@@ -1364,6 +1366,7 @@ fn moza_bench_wizard_receipt(
     let frontier = moza_lane_frontier_label(lane, &support_status);
     let next_operator_step = moza_bench_wizard_next_operator_step(lane, &readiness, &frontier);
     let input_role_semantics = moza_input_role_semantics_summary(lane);
+    let pit_house_compatibility = moza_pit_house_compatibility_summary(lane);
 
     Ok(serde_json::json!({
         "success": true,
@@ -1388,6 +1391,7 @@ fn moza_bench_wizard_receipt(
         "readiness_claims": NonClaimingReadinessClaims::default(),
         "readiness": readiness,
         "input_role_semantics": input_role_semantics,
+        "pit_house_compatibility": pit_house_compatibility,
         "safe_no_output_commands": moza_bench_wizard_safe_no_output_commands(lane),
         "active_blockers": moza_bench_wizard_active_blockers(lane),
         "blocked_output_boundary": {
@@ -1556,6 +1560,130 @@ fn moza_bench_wizard_active_blockers(lane: &Path) -> Vec<Value> {
         }
     }
     blockers
+}
+
+fn moza_pit_house_compatibility_summary(lane: &Path) -> Value {
+    let availability_artifact = "pit-house-availability.json";
+    let availability_receipt = read_json_value(lane, availability_artifact).ok();
+    let availability_receipt_valid = availability_receipt
+        .as_ref()
+        .map(pit_house_availability_receipt_is_safe)
+        .unwrap_or(false);
+    let availability_status = availability_receipt
+        .as_ref()
+        .and_then(|receipt| json_string(receipt, "availability_status"))
+        .unwrap_or("missing_or_invalid");
+    let pit_house_available = availability_receipt
+        .as_ref()
+        .and_then(|receipt| receipt.get("pit_house_available").and_then(Value::as_bool))
+        .unwrap_or(false);
+
+    let mut recorded_cases = Vec::new();
+    let mut missing_cases = Vec::new();
+    let mut observation_only_cases = Vec::new();
+    for (case_id, label, case_artifact, observation_artifact) in
+        pit_house_case_navigation_requirements()
+    {
+        let case_recorded = pit_house_case_receipt_is_safe(lane, case_artifact, case_id);
+        let observation_recorded =
+            pit_house_observation_receipt_is_safe(lane, observation_artifact, case_id);
+        let entry = serde_json::json!({
+            "case": case_id,
+            "label": label,
+            "case_artifact": case_artifact,
+            "observation_artifact": observation_artifact,
+            "case_recorded": case_recorded,
+            "observation_recorded": observation_recorded,
+            "readiness_claim": false
+        });
+        if case_recorded {
+            recorded_cases.push(entry);
+        } else {
+            missing_cases.push(case_id.to_string());
+            if observation_recorded {
+                observation_only_cases.push(entry);
+            }
+        }
+    }
+
+    let parent_gate = verify_pit_house_coexistence_gate_with_support_validation(
+        lane,
+        SupportBundleValidationMode::Fresh,
+    );
+    let parent_claimed = parent_gate.status == "pass";
+    let required_case_count = pit_house_case_navigation_requirements().len() as u64;
+    let recorded_case_count = recorded_cases.len() as u64;
+    serde_json::json!({
+        "artifact_kind": "pit_house_external_compatibility_navigation",
+        "claim_scope": "external_compatibility_navigation_only",
+        "availability_artifact": availability_artifact,
+        "availability_artifact_exists": lane.join(availability_artifact).is_file(),
+        "availability_receipt_valid": availability_receipt_valid,
+        "availability_status": availability_status,
+        "pit_house_available": pit_house_available,
+        "coexistence_artifact": "pit-house-coexistence.json",
+        "pit_house_coexistence_claimed": parent_claimed,
+        "coexistence_gate_status": parent_gate.status,
+        "coexistence_gate_details": parent_gate.details,
+        "required_case_count": required_case_count,
+        "recorded_case_count": recorded_case_count,
+        "missing_case_count": required_case_count.saturating_sub(recorded_case_count),
+        "recorded_cases": recorded_cases,
+        "observation_only_cases": observation_only_cases,
+        "missing_cases": missing_cases,
+        "blocks_native_control": false,
+        "blocks_native_visible": false,
+        "blocks_smoke_ready": !parent_claimed,
+        "readiness_claim": false,
+        "no_hid_device_opened": true,
+        "no_ffb_writes": true,
+        "no_output_reports": true,
+        "no_feature_reports": true,
+        "no_serial_config_commands": true,
+        "no_firmware_or_dfu_commands": true,
+        "notes": [
+            "Pit House compatibility is external smoke evidence only; it is not a native-control prerequisite.",
+            "Availability and case receipts are navigation evidence until pit-house-coexistence.json passes the verifier.",
+            "If Pit House is absent, keep open-state cases and smoke-ready blocked instead of fabricating evidence."
+        ]
+    })
+}
+
+fn pit_house_case_navigation_requirements()
+-> &'static [(&'static str, &'static str, &'static str, &'static str)] {
+    const CASES: &[(&str, &str, &str, &str)] = &[
+        (
+            "pit_house_closed",
+            "closed",
+            "pit-house-closed.json",
+            "pit-house-observation-closed.json",
+        ),
+        (
+            "pit_house_open_idle_standard",
+            "open_standard",
+            "pit-house-open-standard.json",
+            "pit-house-observation-open-standard.json",
+        ),
+        (
+            "pit_house_open_direct",
+            "open_direct",
+            "pit-house-direct-blocked.json",
+            "pit-house-observation-open-direct.json",
+        ),
+        (
+            "pit_house_mode_change_during_run",
+            "mode_change",
+            "pit-house-mode-change.json",
+            "pit-house-observation-mode-change.json",
+        ),
+        (
+            "pit_house_firmware_update_page_open",
+            "firmware_page",
+            "pit-house-firmware-page.json",
+            "pit-house-observation-firmware-page.json",
+        ),
+    ];
+    CASES
 }
 
 async fn descriptor(
@@ -28773,6 +28901,7 @@ fn render_moza_lane_artifact_index_markdown(receipt: &Value) -> String {
     out.push_str(&format!("- Release ready: `{release_ready}`\n\n"));
 
     push_input_role_semantics_markdown(&mut out, receipt);
+    push_pit_house_compatibility_markdown(&mut out, receipt);
 
     let mut grouped: BTreeMap<&str, Vec<&Value>> = BTreeMap::new();
     if let Some(artifacts) = receipt.get("lane_artifacts").and_then(Value::as_array) {
@@ -28880,6 +29009,7 @@ fn render_moza_bench_wizard_markdown(receipt: &Value) -> String {
     ));
 
     push_input_role_semantics_markdown(&mut out, receipt);
+    push_pit_house_compatibility_markdown(&mut out, receipt);
 
     out.push_str("## Safe No-Output Commands\n\n");
     out.push_str("| Name | Command |\n");
@@ -29037,6 +29167,104 @@ fn push_input_role_semantics_markdown(out: &mut String, receipt: &Value) {
         }
         out.push('\n');
     }
+}
+
+fn push_pit_house_compatibility_markdown(out: &mut String, receipt: &Value) {
+    let Some(summary) = receipt.get("pit_house_compatibility") else {
+        return;
+    };
+    if summary.is_null() {
+        return;
+    }
+
+    let availability_status = json_string(summary, "availability_status").unwrap_or("unknown");
+    let pit_house_available = json_bool(summary, "pit_house_available").unwrap_or(false);
+    let coexistence_claimed = json_bool(summary, "pit_house_coexistence_claimed").unwrap_or(false);
+    let gate_status = json_string(summary, "coexistence_gate_status").unwrap_or("unknown");
+    let recorded_case_count = json_u64(summary, "recorded_case_count").unwrap_or(0);
+    let required_case_count = json_u64(summary, "required_case_count").unwrap_or(0);
+
+    out.push_str("## Pit House Compatibility\n\n");
+    out.push_str("This section is external-smoke navigation only. Pit House is not required for native OpenRacing control, and these artifacts do not authorize hardware output.\n\n");
+    out.push_str(&format!(
+        "- Availability status: `{}`\n",
+        markdown_escape(availability_status)
+    ));
+    out.push_str(&format!("- Pit House available: `{pit_house_available}`\n"));
+    out.push_str(&format!(
+        "- Coexistence gate status: `{}`\n",
+        markdown_escape(gate_status)
+    ));
+    out.push_str(&format!(
+        "- Pit House coexistence claimed: `{coexistence_claimed}`\n"
+    ));
+    out.push_str(&format!(
+        "- Recorded cases: `{recorded_case_count}` / `{required_case_count}`\n\n"
+    ));
+
+    out.push_str("| Case | Case Artifact | Observation Artifact | Status |\n");
+    out.push_str("| --- | --- | --- | --- |\n");
+    if let Some(cases) = summary.get("recorded_cases").and_then(Value::as_array) {
+        for case in cases {
+            push_pit_house_case_markdown_row(out, case, "recorded");
+        }
+    }
+    if let Some(cases) = summary
+        .get("observation_only_cases")
+        .and_then(Value::as_array)
+    {
+        for case in cases {
+            push_pit_house_case_markdown_row(out, case, "observation_only");
+        }
+    }
+    if let Some(missing_cases) = summary.get("missing_cases").and_then(Value::as_array) {
+        for missing_case in missing_cases {
+            let case_id = missing_case.as_str().unwrap_or("unknown");
+            if summary
+                .get("observation_only_cases")
+                .and_then(Value::as_array)
+                .map(|cases| {
+                    cases
+                        .iter()
+                        .any(|case| json_string(case, "case") == Some(case_id))
+                })
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            let (case_artifact, observation_artifact) =
+                pit_house_case_artifacts_for_markdown(case_id);
+            out.push_str(&format!(
+                "| `{}` | `{}` | `{}` | `missing` |\n",
+                markdown_escape(case_id),
+                markdown_escape(case_artifact),
+                markdown_escape(observation_artifact)
+            ));
+        }
+    }
+    out.push('\n');
+}
+
+fn push_pit_house_case_markdown_row(out: &mut String, case: &Value, status: &str) {
+    let case_id = json_string(case, "case").unwrap_or("unknown");
+    let case_artifact = json_string(case, "case_artifact").unwrap_or("unknown");
+    let observation_artifact = json_string(case, "observation_artifact").unwrap_or("unknown");
+    out.push_str(&format!(
+        "| `{}` | `{}` | `{}` | `{}` |\n",
+        markdown_escape(case_id),
+        markdown_escape(case_artifact),
+        markdown_escape(observation_artifact),
+        markdown_escape(status)
+    ));
+}
+
+fn pit_house_case_artifacts_for_markdown(case_id: &str) -> (&'static str, &'static str) {
+    pit_house_case_navigation_requirements()
+        .iter()
+        .find_map(|(known_case_id, _, case_artifact, observation_artifact)| {
+            (*known_case_id == case_id).then_some((*case_artifact, *observation_artifact))
+        })
+        .unwrap_or(("unknown", "unknown"))
 }
 
 fn markdown_escape(value: &str) -> String {
@@ -31263,6 +31491,113 @@ mod tests {
         let wizard_markdown = render_moza_bench_wizard_markdown(&wizard_receipt);
         assert!(wizard_markdown.contains("Input Role Semantics"));
         assert!(wizard_markdown.contains("valid parser-visible passive evidence"));
+        Ok(())
+    }
+
+    #[test]
+    fn artifact_navigation_surfaces_pit_house_case_progress_without_native_claims() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        write_pit_house_artifacts(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("pit-house-availability.json"),
+            &pit_house_availability_receipt_unavailable(),
+        )?;
+        for artifact in [
+            "pit-house-open-standard.json",
+            "pit-house-direct-blocked.json",
+            "pit-house-mode-change.json",
+            "pit-house-firmware-page.json",
+            "pit-house-observation-open-standard.json",
+            "pit-house-observation-open-direct.json",
+            "pit-house-observation-mode-change.json",
+            "pit-house-observation-firmware-page.json",
+        ] {
+            let path = dir.path().join(artifact);
+            if path.is_file() {
+                fs::remove_file(path)?;
+            }
+        }
+
+        let receipt = moza_artifact_index_receipt(dir.path(), None, None)?;
+        let pit_house = receipt
+            .get("pit_house_compatibility")
+            .ok_or("expected pit_house_compatibility summary")?;
+        assert_eq!(
+            json_string(pit_house, "claim_scope"),
+            Some("external_compatibility_navigation_only")
+        );
+        assert_eq!(
+            json_string(pit_house, "availability_status"),
+            Some("not_installed_or_not_running")
+        );
+        assert_eq!(json_bool(pit_house, "pit_house_available"), Some(false));
+        assert_eq!(
+            json_bool(pit_house, "pit_house_coexistence_claimed"),
+            Some(false)
+        );
+        assert_eq!(json_u64(pit_house, "required_case_count"), Some(5));
+        assert_eq!(json_u64(pit_house, "recorded_case_count"), Some(1));
+        assert_eq!(json_u64(pit_house, "missing_case_count"), Some(4));
+        assert_eq!(json_bool(pit_house, "blocks_native_control"), Some(false));
+        assert_eq!(json_bool(pit_house, "blocks_native_visible"), Some(false));
+        assert_eq!(json_bool(pit_house, "blocks_smoke_ready"), Some(true));
+        assert_eq!(json_bool(pit_house, "readiness_claim"), Some(false));
+        assert_eq!(json_bool(pit_house, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(pit_house, "no_ffb_writes"), Some(true));
+
+        let recorded_cases = pit_house
+            .get("recorded_cases")
+            .and_then(Value::as_array)
+            .ok_or("expected recorded pit house cases")?;
+        assert!(
+            recorded_cases.iter().any(|case| {
+                json_string(case, "case") == Some("pit_house_closed")
+                    && json_string(case, "case_artifact") == Some("pit-house-closed.json")
+                    && json_bool(case, "readiness_claim") == Some(false)
+            }),
+            "expected recorded closed Pit House case to be surfaced without readiness claim: {recorded_cases:?}"
+        );
+        let missing_cases = pit_house
+            .get("missing_cases")
+            .and_then(Value::as_array)
+            .ok_or("expected missing pit house cases")?;
+        assert!(
+            missing_cases
+                .iter()
+                .any(|case| case.as_str() == Some("pit_house_open_idle_standard")),
+            "expected open-standard Pit House case to remain missing: {missing_cases:?}"
+        );
+
+        let markdown = render_moza_lane_artifact_index_markdown(&receipt);
+        assert!(markdown.contains("Pit House Compatibility"));
+        assert!(markdown.contains("external-smoke navigation only"));
+        assert!(markdown.contains(
+            "| `pit_house_closed` | `pit-house-closed.json` | `pit-house-observation-closed.json` | `recorded` |"
+        ));
+        assert!(markdown.contains(
+            "| `pit_house_open_idle_standard` | `pit-house-open-standard.json` | `pit-house-observation-open-standard.json` | `missing` |"
+        ));
+
+        let wizard_receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
+        let wizard_pit_house = wizard_receipt
+            .get("pit_house_compatibility")
+            .ok_or("expected wizard pit_house_compatibility summary")?;
+        assert_eq!(
+            json_bool(wizard_pit_house, "pit_house_coexistence_claimed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&wizard_receipt, "native_visible_claimed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&wizard_receipt, "smoke_ready_claimed"),
+            Some(false)
+        );
+        let wizard_markdown = render_moza_bench_wizard_markdown(&wizard_receipt);
+        assert!(wizard_markdown.contains("Pit House Compatibility"));
+        assert!(wizard_markdown.contains("not required for native OpenRacing control"));
         Ok(())
     }
 

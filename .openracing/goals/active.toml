@@ -183,6 +183,24 @@ commands = [
 ]
 
 [[work_item]]
+id = "surface-pit-house-compatibility-progress"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-surface-pit-house-compatibility-progress"
+current_pointer = "crates/cli/src/commands/moza.rs"
+claim_boundary = "No-output navigation only; Pit House availability and partial case progress are external-smoke diagnostics and do not become native-control, native-visible, smoke-ready, authorization, or output claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl artifact_navigation_surfaces_pit_house -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl artifact_index -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl bench_wizard -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "attempt-03-authorization"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

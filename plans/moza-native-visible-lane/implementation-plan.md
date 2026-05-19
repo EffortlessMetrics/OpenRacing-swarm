@@ -480,6 +480,65 @@ Restore only the previous generated analysis receipts. Do not alter the
 underlying passive captures, manifest topology, attempt-03 preflight,
 authorization, or output receipts.
 
+## Work item: surface-pit-house-compatibility-progress
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: clearer external-smoke navigation while native-visible is blocked
+Blocked by: n/a
+
+### Goal
+
+Make the no-output navigation surfaces show partial Pit House coexistence
+progress without making Pit House a native-control prerequisite or converting
+case artifacts into smoke-ready claims.
+
+### Production delta
+
+`wheelctl moza artifact-index` and `wheelctl moza bench-wizard` now include a
+`pit_house_compatibility` summary. It reads the existing availability artifact,
+the required case artifacts, and the parent coexistence gate. The summary
+records recorded cases, missing cases, availability state, and the parent gate
+status while keeping `readiness_claim=false`, `blocks_native_control=false`, and
+`blocks_native_visible=false`.
+
+### Non-goals
+
+No hardware output, no HID open, no Pit House evidence capture, no new
+coexistence artifact, no simulator artifact, no authorization receipt, and no
+native-visible or smoke-ready promotion.
+
+### Acceptance
+
+- The artifact index and bench wizard surface the recorded closed Pit House case
+  separately from the missing parent `pit-house-coexistence.json`.
+- Missing open/direct/mode-change/firmware-page cases stay visible as external
+  smoke blockers.
+- Pit House progress reports `readiness_claim=false` and does not affect native
+  readiness.
+- Markdown renderers state that Pit House compatibility is external-smoke
+  navigation only and does not authorize output.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl artifact_navigation_surfaces_pit_house -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl artifact_index -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+git diff --check
+```
+
+### Rollback
+
+Remove only the Pit House compatibility summary fields, renderer section, and
+tests. Do not alter any Pit House receipts, attempt-03 artifacts, or verifier
+gates.
+
 ## Work item: attempt-03-authorization
 
 Status: blocked

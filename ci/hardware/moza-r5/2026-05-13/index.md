@@ -28,6 +28,24 @@ This section is diagnostic navigation only. `generic_aux` roles are valid parser
 | `clutch` | `clutch` | `captures/r5-clutch-only-sweep.jsonl` | `generic_aux` | `r5_v1_extended_aux0_u16, r5_v1_extended_aux1_u16` |
 | `handbrake` | `handbrake` | `captures/r5-handbrake-only-sweep.jsonl` | `generic_aux` | `r5_v1_extended_aux0_u16, r5_v1_extended_aux1_u16, r5_v1_extended_axis1_u16` |
 
+## Pit House Compatibility
+
+This section is external-smoke navigation only. Pit House is not required for native OpenRacing control, and these artifacts do not authorize hardware output.
+
+- Availability status: `not_installed_or_not_running`
+- Pit House available: `false`
+- Coexistence gate status: `fail`
+- Pit House coexistence claimed: `false`
+- Recorded cases: `1` / `5`
+
+| Case | Case Artifact | Observation Artifact | Status |
+| --- | --- | --- | --- |
+| `pit_house_closed` | `pit-house-closed.json` | `pit-house-observation-closed.json` | `recorded` |
+| `pit_house_open_idle_standard` | `pit-house-open-standard.json` | `pit-house-observation-open-standard.json` | `missing` |
+| `pit_house_open_direct` | `pit-house-direct-blocked.json` | `pit-house-observation-open-direct.json` | `missing` |
+| `pit_house_mode_change_during_run` | `pit-house-mode-change.json` | `pit-house-observation-mode-change.json` | `missing` |
+| `pit_house_firmware_update_page_open` | `pit-house-firmware-page.json` | `pit-house-observation-firmware-page.json` | `missing` |
+
 ## Passive Enumeration And Input
 
 | Path | Kind | Evidence Role |
