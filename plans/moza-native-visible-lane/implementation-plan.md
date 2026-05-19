@@ -1402,6 +1402,67 @@ Revert only the sniff-summary classification fields, schema expansion, focused
 tests, and this plan entry. Do not remove sniff plans or controlled-angle
 evidence.
 
+## Work item: pit-house-open-idle-sniff-evidence
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: passive protocol evidence review before any future output family
+Blocked by: n/a
+
+### Goal
+
+Record the first Pit House open-idle passive USB sniff capture as checked-in,
+non-claiming support evidence after the report-classification path landed.
+
+### Production delta
+
+Added `sniff-receipt.json`, `sniff-summary.json`, and
+`sniff-bundle-manifest.json` under
+`ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle`. The summary records
+only device-to-host report `0x01`, no standard PIDFF output reports, and no
+vendor/device-specific host-to-device decode candidates. The bundle manifest
+keeps the raw pcapng and ZIP local while preserving hashes for the plan,
+receipt, summary, operator notes, and filtered pcap hash file.
+
+### Non-goals
+
+No hardware output, no OpenRacing HID open, no raw pcap commit, no bundle ZIP
+commit, no vendor report decode claim, no native-control claim, no
+native-visible promotion, no smoke-ready promotion, no serial config, no
+firmware, and no DFU.
+
+### Acceptance
+
+- The receipt records `openracing_hardware_output=false`,
+  `openracing_hid_device_opened=false`, and all readiness claims false.
+- The classified summary records only input/status traffic for report `0x01`
+  and `decode_recommended=false`.
+- The bundle manifest records `includes_raw_pcapng=false`.
+- The artifact index records `pit-house-open-idle` as present non-claiming
+  evidence while leaving native-visible and smoke-ready blocked.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-receipt --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-plan.json --pcapng target/sniff/pit-house-open-idle/capture.pcapng --operator Steven --app "MOZA Pit House" --scenario pit-house-open-idle --evidence <operator-evidence> --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-receipt.json --json
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-summary --pcapng target/sniff/pit-house-open-idle/capture.pcapng --vendor 0x346E --product 0x0004 --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-summary.json --md-out target/sniff/pit-house-open-idle/sniff-summary.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-bundle --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-plan.json --receipt ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-receipt.json --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-summary.json --operator-notes target/sniff/pit-house-open-idle/operator-notes.md --out target/sniff/pit-house-open-idle/openracing-sniff-bundle.zip --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-bundle-manifest.json --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-pit-house-open-idle.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-pit-house-open-idle.json --json
+if ($LASTEXITCODE -ne 4) { throw "expected native-visible verifier to remain blocked" }
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the Pit House open-idle receipt, summary, bundle manifest,
+artifact-index refresh, and this plan entry. Do not remove sniff plans,
+controlled-angle receipts, or local raw pcap artifacts.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

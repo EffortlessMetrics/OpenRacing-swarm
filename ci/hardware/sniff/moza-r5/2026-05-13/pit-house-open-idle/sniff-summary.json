@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "success": true,
+  "command": "wheelctl hardware sniff-summary",
+  "generated_at_utc": "2026-05-19T23:05:17Z",
+  "pcapng_sha256": "600111023b27cccb95138f59b1e64a73b35af34a48b6fc7d0f2f89f03dd82927",
+  "tool": {
+    "tshark_present": true,
+    "tshark_version": "TShark (Wireshark) 4.6.5 (v4.6.5-0-gb40c46f83867)."
+  },
+  "filters": {
+    "vendor_id": "0x346E",
+    "product_id": "0x0004",
+    "interface_number": null
+  },
+  "matched_packets": 7768,
+  "usb_transfer_summary": {
+    "host_to_device": 788,
+    "device_to_host": 6980,
+    "control": 0,
+    "interrupt": 0
+  },
+  "observed_devices": [
+    {
+      "vendor_id": "0x346E",
+      "product_id": "0x0004",
+      "interfaces": [
+        0
+      ],
+      "endpoints": [
+        "0x00",
+        "0x02",
+        "0x80",
+        "0x82",
+        "0x83"
+      ]
+    }
+  ],
+  "observed_reports": [
+    {
+      "direction": "device_to_host",
+      "report_id": "0x01",
+      "classification": {
+        "category": "input_or_status_report",
+        "label": "device_to_host_report_0x01",
+        "vendor_specific_candidate": false,
+        "native_control_evidence": false,
+        "notes": [
+          "device-to-host report observed in passive traffic",
+          "passive input/status traffic does not prove native control or visible motion"
+        ]
+      },
+      "count": 3078,
+      "payload_sample_count": 3,
+      "payload_sha256_examples": [
+        "54d4aa01c9568f0f3b787ebd65384e0af49a7ce7e590c77db22e1bf1d7506c38",
+        "2f50e4007a858c00a5dcf145a4c3d1ca6ced9d031b24ac810272bd0870994c14",
+        "c34ce1053c12ce855849674afc6d667c3e740c71fad48ec2460b3a26c11fa4f7"
+      ]
+    }
+  ],
+  "report_classification_summary": {
+    "standard_pidff_output_report_count": 0,
+    "vendor_or_device_specific_output_candidate_count": 0,
+    "input_or_status_report_count": 1,
+    "host_to_device_report_ids": [],
+    "standard_pidff_output_report_ids": [],
+    "vendor_or_device_specific_output_candidate_report_ids": [],
+    "decode_recommended": false,
+    "native_control_evidence": false,
+    "readiness_claim": false,
+    "notes": [
+      "no vendor/device-specific host-to-device report candidates were classified in the matched packets",
+      "absence of candidates in one passive capture does not prove standard PIDFF is sufficient"
+    ]
+  },
+  "descriptor_candidates": [],
+  "evidence_status": "passive_external_usb_observation",
+  "native_control_evidence": false,
+  "openracing_hardware_output": false,
+  "external_app_may_have_sent_output": true,
+  "satisfies_native_response_ready": false,
+  "satisfies_native_visible_ready": false,
+  "satisfies_smoke_ready": false,
+  "satisfies_release_ready": false,
+  "readiness_claims": {
+    "satisfies_native_response_ready": false,
+    "satisfies_native_visible_ready": false,
+    "satisfies_smoke_ready": false,
+    "satisfies_release_ready": false
+  },
+  "notes": [
+    "passive sniff summary is protocol research/support evidence only",
+    "OpenRacing opened no HID device and sent no output, feature, serial, firmware, or DFU commands",
+    "sniff artifacts cannot satisfy native response, native visible, smoke, or release gates",
+    "payload examples are represented as sha256 hashes only"
+  ]
+}

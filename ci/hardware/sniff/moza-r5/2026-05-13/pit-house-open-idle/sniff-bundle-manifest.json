@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "success": true,
+  "command": "wheelctl hardware sniff-bundle",
+  "generated_at_utc": "2026-05-19T23:05:18Z",
+  "bundle_kind": "openracing_passive_usb_sniff_bundle",
+  "includes_raw_pcapng": false,
+  "artifacts": [
+    {
+      "path": "openracing-sniff-bundle/README.md",
+      "sha256": "cfc4ff5fd22476be151cc3d4fafe7b9478ff15f7ee0c60d418df595ab6fded6e"
+    },
+    {
+      "path": "openracing-sniff-bundle/sniff-plan.json",
+      "sha256": "b87644968500824e0bfebdf239a2c334f67c34da55d0ffe0ee885985ab1ae456"
+    },
+    {
+      "path": "openracing-sniff-bundle/sniff-receipt.json",
+      "sha256": "07b5064aca7731b4eac2f797f5f7c5873d47abd9fef1a5636f5e675566707fa3"
+    },
+    {
+      "path": "openracing-sniff-bundle/sniff-summary.json",
+      "sha256": "737da453fdf7cdacc386fb3ee5be16273735cdf142a7f1e13fa6b74af4971f77"
+    },
+    {
+      "path": "openracing-sniff-bundle/operator-notes.md",
+      "sha256": "069fc10c22893edd57524011731e572a0f781533c7c2694324cd5121290aa21d"
+    },
+    {
+      "path": "openracing-sniff-bundle/pcapng-sha256.txt",
+      "sha256": "aac12bb856e4dd248047ba8f6c3dbdb36e0dbc71e2ba03c1c5477b2cf33a7d35"
+    }
+  ],
+  "evidence_status": "passive_external_usb_observation",
+  "native_control_evidence": false,
+  "openracing_hardware_output": false,
+  "external_app_may_have_sent_output": true,
+  "satisfies_native_response_ready": false,
+  "satisfies_native_visible_ready": false,
+  "satisfies_smoke_ready": false,
+  "satisfies_release_ready": false,
+  "readiness_claims": {
+    "satisfies_native_response_ready": false,
+    "satisfies_native_visible_ready": false,
+    "satisfies_smoke_ready": false,
+    "satisfies_release_ready": false
+  }
+}
