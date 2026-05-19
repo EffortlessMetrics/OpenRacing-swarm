@@ -73,6 +73,7 @@ The existing attempt-03 preflight is no-output evidence only.
 | Pit House compatibility navigation is current | `pre-output-readiness.json`, `artifact-index`, and `bench-wizard` `pit_house_compatibility`; `ci/hardware/moza-r5/2026-05-13/index.md` Pit House Compatibility section | Pass as non-claiming navigation | The lane records `pit_house_available=false`, `recorded_case_count=1/5`, `pit_house_coexistence_claimed=false`, `readiness_claim=false`, `blocks_native_control=false`, and `blocks_native_visible=false`. Missing open/direct/mode-change/firmware-page cases remain external smoke blockers. |
 | Pit House coexistence proven | `pit-house-coexistence.json`; smoke-ready verifier | Missing | `pit-house-availability.json` is non-claiming availability evidence only. Coexistence matrix is not proven. |
 | Simulator compatibility navigation is current | `pre-output-readiness.json`, `artifact-index`, and `bench-wizard` `simulator_compatibility`; `ci/hardware/moza-r5/2026-05-13/index.md` Simulator Compatibility section | Pass as non-claiming navigation | The lane records `recorded_artifact_count=0/2`, `simulator_telemetry_claimed=false`, `bounded_simulator_ffb_claimed=false`, `readiness_claim=false`, `blocks_native_control=false`, and `blocks_native_visible=false`. Missing telemetry and bounded FFB artifacts remain external smoke blockers. |
+| Passive USB sniff navigation is current | `artifact-index` and `bench-wizard` `passive_sniff_navigation`; `ci/hardware/moza-r5/2026-05-13/index.md` Passive USB Sniffing section | Pass as non-claiming navigation | The lane records 0/5 passive sniff scenarios, `readiness_claim=false`, `blocks_native_control=false`, `blocks_native_visible=false`, and `blocks_smoke_ready=false`. Missing sniff scenarios are protocol-research/support navigation only, not native or smoke gates. |
 | Simulator telemetry proof exists | `simulator-telemetry-proof.json`; smoke-ready verifier | Missing | No real simulator telemetry receipt exists. |
 | Bounded sim-to-Moza FFB smoke exists | `simulator-ffb-smoke.json`; smoke-ready verifier | Missing | No bounded simulator FFB receipt or output log exists. |
 | Smoke-ready verification passes | `smoke-ready-verification.json`; current smoke-ready verifier state | Missing | Current smoke-ready verification fails native visible motion, Pit House coexistence, simulator telemetry, and simulator FFB. |
@@ -135,6 +136,12 @@ simulator_compatibility.simulator_telemetry_claimed=false
 simulator_compatibility.bounded_simulator_ffb_claimed=false
 simulator_compatibility.blocks_native_control=false
 simulator_compatibility.blocks_native_visible=false
+passive_sniff_navigation.recorded_scenario_count=0
+passive_sniff_navigation.required_scenario_count=5
+passive_sniff_navigation.readiness_claim=false
+passive_sniff_navigation.blocks_native_control=false
+passive_sniff_navigation.blocks_native_visible=false
+passive_sniff_navigation.blocks_smoke_ready=false
 ```
 
 The current smoke-ready state is incomplete:
