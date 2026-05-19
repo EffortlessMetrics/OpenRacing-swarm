@@ -539,6 +539,67 @@ Remove only the Pit House compatibility summary fields, renderer section, and
 tests. Do not alter any Pit House receipts, attempt-03 artifacts, or verifier
 gates.
 
+## Work item: surface-simulator-compatibility-progress
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: clearer external-smoke navigation while native-visible is blocked
+Blocked by: n/a
+
+### Goal
+
+Make the no-output navigation surfaces show simulator telemetry and bounded
+simulator FFB progress without making simulator evidence a native-control
+prerequisite or converting missing/present-but-unaccepted simulator artifacts
+into smoke-ready claims.
+
+### Production delta
+
+`wheelctl moza artifact-index` and `wheelctl moza bench-wizard` now include a
+`simulator_compatibility` summary. It reads the simulator telemetry and bounded
+simulator FFB artifacts, checks their verifier gates, and records missing,
+present-not-accepted, or accepted state while keeping `readiness_claim=false`,
+`blocks_native_control=false`, and `blocks_native_visible=false`.
+
+### Non-goals
+
+No hardware output, no HID open, no simulator launch, no telemetry capture, no
+bounded FFB receipt, no authorization receipt, and no native-visible or
+smoke-ready promotion.
+
+### Acceptance
+
+- The artifact index and bench wizard surface simulator telemetry separately
+  from bounded simulator FFB.
+- Missing simulator artifacts stay visible as external smoke blockers.
+- Present-but-unaccepted simulator receipts do not surface output-looking fields
+  as trusted evidence.
+- Simulator progress reports `readiness_claim=false` and does not affect native
+  readiness.
+- Markdown renderers state that simulator compatibility is external-smoke
+  navigation only and does not authorize output.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl artifact_navigation_surfaces_simulator -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl simulator_navigation -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl artifact_index -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+git diff --check
+```
+
+### Rollback
+
+Remove only the simulator compatibility summary fields, renderer section, and
+tests. Do not alter any simulator receipts, attempt-03 artifacts, authorization
+logic, or verifier gates.
+
 ## Work item: attempt-03-authorization
 
 Status: blocked
