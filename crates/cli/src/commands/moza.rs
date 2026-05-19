@@ -1302,6 +1302,7 @@ fn moza_artifact_index_receipt(
     let frontier = moza_lane_frontier_label(lane, &support_status);
     let input_role_semantics = moza_input_role_semantics_summary(lane);
     let pit_house_compatibility = moza_pit_house_compatibility_summary(lane);
+    let simulator_compatibility = moza_simulator_compatibility_summary(lane);
     Ok(serde_json::json!({
         "success": true,
         "command": "wheelctl moza artifact-index",
@@ -1323,6 +1324,7 @@ fn moza_artifact_index_receipt(
         "readiness": readiness,
         "input_role_semantics": input_role_semantics,
         "pit_house_compatibility": pit_house_compatibility,
+        "simulator_compatibility": simulator_compatibility,
         "required_artifact_index": support_status
             .get("artifact_index")
             .cloned()
@@ -1367,6 +1369,7 @@ fn moza_bench_wizard_receipt(
     let next_operator_step = moza_bench_wizard_next_operator_step(lane, &readiness, &frontier);
     let input_role_semantics = moza_input_role_semantics_summary(lane);
     let pit_house_compatibility = moza_pit_house_compatibility_summary(lane);
+    let simulator_compatibility = moza_simulator_compatibility_summary(lane);
 
     Ok(serde_json::json!({
         "success": true,
@@ -1392,6 +1395,7 @@ fn moza_bench_wizard_receipt(
         "readiness": readiness,
         "input_role_semantics": input_role_semantics,
         "pit_house_compatibility": pit_house_compatibility,
+        "simulator_compatibility": simulator_compatibility,
         "safe_no_output_commands": moza_bench_wizard_safe_no_output_commands(lane),
         "active_blockers": moza_bench_wizard_active_blockers(lane),
         "blocked_output_boundary": {
@@ -1647,6 +1651,125 @@ fn moza_pit_house_compatibility_summary(lane: &Path) -> Value {
             "If Pit House is absent, keep open-state cases and smoke-ready blocked instead of fabricating evidence."
         ]
     })
+}
+
+fn moza_simulator_compatibility_summary(lane: &Path) -> Value {
+    let telemetry_artifact = "simulator-telemetry-proof.json";
+    let ffb_artifact = "simulator-ffb-smoke.json";
+    let telemetry_receipt = read_json_value(lane, telemetry_artifact).ok();
+    let ffb_receipt = read_json_value(lane, ffb_artifact).ok();
+    let telemetry_gate = verify_simulator_telemetry_gate(lane);
+    let ffb_gate = verify_simulator_ffb_gate(lane);
+    let telemetry_claimed = telemetry_gate.status == "pass";
+    let ffb_claimed = ffb_gate.status == "pass";
+    let telemetry_artifact_exists = lane.join(telemetry_artifact).is_file();
+    let ffb_artifact_exists = lane.join(ffb_artifact).is_file();
+    let recorded_artifact_count = (telemetry_artifact_exists as u64) + (ffb_artifact_exists as u64);
+    let missing_artifacts = [
+        (telemetry_artifact, telemetry_artifact_exists),
+        (ffb_artifact, ffb_artifact_exists),
+    ]
+    .into_iter()
+    .filter(|(_, exists)| !exists)
+    .map(|(artifact, _)| Value::String(artifact.to_string()))
+    .collect::<Vec<_>>();
+
+    serde_json::json!({
+        "artifact_kind": "simulator_external_compatibility_navigation",
+        "claim_scope": "external_compatibility_navigation_only",
+        "telemetry": {
+            "artifact": telemetry_artifact,
+            "artifact_exists": telemetry_artifact_exists,
+            "gate_status": telemetry_gate.status,
+            "gate_details": telemetry_gate.details,
+            "claim_status": simulator_navigation_claim_status(
+                telemetry_artifact_exists,
+                telemetry_claimed,
+            ),
+            "simulator_telemetry_claimed": telemetry_claimed,
+            "readiness_claim": false,
+            "game": telemetry_claimed.then(|| telemetry_receipt
+                .as_ref()
+                .and_then(|receipt| json_string(receipt, "game"))).flatten(),
+            "telemetry_source": telemetry_claimed.then(|| telemetry_receipt
+                .as_ref()
+                .and_then(|receipt| json_string(receipt, "telemetry_source"))).flatten(),
+            "recorder_artifact": telemetry_claimed.then(|| telemetry_receipt
+                .as_ref()
+                .and_then(|receipt| json_string(receipt, "recorder_artifact")
+                    .or_else(|| json_string(receipt, "normalized_snapshot_artifact")))).flatten(),
+            "normalized_snapshot_count": telemetry_claimed.then(|| telemetry_receipt
+                .as_ref()
+                .and_then(|receipt| json_u64(receipt, "normalized_snapshot_count")
+                    .or_else(|| json_u64(receipt, "snapshots_recorded")))).flatten(),
+            "hardware_output_enabled": telemetry_claimed.then(|| telemetry_receipt
+                .as_ref()
+                .and_then(|receipt| json_bool(receipt, "hardware_output_enabled"))).flatten(),
+            "no_ffb_writes": telemetry_claimed.then(|| telemetry_receipt
+                .as_ref()
+                .and_then(|receipt| json_bool(receipt, "no_ffb_writes"))).flatten(),
+        },
+        "bounded_ffb": {
+            "artifact": ffb_artifact,
+            "artifact_exists": ffb_artifact_exists,
+            "gate_status": ffb_gate.status,
+            "gate_details": ffb_gate.details,
+            "claim_status": simulator_navigation_claim_status(ffb_artifact_exists, ffb_claimed),
+            "bounded_simulator_ffb_claimed": ffb_claimed,
+            "readiness_claim": false,
+            "game": ffb_claimed.then(|| ffb_receipt
+                .as_ref()
+                .and_then(|receipt| json_string(receipt, "game"))).flatten(),
+            "telemetry_source": ffb_claimed.then(|| ffb_receipt
+                .as_ref()
+                .and_then(|receipt| json_string(receipt, "telemetry_source"))).flatten(),
+            "output_log_artifact": ffb_claimed.then(|| ffb_receipt
+                .as_ref()
+                .and_then(|receipt| json_string(receipt, "output_log_artifact")
+                    .or_else(|| json_string(receipt, "output_receipt_artifact")))).flatten(),
+            "max_output_percent": ffb_claimed.then(|| ffb_receipt
+                .as_ref()
+                .and_then(|receipt| json_f64(receipt, "max_output_percent")
+                    .or_else(|| json_f64(receipt, "max_percent"))
+                    .or_else(|| json_f64(receipt, "max_command_percent")))).flatten(),
+            "hardware_output_enabled": ffb_claimed.then(|| ffb_receipt
+                .as_ref()
+                .and_then(|receipt| json_bool(receipt, "hardware_output_enabled"))).flatten(),
+            "final_zero_sent": ffb_claimed.then(|| ffb_receipt
+                .as_ref()
+                .and_then(|receipt| json_bool(receipt, "final_zero_sent"))).flatten(),
+        },
+        "simulator_telemetry_claimed": telemetry_claimed,
+        "bounded_simulator_ffb_claimed": ffb_claimed,
+        "required_artifact_count": 2,
+        "recorded_artifact_count": recorded_artifact_count,
+        "missing_artifacts": missing_artifacts,
+        "blocks_native_control": false,
+        "blocks_native_visible": false,
+        "blocks_smoke_ready": !(telemetry_claimed && ffb_claimed),
+        "readiness_claim": false,
+        "no_hid_device_opened": true,
+        "no_ffb_writes": true,
+        "no_output_reports": true,
+        "no_feature_reports": true,
+        "no_serial_config_commands": true,
+        "no_firmware_or_dfu_commands": true,
+        "notes": [
+            "Simulator telemetry and bounded simulator FFB are smoke/external compatibility evidence; they are not native-control prerequisites.",
+            "Telemetry-only proof must remain no-output and cannot satisfy bounded FFB by itself.",
+            "Bounded simulator FFB can claim smoke evidence only after the telemetry gate and all safety prerequisites pass."
+        ]
+    })
+}
+
+fn simulator_navigation_claim_status(artifact_exists: bool, gate_passed: bool) -> &'static str {
+    if gate_passed {
+        "claimed"
+    } else if artifact_exists {
+        "present_not_accepted"
+    } else {
+        "missing"
+    }
 }
 
 fn pit_house_case_navigation_requirements()
@@ -28902,6 +29025,7 @@ fn render_moza_lane_artifact_index_markdown(receipt: &Value) -> String {
 
     push_input_role_semantics_markdown(&mut out, receipt);
     push_pit_house_compatibility_markdown(&mut out, receipt);
+    push_simulator_compatibility_markdown(&mut out, receipt);
 
     let mut grouped: BTreeMap<&str, Vec<&Value>> = BTreeMap::new();
     if let Some(artifacts) = receipt.get("lane_artifacts").and_then(Value::as_array) {
@@ -29010,6 +29134,7 @@ fn render_moza_bench_wizard_markdown(receipt: &Value) -> String {
 
     push_input_role_semantics_markdown(&mut out, receipt);
     push_pit_house_compatibility_markdown(&mut out, receipt);
+    push_simulator_compatibility_markdown(&mut out, receipt);
 
     out.push_str("## Safe No-Output Commands\n\n");
     out.push_str("| Name | Command |\n");
@@ -29256,6 +29381,54 @@ fn push_pit_house_case_markdown_row(out: &mut String, case: &Value, status: &str
         markdown_escape(observation_artifact),
         markdown_escape(status)
     ));
+}
+
+fn push_simulator_compatibility_markdown(out: &mut String, receipt: &Value) {
+    let Some(summary) = receipt.get("simulator_compatibility") else {
+        return;
+    };
+    if summary.is_null() {
+        return;
+    }
+
+    let telemetry_claimed = json_bool(summary, "simulator_telemetry_claimed").unwrap_or(false);
+    let bounded_ffb_claimed = json_bool(summary, "bounded_simulator_ffb_claimed").unwrap_or(false);
+    let recorded_artifact_count = json_u64(summary, "recorded_artifact_count").unwrap_or(0);
+    let required_artifact_count = json_u64(summary, "required_artifact_count").unwrap_or(0);
+    let blocks_smoke_ready = json_bool(summary, "blocks_smoke_ready").unwrap_or(true);
+
+    out.push_str("## Simulator Compatibility\n\n");
+    out.push_str("This section is external-smoke navigation only. Simulator telemetry and bounded simulator FFB are not required for native OpenRacing control, and this navigation does not authorize hardware output.\n\n");
+    out.push_str(&format!(
+        "- Simulator telemetry claimed: `{telemetry_claimed}`\n"
+    ));
+    out.push_str(&format!(
+        "- Bounded simulator FFB claimed: `{bounded_ffb_claimed}`\n"
+    ));
+    out.push_str(&format!(
+        "- Recorded artifacts: `{recorded_artifact_count}` / `{required_artifact_count}`\n"
+    ));
+    out.push_str(&format!("- Blocks smoke-ready: `{blocks_smoke_ready}`\n\n"));
+
+    out.push_str("| Gate | Artifact | Gate Status | Claim Status |\n");
+    out.push_str("| --- | --- | --- | --- |\n");
+    for (gate, pointer) in [
+        ("simulator_telemetry", "telemetry"),
+        ("simulator_ffb_bounded", "bounded_ffb"),
+    ] {
+        let item = summary.get(pointer).unwrap_or(&Value::Null);
+        let artifact = json_string(item, "artifact").unwrap_or("unknown");
+        let gate_status = json_string(item, "gate_status").unwrap_or("unknown");
+        let claim_status = json_string(item, "claim_status").unwrap_or("unknown");
+        out.push_str(&format!(
+            "| `{}` | `{}` | `{}` | `{}` |\n",
+            markdown_escape(gate),
+            markdown_escape(artifact),
+            markdown_escape(gate_status),
+            markdown_escape(claim_status)
+        ));
+    }
+    out.push('\n');
 }
 
 fn pit_house_case_artifacts_for_markdown(case_id: &str) -> (&'static str, &'static str) {
@@ -31598,6 +31771,245 @@ mod tests {
         let wizard_markdown = render_moza_bench_wizard_markdown(&wizard_receipt);
         assert!(wizard_markdown.contains("Pit House Compatibility"));
         assert!(wizard_markdown.contains("not required for native OpenRacing control"));
+        Ok(())
+    }
+
+    #[test]
+    fn artifact_navigation_surfaces_simulator_progress_without_native_claims() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        write_simulator_artifacts(dir.path())?;
+
+        let receipt = moza_artifact_index_receipt(dir.path(), None, None)?;
+        let simulator = receipt
+            .get("simulator_compatibility")
+            .ok_or("expected simulator_compatibility summary")?;
+        assert_eq!(
+            json_string(simulator, "claim_scope"),
+            Some("external_compatibility_navigation_only")
+        );
+        assert_eq!(
+            json_bool(simulator, "simulator_telemetry_claimed"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(simulator, "bounded_simulator_ffb_claimed"),
+            Some(false)
+        );
+        assert_eq!(json_u64(simulator, "required_artifact_count"), Some(2));
+        assert_eq!(json_u64(simulator, "recorded_artifact_count"), Some(1));
+        assert_eq!(json_bool(simulator, "blocks_native_control"), Some(false));
+        assert_eq!(json_bool(simulator, "blocks_native_visible"), Some(false));
+        assert_eq!(json_bool(simulator, "blocks_smoke_ready"), Some(true));
+        assert_eq!(json_bool(simulator, "readiness_claim"), Some(false));
+        assert_eq!(json_bool(simulator, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(simulator, "no_ffb_writes"), Some(true));
+
+        let telemetry = simulator
+            .get("telemetry")
+            .ok_or("expected simulator telemetry navigation")?;
+        assert_eq!(
+            json_string(telemetry, "artifact"),
+            Some("simulator-telemetry-proof.json")
+        );
+        assert_eq!(json_bool(telemetry, "artifact_exists"), Some(true));
+        assert_eq!(json_string(telemetry, "gate_status"), Some("pass"));
+        assert_eq!(json_string(telemetry, "claim_status"), Some("claimed"));
+        assert_eq!(
+            json_bool(telemetry, "simulator_telemetry_claimed"),
+            Some(true)
+        );
+        assert_eq!(json_bool(telemetry, "readiness_claim"), Some(false));
+        assert_eq!(json_string(telemetry, "game"), Some("simhub-bridge"));
+        assert_eq!(
+            json_string(telemetry, "telemetry_source"),
+            Some("simhub_bridge")
+        );
+
+        let bounded_ffb = simulator
+            .get("bounded_ffb")
+            .ok_or("expected bounded simulator FFB navigation")?;
+        assert_eq!(
+            json_string(bounded_ffb, "artifact"),
+            Some("simulator-ffb-smoke.json")
+        );
+        assert_eq!(json_bool(bounded_ffb, "artifact_exists"), Some(false));
+        assert_eq!(json_string(bounded_ffb, "gate_status"), Some("fail"));
+        assert_eq!(json_string(bounded_ffb, "claim_status"), Some("missing"));
+        assert_eq!(
+            json_bool(bounded_ffb, "bounded_simulator_ffb_claimed"),
+            Some(false)
+        );
+        assert_eq!(json_bool(bounded_ffb, "readiness_claim"), Some(false));
+
+        let missing = simulator
+            .get("missing_artifacts")
+            .and_then(Value::as_array)
+            .ok_or("expected missing simulator artifacts")?;
+        assert!(
+            missing
+                .iter()
+                .any(|artifact| artifact.as_str() == Some("simulator-ffb-smoke.json")),
+            "expected bounded FFB receipt to remain missing: {missing:?}"
+        );
+
+        assert_eq!(
+            json_bool(&receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "native_visible_claimed"), Some(false));
+        let markdown = render_moza_lane_artifact_index_markdown(&receipt);
+        assert!(markdown.contains("Simulator Compatibility"));
+        assert!(markdown.contains("external-smoke navigation only"));
+        assert!(markdown.contains(
+            "| `simulator_telemetry` | `simulator-telemetry-proof.json` | `pass` | `claimed` |"
+        ));
+        assert!(markdown.contains(
+            "| `simulator_ffb_bounded` | `simulator-ffb-smoke.json` | `fail` | `missing` |"
+        ));
+
+        let wizard_receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
+        let wizard_simulator = wizard_receipt
+            .get("simulator_compatibility")
+            .ok_or("expected wizard simulator_compatibility summary")?;
+        assert_eq!(
+            json_bool(wizard_simulator, "simulator_telemetry_claimed"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(wizard_simulator, "bounded_simulator_ffb_claimed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&wizard_receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&wizard_receipt, "native_visible_claimed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&wizard_receipt, "smoke_ready_claimed"),
+            Some(false)
+        );
+        let wizard_markdown = render_moza_bench_wizard_markdown(&wizard_receipt);
+        assert!(wizard_markdown.contains("Simulator Compatibility"));
+        assert!(wizard_markdown.contains("not required for native OpenRacing control"));
+        Ok(())
+    }
+
+    #[test]
+    fn simulator_navigation_suppresses_unaccepted_receipt_output_fields() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("simulator-telemetry-proof.json"),
+            &serde_json::json!({
+                "success": false,
+                "command": "wheelctl moza simulator-telemetry-proof",
+                "game": "simhub-bridge",
+                "telemetry_source": "simhub_bridge",
+                "hardware_output_enabled": true,
+                "no_ffb_writes": false,
+                "normalized_snapshot_count": 120,
+                "duration_ms": 5000,
+                "recorder_artifact": "simulator-telemetry-recording.jsonl",
+                "faults": ["invalid test receipt"]
+            }),
+        )?;
+        write_test_json_file(
+            &dir.path().join("simulator-ffb-smoke.json"),
+            &serde_json::json!({
+                "success": false,
+                "command": "wheelctl moza simulator-ffb-smoke",
+                "game": "simhub-bridge",
+                "telemetry_source": "simhub_bridge",
+                "hardware": "moza-r5",
+                "hardware_output_enabled": true,
+                "max_output_percent": 5.0,
+                "final_zero_sent": true,
+                "output_log_artifact": "simulator-ffb-output.jsonl",
+                "faults": ["invalid test receipt"]
+            }),
+        )?;
+
+        let receipt = moza_artifact_index_receipt(dir.path(), None, None)?;
+        let simulator = receipt
+            .get("simulator_compatibility")
+            .ok_or("expected simulator_compatibility summary")?;
+        assert_eq!(
+            json_bool(simulator, "simulator_telemetry_claimed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(simulator, "bounded_simulator_ffb_claimed"),
+            Some(false)
+        );
+        assert_eq!(json_u64(simulator, "recorded_artifact_count"), Some(2));
+
+        let telemetry = simulator
+            .get("telemetry")
+            .ok_or("expected simulator telemetry navigation")?;
+        assert_eq!(json_bool(telemetry, "artifact_exists"), Some(true));
+        assert_eq!(
+            json_string(telemetry, "claim_status"),
+            Some("present_not_accepted")
+        );
+        assert_eq!(json_string(telemetry, "gate_status"), Some("fail"));
+        assert!(
+            telemetry.get("game").and_then(Value::as_str).is_none(),
+            "unaccepted telemetry receipt metadata must not be surfaced"
+        );
+        assert!(
+            telemetry
+                .get("hardware_output_enabled")
+                .and_then(Value::as_bool)
+                .is_none(),
+            "unaccepted telemetry output-looking fields must not be surfaced"
+        );
+        assert!(
+            telemetry
+                .get("no_ffb_writes")
+                .and_then(Value::as_bool)
+                .is_none(),
+            "unaccepted telemetry safety fields must not be surfaced as claims"
+        );
+
+        let bounded_ffb = simulator
+            .get("bounded_ffb")
+            .ok_or("expected bounded simulator FFB navigation")?;
+        assert_eq!(json_bool(bounded_ffb, "artifact_exists"), Some(true));
+        assert_eq!(
+            json_string(bounded_ffb, "claim_status"),
+            Some("present_not_accepted")
+        );
+        assert_eq!(json_string(bounded_ffb, "gate_status"), Some("fail"));
+        assert!(
+            bounded_ffb
+                .get("hardware_output_enabled")
+                .and_then(Value::as_bool)
+                .is_none(),
+            "unaccepted FFB output-looking fields must not be surfaced"
+        );
+        assert!(
+            bounded_ffb
+                .get("final_zero_sent")
+                .and_then(Value::as_bool)
+                .is_none(),
+            "unaccepted FFB cleanup-looking fields must not be surfaced"
+        );
+        assert!(
+            bounded_ffb
+                .get("max_output_percent")
+                .and_then(Value::as_f64)
+                .is_none(),
+            "unaccepted FFB bound-looking fields must not be surfaced"
+        );
+        assert_eq!(
+            json_bool(&receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "native_visible_claimed"), Some(false));
         Ok(())
     }
 

@@ -46,6 +46,20 @@ This section is external-smoke navigation only. Pit House is not required for na
 | `pit_house_mode_change_during_run` | `pit-house-mode-change.json` | `pit-house-observation-mode-change.json` | `missing` |
 | `pit_house_firmware_update_page_open` | `pit-house-firmware-page.json` | `pit-house-observation-firmware-page.json` | `missing` |
 
+## Simulator Compatibility
+
+This section is external-smoke navigation only. Simulator telemetry and bounded simulator FFB are not required for native OpenRacing control, and this navigation does not authorize hardware output.
+
+- Simulator telemetry claimed: `false`
+- Bounded simulator FFB claimed: `false`
+- Recorded artifacts: `0` / `2`
+- Blocks smoke-ready: `true`
+
+| Gate | Artifact | Gate Status | Claim Status |
+| --- | --- | --- | --- |
+| `simulator_telemetry` | `simulator-telemetry-proof.json` | `fail` | `missing` |
+| `simulator_ffb_bounded` | `simulator-ffb-smoke.json` | `fail` | `missing` |
+
 ## Passive Enumeration And Input
 
 | Path | Kind | Evidence Role |
