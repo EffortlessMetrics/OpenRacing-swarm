@@ -19,13 +19,13 @@ The current frontier is:
 
 ```text
 native_response_ready
--> repeated_safe_undertravel_attempt_03_preflight_recorded
+-> controlled_angle_attempt_03_recorded
 -> native_visible_ready still blocked
 ```
 
 ## Required behavior
 
-The lane MUST preserve the first controlled-angle receipt, the reviewed retry receipt, and their failure analysis artifacts. Both attempts are evidence because they show bounded PIDFF writes, steering feedback, final Stop All cleanup, and post-stop stability, but they MUST NOT satisfy native visible motion because both stayed below the 1 degree visible threshold.
+The lane MUST preserve the first controlled-angle receipt, the reviewed retry receipt, attempt 03, their authorization receipts, and their failure analysis artifacts. These attempts are evidence because they show bounded PIDFF writes, steering feedback, final Stop All cleanup, and post-stop stability, but they MUST NOT satisfy native visible motion because all stayed below the 1 degree visible threshold.
 
 The lane MUST keep `native_visible_motion_proven=false` until a same-lane visible-motion receipt passes the verifier. A dry-run, preflight, plan, lifecycle trace, artifact index, bench wizard receipt, passive sniff bundle, Pit House receipt, SimHub receipt, simulator telemetry proof, or simulator FFB smoke receipt MUST NOT satisfy native-visible readiness.
 
@@ -51,9 +51,9 @@ The only profile named by the current no-output preflight is:
 bounded-pidff-effect-lifecycle-v1
 ```
 
-Attempt 03 remains blocked until a matching authorization receipt exists. The current preflight authorizes no output.
+Attempt 03 has been run exactly once. `native-controlled-angle-attempt-03-authorization.json` is consumed, `native-controlled-angle-attempt-03-smoke.json` records safe undertravel, and `native-controlled-angle-attempt-03-failure-analysis.json` records the no-output classification. The attempt authorizes no further output.
 
-The required command-bound bench-clear evidence for attempt 03 is:
+The command-bound bench-clear evidence consumed by attempt 03 was:
 
 ```text
 bench clear for exactly one Moza controlled-angle attempt 03: target 1 degree, max 5%, timeout 2000 ms, strategy pidff-bounded-effect, profile bounded-pidff-effect-lifecycle-v1, R5 stable, KS attached securely, hands clear, wheel clear, prior undertravel receipts preserved
@@ -65,15 +65,15 @@ Generic `bench clear` text is not sufficient for this attempt.
 
 ### Current verifier failure
 
-Given the current lane, `wheelctl moza verify-bundle --stage native-visible-ready` SHOULD fail because the native visible motion gate is still blocked. The failure SHOULD NOT include a generated output command.
+Given the current lane, `wheelctl moza verify-bundle --stage native-visible-ready` SHOULD fail because the native visible motion gate is still blocked after attempt 03. The failure SHOULD NOT include a generated output command.
 
 ### Passing visible-motion receipt
 
-Given a same-lane attempt-03 receipt with target reached, visible threshold met, no write errors, final Stop All sent, post-stop stable, and all forbidden paths false, the verifier MAY pass `native-visible-ready`.
+Given a future same-lane receipt with target reached, visible threshold met, no write errors, final Stop All sent, post-stop stable, and all forbidden paths false, the verifier MAY pass `native-visible-ready`.
 
 ### Non-claiming diagnostics
 
-Given `native-pidff-lifecycle-trace.json`, `native-pidff-effect-lifecycle-plan.json`, `native-controlled-angle-attempt-03-preflight.json`, `index.md`, or a bench-wizard receipt, the verifier MUST keep native-visible blocked unless a real output receipt also passes.
+Given `native-pidff-lifecycle-trace.json`, `native-pidff-effect-lifecycle-plan.json`, `native-controlled-angle-attempt-03-preflight.json`, `native-controlled-angle-attempt-03-authorization.json`, the failed `native-controlled-angle-attempt-03-smoke.json`, `native-controlled-angle-attempt-03-failure-analysis.json`, `index.md`, or a bench-wizard receipt, the verifier MUST keep native-visible blocked unless a real output receipt also passes.
 
 Given a stored verifier receipt that is syntactically valid but failed its requested stage, the artifact index MAY mark the file itself as `pass`, but it MUST expose the claim status as `stage_failed`. Artifact validity MUST NOT be treated as native-visible readiness.
 

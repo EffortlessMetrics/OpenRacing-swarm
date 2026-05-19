@@ -19,17 +19,19 @@ Current verified state:
 - `native_actuator_response_proven=true`
 - `native_visible_motion_proven=false`
 - `native_control_blocking_items=[]`
-- `frontier=repeated_safe_undertravel_attempt_03_preflight_recorded`
+- `frontier=controlled_angle_attempt_03_recorded`
 - `hardware_output_authorized=false`
 
-The first 1 degree controlled-angle attempt and the retry both failed safely in
-the same response band, about `0.181277` degrees. Both preserved bounded writes,
-final Stop All cleanup, post-stop stability, no direct report `0x20`, no high
-torque, no serial config, and no firmware or DFU.
+The first 1 degree controlled-angle attempt, the reviewed retry, and attempt 03
+all failed safely in the same response band, about `0.181277` degrees. Attempt
+03 used `bounded-pidff-effect-lifecycle-v1`, consumed the exact command-bound
+authorization, sent four bounded PIDFF writes, timed out before target, sent
+final Stop All, stayed post-stop stable, and recorded no direct report `0x20`,
+no high torque, no serial config, and no firmware or DFU.
 
-Attempt 03 is only preflighted. `native-controlled-angle-attempt-03-preflight.json`
-is a no-output dry run for `bounded-pidff-effect-lifecycle-v1`; it is not an
-authorization receipt and it proves no motion.
+`native-controlled-angle-attempt-03-failure-analysis.json` classifies attempt 03
+as safe undertravel and keeps native visible motion unclaimed. No further
+hardware output is authorized.
 
 ## Completion Audit Summary
 
@@ -40,8 +42,9 @@ The broader Moza objective remains incomplete:
 | Passive enumeration, descriptor capture, parser fixtures | Lane passive receipts, parser fixture validation, passive verifier | Proven |
 | Zero, watchdog, disconnect, low-torque, native response | Zero/openracing-control/native-response receipts and verifiers | Proven |
 | Native visible motion | `verify-bundle --stage native-visible-ready` | Blocked: `native_actuator_visible_smoke` |
-| Attempt-03 authorization | `native-controlled-angle-attempt-03-authorization.json` | Missing |
-| Attempt-03 output | `native-controlled-angle-attempt-03-smoke.json` | Missing |
+| Attempt-03 authorization | `native-controlled-angle-attempt-03-authorization.json` | Recorded and consumed |
+| Attempt-03 output | `native-controlled-angle-attempt-03-smoke.json` | Recorded safe undertravel |
+| Attempt-03 analysis | `native-controlled-angle-attempt-03-failure-analysis.json` | Recorded no-output classification |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |
 | Simulator telemetry | `simulator-telemetry-proof.json` | Missing |
 | Bounded simulator FFB | `simulator-ffb-smoke.json` | Missing |
@@ -53,24 +56,18 @@ mapping remains diagnostic with `readiness_claim=false`.
 
 ## Required Next Event
 
-The next native-visible step is blocked until Steven provides fresh
-command-bound bench-clear for exactly this attempt:
-
-```text
-bench clear for exactly one Moza controlled-angle attempt 03: target 1 degree, max 5%, timeout 2000 ms, strategy pidff-bounded-effect, profile bounded-pidff-effect-lifecycle-v1, R5 stable, KS attached securely, hands clear, wheel clear, prior undertravel receipts preserved
-```
-
-Only after that exact evidence exists may an agent create
-`native-controlled-angle-attempt-03-authorization.json`. The authorization still
-does not prove motion. A matching authorization is required before exactly one
-`native-controlled-angle-attempt-03-smoke.json` output attempt.
+The next native-visible step is no-output protocol diagnosis. Preserve the
+attempt-03 authorization, smoke, verification, and analysis receipts. Do not
+create another authorization or output receipt from verifier guidance. Any future
+output family requires a reviewed no-output plan, fresh command-bound bench
+clear, and a new exact authorization.
 
 ## Do Not Do
 
-- Do not create an authorization receipt from this handoff.
+- Do not create another authorization receipt from this handoff.
 - Do not run hardware output.
-- Do not rerun either previous 1 degree attempt.
-- Do not raise force, extend dwell, or jump to 3, 30, or 90 degrees.
+- Do not rerun attempt 03 or either previous 1 degree attempt.
+- Do not raise force, extend dwell, or jump to 3, 5, 30, or 90 degrees.
 - Do not use direct report `0x20`.
 - Do not use high torque.
 - Do not run serial config, firmware, or DFU flows.
@@ -93,13 +90,12 @@ cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle `
   --json-out target/moza-native-visible-current.json `
   --json
 
-cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard `
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index `
   --lane ci/hardware/moza-r5/2026-05-13 `
-  --json-out target/moza-bench-wizard-current.json `
-  --md-out target/moza-bench-wizard-current.md `
+  --json-out target/moza-artifact-index-current.json `
+  --md-out ci/hardware/moza-r5/2026-05-13/index.md `
   --json
 ```
 
 `verify-bundle --stage native-visible-ready` is expected to exit with code `4`
 until a passing visible-motion receipt exists.
-

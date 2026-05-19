@@ -3,7 +3,7 @@
 This index is diagnostic navigation only. It reads stored lane files, opens no HID device, sends no output or feature reports, and does not authorize hardware output or promote readiness.
 
 - Lane: `ci/hardware/moza-r5/2026-05-13`
-- Frontier: `repeated_safe_undertravel_attempt_03_preflight_recorded`
+- Frontier: `controlled_angle_attempt_03_recorded`
 - Highest passing stage: `native_response_ready`
 - Next required stage: `native_visible_ready`
 - Native actuator response proven: `true`
@@ -148,7 +148,10 @@ This section is protocol research/support navigation only. Passive sniff artifac
 | `native-actuator-visible-follow-up-plan.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 | `native-actuator-visible-smoke-response-only.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 | `native-actuator-visible-smoke.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
+| `native-controlled-angle-attempt-03-authorization.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
+| `native-controlled-angle-attempt-03-failure-analysis.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 | `native-controlled-angle-attempt-03-preflight.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
+| `native-controlled-angle-attempt-03-smoke.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 | `native-controlled-angle-authorization.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 | `native-controlled-angle-failure-analysis.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 | `native-controlled-angle-plan.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
@@ -241,6 +244,6 @@ This section is protocol research/support navigation only. Passive sniff artifac
 | `smoke-ready-verification.json` | `smoke_ready` | `pass` | `stage_failed` |
 | `manifest-promotion-smoke-ready.json` | `smoke_ready` | `missing` | `artifact_only` |
 | `lane-audit-smoke-ready.json` | `smoke_ready` | `missing` | `artifact_only` |
-| `native-controlled-angle-attempt-03-authorization.json` | `native_visible_ready` | `missing` | `planned_missing` |
-| `native-controlled-angle-attempt-03-smoke.json` | `native_visible_ready` | `missing` | `planned_missing` |
+| `native-controlled-angle-attempt-03-authorization.json` | `native_visible_ready` | `pass` | `artifact_only` |
+| `native-controlled-angle-attempt-03-smoke.json` | `native_visible_ready` | `pass` | `artifact_only` |
 

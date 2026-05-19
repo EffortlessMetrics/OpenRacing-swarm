@@ -10,15 +10,14 @@ One-screen execution plan for OpenRacing. Updated each sprint.
 
 ## NOW (Active — this sprint)
 
-- **Moza native-visible frontier** - the R5 lane is `native_response_ready`; two 1 degree controlled-angle attempts failed safely in the same ~0.181277 degree response band, `native-controlled-angle-attempt-03-preflight.json` records a no-output `bounded-pidff-effect-lifecycle-v1` dry-run, and no output is authorized
+- **Moza native-visible frontier** - the R5 lane is `native_response_ready`; three 1 degree controlled-angle attempts, including `bounded-pidff-effect-lifecycle-v1` attempt 03, failed safely in the same ~0.181277 degree response band, and no output is authorized
 - **Moza source-of-truth activation** - use `.openracing/goals/active.toml`, `docs/proposals/OR-PROP-0001-moza-native-visible-lane.md`, `docs/specs/OR-SPEC-0001-moza-native-visible-lane.md`, and `plans/moza-native-visible-lane/implementation-plan.md` as the current lane rail
 - **Moza no-output operator navigation** - use `wheelctl moza artifact-index`, `wheelctl moza bench-wizard`, and `wheelctl moza verify-bundle --stage native-visible-ready` to inspect the blocked frontier; the surfaces show attempt-03 handoff, Pit House, simulator, and passive USB sniff navigation, but still create no authorization, output permission, or readiness claim
 - **Service API completion** — implement `WheelService::game_service()` and `plugin_service()` accessors; re-enable blocked integration tests
 
 ## NEXT (Queued — next 2–4 sprints)
 
-- **Moza attempt-03 authorization** - only after fresh command-bound bench-clear, create one exact authorization for target 1 degree, max 5%, timeout 2000 ms, strategy `pidff-bounded-effect`, profile `bounded-pidff-effect-lifecycle-v1`, preserving all prior receipts
-- **Moza attempt-03 output** - run exactly one authorized controlled-angle attempt, preserve the receipt, and either promote `native_visible_ready` if the verifier passes or stop and analyze if it fails
+- **Moza no-output protocol diagnosis** - preserve the consumed attempt-03 authorization, output, verification, and failure-analysis receipts; investigate why the standard PIDFF effect lifecycle stays in the same undertravel band before proposing any future output family
 - **Moza Pit House coexistence** - external compatibility only; test closed/open/mode-change/update-page cases separately and do not make Pit House a native-control prerequisite
 - **Moza passive USB sniff support evidence** - optional protocol research for Pit House, SimHub, and simulator traffic; summary-only by default, no raw pcapng unless reviewed, and never a native or smoke-ready gate
 - **One simulator telemetry path** - telemetry-only first, no FFB writes, before bounded sim-to-Moza FFB smoke

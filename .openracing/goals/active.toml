@@ -242,13 +242,13 @@ commands = [
 
 [[work_item]]
 id = "attempt-03-authorization"
-status = "blocked"
+status = "completed"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
 adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
 plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-attempt-03-authorization"
-current_pointer = "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-preflight.json"
-claim_boundary = "May create one exact authorization receipt only after fresh command-bound bench-clear for attempt 03; still no motion claim."
-blocked_by = "Fresh command-bound bench-clear from the operator for attempt 03."
+current_pointer = "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-authorization.json"
+claim_boundary = "Consumed exact attempt-03 authorization receipt; no motion claim and no further output permission."
+blocked_by = "n/a"
 required_bench_clear_evidence = "bench clear for exactly one Moza controlled-angle attempt 03: target 1 degree, max 5%, timeout 2000 ms, strategy pidff-bounded-effect, profile bounded-pidff-effect-lifecycle-v1, R5 stable, KS attached securely, hands clear, wheel clear, prior undertravel receipts preserved"
 commands = [
   "wheelctl moza pre-output-readiness --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-pre-output-before-attempt-03.json --json",
@@ -257,15 +257,32 @@ commands = [
 
 [[work_item]]
 id = "attempt-03-output"
-status = "blocked"
+status = "completed"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
 adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
 plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-attempt-03-output"
-current_pointer = "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-authorization.json"
-claim_boundary = "May run exactly one authorized 1 degree, 5 percent, 2000 ms controlled-angle attempt using bounded-pidff-effect-lifecycle-v1; no rerun or escalation."
-blocked_by = "A matching attempt-03 authorization receipt."
+current_pointer = "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-smoke.json"
+claim_boundary = "Exactly one authorized 1 degree, 5 percent, 2000 ms controlled-angle attempt ran and failed safely; no rerun or escalation."
+blocked_by = "n/a"
 commands = [
   "wheelctl moza controlled-angle-smoke --device hid-0x346E-0x0004-if2-0x0001-0x0004 --lane ci/hardware/moza-r5/2026-05-13 --prior-actuator-proof ci/hardware/moza-r5/2026-05-13/native-actuator-profile-smoke.json --steering-proof ci/hardware/moza-r5/2026-05-13/steering-angle-stream-proof.json --authorization-proof ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-authorization.json --target-degrees 1 --profile bounded-pidff-effect-lifecycle-v1 --max-percent 5 --timeout-ms 2000 --strategy pidff-bounded-effect --confirm-controlled-angle --json-out ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-smoke.json --json",
+]
+
+[[work_item]]
+id = "attempt-03-analysis"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-attempt-03-analysis"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/native-controlled-angle-attempt-03-failure-analysis.json"
+claim_boundary = "No-output analysis only; preserves the consumed authorization and failed output receipt without creating rerun, force escalation, native-visible, smoke-ready, or release-ready claims."
+blocked_by = "n/a"
+commands = [
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out ci/hardware/moza-r5/2026-05-13/native-visible-verification.json --json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-artifact-index-after-attempt-03.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
 ]
 
 [[work_item]]

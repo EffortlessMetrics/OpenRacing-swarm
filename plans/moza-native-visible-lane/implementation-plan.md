@@ -13,22 +13,26 @@ Blocked handoff: plans/moza-native-visible-lane/handoff.md
 
 The Moza R5 lane at `ci/hardware/moza-r5/2026-05-13` is `native_response_ready`.
 The artifact index records frontier
-`repeated_safe_undertravel_attempt_03_preflight_recorded`, highest passing stage
+`controlled_angle_attempt_03_recorded`, highest passing stage
 `native_response_ready`, next required stage `native_visible_ready`,
 `native_actuator_response_proven=true`, `native_visible_motion_proven=false`,
 and `release_ready=false`.
 
-Two real controlled-angle output receipts are preserved. The first 1 degree
-attempt sent five bounded PIDFF writes and the reviewed retry sent 33 bounded
-PIDFF writes. Both had zero write errors, final Stop All sent, post-stop
-stability, and about 0.181277 degrees of steering delta. They are useful safe
-undertravel evidence, not visible-motion proof.
+Three real controlled-angle output receipts are preserved. The first 1 degree
+attempt sent five bounded PIDFF writes, the reviewed retry sent 33 bounded PIDFF
+writes, and attempt 03 sent four bounded PIDFF effect-lifecycle writes. All had
+zero write errors, final Stop All sent, post-stop stability, and about 0.181277
+degrees of steering delta. They are useful safe undertravel evidence, not
+visible-motion proof.
 
 `native-pidff-lifecycle-trace.json` and
 `native-pidff-effect-lifecycle-plan.json` record the no-output PIDFF diagnosis.
 `native-controlled-angle-attempt-03-preflight.json` records the software-only
-dry-run for `bounded-pidff-effect-lifecycle-v1`. No attempt-03 authorization or
-output receipt exists yet.
+dry-run for `bounded-pidff-effect-lifecycle-v1`. The matching
+`native-controlled-angle-attempt-03-authorization.json` is recorded and consumed,
+`native-controlled-angle-attempt-03-smoke.json` records safe undertravel, and
+`native-controlled-angle-attempt-03-failure-analysis.json` records the no-output
+classification. No further hardware output is authorized.
 
 `docs/hardware/moza-r5-completion-audit.md` maps the broader Moza lane objective
 to concrete receipts and confirms that the objective is still incomplete:
@@ -60,10 +64,10 @@ as the planned output receipt, while still emitting no output command and
 creating no authorization receipt itself.
 
 The artifact index now treats the attempt-03 authorization and output receipts
-as first-class planned frontier artifacts. Until they exist, the required table
-marks `native-controlled-angle-attempt-03-authorization.json` and
-`native-controlled-angle-attempt-03-smoke.json` as `planned_missing`, with
-`native_visible_not_claimed` preserved.
+as first-class frontier artifacts. After attempt 03, the required table marks
+`native-controlled-angle-attempt-03-authorization.json` and
+`native-controlled-angle-attempt-03-smoke.json` as present artifacts while
+`native_visible_not_claimed` remains preserved.
 
 The stored input analysis artifacts now include the same candidate-only R5 V1
 extended-slot details that the readiness and artifact-index renderers surface.
@@ -668,12 +672,12 @@ attempt-03 artifacts, authorization logic, or verifier gates.
 
 ## Work item: attempt-03-authorization
 
-Status: blocked
+Status: completed
 Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
 Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
 Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
 Blocks: attempt-03-output
-Blocked by: fresh command-bound operator bench-clear for attempt 03
+Blocked by: n/a
 
 ### Goal
 
@@ -682,9 +686,10 @@ provides fresh bench-clear evidence for the exact command.
 
 ### Production delta
 
-Run no-output readiness and native-visible verification first. Then create
-`native-controlled-angle-attempt-03-authorization.json` only if the command shape
-matches the preflight and the operator evidence is command-bound.
+Ran no-output readiness and native-visible verification first. Then created
+`native-controlled-angle-attempt-03-authorization.json` with the exact command
+shape from the preflight and command-bound operator evidence. The authorization
+was consumed by the single recorded attempt and authorizes no further output.
 
 Required bench-clear evidence:
 
@@ -734,17 +739,17 @@ wheelctl moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native
 
 ### Rollback
 
-Delete the new authorization receipt if no output has consumed it. If output has
-run, preserve all receipts and record analysis instead of deleting evidence.
+The authorization has been consumed by output. Preserve it with the output
+receipt and failure analysis.
 
 ## Work item: attempt-03-output
 
-Status: blocked
+Status: completed
 Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
 Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
 Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
 Blocks: native-visible-promotion or attempt-03-analysis
-Blocked by: matching attempt-03 authorization receipt
+Blocked by: n/a
 
 ### Goal
 
@@ -753,10 +758,9 @@ Run exactly one 1 degree, 5 percent, 2000 ms controlled-angle attempt using
 
 ### Production delta
 
-Create `native-controlled-angle-attempt-03-smoke.json` from one hardware output
-command. The command must stop on target, timeout, wrong-way/overshoot guard, no
-steering samples, write error, or cleanup condition, and must always send final
-Stop All.
+Created `native-controlled-angle-attempt-03-smoke.json` from exactly one hardware
+output command. The command stopped on timeout before target and sent final Stop
+All.
 
 ### Non-goals
 
@@ -792,8 +796,60 @@ wheelctl moza controlled-angle-smoke `
 
 ### Rollback
 
-Do not delete a hardware-output receipt. If the attempt fails, preserve it and
-add analysis.
+Do not delete the hardware-output receipt. Preserve it with the consumed
+authorization and analysis.
+
+## Work item: attempt-03-analysis
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: no-output protocol architecture diagnosis
+Blocked by: n/a
+
+### Goal
+
+Classify the single attempt-03 output receipt without running any further
+hardware output.
+
+### Production delta
+
+Added `native-controlled-angle-attempt-03-failure-analysis.json`. It classifies
+attempt 03 as safe undertravel in the same response band, records the standard
+PIDFF effect lifecycle as ineffective in the current R5 device mode, and keeps
+native-visible, smoke-ready, release-ready, rerun, and force-escalation claims
+false.
+
+### Non-goals
+
+No output rerun, no new authorization, no force increase, no dwell extension, no
+larger angle, no direct report `0x20`, no high torque, no serial config, no
+firmware, no DFU, and no readiness promotion.
+
+### Acceptance
+
+- Attempt-03 authorization, output, verifier, and analysis receipts are
+  preserved.
+- Analysis records write_errors=0, final Stop All sent, post-stop stable, no
+  high torque, no direct report `0x20`, no serial config, and no firmware/DFU.
+- Planned next output remains disallowed.
+- Native visible motion remains unclaimed.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out ci/hardware/moza-r5/2026-05-13/native-visible-verification.json --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-artifact-index-after-attempt-03.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Do not remove the attempt-03 receipts. If wording needs correction, add a
+corrective analysis/doc patch that preserves the hardware evidence.
 
 ## Work item: native-visible-promotion
 

@@ -36,7 +36,7 @@ This lane affects:
 
 ## Proposed shape
 
-Activate a Moza native-visible source-of-truth lane with a proposal, behavior spec, implementation plan, and active goal. The active goal records that source-of-truth activation is complete, that attempt-03 authorization and output are blocked until operator conditions are met, and that promotion is blocked until a real visible-motion receipt passes.
+Activate a Moza native-visible source-of-truth lane with a proposal, behavior spec, implementation plan, and active goal. The active goal records that source-of-truth activation is complete, that attempt 03 ran once and failed safely, that no further output is authorized, and that promotion is blocked until a real visible-motion receipt passes.
 
 ## Alternatives considered
 
@@ -57,8 +57,8 @@ No new ADR is required for this source-of-truth activation because the durable v
 ## Implementation campaign shape
 
 1. Activate source-of-truth docs and metadata.
-2. Keep attempt-03 authorization blocked until fresh command-bound bench-clear.
-3. Run exactly one attempt-03 output only with a matching authorization receipt.
+2. Preserve the consumed attempt-03 authorization and safe failed output receipt.
+3. Require no-output protocol diagnosis before any future output family is proposed.
 4. Promote native-visible only if the verifier accepts the receipt.
 5. Continue controlled movement and external/simulator work as separate receipt-gated lanes.
 
