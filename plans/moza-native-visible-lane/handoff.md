@@ -70,7 +70,10 @@ now surface the first command-bound no-output handoff for `pit-house-open-idle`:
 generate the receipt from the saved local pcapng, summarize it with
 `wheelctl hardware sniff-summary`, and optionally bundle summary evidence
 without committing raw pcapng. The generated sniff receipt, summary, and bundle
-command strings are parse-validated by the bench-wizard test guard. Preserve all
+command strings are parse-validated by the bench-wizard test guard. Bench-wizard
+also renders an external capture checklist that keeps USBPcap/Wireshark/tshark
+capture operator-owned, names `target/sniff/pit-house-open-idle/capture.pcapng`,
+and repeats the firmware/DFU/driver-change boundary. Preserve all
 three controlled-angle undertravel receipts and the attempt-03 authorization,
 smoke, verification, analysis, standard-PIDFF diagnosis, and sniff plan
 artifacts. Do not create another authorization or output receipt from verifier

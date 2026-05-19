@@ -1574,6 +1574,13 @@ fn moza_passive_sniff_next_operator_step(lane: &Path) -> Option<Value> {
             "summary_artifact": summary_artifact.display().to_string(),
             "bundle_manifest_artifact": bundle_manifest_artifact.display().to_string(),
             "local_pcapng": local_pcapng.display().to_string(),
+            "external_capture_checklist": moza_passive_sniff_capture_checklist(
+                scenario,
+                label,
+                warning,
+                &local_dir,
+                &local_pcapng
+            ),
             "commands": [
                 {
                     "name": "record_sniff_receipt",
@@ -1622,6 +1629,89 @@ fn moza_passive_sniff_next_operator_step(lane: &Path) -> Option<Value> {
         }));
     }
     None
+}
+
+fn moza_passive_sniff_capture_checklist(
+    scenario: &str,
+    label: &str,
+    warning: &str,
+    local_dir: &Path,
+    local_pcapng: &Path,
+) -> Value {
+    serde_json::json!({
+        "owner": "operator_external_capture_tool",
+        "scenario": scenario,
+        "label": label,
+        "local_directory": local_dir.display().to_string(),
+        "local_pcapng": local_pcapng.display().to_string(),
+        "capture_tools": ["USBPcap", "Wireshark", "tshark"],
+        "openracing_output": false,
+        "openracing_hid_open": false,
+        "openracing_feature_reports": false,
+        "external_app_may_send_output": true,
+        "raw_pcap_commit_default": false,
+        "steps": [
+            format!(
+                "Create the local scratch directory {} before starting the capture.",
+                local_dir.display()
+            ),
+            "Start USBPcap, Wireshark, or tshark capture on the USB controller that contains the Moza R5 before starting the external app.".to_string(),
+            moza_passive_sniff_capture_action(scenario),
+            format!(
+                "Stop capture and save the pcapng as {}.",
+                local_pcapng.display()
+            ),
+            "Run the no-output wheelctl hardware sniff-receipt and sniff-summary commands from this bench-wizard handoff.".to_string(),
+            "Create operator notes before bundling and do not commit raw pcapng unless separately reviewed.".to_string()
+        ],
+        "operator_notes_required": [
+            "scenario performed",
+            "external app or simulator observed",
+            "capture duration or start/stop times",
+            "device stack attached",
+            "whether firmware/update/DFU pages stayed closed",
+            "whether raw pcapng was kept local or reviewed for bundling"
+        ],
+        "forbidden_actions": [
+            "OpenRacing output commands",
+            "OpenRacing HID output reports",
+            "OpenRacing HID feature reports",
+            "driver replacement",
+            "Zadig",
+            "WinUSB conversion",
+            "serial configuration",
+            "firmware update",
+            "DFU"
+        ],
+        "warning": warning,
+        "notes": [
+            "capture is produced outside OpenRacing; this checklist does not open HID or send reports",
+            "external app traffic is protocol research evidence only and is not OpenRacing native-visible or smoke-ready proof"
+        ]
+    })
+}
+
+fn moza_passive_sniff_capture_action(scenario: &str) -> String {
+    match scenario {
+        "pit-house-open-idle" => {
+            "Open MOZA Pit House, wait for device discovery to settle, leave the app idle, and do not open firmware or update pages.".to_string()
+        }
+        "pit-house-setting-change" => {
+            "In MOZA Pit House, record one explicit setting name, starting value, ending value, and whether it was restored; do not open firmware or update pages.".to_string()
+        }
+        "simhub-open-idle" => {
+            "Open SimHub, allow device discovery or idle polling to settle, and do not start an output session.".to_string()
+        }
+        "simhub-output-session" => {
+            "Run the reviewed external SimHub output scenario only; record that any output traffic is external-app traffic, not OpenRacing FFB proof.".to_string()
+        }
+        "simulator-session-start-stop" => {
+            "Start and stop the external simulator or bridge session and record the simulator/bridge name; do not run OpenRacing simulator FFB.".to_string()
+        }
+        _ => {
+            "Perform the named external observation scenario and record exactly what changed during the capture.".to_string()
+        }
+    }
 }
 
 fn moza_passive_sniff_external_app(scenario: &str) -> &'static str {
@@ -29469,6 +29559,7 @@ fn render_moza_bench_wizard_markdown(receipt: &Value) -> String {
         markdown_escape(step_kind),
         markdown_escape(step_summary)
     ));
+    push_next_operator_step_capture_checklist_markdown(&mut out, step);
     push_next_operator_step_commands_markdown(&mut out, step);
 
     push_input_role_semantics_markdown(&mut out, receipt);
@@ -29830,6 +29921,61 @@ fn push_passive_sniff_navigation_markdown(out: &mut String, receipt: &Value) {
         }
     }
     out.push('\n');
+}
+
+fn push_next_operator_step_capture_checklist_markdown(out: &mut String, step: &Value) {
+    let Some(checklist) = step.get("external_capture_checklist") else {
+        return;
+    };
+    if checklist.is_null() {
+        return;
+    }
+
+    let owner = json_string(checklist, "owner").unwrap_or("operator_external_capture_tool");
+    let local_pcapng = json_string(checklist, "local_pcapng").unwrap_or("capture.pcapng");
+    let openracing_output = json_bool(checklist, "openracing_output").unwrap_or(false);
+    let external_app_may_send_output =
+        json_bool(checklist, "external_app_may_send_output").unwrap_or(true);
+
+    out.push_str("### External Capture Checklist\n\n");
+    out.push_str("This checklist is for the operator's USB capture tool. It is not an OpenRacing command sequence and it does not authorize OpenRacing output.\n\n");
+    out.push_str(&format!("- Owner: `{}`\n", markdown_escape(owner)));
+    out.push_str(&format!(
+        "- Local pcapng: `{}`\n",
+        markdown_escape(local_pcapng)
+    ));
+    out.push_str(&format!("- OpenRacing output: `{openracing_output}`\n"));
+    out.push_str(&format!(
+        "- External app may send output: `{external_app_may_send_output}`\n\n"
+    ));
+
+    if let Some(steps) = checklist.get("steps").and_then(Value::as_array)
+        && !steps.is_empty()
+    {
+        out.push_str("| Step | Operator Action |\n");
+        out.push_str("| --- | --- |\n");
+        for (index, step) in steps.iter().enumerate() {
+            let text = step.as_str().unwrap_or("");
+            out.push_str(&format!(
+                "| `{}` | {} |\n",
+                index + 1,
+                markdown_escape(text)
+            ));
+        }
+        out.push('\n');
+    }
+
+    if let Some(forbidden) = checklist.get("forbidden_actions").and_then(Value::as_array)
+        && !forbidden.is_empty()
+    {
+        let actions = forbidden
+            .iter()
+            .filter_map(Value::as_str)
+            .map(markdown_escape)
+            .collect::<Vec<_>>()
+            .join(", ");
+        out.push_str(&format!("- Forbidden actions: `{actions}`\n\n"));
+    }
 }
 
 fn push_next_operator_step_commands_markdown(out: &mut String, step: &Value) {
@@ -32587,6 +32733,47 @@ mod tests {
         assert_eq!(json_string(step, "scenario"), Some("pit-house-open-idle"));
         assert_eq!(json_bool(step, "hardware_output_allowed_now"), Some(false));
         assert_eq!(json_bool(step, "no_openracing_output"), Some(true));
+        let checklist = step
+            .get("external_capture_checklist")
+            .ok_or("expected external capture checklist")?;
+        assert_eq!(
+            json_string(checklist, "owner"),
+            Some("operator_external_capture_tool")
+        );
+        assert_eq!(json_bool(checklist, "openracing_output"), Some(false));
+        assert_eq!(json_bool(checklist, "openracing_hid_open"), Some(false));
+        assert_eq!(
+            json_bool(checklist, "external_app_may_send_output"),
+            Some(true)
+        );
+        assert!(
+            checklist
+                .get("steps")
+                .and_then(Value::as_array)
+                .is_some_and(|steps| {
+                    steps.iter().any(|step| {
+                        step.as_str()
+                            .is_some_and(|text| text.contains("MOZA Pit House"))
+                    }) && steps.iter().any(|step| {
+                        step.as_str()
+                            .is_some_and(|text| text.contains("capture.pcapng"))
+                    })
+                }),
+            "external capture checklist should name Pit House and the local pcapng path: {checklist}"
+        );
+        assert!(
+            checklist
+                .get("forbidden_actions")
+                .and_then(Value::as_array)
+                .is_some_and(|actions| {
+                    actions.iter().any(|action| {
+                        action
+                            .as_str()
+                            .is_some_and(|text| text.contains("firmware update"))
+                    })
+                }),
+            "external capture checklist should preserve firmware/update boundary: {checklist}"
+        );
 
         let commands = step
             .get("commands")
@@ -32609,6 +32796,9 @@ mod tests {
 
         let markdown = render_moza_bench_wizard_markdown(&receipt);
         assert!(markdown.contains("capture_passive_vendor_sniff"));
+        assert!(markdown.contains("External Capture Checklist"));
+        assert!(markdown.contains("MOZA Pit House"));
+        assert!(markdown.contains("capture.pcapng"));
         assert!(markdown.contains("wheelctl hardware sniff-receipt"));
         assert!(markdown.contains("wheelctl hardware sniff-summary"));
         assert!(markdown.contains("do not authorize output"));

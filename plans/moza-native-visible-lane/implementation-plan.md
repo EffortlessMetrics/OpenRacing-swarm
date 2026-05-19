@@ -1101,6 +1101,69 @@ git diff --check
 Revert only the command-parse test and this plan entry. Do not remove any sniff
 plan artifacts or hardware receipts.
 
+## Work item: bench-wizard-sniff-capture-checklist
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: operator-captured passive USB sniff evidence
+Blocked by: n/a
+
+### Goal
+
+Make the next passive sniff event operationally unambiguous by having
+bench-wizard emit a structured external capture checklist for the first pending
+scenario. The checklist must explain what the operator does in USBPcap,
+Wireshark, or `tshark`, where the local pcapng belongs, what notes are
+required, and which actions remain forbidden.
+
+### Production delta
+
+`wheelctl moza bench-wizard` now includes
+`next_operator_step.external_capture_checklist` for
+`capture_passive_vendor_sniff`. The checklist records the operator-owned
+external capture boundary, local scratch directory, local `capture.pcapng` path,
+capture tools, scenario-specific action text, required notes, forbidden actions,
+and the claim ceiling. Markdown output renders this as an
+`External Capture Checklist` before the no-output `wheelctl hardware`
+receipt/summary/bundle commands.
+
+### Non-goals
+
+No hardware output, no OpenRacing HID open, no OpenRacing output or feature
+reports, no authorization receipt, no pcap capture, no sniff receipt, no sniff
+summary, no bundle artifact, no raw pcap commit, no native-visible promotion,
+and no smoke-ready promotion.
+
+### Acceptance
+
+- The current bench-wizard next step still reports
+  `capture_passive_vendor_sniff` for `pit-house-open-idle`.
+- The step includes `external_capture_checklist.owner=operator_external_capture_tool`.
+- The checklist keeps `openracing_output=false`, `openracing_hid_open=false`,
+  and `external_app_may_send_output=true`.
+- The checklist names the local `capture.pcapng`, the scenario-specific Pit
+  House action, operator notes, and forbidden firmware/DFU/driver actions.
+- Markdown renders the external capture checklist before the OpenRacing
+  no-output artifact commands.
+
+### Proof commands
+
+```powershell
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_points_diagnosed_attempt_03_to_passive_sniff_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-bench-wizard-after-sniff-capture-checklist.json --md-out target/moza-bench-wizard-after-sniff-capture-checklist.md --json
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the checklist helper, Markdown rendering, focused assertions, and
+this plan entry. Do not remove sniff plan artifacts or hardware receipts.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
