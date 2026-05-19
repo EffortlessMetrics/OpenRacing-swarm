@@ -314,6 +314,20 @@ pub fn parse_wheelbase_input_report(report: &[u8]) -> Option<WheelbaseInputRaw> 
 mod tests {
     use super::*;
 
+    fn report_bytes_from_hex(hex: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let mut chunks = hex.as_bytes().chunks_exact(2);
+        if !chunks.remainder().is_empty() {
+            return Err("hex report must contain an even number of characters".into());
+        }
+
+        let mut bytes = Vec::with_capacity(hex.len() / 2);
+        for chunk in &mut chunks {
+            let pair = std::str::from_utf8(chunk)?;
+            bytes.push(u8::from_str_radix(pair, 16)?);
+        }
+        Ok(bytes)
+    }
+
     #[test]
     fn parse_wheelbase_report_rejects_non_input_id() {
         let report = [0x02u8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
@@ -505,6 +519,115 @@ mod tests {
         assert_eq!(parsed.hat, 0x03);
         assert_eq!(parsed.funky, 0x00);
         assert_eq!(parsed.rotary, [0x00, 0x00]);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_wheelbase_input_preserves_target_only_live_r5_v1_button_samples()
+    -> Result<(), Box<dyn std::error::Error>> {
+        struct ButtonSample {
+            label: &'static str,
+            report_hex: &'static str,
+            buttons: [u8; input_report::BUTTONS_LEN],
+        }
+
+        let samples = [
+            ButtonSample {
+                label: "right-hand-button-cluster",
+                report_hex: "0127e70180008001800180008001800080080000000800000000000000000000000048e36abfb495f4c1",
+                buttons: [
+                    0x08, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00,
+                ],
+            },
+            ButtonSample {
+                label: "left-hand-button-cluster",
+                report_hex: "016fe7018000800180018000800180008008004000000000000000000000000000006f9780c0847625c3",
+                buttons: [
+                    0x08, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00,
+                ],
+            },
+            ButtonSample {
+                label: "thumb-roller-cluster",
+                report_hex: "015be501800080018001800080018000800800000000000800000000000000000000dc9fa14145e65643",
+                buttons: [
+                    0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00,
+                ],
+            },
+            ButtonSample {
+                label: "right-thumb-control-cluster",
+                report_hex: "015be60180008001800180008001800080084000000000000000000000000000000000000000a4fe76c1",
+                buttons: [
+                    0x08, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00,
+                ],
+            },
+            ButtonSample {
+                label: "right-thumbstick-cluster",
+                report_hex: "0160e601800080018001800080018000800801000000000000000000000000000000bced834028384142",
+                buttons: [
+                    0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00,
+                ],
+            },
+            ButtonSample {
+                label: "left-thumbstick-cluster",
+                report_hex: "012ce601800080018001800080018000800800000000000000000004000000000000a2861f3f3613b041",
+                buttons: [
+                    0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00,
+                    0x00, 0x00, 0x00,
+                ],
+            },
+            ButtonSample {
+                label: "late-control-byte24",
+                report_hex: "0158e60180008001800180008001800080080000000000001000000000000000000014a3c73f2d2aca41",
+                buttons: [
+                    0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00,
+                ],
+            },
+            ButtonSample {
+                label: "late-control-byte25",
+                report_hex: "0194e601800080018001800080018000800800000000000000080000000000000000657b6d4000000000",
+                buttons: [
+                    0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00,
+                ],
+            },
+            ButtonSample {
+                label: "late-control-byte26",
+                report_hex: "014ce60180008001800180008001800080080000000000000000800000000000000000000000fb6167c2",
+                buttons: [
+                    0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00,
+                ],
+            },
+        ];
+
+        for sample in samples {
+            let report = report_bytes_from_hex(sample.report_hex)?;
+            assert_eq!(
+                report.len(),
+                input_report::R5_V1_EXTENDED_REPORT_LEN,
+                "{} report length",
+                sample.label
+            );
+            assert!(
+                looks_like_live_r5_v1_extended_report(&report),
+                "{} should select the live R5 V1 extended layout",
+                sample.label
+            );
+
+            let parsed = parse_wheelbase_input_report(&report)
+                .ok_or_else(|| format!("expected live R5 V1 parse for {}", sample.label))?;
+
+            assert_eq!(parsed.buttons, sample.buttons, "{}", sample.label);
+            assert_eq!(parsed.pedals.clutch, None, "{}", sample.label);
+            assert_eq!(parsed.funky, 0x00, "{}", sample.label);
+            assert_eq!(parsed.rotary, [0x00, 0x00], "{}", sample.label);
+        }
         Ok(())
     }
 

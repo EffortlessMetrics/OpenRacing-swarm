@@ -97,6 +97,23 @@ commands = [
 ]
 
 [[work_item]]
+id = "target-only-r5-control-parser-regression"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-target-only-r5-control-parser-regression"
+current_pointer = "crates/moza-wheelbase-report/src/lib.rs"
+claim_boundary = "Parser regression only; target-only wheel control samples preserve packed R5 V1 button bytes without creating button-name, clutch, rotary, native-visible, smoke-ready, authorization, or output claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p racing-wheel-moza-wheelbase-report parse_wheelbase_input_preserves_target_only_live_r5_v1_button_samples -- --nocapture",
+  "cargo clippy --locked -p racing-wheel-moza-wheelbase-report --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "harden-artifact-claim-boundaries"
 status = "completed"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

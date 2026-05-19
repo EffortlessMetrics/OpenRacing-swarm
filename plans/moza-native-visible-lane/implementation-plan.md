@@ -228,6 +228,60 @@ git diff --check
 Remove the candidate-only navigation fields and revert the docs. Do not alter
 the underlying passive input captures.
 
+## Work item: target-only-r5-control-parser-regression
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: safer parser expansion from target-only wheel control captures
+Blocked by: n/a
+
+### Goal
+
+Preserve the target-only wheel button, thumb control, and central control
+samples as parser regression coverage without turning them into readiness or
+button-name claims.
+
+### Production delta
+
+Added a `racing-wheel-moza-wheelbase-report` regression test using target-only
+live R5 V1 extended reports from the Pit House solo wheel-controls capture. The
+test verifies the parser selects the live R5 V1 extended layout, preserves the
+full packed button byte window, and keeps clutch/rotary/funky semantics
+unpromoted for those samples.
+
+### Non-goals
+
+No hardware output, no HID open, no new capture, no raw pcap commit, no
+button-name mapping, no clutch role-specific semantic promotion, no rotary
+semantic promotion, no native-visible promotion, and no smoke-ready promotion.
+
+### Acceptance
+
+- Target-only live R5 V1 wheel-control sample reports parse as 42-byte extended
+  reports.
+- Packed button bytes from offsets `17..32` are preserved exactly.
+- `clutch`, `funky`, and `rotary` remain unpromoted for these samples.
+- The work creates no readiness claim and does not change lane promotion status.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p racing-wheel-moza-wheelbase-report parse_wheelbase_input_preserves_target_only_live_r5_v1_button_samples -- --nocapture
+cargo clippy --locked -p racing-wheel-moza-wheelbase-report --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the parser regression test and this plan entry. Do not remove local
+target-only capture artifacts, lane input receipts, or candidate-only input
+role documentation.
+
 ## Work item: harden-artifact-claim-boundaries
 
 Status: completed
