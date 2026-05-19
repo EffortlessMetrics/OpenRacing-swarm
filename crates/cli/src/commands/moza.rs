@@ -10634,6 +10634,8 @@ fn pre_output_readiness_dir(lane: &Path) -> PreOutputReadinessReceipt {
 
     let role_evidence_complete = required_role_evidence_complete(&passive);
     let input_role_semantics = moza_input_role_semantics_summary(lane);
+    let pit_house_compatibility = moza_pit_house_compatibility_summary(lane);
+    let simulator_compatibility = moza_simulator_compatibility_summary(lane);
     let input_semantic_mapping_complete = json_string(&input_role_semantics, "semantic_status")
         == Some("all_required_roles_semantically_proven");
     let native_actuator_response_gate = verify_native_actuator_response_smoke_gate(lane);
@@ -10699,6 +10701,8 @@ fn pre_output_readiness_dir(lane: &Path) -> PreOutputReadinessReceipt {
         native_visible_motion_proven,
         input_semantic_mapping_complete,
         input_role_semantics,
+        pit_house_compatibility,
+        simulator_compatibility,
         blocking_items,
         ffb_blocking_items,
         native_control_blocking_items,
@@ -28031,6 +28035,8 @@ struct PreOutputReadinessReceipt {
     native_visible_motion_proven: bool,
     input_semantic_mapping_complete: bool,
     input_role_semantics: Value,
+    pit_house_compatibility: Value,
+    simulator_compatibility: Value,
     blocking_items: Vec<String>,
     ffb_blocking_items: Vec<String>,
     native_control_blocking_items: Vec<String>,
@@ -32844,6 +32850,131 @@ mod tests {
                 .iter()
                 .any(|item| item == "input_semantic_mapping_complete")
         );
+        Ok(())
+    }
+
+    #[test]
+    fn pre_output_readiness_surfaces_external_compatibility_without_native_prerequisite()
+    -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        write_pit_house_artifacts(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("pit-house-availability.json"),
+            &pit_house_availability_receipt_unavailable(),
+        )?;
+        for artifact in [
+            "pit-house-open-standard.json",
+            "pit-house-direct-blocked.json",
+            "pit-house-mode-change.json",
+            "pit-house-firmware-page.json",
+            "pit-house-observation-open-standard.json",
+            "pit-house-observation-open-direct.json",
+            "pit-house-observation-mode-change.json",
+            "pit-house-observation-firmware-page.json",
+            "simulator-ffb-smoke.json",
+        ] {
+            let path = dir.path().join(artifact);
+            if path.is_file() {
+                fs::remove_file(path)?;
+            }
+        }
+        write_test_json_file(
+            &dir.path().join("smoke-ready-verification.json"),
+            &serde_json::json!({
+                "success": false,
+                "command": "wheelctl moza verify-bundle",
+                "lane": dir.path().display().to_string(),
+                "requested_stage": "smoke_ready",
+                "missing_artifacts": 0,
+                "invalid_artifacts": 0,
+                "failed_gates": 2,
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "artifacts": [],
+                "gates": [
+                    {"name": "simulator_telemetry", "status": "pass"},
+                    {"name": "simulator_ffb_bounded", "status": "fail"},
+                    {"name": "pit_house_coexistence", "status": "fail"}
+                ],
+                "role_evidence": []
+            }),
+        )?;
+
+        let receipt = pre_output_readiness_dir(dir.path());
+
+        let pit_house = &receipt.pit_house_compatibility;
+        assert_eq!(
+            json_string(pit_house, "claim_scope"),
+            Some("external_compatibility_navigation_only")
+        );
+        assert_eq!(
+            json_string(pit_house, "availability_status"),
+            Some("not_installed_or_not_running")
+        );
+        assert_eq!(
+            json_bool(pit_house, "pit_house_coexistence_claimed"),
+            Some(false)
+        );
+        assert_eq!(json_u64(pit_house, "required_case_count"), Some(5));
+        assert_eq!(json_u64(pit_house, "recorded_case_count"), Some(1));
+        assert_eq!(json_bool(pit_house, "blocks_native_control"), Some(false));
+        assert_eq!(json_bool(pit_house, "blocks_native_visible"), Some(false));
+        assert_eq!(json_bool(pit_house, "blocks_smoke_ready"), Some(true));
+        assert_eq!(json_bool(pit_house, "readiness_claim"), Some(false));
+
+        let simulator = &receipt.simulator_compatibility;
+        assert_eq!(
+            json_string(simulator, "claim_scope"),
+            Some("external_compatibility_navigation_only")
+        );
+        assert_eq!(
+            json_bool(simulator, "simulator_telemetry_claimed"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(simulator, "bounded_simulator_ffb_claimed"),
+            Some(false)
+        );
+        assert_eq!(json_u64(simulator, "required_artifact_count"), Some(2));
+        assert_eq!(json_u64(simulator, "recorded_artifact_count"), Some(1));
+        assert_eq!(json_bool(simulator, "blocks_native_control"), Some(false));
+        assert_eq!(json_bool(simulator, "blocks_native_visible"), Some(false));
+        assert_eq!(json_bool(simulator, "blocks_smoke_ready"), Some(true));
+        assert_eq!(json_bool(simulator, "readiness_claim"), Some(false));
+        let bounded_ffb = simulator
+            .get("bounded_ffb")
+            .ok_or("expected bounded simulator FFB pre-output summary")?;
+        assert_eq!(json_string(bounded_ffb, "claim_status"), Some("missing"));
+        assert_eq!(json_bool(bounded_ffb, "readiness_claim"), Some(false));
+
+        assert!(
+            receipt
+                .external_compatibility_blocking_items
+                .iter()
+                .any(|item| item == "pit_house_coexistence")
+        );
+        assert!(
+            receipt
+                .external_compatibility_blocking_items
+                .iter()
+                .any(|item| item == "simulator_ffb_bounded")
+        );
+        for external_gate in [
+            "pit_house_coexistence",
+            "simulator_telemetry",
+            "simulator_ffb_bounded",
+        ] {
+            assert!(
+                !receipt
+                    .native_control_blocking_items
+                    .iter()
+                    .any(|item| item == external_gate),
+                "native control readiness must not be blocked by {external_gate}"
+            );
+        }
         Ok(())
     }
 
