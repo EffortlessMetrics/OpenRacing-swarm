@@ -157,7 +157,14 @@ output/configuration/firmware writes while creating the receipt.
 
 ### Vendor authority smoke contract
 
-The first authority smoke profile MUST be bounded and non-motion-claiming. It may validate authority-state transitions and cleanup but MUST keep `native_visible_ready=false` and `planned_next_output.allowed=false`.
+The first authority smoke profile MUST be bounded and non-motion-claiming. A
+software smoke dry-run MAY validate an exact authorization receipt, re-decode the
+bound frame, and prove that the next hardware command is still blocked. The
+dry-run MUST NOT open HID, open serial, send read-only queries, consume
+authorization, or send output/configuration/firmware writes. It MUST keep
+`native_control_evidence=false`, `hardware_output_authorized=false`,
+`native_visible_ready=false`, `authorization_consumed=false`, `commands_sent=[]`,
+and `planned_next_output.allowed=false`.
 
 ### Post-authority PIDFF response and motion ladder
 

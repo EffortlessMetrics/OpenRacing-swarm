@@ -559,6 +559,14 @@ struct VendorAuthorityAuthorizationRequest<'a> {
     overwrite: bool,
 }
 
+struct VendorAuthoritySmokeDryRunRequest<'a> {
+    json: bool,
+    authorization: &'a Path,
+    confirm_no_output_smoke_dry_run: bool,
+    json_out: &'a Path,
+    overwrite: bool,
+}
+
 struct PitHouseCaseRequest<'a> {
     json: bool,
     lane: &'a Path,
@@ -736,6 +744,21 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 expires_after_minutes: *expires_after_minutes,
                 confirm_exact_vendor_authority_authorization:
                     *confirm_exact_vendor_authority_authorization,
+                json_out,
+                overwrite: *overwrite,
+            })
+            .await
+        }
+        MozaCommands::VendorAuthoritySmokeDryRun {
+            authorization,
+            confirm_no_output_smoke_dry_run,
+            json_out,
+            overwrite,
+        } => {
+            vendor_authority_smoke_dry_run(VendorAuthoritySmokeDryRunRequest {
+                json,
+                authorization,
+                confirm_no_output_smoke_dry_run: *confirm_no_output_smoke_dry_run,
                 json_out,
                 overwrite: *overwrite,
             })
@@ -5797,6 +5820,16 @@ async fn authorize_vendor_authority(
     let receipt = vendor_authority_authorization_receipt(&request)?;
     write_json_file(request.json_out, &receipt)?;
     print_vendor_authority_authorization_receipt(request.json, request.json_out, &receipt)
+}
+
+async fn vendor_authority_smoke_dry_run(
+    request: VendorAuthoritySmokeDryRunRequest<'_>,
+) -> Result<()> {
+    ensure_receipt_writable(request.json_out, request.overwrite)?;
+    let authorization = read_json_path(request.authorization)?;
+    let receipt = vendor_authority_smoke_dry_run_receipt(&request, &authorization)?;
+    write_json_file(request.json_out, &receipt)?;
+    print_vendor_authority_smoke_dry_run_receipt(request.json, request.json_out, &receipt)
 }
 
 async fn audit_lane(
@@ -25785,6 +25818,263 @@ fn vendor_authority_authorization_receipt(
     })
 }
 
+fn vendor_authority_smoke_dry_run_receipt(
+    request: &VendorAuthoritySmokeDryRunRequest<'_>,
+    authorization: &Value,
+) -> Result<VendorAuthoritySmokeDryRunReceipt> {
+    if !request.confirm_no_output_smoke_dry_run {
+        return Err(anyhow!(
+            "--confirm-no-output-smoke-dry-run is required before validating a Moza vendor-authority dry-run"
+        ));
+    }
+
+    validate_vendor_authority_authorization_schema(authorization)?;
+    validate_vendor_authority_authorization_gates(authorization)?;
+
+    let command_id = json_pointer_string(authorization, "/authorized_command/command_id")?;
+    let command_name = json_pointer_string(authorization, "/authorized_command/command_name")?;
+    let family = json_pointer_string(authorization, "/authorized_command/family")?;
+    let risk_class = json_pointer_string(authorization, "/authorized_command/risk_class")?;
+    if json_pointer_bool(
+        authorization,
+        "/authorized_command/read_only_status_probe_allowed",
+    )? {
+        return Err(anyhow!(
+            "read-only status command `{command_id}` must not enter vendor-authority smoke dry-run"
+        ));
+    }
+
+    let command = vendor_command_by_id(command_id)?;
+    ensure_vendor_authority_exact_authorization_candidate(command)?;
+    if command.risk_class.as_registry_str() != risk_class {
+        return Err(anyhow!(
+            "authorization risk_class `{risk_class}` does not match registry risk_class `{}` for `{command_id}`",
+            command.risk_class.as_registry_str()
+        ));
+    }
+
+    let frame_hex = json_pointer_string(authorization, "/authorized_frame/frame_hex")?;
+    let expected_frame_sha256 =
+        json_pointer_string(authorization, "/authorized_frame/frame_sha256")?;
+    let expected_payload_sha256 =
+        json_pointer_string(authorization, "/authorized_frame/payload_sha256")?;
+    let frame = parse_hex_bytes(frame_hex)
+        .map_err(|error| anyhow!("authorization frame_hex is invalid: {error}"))?;
+    let decoded =
+        decode_fixture_frame(&frame).context("failed to decode authorization frame_hex")?;
+    if decoded.command.id != command.id {
+        return Err(anyhow!(
+            "authorization frame command `{}` does not match receipt command `{command_id}`",
+            decoded.command.id
+        ));
+    }
+    if decoded.device_id != command.device_id {
+        return Err(anyhow!(
+            "authorization frame device id 0x{:02X} does not match registry device id 0x{:02X}",
+            decoded.device_id,
+            command.device_id
+        ));
+    }
+    let actual_frame_sha256 = sha256_hex(&frame);
+    if actual_frame_sha256 != expected_frame_sha256 {
+        return Err(anyhow!(
+            "authorization frame hash mismatch: expected {expected_frame_sha256}, got {actual_frame_sha256}"
+        ));
+    }
+    let actual_payload_sha256 = sha256_hex(decoded.payload);
+    if actual_payload_sha256 != expected_payload_sha256 {
+        return Err(anyhow!(
+            "authorization payload hash mismatch: expected {expected_payload_sha256}, got {actual_payload_sha256}"
+        ));
+    }
+    if decoded.payload.is_empty() {
+        return Err(anyhow!(
+            "vendor-authority smoke dry-run requires a non-empty authorized payload for `{command_id}`"
+        ));
+    }
+    validate_authorization_not_expired(authorization)?;
+
+    Ok(VendorAuthoritySmokeDryRunReceipt {
+        success: true,
+        schema_version: 1,
+        artifact_kind: "moza_vendor_authority_smoke",
+        claim_scope: "software_vendor_authority_smoke_dry_run",
+        command: "wheelctl moza vendor-authority-smoke-dry-run",
+        generated_at_utc: now_utc(),
+        authorization_receipt: request.authorization.display().to_string(),
+        authorization_receipt_validated: true,
+        authorization_consumed: false,
+        exact_authorization: true,
+        single_use_authorization: true,
+        native_control_evidence: false,
+        hardware_output_authorized: false,
+        native_visible_ready: false,
+        next_allowed_action: "Review this dry-run receipt before a separate bounded hardware authority attempt consumes the exact authorization receipt.",
+        blocked_actions: vec![
+            "hardware send from dry-run command",
+            "authorization reuse",
+            "payload drift",
+            "configuration drift",
+            "firmware or DFU command",
+            "unknown host-to-device command",
+            "high-torque enablement",
+            "native-control claim",
+            "native-visible claim",
+            "smoke-ready claim",
+            "release-ready claim",
+        ],
+        required_artifacts: vec![
+            "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md",
+            "docs/hardware/moza-r5-vendor-authority-test-plan.md",
+            "schemas/moza-vendor-authority-authorization.schema.json",
+            "schemas/moza-vendor-authority-smoke.schema.json",
+            "crates/hid-moza-protocol/src/serial/frame.rs",
+            "crates/hid-moza-protocol/src/serial/vendor_authority.rs",
+            "crates/cli/src/commands/moza.rs",
+        ],
+        no_hid_device_opened: true,
+        no_serial_device_opened: true,
+        no_serial_query_sent: true,
+        sent_output_writes: false,
+        sent_configuration_writes: false,
+        sent_firmware_or_dfu_commands: false,
+        commands_sent: Vec::new(),
+        transport_kind: "dry_run_only",
+        codec_status: "fixture_decode_verified_exact_frame",
+        hardware_write_eligible: false,
+        planned_next_output: VendorAuthoritySmokePlannedNextOutput {
+            allowed: false,
+            reason: "dry-run validates exact authorization only; the later hardware attempt must consume the authorization receipt",
+            requires_exact_authorization_receipt: true,
+            requires_bounded_hardware_attempt_command: true,
+            command_id: command_id.to_string(),
+            command_name: command_name.to_string(),
+            family: family.to_string(),
+            risk_class: risk_class.to_string(),
+            frame_sha256: expected_frame_sha256.to_string(),
+            payload_sha256: expected_payload_sha256.to_string(),
+        },
+        dry_run_checks: vec![
+            VendorAuthoritySmokeDryRunCheck {
+                check: "authorization_schema_valid",
+                passed: true,
+            },
+            VendorAuthoritySmokeDryRunCheck {
+                check: "authorization_not_consumed",
+                passed: true,
+            },
+            VendorAuthoritySmokeDryRunCheck {
+                check: "frame_hash_bound",
+                passed: true,
+            },
+            VendorAuthoritySmokeDryRunCheck {
+                check: "payload_hash_bound",
+                passed: true,
+            },
+            VendorAuthoritySmokeDryRunCheck {
+                check: "no_hardware_traffic_sent",
+                passed: true,
+            },
+        ],
+        notes: vec![
+            "This dry-run validates a prior exact vendor-authority authorization receipt only.",
+            "It does not consume authorization and does not open HID, open serial, send queries, or send output/configuration/firmware writes.",
+            "It is not native-control, native-visible, smoke-ready, coexistence, simulator, or release-ready proof.",
+        ],
+    })
+}
+
+fn validate_vendor_authority_authorization_schema(authorization: &Value) -> Result<()> {
+    let schema: Value = serde_json::from_str(include_str!(
+        "../../../../schemas/moza-vendor-authority-authorization.schema.json"
+    ))
+    .context("failed to parse Moza vendor authority authorization schema")?;
+    let validator = Validator::new(&schema)
+        .context("failed to compile Moza vendor authority authorization schema")?;
+    let errors: Vec<_> = validator
+        .iter_errors(authorization)
+        .take(8)
+        .map(|error| error.to_string())
+        .collect();
+    if !errors.is_empty() {
+        return Err(anyhow!(
+            "authorization receipt failed schema validation: {}",
+            errors.join("; ")
+        ));
+    }
+    Ok(())
+}
+
+fn validate_vendor_authority_authorization_gates(authorization: &Value) -> Result<()> {
+    for (path, expected) in [
+        ("/success", true),
+        ("/native_control_evidence", false),
+        ("/hardware_output_authorized", true),
+        ("/native_visible_ready", false),
+        ("/authorization_consumed", false),
+        ("/exact_authorization", true),
+        ("/single_use", true),
+        ("/no_hid_device_opened", true),
+        ("/no_serial_device_opened", true),
+        ("/no_serial_query_sent", true),
+        ("/sent_output_writes", false),
+        ("/sent_configuration_writes", false),
+        ("/sent_firmware_or_dfu_commands", false),
+    ] {
+        let actual = json_pointer_bool(authorization, path)?;
+        if actual != expected {
+            return Err(anyhow!(
+                "authorization receipt gate `{path}` expected {expected}, got {actual}"
+            ));
+        }
+    }
+    for (path, expected) in [
+        ("/artifact_kind", "moza_vendor_authority_authorization"),
+        (
+            "/claim_scope",
+            "single_use_exact_vendor_authority_authorization",
+        ),
+        ("/transport_kind", "authorization_receipt_only"),
+        ("/codec_status", "fixture_decode_verified_exact_frame"),
+    ] {
+        let actual = json_pointer_string(authorization, path)?;
+        if actual != expected {
+            return Err(anyhow!(
+                "authorization receipt field `{path}` expected `{expected}`, got `{actual}`"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_authorization_not_expired(authorization: &Value) -> Result<()> {
+    let expires_at = json_pointer_string(authorization, "/expires_at_utc")?;
+    let expires_at = chrono::DateTime::parse_from_rfc3339(expires_at)
+        .with_context(|| format!("invalid authorization expires_at_utc `{expires_at}`"))?
+        .with_timezone(&chrono::Utc);
+    if expires_at <= chrono::Utc::now() {
+        return Err(anyhow!(
+            "authorization receipt expired at {}",
+            expires_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+        ));
+    }
+    Ok(())
+}
+
+fn json_pointer_string<'a>(value: &'a Value, path: &str) -> Result<&'a str> {
+    value
+        .pointer(path)
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("missing or non-string JSON field `{path}`"))
+}
+
+fn json_pointer_bool(value: &Value, path: &str) -> Result<bool> {
+    value
+        .pointer(path)
+        .and_then(Value::as_bool)
+        .ok_or_else(|| anyhow!("missing or non-bool JSON field `{path}`"))
+}
+
 fn vendor_command_by_id(command_id: &str) -> Result<&'static MozaVendorCommand> {
     REQUIRED_VENDOR_COMMANDS
         .iter()
@@ -26428,6 +26718,60 @@ struct VendorAuthorityAuthorizedFrame {
     payload_sha256: String,
     payload_len: usize,
     checksum: String,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorAuthoritySmokeDryRunReceipt {
+    success: bool,
+    schema_version: u8,
+    artifact_kind: &'static str,
+    claim_scope: &'static str,
+    command: &'static str,
+    generated_at_utc: String,
+    authorization_receipt: String,
+    authorization_receipt_validated: bool,
+    authorization_consumed: bool,
+    exact_authorization: bool,
+    single_use_authorization: bool,
+    native_control_evidence: bool,
+    hardware_output_authorized: bool,
+    native_visible_ready: bool,
+    next_allowed_action: &'static str,
+    blocked_actions: Vec<&'static str>,
+    required_artifacts: Vec<&'static str>,
+    no_hid_device_opened: bool,
+    no_serial_device_opened: bool,
+    no_serial_query_sent: bool,
+    sent_output_writes: bool,
+    sent_configuration_writes: bool,
+    sent_firmware_or_dfu_commands: bool,
+    commands_sent: Vec<String>,
+    transport_kind: &'static str,
+    codec_status: &'static str,
+    hardware_write_eligible: bool,
+    planned_next_output: VendorAuthoritySmokePlannedNextOutput,
+    dry_run_checks: Vec<VendorAuthoritySmokeDryRunCheck>,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorAuthoritySmokePlannedNextOutput {
+    allowed: bool,
+    reason: &'static str,
+    requires_exact_authorization_receipt: bool,
+    requires_bounded_hardware_attempt_command: bool,
+    command_id: String,
+    command_name: String,
+    family: String,
+    risk_class: String,
+    frame_sha256: String,
+    payload_sha256: String,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorAuthoritySmokeDryRunCheck {
+    check: &'static str,
+    passed: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -32377,6 +32721,23 @@ fn print_vendor_authority_authorization_receipt(
     Ok(())
 }
 
+fn print_vendor_authority_smoke_dry_run_receipt(
+    json: bool,
+    json_out: &Path,
+    receipt: &VendorAuthoritySmokeDryRunReceipt,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Moza vendor-authority smoke dry-run validated {} with frame hash {}; no HID/serial/output traffic was sent.",
+            receipt.planned_next_output.command_id, receipt.planned_next_output.frame_sha256
+        );
+        println!("Receipt: {}", json_out.display());
+    }
+    Ok(())
+}
+
 fn print_lane_audit_receipt(
     json: bool,
     json_out: Option<&Path>,
@@ -33622,6 +33983,254 @@ mod tests {
         );
         assert_eq!(
             schema["properties"]["sent_firmware_or_dfu_commands"]["const"],
+            false
+        );
+        Ok(())
+    }
+
+    fn sample_vendor_authority_authorization_value() -> TestResult<Value> {
+        let dir = tempfile::tempdir()?;
+        let json_out = dir.path().join("vendor-authority-authorization.json");
+        let request = sample_vendor_authority_authorization_request(&json_out);
+        let receipt = vendor_authority_authorization_receipt(&request)?;
+        Ok(serde_json::to_value(receipt)?)
+    }
+
+    fn sample_vendor_authority_smoke_request<'a>(
+        authorization: &'a Path,
+        json_out: &'a Path,
+    ) -> VendorAuthoritySmokeDryRunRequest<'a> {
+        VendorAuthoritySmokeDryRunRequest {
+            json: false,
+            authorization,
+            confirm_no_output_smoke_dry_run: true,
+            json_out,
+            overwrite: false,
+        }
+    }
+
+    #[test]
+    fn vendor_authority_smoke_dry_run_receipt_is_no_output_and_non_claiming() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let authorization_path = dir.path().join("vendor-authority-authorization.json");
+        let json_out = dir.path().join("vendor-authority-smoke-dry-run.json");
+        let authorization = sample_vendor_authority_authorization_value()?;
+        let request = sample_vendor_authority_smoke_request(&authorization_path, &json_out);
+        let receipt = vendor_authority_smoke_dry_run_receipt(&request, &authorization)?;
+        let value = serde_json::to_value(&receipt)?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-authority-smoke.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&value).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        assert_eq!(
+            json_string(&value, "artifact_kind"),
+            Some("moza_vendor_authority_smoke")
+        );
+        assert_eq!(
+            json_string(&value, "claim_scope"),
+            Some("software_vendor_authority_smoke_dry_run")
+        );
+        assert_eq!(json_bool(&value, "native_control_evidence"), Some(false));
+        assert_eq!(json_bool(&value, "hardware_output_authorized"), Some(false));
+        assert_eq!(json_bool(&value, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(&value, "authorization_consumed"), Some(false));
+        assert_eq!(
+            json_bool(&value, "authorization_receipt_validated"),
+            Some(true)
+        );
+        assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "no_serial_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "no_serial_query_sent"), Some(true));
+        assert_eq!(json_bool(&value, "sent_output_writes"), Some(false));
+        assert_eq!(json_bool(&value, "sent_configuration_writes"), Some(false));
+        assert_eq!(
+            json_bool(&value, "sent_firmware_or_dfu_commands"),
+            Some(false)
+        );
+        assert_eq!(
+            value
+                .pointer("/planned_next_output/allowed")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            value
+                .pointer("/planned_next_output/command_id")
+                .and_then(Value::as_str),
+            Some("estop_set_ffb")
+        );
+        assert_eq!(
+            value
+                .get("commands_sent")
+                .and_then(Value::as_array)
+                .map(Vec::len),
+            Some(0)
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn vendor_authority_smoke_dry_run_command_writes_json_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let authorization_path = dir.path().join("vendor-authority-authorization.json");
+        let json_out = dir.path().join("vendor-authority-smoke-dry-run.json");
+        let authorization = sample_vendor_authority_authorization_value()?;
+        write_json_file(&authorization_path, &authorization)?;
+
+        vendor_authority_smoke_dry_run(sample_vendor_authority_smoke_request(
+            &authorization_path,
+            &json_out,
+        ))
+        .await?;
+        let receipt = read_json_path(&json_out)?;
+        assert_eq!(
+            json_string(&receipt, "artifact_kind"),
+            Some("moza_vendor_authority_smoke")
+        );
+        assert_eq!(
+            receipt
+                .pointer("/planned_next_output/command_id")
+                .and_then(Value::as_str),
+            Some("estop_set_ffb")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_smoke_dry_run_rejects_missing_confirmation() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let authorization_path = dir.path().join("vendor-authority-authorization.json");
+        let json_out = dir.path().join("vendor-authority-smoke-dry-run.json");
+        let authorization = sample_vendor_authority_authorization_value()?;
+        let request = VendorAuthoritySmokeDryRunRequest {
+            confirm_no_output_smoke_dry_run: false,
+            ..sample_vendor_authority_smoke_request(&authorization_path, &json_out)
+        };
+        let error = match vendor_authority_smoke_dry_run_receipt(&request, &authorization) {
+            Ok(_) => return Err("missing dry-run confirmation must be rejected".into()),
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("--confirm-no-output-smoke-dry-run"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_smoke_dry_run_rejects_consumed_authorization() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let authorization_path = dir.path().join("vendor-authority-authorization.json");
+        let json_out = dir.path().join("vendor-authority-smoke-dry-run.json");
+        let mut authorization = sample_vendor_authority_authorization_value()?;
+        authorization["authorization_consumed"] = serde_json::json!(true);
+        let request = sample_vendor_authority_smoke_request(&authorization_path, &json_out);
+        let error = match vendor_authority_smoke_dry_run_receipt(&request, &authorization) {
+            Ok(_) => return Err("consumed authorization must be rejected".into()),
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("authorization receipt failed schema validation")
+                || error
+                    .to_string()
+                    .contains("authorization receipt gate `/authorization_consumed`"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_smoke_dry_run_rejects_payload_hash_drift() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let authorization_path = dir.path().join("vendor-authority-authorization.json");
+        let json_out = dir.path().join("vendor-authority-smoke-dry-run.json");
+        let mut authorization = sample_vendor_authority_authorization_value()?;
+        authorization["authorized_frame"]["payload_sha256"] =
+            serde_json::json!("0000000000000000000000000000000000000000000000000000000000000000");
+        let request = sample_vendor_authority_smoke_request(&authorization_path, &json_out);
+        let error = match vendor_authority_smoke_dry_run_receipt(&request, &authorization) {
+            Ok(_) => return Err("payload hash drift must be rejected".into()),
+            Err(error) => error,
+        };
+        assert!(
+            error.to_string().contains("payload hash mismatch"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_smoke_schema_pins_no_output_gates() -> TestResult {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-authority-smoke.schema.json"
+        ))?;
+        let required = schema
+            .get("required")
+            .and_then(Value::as_array)
+            .ok_or("schema must have a required array")?;
+        for field in [
+            "claim_scope",
+            "native_control_evidence",
+            "hardware_output_authorized",
+            "native_visible_ready",
+            "authorization_receipt_validated",
+            "authorization_consumed",
+            "no_hid_device_opened",
+            "no_serial_device_opened",
+            "no_serial_query_sent",
+            "sent_output_writes",
+            "sent_configuration_writes",
+            "sent_firmware_or_dfu_commands",
+            "commands_sent",
+            "planned_next_output",
+        ] {
+            assert!(
+                required.iter().any(|entry| entry.as_str() == Some(field)),
+                "schema must require `{field}`"
+            );
+        }
+        assert_eq!(
+            schema["properties"]["claim_scope"]["const"],
+            "software_vendor_authority_smoke_dry_run"
+        );
+        assert_eq!(
+            schema["properties"]["native_control_evidence"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["hardware_output_authorized"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["native_visible_ready"]["const"], false);
+        assert_eq!(
+            schema["properties"]["authorization_consumed"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["no_hid_device_opened"]["const"], true);
+        assert_eq!(
+            schema["properties"]["no_serial_device_opened"]["const"],
+            true
+        );
+        assert_eq!(schema["properties"]["no_serial_query_sent"]["const"], true);
+        assert_eq!(schema["properties"]["sent_output_writes"]["const"], false);
+        assert_eq!(
+            schema["properties"]["sent_configuration_writes"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["sent_firmware_or_dfu_commands"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["planned_next_output"]["properties"]["allowed"]["const"],
             false
         );
         Ok(())

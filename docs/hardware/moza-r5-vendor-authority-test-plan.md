@@ -56,6 +56,10 @@ Provide a step-by-step implementation queue for Moza R5 vendor authority infrast
    - Keep `native_control_evidence=false` and `native_visible_ready=false`; this receipt authorizes only one later exact vendor-authority frame after the no-output dry-run stage reviews and consumes it.
    - Do not add hardware send behavior, serial transport writes, native-visible promotion, smoke-ready promotion, coexistence claims, simulator claims, or readiness promotion.
 8. **Vendor authority smoke dry-run**
+   - Add a guarded `wheelctl moza vendor-authority-smoke-dry-run` command that validates a prior exact vendor-authority authorization receipt without opening HID, opening serial, sending read-only queries, or sending output/configuration/firmware writes.
+   - Require explicit `--confirm-no-output-smoke-dry-run`, validate the authorization schema and safety gates, reject consumed/expired/drifted receipts, and re-decode the bound frame/hash/payload before emitting the dry-run receipt.
+   - Emit `claim_scope=software_vendor_authority_smoke_dry_run`, `native_control_evidence=false`, `hardware_output_authorized=false`, `native_visible_ready=false`, `authorization_consumed=false`, `commands_sent=[]`, and `planned_next_output.allowed=false`.
+   - Do not add hardware send behavior, authorization consumption, serial transport writes, native-visible promotion, smoke-ready promotion, coexistence claims, simulator claims, or readiness promotion.
 9. **First bounded hardware authority attempt**
 10. **Post-authority PIDFF response comparison**
 11+. **Closed-loop motion ladder**
@@ -120,6 +124,20 @@ git diff --check
 python scripts/cargo_fmt_workspace.py
 cargo test --locked -p wheelctl --bin wheelctl vendor_authority_authorization -- --nocapture
 cargo test --locked -p wheelctl --bin wheelctl parse_moza_authorize_vendor_authority -- --nocapture
+cargo test --locked -p wheelctl --test cli_comprehensive_e2e_tests help_snapshots::snapshot_moza_help -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo hakari verify
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+## Proof commands (PR8)
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_authority_smoke -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl parse_moza_vendor_authority_smoke_dry_run -- --nocapture
 cargo test --locked -p wheelctl --test cli_comprehensive_e2e_tests help_snapshots::snapshot_moza_help -- --nocapture
 cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
 cargo hakari verify

@@ -2229,6 +2229,41 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_vendor_authority_smoke_dry_run() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "vendor-authority-smoke-dry-run",
+            "--authorization",
+            "target/moza-current/vendor-authority-authorization.json",
+            "--confirm-no-output-smoke-dry-run",
+            "--json-out",
+            "target/moza-current/vendor-authority-smoke-dry-run.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::VendorAuthoritySmokeDryRun {
+                authorization,
+                confirm_no_output_smoke_dry_run,
+                json_out,
+                overwrite,
+            }) => {
+                assert_eq!(
+                    authorization.to_str(),
+                    Some("target/moza-current/vendor-authority-authorization.json")
+                );
+                assert!(*confirm_no_output_smoke_dry_run);
+                assert_eq!(
+                    json_out.to_str(),
+                    Some("target/moza-current/vendor-authority-smoke-dry-run.json")
+                );
+                assert!(!overwrite);
+            }
+            _ => return Err("expected Moza VendorAuthoritySmokeDryRun command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_promote_fixture() -> TestResult {
         let cli = parse_cli([
             "wheelctl",

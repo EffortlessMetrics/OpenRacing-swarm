@@ -25,6 +25,7 @@ Commands:
   vendor-fake-transport              Replay checked-in Moza vendor serial fixtures through the fake transport
   vendor-status-probe                Send read-only Moza vendor status queries over the R5 serial interface
   authorize-vendor-authority         Create a single-use exact Moza vendor-authority authorization receipt without sending traffic
+  vendor-authority-smoke-dry-run     Validate an exact Moza vendor-authority authorization without sending traffic
   promote-fixture                    Promote a validated Moza capture JSONL into a parser fixture file
   promote-fixtures                   Promote every required Moza lane capture into parser fixture files
   zero                               Send bounded zero-torque output reports to a Moza wheelbase

@@ -868,6 +868,22 @@ pub enum MozaCommands {
         overwrite: bool,
     },
 
+    /// Validate an exact Moza vendor-authority authorization without sending traffic
+    VendorAuthoritySmokeDryRun {
+        /// Exact vendor-authority authorization receipt to validate
+        #[arg(long)]
+        authorization: std::path::PathBuf,
+        /// Explicit acknowledgement that this command is a no-output dry-run only
+        #[arg(long)]
+        confirm_no_output_smoke_dry_run: bool,
+        /// Write the smoke dry-run receipt to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing smoke dry-run receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
     /// Promote a validated Moza capture JSONL into a parser fixture file
     PromoteFixture {
         /// JSON Lines file produced by `wheelctl moza capture-input`
