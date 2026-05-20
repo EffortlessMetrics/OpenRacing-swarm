@@ -1,0 +1,17 @@
+{
+  "case": "pit_house_open_idle_standard",
+  "command": "wheelctl moza pit-house-observation",
+  "evidence": "Pit House open and idle while standard mode completed.",
+  "evidence_artifact": "pit-house-evidence-open-standard.json",
+  "evidence_kind": "process_window_snapshot",
+  "generated_at_utc": "2026-05-20T18:14:42Z",
+  "no_ffb_writes": true,
+  "no_firmware_or_dfu_commands": true,
+  "no_hid_device_opened": true,
+  "no_serial_config_commands": true,
+  "observed": true,
+  "observed_at_utc": "2026-05-20T18:14:42Z",
+  "operator": "Steven",
+  "pit_house_observed_state": "open_idle_standard",
+  "success": true
+}

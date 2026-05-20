@@ -519,6 +519,30 @@ commands = [
 ]
 
 [[work_item]]
+id = "pit-house-open-standard-case-evidence"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-pit-house-open-standard-case-evidence"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/pit-house-open-standard.json"
+claim_boundary = "No-output external compatibility case evidence only; records Pit House open-idle standard process/window evidence, observation receipt, and case artifact linked to init-standard.json without opening HID or serial, sending output/configuration/firmware writes, creating authorization, running vendor-authority attempts, claiming Pit House parent coexistence, native-control, native-visible, smoke-ready, simulator, firmware, or release-ready."
+blocked_by = "n/a"
+commands = [
+  "wheelctl moza pit-house-evidence --case open-standard --operator Steven --evidence \"Pit House open and idle while standard mode completed.\" --require-match --json-out ci/hardware/moza-r5/2026-05-13/pit-house-evidence-open-standard.json --overwrite --json",
+  "wheelctl moza pit-house-observation --case open-standard --evidence-kind process-window-snapshot --evidence-artifact pit-house-evidence-open-standard.json --operator Steven --evidence \"Pit House open and idle while standard mode completed.\" --json-out ci/hardware/moza-r5/2026-05-13/pit-house-observation-open-standard.json --overwrite --json",
+  "wheelctl moza pit-house-case --lane ci/hardware/moza-r5/2026-05-13 --case open-standard --observation-artifact pit-house-observation-open-standard.json --evidence \"Pit House open and idle; standard mode completed without conflict.\" --json-out ci/hardware/moza-r5/2026-05-13/pit-house-open-standard.json --overwrite --json",
+  "wheelctl moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-pit-house-open-standard.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json",
+  "wheelctl moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-after-pit-house-open-standard.json --md-out target/moza-current/bench-wizard-after-pit-house-open-standard.md --json",
+  "wheelctl moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-pit-house-open-standard.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw \"expected native-visible verifier to remain blocked\" }",
+  "cargo test --locked -p wheelctl --bin wheelctl pit_house -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl artifact_index -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl bench_wizard -- --nocapture",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "brake-hbp-semantic-promotion"
 status = "completed"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

@@ -63,12 +63,12 @@ This section is external-smoke navigation only. Pit House is not required for na
 - Install guidance: Install or update Pit House from the official MOZA Pit House Downloads support page; do not treat package-manager availability as authoritative evidence.
 - Coexistence gate status: `fail`
 - Pit House coexistence claimed: `false`
-- Recorded cases: `1` / `5`
+- Recorded cases: `2` / `5`
 
 | Case | Case Artifact | Observation Artifact | Status |
 | --- | --- | --- | --- |
 | `pit_house_closed` | `pit-house-closed.json` | `pit-house-observation-closed.json` | `recorded` |
-| `pit_house_open_idle_standard` | `pit-house-open-standard.json` | `pit-house-observation-open-standard.json` | `missing` |
+| `pit_house_open_idle_standard` | `pit-house-open-standard.json` | `pit-house-observation-open-standard.json` | `recorded` |
 | `pit_house_open_direct` | `pit-house-direct-blocked.json` | `pit-house-observation-open-direct.json` | `missing` |
 | `pit_house_mode_change_during_run` | `pit-house-mode-change.json` | `pit-house-observation-mode-change.json` | `missing` |
 | `pit_house_firmware_update_page_open` | `pit-house-firmware-page.json` | `pit-house-observation-firmware-page.json` | `missing` |
@@ -203,7 +203,10 @@ This section is protocol research/support navigation only. Passive sniff artifac
 | `pit-house-availability.json` | `json` | `external_compatibility_evidence` |
 | `pit-house-closed.json` | `json` | `external_compatibility_evidence` |
 | `pit-house-evidence-closed.json` | `json` | `external_compatibility_evidence` |
+| `pit-house-evidence-open-standard.json` | `json` | `external_compatibility_evidence` |
 | `pit-house-observation-closed.json` | `json` | `external_compatibility_evidence` |
+| `pit-house-observation-open-standard.json` | `json` | `external_compatibility_evidence` |
+| `pit-house-open-standard.json` | `json` | `external_compatibility_evidence` |
 
 ## Smoke Promotion
 

@@ -1861,6 +1861,77 @@ Restore the previous pre-output readiness receipt and remove this work-item
 entry. Do not alter parser mappings, Pit House receipts, sniff artifacts, or
 native-visible undertravel receipts.
 
+## Work item: pit-house-open-standard-case-evidence
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: partial Pit House coexistence progress before final parent proof
+Blocked by: Pit House running and a verifier-matching process/window snapshot
+
+### Goal
+
+Record the Pit House open-idle standard-mode coexistence case as checked-in,
+non-claiming external compatibility evidence while the native-control
+vendor-authority lane remains blocked on fresh bench-clear and exclusive serial
+access.
+
+### Production delta
+
+Add the process/window snapshot evidence, observation receipt, and generated
+case artifact for `pit_house_open_idle_standard` under
+`ci/hardware/moza-r5/2026-05-13`, then refresh the lane artifact index. The case
+links to the existing `init-standard.json` source receipt and records
+`result=standard_ok` without creating the final parent
+`pit-house-coexistence.json` proof.
+
+### Non-goals
+
+No hardware output, HID open, serial open, authorization, vendor-authority
+attempt, simulator artifact, Pit House parent coexistence proof,
+native-visible promotion, smoke-ready promotion, firmware, DFU, high torque, or
+release-ready claim.
+
+### Acceptance
+
+- `pit-house-evidence-open-standard.json` records a matching Pit House
+  process/window snapshot with no HID, FFB, serial config, firmware, or DFU
+  commands.
+- `pit-house-observation-open-standard.json` references that snapshot using
+  `evidence_kind=process_window_snapshot`.
+- `pit-house-open-standard.json` records
+  `case=pit_house_open_idle_standard`, `result=standard_ok`,
+  `source_receipt=init-standard.json`, `high_torque=false`, and no
+  serial/firmware/DFU commands.
+- Artifact-index and bench-wizard navigation show 2/5 Pit House cases recorded,
+  while `pit-house-coexistence.json`, native-visible, and smoke-ready remain
+  blocked.
+
+### Proof commands
+
+```powershell
+wheelctl moza pit-house-evidence --case open-standard --operator Steven --evidence "Pit House open and idle while standard mode completed." --require-match --json-out ci/hardware/moza-r5/2026-05-13/pit-house-evidence-open-standard.json --overwrite --json
+wheelctl moza pit-house-observation --case open-standard --evidence-kind process-window-snapshot --evidence-artifact pit-house-evidence-open-standard.json --operator Steven --evidence "Pit House open and idle while standard mode completed." --json-out ci/hardware/moza-r5/2026-05-13/pit-house-observation-open-standard.json --overwrite --json
+wheelctl moza pit-house-case --lane ci/hardware/moza-r5/2026-05-13 --case open-standard --observation-artifact pit-house-observation-open-standard.json --evidence "Pit House open and idle; standard mode completed without conflict." --json-out ci/hardware/moza-r5/2026-05-13/pit-house-open-standard.json --overwrite --json
+wheelctl moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-pit-house-open-standard.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json
+wheelctl moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-after-pit-house-open-standard.json --md-out target/moza-current/bench-wizard-after-pit-house-open-standard.md --json
+wheelctl moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-pit-house-open-standard.json --json
+if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo test --locked -p wheelctl --bin wheelctl pit_house -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl artifact_index -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard -- --nocapture
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the open-standard Pit House evidence, observation, case artifact,
+artifact-index refresh, and this work-item entry. Do not alter closed Pit House,
+Pit House sniff, native-control, native-visible, or simulator receipts.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
