@@ -801,6 +801,27 @@ commands = [
 ]
 
 [[work_item]]
+id = "vendor-post-authority-pidff-response"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "schemas/moza-vendor-post-authority-pidff-response.schema.json"
+claim_boundary = "No-output post-authority PIDFF response comparison only; adds a command and navigation path to compare a consumed vendor-authority attempt receipt against baseline and post-authority PIDFF response receipts without opening HID, opening serial, sending queries, sending PIDFF or serial output, creating authorization, reusing authorization, native-control, native-visible, smoke-ready, coexistence, simulator, firmware, or release-ready claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_post_authority_pidff_response -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl post_authority_comparison -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl parse_moza_vendor_post_authority_pidff_response -- --nocapture",
+  "cargo test --locked -p wheelctl --test cli_comprehensive_e2e_tests help_snapshots::snapshot_moza_help -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo hakari verify",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

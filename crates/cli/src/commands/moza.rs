@@ -128,6 +128,7 @@ const NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_FAILURE_ANALYSIS_FILE: &str =
 const VENDOR_AUTHORITY_AUTHORIZATION_FILE: &str = "vendor-authority-authorization.json";
 const VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE: &str = "vendor-authority-smoke-dry-run.json";
 const VENDOR_AUTHORITY_ATTEMPT_FILE: &str = "vendor-authority-attempt.json";
+const VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE: &str = "vendor-post-authority-pidff-smoke.json";
 const VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE: &str = "vendor-post-authority-pidff-response.json";
 const VENDOR_AUTHORITY_HANDOFF_COMMAND_ID: &str = "estop_set_ffb";
 const VENDOR_AUTHORITY_HANDOFF_FRAME_HEX: &str = "7E02461C0001F0";
@@ -588,6 +589,16 @@ struct VendorAuthorityAttemptRequest<'a> {
     overwrite: bool,
 }
 
+struct VendorPostAuthorityPidffResponseRequest<'a> {
+    json: bool,
+    lane: &'a Path,
+    attempt: Option<&'a Path>,
+    baseline_response: Option<&'a Path>,
+    post_response: Option<&'a Path>,
+    json_out: &'a Path,
+    overwrite: bool,
+}
+
 struct PitHouseCaseRequest<'a> {
     json: bool,
     lane: &'a Path,
@@ -803,6 +814,25 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 authorization,
                 smoke_dry_run,
                 confirm_bounded_vendor_authority_attempt: *confirm_bounded_vendor_authority_attempt,
+                json_out,
+                overwrite: *overwrite,
+            })
+            .await
+        }
+        MozaCommands::VendorPostAuthorityPidffResponse {
+            lane,
+            attempt,
+            baseline_response,
+            post_response,
+            json_out,
+            overwrite,
+        } => {
+            vendor_post_authority_pidff_response(VendorPostAuthorityPidffResponseRequest {
+                json,
+                lane,
+                attempt: attempt.as_deref(),
+                baseline_response: baseline_response.as_deref(),
+                post_response: post_response.as_deref(),
                 json_out,
                 overwrite: *overwrite,
             })
@@ -1640,15 +1670,7 @@ fn moza_bench_wizard_next_operator_step(lane: &Path, readiness: &Value, frontier
     }
 
     if lane.join(VENDOR_AUTHORITY_ATTEMPT_FILE).is_file() {
-        return serde_json::json!({
-            "kind": "post_authority_pidff_response_comparison",
-            "summary": "a bounded vendor-authority attempt receipt is recorded; compare baseline and post-authority PIDFF response before any motion claim or further output",
-            "hardware_output_allowed_now": false,
-            "authorization_created_by_wizard": false,
-            "no_openracing_output": true,
-            "vendor_authority_attempt_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
-            "planned_post_authority_receipt": VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE
-        });
+        return moza_post_authority_pidff_response_next_operator_step(lane);
     }
 
     if lane
@@ -1819,17 +1841,82 @@ fn moza_vendor_authority_next_operator_step(lane: &Path) -> Value {
     })
 }
 
+fn moza_post_authority_pidff_response_next_operator_step(lane: &Path) -> Value {
+    let post_response_recorded = lane.join(VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE).is_file();
+    let comparison_recorded = lane
+        .join(VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE)
+        .is_file();
+    if comparison_recorded {
+        return serde_json::json!({
+            "kind": "post_authority_pidff_response_comparison_recorded",
+            "summary": "post-authority PIDFF response comparison is recorded; keep native-visible unclaimed until strict verifier accepts real movement evidence",
+            "hardware_output_allowed_now": false,
+            "authorization_created_by_wizard": false,
+            "no_openracing_output": true,
+            "hardware_attempt_command_emitted": false,
+            "vendor_authority_attempt_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
+            "post_authority_pidff_response_receipt": VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE,
+            "blocked_actions": vendor_authority_handoff_blocked_actions()
+        });
+    }
+    if post_response_recorded {
+        return serde_json::json!({
+            "kind": "post_authority_pidff_response_comparison",
+            "summary": "a bounded vendor-authority attempt receipt and post-authority PIDFF response receipt are recorded; run the no-output comparison before any motion claim or further output",
+            "hardware_output_allowed_now": false,
+            "authorization_created_by_wizard": false,
+            "no_openracing_output": true,
+            "hardware_attempt_command_emitted": false,
+            "vendor_authority_attempt_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
+            "baseline_response_receipt": "native-actuator-visible-smoke-response-only.json",
+            "post_authority_pidff_smoke_receipt": VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE,
+            "planned_post_authority_receipt": VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE,
+            "commands": [
+                {
+                    "name": "compare_post_authority_pidff_response",
+                    "output_enabled": false,
+                    "opens_hid": false,
+                    "opens_serial": false,
+                    "sends_read_only_query": false,
+                    "sends_output": false,
+                    "command": vendor_post_authority_pidff_response_command(lane)
+                }
+            ],
+            "blocked_actions": vendor_authority_handoff_blocked_actions()
+        });
+    }
+    serde_json::json!({
+        "kind": "awaiting_post_authority_pidff_response_receipt",
+        "summary": "a bounded vendor-authority attempt receipt is recorded; capture a separately authorized post-authority PIDFF response receipt, then compare it without making a motion claim",
+        "hardware_output_allowed_now": false,
+        "authorization_created_by_wizard": false,
+        "no_openracing_output": true,
+        "hardware_attempt_command_emitted": false,
+        "vendor_authority_attempt_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
+        "baseline_response_receipt": "native-actuator-visible-smoke-response-only.json",
+        "planned_post_authority_pidff_smoke_receipt": VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE,
+        "planned_post_authority_receipt": VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE,
+        "blocked_actions": vendor_authority_handoff_blocked_actions()
+    })
+}
+
 fn moza_vendor_authority_navigation_summary(lane: &Path) -> Value {
     let authorization_recorded = lane.join(VENDOR_AUTHORITY_AUTHORIZATION_FILE).is_file();
     let smoke_dry_run_recorded = lane.join(VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE).is_file();
     let attempt_recorded = lane.join(VENDOR_AUTHORITY_ATTEMPT_FILE).is_file();
+    let post_pidff_smoke_recorded = lane.join(VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE).is_file();
+    let post_pidff_comparison_recorded = lane
+        .join(VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE)
+        .is_file();
     let closed_loop_undertravel_recorded = lane
         .join(NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE)
         .is_file();
     let standard_pidff_diagnosis_recorded = lane
         .join(NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE)
         .is_file();
-    let state = if attempt_recorded {
+    let state = if post_pidff_comparison_recorded {
+        "post_authority_pidff_response_recorded"
+    } else if attempt_recorded {
         "vendor_authority_attempt_recorded"
     } else if authorization_recorded && smoke_dry_run_recorded {
         "awaiting_separate_bounded_attempt"
@@ -1862,8 +1949,12 @@ fn moza_vendor_authority_navigation_summary(lane: &Path) -> Value {
         "authorization_receipt_recorded": authorization_recorded,
         "smoke_dry_run_receipt_recorded": smoke_dry_run_recorded,
         "vendor_authority_attempt_recorded": attempt_recorded,
+        "post_authority_pidff_smoke_recorded": post_pidff_smoke_recorded,
+        "post_authority_pidff_response_recorded": post_pidff_comparison_recorded,
         "hardware_attempt_command_emitted": false,
-        "next_allowed_action": if attempt_recorded {
+        "next_allowed_action": if post_pidff_comparison_recorded {
+            "Review post-authority PIDFF response comparison and run strict verifier before any motion claim."
+        } else if attempt_recorded {
             "Record post-authority PIDFF response comparison before any motion claim."
         } else if authorization_recorded && smoke_dry_run_recorded {
             "A separately requested bounded hardware attempt may consume the exact receipts; this navigation does not emit the serial write command."
@@ -1886,6 +1977,7 @@ fn moza_vendor_authority_navigation_summary(lane: &Path) -> Value {
             "authorization_receipt": VENDOR_AUTHORITY_AUTHORIZATION_FILE,
             "smoke_dry_run_receipt": VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE,
             "attempt_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
+            "post_authority_pidff_smoke_receipt": VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE,
             "post_authority_pidff_response_receipt": VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE
         },
         "required_bench_clear_evidence": VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE,
@@ -1913,6 +2005,19 @@ fn vendor_authority_smoke_dry_run_command(lane: &Path) -> String {
         "wheelctl moza vendor-authority-smoke-dry-run --authorization {} --json-out {} --json --confirm-no-output-smoke-dry-run",
         lane.join(VENDOR_AUTHORITY_AUTHORIZATION_FILE).display(),
         lane.join(VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE).display()
+    )
+}
+
+fn vendor_post_authority_pidff_response_command(lane: &Path) -> String {
+    format!(
+        "wheelctl moza vendor-post-authority-pidff-response --lane {} --attempt {} --baseline-response {} --post-response {} --json-out {} --json",
+        lane.display(),
+        lane.join(VENDOR_AUTHORITY_ATTEMPT_FILE).display(),
+        lane.join("native-actuator-visible-smoke-response-only.json")
+            .display(),
+        lane.join(VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE).display(),
+        lane.join(VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE)
+            .display()
     )
 }
 
@@ -6132,6 +6237,58 @@ async fn vendor_authority_attempt(request: VendorAuthorityAttemptRequest<'_>) ->
     )?;
     write_json_file(request.json_out, &receipt)?;
     print_vendor_authority_attempt_receipt(request.json, request.json_out, &receipt)
+}
+
+async fn vendor_post_authority_pidff_response(
+    request: VendorPostAuthorityPidffResponseRequest<'_>,
+) -> Result<()> {
+    ensure_receipt_writable(request.json_out, request.overwrite)?;
+    let attempt_path = request
+        .attempt
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| request.lane.join(VENDOR_AUTHORITY_ATTEMPT_FILE));
+    let baseline_path = request
+        .baseline_response
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| {
+            request
+                .lane
+                .join("native-actuator-visible-smoke-response-only.json")
+        });
+    let post_path = request
+        .post_response
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| request.lane.join(VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE));
+
+    let attempt = read_json_path(&attempt_path).with_context(|| {
+        format!(
+            "failed to read vendor-authority attempt receipt '{}'",
+            attempt_path.display()
+        )
+    })?;
+    let baseline = read_json_path(&baseline_path).with_context(|| {
+        format!(
+            "failed to read baseline PIDFF response receipt '{}'",
+            baseline_path.display()
+        )
+    })?;
+    let post = read_json_path(&post_path).with_context(|| {
+        format!(
+            "failed to read post-authority PIDFF response receipt '{}'",
+            post_path.display()
+        )
+    })?;
+
+    let receipt = vendor_post_authority_pidff_response_receipt(
+        &attempt_path,
+        &attempt,
+        &baseline_path,
+        &baseline,
+        &post_path,
+        &post,
+    )?;
+    write_json_file(request.json_out, &receipt)?;
+    print_vendor_post_authority_pidff_response_receipt(request.json, request.json_out, &receipt)
 }
 
 async fn audit_lane(
@@ -26530,6 +26687,373 @@ fn vendor_authority_attempt_receipt_with_transport(
     })
 }
 
+fn vendor_post_authority_pidff_response_receipt(
+    attempt_path: &Path,
+    attempt: &Value,
+    baseline_path: &Path,
+    baseline: &Value,
+    post_path: &Path,
+    post: &Value,
+) -> Result<VendorPostAuthorityPidffResponseReceipt> {
+    validate_vendor_authority_attempt_schema(attempt)?;
+    validate_vendor_authority_attempt_gates(attempt)?;
+    let baseline_response = native_pidff_response_summary(baseline_path, baseline, "baseline")?;
+    let post_authority_response = native_pidff_response_summary(post_path, post, "post-authority")?;
+    validate_post_authority_pidff_response_order(
+        attempt,
+        &baseline_response,
+        &post_authority_response,
+    )?;
+    validate_pidff_response_comparable(&baseline_response, &post_authority_response)?;
+
+    let delta_change_degrees =
+        post_authority_response.angle_delta_degrees - baseline_response.angle_delta_degrees;
+    let absolute_delta_change_degrees = delta_change_degrees.abs();
+    let visible_motion_candidate = post_authority_response.angle_delta_degrees
+        >= post_authority_response.movement_threshold_degrees
+        || post_authority_response.movement_observed;
+    let response_increased = delta_change_degrees >= NATIVE_ACTUATOR_RESPONSE_MIN_DELTA_DEGREES;
+    let response_regressed = delta_change_degrees <= -NATIVE_ACTUATOR_RESPONSE_MIN_DELTA_DEGREES;
+    let classification = if visible_motion_candidate {
+        "post_authority_visible_motion_candidate_requires_verifier"
+    } else if response_increased {
+        "post_authority_pidff_response_increased_no_motion_claim"
+    } else if response_regressed {
+        "post_authority_pidff_response_regressed"
+    } else {
+        "post_authority_pidff_response_unchanged"
+    };
+
+    Ok(VendorPostAuthorityPidffResponseReceipt {
+        success: true,
+        schema_version: 1,
+        artifact_kind: "moza_vendor_post_authority_pidff_response",
+        claim_scope: "post_authority_pidff_response_comparison_only",
+        command: "wheelctl moza vendor-post-authority-pidff-response",
+        generated_at_utc: now_utc(),
+        vendor_authority_attempt_receipt: attempt_path.display().to_string(),
+        baseline_response_receipt: baseline_path.display().to_string(),
+        post_authority_response_receipt: post_path.display().to_string(),
+        vendor_authority_attempt_validated: true,
+        baseline_response_validated: true,
+        post_authority_response_validated: true,
+        comparable_pidff_profile: true,
+        native_control_evidence: false,
+        hardware_output_authorized: false,
+        native_visible_ready: false,
+        smoke_ready: false,
+        no_hid_device_opened: true,
+        no_serial_device_opened: true,
+        no_read_only_query_sent: true,
+        no_output_reports_sent: true,
+        no_feature_reports_sent: true,
+        no_serial_writes_sent: true,
+        sent_output_writes: false,
+        sent_configuration_writes: false,
+        sent_firmware_or_dfu_commands: false,
+        high_torque_enabled: false,
+        comparison: VendorPostAuthorityPidffComparison {
+            classification,
+            response_threshold_degrees: NATIVE_ACTUATOR_RESPONSE_MIN_DELTA_DEGREES,
+            movement_threshold_degrees: post_authority_response.movement_threshold_degrees,
+            baseline_angle_delta_degrees: baseline_response.angle_delta_degrees,
+            post_authority_angle_delta_degrees: post_authority_response.angle_delta_degrees,
+            delta_change_degrees,
+            absolute_delta_change_degrees,
+            baseline_movement_observed: baseline_response.movement_observed,
+            post_authority_movement_observed: post_authority_response.movement_observed,
+            visible_motion_candidate,
+            response_increased,
+            response_regressed,
+        },
+        baseline_response,
+        post_authority_response,
+        next_allowed_action: "Review the comparison and run the native-visible verifier before any claim; any follow-up motion ladder requires a new plan, fresh bench-clear, and exact authorization.",
+        blocked_actions: vec![
+            "native-visible promotion from comparison alone",
+            "smoke-ready promotion from comparison alone",
+            "authorization reuse",
+            "rerun without fresh bench-clear",
+            "hardware attempt command from bench-wizard",
+            "direct HID report 0xaf",
+            "high torque",
+            "firmware or DFU command",
+            "unknown host-to-device command",
+        ],
+        required_artifacts: vec![
+            "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md",
+            "docs/hardware/moza-r5-vendor-authority-test-plan.md",
+            "schemas/moza-vendor-authority-attempt.schema.json",
+            "schemas/moza-vendor-post-authority-pidff-response.schema.json",
+        ],
+        planned_next_output: VendorPostAuthorityPlannedNextOutput {
+            allowed: false,
+            reason: "The comparison receipt is diagnostic only and does not authorize another output command.",
+        },
+        notes: vec![
+            "This command only compares existing receipts; it does not open HID, open serial, send queries, or send output/configuration/firmware writes.",
+            "A visible-motion-looking post-authority PIDFF response remains a candidate until the strict native-visible verifier accepts real hardware evidence.",
+            "The consumed vendor-authority attempt receipt is evidence only and cannot be reused as authorization.",
+        ],
+    })
+}
+
+fn native_pidff_response_summary(
+    path: &Path,
+    receipt: &Value,
+    label: &str,
+) -> Result<NativePidffResponseSummary> {
+    if json_string(receipt, "command") != Some("wheelctl moza actuator-visible-smoke") {
+        return Err(anyhow!(
+            "{label} PIDFF response receipt '{}' must be from `wheelctl moza actuator-visible-smoke`",
+            path.display()
+        ));
+    }
+    for (field, expected) in [
+        ("dry_run", false),
+        ("hardware_output_enabled", true),
+        ("no_direct_torque_reports", true),
+        ("no_high_torque", true),
+        ("high_torque", false),
+        ("no_serial_config_commands", true),
+        ("no_firmware_or_dfu_commands", true),
+        ("no_nonzero_above_limit", true),
+        ("final_zero_sent", true),
+        ("final_stop_all_sent", true),
+        ("post_stop_stable", true),
+    ] {
+        let actual = json_bool(receipt, field).ok_or_else(|| {
+            anyhow!(
+                "{label} PIDFF response receipt '{}' is missing bool field `{field}`",
+                path.display()
+            )
+        })?;
+        if actual != expected {
+            return Err(anyhow!(
+                "{label} PIDFF response receipt '{}' field `{field}` expected {expected}, got {actual}",
+                path.display()
+            ));
+        }
+    }
+    let profile = json_string(receipt, "profile")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `profile`"))?
+        .to_string();
+    let output_strategy = json_string(receipt, "output_strategy")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `output_strategy`"))?
+        .to_string();
+    let generated_at_utc = json_string(receipt, "generated_at_utc")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `generated_at_utc`"))?
+        .to_string();
+    let selector = json_string(receipt, "selector")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `selector`"))?
+        .to_string();
+    let max_percent = json_f64(receipt, "max_percent")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `max_percent`"))?;
+    let duration_ms = json_u64(receipt, "duration_ms")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `duration_ms`"))?;
+    let movement_threshold_degrees =
+        json_f64(receipt, "movement_threshold_degrees").ok_or_else(|| {
+            anyhow!("{label} PIDFF response receipt missing `movement_threshold_degrees`")
+        })?;
+    let angle_delta_degrees = json_f64(receipt, "angle_delta_degrees")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `angle_delta_degrees`"))?;
+    let movement_observed = json_bool(receipt, "movement_observed")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `movement_observed`"))?;
+    let write_attempts = json_u64(receipt, "write_attempts")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `write_attempts`"))?;
+    let writes_ok = json_u64(receipt, "writes_ok")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `writes_ok`"))?;
+    let write_errors = json_u64(receipt, "write_errors")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `write_errors`"))?;
+    if write_errors != 0 {
+        return Err(anyhow!(
+            "{label} PIDFF response receipt '{}' must have write_errors=0, got {write_errors}",
+            path.display()
+        ));
+    }
+    if writes_ok != write_attempts {
+        return Err(anyhow!(
+            "{label} PIDFF response receipt '{}' must have writes_ok == write_attempts, got {writes_ok}/{write_attempts}",
+            path.display()
+        ));
+    }
+    if !angle_delta_degrees.is_finite()
+        || !movement_threshold_degrees.is_finite()
+        || !max_percent.is_finite()
+        || movement_threshold_degrees <= 0.0
+        || max_percent <= 0.0
+    {
+        return Err(anyhow!(
+            "{label} PIDFF response receipt '{}' has invalid numeric PIDFF response fields",
+            path.display()
+        ));
+    }
+
+    Ok(NativePidffResponseSummary {
+        receipt: path.display().to_string(),
+        generated_at_utc,
+        selector,
+        profile,
+        output_strategy,
+        max_percent,
+        duration_ms,
+        movement_threshold_degrees,
+        angle_delta_degrees,
+        movement_observed,
+        write_attempts,
+        writes_ok,
+        write_errors,
+        final_zero_sent: true,
+        final_stop_all_sent: true,
+        post_stop_stable: true,
+        no_direct_torque_reports: true,
+        no_high_torque: true,
+    })
+}
+
+fn validate_post_authority_pidff_response_order(
+    attempt: &Value,
+    baseline: &NativePidffResponseSummary,
+    post: &NativePidffResponseSummary,
+) -> Result<()> {
+    let attempt_generated_at = json_pointer_string(attempt, "/generated_at_utc")?;
+    if !utc_timestamp_pair_is_ordered(&baseline.generated_at_utc, attempt_generated_at) {
+        return Err(anyhow!(
+            "baseline PIDFF response must be recorded before or at the vendor-authority attempt"
+        ));
+    }
+    if !utc_timestamp_pair_is_ordered(attempt_generated_at, &post.generated_at_utc) {
+        return Err(anyhow!(
+            "post-authority PIDFF response must be recorded after or at the vendor-authority attempt"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_pidff_response_comparable(
+    baseline: &NativePidffResponseSummary,
+    post: &NativePidffResponseSummary,
+) -> Result<()> {
+    if baseline.selector != post.selector {
+        return Err(anyhow!(
+            "baseline and post-authority PIDFF responses target different selectors: `{}` vs `{}`",
+            baseline.selector,
+            post.selector
+        ));
+    }
+    if baseline.profile != post.profile {
+        return Err(anyhow!(
+            "baseline and post-authority PIDFF response profiles differ: `{}` vs `{}`",
+            baseline.profile,
+            post.profile
+        ));
+    }
+    if baseline.output_strategy != post.output_strategy {
+        return Err(anyhow!(
+            "baseline and post-authority PIDFF response strategies differ: `{}` vs `{}`",
+            baseline.output_strategy,
+            post.output_strategy
+        ));
+    }
+    if (baseline.max_percent - post.max_percent).abs() > 0.001 {
+        return Err(anyhow!(
+            "baseline and post-authority max_percent differ: {} vs {}",
+            baseline.max_percent,
+            post.max_percent
+        ));
+    }
+    if baseline.duration_ms != post.duration_ms {
+        return Err(anyhow!(
+            "baseline and post-authority duration_ms differ: {} vs {}",
+            baseline.duration_ms,
+            post.duration_ms
+        ));
+    }
+    if (baseline.movement_threshold_degrees - post.movement_threshold_degrees).abs() > 0.001 {
+        return Err(anyhow!(
+            "baseline and post-authority movement thresholds differ: {} vs {}",
+            baseline.movement_threshold_degrees,
+            post.movement_threshold_degrees
+        ));
+    }
+    Ok(())
+}
+
+fn validate_vendor_authority_attempt_schema(attempt: &Value) -> Result<()> {
+    let schema: Value = serde_json::from_str(include_str!(
+        "../../../../schemas/moza-vendor-authority-attempt.schema.json"
+    ))
+    .context("failed to parse Moza vendor authority attempt schema")?;
+    let validator = Validator::new(&schema)
+        .context("failed to compile Moza vendor authority attempt schema")?;
+    let errors: Vec<_> = validator
+        .iter_errors(attempt)
+        .take(8)
+        .map(|error| error.to_string())
+        .collect();
+    if !errors.is_empty() {
+        return Err(anyhow!(
+            "vendor-authority attempt receipt failed schema validation: {}",
+            errors.join("; ")
+        ));
+    }
+    Ok(())
+}
+
+fn validate_vendor_authority_attempt_gates(attempt: &Value) -> Result<()> {
+    for (path, expected) in [
+        ("/success", true),
+        ("/authorization_consumed", true),
+        ("/exact_authorization", true),
+        ("/single_use_authorization", true),
+        ("/native_control_evidence", false),
+        ("/hardware_output_authorized", false),
+        ("/native_visible_ready", false),
+        ("/smoke_ready", false),
+        ("/serial_identity_verified", true),
+        ("/no_hid_device_opened", true),
+        ("/opened_serial_device", true),
+        ("/sent_read_only_query_commands", false),
+        ("/sent_authorized_frame", true),
+        ("/sent_firmware_or_dfu_commands", false),
+        ("/sent_unknown_commands", false),
+        ("/direct_hid_report_0xaf_sent", false),
+        ("/high_torque_enabled", false),
+        ("/planned_next_output/allowed", false),
+    ] {
+        let actual = json_pointer_bool(attempt, path)?;
+        if actual != expected {
+            return Err(anyhow!(
+                "vendor-authority attempt receipt gate `{path}` expected {expected}, got {actual}"
+            ));
+        }
+    }
+    if attempt
+        .pointer("/sent_authorized_frame_count")
+        .and_then(Value::as_u64)
+        != Some(1)
+    {
+        return Err(anyhow!(
+            "vendor-authority attempt receipt must record exactly one authorized frame send"
+        ));
+    }
+    for (path, expected) in [
+        ("/artifact_kind", "moza_vendor_authority_attempt"),
+        ("/claim_scope", "bounded_vendor_authority_attempt_recorded"),
+        ("/command", "wheelctl moza vendor-authority-attempt"),
+        ("/transport_kind", "serial_bounded_authority_attempt"),
+        ("/codec_status", "fixture_decode_verified_exact_frame"),
+    ] {
+        let actual = json_pointer_string(attempt, path)?;
+        if actual != expected {
+            return Err(anyhow!(
+                "vendor-authority attempt receipt field `{path}` expected `{expected}`, got `{actual}`"
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn validate_vendor_authority_attempt_receipts(
     request: &VendorAuthorityAttemptRequest<'_>,
     authorization: &Value,
@@ -27588,6 +28112,89 @@ struct VendorAuthorityAttemptConsumption {
 
 #[derive(Debug, Serialize)]
 struct VendorAuthorityAttemptPlannedNextOutput {
+    allowed: bool,
+    reason: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorPostAuthorityPidffResponseReceipt {
+    success: bool,
+    schema_version: u8,
+    artifact_kind: &'static str,
+    claim_scope: &'static str,
+    command: &'static str,
+    generated_at_utc: String,
+    vendor_authority_attempt_receipt: String,
+    baseline_response_receipt: String,
+    post_authority_response_receipt: String,
+    vendor_authority_attempt_validated: bool,
+    baseline_response_validated: bool,
+    post_authority_response_validated: bool,
+    comparable_pidff_profile: bool,
+    native_control_evidence: bool,
+    hardware_output_authorized: bool,
+    native_visible_ready: bool,
+    smoke_ready: bool,
+    no_hid_device_opened: bool,
+    no_serial_device_opened: bool,
+    no_read_only_query_sent: bool,
+    no_output_reports_sent: bool,
+    no_feature_reports_sent: bool,
+    no_serial_writes_sent: bool,
+    sent_output_writes: bool,
+    sent_configuration_writes: bool,
+    sent_firmware_or_dfu_commands: bool,
+    high_torque_enabled: bool,
+    comparison: VendorPostAuthorityPidffComparison,
+    baseline_response: NativePidffResponseSummary,
+    post_authority_response: NativePidffResponseSummary,
+    next_allowed_action: &'static str,
+    blocked_actions: Vec<&'static str>,
+    required_artifacts: Vec<&'static str>,
+    planned_next_output: VendorPostAuthorityPlannedNextOutput,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorPostAuthorityPidffComparison {
+    classification: &'static str,
+    response_threshold_degrees: f64,
+    movement_threshold_degrees: f64,
+    baseline_angle_delta_degrees: f64,
+    post_authority_angle_delta_degrees: f64,
+    delta_change_degrees: f64,
+    absolute_delta_change_degrees: f64,
+    baseline_movement_observed: bool,
+    post_authority_movement_observed: bool,
+    visible_motion_candidate: bool,
+    response_increased: bool,
+    response_regressed: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct NativePidffResponseSummary {
+    receipt: String,
+    generated_at_utc: String,
+    selector: String,
+    profile: String,
+    output_strategy: String,
+    max_percent: f64,
+    duration_ms: u64,
+    movement_threshold_degrees: f64,
+    angle_delta_degrees: f64,
+    movement_observed: bool,
+    write_attempts: u64,
+    writes_ok: u64,
+    write_errors: u64,
+    final_zero_sent: bool,
+    final_stop_all_sent: bool,
+    post_stop_stable: bool,
+    no_direct_torque_reports: bool,
+    no_high_torque: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorPostAuthorityPlannedNextOutput {
     allowed: bool,
     reason: &'static str,
 }
@@ -32722,6 +33329,10 @@ fn push_vendor_authority_navigation_markdown(out: &mut String, receipt: &Value) 
             ("smoke_dry_run", "smoke_dry_run_receipt"),
             ("attempt", "attempt_receipt"),
             (
+                "post_authority_pidff_smoke",
+                "post_authority_pidff_smoke_receipt",
+            ),
+            (
                 "post_authority_pidff_response",
                 "post_authority_pidff_response_receipt",
             ),
@@ -33660,6 +34271,23 @@ fn print_vendor_authority_attempt_receipt(
         println!(
             "Moza vendor-authority attempt consumed {} with one exact frame write; native_visible_ready remains false.",
             receipt.authorized_command.command_id
+        );
+        println!("Receipt: {}", json_out.display());
+    }
+    Ok(())
+}
+
+fn print_vendor_post_authority_pidff_response_receipt(
+    json: bool,
+    json_out: &Path,
+    receipt: &VendorPostAuthorityPidffResponseReceipt,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Compared post-authority PIDFF response: classification={}, delta_change_degrees={:.3}; native_visible_ready remains false.",
+            receipt.comparison.classification, receipt.comparison.delta_change_degrees
         );
         println!("Receipt: {}", json_out.display());
     }
@@ -35602,6 +36230,386 @@ mod tests {
             "vendor_output_candidate must require sent_output_writes=true"
         );
 
+        Ok(())
+    }
+
+    fn sample_vendor_authority_attempt_value(generated_at_utc: &str) -> TestResult<Value> {
+        let contents = r#"{
+            "success": true,
+            "schema_version": 1,
+            "artifact_kind": "moza_vendor_authority_attempt",
+            "claim_scope": "bounded_vendor_authority_attempt_recorded",
+            "command": "wheelctl moza vendor-authority-attempt",
+            "generated_at_utc": "__GENERATED_AT_UTC__",
+            "authorization_receipt": "target/moza-current/vendor-authority-authorization.json",
+            "smoke_dry_run_receipt": "target/moza-current/vendor-authority-smoke-dry-run.json",
+            "authorization_receipt_validated": true,
+            "smoke_dry_run_receipt_validated": true,
+            "authorization_consumed": true,
+            "exact_authorization": true,
+            "single_use_authorization": true,
+            "native_control_evidence": false,
+            "hardware_output_authorized": false,
+            "native_visible_ready": false,
+            "smoke_ready": false,
+            "next_allowed_action": "Record post-authority PIDFF response comparison before any motion claim.",
+            "blocked_actions": [
+                "native_visible_promotion",
+                "smoke_ready_promotion",
+                "authorization_reuse",
+                "firmware_or_dfu"
+            ],
+            "required_artifacts": [
+                "fresh_authorization_for_retry",
+                "fresh_smoke_dry_run_for_retry"
+            ],
+            "serial_identity_verified": true,
+            "no_hid_device_opened": true,
+            "opened_serial_device": true,
+            "sent_read_only_query_commands": false,
+            "sent_authorized_frame": true,
+            "sent_authorized_frame_count": 1,
+            "sent_output_writes": true,
+            "sent_configuration_writes": false,
+            "sent_firmware_or_dfu_commands": false,
+            "sent_unknown_commands": false,
+            "direct_hid_report_0xaf_sent": false,
+            "high_torque_enabled": false,
+            "transport_kind": "serial_bounded_authority_attempt",
+            "codec_status": "fixture_decode_verified_exact_frame",
+            "hardware_write_eligible": false,
+            "authorized_command": {
+                "command_id": "estop_set_ffb",
+                "command_name": "E-stop / FFB authority set",
+                "family": "authority_state",
+                "group": 70,
+                "device_id": 28,
+                "command": 0,
+                "risk_class": "vendor_output_candidate",
+                "read_only_status_probe_allowed": false
+            },
+            "authorized_frame": {
+                "frame_hex": "7E02461C0001F0",
+                "frame_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                "frame_len": 7,
+                "payload_hex": "01",
+                "payload_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "payload_len": 1,
+                "checksum": "0xF0",
+                "written_frame_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                "written_frame_len": 7
+            },
+            "authorization_consumption": {
+                "consumption_recorded": true,
+                "authorization_reuse_allowed": false,
+                "requires_new_bench_clear_for_retry": true,
+                "requires_new_authorization_for_retry": true,
+                "requires_new_smoke_dry_run_for_retry": true,
+                "requires_new_attempt_receipt_for_retry": true
+            },
+            "planned_next_output": {
+                "allowed": false,
+                "reason": "The first authority attempt is consumed evidence, not reusable authorization."
+            }
+        }"#;
+        let contents = contents.replace("__GENERATED_AT_UTC__", generated_at_utc);
+        Ok(serde_json::from_str(&contents)?)
+    }
+
+    fn sample_native_pidff_response(
+        generated_at_utc: &str,
+        angle_delta_degrees: f64,
+        movement_observed: bool,
+    ) -> Value {
+        serde_json::json!({
+            "success": movement_observed,
+            "command": "wheelctl moza actuator-visible-smoke",
+            "generated_at_utc": generated_at_utc,
+            "receipt_path": "target/moza-current/native-actuator-visible-smoke.json",
+            "lane": "target/moza-current",
+            "selector": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            "profile": "constant_low_force",
+            "output_strategy": "pidff_bounded_effect",
+            "max_percent": 5.0,
+            "duration_ms": 2000,
+            "movement_threshold_degrees": 1.0,
+            "confirmed": true,
+            "dry_run": false,
+            "hardware_output_enabled": true,
+            "no_hid_device_opened": false,
+            "no_feature_reports": true,
+            "no_ffb_writes": false,
+            "no_direct_torque_reports": true,
+            "no_high_torque": true,
+            "high_torque": false,
+            "no_serial_config_commands": true,
+            "no_firmware_or_dfu_commands": true,
+            "no_nonzero_above_limit": true,
+            "angle_delta_degrees": angle_delta_degrees,
+            "movement_observed": movement_observed,
+            "post_stop_stable": true,
+            "write_attempts": 4,
+            "writes_ok": 4,
+            "write_errors": 0,
+            "final_zero_sent": true,
+            "final_stop_all_sent": true
+        })
+    }
+
+    #[test]
+    fn vendor_post_authority_pidff_response_receipt_compares_without_claims() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let attempt_path = dir.path().join("vendor-authority-attempt.json");
+        let baseline_path = dir
+            .path()
+            .join("native-actuator-visible-smoke-response-only.json");
+        let post_path = dir.path().join("vendor-post-authority-pidff-smoke.json");
+        let attempt = sample_vendor_authority_attempt_value("2026-05-20T12:00:00Z")?;
+        let baseline = sample_native_pidff_response("2026-05-20T11:55:00Z", 0.181, false);
+        let post = sample_native_pidff_response("2026-05-20T12:05:00Z", 0.350, false);
+
+        let receipt = vendor_post_authority_pidff_response_receipt(
+            &attempt_path,
+            &attempt,
+            &baseline_path,
+            &baseline,
+            &post_path,
+            &post,
+        )?;
+        let value = serde_json::to_value(&receipt)?;
+        assert_eq!(
+            json_string(&value, "artifact_kind"),
+            Some("moza_vendor_post_authority_pidff_response")
+        );
+        assert_eq!(
+            json_string(&value, "claim_scope"),
+            Some("post_authority_pidff_response_comparison_only")
+        );
+        assert_eq!(json_bool(&value, "native_control_evidence"), Some(false));
+        assert_eq!(json_bool(&value, "hardware_output_authorized"), Some(false));
+        assert_eq!(json_bool(&value, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(&value, "smoke_ready"), Some(false));
+        assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "no_serial_writes_sent"), Some(true));
+        assert_eq!(json_bool(&value, "sent_output_writes"), Some(false));
+        assert_eq!(
+            value
+                .pointer("/comparison/classification")
+                .and_then(Value::as_str),
+            Some("post_authority_pidff_response_increased_no_motion_claim")
+        );
+        assert_eq!(
+            value
+                .pointer("/comparison/visible_motion_candidate")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            value
+                .pointer("/planned_next_output/allowed")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-post-authority-pidff-response.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&value).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_post_authority_pidff_response_rejects_stale_post_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let attempt_path = dir.path().join("vendor-authority-attempt.json");
+        let baseline_path = dir
+            .path()
+            .join("native-actuator-visible-smoke-response-only.json");
+        let post_path = dir.path().join("vendor-post-authority-pidff-smoke.json");
+        let attempt = sample_vendor_authority_attempt_value("2026-05-20T12:00:00Z")?;
+        let baseline = sample_native_pidff_response("2026-05-20T11:55:00Z", 0.181, false);
+        let post = sample_native_pidff_response("2026-05-20T11:56:00Z", 0.350, false);
+
+        let error = match vendor_post_authority_pidff_response_receipt(
+            &attempt_path,
+            &attempt,
+            &baseline_path,
+            &baseline,
+            &post_path,
+            &post,
+        ) {
+            Ok(_) => return Err("stale post-authority response should be rejected".into()),
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("post-authority PIDFF response must be recorded after"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn vendor_post_authority_pidff_response_command_writes_json_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path();
+        let attempt_path = lane.join(VENDOR_AUTHORITY_ATTEMPT_FILE);
+        let baseline_path = lane.join("native-actuator-visible-smoke-response-only.json");
+        let post_path = lane.join(VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE);
+        let json_out = lane.join(VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE);
+        write_test_json_file(
+            &attempt_path,
+            &sample_vendor_authority_attempt_value("2026-05-20T12:00:00Z")?,
+        )?;
+        write_test_json_file(
+            &baseline_path,
+            &sample_native_pidff_response("2026-05-20T11:55:00Z", 0.181, false),
+        )?;
+        write_test_json_file(
+            &post_path,
+            &sample_native_pidff_response("2026-05-20T12:05:00Z", 0.350, false),
+        )?;
+
+        vendor_post_authority_pidff_response(VendorPostAuthorityPidffResponseRequest {
+            json: false,
+            lane,
+            attempt: None,
+            baseline_response: None,
+            post_response: None,
+            json_out: &json_out,
+            overwrite: false,
+        })
+        .await?;
+
+        let receipt = read_json_path(&json_out)?;
+        assert_eq!(
+            json_string(&receipt, "command"),
+            Some("wheelctl moza vendor-post-authority-pidff-response")
+        );
+        assert_eq!(
+            json_bool(&receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "native_visible_ready"), Some(false));
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_post_authority_pidff_response_schema_pins_non_claiming_gates() -> TestResult {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-post-authority-pidff-response.schema.json"
+        ))?;
+        let required = schema
+            .get("required")
+            .and_then(Value::as_array)
+            .ok_or("schema must have a required array")?;
+        for field in [
+            "claim_scope",
+            "vendor_authority_attempt_validated",
+            "baseline_response_validated",
+            "post_authority_response_validated",
+            "native_control_evidence",
+            "hardware_output_authorized",
+            "native_visible_ready",
+            "smoke_ready",
+            "no_hid_device_opened",
+            "no_serial_device_opened",
+            "no_serial_writes_sent",
+            "sent_output_writes",
+            "sent_configuration_writes",
+            "sent_firmware_or_dfu_commands",
+            "comparison",
+            "planned_next_output",
+        ] {
+            assert!(
+                required.iter().any(|entry| entry.as_str() == Some(field)),
+                "schema must require `{field}`"
+            );
+        }
+        assert_eq!(
+            schema["properties"]["claim_scope"]["const"],
+            "post_authority_pidff_response_comparison_only"
+        );
+        assert_eq!(
+            schema["properties"]["native_control_evidence"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["hardware_output_authorized"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["native_visible_ready"]["const"], false);
+        assert_eq!(schema["properties"]["smoke_ready"]["const"], false);
+        assert_eq!(schema["properties"]["no_hid_device_opened"]["const"], true);
+        assert_eq!(schema["properties"]["no_serial_writes_sent"]["const"], true);
+        assert_eq!(schema["properties"]["sent_output_writes"]["const"], false);
+        assert_eq!(
+            schema["properties"]["planned_next_output"]["properties"]["allowed"]["const"],
+            false
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn bench_wizard_emits_only_no_output_post_authority_comparison_command() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let attempt_path = dir.path().join(VENDOR_AUTHORITY_ATTEMPT_FILE);
+        let baseline_path = dir
+            .path()
+            .join("native-actuator-visible-smoke-response-only.json");
+        let post_path = dir.path().join(VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE);
+        write_test_json_file(
+            &attempt_path,
+            &sample_vendor_authority_attempt_value("2026-05-20T12:00:00Z")?,
+        )?;
+        write_test_json_file(
+            &baseline_path,
+            &sample_native_pidff_response("2026-05-20T11:55:00Z", 0.181, false),
+        )?;
+        write_test_json_file(
+            &post_path,
+            &sample_native_pidff_response("2026-05-20T12:05:00Z", 0.350, false),
+        )?;
+
+        let receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
+        let step = receipt
+            .get("next_operator_step")
+            .ok_or("expected next operator step")?;
+        assert_eq!(
+            json_string(step, "kind"),
+            Some("post_authority_pidff_response_comparison")
+        );
+        assert_eq!(json_bool(step, "hardware_output_allowed_now"), Some(false));
+        assert_eq!(
+            json_bool(step, "hardware_attempt_command_emitted"),
+            Some(false)
+        );
+        let commands = step
+            .get("commands")
+            .and_then(Value::as_array)
+            .ok_or("expected comparison command")?;
+        assert_eq!(commands.len(), 1);
+        let command = commands.first().ok_or("missing comparison command")?;
+        assert_eq!(json_bool(command, "output_enabled"), Some(false));
+        assert_eq!(json_bool(command, "opens_hid"), Some(false));
+        assert_eq!(json_bool(command, "opens_serial"), Some(false));
+        assert_eq!(json_bool(command, "sends_output"), Some(false));
+        let command_text = json_string(command, "command").ok_or("missing command text")?;
+        assert!(command_text.contains("vendor-post-authority-pidff-response"));
+        assert!(
+            !command_text.contains("vendor-authority-attempt")
+                || !command_text.contains("--confirm-bounded-vendor-authority-attempt"),
+            "comparison command must not emit the hardware attempt command: {command_text}"
+        );
+        let args = split_generated_command(command_text)?;
+        parse_cli(args).map_err(|error| {
+            format!(
+                "generated post-authority comparison command failed to parse: {command_text}\n{error}"
+            )
+        })?;
         Ok(())
     }
 

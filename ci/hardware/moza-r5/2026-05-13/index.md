@@ -45,6 +45,7 @@ This section is native-control research navigation only. It does not open HID, s
 | `authorization` | `vendor-authority-authorization.json` |
 | `smoke_dry_run` | `vendor-authority-smoke-dry-run.json` |
 | `attempt` | `vendor-authority-attempt.json` |
+| `post_authority_pidff_smoke` | `vendor-post-authority-pidff-smoke.json` |
 | `post_authority_pidff_response` | `vendor-post-authority-pidff-response.json` |
 
 ## Pit House Compatibility

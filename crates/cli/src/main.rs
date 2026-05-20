@@ -2318,6 +2318,60 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_vendor_post_authority_pidff_response() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "vendor-post-authority-pidff-response",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
+            "--attempt",
+            "ci/hardware/moza-r5/2026-05-13/vendor-authority-attempt.json",
+            "--baseline-response",
+            "ci/hardware/moza-r5/2026-05-13/native-actuator-visible-smoke-response-only.json",
+            "--post-response",
+            "ci/hardware/moza-r5/2026-05-13/vendor-post-authority-pidff-smoke.json",
+            "--json-out",
+            "ci/hardware/moza-r5/2026-05-13/vendor-post-authority-pidff-response.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::VendorPostAuthorityPidffResponse {
+                lane,
+                attempt,
+                baseline_response,
+                post_response,
+                json_out,
+                overwrite,
+            }) => {
+                assert_eq!(lane.to_str(), Some("ci/hardware/moza-r5/2026-05-13"));
+                assert_eq!(
+                    attempt.as_ref().and_then(|path| path.to_str()),
+                    Some("ci/hardware/moza-r5/2026-05-13/vendor-authority-attempt.json")
+                );
+                assert_eq!(
+                    baseline_response.as_ref().and_then(|path| path.to_str()),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/native-actuator-visible-smoke-response-only.json"
+                    )
+                );
+                assert_eq!(
+                    post_response.as_ref().and_then(|path| path.to_str()),
+                    Some("ci/hardware/moza-r5/2026-05-13/vendor-post-authority-pidff-smoke.json")
+                );
+                assert_eq!(
+                    json_out.to_str(),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/vendor-post-authority-pidff-response.json"
+                    )
+                );
+                assert!(!overwrite);
+            }
+            _ => return Err("expected Moza VendorPostAuthorityPidffResponse command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_promote_fixture() -> TestResult {
         let cli = parse_cli([
             "wheelctl",

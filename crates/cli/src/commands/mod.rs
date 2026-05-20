@@ -912,6 +912,28 @@ pub enum MozaCommands {
         overwrite: bool,
     },
 
+    /// Compare baseline and post-authority PIDFF response receipts without sending traffic
+    VendorPostAuthorityPidffResponse {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-13
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Consumed vendor-authority attempt receipt; defaults to lane/vendor-authority-attempt.json
+        #[arg(long)]
+        attempt: Option<std::path::PathBuf>,
+        /// Baseline PIDFF response receipt; defaults to lane/native-actuator-visible-smoke-response-only.json
+        #[arg(long)]
+        baseline_response: Option<std::path::PathBuf>,
+        /// Post-authority PIDFF response receipt; defaults to lane/vendor-post-authority-pidff-smoke.json
+        #[arg(long)]
+        post_response: Option<std::path::PathBuf>,
+        /// Write the non-claiming comparison receipt to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing comparison receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
     /// Promote a validated Moza capture JSONL into a parser fixture file
     PromoteFixture {
         /// JSON Lines file produced by `wheelctl moza capture-input`
