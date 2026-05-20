@@ -28,6 +28,33 @@ This section is diagnostic navigation only. `generic_aux` roles are valid parser
 | --- | --- | --- | --- | --- |
 | `clutch` | `clutch` | `captures/r5-clutch-only-sweep.jsonl` | `generic_aux` | `r5_v1_extended_aux0_u16, r5_v1_extended_aux1_u16` |
 
+## Vendor Authority Handoff
+
+This section is native-control research navigation only. It does not open HID, send serial traffic, create authorization, emit the hardware attempt command, or claim native-visible readiness.
+
+- State: `post_authority_pidff_response_recorded`
+- Next allowed action: Review post-authority PIDFF response comparison and run strict verifier before any motion claim.
+- Hardware output authorized: `false`
+- Native visible ready: `false`
+- Hardware attempt command emitted: `false`
+- Exact command: `estop_set_ffb` frame `7E02461C0001F0` payload `01` risk `vendor_output_candidate`
+- Required bench-clear evidence: `bench clear for exact estop_set_ffb: R5 stable, hands clear, wheel clear`
+- Requires exclusive R5 serial/CDC access before separate attempt: `true`
+- Pit House dependency: `false`; serial-owner risk: `true`
+- Handoff opens serial: `false`; sends output: `false`
+- R5 serial port hints: `COM4`
+- Serial precondition guidance: Before creating short-lived exact authorization or running the separate bounded attempt, close or release Pit House and any other app that may own the R5 serial/CDC port; this is an exclusive-port precondition, not a Pit House dependency for native control.
+- Live precondition refresh command: `wheelctl hardware doctor --json-out target/moza-current/vendor-authority-precondition-hardware-doctor.json --json`
+- Live precondition receipt: `target/moza-current/vendor-authority-precondition-hardware-doctor.json`
+
+| Artifact | Path |
+| --- | --- |
+| `authorization` | `vendor-authority-authorization.json` |
+| `smoke_dry_run` | `vendor-authority-smoke-dry-run.json` |
+| `attempt` | `vendor-authority-attempt.json` |
+| `post_authority_pidff_smoke` | `vendor-post-authority-pidff-smoke.json` |
+| `post_authority_pidff_response` | `vendor-post-authority-pidff-response.json` |
+
 ## Pit House Compatibility
 
 This section is external-smoke navigation only. Pit House is not required for native OpenRacing control, and these artifacts do not authorize hardware output.
@@ -38,12 +65,12 @@ This section is external-smoke navigation only. Pit House is not required for na
 - Install guidance: Install or update Pit House from the official MOZA Pit House Downloads support page; do not treat package-manager availability as authoritative evidence.
 - Coexistence gate status: `fail`
 - Pit House coexistence claimed: `false`
-- Recorded cases: `1` / `5`
+- Recorded cases: `2` / `5`
 
 | Case | Case Artifact | Observation Artifact | Status |
 | --- | --- | --- | --- |
 | `pit_house_closed` | `pit-house-closed.json` | `pit-house-observation-closed.json` | `recorded` |
-| `pit_house_open_idle_standard` | `pit-house-open-standard.json` | `pit-house-observation-open-standard.json` | `missing` |
+| `pit_house_open_idle_standard` | `pit-house-open-standard.json` | `pit-house-observation-open-standard.json` | `recorded` |
 | `pit_house_open_direct` | `pit-house-direct-blocked.json` | `pit-house-observation-open-direct.json` | `missing` |
 | `pit_house_mode_change_during_run` | `pit-house-mode-change.json` | `pit-house-observation-mode-change.json` | `missing` |
 | `pit_house_firmware_update_page_open` | `pit-house-firmware-page.json` | `pit-house-observation-firmware-page.json` | `missing` |
@@ -111,6 +138,9 @@ This section is protocol research/support navigation only. Passive sniff artifac
 | `parser-fixture-validation.json` | `json` | `passive_input_or_descriptor_evidence` |
 | `passive-verification.json` | `json` | `passive_input_or_descriptor_evidence` |
 | `role-status-sync.json` | `json` | `passive_input_or_descriptor_evidence` |
+| `vendor-authority-attempt.json` | `json` | `passive_input_or_descriptor_evidence` |
+| `vendor-authority-authorization.json` | `json` | `passive_input_or_descriptor_evidence` |
+| `vendor-authority-smoke-dry-run.json` | `json` | `passive_input_or_descriptor_evidence` |
 
 ## Zero, Watchdog, Disconnect
 
@@ -170,6 +200,8 @@ This section is protocol research/support navigation only. Passive sniff artifac
 | `native-pidff-semantics-diagnosis.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 | `native-pidff-standard-path-diagnosis.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 | `native-visible-verification.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
+| `vendor-post-authority-pidff-response.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
+| `vendor-post-authority-pidff-smoke.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 
 ## Pit House External Compatibility
 
@@ -178,7 +210,10 @@ This section is protocol research/support navigation only. Passive sniff artifac
 | `pit-house-availability.json` | `json` | `external_compatibility_evidence` |
 | `pit-house-closed.json` | `json` | `external_compatibility_evidence` |
 | `pit-house-evidence-closed.json` | `json` | `external_compatibility_evidence` |
+| `pit-house-evidence-open-standard.json` | `json` | `external_compatibility_evidence` |
 | `pit-house-observation-closed.json` | `json` | `external_compatibility_evidence` |
+| `pit-house-observation-open-standard.json` | `json` | `external_compatibility_evidence` |
+| `pit-house-open-standard.json` | `json` | `external_compatibility_evidence` |
 
 ## Smoke Promotion
 

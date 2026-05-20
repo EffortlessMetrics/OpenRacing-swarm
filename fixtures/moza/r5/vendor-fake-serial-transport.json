@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "moza_vendor_fake_serial_transport",
+  "claim_scope": "software_fake_transport_only",
+  "native_control_evidence": false,
+  "hardware_output_authorized": false,
+  "native_visible_ready": false,
+  "next_allowed_action": "Build no-output CLI tooling around this fake transport before any read-only hardware probe, authorization, or hardware-write work.",
+  "blocked_actions": [
+    "serial device open",
+    "read-only hardware probe",
+    "serial query send",
+    "output write",
+    "configuration write",
+    "authorization receipt",
+    "hardware writes",
+    "native-visible claim",
+    "smoke-ready claim",
+    "release-ready claim",
+    "firmware or DFU command",
+    "unknown host-to-device command"
+  ],
+  "required_artifacts": [
+    "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md",
+    "docs/hardware/moza-r5-vendor-authority-test-plan.md",
+    "fixtures/moza/r5/vendor-command-registry.json",
+    "fixtures/moza/r5/vendor-serial-codec-fixtures.json",
+    "fixtures/moza/r5/vendor-fake-serial-transport.json",
+    "crates/hid-moza-protocol/src/serial/fake_transport.rs"
+  ],
+  "transport_kind": "fake_only",
+  "fake_transport_verified": true,
+  "codec_status": "round_trip_verified",
+  "opened_serial_device": false,
+  "sent_read_only_query_commands": false,
+  "sent_output_writes": false,
+  "sent_configuration_writes": false,
+  "sent_firmware_or_dfu_commands": false,
+  "real_hardware_validated": false,
+  "fixture_source": "fixtures/moza/r5/vendor-serial-codec-fixtures.json",
+  "accepted_fixture_ids": [
+    "estop_get_ffb",
+    "main_misc_get_ffb_status",
+    "base_gain_get_overall_strength",
+    "base_gain_get_speed_dependent_damping",
+    "base_gain_get_hands_off_protection",
+    "temperature_get_mosfet",
+    "temperature_get_motor",
+    "temperature_get_board",
+    "compatibility_get_mode"
+  ],
+  "blocked_fixture_ids": [
+    "estop_set_ffb",
+    "main_misc_set_ffb_status",
+    "base_gain_set_overall_strength",
+    "base_gain_set_speed_dependent_damping",
+    "base_gain_set_hands_off_protection",
+    "compatibility_set_mode"
+  ],
+  "fake_response": {
+    "payload_hex": "00",
+    "meaning": "synthetic placeholder status byte only; not a hardware response and not evidence of native control"
+  },
+  "notes": [
+    "The fake transport replays checked-in fixture bytes through the decoder and records synthetic exchanges.",
+    "Write-like vendor output/configuration candidates remain rejected by the fake transport until a later exact authorization stage.",
+    "No serial device is opened and no host-to-device traffic is sent by this artifact."
+  ]
+}

@@ -45,6 +45,7 @@ status_docs = [
   "docs/hardware/moza-r5-pidff-lifecycle-trace.md",
   "docs/hardware/moza-r5-pidff-effect-lifecycle-plan.md",
   "docs/hardware/moza-r5-standard-pidff-path-diagnosis.md",
+  "docs/hardware/moza-r5-post-authority-pidff-response.md",
   "docs/hardware/moza-r5-vendor-control-investigation.md",
   "plans/moza-native-visible-lane/handoff.md",
 ]
@@ -519,6 +520,30 @@ commands = [
 ]
 
 [[work_item]]
+id = "pit-house-open-standard-case-evidence"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-pit-house-open-standard-case-evidence"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/pit-house-open-standard.json"
+claim_boundary = "No-output external compatibility case evidence only; records Pit House open-idle standard process/window evidence, observation receipt, and case artifact linked to init-standard.json without opening HID or serial, sending output/configuration/firmware writes, creating authorization, running vendor-authority attempts, claiming Pit House parent coexistence, native-control, native-visible, smoke-ready, simulator, firmware, or release-ready."
+blocked_by = "n/a"
+commands = [
+  "wheelctl moza pit-house-evidence --case open-standard --operator Steven --evidence \"Pit House open and idle while standard mode completed.\" --require-match --json-out ci/hardware/moza-r5/2026-05-13/pit-house-evidence-open-standard.json --overwrite --json",
+  "wheelctl moza pit-house-observation --case open-standard --evidence-kind process-window-snapshot --evidence-artifact pit-house-evidence-open-standard.json --operator Steven --evidence \"Pit House open and idle while standard mode completed.\" --json-out ci/hardware/moza-r5/2026-05-13/pit-house-observation-open-standard.json --overwrite --json",
+  "wheelctl moza pit-house-case --lane ci/hardware/moza-r5/2026-05-13 --case open-standard --observation-artifact pit-house-observation-open-standard.json --evidence \"Pit House open and idle; standard mode completed without conflict.\" --json-out ci/hardware/moza-r5/2026-05-13/pit-house-open-standard.json --overwrite --json",
+  "wheelctl moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-pit-house-open-standard.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json",
+  "wheelctl moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-after-pit-house-open-standard.json --md-out target/moza-current/bench-wizard-after-pit-house-open-standard.md --json",
+  "wheelctl moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-pit-house-open-standard.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw \"expected native-visible verifier to remain blocked\" }",
+  "cargo test --locked -p wheelctl --bin wheelctl pit_house -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl artifact_index -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl bench_wizard -- --nocapture",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "brake-hbp-semantic-promotion"
 status = "completed"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
@@ -619,6 +644,374 @@ commands = [
   "python scripts/cargo_fmt_workspace.py",
   "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_authority_registry -- --nocapture",
   "cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "vendor-serial-codec-fixtures"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "fixtures/moza/r5/vendor-serial-codec-fixtures.json"
+claim_boundary = "No-output fixture decode only; validates checked-in synthetic serial frame bytes against the vendor command registry without encode APIs, fake transport, CLI, read-only hardware probes, authorization receipts, serial device open, query sends, output writes, configuration writes, hardware writes, native-visible, smoke-ready, coexistence, simulator, firmware, or release-ready claims."
+blocked_by = "n/a"
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_serial_codec_fixtures -- --nocapture",
+  "cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "vendor-fake-serial-transport"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "fixtures/moza/r5/vendor-fake-serial-transport.json"
+claim_boundary = "No-output fake transport only; replays checked-in synthetic serial fixture bytes through the decoder, accepts only read-only status fixtures, and rejects write-like candidates without CLI, serial device open, query sends, read-only hardware probes, authorization receipts, output writes, configuration writes, hardware writes, native-visible, smoke-ready, coexistence, simulator, firmware, or release-ready claims."
+blocked_by = "n/a"
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_fake_serial_transport -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_serial_codec_fixtures -- --nocapture",
+  "cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "vendor-no-output-cli-tools"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "crates/cli/src/commands/moza.rs"
+claim_boundary = "No-output CLI tooling only; adds wheelctl moza vendor-fake-transport to exercise checked-in synthetic serial fixture bytes through the fake transport and write a non-claiming receipt without HID opens, serial device opens, read-only hardware probes, query sends, authorization receipts, output writes, configuration writes, hardware writes, native-visible, smoke-ready, coexistence, simulator, firmware, or release-ready claims."
+blocked_by = "n/a"
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl parse_moza_vendor_fake_transport -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_fake_serial_transport -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza vendor-fake-transport --json-out target/moza-current/vendor-no-output-cli.json --json",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "vendor-read-only-status-probe"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "crates/cli/src/commands/moza.rs"
+claim_boundary = "Read-only serial status probe tooling only; adds wheelctl moza vendor-status-probe with explicit confirmation and MOZA R5 USB serial identity gating, sends only registry-allowed read-only status queries, and writes a non-claiming receipt without HID opens, output writes, configuration writes, firmware/DFU commands, authorization receipts, native-control, native-visible, smoke-ready, coexistence, simulator, or release-ready claims."
+blocked_by = "n/a"
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_status_probe -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_authority_registry -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl parse_moza_vendor_status_probe -- --nocapture",
+  "cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo hakari verify",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "vendor-exact-authorization-support"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "schemas/moza-vendor-authority-authorization.schema.json"
+claim_boundary = "Exact authorization receipt support only; adds wheelctl moza authorize-vendor-authority to create a single-use command/frame/hash-bound authorization receipt without opening HID, opening serial, sending queries, sending output/configuration/firmware writes, consuming authorization, native-control, native-visible, smoke-ready, coexistence, simulator, or release-ready claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_authorization -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl parse_moza_authorize_vendor_authority -- --nocapture",
+  "cargo test --locked -p wheelctl --test cli_comprehensive_e2e_tests help_snapshots::snapshot_moza_help -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo hakari verify",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "vendor-authority-smoke-dry-run"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "schemas/moza-vendor-authority-smoke.schema.json"
+claim_boundary = "No-output vendor-authority smoke dry-run only; adds wheelctl moza vendor-authority-smoke-dry-run to validate an exact authorization receipt and emit a non-claiming dry-run receipt without opening HID, opening serial, sending queries, sending output/configuration/firmware writes, consuming authorization, native-control, native-visible, smoke-ready, coexistence, simulator, or release-ready claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_smoke -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl parse_moza_vendor_authority_smoke_dry_run -- --nocapture",
+  "cargo test --locked -p wheelctl --test cli_comprehensive_e2e_tests help_snapshots::snapshot_moza_help -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo hakari verify",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "vendor-authority-attempt-contract"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "schemas/moza-vendor-authority-attempt.schema.json"
+claim_boundary = "First bounded vendor-authority attempt contract only; defines the consumed, non-claiming hardware-attempt receipt shape without adding a CLI command, opening HID, opening serial, sending read-only queries, sending output/configuration/firmware writes, native-control, native-visible, smoke-ready, coexistence, simulator, or release-ready claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_attempt_schema -- --nocapture",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "vendor-authority-attempt-cli"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "schemas/moza-vendor-authority-attempt.schema.json"
+claim_boundary = "Guarded first bounded vendor-authority attempt CLI only; adds a command path that can consume exact authorization and send exactly one bound serial frame when explicitly run, but this PR does not run hardware output, check in hardware attempt evidence, native-control, native-visible, smoke-ready, coexistence, simulator, or release-ready claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_attempt -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl parse_moza_vendor_authority_attempt -- --nocapture",
+  "cargo test --locked -p wheelctl --test cli_comprehensive_e2e_tests help_snapshots::snapshot_moza_help -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo hakari verify",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "vendor-authority-attempt-handoff"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "crates/cli/src/commands/moza.rs"
+claim_boundary = "No-output operator handoff only; artifact-index and bench-wizard surface the exact vendor-authority command id, frame, required bench-clear text, authorization receipt, and smoke dry-run paths after closed-loop PIDFF undertravel, but they do not create authorization, emit the hardware attempt command, run serial writes, native-control, native-visible, smoke-ready, coexistence, simulator, or release-ready claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_handoff -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl checked_in_moza_lane_index_matches_artifact_index_renderer -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo hakari verify",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "vendor-post-authority-pidff-response"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "schemas/moza-vendor-post-authority-pidff-response.schema.json"
+claim_boundary = "No-output post-authority PIDFF response comparison only; adds a command and navigation path to compare a consumed vendor-authority attempt receipt against baseline and post-authority PIDFF response receipts without opening HID, opening serial, sending queries, sending PIDFF or serial output, creating authorization, reusing authorization, native-control, native-visible, smoke-ready, coexistence, simulator, firmware, or release-ready claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_post_authority_pidff_response -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl post_authority_comparison -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl parse_moza_vendor_post_authority_pidff_response -- --nocapture",
+  "cargo test --locked -p wheelctl --test cli_comprehensive_e2e_tests help_snapshots::snapshot_moza_help -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo hakari verify",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "vendor-authority-attempt-blocked-receipt"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "schemas/moza-vendor-authority-attempt-blocked.schema.json"
+claim_boundary = "Blocked-before-send vendor-authority attempt receipt only; if the guarded attempt validates exact receipts and R5 serial identity but fails before opening serial or sending the frame, record a non-claiming blocked receipt without consuming authorization, satisfying the consumed attempt gate, sending output/configuration/firmware writes, native-control, native-visible, smoke-ready, coexistence, simulator, firmware, or release-ready claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_attempt_blocked -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_handoff -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "vendor-authority-serial-precondition-handoff"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "crates/cli/src/commands/moza.rs"
+claim_boundary = "No-output operator navigation only; artifact-index and bench-wizard surface exclusive R5 serial/CDC access guidance and stored serial-port hints before exact vendor-authority authorization or a separate bounded attempt, without opening live serial, creating authorization, emitting hardware attempt commands, running output/configuration/firmware writes, native-control, native-visible, smoke-ready, Pit House dependency, simulator, or release-ready claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_handoff -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "refresh-pre-output-readiness-after-pit-house-open-standard"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-refresh-pre-output-readiness-after-pit-house-open-standard"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/pre-output-readiness.json"
+claim_boundary = "No-output generated receipt refresh only; records the checked-in Pit House open-standard case in pre-output readiness without opening HID or serial, creating authorization, running output, proving Pit House coexistence, or promoting native-visible, smoke-ready, simulator, firmware, or release-ready claims."
+commands = [
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza pre-output-readiness --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/pre-output-readiness.json --json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-pit-house-open-standard-pre-output-refresh.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw \"expected native-visible verifier to remain blocked\" }",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "vendor-authority-explicit-authorization-handoff"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "crates/cli/src/commands/moza.rs"
+claim_boundary = "No-output bench-wizard handoff hardening only; the generated exact authorization command names the operator and expiry explicitly while still creating no authorization receipt, opening no HID or serial device, emitting no hardware attempt command, sending no output/configuration/firmware writes, and making no native-control, native-visible, smoke-ready, or release-ready claim."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_handoff -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "vendor-authority-live-hardware-doctor-handoff"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "crates/cli/src/commands/moza.rs"
+claim_boundary = "No-output bench-wizard/artifact-index handoff hardening only; surfaces a target-only hardware-doctor refresh command that must be reviewed immediately before exact authorization while still creating no authorization receipt, opening no HID or serial device, emitting no hardware attempt command, sending no query/output/configuration/firmware writes, and making no native-control, native-visible, smoke-ready, or release-ready claim."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_handoff -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "vendor-authority-precondition-bound-authorization"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "schemas/moza-vendor-authority-authorization.schema.json"
+claim_boundary = "Exact authorization gate hardening only; require the refreshed target-only hardware-doctor precondition receipt to be fresh, observe-only, R5 serial/CDC present, and vendor-app-free before creating a single-use authorization, while still opening no HID or serial device, sending no query/output/configuration/firmware writes, emitting no hardware attempt command, and making no native-control, native-visible, smoke-ready, or release-ready claim."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_authorization -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_handoff -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl parse_moza_authorize_vendor_authority -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "vendor-authority-consumed-attempt-evidence"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-authority-attempt.json"
+claim_boundary = "Consumed exact vendor-authority attempt evidence only; records one bench-authorized estop_set_ffb serial frame after a fresh precondition-bound authorization and no-output smoke dry-run, consumes authorization, closes hardware_output_authorized=false, and makes no native-control, native-visible, smoke-ready, release-ready, PIDFF follow-up, retry, high-torque, firmware, or simulator claim."
+commands = [
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_attempt -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl checked_in_moza_lane_index_matches_artifact_index_renderer -- --nocapture",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "vendor-post-authority-pidff-smoke-authorization"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "crates/cli/src/commands/moza.rs"
+claim_boundary = "Guarded post-authority PIDFF smoke authorization only; permits one exact descriptor-proven PIDFF response capture at vendor-post-authority-pidff-smoke.json after a consumed vendor-authority attempt, without replacing native-actuator-visible-smoke.json, reusing vendor authority, emitting commands from bench-wizard, high torque, direct HID report 0xaf, serial config, firmware, native-control, native-visible, smoke-ready, simulator, coexistence, or release-ready claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl post_authority_pidff_smoke -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_post_authority_pidff_response -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "vendor-post-authority-pidff-response-evidence"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-post-authority-pidff-response.json"
+claim_boundary = "Post-authority PIDFF response evidence only; records one separately authorized 5 percent, 2000 ms constant-low-force PIDFF response capture after the consumed vendor-authority attempt plus a no-output comparison receipt, preserving final Stop All cleanup and leaving native-control, native-visible, smoke-ready, release-ready, retry, force-escalation, high-torque, direct HID report 0xaf, serial config, firmware, Pit House, simulator, and coexistence claims false."
+commands = [
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_post_authority_pidff_response -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl checked_in_moza_lane_index_matches_artifact_index_renderer -- --nocapture",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-post-authority-pidff.json --json",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "post-authority-pidff-regression-doc-refresh"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-post-authority-pidff-regression-doc-refresh"
+current_pointer = "docs/hardware/moza-r5-post-authority-pidff-response.md"
+claim_boundary = "Docs/source-of-truth refresh only; records that the consumed vendor-authority attempt and post-authority PIDFF response comparison regressed versus baseline and leaves native-control, native-visible, smoke-ready, release-ready, retry, force-escalation, high-torque, direct HID report 0xaf, serial config, firmware, Pit House, simulator, and coexistence claims false."
+commands = [
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-after-post-authority-doc-refresh.json --md-out target/moza-current/bench-wizard-after-post-authority-doc-refresh.md --json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-post-authority-doc-refresh.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw \"expected native-visible verifier to remain blocked\" }",
   "cargo run --locked -p openracing-tools --bin package-surface -- --check",
   "python scripts/policy_file.py",
   "git diff --check",

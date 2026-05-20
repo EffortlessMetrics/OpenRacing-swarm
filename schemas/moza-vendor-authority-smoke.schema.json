@@ -1,27 +1,55 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openracing.dev/schemas/moza-vendor-authority-smoke.schema.json",
+  "title": "Moza vendor authority smoke dry-run receipt",
   "type": "object",
   "required": [
+    "success",
     "schema_version",
     "artifact_kind",
     "claim_scope",
+    "command",
+    "generated_at_utc",
+    "authorization_receipt",
+    "authorization_receipt_validated",
+    "authorization_consumed",
+    "exact_authorization",
+    "single_use_authorization",
     "native_control_evidence",
     "hardware_output_authorized",
     "native_visible_ready",
     "next_allowed_action",
     "blocked_actions",
     "required_artifacts",
-    "authorization_consumed",
-    "commands_sent"
+    "no_hid_device_opened",
+    "no_serial_device_opened",
+    "no_serial_query_sent",
+    "sent_output_writes",
+    "sent_configuration_writes",
+    "sent_firmware_or_dfu_commands",
+    "commands_sent",
+    "transport_kind",
+    "codec_status",
+    "hardware_write_eligible",
+    "planned_next_output",
+    "dry_run_checks"
   ],
   "properties": {
+    "success": {"const": true},
     "schema_version": {"const": 1},
     "artifact_kind": {"const": "moza_vendor_authority_smoke"},
-    "claim_scope": {"const": "hardware_vendor_control_non_claiming"},
+    "claim_scope": {"const": "software_vendor_authority_smoke_dry_run"},
+    "command": {"const": "wheelctl moza vendor-authority-smoke-dry-run"},
+    "generated_at_utc": {"type": "string"},
+    "authorization_receipt": {"type": "string", "minLength": 1},
+    "authorization_receipt_validated": {"const": true},
+    "authorization_consumed": {"const": false},
+    "exact_authorization": {"const": true},
+    "single_use_authorization": {"const": true},
     "native_control_evidence": {"const": false},
     "hardware_output_authorized": {"const": false},
     "native_visible_ready": {"const": false},
-    "next_allowed_action": {"type": "string"},
+    "next_allowed_action": {"type": "string", "minLength": 1},
     "blocked_actions": {
       "type": "array",
       "items": {"type": "string"}
@@ -30,8 +58,66 @@
       "type": "array",
       "items": {"type": "string"}
     },
-    "authorization_consumed": {"type": "boolean"},
-    "commands_sent": {"type": "array"}
+    "no_hid_device_opened": {"const": true},
+    "no_serial_device_opened": {"const": true},
+    "no_serial_query_sent": {"const": true},
+    "sent_output_writes": {"const": false},
+    "sent_configuration_writes": {"const": false},
+    "sent_firmware_or_dfu_commands": {"const": false},
+    "commands_sent": {
+      "type": "array",
+      "maxItems": 0
+    },
+    "transport_kind": {"const": "dry_run_only"},
+    "codec_status": {"const": "fixture_decode_verified_exact_frame"},
+    "hardware_write_eligible": {"const": false},
+    "planned_next_output": {
+      "type": "object",
+      "required": [
+        "allowed",
+        "reason",
+        "requires_exact_authorization_receipt",
+        "requires_bounded_hardware_attempt_command",
+        "command_id",
+        "command_name",
+        "family",
+        "risk_class",
+        "frame_sha256",
+        "payload_sha256"
+      ],
+      "properties": {
+        "allowed": {"const": false},
+        "reason": {"type": "string", "minLength": 1},
+        "requires_exact_authorization_receipt": {"const": true},
+        "requires_bounded_hardware_attempt_command": {"const": true},
+        "command_id": {"type": "string", "minLength": 1},
+        "command_name": {"type": "string", "minLength": 1},
+        "family": {"type": "string", "minLength": 1},
+        "risk_class": {
+          "enum": [
+            "vendor_control_candidate",
+            "vendor_output_candidate",
+            "configuration_candidate"
+          ]
+        },
+        "frame_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "payload_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "additionalProperties": true
+    },
+    "dry_run_checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["check", "passed"],
+        "properties": {
+          "check": {"type": "string", "minLength": 1},
+          "passed": {"const": true}
+        },
+        "additionalProperties": true
+      }
+    }
   },
   "additionalProperties": true
 }

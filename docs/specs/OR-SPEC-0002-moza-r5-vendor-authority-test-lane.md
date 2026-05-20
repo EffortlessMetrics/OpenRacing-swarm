@@ -8,7 +8,7 @@ Linked ADRs: docs/adr/0009-hardware-validation-evidence-state-machine.md
 Linked plan: docs/hardware/moza-r5-vendor-authority-test-plan.md
 Linked issues: n/a
 Linked PRs: n/a
-Support-tier impact: no support-tier promotion; this defines no-output and read-only gates only.
+Support-tier impact: no support-tier promotion; this defines non-claiming evidence gates through the first bounded authority attempt receipt.
 Policy impact: no new policy exception
 
 ## Scope
@@ -149,10 +149,71 @@ traffic from output/configuration writes. It MUST set:
 ### Authorization contract
 
 Any vendor write MUST be exact-command authorized, hash-bound, command-bound, consumable once, and rejection-tested for payload drift, unknown commands, and generic bench-clear phrases.
+The authorization receipt MAY set `hardware_output_authorized=true`, but it MUST
+also keep `native_control_evidence=false` and `native_visible_ready=false` until
+a later consumed hardware attempt records real evidence. The authorization tool
+MUST NOT open HID, open serial, send read-only queries, or send
+output/configuration/firmware writes while creating the receipt.
+
+The authorization tool MUST validate a fresh target-only `wheelctl hardware
+doctor` precondition receipt before creating the exact authorization receipt.
+That precondition receipt MUST be successful and observe-only, show the R5
+serial/CDC Ports interface for `0x346E:0x0004`, and show no running vendor app
+process that may own the serial port. The authorization receipt MUST bind the
+precondition receipt path, timestamp, serial port/interface, and observe-only
+safety flags without promoting native-control or native-visible readiness.
 
 ### Vendor authority smoke contract
 
-The first authority smoke profile MUST be bounded and non-motion-claiming. It may validate authority-state transitions and cleanup but MUST keep `native_visible_ready=false` and `planned_next_output.allowed=false`.
+The first authority smoke profile MUST be bounded and non-motion-claiming. A
+software smoke dry-run MAY validate an exact authorization receipt, re-decode the
+bound frame, and prove that the next hardware command is still blocked. The
+dry-run MUST NOT open HID, open serial, send read-only queries, consume
+authorization, or send output/configuration/firmware writes. It MUST keep
+`native_control_evidence=false`, `hardware_output_authorized=false`,
+`native_visible_ready=false`, `authorization_consumed=false`, `commands_sent=[]`,
+and `planned_next_output.allowed=false`.
+
+### First bounded hardware authority attempt contract
+
+The first hardware authority attempt MUST consume exactly one matching
+authorization receipt and exactly one matching smoke dry-run receipt. The
+consumed attempt receipt MUST record the exact command id, risk class, tuple,
+frame hash, payload hash, serial identity verification, and a single authorized
+frame send.
+
+The attempt receipt MUST close the authorization gate after the attempt by
+recording `authorization_consumed=true` and `hardware_output_authorized=false`.
+It MUST keep `native_control_evidence=false`, `native_visible_ready=false`,
+`smoke_ready=false`, `sent_firmware_or_dfu_commands=false`,
+`sent_unknown_commands=false`, `direct_hid_report_0xaf_sent=false`, and
+`high_torque_enabled=false`. A retry MUST require a fresh bench-clear, a fresh
+exact authorization receipt, a fresh smoke dry-run receipt, and a fresh attempt
+receipt path; a consumed attempt receipt is evidence, not reusable
+authorization.
+
+The executable attempt command MUST require explicit
+`--confirm-bounded-vendor-authority-attempt`, validate the exact authorization
+and smoke dry-run receipts, verify the R5 USB serial identity before opening the
+port, send only the exact hash-bound frame once, and write the consumed attempt
+receipt. Verifiers, bench wizards, and generators MUST NOT emit or auto-run the
+hardware attempt command.
+
+No-output navigation MAY surface an exclusive R5 serial/CDC access precondition
+and stored serial-port hints before authorization or attempt. That guidance MAY
+name Pit House as a possible serial-port owner, but it MUST keep Pit House a
+witness/compatibility lane rather than a native-control dependency.
+
+If the executable command validates the exact receipts and R5 serial identity
+but blocks before opening the serial port or sending the frame, it MUST write a
+separate blocked-before-send receipt instead of a consumed attempt receipt. That
+receipt MUST set `success=false`, `authorization_consumed=false`,
+`opened_serial_device=false`, `sent_authorized_frame=false`,
+`sent_authorized_frame_count=0`, `hardware_output_authorized=false`,
+`native_control_evidence=false`, `native_visible_ready=false`, and
+`smoke_ready=false`. A blocked-before-send receipt is diagnostic evidence only;
+retry still requires fresh bench-clear, fresh exact authorization, fresh
+smoke dry-run, and a fresh attempt receipt path.
 
 ### Post-authority PIDFF response and motion ladder
 

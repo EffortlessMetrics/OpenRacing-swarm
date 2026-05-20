@@ -811,6 +811,132 @@ pub enum MozaCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
+    /// Replay checked-in Moza vendor serial fixtures through the fake transport
+    VendorFakeTransport {
+        /// Write the no-output fake-transport CLI receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
+    /// Send read-only Moza vendor status queries over the R5 serial interface
+    VendorStatusProbe {
+        /// Serial/CDC port to query, e.g. COM4 or /dev/ttyACM0
+        #[arg(long)]
+        serial_port: String,
+        /// Serial baud rate for the Moza vendor status interface
+        #[arg(long, default_value_t = 115200)]
+        baud_rate: u32,
+        /// Per-command response timeout in milliseconds
+        #[arg(long, default_value_t = 250)]
+        timeout_ms: u64,
+        /// Probe only the named read-only command id; repeat to select multiple
+        #[arg(long = "command")]
+        command_ids: Vec<String>,
+        /// Explicit acknowledgement required before sending read-only query commands
+        #[arg(long)]
+        confirm_read_only_query: bool,
+        /// Write the read-only status probe receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
+    /// Create a single-use exact Moza vendor-authority authorization receipt without sending traffic
+    AuthorizeVendorAuthority {
+        /// Registry command id being authorized for the later exact frame
+        #[arg(long)]
+        command_id: String,
+        /// Full Moza serial frame bytes to bind, including start byte and checksum
+        #[arg(long)]
+        frame_hex: String,
+        /// Fresh target-only hardware doctor receipt reviewed before authorization
+        #[arg(long)]
+        precondition_hardware_doctor: std::path::PathBuf,
+        /// Operator or host label granting bench-clear
+        #[arg(long, default_value = "Steven")]
+        authorized_by: String,
+        /// Fresh command-bound bench-clear evidence naming the exact command id, stable R5, hands clear, and wheel clear
+        #[arg(long)]
+        bench_clear_evidence: String,
+        /// Expiration window for this single-use authorization receipt
+        #[arg(long, default_value_t = 10)]
+        expires_after_minutes: u64,
+        /// Explicit acknowledgement required before creating a vendor-authority authorization receipt
+        #[arg(long)]
+        confirm_exact_vendor_authority_authorization: bool,
+        /// Write the authorization receipt to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing authorization receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
+    /// Validate an exact Moza vendor-authority authorization without sending traffic
+    VendorAuthoritySmokeDryRun {
+        /// Exact vendor-authority authorization receipt to validate
+        #[arg(long)]
+        authorization: std::path::PathBuf,
+        /// Explicit acknowledgement that this command is a no-output dry-run only
+        #[arg(long)]
+        confirm_no_output_smoke_dry_run: bool,
+        /// Write the smoke dry-run receipt to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing smoke dry-run receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
+    /// Send one exact authorized Moza vendor-authority frame over the R5 serial interface
+    VendorAuthorityAttempt {
+        /// Serial/CDC port to use, e.g. COM4 or /dev/ttyACM0
+        #[arg(long)]
+        serial_port: String,
+        /// Serial baud rate for the Moza vendor authority interface
+        #[arg(long, default_value_t = 115200)]
+        baud_rate: u32,
+        /// Serial write timeout in milliseconds
+        #[arg(long, default_value_t = 250)]
+        timeout_ms: u64,
+        /// Exact vendor-authority authorization receipt to consume
+        #[arg(long)]
+        authorization: std::path::PathBuf,
+        /// Matching no-output vendor-authority smoke dry-run receipt
+        #[arg(long)]
+        smoke_dry_run: std::path::PathBuf,
+        /// Explicit acknowledgement required before sending the exact authorized frame once
+        #[arg(long)]
+        confirm_bounded_vendor_authority_attempt: bool,
+        /// Write the consumed attempt receipt to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing attempt receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
+    /// Compare baseline and post-authority PIDFF response receipts without sending traffic
+    VendorPostAuthorityPidffResponse {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-13
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Consumed vendor-authority attempt receipt; defaults to lane/vendor-authority-attempt.json
+        #[arg(long)]
+        attempt: Option<std::path::PathBuf>,
+        /// Baseline PIDFF response receipt; defaults to lane/native-actuator-visible-smoke-response-only.json
+        #[arg(long)]
+        baseline_response: Option<std::path::PathBuf>,
+        /// Post-authority PIDFF response receipt; defaults to lane/vendor-post-authority-pidff-smoke.json
+        #[arg(long)]
+        post_response: Option<std::path::PathBuf>,
+        /// Write the non-claiming comparison receipt to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing comparison receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
     /// Promote a validated Moza capture JSONL into a parser fixture file
     PromoteFixture {
         /// JSON Lines file produced by `wheelctl moza capture-input`
@@ -1217,6 +1343,9 @@ pub enum MozaCommands {
         /// Optional lane-relative preserved copy of the current response-only receipt
         #[arg(long)]
         preserve_receipt: Option<std::path::PathBuf>,
+        /// Same-lane output receipt path the exact authorized command must write
+        #[arg(long)]
+        planned_output: Option<std::path::PathBuf>,
         /// Update the native visible-motion follow-up plan JSON
         #[arg(long)]
         json_out: Option<std::path::PathBuf>,

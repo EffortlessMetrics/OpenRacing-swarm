@@ -13,6 +13,17 @@ use racing_wheel_hid_capture::{
     HidReportDescriptorMetadata, HidReportDescriptorReport, parse_hid_report_descriptor_metadata,
 };
 use racing_wheel_hid_moza_protocol::report::looks_like_live_r5_v1_extended_report;
+use racing_wheel_hid_moza_protocol::serial::fake_transport::{
+    FAKE_TRANSPORT_CODEC_STATUS, MozaFakeSerialTransport, MozaFakeSerialTransportError,
+};
+use racing_wheel_hid_moza_protocol::serial::frame::{MESSAGE_START, decode_fixture_frame};
+use racing_wheel_hid_moza_protocol::serial::status_probe::{
+    READ_ONLY_STATUS_CODEC_STATUS, decode_read_only_status_response, encode_read_only_status_query,
+    read_only_status_commands,
+};
+use racing_wheel_hid_moza_protocol::serial::vendor_authority::{
+    MozaRiskClass, MozaSerialCodecStatus, MozaVendorCommand, REQUIRED_VENDOR_COMMANDS,
+};
 use racing_wheel_hid_moza_protocol::{
     DeviceWriter, FfbMode, MOZA_VENDOR_ID, MozaDeviceCategory, MozaDirectTorqueEncoder,
     MozaInitState, MozaInputState, MozaProtocol, MozaTopologyHint, REPORT_LEN, VendorProtocol,
@@ -20,9 +31,10 @@ use racing_wheel_hid_moza_protocol::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -83,6 +95,9 @@ const PIDFF_BOUNDED_EFFECT_CLASSIFICATION: &str = "bounded_low_torque_pidff";
 const PIDFF_STOP_ALL_CLEANUP_CLASSIFICATION: &str = "pidff_stop_all_cleanup";
 const PIDFF_PLANNED_STOP_ALL_CLASSIFICATION: &str = "planned_pidff_stop_all";
 const NATIVE_ACTUATOR_RESPONSE_MIN_DELTA_DEGREES: f64 = 0.10;
+const NATIVE_ACTUATOR_VISIBLE_SMOKE_FILE: &str = "native-actuator-visible-smoke.json";
+const NATIVE_ACTUATOR_VISIBLE_RESPONSE_ONLY_FILE: &str =
+    "native-actuator-visible-smoke-response-only.json";
 const NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE: &str = "native-actuator-visible-follow-up-plan.json";
 const NATIVE_CONTROLLED_ANGLE_PLAN_FILE: &str = "native-controlled-angle-plan.json";
 const NATIVE_CONTROLLED_ANGLE_SMOKE_FILE: &str = "native-controlled-angle-smoke.json";
@@ -113,6 +128,22 @@ const NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE: &str =
     "native-controlled-angle-closed-loop-smoke.json";
 const NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_FAILURE_ANALYSIS_FILE: &str =
     "native-controlled-angle-closed-loop-failure-analysis.json";
+const VENDOR_AUTHORITY_AUTHORIZATION_FILE: &str = "vendor-authority-authorization.json";
+const VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE: &str = "vendor-authority-smoke-dry-run.json";
+const VENDOR_AUTHORITY_ATTEMPT_FILE: &str = "vendor-authority-attempt.json";
+const VENDOR_AUTHORITY_ATTEMPT_BLOCKED_FILE: &str = "vendor-authority-attempt-blocked.json";
+const VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE: &str = "vendor-post-authority-pidff-smoke.json";
+const VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE: &str = "vendor-post-authority-pidff-response.json";
+const VENDOR_AUTHORITY_HANDOFF_COMMAND_ID: &str = "estop_set_ffb";
+const VENDOR_AUTHORITY_HANDOFF_FRAME_HEX: &str = "7E02461C0001F0";
+const VENDOR_AUTHORITY_HANDOFF_PAYLOAD_HEX: &str = "01";
+const VENDOR_AUTHORITY_HANDOFF_PRODUCT_ID: &str = "0x0004";
+const VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE: &str =
+    "bench clear for exact estop_set_ffb: R5 stable, hands clear, wheel clear";
+const VENDOR_AUTHORITY_HANDOFF_AUTHORIZED_BY: &str = "Steven";
+const VENDOR_AUTHORITY_HANDOFF_EXPIRES_AFTER_MINUTES: u64 = 10;
+const VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET: &str =
+    "target/moza-current/vendor-authority-precondition-hardware-doctor.json";
 const NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILES: &[&str] = &[
     NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE,
     NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE,
@@ -124,6 +155,10 @@ const NATIVE_CONTROLLED_ANGLE_OUTPUT_FILES: &[&str] = &[
     NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE,
     NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE,
     NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE,
+];
+const NATIVE_VISIBLE_OUTPUT_FILES: &[&str] = &[
+    NATIVE_ACTUATOR_VISIBLE_SMOKE_FILE,
+    VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE,
 ];
 const NATIVE_CONTROLLED_ANGLE_PREFLIGHT_FILES: &[&str] = &[
     NATIVE_CONTROLLED_ANGLE_SMOKE_FILE,
@@ -156,6 +191,10 @@ const R5_V1_LIVE_OUTPUT_REPORTS: &[(&str, usize)] = &[
 const R5_V1_LIVE_FEATURE_REPORT_IDS: &[&str] = &["0x11", "0x12", "0x13", "0xAF"];
 const MOZA_R5_MANIFEST_SCHEMA_JSON: &str =
     include_str!("../../../../ci/hardware/moza-r5/manifest.schema.json");
+const MOZA_VENDOR_SERIAL_CODEC_FIXTURES_JSON: &str =
+    include_str!("../../../../fixtures/moza/r5/vendor-serial-codec-fixtures.json");
+const MOZA_VENDOR_FAKE_SERIAL_TRANSPORT_JSON: &str =
+    include_str!("../../../../fixtures/moza/r5/vendor-fake-serial-transport.json");
 const SIMULATOR_FFB_PREREQUISITE_ARTIFACTS: [(&str, &str); 6] = [
     ("zero_torque_real_hardware", "zero-torque-proof.json"),
     ("watchdog_zero_output", "watchdog-proof.json"),
@@ -288,6 +327,7 @@ struct AuthorizeVisibleOutputRequest<'a> {
     duration_ms: u64,
     movement_threshold_degrees: f64,
     preserve_receipt: Option<&'a Path>,
+    planned_output: Option<&'a Path>,
     json_out: Option<&'a Path>,
     overwrite: bool,
 }
@@ -455,6 +495,15 @@ fn controlled_angle_profile_json_name_is_allowed(profile: &str) -> bool {
     .any(|allowed| profile == controlled_angle_profile_name(*allowed))
 }
 
+fn moza_serial_codec_status_name(status: MozaSerialCodecStatus) -> &'static str {
+    match status {
+        MozaSerialCodecStatus::SemanticOnly => "semantic_only",
+        MozaSerialCodecStatus::FixtureDecodeOnly => "fixture_decode_only",
+        MozaSerialCodecStatus::RoundTripVerified => "round_trip_verified",
+        MozaSerialCodecStatus::HardwareWriteEligible => "hardware_write_eligible",
+    }
+}
+
 fn controlled_angle_profile_requires_effect_lifecycle_plan(
     profile: MozaControlledAngleProfile,
 ) -> bool {
@@ -508,6 +557,59 @@ struct PitHouseAvailabilityRequest<'a> {
     json: bool,
     operator: &'a str,
     evidence: Option<&'a str>,
+    json_out: &'a Path,
+    overwrite: bool,
+}
+
+struct VendorStatusProbeRequest<'a> {
+    json: bool,
+    serial_port: &'a str,
+    baud_rate: u32,
+    timeout_ms: u64,
+    command_ids: &'a [String],
+    confirm_read_only_query: bool,
+    json_out: Option<&'a Path>,
+}
+
+struct VendorAuthorityAuthorizationRequest<'a> {
+    json: bool,
+    command_id: &'a str,
+    frame_hex: &'a str,
+    precondition_hardware_doctor: &'a Path,
+    authorized_by: &'a str,
+    bench_clear_evidence: &'a str,
+    expires_after_minutes: u64,
+    confirm_exact_vendor_authority_authorization: bool,
+    json_out: &'a Path,
+    overwrite: bool,
+}
+
+struct VendorAuthoritySmokeDryRunRequest<'a> {
+    json: bool,
+    authorization: &'a Path,
+    confirm_no_output_smoke_dry_run: bool,
+    json_out: &'a Path,
+    overwrite: bool,
+}
+
+struct VendorAuthorityAttemptRequest<'a> {
+    json: bool,
+    serial_port: &'a str,
+    baud_rate: u32,
+    timeout_ms: u64,
+    authorization: &'a Path,
+    smoke_dry_run: &'a Path,
+    confirm_bounded_vendor_authority_attempt: bool,
+    json_out: &'a Path,
+    overwrite: bool,
+}
+
+struct VendorPostAuthorityPidffResponseRequest<'a> {
+    json: bool,
+    lane: &'a Path,
+    attempt: Option<&'a Path>,
+    baseline_response: Option<&'a Path>,
+    post_response: Option<&'a Path>,
     json_out: &'a Path,
     overwrite: bool,
 }
@@ -647,6 +749,111 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
         }
         MozaCommands::PreOutputReadiness { lane, json_out } => {
             pre_output_readiness(json, lane, json_out.as_deref()).await
+        }
+        MozaCommands::VendorFakeTransport { json_out } => {
+            vendor_fake_transport(json, json_out.as_deref()).await
+        }
+        MozaCommands::VendorStatusProbe {
+            serial_port,
+            baud_rate,
+            timeout_ms,
+            command_ids,
+            confirm_read_only_query,
+            json_out,
+        } => {
+            vendor_status_probe(VendorStatusProbeRequest {
+                json,
+                serial_port,
+                baud_rate: *baud_rate,
+                timeout_ms: *timeout_ms,
+                command_ids,
+                confirm_read_only_query: *confirm_read_only_query,
+                json_out: json_out.as_deref(),
+            })
+            .await
+        }
+        MozaCommands::AuthorizeVendorAuthority {
+            command_id,
+            frame_hex,
+            precondition_hardware_doctor,
+            authorized_by,
+            bench_clear_evidence,
+            expires_after_minutes,
+            confirm_exact_vendor_authority_authorization,
+            json_out,
+            overwrite,
+        } => {
+            authorize_vendor_authority(VendorAuthorityAuthorizationRequest {
+                json,
+                command_id,
+                frame_hex,
+                precondition_hardware_doctor,
+                authorized_by,
+                bench_clear_evidence,
+                expires_after_minutes: *expires_after_minutes,
+                confirm_exact_vendor_authority_authorization:
+                    *confirm_exact_vendor_authority_authorization,
+                json_out,
+                overwrite: *overwrite,
+            })
+            .await
+        }
+        MozaCommands::VendorAuthoritySmokeDryRun {
+            authorization,
+            confirm_no_output_smoke_dry_run,
+            json_out,
+            overwrite,
+        } => {
+            vendor_authority_smoke_dry_run(VendorAuthoritySmokeDryRunRequest {
+                json,
+                authorization,
+                confirm_no_output_smoke_dry_run: *confirm_no_output_smoke_dry_run,
+                json_out,
+                overwrite: *overwrite,
+            })
+            .await
+        }
+        MozaCommands::VendorAuthorityAttempt {
+            serial_port,
+            baud_rate,
+            timeout_ms,
+            authorization,
+            smoke_dry_run,
+            confirm_bounded_vendor_authority_attempt,
+            json_out,
+            overwrite,
+        } => {
+            vendor_authority_attempt(VendorAuthorityAttemptRequest {
+                json,
+                serial_port,
+                baud_rate: *baud_rate,
+                timeout_ms: *timeout_ms,
+                authorization,
+                smoke_dry_run,
+                confirm_bounded_vendor_authority_attempt: *confirm_bounded_vendor_authority_attempt,
+                json_out,
+                overwrite: *overwrite,
+            })
+            .await
+        }
+        MozaCommands::VendorPostAuthorityPidffResponse {
+            lane,
+            attempt,
+            baseline_response,
+            post_response,
+            json_out,
+            overwrite,
+        } => {
+            vendor_post_authority_pidff_response(VendorPostAuthorityPidffResponseRequest {
+                json,
+                lane,
+                attempt: attempt.as_deref(),
+                baseline_response: baseline_response.as_deref(),
+                post_response: post_response.as_deref(),
+                json_out,
+                overwrite: *overwrite,
+            })
+            .await
         }
         MozaCommands::PromoteFixture {
             capture,
@@ -953,6 +1160,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             duration_ms,
             movement_threshold_degrees,
             preserve_receipt,
+            planned_output,
             json_out,
             overwrite,
         } => {
@@ -971,6 +1179,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 duration_ms: *duration_ms,
                 movement_threshold_degrees: *movement_threshold_degrees,
                 preserve_receipt: preserve_receipt.as_deref(),
+                planned_output: planned_output.as_deref(),
                 json_out: json_out.as_deref(),
                 overwrite: *overwrite,
             })
@@ -1324,6 +1533,7 @@ fn moza_artifact_index_receipt(
     let input_role_semantics = moza_input_role_semantics_summary(lane);
     let pit_house_compatibility = moza_pit_house_compatibility_summary(lane);
     let simulator_compatibility = moza_simulator_compatibility_summary(lane);
+    let vendor_authority_navigation = moza_vendor_authority_navigation_summary(lane);
     let passive_sniff_navigation = moza_passive_sniff_navigation_summary(lane);
     Ok(serde_json::json!({
         "success": true,
@@ -1347,6 +1557,7 @@ fn moza_artifact_index_receipt(
         "input_role_semantics": input_role_semantics,
         "pit_house_compatibility": pit_house_compatibility,
         "simulator_compatibility": simulator_compatibility,
+        "vendor_authority_navigation": vendor_authority_navigation,
         "passive_sniff_navigation": passive_sniff_navigation,
         "required_artifact_index": support_status
             .get("artifact_index")
@@ -1393,6 +1604,7 @@ fn moza_bench_wizard_receipt(
     let input_role_semantics = moza_input_role_semantics_summary(lane);
     let pit_house_compatibility = moza_pit_house_compatibility_summary(lane);
     let simulator_compatibility = moza_simulator_compatibility_summary(lane);
+    let vendor_authority_navigation = moza_vendor_authority_navigation_summary(lane);
     let passive_sniff_navigation = moza_passive_sniff_navigation_summary(lane);
 
     Ok(serde_json::json!({
@@ -1420,6 +1632,7 @@ fn moza_bench_wizard_receipt(
         "input_role_semantics": input_role_semantics,
         "pit_house_compatibility": pit_house_compatibility,
         "simulator_compatibility": simulator_compatibility,
+        "vendor_authority_navigation": vendor_authority_navigation,
         "passive_sniff_navigation": passive_sniff_navigation,
         "safe_no_output_commands": moza_bench_wizard_safe_no_output_commands(lane),
         "active_blockers": moza_bench_wizard_active_blockers(lane),
@@ -1475,6 +1688,10 @@ fn moza_bench_wizard_next_operator_step(lane: &Path, readiness: &Value, frontier
         });
     }
 
+    if lane.join(VENDOR_AUTHORITY_ATTEMPT_FILE).is_file() {
+        return moza_post_authority_pidff_response_next_operator_step(lane);
+    }
+
     if lane
         .join(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE)
         .is_file()
@@ -1483,6 +1700,12 @@ fn moza_bench_wizard_next_operator_step(lane: &Path, readiness: &Value, frontier
             .join(NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE)
             .is_file()
         {
+            if lane
+                .join(NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE)
+                .is_file()
+            {
+                return moza_vendor_authority_next_operator_step(lane);
+            }
             if let Some(step) = moza_passive_sniff_next_operator_step(lane) {
                 return step;
             }
@@ -1543,6 +1766,436 @@ fn moza_bench_wizard_next_operator_step(lane: &Path, readiness: &Value, frontier
         "summary": "refresh no-output readiness and verifier receipts before selecting the next lane action",
         "hardware_output_allowed_now": false
     })
+}
+
+fn moza_vendor_authority_next_operator_step(lane: &Path) -> Value {
+    let authorization_path = lane.join(VENDOR_AUTHORITY_AUTHORIZATION_FILE);
+    let smoke_path = lane.join(VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE);
+    let blocked_attempt_recorded = lane.join(VENDOR_AUTHORITY_ATTEMPT_BLOCKED_FILE).is_file();
+    let authorization_recorded = authorization_path.is_file();
+    let smoke_dry_run_recorded = smoke_path.is_file();
+    let serial_precondition = moza_vendor_authority_serial_precondition(lane);
+
+    if blocked_attempt_recorded {
+        return serde_json::json!({
+            "kind": "vendor_authority_attempt_blocked_before_send",
+            "summary": "the bounded vendor-authority attempt was blocked before sending a frame; release the serial-port owner, then restart with fresh bench-clear, authorization, smoke dry-run, and attempt receipts",
+            "hardware_output_allowed_now": false,
+            "authorization_created_by_wizard": false,
+            "authorization_receipt_recorded": authorization_recorded,
+            "smoke_dry_run_receipt_recorded": smoke_dry_run_recorded,
+            "blocked_attempt_receipt_recorded": true,
+            "hardware_attempt_command_emitted": false,
+            "blocked_attempt_receipt": VENDOR_AUTHORITY_ATTEMPT_BLOCKED_FILE,
+            "required_bench_clear_evidence": VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE,
+            "requires_fresh_authorization_for_retry": true,
+            "requires_fresh_smoke_dry_run_for_retry": true,
+            "serial_precondition": serial_precondition,
+            "planned_output_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
+            "blocked_actions": vendor_authority_handoff_blocked_actions()
+        });
+    }
+
+    if authorization_recorded && smoke_dry_run_recorded {
+        return serde_json::json!({
+            "kind": "awaiting_separate_vendor_authority_attempt",
+            "summary": "exact vendor-authority authorization and no-output smoke dry-run receipts are recorded; any serial write still requires a separately requested bounded attempt and this wizard emits no hardware attempt command",
+            "hardware_output_allowed_now": false,
+            "authorization_created_by_wizard": false,
+            "authorization_receipt_recorded": true,
+            "smoke_dry_run_receipt_recorded": true,
+            "hardware_attempt_command_emitted": false,
+            "attempt_command_must_be_operator_requested": true,
+            "authorization_receipt": VENDOR_AUTHORITY_AUTHORIZATION_FILE,
+            "smoke_dry_run_receipt": VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE,
+            "serial_precondition": serial_precondition,
+            "planned_output_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
+            "blocked_actions": vendor_authority_handoff_blocked_actions()
+        });
+    }
+
+    if authorization_recorded {
+        return serde_json::json!({
+            "kind": "awaiting_vendor_authority_smoke_dry_run",
+            "summary": "exact vendor-authority authorization is recorded; run only the no-output smoke dry-run before any separate bounded hardware attempt",
+            "hardware_output_allowed_now": false,
+            "authorization_created_by_wizard": false,
+            "authorization_receipt_recorded": true,
+            "smoke_dry_run_receipt_recorded": false,
+            "hardware_attempt_command_emitted": false,
+            "authorization_receipt": VENDOR_AUTHORITY_AUTHORIZATION_FILE,
+            "required_smoke_dry_run_receipt": VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE,
+            "serial_precondition": serial_precondition,
+            "commands": [
+                {
+                    "name": "validate_vendor_authority_smoke_dry_run",
+                    "output_enabled": false,
+                    "opens_serial": false,
+                    "sends_read_only_query": false,
+                    "sends_output": false,
+                    "command": vendor_authority_smoke_dry_run_command(lane)
+                }
+            ],
+            "blocked_actions": vendor_authority_handoff_blocked_actions()
+        });
+    }
+
+    serde_json::json!({
+        "kind": "prepare_vendor_authority_attempt_handoff",
+        "summary": "closed-loop standard PIDFF undertravel is recorded; prepare the exact vendor-authority authorization and no-output smoke dry-run without emitting a hardware attempt command",
+        "hardware_output_allowed_now": false,
+        "authorization_created_by_wizard": false,
+        "authorization_receipt_recorded": false,
+        "smoke_dry_run_receipt_recorded": false,
+        "hardware_attempt_command_emitted": false,
+        "attempt_command_must_be_operator_requested": true,
+        "no_openracing_output": true,
+        "required_bench_clear_evidence": VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE,
+        "command_id": VENDOR_AUTHORITY_HANDOFF_COMMAND_ID,
+        "frame_hex": VENDOR_AUTHORITY_HANDOFF_FRAME_HEX,
+        "payload_hex": VENDOR_AUTHORITY_HANDOFF_PAYLOAD_HEX,
+        "risk_class": "vendor_output_candidate",
+        "authorization_receipt": VENDOR_AUTHORITY_AUTHORIZATION_FILE,
+        "smoke_dry_run_receipt": VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE,
+        "serial_precondition": serial_precondition,
+        "planned_output_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
+        "commands": [
+            {
+                "name": "refresh_live_vendor_authority_precondition",
+                "output_enabled": false,
+                "opens_hid": false,
+                "opens_serial": false,
+                "sends_read_only_query": false,
+                "sends_output": false,
+                "sends_configuration_write": false,
+                "sends_firmware_or_dfu_command": false,
+                "creates_single_use_authorization": false,
+                "must_be_reviewed_immediately_before_authorization": true,
+                "blocked_if_vendor_app_running": true,
+                "blocked_if_r5_serial_missing": true,
+                "json_out": VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET,
+                "command": vendor_authority_live_hardware_doctor_command()
+            },
+            {
+                "name": "create_exact_vendor_authority_authorization",
+                "output_enabled": false,
+                "opens_hid": false,
+                "opens_serial": false,
+                "sends_read_only_query": false,
+                "sends_output": false,
+                "creates_single_use_authorization": true,
+                "requires_fresh_operator_bench_clear": true,
+                "command": vendor_authority_authorization_command(lane)
+            },
+            {
+                "name": "validate_vendor_authority_smoke_dry_run",
+                "output_enabled": false,
+                "opens_serial": false,
+                "sends_read_only_query": false,
+                "sends_output": false,
+                "requires_authorization_receipt": VENDOR_AUTHORITY_AUTHORIZATION_FILE,
+                "command": vendor_authority_smoke_dry_run_command(lane)
+            }
+        ],
+        "blocked_actions": vendor_authority_handoff_blocked_actions()
+    })
+}
+
+fn moza_vendor_authority_serial_precondition(lane: &Path) -> Value {
+    let hints = moza_vendor_authority_serial_port_hints(lane);
+    let interfaces = moza_vendor_authority_serial_interface_hints(lane);
+    serde_json::json!({
+        "requires_exclusive_r5_serial_cdc_access": true,
+        "pit_house_dependency": false,
+        "pit_house_serial_owner_risk": true,
+        "other_vendor_app_serial_owner_risk": true,
+        "opens_serial": false,
+        "sends_read_only_query": false,
+        "sends_output": false,
+        "sends_configuration_write": false,
+        "sends_firmware_or_dfu_command": false,
+        "source_artifact": "hardware-doctor.json",
+        "live_precondition_receipt": VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET,
+        "live_precondition_command": vendor_authority_live_hardware_doctor_command(),
+        "live_precondition_must_be_reviewed_immediately_before_authorization": true,
+        "blocked_if_vendor_app_running": true,
+        "blocked_if_r5_serial_missing": true,
+        "serial_port_hints": hints,
+        "serial_interface_hints": interfaces,
+        "guidance": "Before creating short-lived exact authorization or running the separate bounded attempt, close or release Pit House and any other app that may own the R5 serial/CDC port; this is an exclusive-port precondition, not a Pit House dependency for native control."
+    })
+}
+
+fn moza_vendor_authority_serial_port_hints(lane: &Path) -> Vec<String> {
+    moza_vendor_authority_serial_hints(lane, true)
+}
+
+fn moza_vendor_authority_serial_interface_hints(lane: &Path) -> Vec<String> {
+    moza_vendor_authority_serial_hints(lane, false)
+}
+
+fn moza_vendor_authority_serial_hints(lane: &Path, ports_only: bool) -> Vec<String> {
+    let Ok(receipt) = read_json_value(lane, "hardware-doctor.json") else {
+        return Vec::new();
+    };
+    let mut hints = BTreeSet::new();
+    let Some(devices) = receipt
+        .pointer("/windows_pnp/devices")
+        .and_then(Value::as_array)
+    else {
+        return Vec::new();
+    };
+    for device in devices {
+        if json_string(device, "class") != Some("Ports")
+            || json_string(device, "vendor_id") != Some(MOZA_VENDOR_HEX)
+            || json_string(device, "product_id") != Some(VENDOR_AUTHORITY_HANDOFF_PRODUCT_ID)
+        {
+            continue;
+        }
+        let Some(friendly_name) = json_string(device, "friendly_name") else {
+            continue;
+        };
+        if ports_only {
+            if let Some(port) = windows_com_port_from_friendly_name(friendly_name) {
+                hints.insert(port);
+            }
+        } else {
+            hints.insert(friendly_name.to_string());
+        }
+    }
+    hints.into_iter().collect()
+}
+
+fn windows_com_port_from_friendly_name(friendly_name: &str) -> Option<String> {
+    let marker = "(COM";
+    let start = friendly_name.find(marker)? + 1;
+    let suffix = &friendly_name[start..];
+    let end = suffix.find(')')?;
+    let candidate = &suffix[..end];
+    if candidate.len() > 3
+        && candidate.starts_with("COM")
+        && candidate[3..].chars().all(|ch| ch.is_ascii_digit())
+    {
+        Some(candidate.to_string())
+    } else {
+        None
+    }
+}
+
+fn moza_post_authority_pidff_response_next_operator_step(lane: &Path) -> Value {
+    let post_response_recorded = lane.join(VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE).is_file();
+    let comparison_recorded = lane
+        .join(VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE)
+        .is_file();
+    if comparison_recorded {
+        return serde_json::json!({
+            "kind": "post_authority_pidff_response_comparison_recorded",
+            "summary": "post-authority PIDFF response comparison is recorded; keep native-visible unclaimed until strict verifier accepts real movement evidence",
+            "hardware_output_allowed_now": false,
+            "authorization_created_by_wizard": false,
+            "no_openracing_output": true,
+            "hardware_attempt_command_emitted": false,
+            "vendor_authority_attempt_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
+            "post_authority_pidff_response_receipt": VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE,
+            "blocked_actions": vendor_authority_handoff_blocked_actions()
+        });
+    }
+    if post_response_recorded {
+        return serde_json::json!({
+            "kind": "post_authority_pidff_response_comparison",
+            "summary": "a bounded vendor-authority attempt receipt and post-authority PIDFF response receipt are recorded; run the no-output comparison before any motion claim or further output",
+            "hardware_output_allowed_now": false,
+            "authorization_created_by_wizard": false,
+            "no_openracing_output": true,
+            "hardware_attempt_command_emitted": false,
+            "vendor_authority_attempt_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
+            "baseline_response_receipt": "native-actuator-visible-smoke-response-only.json",
+            "post_authority_pidff_smoke_receipt": VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE,
+            "planned_post_authority_receipt": VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE,
+            "commands": [
+                {
+                    "name": "compare_post_authority_pidff_response",
+                    "output_enabled": false,
+                    "opens_hid": false,
+                    "opens_serial": false,
+                    "sends_read_only_query": false,
+                    "sends_output": false,
+                    "command": vendor_post_authority_pidff_response_command(lane)
+                }
+            ],
+            "blocked_actions": vendor_authority_handoff_blocked_actions()
+        });
+    }
+    serde_json::json!({
+        "kind": "awaiting_post_authority_pidff_response_receipt",
+        "summary": "a bounded vendor-authority attempt receipt is recorded; capture a separately authorized post-authority PIDFF response receipt, then compare it without making a motion claim",
+        "hardware_output_allowed_now": false,
+        "authorization_created_by_wizard": false,
+        "no_openracing_output": true,
+        "hardware_attempt_command_emitted": false,
+        "vendor_authority_attempt_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
+        "baseline_response_receipt": "native-actuator-visible-smoke-response-only.json",
+        "planned_post_authority_pidff_smoke_receipt": VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE,
+        "planned_post_authority_receipt": VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE,
+        "blocked_actions": vendor_authority_handoff_blocked_actions()
+    })
+}
+
+fn moza_vendor_authority_navigation_summary(lane: &Path) -> Value {
+    let authorization_recorded = lane.join(VENDOR_AUTHORITY_AUTHORIZATION_FILE).is_file();
+    let smoke_dry_run_recorded = lane.join(VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE).is_file();
+    let attempt_recorded = lane.join(VENDOR_AUTHORITY_ATTEMPT_FILE).is_file();
+    let blocked_attempt_recorded = lane.join(VENDOR_AUTHORITY_ATTEMPT_BLOCKED_FILE).is_file();
+    let post_pidff_smoke_recorded = lane.join(VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE).is_file();
+    let post_pidff_comparison_recorded = lane
+        .join(VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE)
+        .is_file();
+    let closed_loop_undertravel_recorded = lane
+        .join(NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE)
+        .is_file();
+    let standard_pidff_diagnosis_recorded = lane
+        .join(NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE)
+        .is_file();
+    let state = if post_pidff_comparison_recorded {
+        "post_authority_pidff_response_recorded"
+    } else if attempt_recorded {
+        "vendor_authority_attempt_recorded"
+    } else if blocked_attempt_recorded {
+        "vendor_authority_attempt_blocked_before_send"
+    } else if authorization_recorded && smoke_dry_run_recorded {
+        "awaiting_separate_bounded_attempt"
+    } else if authorization_recorded {
+        "awaiting_no_output_smoke_dry_run"
+    } else if closed_loop_undertravel_recorded && standard_pidff_diagnosis_recorded {
+        "ready_for_exact_authority_handoff"
+    } else {
+        "awaiting_closed_loop_undertravel_evidence"
+    };
+
+    serde_json::json!({
+        "artifact_kind": "moza_vendor_authority_navigation",
+        "claim_scope": "native_control_vendor_authority_navigation_only",
+        "state": state,
+        "native_control_evidence": false,
+        "hardware_output_authorized": false,
+        "native_visible_ready": false,
+        "smoke_ready": false,
+        "no_hid_device_opened": true,
+        "no_ffb_writes": true,
+        "no_output_reports": true,
+        "no_feature_reports": true,
+        "no_serial_config_commands": true,
+        "no_firmware_or_dfu_commands": true,
+        "pit_house_dependency": false,
+        "simulator_dependency": false,
+        "closed_loop_undertravel_recorded": closed_loop_undertravel_recorded,
+        "standard_pidff_diagnosis_recorded": standard_pidff_diagnosis_recorded,
+        "authorization_receipt_recorded": authorization_recorded,
+        "smoke_dry_run_receipt_recorded": smoke_dry_run_recorded,
+        "vendor_authority_attempt_recorded": attempt_recorded,
+        "vendor_authority_attempt_blocked_recorded": blocked_attempt_recorded,
+        "post_authority_pidff_smoke_recorded": post_pidff_smoke_recorded,
+        "post_authority_pidff_response_recorded": post_pidff_comparison_recorded,
+        "hardware_attempt_command_emitted": false,
+        "next_allowed_action": if post_pidff_comparison_recorded {
+            "Review post-authority PIDFF response comparison and run strict verifier before any motion claim."
+        } else if attempt_recorded {
+            "Record post-authority PIDFF response comparison before any motion claim."
+        } else if blocked_attempt_recorded {
+            "Release the serial-port owner, then create fresh bench-clear, authorization, smoke dry-run, and attempt receipts before retry."
+        } else if authorization_recorded && smoke_dry_run_recorded {
+            "A separately requested bounded hardware attempt may consume the exact receipts; this navigation does not emit the serial write command."
+        } else if authorization_recorded {
+            "Run the no-output vendor-authority smoke dry-run before any separate bounded attempt."
+        } else if closed_loop_undertravel_recorded && standard_pidff_diagnosis_recorded {
+            "Create an exact authorization receipt after fresh command-bound bench-clear, then run a no-output smoke dry-run."
+        } else {
+            "Preserve undertravel evidence and finish the vendor-authority prerequisites before any hardware attempt."
+        },
+        "exact_command": {
+            "command_id": VENDOR_AUTHORITY_HANDOFF_COMMAND_ID,
+            "frame_hex": VENDOR_AUTHORITY_HANDOFF_FRAME_HEX,
+            "payload_hex": VENDOR_AUTHORITY_HANDOFF_PAYLOAD_HEX,
+            "risk_class": "vendor_output_candidate",
+            "requires_exact_authorization": true,
+            "hardware_attempt_command_emitted": false
+        },
+        "artifacts": {
+            "authorization_receipt": VENDOR_AUTHORITY_AUTHORIZATION_FILE,
+            "smoke_dry_run_receipt": VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE,
+            "attempt_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
+            "blocked_attempt_receipt": VENDOR_AUTHORITY_ATTEMPT_BLOCKED_FILE,
+            "post_authority_pidff_smoke_receipt": VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE,
+            "post_authority_pidff_response_receipt": VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE
+        },
+        "required_bench_clear_evidence": VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE,
+        "serial_precondition": moza_vendor_authority_serial_precondition(lane),
+        "blocked_actions": vendor_authority_handoff_blocked_actions(),
+        "notes": [
+            "Vendor-authority navigation is native-control research support; it is not a Pit House, SimHub, or simulator dependency.",
+            "Pit House may still own the R5 serial/CDC port; release exclusive serial owners before creating short-lived authorization or running the separate bounded attempt.",
+            "The bench wizard may surface no-output authorization and smoke commands, but it must not emit the hardware attempt command.",
+            "A consumed attempt receipt remains non-claiming until later PIDFF response comparison and native-visible verification pass."
+        ]
+    })
+}
+
+fn vendor_authority_authorization_command(lane: &Path) -> String {
+    format!(
+        "wheelctl moza authorize-vendor-authority --command-id {} --frame-hex {} --precondition-hardware-doctor {} --authorized-by {} --bench-clear-evidence '{}' --expires-after-minutes {} --json-out {} --json --confirm-exact-vendor-authority-authorization",
+        VENDOR_AUTHORITY_HANDOFF_COMMAND_ID,
+        VENDOR_AUTHORITY_HANDOFF_FRAME_HEX,
+        VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET,
+        VENDOR_AUTHORITY_HANDOFF_AUTHORIZED_BY,
+        VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE,
+        VENDOR_AUTHORITY_HANDOFF_EXPIRES_AFTER_MINUTES,
+        lane.join(VENDOR_AUTHORITY_AUTHORIZATION_FILE).display()
+    )
+}
+
+fn vendor_authority_live_hardware_doctor_command() -> String {
+    format!(
+        "wheelctl hardware doctor --json-out {} --json",
+        VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET
+    )
+}
+
+fn vendor_authority_smoke_dry_run_command(lane: &Path) -> String {
+    format!(
+        "wheelctl moza vendor-authority-smoke-dry-run --authorization {} --json-out {} --json --confirm-no-output-smoke-dry-run",
+        lane.join(VENDOR_AUTHORITY_AUTHORIZATION_FILE).display(),
+        lane.join(VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE).display()
+    )
+}
+
+fn vendor_post_authority_pidff_response_command(lane: &Path) -> String {
+    format!(
+        "wheelctl moza vendor-post-authority-pidff-response --lane {} --attempt {} --baseline-response {} --post-response {} --json-out {} --json",
+        lane.display(),
+        lane.join(VENDOR_AUTHORITY_ATTEMPT_FILE).display(),
+        lane.join("native-actuator-visible-smoke-response-only.json")
+            .display(),
+        lane.join(VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE).display(),
+        lane.join(VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE)
+            .display()
+    )
+}
+
+fn vendor_authority_handoff_blocked_actions() -> Vec<&'static str> {
+    vec![
+        "hardware attempt command from bench-wizard",
+        "authorization reuse",
+        "payload drift",
+        "configuration drift",
+        "firmware or DFU command",
+        "unknown host-to-device command",
+        "direct HID report 0xaf",
+        "high torque",
+        "native-control claim",
+        "native-visible claim",
+        "smoke-ready claim",
+        "release-ready claim",
+    ]
 }
 
 fn moza_passive_sniff_next_operator_step(lane: &Path) -> Option<Value> {
@@ -5641,6 +6294,188 @@ async fn pre_output_readiness(json: bool, lane: &Path, json_out: Option<&Path>) 
     Ok(())
 }
 
+async fn vendor_fake_transport(json: bool, json_out: Option<&Path>) -> Result<()> {
+    let receipt = vendor_fake_transport_cli_receipt()?;
+    write_json_receipt(json_out, &receipt)?;
+    print_vendor_fake_transport_receipt(json, json_out, &receipt)
+}
+
+async fn vendor_status_probe(request: VendorStatusProbeRequest<'_>) -> Result<()> {
+    if !request.confirm_read_only_query {
+        return Err(anyhow!(
+            "--confirm-read-only-query is required before sending Moza vendor status queries"
+        ));
+    }
+    if request.timeout_ms == 0 {
+        return Err(anyhow!("--timeout-ms must be greater than zero"));
+    }
+
+    let commands = selected_read_only_status_commands(request.command_ids)?;
+    let port_identity = moza_serial_port_identity(request.serial_port)?;
+    let mut transport = SerialPortStatusProbeTransport::open(
+        request.serial_port,
+        request.baud_rate,
+        request.timeout_ms,
+    )?;
+    let receipt = vendor_status_probe_receipt_with_transport(
+        request.serial_port,
+        request.baud_rate,
+        request.timeout_ms,
+        &commands,
+        port_identity,
+        &mut transport,
+    )?;
+
+    write_json_receipt(request.json_out, &receipt)?;
+    print_vendor_status_probe_receipt(request.json, request.json_out, &receipt)?;
+    if receipt.success {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "Moza vendor status probe failed: {} decoded response(s), {} failure(s)",
+            receipt.decoded_response_count,
+            receipt.failed_response_count
+        ))
+    }
+}
+
+async fn authorize_vendor_authority(
+    request: VendorAuthorityAuthorizationRequest<'_>,
+) -> Result<()> {
+    if !request.confirm_exact_vendor_authority_authorization {
+        return Err(anyhow!(
+            "--confirm-exact-vendor-authority-authorization is required before creating a Moza vendor-authority authorization receipt"
+        ));
+    }
+    if request.expires_after_minutes == 0 || request.expires_after_minutes > 60 {
+        return Err(anyhow!(
+            "--expires-after-minutes must be in the bounded range 1..=60"
+        ));
+    }
+
+    ensure_receipt_writable(request.json_out, request.overwrite)?;
+    let receipt = vendor_authority_authorization_receipt(&request)?;
+    write_json_file(request.json_out, &receipt)?;
+    print_vendor_authority_authorization_receipt(request.json, request.json_out, &receipt)
+}
+
+async fn vendor_authority_smoke_dry_run(
+    request: VendorAuthoritySmokeDryRunRequest<'_>,
+) -> Result<()> {
+    ensure_receipt_writable(request.json_out, request.overwrite)?;
+    let authorization = read_json_path(request.authorization)?;
+    let receipt = vendor_authority_smoke_dry_run_receipt(&request, &authorization)?;
+    write_json_file(request.json_out, &receipt)?;
+    print_vendor_authority_smoke_dry_run_receipt(request.json, request.json_out, &receipt)
+}
+
+async fn vendor_authority_attempt(request: VendorAuthorityAttemptRequest<'_>) -> Result<()> {
+    if !request.confirm_bounded_vendor_authority_attempt {
+        return Err(anyhow!(
+            "--confirm-bounded-vendor-authority-attempt is required before sending a Moza vendor-authority frame"
+        ));
+    }
+    if request.timeout_ms == 0 {
+        return Err(anyhow!("--timeout-ms must be greater than zero"));
+    }
+    ensure_receipt_writable(request.json_out, request.overwrite)?;
+    let authorization = read_json_path(request.authorization)?;
+    let smoke_dry_run = read_json_path(request.smoke_dry_run)?;
+    validate_vendor_authority_attempt_receipts(&request, &authorization, &smoke_dry_run)?;
+    let port_identity = moza_serial_port_identity(request.serial_port)?;
+    let blocked_json_out = vendor_authority_attempt_blocked_output_path(request.json_out);
+    ensure_receipt_writable(&blocked_json_out, request.overwrite)?;
+    let mut transport = match SerialPortVendorAuthorityAttemptTransport::open(
+        request.serial_port,
+        request.baud_rate,
+        request.timeout_ms,
+    ) {
+        Ok(transport) => transport,
+        Err(error) => {
+            let error_message = error.to_string();
+            let receipt = vendor_authority_attempt_blocked_receipt(
+                &request,
+                &authorization,
+                &smoke_dry_run,
+                port_identity,
+                "serial_open",
+                &error_message,
+            )?;
+            write_json_file(&blocked_json_out, &receipt)?;
+            print_vendor_authority_attempt_blocked_receipt(
+                request.json,
+                &blocked_json_out,
+                &receipt,
+            )?;
+            return Err(anyhow!(
+                "Moza vendor-authority attempt blocked before send; wrote non-claiming receipt to '{}': {error_message}",
+                blocked_json_out.display()
+            ));
+        }
+    };
+    let receipt = vendor_authority_attempt_receipt_with_transport(
+        &request,
+        &authorization,
+        &smoke_dry_run,
+        port_identity,
+        &mut transport,
+    )?;
+    write_json_file(request.json_out, &receipt)?;
+    print_vendor_authority_attempt_receipt(request.json, request.json_out, &receipt)
+}
+
+async fn vendor_post_authority_pidff_response(
+    request: VendorPostAuthorityPidffResponseRequest<'_>,
+) -> Result<()> {
+    ensure_receipt_writable(request.json_out, request.overwrite)?;
+    let attempt_path = request
+        .attempt
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| request.lane.join(VENDOR_AUTHORITY_ATTEMPT_FILE));
+    let baseline_path = request
+        .baseline_response
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| {
+            request
+                .lane
+                .join("native-actuator-visible-smoke-response-only.json")
+        });
+    let post_path = request
+        .post_response
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| request.lane.join(VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE));
+
+    let attempt = read_json_path(&attempt_path).with_context(|| {
+        format!(
+            "failed to read vendor-authority attempt receipt '{}'",
+            attempt_path.display()
+        )
+    })?;
+    let baseline = read_json_path(&baseline_path).with_context(|| {
+        format!(
+            "failed to read baseline PIDFF response receipt '{}'",
+            baseline_path.display()
+        )
+    })?;
+    let post = read_json_path(&post_path).with_context(|| {
+        format!(
+            "failed to read post-authority PIDFF response receipt '{}'",
+            post_path.display()
+        )
+    })?;
+
+    let receipt = vendor_post_authority_pidff_response_receipt(
+        &attempt_path,
+        &attempt,
+        &baseline_path,
+        &baseline,
+        &post_path,
+        &post,
+    )?;
+    write_json_file(request.json_out, &receipt)?;
+    print_vendor_post_authority_pidff_response_receipt(request.json, request.json_out, &receipt)
+}
+
 async fn audit_lane(
     json: bool,
     lane: &Path,
@@ -5675,6 +6510,7 @@ async fn authorize_visible_output(request: AuthorizeVisibleOutputRequest<'_>) ->
         duration_ms,
         movement_threshold_degrees,
         preserve_receipt,
+        planned_output,
         json_out,
         overwrite,
     } = request;
@@ -5741,40 +6577,68 @@ async fn authorize_visible_output(request: AuthorizeVisibleOutputRequest<'_>) ->
         ));
     }
 
-    let preserved_path = preserve_receipt
+    let current_visible_path = lane.join(NATIVE_ACTUATOR_VISIBLE_SMOKE_FILE);
+    let planned_output_path = planned_output
         .map(|path| lane_output_artifact_path(lane, path))
         .transpose()?
-        .unwrap_or_else(|| lane.join("native-actuator-visible-smoke-response-only.json"));
-    let current_visible_path = lane.join("native-actuator-visible-smoke.json");
-    if path_value_matches(
-        &current_visible_path,
-        Some(&preserved_path.display().to_string()),
-    ) {
-        return Err(anyhow!(
-            "--preserve-receipt must not point at the live replacement receipt '{}'",
-            current_visible_path.display()
-        ));
+        .unwrap_or_else(|| current_visible_path.clone());
+    let planned_output_file =
+        native_visible_output_relative_path(lane, &planned_output_path, "--planned-output")?;
+    let replaces_live_visible_receipt = planned_output_file == NATIVE_ACTUATOR_VISIBLE_SMOKE_FILE;
+    if planned_output_file == VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE {
+        validate_post_authority_pidff_smoke_context(lane)?;
+        if planned_output_path.exists() && !overwrite {
+            return Err(anyhow!(
+                "{} already exists; pass --overwrite only after confirming the post-authority PIDFF response receipt can be replaced",
+                planned_output_path.display()
+            ));
+        }
     }
-    if preserved_path.exists() && !overwrite {
-        return Err(anyhow!(
-            "{} already exists; pass --overwrite only after confirming it is the same preserved response-only receipt",
-            preserved_path.display()
-        ));
-    }
-    if let Some(parent) = preserved_path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create '{}'", parent.display()))?;
-    }
-    fs::copy(&current_visible_path, &preserved_path).with_context(|| {
-        format!(
-            "failed to preserve response-only receipt '{}' as '{}'",
-            current_visible_path.display(),
-            preserved_path.display()
-        )
-    })?;
+
+    let preserved_path = if replaces_live_visible_receipt {
+        let preserved_path = preserve_receipt
+            .map(|path| lane_output_artifact_path(lane, path))
+            .transpose()?
+            .unwrap_or_else(|| lane.join(NATIVE_ACTUATOR_VISIBLE_RESPONSE_ONLY_FILE));
+        if path_value_matches(
+            &current_visible_path,
+            Some(&preserved_path.display().to_string()),
+        ) {
+            return Err(anyhow!(
+                "--preserve-receipt must not point at the live replacement receipt '{}'",
+                current_visible_path.display()
+            ));
+        }
+        if preserved_path.exists() && !overwrite {
+            return Err(anyhow!(
+                "{} already exists; pass --overwrite only after confirming it is the same preserved response-only receipt",
+                preserved_path.display()
+            ));
+        }
+        if let Some(parent) = preserved_path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create '{}'", parent.display()))?;
+        }
+        fs::copy(&current_visible_path, &preserved_path).with_context(|| {
+            format!(
+                "failed to preserve response-only receipt '{}' as '{}'",
+                current_visible_path.display(),
+                preserved_path.display()
+            )
+        })?;
+        preserved_path
+    } else {
+        if preserve_receipt.is_some() {
+            return Err(anyhow!(
+                "--preserve-receipt is only valid when --planned-output replaces '{}'",
+                current_visible_path.display()
+            ));
+        }
+        lane.join(NATIVE_ACTUATOR_VISIBLE_RESPONSE_ONLY_FILE)
+    };
 
     let planned_command = native_visible_output_command(
         lane,
@@ -5784,6 +6648,7 @@ async fn authorize_visible_output(request: AuthorizeVisibleOutputRequest<'_>) ->
         max_percent,
         duration_ms,
         movement_threshold_degrees,
+        planned_output_file,
     );
     validate_authorized_native_visible_command(
         lane,
@@ -5794,7 +6659,7 @@ async fn authorize_visible_output(request: AuthorizeVisibleOutputRequest<'_>) ->
         max_percent,
         duration_ms,
         movement_threshold_degrees,
-        &current_visible_path,
+        &planned_output_path,
     )?;
 
     let authorized_at = now_utc();
@@ -5823,8 +6688,10 @@ async fn authorize_visible_output(request: AuthorizeVisibleOutputRequest<'_>) ->
         "movement_threshold_degrees": movement_threshold_degrees,
         "operator": operator,
         "authorized_at_utc": plan["authorized_at_utc"].clone(),
-        "must_preserve_failed_receipt": true,
+        "must_preserve_failed_receipt": replaces_live_visible_receipt,
         "preserved_receipt": lane_relative_or_display(lane, &preserved_path),
+        "planned_output": planned_output_file,
+        "post_authority_pidff_response_capture": planned_output_file == VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE,
         "requires_fresh_bench_clear": false
     });
     update_native_visible_authorization_checks(
@@ -5835,7 +6702,11 @@ async fn authorize_visible_output(request: AuthorizeVisibleOutputRequest<'_>) ->
     );
     plan["notes"] = serde_json::json!([
         "Authorization artifact only: this file is not evidence that visible motion passed.",
-        "The response-only visible-motion receipt was preserved before authorizing replacement.",
+        if replaces_live_visible_receipt {
+            "The response-only visible-motion receipt was preserved before authorizing replacement."
+        } else {
+            "The post-authority PIDFF response command writes a separate receipt and does not replace native-visible evidence."
+        },
         "The planned output command is exact and remains capped at 5 percent for up to 2000 ms through descriptor-proven PIDFF bounded-effect reports."
     ]);
     plan["observed_failure_summary"]["preserved_receipt"] =
@@ -8334,12 +9205,10 @@ fn validate_native_actuator_visible_smoke_preflight(
         let json_out = json_out.ok_or_else(|| {
             anyhow!("--json-out is required before actual native actuator visible-motion writes")
         })?;
-        require_lane_artifact_path(
-            lane,
-            json_out,
-            "native-actuator-visible-smoke.json",
-            "--json-out",
-        )?;
+        let output_file = native_visible_output_relative_path(lane, json_out, "--json-out")?;
+        if output_file == VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE {
+            validate_post_authority_pidff_smoke_context(lane)?;
+        }
         validate_native_visible_retry_authorization(
             lane,
             selector,
@@ -8515,13 +9384,19 @@ fn consume_native_visible_output_authorization(
         json_out,
     )?;
 
+    let output_file = native_visible_output_relative_path(lane, json_out, "--json-out")?;
+    let post_authority_pidff_capture = output_file == VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE;
     let visible_passed = json_bool(receipt, "success") == Some(true);
-    let evidence_status = if visible_passed {
+    let evidence_status = if post_authority_pidff_capture {
+        "post_authority_pidff_response_consumed_no_motion_claim"
+    } else if visible_passed {
         "exact_output_attempt_consumed_visible_motion_proven"
     } else {
         "exact_output_attempt_consumed_visible_motion_unproven"
     };
-    let review_decision = if visible_passed {
+    let review_decision = if post_authority_pidff_capture {
+        "post_authority_pidff_response_recorded_pending_comparison"
+    } else if visible_passed {
         "authorized_output_consumed_visible_motion_proven"
     } else {
         "authorized_output_consumed_visible_motion_unproven"
@@ -8540,12 +9415,19 @@ fn consume_native_visible_output_authorization(
     plan["planned_next_output"]["duration_ms"] = serde_json::json!("not_authorized");
     plan["planned_next_output"]["force_percent"] = serde_json::json!("not_authorized");
     plan["last_output_attempt"] = serde_json::json!({
-        "status": if visible_passed {
+        "status": if post_authority_pidff_capture {
+            if visible_passed {
+                "post_authority_visible_motion_candidate_requires_verifier"
+            } else {
+                "post_authority_pidff_response_recorded_no_motion_claim"
+            }
+        } else if visible_passed {
             "visible_motion_proven"
         } else {
             "visible_motion_unproven"
         },
         "receipt": lane_relative_or_display(lane, json_out),
+        "post_authority_pidff_response_capture": post_authority_pidff_capture,
         "profile": json_string(receipt, "profile"),
         "strategy": json_string(receipt, "output_strategy"),
         "max_percent": json_f64(receipt, "max_percent"),
@@ -8567,7 +9449,11 @@ fn consume_native_visible_output_authorization(
     update_native_visible_consumed_authorization_checks(&mut plan, visible_passed);
     plan["notes"] = serde_json::json!([
         "Authorization artifact only: this file is not evidence that visible motion passed.",
-        "The exact authorized native visible-motion command has been consumed by the recorded output receipt.",
+        if post_authority_pidff_capture {
+            "The exact authorized post-authority PIDFF response command has been consumed by a separate non-claiming receipt."
+        } else {
+            "The exact authorized native visible-motion command has been consumed by the recorded output receipt."
+        },
         "No further hardware-output command is authorized by this artifact; use a separate reviewed plan and fresh bench-clear before any rerun, longer duration, higher force, or controlled-angle profile."
     ]);
 
@@ -8999,6 +9885,7 @@ fn native_visible_output_command(
     max_percent: f32,
     duration_ms: u64,
     movement_threshold_degrees: f64,
+    json_out_relative_path: &str,
 ) -> String {
     format!(
         "wheelctl moza actuator-visible-smoke --device {} --lane {} --prior-actuator-proof {} --steering-proof {} --profile {} --strategy {} --max-percent {} --duration-ms {} --movement-threshold-degrees {} --confirm-actuator-visible --json-out {} --json",
@@ -9011,7 +9898,7 @@ fn native_visible_output_command(
         compact_f32(max_percent),
         duration_ms,
         compact_f64(movement_threshold_degrees),
-        lane_path_arg(lane, "native-actuator-visible-smoke.json")
+        lane_path_arg(lane, json_out_relative_path)
     )
 }
 
@@ -9181,6 +10068,37 @@ fn require_one_of_lane_artifact_paths(
         "{label} '{}' must resolve to one of these same-lane artifacts: {allowed}",
         path.display()
     ))
+}
+
+fn native_visible_output_relative_path(
+    lane: &Path,
+    output: &Path,
+    label: &str,
+) -> Result<&'static str> {
+    require_one_of_lane_artifact_paths(lane, output, NATIVE_VISIBLE_OUTPUT_FILES, label)
+}
+
+fn validate_post_authority_pidff_smoke_context(lane: &Path) -> Result<()> {
+    let attempt_path = lane.join(VENDOR_AUTHORITY_ATTEMPT_FILE);
+    let attempt = read_json_value(lane, VENDOR_AUTHORITY_ATTEMPT_FILE).with_context(|| {
+        format!(
+            "post-authority PIDFF smoke requires consumed vendor-authority attempt receipt '{}'",
+            attempt_path.display()
+        )
+    })?;
+    validate_vendor_authority_attempt_schema(&attempt)?;
+    validate_vendor_authority_attempt_gates(&attempt)?;
+
+    let baseline_path = lane.join(NATIVE_ACTUATOR_VISIBLE_RESPONSE_ONLY_FILE);
+    let baseline =
+        read_json_value(lane, NATIVE_ACTUATOR_VISIBLE_RESPONSE_ONLY_FILE).with_context(|| {
+            format!(
+                "post-authority PIDFF smoke requires preserved baseline response receipt '{}'",
+                baseline_path.display()
+            )
+        })?;
+    native_pidff_response_summary(&baseline_path, &baseline, "baseline")?;
+    Ok(())
 }
 
 fn controlled_angle_authorization_relative_path(
@@ -25242,6 +26160,2110 @@ fn parse_hex_u8_token(token: &str) -> std::result::Result<u8, String> {
     u8::from_str_radix(value, 16).map_err(|_| format!("invalid byte token '{token}'"))
 }
 
+trait VendorStatusProbeTransport {
+    fn write_query(&mut self, command: &MozaVendorCommand, frame: &[u8]) -> Result<()>;
+    fn read_response_frame(
+        &mut self,
+        command: &MozaVendorCommand,
+        timeout_ms: u64,
+    ) -> Result<Vec<u8>>;
+}
+
+struct SerialPortStatusProbeTransport {
+    port: Box<dyn serialport::SerialPort>,
+}
+
+impl SerialPortStatusProbeTransport {
+    fn open(serial_port: &str, baud_rate: u32, timeout_ms: u64) -> Result<Self> {
+        let port = serialport::new(serial_port, baud_rate)
+            .timeout(Duration::from_millis(timeout_ms))
+            .open()
+            .with_context(|| {
+                format!(
+                    "failed to open Moza R5 read-only status serial port `{serial_port}` at {baud_rate} baud"
+                )
+            })?;
+        Ok(Self { port })
+    }
+}
+
+impl VendorStatusProbeTransport for SerialPortStatusProbeTransport {
+    fn write_query(&mut self, command: &MozaVendorCommand, frame: &[u8]) -> Result<()> {
+        self.port
+            .write_all(frame)
+            .with_context(|| format!("failed to send read-only status query `{}`", command.id))?;
+        self.port
+            .flush()
+            .with_context(|| format!("failed to flush read-only status query `{}`", command.id))
+    }
+
+    fn read_response_frame(
+        &mut self,
+        command: &MozaVendorCommand,
+        timeout_ms: u64,
+    ) -> Result<Vec<u8>> {
+        self.port
+            .set_timeout(Duration::from_millis(timeout_ms))
+            .with_context(|| {
+                format!(
+                    "failed to set read timeout before status query `{}`",
+                    command.id
+                )
+            })?;
+        read_moza_serial_frame(&mut *self.port, 256)
+            .with_context(|| format!("failed to read status response `{}`", command.id))
+    }
+}
+
+trait VendorAuthorityAttemptTransport {
+    fn write_authorized_frame(
+        &mut self,
+        command: &MozaVendorCommand,
+        frame: &[u8],
+    ) -> Result<usize>;
+}
+
+struct SerialPortVendorAuthorityAttemptTransport {
+    port: Box<dyn serialport::SerialPort>,
+}
+
+impl SerialPortVendorAuthorityAttemptTransport {
+    fn open(serial_port: &str, baud_rate: u32, timeout_ms: u64) -> Result<Self> {
+        let port = serialport::new(serial_port, baud_rate)
+            .timeout(Duration::from_millis(timeout_ms))
+            .open()
+            .with_context(|| {
+                format!(
+                    "failed to open Moza R5 vendor authority serial port `{serial_port}` at {baud_rate} baud"
+                )
+            })?;
+        Ok(Self { port })
+    }
+}
+
+impl VendorAuthorityAttemptTransport for SerialPortVendorAuthorityAttemptTransport {
+    fn write_authorized_frame(
+        &mut self,
+        command: &MozaVendorCommand,
+        frame: &[u8],
+    ) -> Result<usize> {
+        self.port.write_all(frame).with_context(|| {
+            format!(
+                "failed to send bounded vendor-authority frame `{}`",
+                command.id
+            )
+        })?;
+        self.port.flush().with_context(|| {
+            format!(
+                "failed to flush bounded vendor-authority frame `{}`",
+                command.id
+            )
+        })?;
+        Ok(frame.len())
+    }
+}
+
+fn read_moza_serial_frame(reader: &mut dyn Read, max_frame_len: usize) -> Result<Vec<u8>> {
+    let mut skipped = 0usize;
+    let mut start = [0u8; 1];
+    loop {
+        reader
+            .read_exact(&mut start)
+            .context("failed to read Moza serial frame start byte")?;
+        if start[0] == MESSAGE_START {
+            break;
+        }
+        skipped += 1;
+        if skipped > max_frame_len {
+            return Err(anyhow!(
+                "failed to find Moza serial frame start byte within {max_frame_len} byte(s)"
+            ));
+        }
+    }
+
+    let mut len = [0u8; 1];
+    reader
+        .read_exact(&mut len)
+        .context("failed to read Moza serial frame length byte")?;
+    let expected_len = 5 + usize::from(len[0]);
+    if expected_len > max_frame_len {
+        return Err(anyhow!(
+            "Moza serial frame length {expected_len} exceeds cap {max_frame_len}"
+        ));
+    }
+
+    let mut frame = vec![MESSAGE_START, len[0]];
+    frame.resize(expected_len, 0);
+    reader
+        .read_exact(&mut frame[2..])
+        .context("failed to read Moza serial frame body")?;
+    Ok(frame)
+}
+
+fn vendor_status_probe_receipt_with_transport(
+    serial_port: &str,
+    baud_rate: u32,
+    timeout_ms: u64,
+    commands: &[&'static MozaVendorCommand],
+    port_identity: VendorStatusProbePortIdentity,
+    transport: &mut dyn VendorStatusProbeTransport,
+) -> Result<VendorStatusProbeReceipt> {
+    if commands.is_empty() {
+        return Err(anyhow!(
+            "at least one read-only vendor status command must be selected"
+        ));
+    }
+
+    let mut responses = Vec::new();
+    let mut sent_query_count = 0usize;
+    let mut decoded_response_count = 0usize;
+    let mut failed_response_count = 0usize;
+
+    for command in commands {
+        let query_frame = encode_read_only_status_query(command)
+            .with_context(|| format!("failed to encode read-only status query `{}`", command.id))?;
+        let mut response = VendorStatusProbeResponse {
+            command_id: command.id.to_string(),
+            command_name: command.name.to_string(),
+            group: command.group,
+            device_id: command.device_id,
+            command: command.command,
+            risk_class: command.risk_class.as_registry_str().to_string(),
+            query_frame_hex: bytes_hex_compact(&query_frame),
+            response_frame_hex: None,
+            response_payload_hex: None,
+            response_payload_len: None,
+            decoded: false,
+            error: None,
+        };
+
+        match transport.write_query(command, &query_frame) {
+            Ok(()) => {
+                sent_query_count += 1;
+            }
+            Err(error) => {
+                failed_response_count += 1;
+                response.error = Some(error.to_string());
+                responses.push(response);
+                continue;
+            }
+        }
+
+        match transport.read_response_frame(command, timeout_ms) {
+            Ok(response_frame) => {
+                response.response_frame_hex = Some(bytes_hex_compact(&response_frame));
+                match decode_read_only_status_response(command, &response_frame) {
+                    Ok(decoded) => {
+                        decoded_response_count += 1;
+                        response.decoded = true;
+                        response.response_payload_len = Some(decoded.payload.len());
+                        response.response_payload_hex = Some(bytes_hex_compact(decoded.payload));
+                    }
+                    Err(error) => {
+                        failed_response_count += 1;
+                        response.error = Some(error.to_string());
+                    }
+                }
+            }
+            Err(error) => {
+                failed_response_count += 1;
+                response.error = Some(error.to_string());
+            }
+        }
+
+        responses.push(response);
+    }
+
+    Ok(VendorStatusProbeReceipt {
+        success: failed_response_count == 0 && decoded_response_count == commands.len(),
+        schema_version: 1,
+        artifact_kind: "moza_vendor_status_probe",
+        claim_scope: "read_only_hardware",
+        command: "wheelctl moza vendor-status-probe",
+        generated_at_utc: now_utc(),
+        native_control_evidence: false,
+        hardware_output_authorized: false,
+        native_visible_ready: false,
+        next_allowed_action: "Review this read-only status receipt before implementing exact authorization support.",
+        blocked_actions: vec![
+            "output write",
+            "configuration write",
+            "authorization receipt",
+            "hardware writes",
+            "native-control claim",
+            "native-visible claim",
+            "smoke-ready claim",
+            "release-ready claim",
+            "firmware or DFU command",
+            "unknown host-to-device command",
+        ],
+        required_artifacts: vec![
+            "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md",
+            "docs/hardware/moza-r5-vendor-authority-test-plan.md",
+            "fixtures/moza/r5/vendor-command-registry.json",
+            "fixtures/moza/r5/vendor-serial-codec-fixtures.json",
+            "schemas/moza-vendor-status-probe.schema.json",
+            "crates/hid-moza-protocol/src/serial/status_probe.rs",
+            "crates/cli/src/commands/moza.rs",
+        ],
+        serial_port: serial_port.to_string(),
+        baud_rate,
+        timeout_ms,
+        expected_vid: hex_u16(MOZA_VENDOR_ID),
+        expected_pid: hex_u16(product_ids::R5_V1),
+        port_identity,
+        no_hid_device_opened: true,
+        opened_serial_device: true,
+        serial_identity_verified: true,
+        no_ffb_writes: true,
+        no_output_reports: true,
+        no_feature_reports: true,
+        no_serial_config_commands: true,
+        no_firmware_or_dfu_commands: true,
+        sent_read_only_query_commands: sent_query_count > 0,
+        sent_read_only_query_count: sent_query_count,
+        sent_output_writes: false,
+        sent_configuration_writes: false,
+        sent_firmware_or_dfu_commands: false,
+        real_hardware_status_evidence: failed_response_count == 0 && decoded_response_count > 0,
+        transport_kind: "serial_read_only",
+        codec_status: moza_serial_codec_status_name(READ_ONLY_STATUS_CODEC_STATUS),
+        hardware_write_eligible: READ_ONLY_STATUS_CODEC_STATUS.allows_hardware_writes(),
+        selected_command_count: commands.len(),
+        decoded_response_count,
+        failed_response_count,
+        responses,
+        notes: vec![
+            "This command sends only registry-allowed read-only vendor status queries.",
+            "It never sends output, configuration, firmware, DFU, or unknown commands.",
+            "A successful receipt is status/protocol evidence only and is not native-control, native-visible, smoke-ready, or release-ready proof.",
+        ],
+    })
+}
+
+fn selected_read_only_status_commands(
+    command_ids: &[String],
+) -> Result<Vec<&'static MozaVendorCommand>> {
+    if command_ids.is_empty() {
+        return Ok(read_only_status_commands().collect());
+    }
+
+    let mut selected = Vec::new();
+    for command_id in command_ids {
+        let command = REQUIRED_VENDOR_COMMANDS
+            .iter()
+            .find(|candidate| candidate.id == command_id)
+            .ok_or_else(|| anyhow!("unknown Moza vendor command `{command_id}`"))?;
+        if !command.read_only_status_probe_allowed {
+            return Err(anyhow!(
+                "command `{command_id}` is not read-only status probe eligible"
+            ));
+        }
+        selected.push(command);
+    }
+    Ok(selected)
+}
+
+#[derive(Debug)]
+struct VendorAuthorityPreconditionHardwareDoctor {
+    generated_at: String,
+    serial_port: String,
+    serial_interface: String,
+    vendor_app_matched_processes: Vec<String>,
+}
+
+fn validate_vendor_authority_precondition_hardware_doctor(
+    path: &Path,
+    max_age_minutes: u64,
+) -> Result<VendorAuthorityPreconditionHardwareDoctor> {
+    let receipt = read_json_path(path)?;
+    if !json_pointer_bool(&receipt, "/success")? {
+        return Err(anyhow!(
+            "precondition hardware doctor '{}' was not successful",
+            path.display()
+        ));
+    }
+    let command = json_pointer_string(&receipt, "/command")?;
+    if command != "wheelctl hardware doctor" {
+        return Err(anyhow!(
+            "precondition receipt '{}' has command `{command}`, expected `wheelctl hardware doctor`",
+            path.display()
+        ));
+    }
+
+    for field in [
+        "/no_hid_device_opened",
+        "/no_ffb_writes",
+        "/no_output_reports",
+        "/no_feature_reports",
+        "/no_serial_config_commands",
+        "/no_firmware_or_dfu_commands",
+    ] {
+        if !json_pointer_bool(&receipt, field)? {
+            return Err(anyhow!(
+                "precondition hardware doctor '{}' must keep `{field}` true",
+                path.display()
+            ));
+        }
+    }
+
+    let generated_at = json_pointer_string(&receipt, "/generated_at")
+        .or_else(|_| json_pointer_string(&receipt, "/generated_at_utc"))?
+        .to_string();
+    let generated_at_utc = chrono::DateTime::parse_from_rfc3339(&generated_at)
+        .with_context(|| {
+            format!(
+                "invalid precondition hardware doctor timestamp `{generated_at}` in '{}'",
+                path.display()
+            )
+        })?
+        .with_timezone(&chrono::Utc);
+    let now = chrono::Utc::now();
+    if generated_at_utc > now + chrono::Duration::seconds(30) {
+        return Err(anyhow!(
+            "precondition hardware doctor '{}' is from the future; rerun hardware doctor immediately before authorization",
+            path.display()
+        ));
+    }
+    let max_age = chrono::Duration::minutes(
+        i64::try_from(max_age_minutes).context("precondition max age minutes out of range")?,
+    );
+    if now.signed_duration_since(generated_at_utc) > max_age {
+        return Err(anyhow!(
+            "precondition hardware doctor '{}' is older than {max_age_minutes} minute(s); rerun hardware doctor immediately before authorization",
+            path.display()
+        ));
+    }
+
+    if !json_pointer_bool(&receipt, "/vendor_apps/process_scan_attempted")? {
+        return Err(anyhow!(
+            "precondition hardware doctor '{}' must scan vendor app processes before exact authorization",
+            path.display()
+        ));
+    }
+    let vendor_app_matched_processes =
+        json_pointer_string_array(&receipt, "/vendor_apps/matched_processes")?;
+    if json_pointer_bool(&receipt, "/vendor_apps/pit_house_running")?
+        || !vendor_app_matched_processes.is_empty()
+    {
+        return Err(anyhow!(
+            "precondition hardware doctor '{}' blocks exact authorization because vendor app process(es) may own the R5 serial/CDC port: {}",
+            path.display(),
+            vendor_app_matched_processes.join(", ")
+        ));
+    }
+
+    if !json_pointer_bool(&receipt, "/windows_pnp/scan_attempted")? {
+        return Err(anyhow!(
+            "precondition hardware doctor '{}' must include a Windows PnP scan before exact authorization",
+            path.display()
+        ));
+    }
+    if !json_pointer_bool(&receipt, "/windows_pnp/moza_vid_visible")? {
+        return Err(anyhow!(
+            "precondition hardware doctor '{}' does not show the Moza VID before exact authorization",
+            path.display()
+        ));
+    }
+    let devices = receipt
+        .pointer("/windows_pnp/devices")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            anyhow!(
+                "precondition hardware doctor '{}' is missing `/windows_pnp/devices`",
+                path.display()
+            )
+        })?;
+    for device in devices {
+        if json_string(device, "class") != Some("Ports")
+            || json_string(device, "vendor_id") != Some(MOZA_VENDOR_HEX)
+            || json_string(device, "product_id") != Some(VENDOR_AUTHORITY_HANDOFF_PRODUCT_ID)
+            || json_string(device, "status") != Some("OK")
+        {
+            continue;
+        }
+        let Some(serial_interface) = json_string(device, "friendly_name") else {
+            continue;
+        };
+        if let Some(serial_port) = windows_com_port_from_friendly_name(serial_interface) {
+            return Ok(VendorAuthorityPreconditionHardwareDoctor {
+                generated_at,
+                serial_port,
+                serial_interface: serial_interface.to_string(),
+                vendor_app_matched_processes,
+            });
+        }
+    }
+
+    Err(anyhow!(
+        "precondition hardware doctor '{}' does not show an OK R5 serial/CDC Ports interface for VID {} PID {}",
+        path.display(),
+        MOZA_VENDOR_HEX,
+        VENDOR_AUTHORITY_HANDOFF_PRODUCT_ID
+    ))
+}
+
+fn vendor_authority_authorization_receipt(
+    request: &VendorAuthorityAuthorizationRequest<'_>,
+) -> Result<VendorAuthorityAuthorizationReceipt> {
+    if !request.confirm_exact_vendor_authority_authorization {
+        return Err(anyhow!(
+            "--confirm-exact-vendor-authority-authorization is required before creating a Moza vendor-authority authorization receipt"
+        ));
+    }
+    if request.expires_after_minutes == 0 || request.expires_after_minutes > 60 {
+        return Err(anyhow!(
+            "--expires-after-minutes must be in the bounded range 1..=60"
+        ));
+    }
+
+    let command = vendor_command_by_id(request.command_id)?;
+    ensure_vendor_authority_exact_authorization_candidate(command)?;
+    validate_vendor_authority_bench_clear_evidence(
+        request.bench_clear_evidence,
+        request.command_id,
+    )?;
+    let precondition = validate_vendor_authority_precondition_hardware_doctor(
+        request.precondition_hardware_doctor,
+        request.expires_after_minutes,
+    )?;
+
+    let frame = parse_hex_bytes(request.frame_hex)
+        .map_err(|error| anyhow!("failed to parse --frame-hex: {error}"))?;
+    let decoded = decode_fixture_frame(&frame).context("failed to decode authorized frame")?;
+    if decoded.command.id != command.id {
+        return Err(anyhow!(
+            "--frame-hex command `{}` does not match --command-id `{}`",
+            decoded.command.id,
+            command.id
+        ));
+    }
+    if decoded.device_id != command.device_id {
+        return Err(anyhow!(
+            "--frame-hex device id 0x{:02X} does not match registry device id 0x{:02X} for `{}`",
+            decoded.device_id,
+            command.device_id,
+            command.id
+        ));
+    }
+    if decoded.payload.is_empty() {
+        return Err(anyhow!(
+            "exact vendor-authority authorization requires a non-empty payload for `{}`",
+            command.id
+        ));
+    }
+
+    let generated_at_utc = now_utc();
+    let expires_at_utc = authorization_expiration_utc(request.expires_after_minutes)?;
+    Ok(VendorAuthorityAuthorizationReceipt {
+        success: true,
+        schema_version: 1,
+        artifact_kind: "moza_vendor_authority_authorization",
+        claim_scope: "single_use_exact_vendor_authority_authorization",
+        command: "wheelctl moza authorize-vendor-authority",
+        generated_at_utc,
+        expires_at_utc,
+        expires_after_minutes: request.expires_after_minutes,
+        authorized_by: request.authorized_by.to_string(),
+        bench_clear_evidence: request.bench_clear_evidence.to_string(),
+        precondition_hardware_doctor_receipt: request
+            .precondition_hardware_doctor
+            .display()
+            .to_string(),
+        precondition_hardware_doctor_validated: true,
+        precondition_generated_at: precondition.generated_at,
+        precondition_max_age_minutes: request.expires_after_minutes,
+        precondition_r5_serial_present: true,
+        precondition_r5_serial_port: precondition.serial_port,
+        precondition_r5_serial_interface: precondition.serial_interface,
+        precondition_vendor_app_scan_attempted: true,
+        precondition_vendor_app_running: false,
+        precondition_vendor_app_matched_processes: precondition.vendor_app_matched_processes,
+        precondition_no_hid_device_opened: true,
+        precondition_no_ffb_writes: true,
+        precondition_no_output_reports: true,
+        precondition_no_feature_reports: true,
+        precondition_no_serial_config_commands: true,
+        precondition_no_firmware_or_dfu_commands: true,
+        native_control_evidence: false,
+        hardware_output_authorized: true,
+        native_visible_ready: false,
+        next_allowed_action: "Run only a matching no-output vendor authority smoke dry-run before any hardware send consumes this receipt.",
+        blocked_actions: vec![
+            "hardware send before no-output smoke dry-run",
+            "any command other than the authorized frame hash",
+            "payload drift",
+            "configuration drift",
+            "firmware or DFU command",
+            "unknown host-to-device command",
+            "high-torque enablement",
+            "native-control claim",
+            "native-visible claim",
+            "smoke-ready claim",
+            "release-ready claim",
+        ],
+        required_artifacts: vec![
+            "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md",
+            "docs/hardware/moza-r5-vendor-authority-test-plan.md",
+            "fixtures/moza/r5/vendor-command-registry.json",
+            "schemas/moza-vendor-authority-authorization.schema.json",
+            "crates/hid-moza-protocol/src/serial/frame.rs",
+            "crates/hid-moza-protocol/src/serial/vendor_authority.rs",
+            "crates/cli/src/commands/moza.rs",
+        ],
+        authorization_consumed: false,
+        exact_authorization: true,
+        single_use: true,
+        no_hid_device_opened: true,
+        no_serial_device_opened: true,
+        no_serial_query_sent: true,
+        sent_output_writes: false,
+        sent_configuration_writes: false,
+        sent_firmware_or_dfu_commands: false,
+        transport_kind: "authorization_receipt_only",
+        codec_status: "fixture_decode_verified_exact_frame",
+        hardware_write_eligible: true,
+        authorized_command: VendorAuthorityAuthorizedCommand {
+            command_id: command.id.to_string(),
+            command_name: command.name.to_string(),
+            family: command.family.to_string(),
+            group: command.group,
+            device_id: command.device_id,
+            command: command.command,
+            risk_class: command.risk_class.as_registry_str().to_string(),
+            read_only_status_probe_allowed: command.read_only_status_probe_allowed,
+        },
+        authorized_frame: VendorAuthorityAuthorizedFrame {
+            frame_hex: bytes_hex_compact(&frame),
+            frame_sha256: sha256_hex(&frame),
+            frame_len: frame.len(),
+            payload_hex: bytes_hex_compact(decoded.payload),
+            payload_sha256: sha256_hex(decoded.payload),
+            payload_len: decoded.payload.len(),
+            checksum: hex_u8(decoded.checksum),
+        },
+        forbidden_commands: REQUIRED_VENDOR_COMMANDS
+            .iter()
+            .filter(|candidate| !candidate.risk_class.requires_exact_authorization())
+            .map(|candidate| candidate.id.to_string())
+            .collect(),
+        notes: vec![
+            "This receipt authorizes exactly one later vendor-authority frame by command tuple and frame hash.",
+            "This command does not open HID, open serial, send queries, or send output/configuration/firmware writes.",
+            "The receipt is not native-control, native-visible, smoke-ready, coexistence, simulator, or release-ready proof.",
+        ],
+    })
+}
+
+fn vendor_authority_smoke_dry_run_receipt(
+    request: &VendorAuthoritySmokeDryRunRequest<'_>,
+    authorization: &Value,
+) -> Result<VendorAuthoritySmokeDryRunReceipt> {
+    if !request.confirm_no_output_smoke_dry_run {
+        return Err(anyhow!(
+            "--confirm-no-output-smoke-dry-run is required before validating a Moza vendor-authority dry-run"
+        ));
+    }
+
+    validate_vendor_authority_authorization_schema(authorization)?;
+    validate_vendor_authority_authorization_gates(authorization)?;
+
+    let command_id = json_pointer_string(authorization, "/authorized_command/command_id")?;
+    let command_name = json_pointer_string(authorization, "/authorized_command/command_name")?;
+    let family = json_pointer_string(authorization, "/authorized_command/family")?;
+    let risk_class = json_pointer_string(authorization, "/authorized_command/risk_class")?;
+    if json_pointer_bool(
+        authorization,
+        "/authorized_command/read_only_status_probe_allowed",
+    )? {
+        return Err(anyhow!(
+            "read-only status command `{command_id}` must not enter vendor-authority smoke dry-run"
+        ));
+    }
+
+    let command = vendor_command_by_id(command_id)?;
+    ensure_vendor_authority_exact_authorization_candidate(command)?;
+    if command.risk_class.as_registry_str() != risk_class {
+        return Err(anyhow!(
+            "authorization risk_class `{risk_class}` does not match registry risk_class `{}` for `{command_id}`",
+            command.risk_class.as_registry_str()
+        ));
+    }
+
+    let frame_hex = json_pointer_string(authorization, "/authorized_frame/frame_hex")?;
+    let expected_frame_sha256 =
+        json_pointer_string(authorization, "/authorized_frame/frame_sha256")?;
+    let expected_payload_sha256 =
+        json_pointer_string(authorization, "/authorized_frame/payload_sha256")?;
+    let frame = parse_hex_bytes(frame_hex)
+        .map_err(|error| anyhow!("authorization frame_hex is invalid: {error}"))?;
+    let decoded =
+        decode_fixture_frame(&frame).context("failed to decode authorization frame_hex")?;
+    if decoded.command.id != command.id {
+        return Err(anyhow!(
+            "authorization frame command `{}` does not match receipt command `{command_id}`",
+            decoded.command.id
+        ));
+    }
+    if decoded.device_id != command.device_id {
+        return Err(anyhow!(
+            "authorization frame device id 0x{:02X} does not match registry device id 0x{:02X}",
+            decoded.device_id,
+            command.device_id
+        ));
+    }
+    let actual_frame_sha256 = sha256_hex(&frame);
+    if actual_frame_sha256 != expected_frame_sha256 {
+        return Err(anyhow!(
+            "authorization frame hash mismatch: expected {expected_frame_sha256}, got {actual_frame_sha256}"
+        ));
+    }
+    let actual_payload_sha256 = sha256_hex(decoded.payload);
+    if actual_payload_sha256 != expected_payload_sha256 {
+        return Err(anyhow!(
+            "authorization payload hash mismatch: expected {expected_payload_sha256}, got {actual_payload_sha256}"
+        ));
+    }
+    if decoded.payload.is_empty() {
+        return Err(anyhow!(
+            "vendor-authority smoke dry-run requires a non-empty authorized payload for `{command_id}`"
+        ));
+    }
+    validate_authorization_not_expired(authorization)?;
+
+    Ok(VendorAuthoritySmokeDryRunReceipt {
+        success: true,
+        schema_version: 1,
+        artifact_kind: "moza_vendor_authority_smoke",
+        claim_scope: "software_vendor_authority_smoke_dry_run",
+        command: "wheelctl moza vendor-authority-smoke-dry-run",
+        generated_at_utc: now_utc(),
+        authorization_receipt: request.authorization.display().to_string(),
+        authorization_receipt_validated: true,
+        authorization_consumed: false,
+        exact_authorization: true,
+        single_use_authorization: true,
+        native_control_evidence: false,
+        hardware_output_authorized: false,
+        native_visible_ready: false,
+        next_allowed_action: "Review this dry-run receipt before a separate bounded hardware authority attempt consumes the exact authorization receipt.",
+        blocked_actions: vec![
+            "hardware send from dry-run command",
+            "authorization reuse",
+            "payload drift",
+            "configuration drift",
+            "firmware or DFU command",
+            "unknown host-to-device command",
+            "high-torque enablement",
+            "native-control claim",
+            "native-visible claim",
+            "smoke-ready claim",
+            "release-ready claim",
+        ],
+        required_artifacts: vec![
+            "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md",
+            "docs/hardware/moza-r5-vendor-authority-test-plan.md",
+            "schemas/moza-vendor-authority-authorization.schema.json",
+            "schemas/moza-vendor-authority-smoke.schema.json",
+            "crates/hid-moza-protocol/src/serial/frame.rs",
+            "crates/hid-moza-protocol/src/serial/vendor_authority.rs",
+            "crates/cli/src/commands/moza.rs",
+        ],
+        no_hid_device_opened: true,
+        no_serial_device_opened: true,
+        no_serial_query_sent: true,
+        sent_output_writes: false,
+        sent_configuration_writes: false,
+        sent_firmware_or_dfu_commands: false,
+        commands_sent: Vec::new(),
+        transport_kind: "dry_run_only",
+        codec_status: "fixture_decode_verified_exact_frame",
+        hardware_write_eligible: false,
+        planned_next_output: VendorAuthoritySmokePlannedNextOutput {
+            allowed: false,
+            reason: "dry-run validates exact authorization only; the later hardware attempt must consume the authorization receipt",
+            requires_exact_authorization_receipt: true,
+            requires_bounded_hardware_attempt_command: true,
+            command_id: command_id.to_string(),
+            command_name: command_name.to_string(),
+            family: family.to_string(),
+            risk_class: risk_class.to_string(),
+            frame_sha256: expected_frame_sha256.to_string(),
+            payload_sha256: expected_payload_sha256.to_string(),
+        },
+        dry_run_checks: vec![
+            VendorAuthoritySmokeDryRunCheck {
+                check: "authorization_schema_valid",
+                passed: true,
+            },
+            VendorAuthoritySmokeDryRunCheck {
+                check: "authorization_not_consumed",
+                passed: true,
+            },
+            VendorAuthoritySmokeDryRunCheck {
+                check: "frame_hash_bound",
+                passed: true,
+            },
+            VendorAuthoritySmokeDryRunCheck {
+                check: "payload_hash_bound",
+                passed: true,
+            },
+            VendorAuthoritySmokeDryRunCheck {
+                check: "no_hardware_traffic_sent",
+                passed: true,
+            },
+        ],
+        notes: vec![
+            "This dry-run validates a prior exact vendor-authority authorization receipt only.",
+            "It does not consume authorization and does not open HID, open serial, send queries, or send output/configuration/firmware writes.",
+            "It is not native-control, native-visible, smoke-ready, coexistence, simulator, or release-ready proof.",
+        ],
+    })
+}
+
+fn vendor_authority_attempt_receipt_with_transport(
+    request: &VendorAuthorityAttemptRequest<'_>,
+    authorization: &Value,
+    smoke_dry_run: &Value,
+    port_identity: VendorStatusProbePortIdentity,
+    transport: &mut dyn VendorAuthorityAttemptTransport,
+) -> Result<VendorAuthorityAttemptReceipt> {
+    if !request.confirm_bounded_vendor_authority_attempt {
+        return Err(anyhow!(
+            "--confirm-bounded-vendor-authority-attempt is required before sending a Moza vendor-authority frame"
+        ));
+    }
+    if request.timeout_ms == 0 {
+        return Err(anyhow!("--timeout-ms must be greater than zero"));
+    }
+
+    validate_vendor_authority_authorization_schema(authorization)?;
+    validate_vendor_authority_authorization_gates(authorization)?;
+    validate_authorization_not_expired(authorization)?;
+    validate_vendor_authority_smoke_schema(smoke_dry_run)?;
+    validate_vendor_authority_smoke_gates(smoke_dry_run)?;
+
+    let command_id = json_pointer_string(authorization, "/authorized_command/command_id")?;
+    let command_name = json_pointer_string(authorization, "/authorized_command/command_name")?;
+    let family = json_pointer_string(authorization, "/authorized_command/family")?;
+    let risk_class = json_pointer_string(authorization, "/authorized_command/risk_class")?;
+    let command = vendor_command_by_id(command_id)?;
+    ensure_vendor_authority_exact_authorization_candidate(command)?;
+    if command.risk_class.as_registry_str() != risk_class {
+        return Err(anyhow!(
+            "authorization risk_class `{risk_class}` does not match registry risk_class `{}` for `{command_id}`",
+            command.risk_class.as_registry_str()
+        ));
+    }
+
+    let expected_frame_sha256 =
+        json_pointer_string(authorization, "/authorized_frame/frame_sha256")?;
+    let expected_payload_sha256 =
+        json_pointer_string(authorization, "/authorized_frame/payload_sha256")?;
+    validate_vendor_authority_smoke_matches_authorization(
+        smoke_dry_run,
+        command_id,
+        command_name,
+        family,
+        risk_class,
+        expected_frame_sha256,
+        expected_payload_sha256,
+    )?;
+
+    let frame_hex = json_pointer_string(authorization, "/authorized_frame/frame_hex")?;
+    let frame = parse_hex_bytes(frame_hex)
+        .map_err(|error| anyhow!("authorization frame_hex is invalid: {error}"))?;
+    let decoded =
+        decode_fixture_frame(&frame).context("failed to decode authorization frame_hex")?;
+    if decoded.command.id != command.id {
+        return Err(anyhow!(
+            "authorization frame command `{}` does not match receipt command `{command_id}`",
+            decoded.command.id
+        ));
+    }
+    if decoded.device_id != command.device_id {
+        return Err(anyhow!(
+            "authorization frame device id 0x{:02X} does not match registry device id 0x{:02X}",
+            decoded.device_id,
+            command.device_id
+        ));
+    }
+    if decoded.payload.is_empty() {
+        return Err(anyhow!(
+            "vendor-authority attempt requires a non-empty authorized payload for `{command_id}`"
+        ));
+    }
+
+    let frame_sha256 = sha256_hex(&frame);
+    let payload_sha256 = sha256_hex(decoded.payload);
+    if frame_sha256 != expected_frame_sha256 {
+        return Err(anyhow!(
+            "authorization frame hash mismatch: expected {expected_frame_sha256}, got {frame_sha256}"
+        ));
+    }
+    if payload_sha256 != expected_payload_sha256 {
+        return Err(anyhow!(
+            "authorization payload hash mismatch: expected {expected_payload_sha256}, got {payload_sha256}"
+        ));
+    }
+
+    let written_len = transport.write_authorized_frame(command, &frame)?;
+    if written_len != frame.len() {
+        return Err(anyhow!(
+            "bounded vendor-authority frame write length mismatch: expected {}, got {written_len}",
+            frame.len()
+        ));
+    }
+
+    let (sent_output_writes, sent_configuration_writes) =
+        vendor_authority_attempt_write_flags(command.risk_class);
+    Ok(VendorAuthorityAttemptReceipt {
+        success: true,
+        schema_version: 1,
+        artifact_kind: "moza_vendor_authority_attempt",
+        claim_scope: "bounded_vendor_authority_attempt_recorded",
+        command: "wheelctl moza vendor-authority-attempt",
+        generated_at_utc: now_utc(),
+        authorization_receipt: request.authorization.display().to_string(),
+        smoke_dry_run_receipt: request.smoke_dry_run.display().to_string(),
+        authorization_receipt_validated: true,
+        smoke_dry_run_receipt_validated: true,
+        authorization_consumed: true,
+        exact_authorization: true,
+        single_use_authorization: true,
+        native_control_evidence: false,
+        hardware_output_authorized: false,
+        native_visible_ready: false,
+        smoke_ready: false,
+        next_allowed_action: "Record post-authority PIDFF response comparison before any motion claim.",
+        blocked_actions: vec![
+            "authorization reuse",
+            "second send from this receipt",
+            "native-visible promotion",
+            "smoke-ready promotion",
+            "release-ready promotion",
+            "firmware or DFU command",
+            "unknown host-to-device command",
+            "direct HID report 0xaf",
+            "high-torque enablement",
+        ],
+        required_artifacts: vec![
+            "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md",
+            "docs/hardware/moza-r5-vendor-authority-test-plan.md",
+            "schemas/moza-vendor-authority-authorization.schema.json",
+            "schemas/moza-vendor-authority-smoke.schema.json",
+            "schemas/moza-vendor-authority-attempt.schema.json",
+            "crates/cli/src/commands/moza.rs",
+        ],
+        serial_port: request.serial_port.to_string(),
+        baud_rate: request.baud_rate,
+        timeout_ms: request.timeout_ms,
+        expected_vid: hex_u16(MOZA_VENDOR_ID),
+        expected_pid: hex_u16(product_ids::R5_V1),
+        port_identity,
+        serial_identity_verified: true,
+        no_hid_device_opened: true,
+        opened_serial_device: true,
+        sent_read_only_query_commands: false,
+        sent_authorized_frame: true,
+        sent_authorized_frame_count: 1,
+        sent_output_writes,
+        sent_configuration_writes,
+        sent_firmware_or_dfu_commands: false,
+        sent_unknown_commands: false,
+        direct_hid_report_0xaf_sent: false,
+        high_torque_enabled: false,
+        transport_kind: "serial_bounded_authority_attempt",
+        codec_status: "fixture_decode_verified_exact_frame",
+        hardware_write_eligible: false,
+        authorized_command: VendorAuthorityAuthorizedCommand {
+            command_id: command.id.to_string(),
+            command_name: command.name.to_string(),
+            family: command.family.to_string(),
+            group: command.group,
+            device_id: command.device_id,
+            command: command.command,
+            risk_class: command.risk_class.as_registry_str().to_string(),
+            read_only_status_probe_allowed: command.read_only_status_probe_allowed,
+        },
+        authorized_frame: VendorAuthorityAttemptFrame {
+            frame_hex: bytes_hex_compact(&frame),
+            frame_sha256,
+            frame_len: frame.len(),
+            payload_hex: bytes_hex_compact(decoded.payload),
+            payload_sha256,
+            payload_len: decoded.payload.len(),
+            checksum: hex_u8(decoded.checksum),
+            written_frame_sha256: sha256_hex(&frame),
+            written_frame_len: written_len,
+        },
+        authorization_consumption: VendorAuthorityAttemptConsumption {
+            consumption_recorded: true,
+            authorization_reuse_allowed: false,
+            requires_new_bench_clear_for_retry: true,
+            requires_new_authorization_for_retry: true,
+            requires_new_smoke_dry_run_for_retry: true,
+            requires_new_attempt_receipt_for_retry: true,
+        },
+        planned_next_output: VendorAuthorityAttemptPlannedNextOutput {
+            allowed: false,
+            reason: "The first authority attempt is consumed evidence, not reusable authorization.",
+        },
+        notes: vec![
+            "This receipt records one exact vendor-authority frame send through the serial interface.",
+            "It consumes the matching authorization and does not authorize retry or promotion.",
+            "It is not native-control, native-visible, smoke-ready, coexistence, simulator, or release-ready proof.",
+        ],
+    })
+}
+
+fn vendor_authority_attempt_blocked_output_path(json_out: &Path) -> PathBuf {
+    if json_out.file_name().and_then(|name| name.to_str()) == Some(VENDOR_AUTHORITY_ATTEMPT_FILE) {
+        return json_out.with_file_name(VENDOR_AUTHORITY_ATTEMPT_BLOCKED_FILE);
+    }
+
+    let file_stem = json_out
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("vendor-authority-attempt");
+    let blocked_file_name = match json_out
+        .extension()
+        .and_then(|extension| extension.to_str())
+    {
+        Some(extension) if !extension.is_empty() => format!("{file_stem}-blocked.{extension}"),
+        _ => format!("{file_stem}-blocked"),
+    };
+    json_out.with_file_name(blocked_file_name)
+}
+
+fn vendor_authority_attempt_blocked_receipt(
+    request: &VendorAuthorityAttemptRequest<'_>,
+    authorization: &Value,
+    smoke_dry_run: &Value,
+    port_identity: VendorStatusProbePortIdentity,
+    failure_stage: &'static str,
+    error_message: &str,
+) -> Result<VendorAuthorityAttemptBlockedReceipt> {
+    validate_vendor_authority_attempt_receipts(request, authorization, smoke_dry_run)?;
+
+    let command_id = json_pointer_string(authorization, "/authorized_command/command_id")?;
+    let command_name = json_pointer_string(authorization, "/authorized_command/command_name")?;
+    let family = json_pointer_string(authorization, "/authorized_command/family")?;
+    let risk_class = json_pointer_string(authorization, "/authorized_command/risk_class")?;
+    let command = vendor_command_by_id(command_id)?;
+
+    let frame_hex = json_pointer_string(authorization, "/authorized_frame/frame_hex")?;
+    let expected_frame_sha256 =
+        json_pointer_string(authorization, "/authorized_frame/frame_sha256")?;
+    let expected_payload_sha256 =
+        json_pointer_string(authorization, "/authorized_frame/payload_sha256")?;
+    let frame = parse_hex_bytes(frame_hex)
+        .map_err(|error| anyhow!("authorization frame_hex is invalid: {error}"))?;
+    let decoded =
+        decode_fixture_frame(&frame).context("failed to decode authorization frame_hex")?;
+
+    Ok(VendorAuthorityAttemptBlockedReceipt {
+        success: false,
+        schema_version: 1,
+        artifact_kind: "moza_vendor_authority_attempt_blocked",
+        claim_scope: "bounded_vendor_authority_attempt_blocked_before_send",
+        command: "wheelctl moza vendor-authority-attempt",
+        generated_at_utc: now_utc(),
+        authorization_receipt: request.authorization.display().to_string(),
+        smoke_dry_run_receipt: request.smoke_dry_run.display().to_string(),
+        authorization_receipt_validated: true,
+        smoke_dry_run_receipt_validated: true,
+        authorization_consumed: false,
+        exact_authorization: true,
+        single_use_authorization: true,
+        native_control_evidence: false,
+        hardware_output_authorized: false,
+        native_visible_ready: false,
+        smoke_ready: false,
+        next_allowed_action: "Release the serial-port owner, then create fresh command-bound bench-clear, authorization, smoke dry-run, and attempt receipts before retry.",
+        blocked_actions: vec![
+            "authorization reuse",
+            "retry without fresh bench-clear",
+            "retry without fresh authorization",
+            "retry without fresh smoke dry-run",
+            "native-visible promotion",
+            "smoke-ready promotion",
+            "release-ready promotion",
+            "firmware or DFU command",
+            "unknown host-to-device command",
+            "direct HID report 0xaf",
+            "high-torque enablement",
+        ],
+        required_artifacts: vec![
+            "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md",
+            "docs/hardware/moza-r5-vendor-authority-test-plan.md",
+            "schemas/moza-vendor-authority-authorization.schema.json",
+            "schemas/moza-vendor-authority-smoke.schema.json",
+            "schemas/moza-vendor-authority-attempt-blocked.schema.json",
+            "crates/cli/src/commands/moza.rs",
+        ],
+        serial_port: request.serial_port.to_string(),
+        baud_rate: request.baud_rate,
+        timeout_ms: request.timeout_ms,
+        expected_vid: hex_u16(MOZA_VENDOR_ID),
+        expected_pid: hex_u16(product_ids::R5_V1),
+        port_identity,
+        serial_identity_verified: true,
+        no_hid_device_opened: true,
+        opened_serial_device: false,
+        serial_open_attempted: true,
+        sent_read_only_query_commands: false,
+        sent_authorized_frame: false,
+        sent_authorized_frame_count: 0,
+        sent_output_writes: false,
+        sent_configuration_writes: false,
+        sent_firmware_or_dfu_commands: false,
+        sent_unknown_commands: false,
+        direct_hid_report_0xaf_sent: false,
+        high_torque_enabled: false,
+        transport_kind: "serial_bounded_authority_attempt_blocked_before_send",
+        codec_status: "fixture_decode_verified_exact_frame",
+        hardware_write_eligible: false,
+        authorized_command: VendorAuthorityAuthorizedCommand {
+            command_id: command_id.to_string(),
+            command_name: command_name.to_string(),
+            family: family.to_string(),
+            group: command.group,
+            device_id: command.device_id,
+            command: command.command,
+            risk_class: risk_class.to_string(),
+            read_only_status_probe_allowed: command.read_only_status_probe_allowed,
+        },
+        authorized_frame: VendorAuthorityAuthorizedFrame {
+            frame_hex: bytes_hex_compact(&frame),
+            frame_sha256: expected_frame_sha256.to_string(),
+            frame_len: frame.len(),
+            payload_hex: bytes_hex_compact(decoded.payload),
+            payload_sha256: expected_payload_sha256.to_string(),
+            payload_len: decoded.payload.len(),
+            checksum: hex_u8(decoded.checksum),
+        },
+        failure: VendorAuthorityAttemptBlockedFailure {
+            stage: failure_stage,
+            message: error_message.to_string(),
+            frame_sent_before_failure: false,
+        },
+        retry_policy: VendorAuthorityAttemptBlockedRetryPolicy {
+            authorization_reuse_allowed: false,
+            requires_new_bench_clear_for_retry: true,
+            requires_new_authorization_for_retry: true,
+            requires_new_smoke_dry_run_for_retry: true,
+            requires_new_attempt_receipt_for_retry: true,
+        },
+        planned_next_output: VendorAuthorityAttemptPlannedNextOutput {
+            allowed: false,
+            reason: "A blocked-before-send receipt is not a consumed attempt and does not authorize retry.",
+        },
+        notes: vec![
+            "This receipt records a vendor-authority attempt that was blocked before opening serial output or sending the authorized frame.",
+            "It does not consume the authorization as successful attempt evidence and does not authorize retry.",
+            "It is not native-control, native-visible, smoke-ready, coexistence, simulator, or release-ready proof.",
+        ],
+    })
+}
+
+fn vendor_post_authority_pidff_response_receipt(
+    attempt_path: &Path,
+    attempt: &Value,
+    baseline_path: &Path,
+    baseline: &Value,
+    post_path: &Path,
+    post: &Value,
+) -> Result<VendorPostAuthorityPidffResponseReceipt> {
+    validate_vendor_authority_attempt_schema(attempt)?;
+    validate_vendor_authority_attempt_gates(attempt)?;
+    let baseline_response = native_pidff_response_summary(baseline_path, baseline, "baseline")?;
+    let post_authority_response = native_pidff_response_summary(post_path, post, "post-authority")?;
+    validate_post_authority_pidff_response_order(
+        attempt,
+        &baseline_response,
+        &post_authority_response,
+    )?;
+    validate_pidff_response_comparable(&baseline_response, &post_authority_response)?;
+
+    let delta_change_degrees =
+        post_authority_response.angle_delta_degrees - baseline_response.angle_delta_degrees;
+    let absolute_delta_change_degrees = delta_change_degrees.abs();
+    let visible_motion_candidate = post_authority_response.angle_delta_degrees
+        >= post_authority_response.movement_threshold_degrees
+        || post_authority_response.movement_observed;
+    let response_increased = delta_change_degrees >= NATIVE_ACTUATOR_RESPONSE_MIN_DELTA_DEGREES;
+    let response_regressed = delta_change_degrees <= -NATIVE_ACTUATOR_RESPONSE_MIN_DELTA_DEGREES;
+    let classification = if visible_motion_candidate {
+        "post_authority_visible_motion_candidate_requires_verifier"
+    } else if response_increased {
+        "post_authority_pidff_response_increased_no_motion_claim"
+    } else if response_regressed {
+        "post_authority_pidff_response_regressed"
+    } else {
+        "post_authority_pidff_response_unchanged"
+    };
+
+    Ok(VendorPostAuthorityPidffResponseReceipt {
+        success: true,
+        schema_version: 1,
+        artifact_kind: "moza_vendor_post_authority_pidff_response",
+        claim_scope: "post_authority_pidff_response_comparison_only",
+        command: "wheelctl moza vendor-post-authority-pidff-response",
+        generated_at_utc: now_utc(),
+        vendor_authority_attempt_receipt: attempt_path.display().to_string(),
+        baseline_response_receipt: baseline_path.display().to_string(),
+        post_authority_response_receipt: post_path.display().to_string(),
+        vendor_authority_attempt_validated: true,
+        baseline_response_validated: true,
+        post_authority_response_validated: true,
+        comparable_pidff_profile: true,
+        native_control_evidence: false,
+        hardware_output_authorized: false,
+        native_visible_ready: false,
+        smoke_ready: false,
+        no_hid_device_opened: true,
+        no_serial_device_opened: true,
+        no_read_only_query_sent: true,
+        no_output_reports_sent: true,
+        no_feature_reports_sent: true,
+        no_serial_writes_sent: true,
+        sent_output_writes: false,
+        sent_configuration_writes: false,
+        sent_firmware_or_dfu_commands: false,
+        high_torque_enabled: false,
+        comparison: VendorPostAuthorityPidffComparison {
+            classification,
+            response_threshold_degrees: NATIVE_ACTUATOR_RESPONSE_MIN_DELTA_DEGREES,
+            movement_threshold_degrees: post_authority_response.movement_threshold_degrees,
+            baseline_angle_delta_degrees: baseline_response.angle_delta_degrees,
+            post_authority_angle_delta_degrees: post_authority_response.angle_delta_degrees,
+            delta_change_degrees,
+            absolute_delta_change_degrees,
+            baseline_movement_observed: baseline_response.movement_observed,
+            post_authority_movement_observed: post_authority_response.movement_observed,
+            visible_motion_candidate,
+            response_increased,
+            response_regressed,
+        },
+        baseline_response,
+        post_authority_response,
+        next_allowed_action: "Review the comparison and run the native-visible verifier before any claim; any follow-up motion ladder requires a new plan, fresh bench-clear, and exact authorization.",
+        blocked_actions: vec![
+            "native-visible promotion from comparison alone",
+            "smoke-ready promotion from comparison alone",
+            "authorization reuse",
+            "rerun without fresh bench-clear",
+            "hardware attempt command from bench-wizard",
+            "direct HID report 0xaf",
+            "high torque",
+            "firmware or DFU command",
+            "unknown host-to-device command",
+        ],
+        required_artifacts: vec![
+            "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md",
+            "docs/hardware/moza-r5-vendor-authority-test-plan.md",
+            "schemas/moza-vendor-authority-attempt.schema.json",
+            "schemas/moza-vendor-post-authority-pidff-response.schema.json",
+        ],
+        planned_next_output: VendorPostAuthorityPlannedNextOutput {
+            allowed: false,
+            reason: "The comparison receipt is diagnostic only and does not authorize another output command.",
+        },
+        notes: vec![
+            "This command only compares existing receipts; it does not open HID, open serial, send queries, or send output/configuration/firmware writes.",
+            "A visible-motion-looking post-authority PIDFF response remains a candidate until the strict native-visible verifier accepts real hardware evidence.",
+            "The consumed vendor-authority attempt receipt is evidence only and cannot be reused as authorization.",
+        ],
+    })
+}
+
+fn native_pidff_response_summary(
+    path: &Path,
+    receipt: &Value,
+    label: &str,
+) -> Result<NativePidffResponseSummary> {
+    if json_string(receipt, "command") != Some("wheelctl moza actuator-visible-smoke") {
+        return Err(anyhow!(
+            "{label} PIDFF response receipt '{}' must be from `wheelctl moza actuator-visible-smoke`",
+            path.display()
+        ));
+    }
+    for (field, expected) in [
+        ("dry_run", false),
+        ("hardware_output_enabled", true),
+        ("no_direct_torque_reports", true),
+        ("no_high_torque", true),
+        ("high_torque", false),
+        ("no_serial_config_commands", true),
+        ("no_firmware_or_dfu_commands", true),
+        ("no_nonzero_above_limit", true),
+        ("final_zero_sent", true),
+        ("final_stop_all_sent", true),
+        ("post_stop_stable", true),
+    ] {
+        let actual = json_bool(receipt, field).ok_or_else(|| {
+            anyhow!(
+                "{label} PIDFF response receipt '{}' is missing bool field `{field}`",
+                path.display()
+            )
+        })?;
+        if actual != expected {
+            return Err(anyhow!(
+                "{label} PIDFF response receipt '{}' field `{field}` expected {expected}, got {actual}",
+                path.display()
+            ));
+        }
+    }
+    let profile = json_string(receipt, "profile")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `profile`"))?
+        .to_string();
+    let output_strategy = json_string(receipt, "output_strategy")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `output_strategy`"))?
+        .to_string();
+    let generated_at_utc = json_string(receipt, "generated_at_utc")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `generated_at_utc`"))?
+        .to_string();
+    let selector = json_string(receipt, "selector")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `selector`"))?
+        .to_string();
+    let max_percent = json_f64(receipt, "max_percent")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `max_percent`"))?;
+    let duration_ms = json_u64(receipt, "duration_ms")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `duration_ms`"))?;
+    let movement_threshold_degrees =
+        json_f64(receipt, "movement_threshold_degrees").ok_or_else(|| {
+            anyhow!("{label} PIDFF response receipt missing `movement_threshold_degrees`")
+        })?;
+    let angle_delta_degrees = json_f64(receipt, "angle_delta_degrees")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `angle_delta_degrees`"))?;
+    let movement_observed = json_bool(receipt, "movement_observed")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `movement_observed`"))?;
+    let write_attempts = json_u64(receipt, "write_attempts")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `write_attempts`"))?;
+    let writes_ok = json_u64(receipt, "writes_ok")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `writes_ok`"))?;
+    let write_errors = json_u64(receipt, "write_errors")
+        .ok_or_else(|| anyhow!("{label} PIDFF response receipt missing `write_errors`"))?;
+    if write_errors != 0 {
+        return Err(anyhow!(
+            "{label} PIDFF response receipt '{}' must have write_errors=0, got {write_errors}",
+            path.display()
+        ));
+    }
+    if writes_ok != write_attempts {
+        return Err(anyhow!(
+            "{label} PIDFF response receipt '{}' must have writes_ok == write_attempts, got {writes_ok}/{write_attempts}",
+            path.display()
+        ));
+    }
+    if !angle_delta_degrees.is_finite()
+        || !movement_threshold_degrees.is_finite()
+        || !max_percent.is_finite()
+        || movement_threshold_degrees <= 0.0
+        || max_percent <= 0.0
+    {
+        return Err(anyhow!(
+            "{label} PIDFF response receipt '{}' has invalid numeric PIDFF response fields",
+            path.display()
+        ));
+    }
+
+    Ok(NativePidffResponseSummary {
+        receipt: path.display().to_string(),
+        generated_at_utc,
+        selector,
+        profile,
+        output_strategy,
+        max_percent,
+        duration_ms,
+        movement_threshold_degrees,
+        angle_delta_degrees,
+        movement_observed,
+        write_attempts,
+        writes_ok,
+        write_errors,
+        final_zero_sent: true,
+        final_stop_all_sent: true,
+        post_stop_stable: true,
+        no_direct_torque_reports: true,
+        no_high_torque: true,
+    })
+}
+
+fn validate_post_authority_pidff_response_order(
+    attempt: &Value,
+    baseline: &NativePidffResponseSummary,
+    post: &NativePidffResponseSummary,
+) -> Result<()> {
+    let attempt_generated_at = json_pointer_string(attempt, "/generated_at_utc")?;
+    if !utc_timestamp_pair_is_ordered(&baseline.generated_at_utc, attempt_generated_at) {
+        return Err(anyhow!(
+            "baseline PIDFF response must be recorded before or at the vendor-authority attempt"
+        ));
+    }
+    if !utc_timestamp_pair_is_ordered(attempt_generated_at, &post.generated_at_utc) {
+        return Err(anyhow!(
+            "post-authority PIDFF response must be recorded after or at the vendor-authority attempt"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_pidff_response_comparable(
+    baseline: &NativePidffResponseSummary,
+    post: &NativePidffResponseSummary,
+) -> Result<()> {
+    if baseline.selector != post.selector {
+        return Err(anyhow!(
+            "baseline and post-authority PIDFF responses target different selectors: `{}` vs `{}`",
+            baseline.selector,
+            post.selector
+        ));
+    }
+    if baseline.profile != post.profile {
+        return Err(anyhow!(
+            "baseline and post-authority PIDFF response profiles differ: `{}` vs `{}`",
+            baseline.profile,
+            post.profile
+        ));
+    }
+    if baseline.output_strategy != post.output_strategy {
+        return Err(anyhow!(
+            "baseline and post-authority PIDFF response strategies differ: `{}` vs `{}`",
+            baseline.output_strategy,
+            post.output_strategy
+        ));
+    }
+    if (baseline.max_percent - post.max_percent).abs() > 0.001 {
+        return Err(anyhow!(
+            "baseline and post-authority max_percent differ: {} vs {}",
+            baseline.max_percent,
+            post.max_percent
+        ));
+    }
+    if baseline.duration_ms != post.duration_ms {
+        return Err(anyhow!(
+            "baseline and post-authority duration_ms differ: {} vs {}",
+            baseline.duration_ms,
+            post.duration_ms
+        ));
+    }
+    if (baseline.movement_threshold_degrees - post.movement_threshold_degrees).abs() > 0.001 {
+        return Err(anyhow!(
+            "baseline and post-authority movement thresholds differ: {} vs {}",
+            baseline.movement_threshold_degrees,
+            post.movement_threshold_degrees
+        ));
+    }
+    Ok(())
+}
+
+fn validate_vendor_authority_attempt_schema(attempt: &Value) -> Result<()> {
+    let schema: Value = serde_json::from_str(include_str!(
+        "../../../../schemas/moza-vendor-authority-attempt.schema.json"
+    ))
+    .context("failed to parse Moza vendor authority attempt schema")?;
+    let validator = Validator::new(&schema)
+        .context("failed to compile Moza vendor authority attempt schema")?;
+    let errors: Vec<_> = validator
+        .iter_errors(attempt)
+        .take(8)
+        .map(|error| error.to_string())
+        .collect();
+    if !errors.is_empty() {
+        return Err(anyhow!(
+            "vendor-authority attempt receipt failed schema validation: {}",
+            errors.join("; ")
+        ));
+    }
+    Ok(())
+}
+
+fn validate_vendor_authority_attempt_gates(attempt: &Value) -> Result<()> {
+    for (path, expected) in [
+        ("/success", true),
+        ("/authorization_consumed", true),
+        ("/exact_authorization", true),
+        ("/single_use_authorization", true),
+        ("/native_control_evidence", false),
+        ("/hardware_output_authorized", false),
+        ("/native_visible_ready", false),
+        ("/smoke_ready", false),
+        ("/serial_identity_verified", true),
+        ("/no_hid_device_opened", true),
+        ("/opened_serial_device", true),
+        ("/sent_read_only_query_commands", false),
+        ("/sent_authorized_frame", true),
+        ("/sent_firmware_or_dfu_commands", false),
+        ("/sent_unknown_commands", false),
+        ("/direct_hid_report_0xaf_sent", false),
+        ("/high_torque_enabled", false),
+        ("/planned_next_output/allowed", false),
+    ] {
+        let actual = json_pointer_bool(attempt, path)?;
+        if actual != expected {
+            return Err(anyhow!(
+                "vendor-authority attempt receipt gate `{path}` expected {expected}, got {actual}"
+            ));
+        }
+    }
+    if attempt
+        .pointer("/sent_authorized_frame_count")
+        .and_then(Value::as_u64)
+        != Some(1)
+    {
+        return Err(anyhow!(
+            "vendor-authority attempt receipt must record exactly one authorized frame send"
+        ));
+    }
+    for (path, expected) in [
+        ("/artifact_kind", "moza_vendor_authority_attempt"),
+        ("/claim_scope", "bounded_vendor_authority_attempt_recorded"),
+        ("/command", "wheelctl moza vendor-authority-attempt"),
+        ("/transport_kind", "serial_bounded_authority_attempt"),
+        ("/codec_status", "fixture_decode_verified_exact_frame"),
+    ] {
+        let actual = json_pointer_string(attempt, path)?;
+        if actual != expected {
+            return Err(anyhow!(
+                "vendor-authority attempt receipt field `{path}` expected `{expected}`, got `{actual}`"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_vendor_authority_attempt_receipts(
+    request: &VendorAuthorityAttemptRequest<'_>,
+    authorization: &Value,
+    smoke_dry_run: &Value,
+) -> Result<()> {
+    if !request.confirm_bounded_vendor_authority_attempt {
+        return Err(anyhow!(
+            "--confirm-bounded-vendor-authority-attempt is required before sending a Moza vendor-authority frame"
+        ));
+    }
+    if request.timeout_ms == 0 {
+        return Err(anyhow!("--timeout-ms must be greater than zero"));
+    }
+
+    validate_vendor_authority_authorization_schema(authorization)?;
+    validate_vendor_authority_authorization_gates(authorization)?;
+    validate_authorization_not_expired(authorization)?;
+    validate_vendor_authority_smoke_schema(smoke_dry_run)?;
+    validate_vendor_authority_smoke_gates(smoke_dry_run)?;
+
+    let command_id = json_pointer_string(authorization, "/authorized_command/command_id")?;
+    let command_name = json_pointer_string(authorization, "/authorized_command/command_name")?;
+    let family = json_pointer_string(authorization, "/authorized_command/family")?;
+    let risk_class = json_pointer_string(authorization, "/authorized_command/risk_class")?;
+    let command = vendor_command_by_id(command_id)?;
+    ensure_vendor_authority_exact_authorization_candidate(command)?;
+    if command.risk_class.as_registry_str() != risk_class {
+        return Err(anyhow!(
+            "authorization risk_class `{risk_class}` does not match registry risk_class `{}` for `{command_id}`",
+            command.risk_class.as_registry_str()
+        ));
+    }
+
+    let expected_frame_sha256 =
+        json_pointer_string(authorization, "/authorized_frame/frame_sha256")?;
+    let expected_payload_sha256 =
+        json_pointer_string(authorization, "/authorized_frame/payload_sha256")?;
+    validate_vendor_authority_smoke_matches_authorization(
+        smoke_dry_run,
+        command_id,
+        command_name,
+        family,
+        risk_class,
+        expected_frame_sha256,
+        expected_payload_sha256,
+    )?;
+
+    let frame_hex = json_pointer_string(authorization, "/authorized_frame/frame_hex")?;
+    let frame = parse_hex_bytes(frame_hex)
+        .map_err(|error| anyhow!("authorization frame_hex is invalid: {error}"))?;
+    let decoded =
+        decode_fixture_frame(&frame).context("failed to decode authorization frame_hex")?;
+    if decoded.command.id != command.id {
+        return Err(anyhow!(
+            "authorization frame command `{}` does not match receipt command `{command_id}`",
+            decoded.command.id
+        ));
+    }
+    if decoded.device_id != command.device_id {
+        return Err(anyhow!(
+            "authorization frame device id 0x{:02X} does not match registry device id 0x{:02X}",
+            decoded.device_id,
+            command.device_id
+        ));
+    }
+    if decoded.payload.is_empty() {
+        return Err(anyhow!(
+            "vendor-authority attempt requires a non-empty authorized payload for `{command_id}`"
+        ));
+    }
+
+    let frame_sha256 = sha256_hex(&frame);
+    let payload_sha256 = sha256_hex(decoded.payload);
+    if frame_sha256 != expected_frame_sha256 {
+        return Err(anyhow!(
+            "authorization frame hash mismatch: expected {expected_frame_sha256}, got {frame_sha256}"
+        ));
+    }
+    if payload_sha256 != expected_payload_sha256 {
+        return Err(anyhow!(
+            "authorization payload hash mismatch: expected {expected_payload_sha256}, got {payload_sha256}"
+        ));
+    }
+    validate_vendor_authority_blocked_retry_freshness(request, authorization, smoke_dry_run)?;
+    Ok(())
+}
+
+fn validate_vendor_authority_blocked_retry_freshness(
+    request: &VendorAuthorityAttemptRequest<'_>,
+    authorization: &Value,
+    smoke_dry_run: &Value,
+) -> Result<()> {
+    let blocked_path = vendor_authority_attempt_blocked_output_path(request.json_out);
+    if !blocked_path.is_file() {
+        return Ok(());
+    }
+
+    let blocked = read_json_path(&blocked_path).with_context(|| {
+        format!(
+            "failed to read blocked attempt receipt '{}'",
+            blocked_path.display()
+        )
+    })?;
+    let artifact_kind = json_pointer_string(&blocked, "/artifact_kind")?;
+    if artifact_kind != "moza_vendor_authority_attempt_blocked" {
+        return Err(anyhow!(
+            "blocked attempt sidecar '{}' has artifact_kind `{artifact_kind}`, expected `moza_vendor_authority_attempt_blocked`",
+            blocked_path.display()
+        ));
+    }
+    let blocked_at = json_pointer_utc(&blocked, "/generated_at_utc")?;
+    let authorization_at = json_pointer_utc(authorization, "/generated_at_utc")?;
+    let smoke_at = json_pointer_utc(smoke_dry_run, "/generated_at_utc")?;
+    if authorization_at <= blocked_at || smoke_at <= blocked_at {
+        return Err(anyhow!(
+            "blocked-before-send receipt '{}' requires fresh authorization and smoke dry-run receipts before retry",
+            blocked_path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn validate_vendor_authority_authorization_schema(authorization: &Value) -> Result<()> {
+    let schema: Value = serde_json::from_str(include_str!(
+        "../../../../schemas/moza-vendor-authority-authorization.schema.json"
+    ))
+    .context("failed to parse Moza vendor authority authorization schema")?;
+    let validator = Validator::new(&schema)
+        .context("failed to compile Moza vendor authority authorization schema")?;
+    let errors: Vec<_> = validator
+        .iter_errors(authorization)
+        .take(8)
+        .map(|error| error.to_string())
+        .collect();
+    if !errors.is_empty() {
+        return Err(anyhow!(
+            "authorization receipt failed schema validation: {}",
+            errors.join("; ")
+        ));
+    }
+    Ok(())
+}
+
+fn validate_vendor_authority_smoke_schema(smoke_dry_run: &Value) -> Result<()> {
+    let schema: Value = serde_json::from_str(include_str!(
+        "../../../../schemas/moza-vendor-authority-smoke.schema.json"
+    ))
+    .context("failed to parse Moza vendor authority smoke schema")?;
+    let validator =
+        Validator::new(&schema).context("failed to compile Moza vendor authority smoke schema")?;
+    let errors: Vec<_> = validator
+        .iter_errors(smoke_dry_run)
+        .take(8)
+        .map(|error| error.to_string())
+        .collect();
+    if !errors.is_empty() {
+        return Err(anyhow!(
+            "smoke dry-run receipt failed schema validation: {}",
+            errors.join("; ")
+        ));
+    }
+    Ok(())
+}
+
+fn validate_vendor_authority_smoke_gates(smoke_dry_run: &Value) -> Result<()> {
+    for (path, expected) in [
+        ("/success", true),
+        ("/authorization_receipt_validated", true),
+        ("/authorization_consumed", false),
+        ("/exact_authorization", true),
+        ("/single_use_authorization", true),
+        ("/native_control_evidence", false),
+        ("/hardware_output_authorized", false),
+        ("/native_visible_ready", false),
+        ("/no_hid_device_opened", true),
+        ("/no_serial_device_opened", true),
+        ("/no_serial_query_sent", true),
+        ("/sent_output_writes", false),
+        ("/sent_configuration_writes", false),
+        ("/sent_firmware_or_dfu_commands", false),
+        ("/planned_next_output/allowed", false),
+    ] {
+        let actual = json_pointer_bool(smoke_dry_run, path)?;
+        if actual != expected {
+            return Err(anyhow!(
+                "smoke dry-run receipt gate `{path}` expected {expected}, got {actual}"
+            ));
+        }
+    }
+    for (path, expected) in [
+        ("/artifact_kind", "moza_vendor_authority_smoke"),
+        ("/claim_scope", "software_vendor_authority_smoke_dry_run"),
+        ("/transport_kind", "dry_run_only"),
+        ("/codec_status", "fixture_decode_verified_exact_frame"),
+    ] {
+        let actual = json_pointer_string(smoke_dry_run, path)?;
+        if actual != expected {
+            return Err(anyhow!(
+                "smoke dry-run receipt field `{path}` expected `{expected}`, got `{actual}`"
+            ));
+        }
+    }
+    let commands_sent = smoke_dry_run
+        .pointer("/commands_sent")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("missing or non-array JSON field `/commands_sent`"))?;
+    if !commands_sent.is_empty() {
+        return Err(anyhow!(
+            "smoke dry-run receipt must not include sent commands"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_vendor_authority_smoke_matches_authorization(
+    smoke_dry_run: &Value,
+    command_id: &str,
+    command_name: &str,
+    family: &str,
+    risk_class: &str,
+    frame_sha256: &str,
+    payload_sha256: &str,
+) -> Result<()> {
+    for (path, expected) in [
+        ("/planned_next_output/command_id", command_id),
+        ("/planned_next_output/command_name", command_name),
+        ("/planned_next_output/family", family),
+        ("/planned_next_output/risk_class", risk_class),
+        ("/planned_next_output/frame_sha256", frame_sha256),
+        ("/planned_next_output/payload_sha256", payload_sha256),
+    ] {
+        let actual = json_pointer_string(smoke_dry_run, path)?;
+        if actual != expected {
+            return Err(anyhow!(
+                "smoke dry-run receipt field `{path}` expected `{expected}`, got `{actual}`"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_vendor_authority_authorization_gates(authorization: &Value) -> Result<()> {
+    for (path, expected) in [
+        ("/success", true),
+        ("/native_control_evidence", false),
+        ("/hardware_output_authorized", true),
+        ("/native_visible_ready", false),
+        ("/authorization_consumed", false),
+        ("/exact_authorization", true),
+        ("/single_use", true),
+        ("/no_hid_device_opened", true),
+        ("/no_serial_device_opened", true),
+        ("/no_serial_query_sent", true),
+        ("/sent_output_writes", false),
+        ("/sent_configuration_writes", false),
+        ("/sent_firmware_or_dfu_commands", false),
+    ] {
+        let actual = json_pointer_bool(authorization, path)?;
+        if actual != expected {
+            return Err(anyhow!(
+                "authorization receipt gate `{path}` expected {expected}, got {actual}"
+            ));
+        }
+    }
+    for (path, expected) in [
+        ("/artifact_kind", "moza_vendor_authority_authorization"),
+        (
+            "/claim_scope",
+            "single_use_exact_vendor_authority_authorization",
+        ),
+        ("/transport_kind", "authorization_receipt_only"),
+        ("/codec_status", "fixture_decode_verified_exact_frame"),
+    ] {
+        let actual = json_pointer_string(authorization, path)?;
+        if actual != expected {
+            return Err(anyhow!(
+                "authorization receipt field `{path}` expected `{expected}`, got `{actual}`"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_authorization_not_expired(authorization: &Value) -> Result<()> {
+    let expires_at = json_pointer_string(authorization, "/expires_at_utc")?;
+    let expires_at = chrono::DateTime::parse_from_rfc3339(expires_at)
+        .with_context(|| format!("invalid authorization expires_at_utc `{expires_at}`"))?
+        .with_timezone(&chrono::Utc);
+    if expires_at <= chrono::Utc::now() {
+        return Err(anyhow!(
+            "authorization receipt expired at {}",
+            expires_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+        ));
+    }
+    Ok(())
+}
+
+fn json_pointer_string<'a>(value: &'a Value, path: &str) -> Result<&'a str> {
+    value
+        .pointer(path)
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("missing or non-string JSON field `{path}`"))
+}
+
+fn json_pointer_string_array(value: &Value, path: &str) -> Result<Vec<String>> {
+    let array = value
+        .pointer(path)
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("missing or non-array JSON field `{path}`"))?;
+    let mut strings = Vec::with_capacity(array.len());
+    for item in array {
+        let Some(text) = item.as_str() else {
+            return Err(anyhow!("non-string item in JSON field `{path}`"));
+        };
+        strings.push(text.to_string());
+    }
+    Ok(strings)
+}
+
+fn json_pointer_bool(value: &Value, path: &str) -> Result<bool> {
+    value
+        .pointer(path)
+        .and_then(Value::as_bool)
+        .ok_or_else(|| anyhow!("missing or non-bool JSON field `{path}`"))
+}
+
+fn json_pointer_utc(value: &Value, path: &str) -> Result<chrono::DateTime<chrono::Utc>> {
+    let raw = json_pointer_string(value, path)?;
+    chrono::DateTime::parse_from_rfc3339(raw)
+        .with_context(|| format!("invalid UTC timestamp `{raw}` at `{path}`"))
+        .map(|timestamp| timestamp.with_timezone(&chrono::Utc))
+}
+
+fn vendor_command_by_id(command_id: &str) -> Result<&'static MozaVendorCommand> {
+    REQUIRED_VENDOR_COMMANDS
+        .iter()
+        .find(|candidate| candidate.id == command_id)
+        .ok_or_else(|| anyhow!("unknown Moza vendor command `{command_id}`"))
+}
+
+fn ensure_vendor_authority_exact_authorization_candidate(
+    command: &MozaVendorCommand,
+) -> Result<()> {
+    match command.risk_class {
+        MozaRiskClass::VendorControlCandidate
+        | MozaRiskClass::VendorOutputCandidate
+        | MozaRiskClass::ConfigurationCandidate => Ok(()),
+        MozaRiskClass::FirmwareOrDfuForbidden | MozaRiskClass::UnknownDoNotSend => Err(anyhow!(
+            "command `{}` is {:?} and must never be authorized",
+            command.id,
+            command.risk_class
+        )),
+        _ => Err(anyhow!(
+            "command `{}` is {:?} and does not require exact vendor-authority authorization",
+            command.id,
+            command.risk_class
+        )),
+    }
+}
+
+fn vendor_authority_attempt_write_flags(risk_class: MozaRiskClass) -> (bool, bool) {
+    match risk_class {
+        MozaRiskClass::VendorOutputCandidate => (true, false),
+        MozaRiskClass::ConfigurationCandidate => (false, true),
+        MozaRiskClass::VendorControlCandidate => (false, false),
+        _ => (false, false),
+    }
+}
+
+fn validate_vendor_authority_bench_clear_evidence(evidence: &str, command_id: &str) -> Result<()> {
+    let lower = evidence.to_ascii_lowercase();
+    for required in [
+        "bench clear",
+        "exact",
+        command_id,
+        "r5 stable",
+        "hands clear",
+        "wheel clear",
+    ] {
+        if !lower.contains(&required.to_ascii_lowercase()) {
+            return Err(anyhow!(
+                "bench-clear evidence must include `{required}` for the exact vendor-authority command"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn authorization_expiration_utc(expires_after_minutes: u64) -> Result<String> {
+    let expires_at = chrono::Utc::now()
+        .checked_add_signed(chrono::Duration::minutes(
+            i64::try_from(expires_after_minutes).context("expiration minutes out of range")?,
+        ))
+        .ok_or_else(|| anyhow!("failed to compute authorization expiration"))?;
+    Ok(expires_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn moza_serial_port_identity(serial_port: &str) -> Result<VendorStatusProbePortIdentity> {
+    let requested = normalize_serial_port_name(serial_port);
+    let ports = serialport::available_ports()
+        .context("failed to enumerate serial ports before Moza serial command")?;
+
+    let port_info = ports
+        .into_iter()
+        .find(|port| normalize_serial_port_name(&port.port_name) == requested)
+        .ok_or_else(|| anyhow!("serial port `{serial_port}` was not found"))?;
+
+    match port_info.port_type {
+        serialport::SerialPortType::UsbPort(info)
+            if info.vid == MOZA_VENDOR_ID && info.pid == product_ids::R5_V1 =>
+        {
+            Ok(VendorStatusProbePortIdentity {
+                port_name: port_info.port_name,
+                port_type: "usb".to_string(),
+                vendor_id: Some(hex_u16(info.vid)),
+                product_id: Some(hex_u16(info.pid)),
+                manufacturer: info.manufacturer,
+                product: info.product,
+                serial_number_present: info.serial_number.is_some(),
+            })
+        }
+        serialport::SerialPortType::UsbPort(info) => Err(anyhow!(
+            "serial port `{}` is USB {:04X}:{:04X}, expected MOZA R5 {:04X}:{:04X}",
+            port_info.port_name,
+            info.vid,
+            info.pid,
+            MOZA_VENDOR_ID,
+            product_ids::R5_V1
+        )),
+        _ => Err(anyhow!(
+            "serial port `{}` is not a USB serial port with MOZA R5 identity",
+            port_info.port_name
+        )),
+    }
+}
+
+fn normalize_serial_port_name(serial_port: &str) -> String {
+    serial_port
+        .trim()
+        .trim_start_matches(r"\\.\")
+        .to_ascii_lowercase()
+}
+
+fn vendor_fake_transport_cli_receipt() -> Result<VendorFakeTransportCliReceipt> {
+    let codec_fixture: Value = serde_json::from_str(MOZA_VENDOR_SERIAL_CODEC_FIXTURES_JSON)
+        .context("failed to parse checked-in Moza serial codec fixture")?;
+    let transport_fixture: Value = serde_json::from_str(MOZA_VENDOR_FAKE_SERIAL_TRANSPORT_JSON)
+        .context("failed to parse checked-in Moza fake transport fixture")?;
+    let fixtures = vendor_serial_fixtures_by_id(&codec_fixture)?;
+    let accepted_fixture_ids = json_string_array_field(&transport_fixture, "accepted_fixture_ids")?;
+    let blocked_fixture_ids = json_string_array_field(&transport_fixture, "blocked_fixture_ids")?;
+    let mut transport = MozaFakeSerialTransport::new();
+    let mut accepted_exchanges = Vec::new();
+
+    for fixture_id in &accepted_fixture_ids {
+        let fixture = fixtures
+            .get(fixture_id.as_str())
+            .ok_or_else(|| anyhow!("accepted fixture `{fixture_id}` is missing"))?;
+        let frame = fixture_frame_bytes(fixture)?;
+        let exchange = transport
+            .submit_read_only_fixture_frame(&frame)
+            .with_context(|| format!("accepted fixture `{fixture_id}` failed fake transport"))?;
+        accepted_exchanges.push(VendorFakeTransportAcceptedExchange {
+            fixture_id: fixture_id.clone(),
+            command_name: exchange.command_name.to_string(),
+            group: exchange.group,
+            device_id: exchange.device_id,
+            command: exchange.command,
+            risk_class: exchange.risk_class.as_registry_str().to_string(),
+            synthetic_response_payload_hex: bytes_hex_compact(&exchange.synthetic_response_payload),
+        });
+    }
+
+    let mut blocked_exchanges = Vec::new();
+    for fixture_id in &blocked_fixture_ids {
+        let fixture = fixtures
+            .get(fixture_id.as_str())
+            .ok_or_else(|| anyhow!("blocked fixture `{fixture_id}` is missing"))?;
+        let frame = fixture_frame_bytes(fixture)?;
+        match transport.submit_read_only_fixture_frame(&frame) {
+            Err(MozaFakeSerialTransportError::AuthorizationRequired {
+                command_id,
+                risk_class,
+            }) => {
+                blocked_exchanges.push(VendorFakeTransportBlockedExchange {
+                    fixture_id: command_id.to_string(),
+                    reason: "requires_exact_authorization".to_string(),
+                    risk_class: risk_class.as_registry_str().to_string(),
+                });
+            }
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!("blocked fixture `{fixture_id}` failed unexpectedly")
+                });
+            }
+            Ok(exchange) => {
+                return Err(anyhow!(
+                    "write-like fixture `{}` unexpectedly passed fake transport",
+                    exchange.command_id
+                ));
+            }
+        }
+    }
+
+    let mut bad_checksum = parse_hex_bytes("7E01281302C9").map_err(anyhow::Error::msg)?;
+    let checksum_index = bad_checksum
+        .len()
+        .checked_sub(1)
+        .ok_or_else(|| anyhow!("bad checksum fixture is empty"))?;
+    bad_checksum[checksum_index] ^= 1;
+    let malformed_frame_rejected = matches!(
+        transport.submit_read_only_fixture_frame(&bad_checksum),
+        Err(MozaFakeSerialTransportError::Frame(_))
+    );
+    let unknown_command_rejected = matches!(
+        transport.submit_read_only_fixture_frame(
+            &parse_hex_bytes("7E01FF13019F").map_err(anyhow::Error::msg)?
+        ),
+        Err(MozaFakeSerialTransportError::Frame(_))
+    );
+
+    Ok(VendorFakeTransportCliReceipt {
+        success: true,
+        schema_version: 1,
+        artifact_kind: "moza_vendor_no_output_cli",
+        claim_scope: "software_cli_fake_transport_only",
+        command: "wheelctl moza vendor-fake-transport",
+        generated_at_utc: now_utc(),
+        native_control_evidence: false,
+        hardware_output_authorized: false,
+        native_visible_ready: false,
+        next_allowed_action: "Review this no-output CLI receipt before implementing the later read-only hardware status probe.",
+        blocked_actions: vec![
+            "serial device open",
+            "read-only hardware probe",
+            "serial query send",
+            "output write",
+            "configuration write",
+            "authorization receipt",
+            "hardware writes",
+            "native-visible claim",
+            "smoke-ready claim",
+            "release-ready claim",
+            "firmware or DFU command",
+            "unknown host-to-device command",
+        ],
+        required_artifacts: vec![
+            "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md",
+            "docs/hardware/moza-r5-vendor-authority-test-plan.md",
+            "fixtures/moza/r5/vendor-command-registry.json",
+            "fixtures/moza/r5/vendor-serial-codec-fixtures.json",
+            "fixtures/moza/r5/vendor-fake-serial-transport.json",
+            "crates/hid-moza-protocol/src/serial/fake_transport.rs",
+            "crates/cli/src/commands/moza.rs",
+        ],
+        no_hid_device_opened: true,
+        opened_serial_device: false,
+        no_ffb_writes: true,
+        no_output_reports: true,
+        no_feature_reports: true,
+        no_serial_config_commands: true,
+        no_firmware_or_dfu_commands: true,
+        sent_read_only_query_commands: false,
+        sent_output_writes: false,
+        sent_configuration_writes: false,
+        sent_firmware_or_dfu_commands: false,
+        real_hardware_validated: false,
+        transport_kind: "fake_only",
+        fake_transport_verified: true,
+        codec_status: moza_serial_codec_status_name(FAKE_TRANSPORT_CODEC_STATUS),
+        hardware_write_eligible: FAKE_TRANSPORT_CODEC_STATUS.allows_hardware_writes(),
+        fixture_source: "fixtures/moza/r5/vendor-serial-codec-fixtures.json",
+        fake_transport_fixture: "fixtures/moza/r5/vendor-fake-serial-transport.json",
+        accepted_fixture_count: accepted_exchanges.len(),
+        blocked_fixture_count: blocked_exchanges.len(),
+        accepted_exchanges,
+        blocked_exchanges,
+        malformed_frame_rejected,
+        unknown_command_rejected,
+        notes: vec![
+            "This command replays checked-in synthetic fixture bytes only.",
+            "It does not open HID or serial devices and sends no host-to-device traffic.",
+            "Write-like vendor output/configuration candidates remain blocked until a later exact authorization stage.",
+        ],
+    })
+}
+
+fn vendor_serial_fixtures_by_id(codec_fixture: &Value) -> Result<BTreeMap<&str, &Value>> {
+    let mut fixtures = BTreeMap::new();
+    let entries = codec_fixture
+        .get("fixtures")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("codec fixture is missing `fixtures` array"))?;
+    for fixture in entries {
+        let id = json_string(fixture, "id")
+            .ok_or_else(|| anyhow!("codec fixture entry is missing string `id`"))?;
+        if fixtures.insert(id, fixture).is_some() {
+            return Err(anyhow!("duplicate codec fixture `{id}`"));
+        }
+    }
+    Ok(fixtures)
+}
+
+fn json_string_array_field(value: &Value, field: &str) -> Result<Vec<String>> {
+    let array = value
+        .get(field)
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("missing `{field}` array"))?;
+    array
+        .iter()
+        .map(|entry| {
+            entry
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| anyhow!("`{field}` must contain strings"))
+        })
+        .collect()
+}
+
+fn fixture_frame_bytes(fixture: &Value) -> Result<Vec<u8>> {
+    let raw_frame_hex = json_string(fixture, "raw_frame_hex")
+        .ok_or_else(|| anyhow!("fixture is missing string `raw_frame_hex`"))?;
+    parse_hex_bytes(raw_frame_hex).map_err(anyhow::Error::msg)
+}
+
 #[derive(Default)]
 struct CaptureValidationSummary {
     total_reports: usize,
@@ -25404,6 +28426,499 @@ struct ProbeReceipt {
     no_firmware_or_dfu_commands: bool,
     devices: Vec<MozaDeviceRecord>,
     notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorFakeTransportCliReceipt {
+    success: bool,
+    schema_version: u8,
+    artifact_kind: &'static str,
+    claim_scope: &'static str,
+    command: &'static str,
+    generated_at_utc: String,
+    native_control_evidence: bool,
+    hardware_output_authorized: bool,
+    native_visible_ready: bool,
+    next_allowed_action: &'static str,
+    blocked_actions: Vec<&'static str>,
+    required_artifacts: Vec<&'static str>,
+    no_hid_device_opened: bool,
+    opened_serial_device: bool,
+    no_ffb_writes: bool,
+    no_output_reports: bool,
+    no_feature_reports: bool,
+    no_serial_config_commands: bool,
+    no_firmware_or_dfu_commands: bool,
+    sent_read_only_query_commands: bool,
+    sent_output_writes: bool,
+    sent_configuration_writes: bool,
+    sent_firmware_or_dfu_commands: bool,
+    real_hardware_validated: bool,
+    transport_kind: &'static str,
+    fake_transport_verified: bool,
+    codec_status: &'static str,
+    hardware_write_eligible: bool,
+    fixture_source: &'static str,
+    fake_transport_fixture: &'static str,
+    accepted_fixture_count: usize,
+    blocked_fixture_count: usize,
+    accepted_exchanges: Vec<VendorFakeTransportAcceptedExchange>,
+    blocked_exchanges: Vec<VendorFakeTransportBlockedExchange>,
+    malformed_frame_rejected: bool,
+    unknown_command_rejected: bool,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorFakeTransportAcceptedExchange {
+    fixture_id: String,
+    command_name: String,
+    group: u8,
+    device_id: u8,
+    command: u8,
+    risk_class: String,
+    synthetic_response_payload_hex: String,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorFakeTransportBlockedExchange {
+    fixture_id: String,
+    reason: String,
+    risk_class: String,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorStatusProbeReceipt {
+    success: bool,
+    schema_version: u8,
+    artifact_kind: &'static str,
+    claim_scope: &'static str,
+    command: &'static str,
+    generated_at_utc: String,
+    native_control_evidence: bool,
+    hardware_output_authorized: bool,
+    native_visible_ready: bool,
+    next_allowed_action: &'static str,
+    blocked_actions: Vec<&'static str>,
+    required_artifacts: Vec<&'static str>,
+    serial_port: String,
+    baud_rate: u32,
+    timeout_ms: u64,
+    expected_vid: String,
+    expected_pid: String,
+    port_identity: VendorStatusProbePortIdentity,
+    no_hid_device_opened: bool,
+    opened_serial_device: bool,
+    serial_identity_verified: bool,
+    no_ffb_writes: bool,
+    no_output_reports: bool,
+    no_feature_reports: bool,
+    no_serial_config_commands: bool,
+    no_firmware_or_dfu_commands: bool,
+    sent_read_only_query_commands: bool,
+    sent_read_only_query_count: usize,
+    sent_output_writes: bool,
+    sent_configuration_writes: bool,
+    sent_firmware_or_dfu_commands: bool,
+    real_hardware_status_evidence: bool,
+    transport_kind: &'static str,
+    codec_status: &'static str,
+    hardware_write_eligible: bool,
+    selected_command_count: usize,
+    decoded_response_count: usize,
+    failed_response_count: usize,
+    responses: Vec<VendorStatusProbeResponse>,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorStatusProbePortIdentity {
+    port_name: String,
+    port_type: String,
+    vendor_id: Option<String>,
+    product_id: Option<String>,
+    manufacturer: Option<String>,
+    product: Option<String>,
+    serial_number_present: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorStatusProbeResponse {
+    command_id: String,
+    command_name: String,
+    group: u8,
+    device_id: u8,
+    command: u8,
+    risk_class: String,
+    query_frame_hex: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_frame_hex: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_payload_hex: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_payload_len: Option<usize>,
+    decoded: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorAuthorityAuthorizationReceipt {
+    success: bool,
+    schema_version: u8,
+    artifact_kind: &'static str,
+    claim_scope: &'static str,
+    command: &'static str,
+    generated_at_utc: String,
+    expires_at_utc: String,
+    expires_after_minutes: u64,
+    authorized_by: String,
+    bench_clear_evidence: String,
+    precondition_hardware_doctor_receipt: String,
+    precondition_hardware_doctor_validated: bool,
+    precondition_generated_at: String,
+    precondition_max_age_minutes: u64,
+    precondition_r5_serial_present: bool,
+    precondition_r5_serial_port: String,
+    precondition_r5_serial_interface: String,
+    precondition_vendor_app_scan_attempted: bool,
+    precondition_vendor_app_running: bool,
+    precondition_vendor_app_matched_processes: Vec<String>,
+    precondition_no_hid_device_opened: bool,
+    precondition_no_ffb_writes: bool,
+    precondition_no_output_reports: bool,
+    precondition_no_feature_reports: bool,
+    precondition_no_serial_config_commands: bool,
+    precondition_no_firmware_or_dfu_commands: bool,
+    native_control_evidence: bool,
+    hardware_output_authorized: bool,
+    native_visible_ready: bool,
+    next_allowed_action: &'static str,
+    blocked_actions: Vec<&'static str>,
+    required_artifacts: Vec<&'static str>,
+    authorization_consumed: bool,
+    exact_authorization: bool,
+    single_use: bool,
+    no_hid_device_opened: bool,
+    no_serial_device_opened: bool,
+    no_serial_query_sent: bool,
+    sent_output_writes: bool,
+    sent_configuration_writes: bool,
+    sent_firmware_or_dfu_commands: bool,
+    transport_kind: &'static str,
+    codec_status: &'static str,
+    hardware_write_eligible: bool,
+    authorized_command: VendorAuthorityAuthorizedCommand,
+    authorized_frame: VendorAuthorityAuthorizedFrame,
+    forbidden_commands: Vec<String>,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorAuthorityAuthorizedCommand {
+    command_id: String,
+    command_name: String,
+    family: String,
+    group: u8,
+    device_id: u8,
+    command: u8,
+    risk_class: String,
+    read_only_status_probe_allowed: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorAuthorityAuthorizedFrame {
+    frame_hex: String,
+    frame_sha256: String,
+    frame_len: usize,
+    payload_hex: String,
+    payload_sha256: String,
+    payload_len: usize,
+    checksum: String,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorAuthoritySmokeDryRunReceipt {
+    success: bool,
+    schema_version: u8,
+    artifact_kind: &'static str,
+    claim_scope: &'static str,
+    command: &'static str,
+    generated_at_utc: String,
+    authorization_receipt: String,
+    authorization_receipt_validated: bool,
+    authorization_consumed: bool,
+    exact_authorization: bool,
+    single_use_authorization: bool,
+    native_control_evidence: bool,
+    hardware_output_authorized: bool,
+    native_visible_ready: bool,
+    next_allowed_action: &'static str,
+    blocked_actions: Vec<&'static str>,
+    required_artifacts: Vec<&'static str>,
+    no_hid_device_opened: bool,
+    no_serial_device_opened: bool,
+    no_serial_query_sent: bool,
+    sent_output_writes: bool,
+    sent_configuration_writes: bool,
+    sent_firmware_or_dfu_commands: bool,
+    commands_sent: Vec<String>,
+    transport_kind: &'static str,
+    codec_status: &'static str,
+    hardware_write_eligible: bool,
+    planned_next_output: VendorAuthoritySmokePlannedNextOutput,
+    dry_run_checks: Vec<VendorAuthoritySmokeDryRunCheck>,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorAuthoritySmokePlannedNextOutput {
+    allowed: bool,
+    reason: &'static str,
+    requires_exact_authorization_receipt: bool,
+    requires_bounded_hardware_attempt_command: bool,
+    command_id: String,
+    command_name: String,
+    family: String,
+    risk_class: String,
+    frame_sha256: String,
+    payload_sha256: String,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorAuthoritySmokeDryRunCheck {
+    check: &'static str,
+    passed: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorAuthorityAttemptReceipt {
+    success: bool,
+    schema_version: u8,
+    artifact_kind: &'static str,
+    claim_scope: &'static str,
+    command: &'static str,
+    generated_at_utc: String,
+    authorization_receipt: String,
+    smoke_dry_run_receipt: String,
+    authorization_receipt_validated: bool,
+    smoke_dry_run_receipt_validated: bool,
+    authorization_consumed: bool,
+    exact_authorization: bool,
+    single_use_authorization: bool,
+    native_control_evidence: bool,
+    hardware_output_authorized: bool,
+    native_visible_ready: bool,
+    smoke_ready: bool,
+    next_allowed_action: &'static str,
+    blocked_actions: Vec<&'static str>,
+    required_artifacts: Vec<&'static str>,
+    serial_port: String,
+    baud_rate: u32,
+    timeout_ms: u64,
+    expected_vid: String,
+    expected_pid: String,
+    port_identity: VendorStatusProbePortIdentity,
+    serial_identity_verified: bool,
+    no_hid_device_opened: bool,
+    opened_serial_device: bool,
+    sent_read_only_query_commands: bool,
+    sent_authorized_frame: bool,
+    sent_authorized_frame_count: usize,
+    sent_output_writes: bool,
+    sent_configuration_writes: bool,
+    sent_firmware_or_dfu_commands: bool,
+    sent_unknown_commands: bool,
+    direct_hid_report_0xaf_sent: bool,
+    high_torque_enabled: bool,
+    transport_kind: &'static str,
+    codec_status: &'static str,
+    hardware_write_eligible: bool,
+    authorized_command: VendorAuthorityAuthorizedCommand,
+    authorized_frame: VendorAuthorityAttemptFrame,
+    authorization_consumption: VendorAuthorityAttemptConsumption,
+    planned_next_output: VendorAuthorityAttemptPlannedNextOutput,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorAuthorityAttemptBlockedReceipt {
+    success: bool,
+    schema_version: u8,
+    artifact_kind: &'static str,
+    claim_scope: &'static str,
+    command: &'static str,
+    generated_at_utc: String,
+    authorization_receipt: String,
+    smoke_dry_run_receipt: String,
+    authorization_receipt_validated: bool,
+    smoke_dry_run_receipt_validated: bool,
+    authorization_consumed: bool,
+    exact_authorization: bool,
+    single_use_authorization: bool,
+    native_control_evidence: bool,
+    hardware_output_authorized: bool,
+    native_visible_ready: bool,
+    smoke_ready: bool,
+    next_allowed_action: &'static str,
+    blocked_actions: Vec<&'static str>,
+    required_artifacts: Vec<&'static str>,
+    serial_port: String,
+    baud_rate: u32,
+    timeout_ms: u64,
+    expected_vid: String,
+    expected_pid: String,
+    port_identity: VendorStatusProbePortIdentity,
+    serial_identity_verified: bool,
+    no_hid_device_opened: bool,
+    opened_serial_device: bool,
+    serial_open_attempted: bool,
+    sent_read_only_query_commands: bool,
+    sent_authorized_frame: bool,
+    sent_authorized_frame_count: usize,
+    sent_output_writes: bool,
+    sent_configuration_writes: bool,
+    sent_firmware_or_dfu_commands: bool,
+    sent_unknown_commands: bool,
+    direct_hid_report_0xaf_sent: bool,
+    high_torque_enabled: bool,
+    transport_kind: &'static str,
+    codec_status: &'static str,
+    hardware_write_eligible: bool,
+    authorized_command: VendorAuthorityAuthorizedCommand,
+    authorized_frame: VendorAuthorityAuthorizedFrame,
+    failure: VendorAuthorityAttemptBlockedFailure,
+    retry_policy: VendorAuthorityAttemptBlockedRetryPolicy,
+    planned_next_output: VendorAuthorityAttemptPlannedNextOutput,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorAuthorityAttemptBlockedFailure {
+    stage: &'static str,
+    message: String,
+    frame_sent_before_failure: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorAuthorityAttemptBlockedRetryPolicy {
+    authorization_reuse_allowed: bool,
+    requires_new_bench_clear_for_retry: bool,
+    requires_new_authorization_for_retry: bool,
+    requires_new_smoke_dry_run_for_retry: bool,
+    requires_new_attempt_receipt_for_retry: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorAuthorityAttemptFrame {
+    frame_hex: String,
+    frame_sha256: String,
+    frame_len: usize,
+    payload_hex: String,
+    payload_sha256: String,
+    payload_len: usize,
+    checksum: String,
+    written_frame_sha256: String,
+    written_frame_len: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorAuthorityAttemptConsumption {
+    consumption_recorded: bool,
+    authorization_reuse_allowed: bool,
+    requires_new_bench_clear_for_retry: bool,
+    requires_new_authorization_for_retry: bool,
+    requires_new_smoke_dry_run_for_retry: bool,
+    requires_new_attempt_receipt_for_retry: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorAuthorityAttemptPlannedNextOutput {
+    allowed: bool,
+    reason: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorPostAuthorityPidffResponseReceipt {
+    success: bool,
+    schema_version: u8,
+    artifact_kind: &'static str,
+    claim_scope: &'static str,
+    command: &'static str,
+    generated_at_utc: String,
+    vendor_authority_attempt_receipt: String,
+    baseline_response_receipt: String,
+    post_authority_response_receipt: String,
+    vendor_authority_attempt_validated: bool,
+    baseline_response_validated: bool,
+    post_authority_response_validated: bool,
+    comparable_pidff_profile: bool,
+    native_control_evidence: bool,
+    hardware_output_authorized: bool,
+    native_visible_ready: bool,
+    smoke_ready: bool,
+    no_hid_device_opened: bool,
+    no_serial_device_opened: bool,
+    no_read_only_query_sent: bool,
+    no_output_reports_sent: bool,
+    no_feature_reports_sent: bool,
+    no_serial_writes_sent: bool,
+    sent_output_writes: bool,
+    sent_configuration_writes: bool,
+    sent_firmware_or_dfu_commands: bool,
+    high_torque_enabled: bool,
+    comparison: VendorPostAuthorityPidffComparison,
+    baseline_response: NativePidffResponseSummary,
+    post_authority_response: NativePidffResponseSummary,
+    next_allowed_action: &'static str,
+    blocked_actions: Vec<&'static str>,
+    required_artifacts: Vec<&'static str>,
+    planned_next_output: VendorPostAuthorityPlannedNextOutput,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorPostAuthorityPidffComparison {
+    classification: &'static str,
+    response_threshold_degrees: f64,
+    movement_threshold_degrees: f64,
+    baseline_angle_delta_degrees: f64,
+    post_authority_angle_delta_degrees: f64,
+    delta_change_degrees: f64,
+    absolute_delta_change_degrees: f64,
+    baseline_movement_observed: bool,
+    post_authority_movement_observed: bool,
+    visible_motion_candidate: bool,
+    response_increased: bool,
+    response_regressed: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct NativePidffResponseSummary {
+    receipt: String,
+    generated_at_utc: String,
+    selector: String,
+    profile: String,
+    output_strategy: String,
+    max_percent: f64,
+    duration_ms: u64,
+    movement_threshold_degrees: f64,
+    angle_delta_degrees: f64,
+    movement_observed: bool,
+    write_attempts: u64,
+    writes_ok: u64,
+    write_errors: u64,
+    final_zero_sent: bool,
+    final_stop_all_sent: bool,
+    post_stop_stable: bool,
+    no_direct_torque_reports: bool,
+    no_high_torque: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorPostAuthorityPlannedNextOutput {
+    allowed: bool,
+    reason: &'static str,
 }
 
 #[derive(Debug, Serialize)]
@@ -30174,6 +33689,7 @@ fn render_moza_lane_artifact_index_markdown(receipt: &Value) -> String {
     out.push_str(&format!("- Release ready: `{release_ready}`\n\n"));
 
     push_input_role_semantics_markdown(&mut out, receipt);
+    push_vendor_authority_navigation_markdown(&mut out, receipt);
     push_pit_house_compatibility_markdown(&mut out, receipt);
     push_simulator_compatibility_markdown(&mut out, receipt);
     push_passive_sniff_navigation_markdown(&mut out, receipt);
@@ -30286,6 +33802,7 @@ fn render_moza_bench_wizard_markdown(receipt: &Value) -> String {
     push_next_operator_step_commands_markdown(&mut out, step);
 
     push_input_role_semantics_markdown(&mut out, receipt);
+    push_vendor_authority_navigation_markdown(&mut out, receipt);
     push_pit_house_compatibility_markdown(&mut out, receipt);
     push_simulator_compatibility_markdown(&mut out, receipt);
     push_passive_sniff_navigation_markdown(&mut out, receipt);
@@ -30330,7 +33847,7 @@ fn render_moza_bench_wizard_markdown(receipt: &Value) -> String {
     out.push('\n');
 
     out.push_str("## Output Boundary\n\n");
-    out.push_str("Output is not authorized by this wizard. Any real controlled-angle attempt needs a separate fresh command-bound bench-clear plus exact authorization receipt. Do not use this wizard as permission to rerun, raise force, extend dwell, run 30/90 degrees, use direct report 0x20, high torque, serial config, firmware, or DFU.\n\n");
+    out.push_str("Output is not authorized by this wizard. Any real controlled-angle or vendor-authority attempt needs a separate fresh command-bound bench-clear plus exact authorization receipt. Do not use this wizard as permission to rerun, raise force, extend dwell, run 30/90 degrees, use direct report 0x20, high torque, serial config, firmware, or DFU.\n\n");
     if let Some(evidence) = step
         .get("required_bench_clear_evidence")
         .and_then(Value::as_str)
@@ -30350,6 +33867,20 @@ fn render_moza_bench_wizard_markdown(receipt: &Value) -> String {
         out.push_str(&format!(
             "- Planned output receipt: `{}`\n",
             markdown_escape(planned_output)
+        ));
+    }
+    if let Some(smoke) = step.get("smoke_dry_run_receipt").and_then(Value::as_str) {
+        out.push_str(&format!(
+            "- Smoke dry-run receipt: `{}`\n",
+            markdown_escape(smoke)
+        ));
+    }
+    if let Some(emitted) = step
+        .get("hardware_attempt_command_emitted")
+        .and_then(Value::as_bool)
+    {
+        out.push_str(&format!(
+            "- Hardware attempt command emitted by wizard: `{emitted}`\n"
         ));
     }
     if step.get("authorization_receipt").is_some() || step.get("planned_output_receipt").is_some() {
@@ -30456,6 +33987,136 @@ fn push_input_role_semantics_markdown(out: &mut String, receipt: &Value) {
         }
         out.push('\n');
     }
+}
+
+fn push_vendor_authority_navigation_markdown(out: &mut String, receipt: &Value) {
+    let Some(summary) = receipt.get("vendor_authority_navigation") else {
+        return;
+    };
+    if summary.is_null() {
+        return;
+    }
+
+    let state = json_string(summary, "state").unwrap_or("unknown");
+    let next_allowed_action =
+        json_string(summary, "next_allowed_action").unwrap_or("review source-of-truth");
+    let hardware_output_authorized =
+        json_bool(summary, "hardware_output_authorized").unwrap_or(false);
+    let native_visible_ready = json_bool(summary, "native_visible_ready").unwrap_or(false);
+    let hardware_attempt_command_emitted =
+        json_bool(summary, "hardware_attempt_command_emitted").unwrap_or(false);
+    let command = summary.get("exact_command").unwrap_or(&Value::Null);
+    let command_id = json_string(command, "command_id").unwrap_or("unknown");
+    let frame_hex = json_string(command, "frame_hex").unwrap_or("unknown");
+    let payload_hex = json_string(command, "payload_hex").unwrap_or("unknown");
+    let risk_class = json_string(command, "risk_class").unwrap_or("unknown");
+
+    out.push_str("## Vendor Authority Handoff\n\n");
+    out.push_str("This section is native-control research navigation only. It does not open HID, send serial traffic, create authorization, emit the hardware attempt command, or claim native-visible readiness.\n\n");
+    out.push_str(&format!("- State: `{}`\n", markdown_escape(state)));
+    out.push_str(&format!(
+        "- Next allowed action: {}\n",
+        markdown_escape(next_allowed_action)
+    ));
+    out.push_str(&format!(
+        "- Hardware output authorized: `{hardware_output_authorized}`\n"
+    ));
+    out.push_str(&format!(
+        "- Native visible ready: `{native_visible_ready}`\n"
+    ));
+    out.push_str(&format!(
+        "- Hardware attempt command emitted: `{hardware_attempt_command_emitted}`\n"
+    ));
+    out.push_str(&format!(
+        "- Exact command: `{}` frame `{}` payload `{}` risk `{}`\n",
+        markdown_escape(command_id),
+        markdown_escape(frame_hex),
+        markdown_escape(payload_hex),
+        markdown_escape(risk_class)
+    ));
+    if let Some(evidence) = summary
+        .get("required_bench_clear_evidence")
+        .and_then(Value::as_str)
+    {
+        out.push_str(&format!(
+            "- Required bench-clear evidence: `{}`\n",
+            markdown_escape(evidence)
+        ));
+    }
+    if let Some(precondition) = summary.get("serial_precondition") {
+        let requires_exclusive =
+            json_bool(precondition, "requires_exclusive_r5_serial_cdc_access").unwrap_or(false);
+        let pit_house_dependency = json_bool(precondition, "pit_house_dependency").unwrap_or(false);
+        let pit_house_owner_risk =
+            json_bool(precondition, "pit_house_serial_owner_risk").unwrap_or(false);
+        let opens_serial = json_bool(precondition, "opens_serial").unwrap_or(false);
+        let sends_output = json_bool(precondition, "sends_output").unwrap_or(false);
+        out.push_str(&format!(
+            "- Requires exclusive R5 serial/CDC access before separate attempt: `{requires_exclusive}`\n"
+        ));
+        out.push_str(&format!(
+            "- Pit House dependency: `{pit_house_dependency}`; serial-owner risk: `{pit_house_owner_risk}`\n"
+        ));
+        out.push_str(&format!(
+            "- Handoff opens serial: `{opens_serial}`; sends output: `{sends_output}`\n"
+        ));
+        if let Some(hints) = precondition
+            .get("serial_port_hints")
+            .and_then(Value::as_array)
+            .filter(|hints| !hints.is_empty())
+        {
+            let rendered_hints = hints
+                .iter()
+                .filter_map(Value::as_str)
+                .map(markdown_escape)
+                .collect::<Vec<_>>()
+                .join("`, `");
+            out.push_str(&format!("- R5 serial port hints: `{rendered_hints}`\n"));
+        }
+        if let Some(guidance) = json_string(precondition, "guidance") {
+            out.push_str(&format!(
+                "- Serial precondition guidance: {}\n",
+                markdown_escape(guidance)
+            ));
+        }
+        if let Some(command) = json_string(precondition, "live_precondition_command") {
+            out.push_str(&format!(
+                "- Live precondition refresh command: `{}`\n",
+                markdown_escape(command)
+            ));
+        }
+        if let Some(receipt) = json_string(precondition, "live_precondition_receipt") {
+            out.push_str(&format!(
+                "- Live precondition receipt: `{}`\n",
+                markdown_escape(receipt)
+            ));
+        }
+    }
+    if let Some(artifacts) = summary.get("artifacts") {
+        out.push_str("\n| Artifact | Path |\n");
+        out.push_str("| --- | --- |\n");
+        for (label, pointer) in [
+            ("authorization", "authorization_receipt"),
+            ("smoke_dry_run", "smoke_dry_run_receipt"),
+            ("attempt", "attempt_receipt"),
+            (
+                "post_authority_pidff_smoke",
+                "post_authority_pidff_smoke_receipt",
+            ),
+            (
+                "post_authority_pidff_response",
+                "post_authority_pidff_response_receipt",
+            ),
+        ] {
+            let path = json_string(artifacts, pointer).unwrap_or("unknown");
+            out.push_str(&format!(
+                "| `{}` | `{}` |\n",
+                markdown_escape(label),
+                markdown_escape(path)
+            ));
+        }
+    }
+    out.push('\n');
 }
 
 fn push_pit_house_compatibility_markdown(out: &mut String, receipt: &Value) {
@@ -31296,6 +34957,131 @@ fn print_pre_output_readiness_receipt(
     Ok(())
 }
 
+fn print_vendor_fake_transport_receipt(
+    json: bool,
+    json_out: Option<&Path>,
+    receipt: &VendorFakeTransportCliReceipt,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Moza vendor fake transport replayed {} read-only fixture(s), blocked {} write-like fixture(s), and sent no hardware traffic.",
+            receipt.accepted_fixture_count, receipt.blocked_fixture_count
+        );
+        if let Some(path) = json_out {
+            println!("Receipt: {}", path.display());
+        }
+    }
+    Ok(())
+}
+
+fn print_vendor_status_probe_receipt(
+    json: bool,
+    json_out: Option<&Path>,
+    receipt: &VendorStatusProbeReceipt,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Moza vendor status probe sent {} read-only query command(s), decoded {} response(s), and recorded {} failure(s); no output/configuration/firmware writes were sent.",
+            receipt.sent_read_only_query_count,
+            receipt.decoded_response_count,
+            receipt.failed_response_count
+        );
+        if let Some(path) = json_out {
+            println!("Receipt: {}", path.display());
+        }
+    }
+    Ok(())
+}
+
+fn print_vendor_authority_authorization_receipt(
+    json: bool,
+    json_out: &Path,
+    receipt: &VendorAuthorityAuthorizationReceipt,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Moza vendor-authority authorization recorded for {} with frame hash {}; no HID/serial/output traffic was sent.",
+            receipt.authorized_command.command_id, receipt.authorized_frame.frame_sha256
+        );
+        println!("Receipt: {}", json_out.display());
+    }
+    Ok(())
+}
+
+fn print_vendor_authority_smoke_dry_run_receipt(
+    json: bool,
+    json_out: &Path,
+    receipt: &VendorAuthoritySmokeDryRunReceipt,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Moza vendor-authority smoke dry-run validated {} with frame hash {}; no HID/serial/output traffic was sent.",
+            receipt.planned_next_output.command_id, receipt.planned_next_output.frame_sha256
+        );
+        println!("Receipt: {}", json_out.display());
+    }
+    Ok(())
+}
+
+fn print_vendor_authority_attempt_receipt(
+    json: bool,
+    json_out: &Path,
+    receipt: &VendorAuthorityAttemptReceipt,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Moza vendor-authority attempt consumed {} with one exact frame write; native_visible_ready remains false.",
+            receipt.authorized_command.command_id
+        );
+        println!("Receipt: {}", json_out.display());
+    }
+    Ok(())
+}
+
+fn print_vendor_authority_attempt_blocked_receipt(
+    json: bool,
+    json_out: &Path,
+    receipt: &VendorAuthorityAttemptBlockedReceipt,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Moza vendor-authority attempt blocked at {}; no authorized frame was sent and native_visible_ready remains false.",
+            receipt.failure.stage
+        );
+        println!("Receipt: {}", json_out.display());
+    }
+    Ok(())
+}
+
+fn print_vendor_post_authority_pidff_response_receipt(
+    json: bool,
+    json_out: &Path,
+    receipt: &VendorPostAuthorityPidffResponseReceipt,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Compared post-authority PIDFF response: classification={}, delta_change_degrees={:.3}; native_visible_ready remains false.",
+            receipt.comparison.classification, receipt.comparison.delta_change_degrees
+        );
+        println!("Receipt: {}", json_out.display());
+    }
+    Ok(())
+}
+
 fn print_lane_audit_receipt(
     json: bool,
     json_out: Option<&Path>,
@@ -31934,6 +35720,2091 @@ mod tests {
         }
         let contents = serde_json::to_string_pretty(&value)?;
         write_text_file(path, &contents)
+    }
+
+    #[test]
+    fn vendor_fake_transport_cli_receipt_is_non_claiming() -> TestResult {
+        let receipt = vendor_fake_transport_cli_receipt()?;
+        let value = serde_json::to_value(&receipt)?;
+
+        assert_eq!(
+            json_string(&value, "artifact_kind"),
+            Some("moza_vendor_no_output_cli")
+        );
+        assert_eq!(
+            json_string(&value, "claim_scope"),
+            Some("software_cli_fake_transport_only")
+        );
+        assert_eq!(json_bool(&value, "native_control_evidence"), Some(false));
+        assert_eq!(json_bool(&value, "hardware_output_authorized"), Some(false));
+        assert_eq!(json_bool(&value, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "opened_serial_device"), Some(false));
+        assert_eq!(json_bool(&value, "no_output_reports"), Some(true));
+        assert_eq!(json_bool(&value, "no_feature_reports"), Some(true));
+        assert_eq!(
+            json_bool(&value, "sent_read_only_query_commands"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "sent_output_writes"), Some(false));
+        assert_eq!(json_bool(&value, "sent_configuration_writes"), Some(false));
+        assert_eq!(
+            json_bool(&value, "sent_firmware_or_dfu_commands"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "real_hardware_validated"), Some(false));
+        assert_eq!(json_string(&value, "transport_kind"), Some("fake_only"));
+        assert_eq!(json_bool(&value, "fake_transport_verified"), Some(true));
+        assert_eq!(
+            json_string(&value, "codec_status"),
+            Some("round_trip_verified")
+        );
+        assert_eq!(json_bool(&value, "hardware_write_eligible"), Some(false));
+        assert_eq!(json_bool(&value, "malformed_frame_rejected"), Some(true));
+        assert_eq!(json_bool(&value, "unknown_command_rejected"), Some(true));
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_fake_transport_cli_schema_pins_safety_gates() -> TestResult {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-no-output-cli.schema.json"
+        ))?;
+        let required = schema
+            .get("required")
+            .and_then(Value::as_array)
+            .ok_or("schema must have a required array")?;
+        for field in [
+            "claim_scope",
+            "native_control_evidence",
+            "hardware_output_authorized",
+            "native_visible_ready",
+            "no_hid_device_opened",
+            "opened_serial_device",
+            "no_ffb_writes",
+            "no_serial_config_commands",
+            "no_firmware_or_dfu_commands",
+            "sent_read_only_query_commands",
+            "sent_output_writes",
+            "sent_configuration_writes",
+            "sent_firmware_or_dfu_commands",
+            "real_hardware_validated",
+        ] {
+            assert!(
+                required.iter().any(|entry| entry.as_str() == Some(field)),
+                "schema must require `{field}`"
+            );
+        }
+        assert_eq!(
+            schema["properties"]["claim_scope"]["const"],
+            "software_cli_fake_transport_only"
+        );
+        assert_eq!(
+            schema["properties"]["native_control_evidence"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["hardware_output_authorized"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["native_visible_ready"]["const"], false);
+        assert_eq!(schema["properties"]["opened_serial_device"]["const"], false);
+        assert_eq!(schema["properties"]["no_ffb_writes"]["const"], true);
+        assert_eq!(
+            schema["properties"]["no_serial_config_commands"]["const"],
+            true
+        );
+        assert_eq!(
+            schema["properties"]["no_firmware_or_dfu_commands"]["const"],
+            true
+        );
+        assert_eq!(
+            schema["properties"]["sent_read_only_query_commands"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["sent_output_writes"]["const"], false);
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_fake_transport_cli_records_expected_fixture_sets() -> TestResult {
+        let receipt = vendor_fake_transport_cli_receipt()?;
+        assert_eq!(receipt.accepted_fixture_count, 9);
+        assert_eq!(receipt.blocked_fixture_count, 6);
+        assert_eq!(
+            receipt
+                .accepted_exchanges
+                .iter()
+                .filter(|exchange| exchange.risk_class == "vendor_status")
+                .count(),
+            receipt.accepted_fixture_count
+        );
+        assert_eq!(
+            receipt
+                .blocked_exchanges
+                .iter()
+                .filter(|exchange| exchange.reason == "requires_exact_authorization")
+                .count(),
+            receipt.blocked_fixture_count
+        );
+        assert!(receipt.blocked_exchanges.iter().any(|exchange| {
+            exchange.fixture_id == "base_gain_set_overall_strength"
+                && exchange.risk_class == "configuration_candidate"
+        }));
+        assert!(receipt.blocked_exchanges.iter().any(|exchange| {
+            exchange.fixture_id == "main_misc_set_ffb_status"
+                && exchange.risk_class == "vendor_output_candidate"
+        }));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn vendor_fake_transport_command_writes_json_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let json_out = dir.path().join("vendor-no-output-cli.json");
+
+        vendor_fake_transport(false, Some(&json_out)).await?;
+
+        let value: Value = serde_json::from_str(&fs::read_to_string(&json_out)?)?;
+        assert_eq!(
+            json_string(&value, "command"),
+            Some("wheelctl moza vendor-fake-transport")
+        );
+        assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "opened_serial_device"), Some(false));
+        assert_eq!(
+            json_bool(&value, "sent_read_only_query_commands"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "sent_output_writes"), Some(false));
+        assert_eq!(json_u64(&value, "accepted_fixture_count"), Some(9));
+        assert_eq!(json_u64(&value, "blocked_fixture_count"), Some(6));
+
+        Ok(())
+    }
+
+    struct FakeVendorStatusProbeTransport {
+        responses: BTreeMap<&'static str, Vec<u8>>,
+        writes: Vec<Vec<u8>>,
+    }
+
+    impl FakeVendorStatusProbeTransport {
+        fn with_status_responses(commands: &[&'static MozaVendorCommand]) -> TestResult<Self> {
+            let mut responses = BTreeMap::new();
+            for command in commands {
+                responses.insert(command.id, encode_read_only_status_query(command)?);
+            }
+            Ok(Self {
+                responses,
+                writes: Vec::new(),
+            })
+        }
+    }
+
+    impl VendorStatusProbeTransport for FakeVendorStatusProbeTransport {
+        fn write_query(&mut self, _command: &MozaVendorCommand, frame: &[u8]) -> Result<()> {
+            self.writes.push(frame.to_vec());
+            Ok(())
+        }
+
+        fn read_response_frame(
+            &mut self,
+            command: &MozaVendorCommand,
+            _timeout_ms: u64,
+        ) -> Result<Vec<u8>> {
+            self.responses
+                .get(command.id)
+                .cloned()
+                .ok_or_else(|| anyhow!("missing fake response `{}`", command.id))
+        }
+    }
+
+    fn sample_vendor_status_port_identity() -> VendorStatusProbePortIdentity {
+        VendorStatusProbePortIdentity {
+            port_name: "COM4".to_string(),
+            port_type: "usb".to_string(),
+            vendor_id: Some("0x346E".to_string()),
+            product_id: Some("0x0004".to_string()),
+            manufacturer: Some("MOZA".to_string()),
+            product: Some("MOZA R5 Base".to_string()),
+            serial_number_present: true,
+        }
+    }
+
+    #[test]
+    fn vendor_status_probe_receipt_is_read_only_and_non_claiming() -> TestResult {
+        let commands = selected_read_only_status_commands(&[])?;
+        let mut transport = FakeVendorStatusProbeTransport::with_status_responses(&commands)?;
+
+        let receipt = vendor_status_probe_receipt_with_transport(
+            "COM4",
+            115200,
+            250,
+            &commands,
+            sample_vendor_status_port_identity(),
+            &mut transport,
+        )?;
+        let value = serde_json::to_value(&receipt)?;
+
+        assert_eq!(
+            json_string(&value, "artifact_kind"),
+            Some("moza_vendor_status_probe")
+        );
+        assert_eq!(
+            json_string(&value, "claim_scope"),
+            Some("read_only_hardware")
+        );
+        assert_eq!(json_bool(&value, "native_control_evidence"), Some(false));
+        assert_eq!(json_bool(&value, "hardware_output_authorized"), Some(false));
+        assert_eq!(json_bool(&value, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "opened_serial_device"), Some(true));
+        assert_eq!(json_bool(&value, "serial_identity_verified"), Some(true));
+        assert_eq!(json_bool(&value, "no_output_reports"), Some(true));
+        assert_eq!(json_bool(&value, "no_feature_reports"), Some(true));
+        assert_eq!(
+            json_bool(&value, "sent_read_only_query_commands"),
+            Some(true)
+        );
+        assert_eq!(json_bool(&value, "sent_output_writes"), Some(false));
+        assert_eq!(json_bool(&value, "sent_configuration_writes"), Some(false));
+        assert_eq!(
+            json_bool(&value, "sent_firmware_or_dfu_commands"),
+            Some(false)
+        );
+        assert_eq!(
+            json_string(&value, "transport_kind"),
+            Some("serial_read_only")
+        );
+        assert_eq!(
+            json_string(&value, "codec_status"),
+            Some("round_trip_verified")
+        );
+        assert_eq!(json_bool(&value, "hardware_write_eligible"), Some(false));
+        assert_eq!(json_u64(&value, "selected_command_count"), Some(9));
+        assert_eq!(json_u64(&value, "sent_read_only_query_count"), Some(9));
+        assert_eq!(json_u64(&value, "decoded_response_count"), Some(9));
+        assert_eq!(json_u64(&value, "failed_response_count"), Some(0));
+        assert_eq!(transport.writes.len(), 9);
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_probe_schema_pins_read_only_gates() -> TestResult {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-status-probe.schema.json"
+        ))?;
+        let required = schema
+            .get("required")
+            .and_then(Value::as_array)
+            .ok_or("schema must have a required array")?;
+        for field in [
+            "claim_scope",
+            "native_control_evidence",
+            "hardware_output_authorized",
+            "native_visible_ready",
+            "no_hid_device_opened",
+            "opened_serial_device",
+            "serial_identity_verified",
+            "no_output_reports",
+            "no_feature_reports",
+            "sent_read_only_query_commands",
+            "sent_output_writes",
+            "sent_configuration_writes",
+            "sent_firmware_or_dfu_commands",
+            "transport_kind",
+            "codec_status",
+            "hardware_write_eligible",
+            "responses",
+        ] {
+            assert!(
+                required.iter().any(|entry| entry.as_str() == Some(field)),
+                "schema must require `{field}`"
+            );
+        }
+        assert_eq!(
+            schema["properties"]["claim_scope"]["const"],
+            "read_only_hardware"
+        );
+        assert_eq!(
+            schema["properties"]["native_control_evidence"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["hardware_output_authorized"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["native_visible_ready"]["const"], false);
+        assert_eq!(schema["properties"]["opened_serial_device"]["const"], true);
+        assert_eq!(
+            schema["properties"]["sent_read_only_query_commands"]["const"],
+            true
+        );
+        assert_eq!(schema["properties"]["sent_output_writes"]["const"], false);
+        assert_eq!(
+            schema["properties"]["sent_configuration_writes"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["sent_firmware_or_dfu_commands"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["hardware_write_eligible"]["const"],
+            false
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_probe_rejects_write_like_command_selection() -> TestResult {
+        let command_ids = vec!["base_gain_set_overall_strength".to_string()];
+        let error = match selected_read_only_status_commands(&command_ids) {
+            Ok(_) => return Err("write-like commands must not be status probe eligible".into()),
+            Err(error) => error,
+        };
+
+        assert!(
+            error
+                .to_string()
+                .contains("not read-only status probe eligible"),
+            "unexpected error: {error}"
+        );
+
+        Ok(())
+    }
+
+    fn sample_vendor_authority_authorization_request<'a>(
+        json_out: &'a Path,
+        precondition_hardware_doctor: &'a Path,
+    ) -> VendorAuthorityAuthorizationRequest<'a> {
+        VendorAuthorityAuthorizationRequest {
+            json: false,
+            command_id: "estop_set_ffb",
+            frame_hex: "7E02461C0001F0",
+            precondition_hardware_doctor,
+            authorized_by: "Steven",
+            bench_clear_evidence: "bench clear for exact estop_set_ffb: R5 stable, hands clear, wheel clear",
+            expires_after_minutes: 10,
+            confirm_exact_vendor_authority_authorization: true,
+            json_out,
+            overwrite: false,
+        }
+    }
+
+    fn write_vendor_authority_authorization_precondition(
+        path: &Path,
+        matched_processes: &[&str],
+    ) -> TestResult {
+        write_test_json_file(
+            path,
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl hardware doctor",
+                "generated_at": now_utc(),
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_output_reports": true,
+                "no_feature_reports": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "windows_pnp": {
+                    "scan_attempted": true,
+                    "moza_vid_visible": true,
+                    "serial_interface_count": 1,
+                    "devices": [
+                        {
+                            "status": "OK",
+                            "class": "Ports",
+                            "friendly_name": "USB Serial Device (COM4)",
+                            "vendor_id": "0x346E",
+                            "product_id": "0x0004",
+                            "interface_number": 0,
+                            "instance_id_present": true
+                        }
+                    ]
+                },
+                "vendor_apps": {
+                    "process_scan_attempted": true,
+                    "pit_house_running": !matched_processes.is_empty(),
+                    "matched_processes": matched_processes
+                }
+            }),
+        )
+    }
+
+    #[test]
+    fn vendor_authority_authorization_receipt_is_single_use_exact_and_non_claiming() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let json_out = dir.path().join("vendor-authority-authorization.json");
+        let precondition = dir
+            .path()
+            .join("vendor-authority-precondition-hardware-doctor.json");
+        write_vendor_authority_authorization_precondition(&precondition, &[])?;
+        let request = sample_vendor_authority_authorization_request(&json_out, &precondition);
+        let receipt = vendor_authority_authorization_receipt(&request)?;
+        let value = serde_json::to_value(&receipt)?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-authority-authorization.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&value).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        assert_eq!(
+            json_string(&value, "artifact_kind"),
+            Some("moza_vendor_authority_authorization")
+        );
+        assert_eq!(
+            json_string(&value, "claim_scope"),
+            Some("single_use_exact_vendor_authority_authorization")
+        );
+        assert_eq!(json_bool(&value, "native_control_evidence"), Some(false));
+        assert_eq!(json_bool(&value, "hardware_output_authorized"), Some(true));
+        assert_eq!(json_bool(&value, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(&value, "authorization_consumed"), Some(false));
+        assert_eq!(json_bool(&value, "exact_authorization"), Some(true));
+        assert_eq!(json_bool(&value, "single_use"), Some(true));
+        assert_eq!(
+            json_bool(&value, "precondition_hardware_doctor_validated"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&value, "precondition_r5_serial_present"),
+            Some(true)
+        );
+        assert_eq!(
+            json_string(&value, "precondition_r5_serial_port"),
+            Some("COM4")
+        );
+        assert_eq!(
+            json_string(&value, "precondition_r5_serial_interface"),
+            Some("USB Serial Device (COM4)")
+        );
+        assert_eq!(
+            json_bool(&value, "precondition_vendor_app_running"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "no_serial_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "no_serial_query_sent"), Some(true));
+        assert_eq!(json_bool(&value, "sent_output_writes"), Some(false));
+        assert_eq!(json_bool(&value, "sent_configuration_writes"), Some(false));
+        assert_eq!(
+            json_bool(&value, "sent_firmware_or_dfu_commands"),
+            Some(false)
+        );
+        assert_eq!(
+            value
+                .pointer("/authorized_command/command_id")
+                .and_then(Value::as_str),
+            Some("estop_set_ffb")
+        );
+        assert_eq!(
+            value
+                .pointer("/authorized_command/risk_class")
+                .and_then(Value::as_str),
+            Some("vendor_output_candidate")
+        );
+        assert_eq!(
+            value
+                .pointer("/authorized_frame/frame_hex")
+                .and_then(Value::as_str),
+            Some("7E02461C0001F0")
+        );
+        assert_eq!(
+            value
+                .pointer("/authorized_frame/payload_hex")
+                .and_then(Value::as_str),
+            Some("01")
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn vendor_authority_authorization_command_writes_json_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let json_out = dir.path().join("vendor-authority-authorization.json");
+        let precondition = dir
+            .path()
+            .join("vendor-authority-precondition-hardware-doctor.json");
+        write_vendor_authority_authorization_precondition(&precondition, &[])?;
+        authorize_vendor_authority(sample_vendor_authority_authorization_request(
+            &json_out,
+            &precondition,
+        ))
+        .await?;
+        let receipt = read_json_path(&json_out)?;
+        assert_eq!(
+            json_string(&receipt, "artifact_kind"),
+            Some("moza_vendor_authority_authorization")
+        );
+        assert_eq!(
+            receipt
+                .pointer("/authorized_command/command_id")
+                .and_then(Value::as_str),
+            Some("estop_set_ffb")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_authorization_rejects_read_only_command() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let json_out = dir.path().join("vendor-authority-authorization.json");
+        let precondition = dir
+            .path()
+            .join("vendor-authority-precondition-hardware-doctor.json");
+        let request = VendorAuthorityAuthorizationRequest {
+            command_id: "estop_get_ffb",
+            frame_hex: "7E01461C01EF",
+            ..sample_vendor_authority_authorization_request(&json_out, &precondition)
+        };
+        let error = match vendor_authority_authorization_receipt(&request) {
+            Ok(_) => return Err("read-only command must not authorize vendor authority".into()),
+            Err(error) => error,
+        };
+        assert!(
+            error.to_string().contains("does not require exact"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_authorization_rejects_frame_command_mismatch() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let json_out = dir.path().join("vendor-authority-authorization.json");
+        let precondition = dir
+            .path()
+            .join("vendor-authority-precondition-hardware-doctor.json");
+        write_vendor_authority_authorization_precondition(&precondition, &[])?;
+        let request = VendorAuthorityAuthorizationRequest {
+            frame_hex: "7E0221120601C7",
+            ..sample_vendor_authority_authorization_request(&json_out, &precondition)
+        };
+        let error = match vendor_authority_authorization_receipt(&request) {
+            Ok(_) => return Err("mismatched command frame must be rejected".into()),
+            Err(error) => error,
+        };
+        assert!(
+            error.to_string().contains("does not match --command-id"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_authorization_rejects_generic_bench_clear() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let json_out = dir.path().join("vendor-authority-authorization.json");
+        let precondition = dir
+            .path()
+            .join("vendor-authority-precondition-hardware-doctor.json");
+        let request = VendorAuthorityAuthorizationRequest {
+            bench_clear_evidence: "bench clear",
+            ..sample_vendor_authority_authorization_request(&json_out, &precondition)
+        };
+        let error = match vendor_authority_authorization_receipt(&request) {
+            Ok(_) => return Err("generic bench-clear must not authorize vendor authority".into()),
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("bench-clear evidence must include"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_authorization_rejects_vendor_app_precondition() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let json_out = dir.path().join("vendor-authority-authorization.json");
+        let precondition = dir
+            .path()
+            .join("vendor-authority-precondition-hardware-doctor.json");
+        write_vendor_authority_authorization_precondition(&precondition, &["MOZA Pit House.exe"])?;
+        let request = sample_vendor_authority_authorization_request(&json_out, &precondition);
+        let error = match vendor_authority_authorization_receipt(&request) {
+            Ok(_) => return Err("running vendor app must block exact authorization".into()),
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("vendor app process(es) may own the R5 serial/CDC port"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_authorization_rejects_missing_r5_serial_precondition() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let json_out = dir.path().join("vendor-authority-authorization.json");
+        let precondition = dir
+            .path()
+            .join("vendor-authority-precondition-hardware-doctor.json");
+        write_test_json_file(
+            &precondition,
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl hardware doctor",
+                "generated_at": now_utc(),
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_output_reports": true,
+                "no_feature_reports": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "windows_pnp": {
+                    "scan_attempted": true,
+                    "moza_vid_visible": true,
+                    "devices": []
+                },
+                "vendor_apps": {
+                    "process_scan_attempted": true,
+                    "pit_house_running": false,
+                    "matched_processes": []
+                }
+            }),
+        )?;
+        let request = sample_vendor_authority_authorization_request(&json_out, &precondition);
+        let error = match vendor_authority_authorization_receipt(&request) {
+            Ok(_) => {
+                return Err("missing R5 serial interface must block exact authorization".into());
+            }
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("does not show an OK R5 serial/CDC"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_authorization_requires_explicit_confirmation() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let json_out = dir.path().join("vendor-authority-authorization.json");
+        let precondition = dir
+            .path()
+            .join("vendor-authority-precondition-hardware-doctor.json");
+        let request = VendorAuthorityAuthorizationRequest {
+            confirm_exact_vendor_authority_authorization: false,
+            ..sample_vendor_authority_authorization_request(&json_out, &precondition)
+        };
+        let error = match vendor_authority_authorization_receipt(&request) {
+            Ok(_) => {
+                return Err("missing confirmation must not authorize vendor authority".into());
+            }
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("--confirm-exact-vendor-authority-authorization"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_authorization_schema_requires_single_use_gates() -> TestResult {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-authority-authorization.schema.json"
+        ))?;
+        let required = schema
+            .get("required")
+            .and_then(Value::as_array)
+            .ok_or("schema must have a required array")?;
+        for field in [
+            "claim_scope",
+            "native_control_evidence",
+            "hardware_output_authorized",
+            "native_visible_ready",
+            "authorization_consumed",
+            "exact_authorization",
+            "single_use",
+            "precondition_hardware_doctor_receipt",
+            "precondition_hardware_doctor_validated",
+            "precondition_r5_serial_present",
+            "precondition_r5_serial_port",
+            "precondition_vendor_app_running",
+            "no_hid_device_opened",
+            "no_serial_device_opened",
+            "no_serial_query_sent",
+            "sent_output_writes",
+            "sent_configuration_writes",
+            "sent_firmware_or_dfu_commands",
+            "authorized_command",
+            "authorized_frame",
+            "forbidden_commands",
+        ] {
+            assert!(
+                required.iter().any(|entry| entry.as_str() == Some(field)),
+                "schema must require `{field}`"
+            );
+        }
+        assert_eq!(
+            schema["properties"]["claim_scope"]["const"],
+            "single_use_exact_vendor_authority_authorization"
+        );
+        assert_eq!(
+            schema["properties"]["native_control_evidence"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["hardware_output_authorized"]["const"],
+            true
+        );
+        assert_eq!(schema["properties"]["native_visible_ready"]["const"], false);
+        assert_eq!(
+            schema["properties"]["authorization_consumed"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["exact_authorization"]["const"], true);
+        assert_eq!(schema["properties"]["single_use"]["const"], true);
+        assert_eq!(
+            schema["properties"]["precondition_hardware_doctor_validated"]["const"],
+            true
+        );
+        assert_eq!(
+            schema["properties"]["precondition_r5_serial_present"]["const"],
+            true
+        );
+        assert_eq!(
+            schema["properties"]["precondition_vendor_app_running"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["no_hid_device_opened"]["const"], true);
+        assert_eq!(
+            schema["properties"]["no_serial_device_opened"]["const"],
+            true
+        );
+        assert_eq!(schema["properties"]["no_serial_query_sent"]["const"], true);
+        assert_eq!(schema["properties"]["sent_output_writes"]["const"], false);
+        assert_eq!(
+            schema["properties"]["sent_configuration_writes"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["sent_firmware_or_dfu_commands"]["const"],
+            false
+        );
+        Ok(())
+    }
+
+    fn sample_vendor_authority_authorization_value() -> TestResult<Value> {
+        let dir = tempfile::tempdir()?;
+        let json_out = dir.path().join("vendor-authority-authorization.json");
+        let precondition = dir
+            .path()
+            .join("vendor-authority-precondition-hardware-doctor.json");
+        write_vendor_authority_authorization_precondition(&precondition, &[])?;
+        let request = sample_vendor_authority_authorization_request(&json_out, &precondition);
+        let receipt = vendor_authority_authorization_receipt(&request)?;
+        Ok(serde_json::to_value(receipt)?)
+    }
+
+    fn sample_vendor_authority_smoke_request<'a>(
+        authorization: &'a Path,
+        json_out: &'a Path,
+    ) -> VendorAuthoritySmokeDryRunRequest<'a> {
+        VendorAuthoritySmokeDryRunRequest {
+            json: false,
+            authorization,
+            confirm_no_output_smoke_dry_run: true,
+            json_out,
+            overwrite: false,
+        }
+    }
+
+    fn sample_vendor_authority_attempt_request<'a>(
+        authorization: &'a Path,
+        smoke_dry_run: &'a Path,
+        json_out: &'a Path,
+    ) -> VendorAuthorityAttemptRequest<'a> {
+        VendorAuthorityAttemptRequest {
+            json: false,
+            serial_port: "COM4",
+            baud_rate: 115200,
+            timeout_ms: 250,
+            authorization,
+            smoke_dry_run,
+            confirm_bounded_vendor_authority_attempt: true,
+            json_out,
+            overwrite: false,
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingVendorAuthorityAttemptTransport {
+        writes: Vec<Vec<u8>>,
+        short_write_len: Option<usize>,
+    }
+
+    impl VendorAuthorityAttemptTransport for RecordingVendorAuthorityAttemptTransport {
+        fn write_authorized_frame(
+            &mut self,
+            _command: &MozaVendorCommand,
+            frame: &[u8],
+        ) -> Result<usize> {
+            self.writes.push(frame.to_vec());
+            Ok(self.short_write_len.unwrap_or(frame.len()))
+        }
+    }
+
+    #[test]
+    fn vendor_authority_smoke_dry_run_receipt_is_no_output_and_non_claiming() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let authorization_path = dir.path().join("vendor-authority-authorization.json");
+        let json_out = dir.path().join("vendor-authority-smoke-dry-run.json");
+        let authorization = sample_vendor_authority_authorization_value()?;
+        let request = sample_vendor_authority_smoke_request(&authorization_path, &json_out);
+        let receipt = vendor_authority_smoke_dry_run_receipt(&request, &authorization)?;
+        let value = serde_json::to_value(&receipt)?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-authority-smoke.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&value).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        assert_eq!(
+            json_string(&value, "artifact_kind"),
+            Some("moza_vendor_authority_smoke")
+        );
+        assert_eq!(
+            json_string(&value, "claim_scope"),
+            Some("software_vendor_authority_smoke_dry_run")
+        );
+        assert_eq!(json_bool(&value, "native_control_evidence"), Some(false));
+        assert_eq!(json_bool(&value, "hardware_output_authorized"), Some(false));
+        assert_eq!(json_bool(&value, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(&value, "authorization_consumed"), Some(false));
+        assert_eq!(
+            json_bool(&value, "authorization_receipt_validated"),
+            Some(true)
+        );
+        assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "no_serial_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "no_serial_query_sent"), Some(true));
+        assert_eq!(json_bool(&value, "sent_output_writes"), Some(false));
+        assert_eq!(json_bool(&value, "sent_configuration_writes"), Some(false));
+        assert_eq!(
+            json_bool(&value, "sent_firmware_or_dfu_commands"),
+            Some(false)
+        );
+        assert_eq!(
+            value
+                .pointer("/planned_next_output/allowed")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            value
+                .pointer("/planned_next_output/command_id")
+                .and_then(Value::as_str),
+            Some("estop_set_ffb")
+        );
+        assert_eq!(
+            value
+                .get("commands_sent")
+                .and_then(Value::as_array)
+                .map(Vec::len),
+            Some(0)
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn vendor_authority_smoke_dry_run_command_writes_json_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let authorization_path = dir.path().join("vendor-authority-authorization.json");
+        let json_out = dir.path().join("vendor-authority-smoke-dry-run.json");
+        let authorization = sample_vendor_authority_authorization_value()?;
+        write_json_file(&authorization_path, &authorization)?;
+
+        vendor_authority_smoke_dry_run(sample_vendor_authority_smoke_request(
+            &authorization_path,
+            &json_out,
+        ))
+        .await?;
+        let receipt = read_json_path(&json_out)?;
+        assert_eq!(
+            json_string(&receipt, "artifact_kind"),
+            Some("moza_vendor_authority_smoke")
+        );
+        assert_eq!(
+            receipt
+                .pointer("/planned_next_output/command_id")
+                .and_then(Value::as_str),
+            Some("estop_set_ffb")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_smoke_dry_run_rejects_missing_confirmation() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let authorization_path = dir.path().join("vendor-authority-authorization.json");
+        let json_out = dir.path().join("vendor-authority-smoke-dry-run.json");
+        let authorization = sample_vendor_authority_authorization_value()?;
+        let request = VendorAuthoritySmokeDryRunRequest {
+            confirm_no_output_smoke_dry_run: false,
+            ..sample_vendor_authority_smoke_request(&authorization_path, &json_out)
+        };
+        let error = match vendor_authority_smoke_dry_run_receipt(&request, &authorization) {
+            Ok(_) => return Err("missing dry-run confirmation must be rejected".into()),
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("--confirm-no-output-smoke-dry-run"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_smoke_dry_run_rejects_consumed_authorization() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let authorization_path = dir.path().join("vendor-authority-authorization.json");
+        let json_out = dir.path().join("vendor-authority-smoke-dry-run.json");
+        let mut authorization = sample_vendor_authority_authorization_value()?;
+        authorization["authorization_consumed"] = serde_json::json!(true);
+        let request = sample_vendor_authority_smoke_request(&authorization_path, &json_out);
+        let error = match vendor_authority_smoke_dry_run_receipt(&request, &authorization) {
+            Ok(_) => return Err("consumed authorization must be rejected".into()),
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("authorization receipt failed schema validation")
+                || error
+                    .to_string()
+                    .contains("authorization receipt gate `/authorization_consumed`"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_smoke_dry_run_rejects_payload_hash_drift() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let authorization_path = dir.path().join("vendor-authority-authorization.json");
+        let json_out = dir.path().join("vendor-authority-smoke-dry-run.json");
+        let mut authorization = sample_vendor_authority_authorization_value()?;
+        authorization["authorized_frame"]["payload_sha256"] =
+            serde_json::json!("0000000000000000000000000000000000000000000000000000000000000000");
+        let request = sample_vendor_authority_smoke_request(&authorization_path, &json_out);
+        let error = match vendor_authority_smoke_dry_run_receipt(&request, &authorization) {
+            Ok(_) => return Err("payload hash drift must be rejected".into()),
+            Err(error) => error,
+        };
+        assert!(
+            error.to_string().contains("payload hash mismatch"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_smoke_schema_pins_no_output_gates() -> TestResult {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-authority-smoke.schema.json"
+        ))?;
+        let required = schema
+            .get("required")
+            .and_then(Value::as_array)
+            .ok_or("schema must have a required array")?;
+        for field in [
+            "claim_scope",
+            "native_control_evidence",
+            "hardware_output_authorized",
+            "native_visible_ready",
+            "authorization_receipt_validated",
+            "authorization_consumed",
+            "no_hid_device_opened",
+            "no_serial_device_opened",
+            "no_serial_query_sent",
+            "sent_output_writes",
+            "sent_configuration_writes",
+            "sent_firmware_or_dfu_commands",
+            "commands_sent",
+            "planned_next_output",
+        ] {
+            assert!(
+                required.iter().any(|entry| entry.as_str() == Some(field)),
+                "schema must require `{field}`"
+            );
+        }
+        assert_eq!(
+            schema["properties"]["claim_scope"]["const"],
+            "software_vendor_authority_smoke_dry_run"
+        );
+        assert_eq!(
+            schema["properties"]["native_control_evidence"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["hardware_output_authorized"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["native_visible_ready"]["const"], false);
+        assert_eq!(
+            schema["properties"]["authorization_consumed"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["no_hid_device_opened"]["const"], true);
+        assert_eq!(
+            schema["properties"]["no_serial_device_opened"]["const"],
+            true
+        );
+        assert_eq!(schema["properties"]["no_serial_query_sent"]["const"], true);
+        assert_eq!(schema["properties"]["sent_output_writes"]["const"], false);
+        assert_eq!(
+            schema["properties"]["sent_configuration_writes"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["sent_firmware_or_dfu_commands"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["planned_next_output"]["properties"]["allowed"]["const"],
+            false
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_attempt_receipt_consumes_exact_frame_and_stays_non_claiming() -> TestResult
+    {
+        let dir = tempfile::tempdir()?;
+        let authorization_path = dir.path().join("vendor-authority-authorization.json");
+        let smoke_path = dir.path().join("vendor-authority-smoke-dry-run.json");
+        let json_out = dir.path().join("vendor-authority-attempt.json");
+        let authorization = sample_vendor_authority_authorization_value()?;
+        let smoke_request = sample_vendor_authority_smoke_request(&authorization_path, &smoke_path);
+        let smoke = serde_json::to_value(vendor_authority_smoke_dry_run_receipt(
+            &smoke_request,
+            &authorization,
+        )?)?;
+        let request =
+            sample_vendor_authority_attempt_request(&authorization_path, &smoke_path, &json_out);
+        let mut transport = RecordingVendorAuthorityAttemptTransport::default();
+
+        let receipt = vendor_authority_attempt_receipt_with_transport(
+            &request,
+            &authorization,
+            &smoke,
+            sample_vendor_status_port_identity(),
+            &mut transport,
+        )?;
+        let value = serde_json::to_value(&receipt)?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-authority-attempt.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&value).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        assert_eq!(transport.writes.len(), 1);
+        assert_eq!(
+            transport.writes[0],
+            parse_hex_bytes("7E02461C0001F0").map_err(anyhow::Error::msg)?
+        );
+        assert_eq!(
+            json_string(&value, "artifact_kind"),
+            Some("moza_vendor_authority_attempt")
+        );
+        assert_eq!(
+            json_string(&value, "claim_scope"),
+            Some("bounded_vendor_authority_attempt_recorded")
+        );
+        assert_eq!(json_bool(&value, "authorization_consumed"), Some(true));
+        assert_eq!(json_bool(&value, "native_control_evidence"), Some(false));
+        assert_eq!(json_bool(&value, "hardware_output_authorized"), Some(false));
+        assert_eq!(json_bool(&value, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(&value, "smoke_ready"), Some(false));
+        assert_eq!(json_bool(&value, "serial_identity_verified"), Some(true));
+        assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "opened_serial_device"), Some(true));
+        assert_eq!(
+            json_bool(&value, "sent_read_only_query_commands"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "sent_authorized_frame"), Some(true));
+        assert_eq!(json_u64(&value, "sent_authorized_frame_count"), Some(1));
+        assert_eq!(json_bool(&value, "sent_output_writes"), Some(true));
+        assert_eq!(json_bool(&value, "sent_configuration_writes"), Some(false));
+        assert_eq!(
+            json_bool(&value, "sent_firmware_or_dfu_commands"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "sent_unknown_commands"), Some(false));
+        assert_eq!(
+            json_bool(&value, "direct_hid_report_0xaf_sent"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "high_torque_enabled"), Some(false));
+        assert_eq!(
+            value
+                .pointer("/authorization_consumption/authorization_reuse_allowed")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            value
+                .pointer("/planned_next_output/allowed")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_attempt_rejects_missing_confirmation_without_write() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let authorization_path = dir.path().join("vendor-authority-authorization.json");
+        let smoke_path = dir.path().join("vendor-authority-smoke-dry-run.json");
+        let json_out = dir.path().join("vendor-authority-attempt.json");
+        let authorization = sample_vendor_authority_authorization_value()?;
+        let smoke_request = sample_vendor_authority_smoke_request(&authorization_path, &smoke_path);
+        let smoke = serde_json::to_value(vendor_authority_smoke_dry_run_receipt(
+            &smoke_request,
+            &authorization,
+        )?)?;
+        let request = VendorAuthorityAttemptRequest {
+            confirm_bounded_vendor_authority_attempt: false,
+            ..sample_vendor_authority_attempt_request(&authorization_path, &smoke_path, &json_out)
+        };
+        let mut transport = RecordingVendorAuthorityAttemptTransport::default();
+
+        let error = match vendor_authority_attempt_receipt_with_transport(
+            &request,
+            &authorization,
+            &smoke,
+            sample_vendor_status_port_identity(),
+            &mut transport,
+        ) {
+            Ok(_) => return Err("missing confirmation must not send vendor authority".into()),
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("--confirm-bounded-vendor-authority-attempt"),
+            "unexpected error: {error}"
+        );
+        assert!(transport.writes.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_attempt_rejects_smoke_hash_drift_without_write() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let authorization_path = dir.path().join("vendor-authority-authorization.json");
+        let smoke_path = dir.path().join("vendor-authority-smoke-dry-run.json");
+        let json_out = dir.path().join("vendor-authority-attempt.json");
+        let authorization = sample_vendor_authority_authorization_value()?;
+        let smoke_request = sample_vendor_authority_smoke_request(&authorization_path, &smoke_path);
+        let mut smoke = serde_json::to_value(vendor_authority_smoke_dry_run_receipt(
+            &smoke_request,
+            &authorization,
+        )?)?;
+        smoke["planned_next_output"]["frame_sha256"] =
+            serde_json::json!("0000000000000000000000000000000000000000000000000000000000000000");
+        let request =
+            sample_vendor_authority_attempt_request(&authorization_path, &smoke_path, &json_out);
+        let mut transport = RecordingVendorAuthorityAttemptTransport::default();
+
+        let error = match vendor_authority_attempt_receipt_with_transport(
+            &request,
+            &authorization,
+            &smoke,
+            sample_vendor_status_port_identity(),
+            &mut transport,
+        ) {
+            Ok(_) => return Err("smoke hash drift must not send vendor authority".into()),
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("/planned_next_output/frame_sha256"),
+            "unexpected error: {error}"
+        );
+        assert!(transport.writes.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_attempt_rejects_short_write() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let authorization_path = dir.path().join("vendor-authority-authorization.json");
+        let smoke_path = dir.path().join("vendor-authority-smoke-dry-run.json");
+        let json_out = dir.path().join("vendor-authority-attempt.json");
+        let authorization = sample_vendor_authority_authorization_value()?;
+        let smoke_request = sample_vendor_authority_smoke_request(&authorization_path, &smoke_path);
+        let smoke = serde_json::to_value(vendor_authority_smoke_dry_run_receipt(
+            &smoke_request,
+            &authorization,
+        )?)?;
+        let request =
+            sample_vendor_authority_attempt_request(&authorization_path, &smoke_path, &json_out);
+        let mut transport = RecordingVendorAuthorityAttemptTransport {
+            writes: Vec::new(),
+            short_write_len: Some(3),
+        };
+
+        let error = match vendor_authority_attempt_receipt_with_transport(
+            &request,
+            &authorization,
+            &smoke,
+            sample_vendor_status_port_identity(),
+            &mut transport,
+        ) {
+            Ok(_) => return Err("short write must fail the attempt".into()),
+            Err(error) => error,
+        };
+        assert!(
+            error.to_string().contains("write length mismatch"),
+            "unexpected error: {error}"
+        );
+        assert_eq!(transport.writes.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_attempt_blocked_receipt_records_no_send_and_requires_fresh_gate()
+    -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let authorization_path = dir.path().join("vendor-authority-authorization.json");
+        let smoke_path = dir.path().join("vendor-authority-smoke-dry-run.json");
+        let json_out = dir.path().join("vendor-authority-attempt.json");
+        let authorization = sample_vendor_authority_authorization_value()?;
+        let smoke_request = sample_vendor_authority_smoke_request(&authorization_path, &smoke_path);
+        let smoke = serde_json::to_value(vendor_authority_smoke_dry_run_receipt(
+            &smoke_request,
+            &authorization,
+        )?)?;
+        let request =
+            sample_vendor_authority_attempt_request(&authorization_path, &smoke_path, &json_out);
+
+        let receipt = vendor_authority_attempt_blocked_receipt(
+            &request,
+            &authorization,
+            &smoke,
+            sample_vendor_status_port_identity(),
+            "serial_open",
+            "Access is denied.",
+        )?;
+        let value = serde_json::to_value(&receipt)?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-authority-attempt-blocked.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&value).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        assert_eq!(
+            json_string(&value, "artifact_kind"),
+            Some("moza_vendor_authority_attempt_blocked")
+        );
+        assert_eq!(
+            json_string(&value, "claim_scope"),
+            Some("bounded_vendor_authority_attempt_blocked_before_send")
+        );
+        assert_eq!(json_bool(&value, "success"), Some(false));
+        assert_eq!(json_bool(&value, "authorization_consumed"), Some(false));
+        assert_eq!(json_bool(&value, "native_control_evidence"), Some(false));
+        assert_eq!(json_bool(&value, "hardware_output_authorized"), Some(false));
+        assert_eq!(json_bool(&value, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(&value, "smoke_ready"), Some(false));
+        assert_eq!(json_bool(&value, "serial_identity_verified"), Some(true));
+        assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "opened_serial_device"), Some(false));
+        assert_eq!(json_bool(&value, "serial_open_attempted"), Some(true));
+        assert_eq!(
+            json_bool(&value, "sent_read_only_query_commands"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "sent_authorized_frame"), Some(false));
+        assert_eq!(json_u64(&value, "sent_authorized_frame_count"), Some(0));
+        assert_eq!(json_bool(&value, "sent_output_writes"), Some(false));
+        assert_eq!(json_bool(&value, "sent_configuration_writes"), Some(false));
+        assert_eq!(
+            json_bool(&value, "sent_firmware_or_dfu_commands"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "sent_unknown_commands"), Some(false));
+        assert_eq!(
+            value.pointer("/failure/stage").and_then(Value::as_str),
+            Some("serial_open")
+        );
+        assert_eq!(
+            value
+                .pointer("/failure/frame_sent_before_failure")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            value
+                .pointer("/retry_policy/requires_new_authorization_for_retry")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            value
+                .pointer("/planned_next_output/allowed")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_attempt_blocked_output_uses_sidecar_for_default_attempt_path() -> TestResult
+    {
+        let path = Path::new("ci/hardware/moza-r5/2026-05-13/vendor-authority-attempt.json");
+        let blocked = vendor_authority_attempt_blocked_output_path(path);
+        assert_eq!(
+            blocked,
+            Path::new("ci/hardware/moza-r5/2026-05-13/vendor-authority-attempt-blocked.json")
+        );
+
+        let custom = Path::new("target/moza-current/custom-attempt-receipt.json");
+        let blocked_custom = vendor_authority_attempt_blocked_output_path(custom);
+        assert_eq!(
+            blocked_custom,
+            Path::new("target/moza-current/custom-attempt-receipt-blocked.json")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_attempt_blocked_rejects_retry_without_fresh_gate() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let authorization_path = dir.path().join("vendor-authority-authorization.json");
+        let smoke_path = dir.path().join("vendor-authority-smoke-dry-run.json");
+        let json_out = dir.path().join("vendor-authority-attempt.json");
+        let blocked_path = dir.path().join("vendor-authority-attempt-blocked.json");
+        let authorization = sample_vendor_authority_authorization_value()?;
+        let smoke_request = sample_vendor_authority_smoke_request(&authorization_path, &smoke_path);
+        let smoke = serde_json::to_value(vendor_authority_smoke_dry_run_receipt(
+            &smoke_request,
+            &authorization,
+        )?)?;
+        write_test_json_file(
+            &blocked_path,
+            &serde_json::json!({
+                "artifact_kind": "moza_vendor_authority_attempt_blocked",
+                "generated_at_utc": "2099-01-01T00:00:00Z"
+            }),
+        )?;
+        let request =
+            sample_vendor_authority_attempt_request(&authorization_path, &smoke_path, &json_out);
+
+        let error =
+            match validate_vendor_authority_attempt_receipts(&request, &authorization, &smoke) {
+                Ok(()) => {
+                    return Err(
+                        "stale authorization must not pass after a blocked-before-send receipt"
+                            .into(),
+                    );
+                }
+                Err(error) => error,
+            };
+        assert!(
+            error
+                .to_string()
+                .contains("requires fresh authorization and smoke dry-run"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_attempt_blocked_schema_pins_no_send_gates() -> TestResult {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-authority-attempt-blocked.schema.json"
+        ))?;
+        let required = schema
+            .get("required")
+            .and_then(Value::as_array)
+            .ok_or("schema must have a required array")?;
+        for field in [
+            "claim_scope",
+            "authorization_receipt_validated",
+            "smoke_dry_run_receipt_validated",
+            "authorization_consumed",
+            "native_control_evidence",
+            "hardware_output_authorized",
+            "native_visible_ready",
+            "smoke_ready",
+            "serial_identity_verified",
+            "no_hid_device_opened",
+            "opened_serial_device",
+            "serial_open_attempted",
+            "sent_authorized_frame",
+            "sent_authorized_frame_count",
+            "sent_output_writes",
+            "sent_configuration_writes",
+            "sent_firmware_or_dfu_commands",
+            "sent_unknown_commands",
+            "direct_hid_report_0xaf_sent",
+            "high_torque_enabled",
+            "failure",
+            "retry_policy",
+            "planned_next_output",
+        ] {
+            assert!(
+                required.iter().any(|entry| entry.as_str() == Some(field)),
+                "schema must require `{field}`"
+            );
+        }
+        assert_eq!(schema["properties"]["success"]["const"], false);
+        assert_eq!(
+            schema["properties"]["claim_scope"]["const"],
+            "bounded_vendor_authority_attempt_blocked_before_send"
+        );
+        assert_eq!(
+            schema["properties"]["authorization_consumed"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["native_control_evidence"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["hardware_output_authorized"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["native_visible_ready"]["const"], false);
+        assert_eq!(schema["properties"]["opened_serial_device"]["const"], false);
+        assert_eq!(
+            schema["properties"]["sent_authorized_frame"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["sent_authorized_frame_count"]["const"],
+            0
+        );
+        assert_eq!(schema["properties"]["sent_output_writes"]["const"], false);
+        assert_eq!(
+            schema["properties"]["retry_policy"]["properties"]["requires_new_authorization_for_retry"]
+                ["const"],
+            true
+        );
+        assert_eq!(
+            schema["properties"]["planned_next_output"]["properties"]["allowed"]["const"],
+            false
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_attempt_schema_pins_consumed_non_claiming_gates() -> TestResult {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-authority-attempt.schema.json"
+        ))?;
+        let required = schema
+            .get("required")
+            .and_then(Value::as_array)
+            .ok_or("schema must have a required array")?;
+        for field in [
+            "claim_scope",
+            "authorization_receipt_validated",
+            "smoke_dry_run_receipt_validated",
+            "authorization_consumed",
+            "native_control_evidence",
+            "hardware_output_authorized",
+            "native_visible_ready",
+            "smoke_ready",
+            "serial_identity_verified",
+            "no_hid_device_opened",
+            "opened_serial_device",
+            "sent_authorized_frame",
+            "sent_authorized_frame_count",
+            "sent_output_writes",
+            "sent_configuration_writes",
+            "sent_firmware_or_dfu_commands",
+            "sent_unknown_commands",
+            "direct_hid_report_0xaf_sent",
+            "high_torque_enabled",
+            "authorized_command",
+            "authorized_frame",
+            "authorization_consumption",
+            "planned_next_output",
+        ] {
+            assert!(
+                required.iter().any(|entry| entry.as_str() == Some(field)),
+                "schema must require `{field}`"
+            );
+        }
+        assert_eq!(
+            schema["properties"]["claim_scope"]["const"],
+            "bounded_vendor_authority_attempt_recorded"
+        );
+        assert_eq!(
+            schema["properties"]["authorization_consumed"]["const"],
+            true
+        );
+        assert_eq!(
+            schema["properties"]["native_control_evidence"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["hardware_output_authorized"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["native_visible_ready"]["const"], false);
+        assert_eq!(schema["properties"]["smoke_ready"]["const"], false);
+        assert_eq!(
+            schema["properties"]["serial_identity_verified"]["const"],
+            true
+        );
+        assert_eq!(schema["properties"]["no_hid_device_opened"]["const"], true);
+        assert_eq!(schema["properties"]["opened_serial_device"]["const"], true);
+        assert_eq!(schema["properties"]["sent_authorized_frame"]["const"], true);
+        assert_eq!(
+            schema["properties"]["sent_authorized_frame_count"]["const"],
+            1
+        );
+        assert_eq!(
+            schema["properties"]["sent_firmware_or_dfu_commands"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["sent_unknown_commands"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["direct_hid_report_0xaf_sent"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["high_torque_enabled"]["const"], false);
+        assert_eq!(
+            schema["properties"]["authorization_consumption"]["properties"]["authorization_reuse_allowed"]
+                ["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["authorization_consumption"]["properties"]["requires_new_authorization_for_retry"]
+                ["const"],
+            true
+        );
+        assert_eq!(
+            schema["properties"]["planned_next_output"]["properties"]["allowed"]["const"],
+            false
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_attempt_schema_validates_single_output_write_consumption() -> TestResult {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-authority-attempt.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let mut receipt = serde_json::json!({
+            "success": true,
+            "schema_version": 1,
+            "artifact_kind": "moza_vendor_authority_attempt",
+            "claim_scope": "bounded_vendor_authority_attempt_recorded",
+            "command": "wheelctl moza vendor-authority-attempt",
+            "generated_at_utc": "2026-05-20T12:00:00Z",
+            "authorization_receipt": "target/moza-current/vendor-authority-authorization.json",
+            "smoke_dry_run_receipt": "target/moza-current/vendor-authority-smoke-dry-run.json",
+            "authorization_receipt_validated": true,
+            "smoke_dry_run_receipt_validated": true,
+            "authorization_consumed": true,
+            "exact_authorization": true,
+            "single_use_authorization": true,
+            "native_control_evidence": false,
+            "hardware_output_authorized": false,
+            "native_visible_ready": false,
+            "smoke_ready": false,
+            "next_allowed_action": "Record post-authority PIDFF response comparison before any motion claim.",
+            "blocked_actions": [
+                "native_visible_promotion",
+                "smoke_ready_promotion",
+                "authorization_reuse",
+                "firmware_or_dfu"
+            ],
+            "required_artifacts": [
+                "fresh_authorization_for_retry",
+                "fresh_smoke_dry_run_for_retry"
+            ],
+            "serial_identity_verified": true,
+            "no_hid_device_opened": true,
+            "opened_serial_device": true,
+            "sent_read_only_query_commands": false,
+            "sent_authorized_frame": true,
+            "sent_authorized_frame_count": 1,
+            "sent_output_writes": true,
+            "sent_configuration_writes": false,
+            "sent_firmware_or_dfu_commands": false,
+            "sent_unknown_commands": false,
+            "direct_hid_report_0xaf_sent": false,
+            "high_torque_enabled": false,
+            "transport_kind": "serial_bounded_authority_attempt",
+            "codec_status": "fixture_decode_verified_exact_frame",
+            "hardware_write_eligible": false
+        });
+        receipt["blocked_actions"] = serde_json::json!([
+            "native_visible_promotion",
+            "smoke_ready_promotion",
+            "authorization_reuse",
+            "firmware_or_dfu"
+        ]);
+        receipt["required_artifacts"] = serde_json::json!([
+            "fresh_authorization_for_retry",
+            "fresh_smoke_dry_run_for_retry"
+        ]);
+        receipt["authorized_command"] = serde_json::json!({
+            "command_id": "estop_set_ffb",
+            "command_name": "E-stop / FFB authority set",
+            "family": "authority_state",
+            "group": 70,
+            "device_id": 28,
+            "command": 0,
+            "risk_class": "vendor_output_candidate",
+            "read_only_status_probe_allowed": false
+        });
+        receipt["authorized_frame"] = serde_json::json!({
+            "frame_hex": "7E02461C0001F0",
+            "frame_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "frame_len": 7,
+            "payload_hex": "01",
+            "payload_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "payload_len": 1,
+            "checksum": "0xF0",
+            "written_frame_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "written_frame_len": 7
+        });
+        receipt["authorization_consumption"] = serde_json::json!({
+            "consumption_recorded": true,
+            "authorization_reuse_allowed": false,
+            "requires_new_bench_clear_for_retry": true,
+            "requires_new_authorization_for_retry": true,
+            "requires_new_smoke_dry_run_for_retry": true,
+            "requires_new_attempt_receipt_for_retry": true
+        });
+        receipt["planned_next_output"] = serde_json::json!({
+            "allowed": false,
+            "reason": "The first authority attempt is consumed evidence, not reusable authorization."
+        });
+        let errors: Vec<_> = validator.iter_errors(&receipt).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        let mut drifted_receipt = receipt;
+        drifted_receipt["sent_output_writes"] = serde_json::json!(false);
+        let drift_errors: Vec<_> = validator.iter_errors(&drifted_receipt).collect();
+        assert!(
+            !drift_errors.is_empty(),
+            "vendor_output_candidate must require sent_output_writes=true"
+        );
+
+        Ok(())
+    }
+
+    fn sample_vendor_authority_attempt_value(generated_at_utc: &str) -> TestResult<Value> {
+        let contents = r#"{
+            "success": true,
+            "schema_version": 1,
+            "artifact_kind": "moza_vendor_authority_attempt",
+            "claim_scope": "bounded_vendor_authority_attempt_recorded",
+            "command": "wheelctl moza vendor-authority-attempt",
+            "generated_at_utc": "__GENERATED_AT_UTC__",
+            "authorization_receipt": "target/moza-current/vendor-authority-authorization.json",
+            "smoke_dry_run_receipt": "target/moza-current/vendor-authority-smoke-dry-run.json",
+            "authorization_receipt_validated": true,
+            "smoke_dry_run_receipt_validated": true,
+            "authorization_consumed": true,
+            "exact_authorization": true,
+            "single_use_authorization": true,
+            "native_control_evidence": false,
+            "hardware_output_authorized": false,
+            "native_visible_ready": false,
+            "smoke_ready": false,
+            "next_allowed_action": "Record post-authority PIDFF response comparison before any motion claim.",
+            "blocked_actions": [
+                "native_visible_promotion",
+                "smoke_ready_promotion",
+                "authorization_reuse",
+                "firmware_or_dfu"
+            ],
+            "required_artifacts": [
+                "fresh_authorization_for_retry",
+                "fresh_smoke_dry_run_for_retry"
+            ],
+            "serial_identity_verified": true,
+            "no_hid_device_opened": true,
+            "opened_serial_device": true,
+            "sent_read_only_query_commands": false,
+            "sent_authorized_frame": true,
+            "sent_authorized_frame_count": 1,
+            "sent_output_writes": true,
+            "sent_configuration_writes": false,
+            "sent_firmware_or_dfu_commands": false,
+            "sent_unknown_commands": false,
+            "direct_hid_report_0xaf_sent": false,
+            "high_torque_enabled": false,
+            "transport_kind": "serial_bounded_authority_attempt",
+            "codec_status": "fixture_decode_verified_exact_frame",
+            "hardware_write_eligible": false,
+            "authorized_command": {
+                "command_id": "estop_set_ffb",
+                "command_name": "E-stop / FFB authority set",
+                "family": "authority_state",
+                "group": 70,
+                "device_id": 28,
+                "command": 0,
+                "risk_class": "vendor_output_candidate",
+                "read_only_status_probe_allowed": false
+            },
+            "authorized_frame": {
+                "frame_hex": "7E02461C0001F0",
+                "frame_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                "frame_len": 7,
+                "payload_hex": "01",
+                "payload_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "payload_len": 1,
+                "checksum": "0xF0",
+                "written_frame_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                "written_frame_len": 7
+            },
+            "authorization_consumption": {
+                "consumption_recorded": true,
+                "authorization_reuse_allowed": false,
+                "requires_new_bench_clear_for_retry": true,
+                "requires_new_authorization_for_retry": true,
+                "requires_new_smoke_dry_run_for_retry": true,
+                "requires_new_attempt_receipt_for_retry": true
+            },
+            "planned_next_output": {
+                "allowed": false,
+                "reason": "The first authority attempt is consumed evidence, not reusable authorization."
+            }
+        }"#;
+        let contents = contents.replace("__GENERATED_AT_UTC__", generated_at_utc);
+        Ok(serde_json::from_str(&contents)?)
+    }
+
+    fn sample_native_pidff_response(
+        generated_at_utc: &str,
+        angle_delta_degrees: f64,
+        movement_observed: bool,
+    ) -> Value {
+        serde_json::json!({
+            "success": movement_observed,
+            "command": "wheelctl moza actuator-visible-smoke",
+            "generated_at_utc": generated_at_utc,
+            "receipt_path": "target/moza-current/native-actuator-visible-smoke.json",
+            "lane": "target/moza-current",
+            "selector": "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            "profile": "constant_low_force",
+            "output_strategy": "pidff_bounded_effect",
+            "max_percent": 5.0,
+            "duration_ms": 2000,
+            "movement_threshold_degrees": 1.0,
+            "confirmed": true,
+            "dry_run": false,
+            "hardware_output_enabled": true,
+            "no_hid_device_opened": false,
+            "no_feature_reports": true,
+            "no_ffb_writes": false,
+            "no_direct_torque_reports": true,
+            "no_high_torque": true,
+            "high_torque": false,
+            "no_serial_config_commands": true,
+            "no_firmware_or_dfu_commands": true,
+            "no_nonzero_above_limit": true,
+            "angle_delta_degrees": angle_delta_degrees,
+            "movement_observed": movement_observed,
+            "post_stop_stable": true,
+            "write_attempts": 4,
+            "writes_ok": 4,
+            "write_errors": 0,
+            "final_zero_sent": true,
+            "final_stop_all_sent": true
+        })
+    }
+
+    #[test]
+    fn vendor_post_authority_pidff_response_receipt_compares_without_claims() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let attempt_path = dir.path().join("vendor-authority-attempt.json");
+        let baseline_path = dir
+            .path()
+            .join("native-actuator-visible-smoke-response-only.json");
+        let post_path = dir.path().join("vendor-post-authority-pidff-smoke.json");
+        let attempt = sample_vendor_authority_attempt_value("2026-05-20T12:00:00Z")?;
+        let baseline = sample_native_pidff_response("2026-05-20T11:55:00Z", 0.181, false);
+        let post = sample_native_pidff_response("2026-05-20T12:05:00Z", 0.350, false);
+
+        let receipt = vendor_post_authority_pidff_response_receipt(
+            &attempt_path,
+            &attempt,
+            &baseline_path,
+            &baseline,
+            &post_path,
+            &post,
+        )?;
+        let value = serde_json::to_value(&receipt)?;
+        assert_eq!(
+            json_string(&value, "artifact_kind"),
+            Some("moza_vendor_post_authority_pidff_response")
+        );
+        assert_eq!(
+            json_string(&value, "claim_scope"),
+            Some("post_authority_pidff_response_comparison_only")
+        );
+        assert_eq!(json_bool(&value, "native_control_evidence"), Some(false));
+        assert_eq!(json_bool(&value, "hardware_output_authorized"), Some(false));
+        assert_eq!(json_bool(&value, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(&value, "smoke_ready"), Some(false));
+        assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "no_serial_writes_sent"), Some(true));
+        assert_eq!(json_bool(&value, "sent_output_writes"), Some(false));
+        assert_eq!(
+            value
+                .pointer("/comparison/classification")
+                .and_then(Value::as_str),
+            Some("post_authority_pidff_response_increased_no_motion_claim")
+        );
+        assert_eq!(
+            value
+                .pointer("/comparison/visible_motion_candidate")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            value
+                .pointer("/planned_next_output/allowed")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-post-authority-pidff-response.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&value).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_post_authority_pidff_response_rejects_stale_post_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let attempt_path = dir.path().join("vendor-authority-attempt.json");
+        let baseline_path = dir
+            .path()
+            .join("native-actuator-visible-smoke-response-only.json");
+        let post_path = dir.path().join("vendor-post-authority-pidff-smoke.json");
+        let attempt = sample_vendor_authority_attempt_value("2026-05-20T12:00:00Z")?;
+        let baseline = sample_native_pidff_response("2026-05-20T11:55:00Z", 0.181, false);
+        let post = sample_native_pidff_response("2026-05-20T11:56:00Z", 0.350, false);
+
+        let error = match vendor_post_authority_pidff_response_receipt(
+            &attempt_path,
+            &attempt,
+            &baseline_path,
+            &baseline,
+            &post_path,
+            &post,
+        ) {
+            Ok(_) => return Err("stale post-authority response should be rejected".into()),
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("post-authority PIDFF response must be recorded after"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn vendor_post_authority_pidff_response_command_writes_json_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path();
+        let attempt_path = lane.join(VENDOR_AUTHORITY_ATTEMPT_FILE);
+        let baseline_path = lane.join("native-actuator-visible-smoke-response-only.json");
+        let post_path = lane.join(VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE);
+        let json_out = lane.join(VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE);
+        write_test_json_file(
+            &attempt_path,
+            &sample_vendor_authority_attempt_value("2026-05-20T12:00:00Z")?,
+        )?;
+        write_test_json_file(
+            &baseline_path,
+            &sample_native_pidff_response("2026-05-20T11:55:00Z", 0.181, false),
+        )?;
+        write_test_json_file(
+            &post_path,
+            &sample_native_pidff_response("2026-05-20T12:05:00Z", 0.350, false),
+        )?;
+
+        vendor_post_authority_pidff_response(VendorPostAuthorityPidffResponseRequest {
+            json: false,
+            lane,
+            attempt: None,
+            baseline_response: None,
+            post_response: None,
+            json_out: &json_out,
+            overwrite: false,
+        })
+        .await?;
+
+        let receipt = read_json_path(&json_out)?;
+        assert_eq!(
+            json_string(&receipt, "command"),
+            Some("wheelctl moza vendor-post-authority-pidff-response")
+        );
+        assert_eq!(
+            json_bool(&receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "native_visible_ready"), Some(false));
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_post_authority_pidff_response_schema_pins_non_claiming_gates() -> TestResult {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-post-authority-pidff-response.schema.json"
+        ))?;
+        let required = schema
+            .get("required")
+            .and_then(Value::as_array)
+            .ok_or("schema must have a required array")?;
+        for field in [
+            "claim_scope",
+            "vendor_authority_attempt_validated",
+            "baseline_response_validated",
+            "post_authority_response_validated",
+            "native_control_evidence",
+            "hardware_output_authorized",
+            "native_visible_ready",
+            "smoke_ready",
+            "no_hid_device_opened",
+            "no_serial_device_opened",
+            "no_serial_writes_sent",
+            "sent_output_writes",
+            "sent_configuration_writes",
+            "sent_firmware_or_dfu_commands",
+            "comparison",
+            "planned_next_output",
+        ] {
+            assert!(
+                required.iter().any(|entry| entry.as_str() == Some(field)),
+                "schema must require `{field}`"
+            );
+        }
+        assert_eq!(
+            schema["properties"]["claim_scope"]["const"],
+            "post_authority_pidff_response_comparison_only"
+        );
+        assert_eq!(
+            schema["properties"]["native_control_evidence"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["hardware_output_authorized"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["native_visible_ready"]["const"], false);
+        assert_eq!(schema["properties"]["smoke_ready"]["const"], false);
+        assert_eq!(schema["properties"]["no_hid_device_opened"]["const"], true);
+        assert_eq!(schema["properties"]["no_serial_writes_sent"]["const"], true);
+        assert_eq!(schema["properties"]["sent_output_writes"]["const"], false);
+        assert_eq!(
+            schema["properties"]["planned_next_output"]["properties"]["allowed"]["const"],
+            false
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn bench_wizard_emits_only_no_output_post_authority_comparison_command() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let attempt_path = dir.path().join(VENDOR_AUTHORITY_ATTEMPT_FILE);
+        let baseline_path = dir
+            .path()
+            .join("native-actuator-visible-smoke-response-only.json");
+        let post_path = dir.path().join(VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE);
+        write_test_json_file(
+            &attempt_path,
+            &sample_vendor_authority_attempt_value("2026-05-20T12:00:00Z")?,
+        )?;
+        write_test_json_file(
+            &baseline_path,
+            &sample_native_pidff_response("2026-05-20T11:55:00Z", 0.181, false),
+        )?;
+        write_test_json_file(
+            &post_path,
+            &sample_native_pidff_response("2026-05-20T12:05:00Z", 0.350, false),
+        )?;
+
+        let receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
+        let step = receipt
+            .get("next_operator_step")
+            .ok_or("expected next operator step")?;
+        assert_eq!(
+            json_string(step, "kind"),
+            Some("post_authority_pidff_response_comparison")
+        );
+        assert_eq!(json_bool(step, "hardware_output_allowed_now"), Some(false));
+        assert_eq!(
+            json_bool(step, "hardware_attempt_command_emitted"),
+            Some(false)
+        );
+        let commands = step
+            .get("commands")
+            .and_then(Value::as_array)
+            .ok_or("expected comparison command")?;
+        assert_eq!(commands.len(), 1);
+        let command = commands.first().ok_or("missing comparison command")?;
+        assert_eq!(json_bool(command, "output_enabled"), Some(false));
+        assert_eq!(json_bool(command, "opens_hid"), Some(false));
+        assert_eq!(json_bool(command, "opens_serial"), Some(false));
+        assert_eq!(json_bool(command, "sends_output"), Some(false));
+        let command_text = json_string(command, "command").ok_or("missing command text")?;
+        assert!(command_text.contains("vendor-post-authority-pidff-response"));
+        assert!(
+            !command_text.contains("vendor-authority-attempt")
+                || !command_text.contains("--confirm-bounded-vendor-authority-attempt"),
+            "comparison command must not emit the hardware attempt command: {command_text}"
+        );
+        let args = split_generated_command(command_text)?;
+        parse_cli(args).map_err(|error| {
+            format!(
+                "generated post-authority comparison command failed to parse: {command_text}\n{error}"
+            )
+        })?;
+        Ok(())
     }
 
     fn temp_lane_under_cwd() -> TestResult<(tempfile::TempDir, PathBuf)> {
@@ -33745,6 +39616,487 @@ mod tests {
                 "bundle_sniff_evidence".to_string()
             ]
         );
+        Ok(())
+    }
+
+    fn write_vendor_authority_serial_hardware_doctor(lane: &Path) -> TestResult {
+        write_test_json_file(
+            &lane.join("hardware-doctor.json"),
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl hardware doctor",
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_output_reports": true,
+                "no_feature_reports": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "windows_pnp": {
+                    "scan_attempted": true,
+                    "moza_vid_visible": true,
+                    "serial_interface_count": 1,
+                    "devices": [
+                        {
+                            "status": "OK",
+                            "class": "Ports",
+                            "friendly_name": "USB Serial Device (COM4)",
+                            "vendor_id": "0x346E",
+                            "product_id": "0x0004",
+                            "interface_number": 0,
+                            "instance_id_present": true
+                        },
+                        {
+                            "status": "OK",
+                            "class": "HIDClass",
+                            "friendly_name": "USB Input Device",
+                            "vendor_id": "0x346E",
+                            "product_id": "0x0004",
+                            "interface_number": 2,
+                            "instance_id_present": true
+                        }
+                    ]
+                },
+                "vendor_apps": {
+                    "process_scan_attempted": true,
+                    "pit_house_running": true,
+                    "matched_processes": ["MOZA Pit House.exe"]
+                }
+            }),
+        )
+    }
+
+    #[test]
+    fn bench_wizard_surfaces_vendor_authority_handoff_after_closed_loop_undertravel() -> TestResult
+    {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        let selector = "hid-0x346E-0x0004-if2-0x0001-0x0004";
+        write_vendor_authority_serial_hardware_doctor(dir.path())?;
+        write_failed_controlled_angle_output_receipt_at(
+            dir.path(),
+            selector,
+            NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE,
+        )?;
+        write_failed_controlled_angle_closed_loop_output_receipt(dir.path(), selector)?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE),
+            &serde_json::json!({
+                "schema_version": 1,
+                "success": true,
+                "command": "wheelctl moza standard-pidff-path-diagnosis",
+                "classification": "standard_pidff_controlled_angle_path_ineffective_in_current_r5_mode",
+                "native_visible_claimed": false,
+                "smoke_ready_claimed": false,
+                "planned_next_output": {
+                    "allowed": false
+                }
+            }),
+        )?;
+        write_passive_sniff_plan_artifact(dir.path(), "pit-house-setting-change")?;
+
+        let receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
+        let navigation = receipt
+            .get("vendor_authority_navigation")
+            .ok_or("expected vendor_authority_navigation")?;
+        assert_eq!(
+            json_string(navigation, "state"),
+            Some("ready_for_exact_authority_handoff")
+        );
+        assert_eq!(
+            json_bool(navigation, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(navigation, "native_control_evidence"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(navigation, "hardware_attempt_command_emitted"),
+            Some(false)
+        );
+        assert_eq!(
+            navigation
+                .pointer("/exact_command/command_id")
+                .and_then(Value::as_str),
+            Some(VENDOR_AUTHORITY_HANDOFF_COMMAND_ID)
+        );
+        assert_eq!(
+            navigation
+                .pointer("/exact_command/frame_hex")
+                .and_then(Value::as_str),
+            Some(VENDOR_AUTHORITY_HANDOFF_FRAME_HEX)
+        );
+        let serial_precondition = navigation
+            .get("serial_precondition")
+            .ok_or("expected serial precondition")?;
+        assert_eq!(
+            json_bool(
+                serial_precondition,
+                "requires_exclusive_r5_serial_cdc_access"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(serial_precondition, "pit_house_dependency"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(serial_precondition, "pit_house_serial_owner_risk"),
+            Some(true)
+        );
+        assert_eq!(json_bool(serial_precondition, "opens_serial"), Some(false));
+        assert_eq!(json_bool(serial_precondition, "sends_output"), Some(false));
+        let serial_port_hints = serial_precondition
+            .get("serial_port_hints")
+            .and_then(Value::as_array)
+            .ok_or("expected serial port hints")?;
+        assert!(
+            serial_port_hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("COM4")),
+            "expected COM4 port hint: {serial_precondition}"
+        );
+        let serial_interface_hints = serial_precondition
+            .get("serial_interface_hints")
+            .and_then(Value::as_array)
+            .ok_or("expected serial interface hints")?;
+        assert!(
+            serial_interface_hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("USB Serial Device (COM4)")),
+            "expected friendly interface hint: {serial_precondition}"
+        );
+
+        let step = receipt
+            .get("next_operator_step")
+            .ok_or("expected next operator step")?;
+        assert_eq!(
+            json_string(step, "kind"),
+            Some("prepare_vendor_authority_attempt_handoff")
+        );
+        assert_eq!(json_bool(step, "hardware_output_allowed_now"), Some(false));
+        assert_eq!(
+            json_bool(step, "authorization_created_by_wizard"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(step, "hardware_attempt_command_emitted"),
+            Some(false)
+        );
+        assert_eq!(
+            json_string(step, "required_bench_clear_evidence"),
+            Some(VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE)
+        );
+        assert_eq!(
+            json_string(step, "authorization_receipt"),
+            Some(VENDOR_AUTHORITY_AUTHORIZATION_FILE)
+        );
+        assert_eq!(
+            json_string(step, "smoke_dry_run_receipt"),
+            Some(VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE)
+        );
+        assert_eq!(
+            json_string(step, "planned_output_receipt"),
+            Some(VENDOR_AUTHORITY_ATTEMPT_FILE)
+        );
+        assert_eq!(
+            step.pointer("/serial_precondition/serial_port_hints/0")
+                .and_then(Value::as_str),
+            Some("COM4")
+        );
+        assert_eq!(
+            step.pointer("/serial_precondition/live_precondition_receipt")
+                .and_then(Value::as_str),
+            Some(VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET)
+        );
+        assert_eq!(
+            step.pointer(
+                "/serial_precondition/live_precondition_must_be_reviewed_immediately_before_authorization"
+            )
+            .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            step.pointer("/serial_precondition/blocked_if_vendor_app_running")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+
+        let commands = step
+            .get("commands")
+            .and_then(Value::as_array)
+            .ok_or("expected no-output handoff commands")?;
+        assert_eq!(commands.len(), 3);
+        let mut command_names = Vec::new();
+        for command in commands {
+            assert_eq!(json_bool(command, "output_enabled"), Some(false));
+            assert_eq!(json_bool(command, "opens_serial"), Some(false));
+            assert_eq!(json_bool(command, "sends_output"), Some(false));
+            let name = json_string(command, "name").ok_or("missing command name")?;
+            let command_text = json_string(command, "command").ok_or("missing command text")?;
+            assert!(
+                !command_text.contains("vendor-authority-attempt")
+                    && !command_text.contains("--confirm-bounded-vendor-authority-attempt")
+                    && !command_text.contains("--serial-port"),
+                "bench wizard must not emit the hardware attempt command: {command_text}"
+            );
+            let args = split_generated_command(command_text)?;
+            parse_cli(args).map_err(|error| {
+                format!(
+                    "generated vendor-authority handoff command failed to parse: {command_text}\n{error}"
+                )
+            })?;
+            if name == "refresh_live_vendor_authority_precondition" {
+                assert!(
+                    command_text.contains("wheelctl hardware doctor"),
+                    "live precondition handoff should refresh hardware doctor: {command_text}"
+                );
+                assert!(
+                    command_text.contains(VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET),
+                    "live precondition handoff should write a target-only receipt: {command_text}"
+                );
+                assert_eq!(
+                    json_bool(command, "must_be_reviewed_immediately_before_authorization"),
+                    Some(true)
+                );
+                assert_eq!(
+                    json_bool(command, "blocked_if_vendor_app_running"),
+                    Some(true)
+                );
+                assert_eq!(
+                    json_bool(command, "blocked_if_r5_serial_missing"),
+                    Some(true)
+                );
+            }
+            if name == "create_exact_vendor_authority_authorization" {
+                assert!(
+                    command_text.contains("--precondition-hardware-doctor"),
+                    "authorization handoff should require the refreshed hardware doctor receipt: {command_text}"
+                );
+                assert!(
+                    command_text.contains(VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET),
+                    "authorization handoff should bind the live precondition receipt: {command_text}"
+                );
+                assert!(
+                    command_text.contains("--authorized-by Steven"),
+                    "authorization handoff should name the operator explicitly: {command_text}"
+                );
+                assert!(
+                    command_text.contains("--expires-after-minutes 10"),
+                    "authorization handoff should spell out the bounded expiry: {command_text}"
+                );
+            }
+            command_names.push(name.to_string());
+        }
+        assert_eq!(
+            command_names,
+            vec![
+                "refresh_live_vendor_authority_precondition".to_string(),
+                "create_exact_vendor_authority_authorization".to_string(),
+                "validate_vendor_authority_smoke_dry_run".to_string()
+            ]
+        );
+
+        let markdown = render_moza_bench_wizard_markdown(&receipt);
+        assert!(markdown.contains("Vendor Authority Handoff"));
+        assert!(markdown.contains("native-control research navigation only"));
+        assert!(markdown.contains("Hardware attempt command emitted: `false`"));
+        assert!(markdown.contains(VENDOR_AUTHORITY_HANDOFF_COMMAND_ID));
+        assert!(markdown.contains(VENDOR_AUTHORITY_HANDOFF_FRAME_HEX));
+        assert!(markdown.contains(VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE));
+        assert!(markdown.contains("--precondition-hardware-doctor"));
+        assert!(markdown.contains("--authorized-by Steven"));
+        assert!(markdown.contains("--expires-after-minutes 10"));
+        assert!(markdown.contains("Live precondition refresh command"));
+        assert!(markdown.contains(VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET));
+        assert!(markdown.contains("Requires exclusive R5 serial/CDC access"));
+        assert!(markdown.contains("Pit House dependency: `false`; serial-owner risk: `true`"));
+        assert!(markdown.contains("R5 serial port hints: `COM4`"));
+        assert!(!markdown.contains("--confirm-bounded-vendor-authority-attempt"));
+        Ok(())
+    }
+
+    #[test]
+    fn artifact_index_surfaces_vendor_authority_handoff_without_claims() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        let selector = "hid-0x346E-0x0004-if2-0x0001-0x0004";
+        write_vendor_authority_serial_hardware_doctor(dir.path())?;
+        write_failed_controlled_angle_output_receipt_at(
+            dir.path(),
+            selector,
+            NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE,
+        )?;
+        write_failed_controlled_angle_closed_loop_output_receipt(dir.path(), selector)?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE),
+            &serde_json::json!({
+                "schema_version": 1,
+                "success": true,
+                "command": "wheelctl moza standard-pidff-path-diagnosis",
+                "classification": "standard_pidff_controlled_angle_path_ineffective_in_current_r5_mode",
+                "native_visible_claimed": false,
+                "smoke_ready_claimed": false,
+                "planned_next_output": {
+                    "allowed": false
+                }
+            }),
+        )?;
+
+        let receipt = moza_artifact_index_receipt(dir.path(), None, None)?;
+        let navigation = receipt
+            .get("vendor_authority_navigation")
+            .ok_or("expected vendor_authority_navigation")?;
+        assert_eq!(
+            json_string(navigation, "claim_scope"),
+            Some("native_control_vendor_authority_navigation_only")
+        );
+        assert_eq!(
+            json_string(navigation, "state"),
+            Some("ready_for_exact_authority_handoff")
+        );
+        assert_eq!(
+            json_bool(navigation, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(json_bool(navigation, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(navigation, "pit_house_dependency"), Some(false));
+        assert_eq!(
+            json_bool(navigation, "hardware_attempt_command_emitted"),
+            Some(false)
+        );
+        assert_eq!(
+            navigation
+                .pointer("/serial_precondition/requires_exclusive_r5_serial_cdc_access")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            navigation
+                .pointer("/serial_precondition/pit_house_dependency")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            navigation
+                .pointer("/serial_precondition/serial_port_hints/0")
+                .and_then(Value::as_str),
+            Some("COM4")
+        );
+        assert_eq!(
+            navigation
+                .pointer("/serial_precondition/live_precondition_receipt")
+                .and_then(Value::as_str),
+            Some(VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET)
+        );
+        assert_eq!(
+            navigation
+                .pointer("/serial_precondition/blocked_if_vendor_app_running")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        let markdown = render_moza_lane_artifact_index_markdown(&receipt);
+        assert!(markdown.contains("Vendor Authority Handoff"));
+        assert!(markdown.contains("ready_for_exact_authority_handoff"));
+        assert!(markdown.contains("Hardware attempt command emitted: `false`"));
+        assert!(markdown.contains("Requires exclusive R5 serial/CDC access"));
+        assert!(markdown.contains("Live precondition refresh command"));
+        assert!(markdown.contains(VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET));
+        assert!(markdown.contains("R5 serial port hints: `COM4`"));
+        assert!(markdown.contains("vendor-authority-attempt.json"));
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_navigation_surfaces_blocked_attempt_without_post_authority_progression()
+    -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        let selector = "hid-0x346E-0x0004-if2-0x0001-0x0004";
+        write_failed_controlled_angle_output_receipt_at(
+            dir.path(),
+            selector,
+            NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE,
+        )?;
+        write_failed_controlled_angle_closed_loop_output_receipt(dir.path(), selector)?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE),
+            &serde_json::json!({
+                "schema_version": 1,
+                "success": true,
+                "command": "wheelctl moza standard-pidff-path-diagnosis",
+                "classification": "standard_pidff_controlled_angle_path_ineffective_in_current_r5_mode",
+                "native_visible_claimed": false,
+                "smoke_ready_claimed": false,
+                "planned_next_output": {
+                    "allowed": false
+                }
+            }),
+        )?;
+        write_test_json_file(
+            &dir.path().join(VENDOR_AUTHORITY_ATTEMPT_BLOCKED_FILE),
+            &serde_json::json!({
+                "success": false,
+                "artifact_kind": "moza_vendor_authority_attempt_blocked",
+                "claim_scope": "bounded_vendor_authority_attempt_blocked_before_send",
+                "authorization_consumed": false,
+                "sent_authorized_frame": false
+            }),
+        )?;
+
+        let receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
+        let navigation = receipt
+            .get("vendor_authority_navigation")
+            .ok_or("expected vendor_authority_navigation")?;
+        assert_eq!(
+            json_string(navigation, "state"),
+            Some("vendor_authority_attempt_blocked_before_send")
+        );
+        assert_eq!(
+            json_bool(navigation, "vendor_authority_attempt_recorded"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(navigation, "vendor_authority_attempt_blocked_recorded"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(navigation, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(json_bool(navigation, "native_visible_ready"), Some(false));
+
+        let step = receipt
+            .get("next_operator_step")
+            .ok_or("expected next operator step")?;
+        assert_eq!(
+            json_string(step, "kind"),
+            Some("vendor_authority_attempt_blocked_before_send")
+        );
+        assert_eq!(json_bool(step, "hardware_output_allowed_now"), Some(false));
+        assert_eq!(
+            json_bool(step, "requires_fresh_authorization_for_retry"),
+            Some(true)
+        );
+        assert_eq!(
+            json_string(step, "blocked_attempt_receipt"),
+            Some(VENDOR_AUTHORITY_ATTEMPT_BLOCKED_FILE)
+        );
+        assert_eq!(
+            json_string(step, "planned_output_receipt"),
+            Some(VENDOR_AUTHORITY_ATTEMPT_FILE)
+        );
+        assert!(
+            !step
+                .get("commands")
+                .and_then(Value::as_array)
+                .is_some_and(|commands| commands.iter().any(|command| {
+                    json_string(command, "command")
+                        .is_some_and(|text| text.contains("vendor-post-authority-pidff-response"))
+                })),
+            "blocked attempts must not progress to post-authority comparison commands: {step}"
+        );
+
         Ok(())
     }
 
@@ -44051,6 +50403,7 @@ mod tests {
             duration_ms: 2_000,
             movement_threshold_degrees: 1.0,
             preserve_receipt: None,
+            planned_output: None,
             json_out: Some(&dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE)),
             overwrite: false,
         })
@@ -44141,6 +50494,7 @@ mod tests {
             duration_ms: 2_000,
             movement_threshold_degrees: 1.0,
             preserve_receipt: None,
+            planned_output: None,
             json_out: Some(&dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE)),
             overwrite: false,
         })
@@ -44188,6 +50542,126 @@ mod tests {
         .map(|error| error.to_string())
         .ok_or("expected consumed authorization to block a second output")?;
         assert!(message.contains("blocks another hardware-output attempt"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn authorize_visible_output_can_target_post_authority_pidff_smoke_without_claiming()
+    -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_native_actuator_visible_prerequisite_receipts(dir.path())?;
+        let visible_receipt_path = dir.path().join(NATIVE_ACTUATOR_VISIBLE_SMOKE_FILE);
+        write_test_json_file(
+            &visible_receipt_path,
+            &failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V1),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::VisibleMotionFollowUp),
+        )?;
+        write_test_json_file(
+            &dir.path().join(VENDOR_AUTHORITY_ATTEMPT_FILE),
+            &sample_vendor_authority_attempt_value("2026-05-20T12:00:00Z")?,
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_ACTUATOR_VISIBLE_RESPONSE_ONLY_FILE),
+            &sample_native_pidff_response("2026-05-20T11:55:00Z", 0.181, false),
+        )?;
+
+        let post_path = dir.path().join(VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE);
+        authorize_visible_output(AuthorizeVisibleOutputRequest {
+            json: false,
+            lane: dir.path(),
+            selector: "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            operator: "Steven",
+            bench_clear_evidence:
+                "Bench clear for exact post-authority constant PIDFF response capture.",
+            ffb_mode_evidence:
+                "Vendor authority attempt consumed; Pit House closed; no simulator FFB active.",
+            prior_actuator_proof: Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            steering_proof: Some(&dir.path().join("steering-angle-stream-proof.json")),
+            profile: MozaActuatorProfile::ConstantLowForce,
+            strategy: MozaLowTorqueStrategy::PidffBoundedEffect,
+            max_percent: 5.0,
+            duration_ms: 2_000,
+            movement_threshold_degrees: 1.0,
+            preserve_receipt: None,
+            planned_output: Some(&post_path),
+            json_out: Some(&dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE)),
+            overwrite: false,
+        })
+        .await?;
+
+        let plan = read_json_value(dir.path(), NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE)?;
+        let planned = plan
+            .get("planned_next_output")
+            .ok_or("expected planned_next_output")?;
+        assert_eq!(json_bool(&plan, "hardware_output_authorized"), Some(true));
+        assert_eq!(json_bool(planned, "allowed"), Some(true));
+        assert_eq!(
+            json_bool(planned, "post_authority_pidff_response_capture"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(planned, "must_preserve_failed_receipt"),
+            Some(false)
+        );
+        assert_eq!(
+            json_string(planned, "planned_output"),
+            Some(VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE)
+        );
+        assert!(
+            json_string(planned, "command")
+                .map(|command| {
+                    command.contains("--profile constant-low-force")
+                        && command.contains(VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE)
+                        && !command.contains("--dry-run")
+                })
+                .unwrap_or(false)
+        );
+
+        validate_native_actuator_visible_smoke_preflight(
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            dir.path(),
+            Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            Some(&dir.path().join("steering-angle-stream-proof.json")),
+            Some(&post_path),
+            MozaActuatorProfile::ConstantLowForce,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.0,
+            2_000,
+            1.0,
+            false,
+        )?;
+
+        let post_receipt = sample_native_pidff_response("2026-05-20T12:05:00Z", 1.250, true);
+        consume_native_visible_output_authorization(
+            dir.path(),
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            MozaActuatorProfile::ConstantLowForce,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.0,
+            2_000,
+            1.0,
+            &post_path,
+            &post_receipt,
+        )?;
+
+        let consumed = read_json_value(dir.path(), NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE)?;
+        assert_eq!(
+            json_string(&consumed, "evidence_status"),
+            Some("post_authority_pidff_response_consumed_no_motion_claim")
+        );
+        assert_eq!(
+            json_bool(&consumed, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(
+            consumed
+                .pointer("/last_output_attempt/status")
+                .and_then(Value::as_str),
+            Some("post_authority_visible_motion_candidate_requires_verifier")
+        );
         Ok(())
     }
 

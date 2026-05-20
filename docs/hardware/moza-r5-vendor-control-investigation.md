@@ -12,25 +12,35 @@ same undertravel band, about `0.181277` degrees. The standard PIDFF path is now
 classified as ineffective in the current R5 mode by
 `native-pidff-standard-path-diagnosis.json`.
 
+The later exact-authority experiment did not unlock the standard PIDFF path.
+`vendor-authority-attempt.json` records one consumed `estop_set_ffb` frame, and
+`vendor-post-authority-pidff-response.json` classifies the comparable
+post-authority response as `post_authority_pidff_response_regressed`: baseline
+`0.18127718013275285` degrees versus post-authority
+`0.032959487296864154` degrees. That result keeps this investigation on the
+no-output protocol rail.
+
 The next native-visible investigation path is no-output Moza vendor-specific
-enable/control research. The first step is to plan passive USB captures before
-decoding report IDs or proposing any vendor-control output path.
+enable/control research. The next step is to review the already captured
+passive summaries and fill remaining no-output capture gaps before decoding
+report IDs or proposing any vendor-control output path.
 
 ## Current Artifacts
 
-The following plan-only artifacts are committed:
+The following passive sniff artifacts are committed:
 
 | Scenario | Plan artifact | Current status |
 | --- | --- | --- |
-| Pit House open idle | `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-plan.json` | Plan only |
+| Pit House open idle | `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-plan.json` | Summary recorded, non-claiming |
 | Pit House setting change | `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-plan.json` | Plan only |
 | SimHub open idle | `ci/hardware/sniff/moza-r5/2026-05-13/simhub-open-idle/sniff-plan.json` | Plan only |
 | SimHub output session | `ci/hardware/sniff/moza-r5/2026-05-13/simhub-output-session/sniff-plan.json` | Plan only |
 | Simulator session start/stop | `ci/hardware/sniff/moza-r5/2026-05-13/simulator-session-start-stop/sniff-plan.json` | Plan only |
+| Pit House full controls | `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-plan.json` | Summary recorded, non-claiming |
 
-`wheelctl moza artifact-index` reports these plans as `present_non_claiming`.
-The scenarios remain `partial_or_unaccepted` until matching
-`sniff-receipt.json` and `sniff-summary.json` artifacts exist.
+`wheelctl moza artifact-index` reports recorded scenarios as non-claiming
+receipt/summary evidence and leaves missing scenarios `partial_or_unaccepted`
+until matching `sniff-receipt.json` and `sniff-summary.json` artifacts exist.
 
 ## Boundaries
 
@@ -56,10 +66,10 @@ recorded as passive external observation only, not OpenRacing output.
 ## Next Evidence Needed
 
 Run `wheelctl moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13` to get
-the current command-bound no-output handoff. With the current plan-only state,
-the wizard points first at `pit-house-open-idle` and emits the exact
-`wheelctl hardware sniff-receipt`, `sniff-summary`, and `sniff-bundle` commands
-for that scenario.
+the current command-bound no-output handoff. With the current post-authority
+state, the wizard records that the PIDFF comparison is present and emits no
+output command. Continue with no-output protocol review or the remaining
+passive capture scenarios before proposing any further hardware output family.
 
 For each planned scenario:
 

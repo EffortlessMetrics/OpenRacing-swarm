@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openracing.dev/schemas/moza-vendor-status-probe.schema.json",
+  "title": "Moza Vendor Read-Only Status Probe Receipt",
   "type": "object",
   "required": [
     "schema_version",
@@ -11,10 +13,27 @@
     "next_allowed_action",
     "blocked_actions",
     "required_artifacts",
+    "no_hid_device_opened",
+    "opened_serial_device",
+    "serial_identity_verified",
+    "no_ffb_writes",
+    "no_output_reports",
+    "no_feature_reports",
+    "no_serial_config_commands",
+    "no_firmware_or_dfu_commands",
     "sent_read_only_query_commands",
+    "sent_read_only_query_count",
     "sent_output_writes",
     "sent_configuration_writes",
-    "sent_firmware_or_dfu_commands"
+    "sent_firmware_or_dfu_commands",
+    "real_hardware_status_evidence",
+    "transport_kind",
+    "codec_status",
+    "hardware_write_eligible",
+    "selected_command_count",
+    "decoded_response_count",
+    "failed_response_count",
+    "responses"
   ],
   "properties": {
     "schema_version": {"const": 1},
@@ -32,10 +51,54 @@
       "type": "array",
       "items": {"type": "string"}
     },
+    "no_hid_device_opened": {"const": true},
+    "opened_serial_device": {"const": true},
+    "serial_identity_verified": {"const": true},
+    "no_ffb_writes": {"const": true},
+    "no_output_reports": {"const": true},
+    "no_feature_reports": {"const": true},
+    "no_serial_config_commands": {"const": true},
+    "no_firmware_or_dfu_commands": {"const": true},
     "sent_read_only_query_commands": {"const": true},
+    "sent_read_only_query_count": {"type": "integer", "minimum": 1},
     "sent_output_writes": {"const": false},
     "sent_configuration_writes": {"const": false},
-    "sent_firmware_or_dfu_commands": {"const": false}
+    "sent_firmware_or_dfu_commands": {"const": false},
+    "real_hardware_status_evidence": {"type": "boolean"},
+    "transport_kind": {"const": "serial_read_only"},
+    "codec_status": {"const": "round_trip_verified"},
+    "hardware_write_eligible": {"const": false},
+    "selected_command_count": {"type": "integer", "minimum": 1},
+    "decoded_response_count": {"type": "integer", "minimum": 0},
+    "failed_response_count": {"type": "integer", "minimum": 0},
+    "responses": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "command_id",
+          "command_name",
+          "group",
+          "device_id",
+          "command",
+          "risk_class",
+          "query_frame_hex",
+          "decoded"
+        ],
+        "properties": {
+          "command_id": {"type": "string"},
+          "command_name": {"type": "string"},
+          "group": {"type": "integer", "minimum": 0, "maximum": 255},
+          "device_id": {"type": "integer", "minimum": 0, "maximum": 255},
+          "command": {"type": "integer", "minimum": 0, "maximum": 255},
+          "risk_class": {"const": "vendor_status"},
+          "query_frame_hex": {"type": "string"},
+          "decoded": {"type": "boolean"}
+        },
+        "additionalProperties": true
+      }
+    }
   },
   "additionalProperties": true
 }
