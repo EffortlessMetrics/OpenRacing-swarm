@@ -1,0 +1,50 @@
+schema_version = "1.0"
+policy = "module-boundaries"
+owner = "architecture"
+status = "draft"
+enforced_by = "future module-boundaries policy checker"
+
+[[boundary]]
+id = "hardware-moza"
+owner_package = "openracing-moza"
+owner_package_status = "planned"
+module = "moza"
+owner = "hardware/moza"
+facade = "crates/openracing-moza/src/lib.rs"
+visibility_default = "pub(crate)"
+public_facade_items = [
+  "MozaInputReport",
+  "MozaWheelbaseReport",
+  "parse_input_report",
+]
+private_modules = [
+  "raw",
+  "wheelbase_report",
+  "pedals",
+  "handbrake",
+  "wheels",
+  "receipts",
+]
+forbidden_imports = [
+  "crate::hid::vendors::fanatec::*",
+  "crate::hid::vendors::simucube::*",
+]
+reason = "Vendor modules must not deep-import sibling vendor internals."
+
+[[boundary]]
+id = "telemetry-adapters"
+owner_package = "openracing-telemetry-adapters"
+owner_package_status = "current"
+module = "games"
+owner = "telemetry"
+facade = "crates/telemetry-adapters/src/lib.rs"
+visibility_default = "pub(crate)"
+public_facade_items = [
+  "TelemetryAdapter",
+  "AdapterId",
+  "AdapterStatus",
+]
+forbidden_imports = [
+  "crate::adapters::simhub::internal::*",
+]
+reason = "Game-specific adapters talk through the adapter façade."

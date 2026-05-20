@@ -1,0 +1,72 @@
+schema_version = "1.0"
+policy = "microcrate-to-srp-submodule-transition"
+owner = "architecture"
+status = "draft"
+enforced_by = "future seam-transition policy checker"
+
+[[seam]]
+id = "moza-wheelbase-report"
+current_package = "racing-wheel-moza-wheelbase-report"
+classification = "single_owner_internal"
+owner_package = "openracing-moza"
+target_module = "wheelbase::reports"
+transition = "collapse"
+visibility = "pub(crate)"
+public_compat = "none"
+invariant = "Moza wheelbase report decoding remains lossless and receipt-backed."
+reason = "Wheelbase reports are Moza vendor input semantics, not a public package."
+tests = [
+  "cargo test -p racing-wheel-moza-wheelbase-report",
+  "cargo test -p wheelctl moza",
+]
+expires = "2026-07-01"
+
+[[seam]]
+id = "srp"
+current_package = "racing-wheel-srp"
+classification = "single_owner_internal"
+owner_package = "openracing-moza"
+target_module = "pedals::srp"
+transition = "collapse"
+visibility = "pub(crate)"
+public_compat = "none"
+invariant = "SR-P pedal parsing preserves receipt-backed throttle, brake, and clutch evidence boundaries."
+reason = "SR-P is a Moza accessory role under the planned Moza family package."
+tests = [
+  "cargo test -p racing-wheel-srp",
+  "cargo test -p wheelctl input_role",
+]
+expires = "2026-07-01"
+
+[[seam]]
+id = "hbp"
+current_package = "racing-wheel-hbp"
+classification = "single_owner_internal"
+owner_package = "openracing-moza"
+target_module = "handbrake::hbp"
+transition = "collapse"
+visibility = "pub(crate)"
+public_compat = "none"
+invariant = "HBP report fields map to handbrake role semantics without claiming unsupported readiness."
+reason = "HBP is a Moza accessory role under the Moza HID family."
+tests = [
+  "cargo test -p racing-wheel-hbp",
+  "cargo test -p wheelctl hbp",
+]
+expires = "2026-07-01"
+
+[[seam]]
+id = "openracing-capture-format"
+current_package = "openracing-capture-format"
+classification = "shared_contract"
+owner_package = "openracing-hid"
+target_module = "capture::format"
+transition = "collapse"
+visibility = "pub(crate)"
+invariant = "Capture files remain stable, parseable, and versioned."
+reason = "Capture file format belongs to the durable HID capture/replay family unless a later package-surface PR re-promotes it."
+tests = [
+  "cargo test -p openracing-capture-format",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+]
+review_after = "2026-08-01"

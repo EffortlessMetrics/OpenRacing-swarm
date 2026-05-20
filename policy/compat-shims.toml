@@ -1,0 +1,29 @@
+schema_version = "1.0"
+policy = "compat-shims"
+owner = "release/architecture"
+status = "draft"
+enforced_by = "future compat-shims policy checker"
+
+[[shim]]
+old_package = "racing-wheel-hid-moza-protocol"
+target_package = "openracing-moza"
+target_module = "protocol"
+status = "planned"
+strategy = "reexport_if_target_is_public_else_no_new_release"
+deprecated_since = "0.4.0"
+remove_after = "0.6.0"
+reason = "Moza protocol implementation moved under the hardware owner."
+
+[[shim]]
+old_package = "openracing-handbrake"
+target_package = "openracing-hid"
+target_module = "devices::handbrake"
+status = "collapse_direct"
+reason = "Handbrake is a hardware role, not a public support crate."
+
+[[shim]]
+old_package = "racing-wheel-hbp"
+target_package = "openracing-moza"
+target_module = "handbrake::hbp"
+status = "collapse_direct"
+reason = "HBP is a Moza accessory role, not a standalone public support crate."
