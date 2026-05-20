@@ -1,0 +1,6 @@
+//! Semantic-only Moza serial protocol scaffolding.
+//!
+//! This module does not expose wire codecs or hardware send paths.
+
+#[doc(hidden)]
+pub mod vendor_authority;

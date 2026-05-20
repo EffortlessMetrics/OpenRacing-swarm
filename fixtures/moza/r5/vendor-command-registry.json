@@ -5,47 +5,269 @@
   "native_control_evidence": false,
   "hardware_output_authorized": false,
   "native_visible_ready": false,
-  "next_allowed_action": "Complete the missing command families in PR2 before codec, transport, probe, authorization, or hardware-write work builds on this registry.",
+  "next_allowed_action": "Build semantic-only codec fixtures and fake transport tests from this complete registry before any read-only hardware probe, authorization, or hardware-write work.",
   "blocked_actions": [
-    "codec implementation",
-    "fake transport verification",
     "read-only hardware probe",
     "authorization receipt",
     "hardware writes",
     "native-visible claim",
-    "smoke-ready claim"
+    "smoke-ready claim",
+    "release-ready claim",
+    "firmware or DFU command",
+    "unknown host-to-device command"
   ],
   "required_artifacts": [
     "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md",
     "docs/hardware/moza-r5-vendor-authority-test-plan.md",
-    "fixtures/moza/r5/vendor-command-registry.json"
+    "fixtures/moza/r5/vendor-command-registry.json",
+    "crates/hid-moza-protocol/src/serial/vendor_authority.rs"
   ],
-  "registry_completeness": "partial_pr1_starter",
-  "missing_required_families": [
-    "gain/safety",
-    "temperatures",
-    "compatibility mode"
-  ],
+  "registry_completeness": "complete",
+  "missing_required_families": [],
+  "codec_status": "semantic_only",
   "device": {
     "vid_pid": "0x346E:0x0004",
     "model": "MOZA R5 Base",
     "interface_serial": "MI_00",
     "interface_hid": "MI_02"
   },
+  "families": [
+    {
+      "id": "authority_state",
+      "complete": true,
+      "commands": [
+        "estop_set_ffb",
+        "estop_get_ffb",
+        "main_misc_set_ffb_status",
+        "main_misc_get_ffb_status"
+      ]
+    },
+    {
+      "id": "gain_safety",
+      "complete": true,
+      "commands": [
+        "base_gain_set_overall_strength",
+        "base_gain_get_overall_strength",
+        "base_gain_set_speed_dependent_damping",
+        "base_gain_get_speed_dependent_damping",
+        "base_gain_set_hands_off_protection",
+        "base_gain_get_hands_off_protection"
+      ]
+    },
+    {
+      "id": "temperatures",
+      "complete": true,
+      "commands": [
+        "temperature_get_mosfet",
+        "temperature_get_motor",
+        "temperature_get_board"
+      ]
+    },
+    {
+      "id": "compatibility_mode",
+      "complete": true,
+      "commands": [
+        "compatibility_set_mode",
+        "compatibility_get_mode"
+      ]
+    }
+  ],
   "commands": [
-    {"id":"estop_set_ffb","group":70,"command":0,"name":"EstopCtrl_SetFfb","risk_class":"vendor_output_candidate","allowed_for_native_plan":false},
-    {"id":"estop_get_ffb","group":70,"command":1,"name":"EstopCtrl_GetFfb","risk_class":"vendor_status","allowed_for_native_plan":true},
-    {"id":"main_misc_set_ffb_status","group":33,"command":6,"name":"MainMiscCtrl_SetFfbStatus","risk_class":"vendor_output_candidate","allowed_for_native_plan":false},
-    {"id":"main_misc_get_ffb_status","group":33,"command":7,"name":"MainMiscCtrl_GetFfbStatus","risk_class":"vendor_status","allowed_for_native_plan":true}
+    {
+      "id": "estop_set_ffb",
+      "family": "authority_state",
+      "group": 70,
+      "command": 0,
+      "name": "EstopCtrl_SetFfb",
+      "risk_class": "vendor_output_candidate",
+      "allowed_for_read_only_status_probe": false,
+      "allowed_for_native_plan": false,
+      "hardware_output_authorized": false
+    },
+    {
+      "id": "estop_get_ffb",
+      "family": "authority_state",
+      "group": 70,
+      "command": 1,
+      "name": "EstopCtrl_GetFfb",
+      "risk_class": "vendor_status",
+      "allowed_for_read_only_status_probe": true,
+      "allowed_for_native_plan": true,
+      "hardware_output_authorized": false
+    },
+    {
+      "id": "main_misc_set_ffb_status",
+      "family": "authority_state",
+      "group": 33,
+      "command": 6,
+      "name": "MainMiscCtrl_SetFfbStatus",
+      "risk_class": "vendor_output_candidate",
+      "allowed_for_read_only_status_probe": false,
+      "allowed_for_native_plan": false,
+      "hardware_output_authorized": false
+    },
+    {
+      "id": "main_misc_get_ffb_status",
+      "family": "authority_state",
+      "group": 33,
+      "command": 7,
+      "name": "MainMiscCtrl_GetFfbStatus",
+      "risk_class": "vendor_status",
+      "allowed_for_read_only_status_probe": true,
+      "allowed_for_native_plan": true,
+      "hardware_output_authorized": false
+    },
+    {
+      "id": "base_gain_set_overall_strength",
+      "family": "gain_safety",
+      "group": 41,
+      "command": 2,
+      "name": "BaseGain_SetOverallStrength",
+      "risk_class": "configuration_candidate",
+      "allowed_for_read_only_status_probe": false,
+      "allowed_for_native_plan": false,
+      "hardware_output_authorized": false
+    },
+    {
+      "id": "base_gain_get_overall_strength",
+      "family": "gain_safety",
+      "group": 40,
+      "command": 2,
+      "name": "BaseGain_GetOverallStrength",
+      "risk_class": "vendor_status",
+      "allowed_for_read_only_status_probe": true,
+      "allowed_for_native_plan": true,
+      "hardware_output_authorized": false
+    },
+    {
+      "id": "base_gain_set_speed_dependent_damping",
+      "family": "gain_safety",
+      "group": 41,
+      "command": 13,
+      "name": "BaseGain_SetSpeedDependentDamping",
+      "risk_class": "configuration_candidate",
+      "allowed_for_read_only_status_probe": false,
+      "allowed_for_native_plan": false,
+      "hardware_output_authorized": false
+    },
+    {
+      "id": "base_gain_get_speed_dependent_damping",
+      "family": "gain_safety",
+      "group": 40,
+      "command": 13,
+      "name": "BaseGain_GetSpeedDependentDamping",
+      "risk_class": "vendor_status",
+      "allowed_for_read_only_status_probe": true,
+      "allowed_for_native_plan": true,
+      "hardware_output_authorized": false
+    },
+    {
+      "id": "base_gain_set_hands_off_protection",
+      "family": "gain_safety",
+      "group": 41,
+      "command": 18,
+      "name": "BaseGain_SetHandsOffProtection",
+      "risk_class": "configuration_candidate",
+      "allowed_for_read_only_status_probe": false,
+      "allowed_for_native_plan": false,
+      "hardware_output_authorized": false
+    },
+    {
+      "id": "base_gain_get_hands_off_protection",
+      "family": "gain_safety",
+      "group": 40,
+      "command": 18,
+      "name": "BaseGain_GetHandsOffProtection",
+      "risk_class": "vendor_status",
+      "allowed_for_read_only_status_probe": true,
+      "allowed_for_native_plan": true,
+      "hardware_output_authorized": false
+    },
+    {
+      "id": "temperature_get_mosfet",
+      "family": "temperatures",
+      "group": 43,
+      "command": 4,
+      "name": "Temperature_GetMosfet",
+      "risk_class": "vendor_status",
+      "allowed_for_read_only_status_probe": true,
+      "allowed_for_native_plan": true,
+      "hardware_output_authorized": false
+    },
+    {
+      "id": "temperature_get_motor",
+      "family": "temperatures",
+      "group": 43,
+      "command": 5,
+      "name": "Temperature_GetMotor",
+      "risk_class": "vendor_status",
+      "allowed_for_read_only_status_probe": true,
+      "allowed_for_native_plan": true,
+      "hardware_output_authorized": false
+    },
+    {
+      "id": "temperature_get_board",
+      "family": "temperatures",
+      "group": 43,
+      "command": 6,
+      "name": "Temperature_GetBoard",
+      "risk_class": "vendor_status",
+      "allowed_for_read_only_status_probe": true,
+      "allowed_for_native_plan": true,
+      "hardware_output_authorized": false
+    },
+    {
+      "id": "compatibility_set_mode",
+      "family": "compatibility_mode",
+      "group": 31,
+      "command": 19,
+      "name": "Compatibility_SetMode",
+      "risk_class": "configuration_candidate",
+      "allowed_for_read_only_status_probe": false,
+      "allowed_for_native_plan": false,
+      "hardware_output_authorized": false
+    },
+    {
+      "id": "compatibility_get_mode",
+      "family": "compatibility_mode",
+      "group": 31,
+      "command": 23,
+      "name": "Compatibility_GetMode",
+      "risk_class": "vendor_status",
+      "allowed_for_read_only_status_probe": true,
+      "allowed_for_native_plan": true,
+      "hardware_output_authorized": false
+    }
   ],
   "forbidden": [
-    "group_10_eeprom",
-    "firmware_or_dfu",
-    "hid_report_0xaf",
-    "unknown_host_to_device"
+    {
+      "id": "group_10_eeprom",
+      "risk_class": "configuration_candidate",
+      "sendable_without_review": false,
+      "reason": "EEPROM manipulation is forbidden until a separate restore-reviewed config plan exists."
+    },
+    {
+      "id": "firmware_or_dfu",
+      "risk_class": "firmware_or_dfu_forbidden",
+      "sendable_without_review": false,
+      "reason": "Firmware and DFU paths are outside this lane."
+    },
+    {
+      "id": "hid_report_0xaf",
+      "risk_class": "unknown_do_not_send",
+      "sendable_without_review": false,
+      "reason": "HID report 0xaf is explicitly forbidden by OR-SPEC-0002."
+    },
+    {
+      "id": "unknown_host_to_device",
+      "risk_class": "unknown_do_not_send",
+      "sendable_without_review": false,
+      "reason": "Unknown host-to-device commands are never sendable."
+    }
   ],
   "notes": [
-    "PR1 starter fixture records only the authority/state family.",
-    "PR2 must complete all required command families before implementation work builds on this registry."
+    "PR2 completes all command families required by OR-SPEC-0002.",
+    "This registry remains semantic-only and does not define wire framing, payload bytes, read-only probe behavior, authorization, or hardware-write eligibility.",
+    "Write-like candidates remain hardware_output_authorized=false and require future exact authorization before any send path exists."
   ]
 }

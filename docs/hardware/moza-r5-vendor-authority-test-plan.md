@@ -23,6 +23,12 @@ Provide a step-by-step implementation queue for Moza R5 vendor authority infrast
 
 2. **Command registry + risk policy tests**
    - Complete all required command families before codec, probe, authorization, or hardware-write work builds on the registry.
+   - Keep the registry semantic-only with `codec_status=semantic_only`.
+   - Add a Rust risk policy model with `FirmwareOrDfuForbidden` and
+     `UnknownDoNotSend` non-encodable and non-sendable.
+   - Keep write-like vendor control/configuration candidates blocked from
+     read-only probe eligibility and native-plan eligibility until a future
+     exact authorization stage.
 3. **Semantic-only serial codec + fixtures**
 4. **Fake serial transport**
 5. **No-output CLI tools**
@@ -43,5 +49,16 @@ PR1 schema and fixture artifacts remain non-claiming: `native_control_evidence=f
 ```powershell
 python scripts/policy_file.py
 cargo run --locked -p openracing-tools --bin package-surface -- --check
+git diff --check
+```
+
+## Proof commands (PR2)
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_authority_registry -- --nocapture
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
 git diff --check
 ```

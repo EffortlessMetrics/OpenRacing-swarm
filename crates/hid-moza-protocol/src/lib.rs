@@ -14,6 +14,8 @@ pub mod ids;
 pub mod protocol;
 pub mod report;
 pub mod rt_types;
+#[doc(hidden)]
+pub mod serial;
 pub mod signature;
 pub mod standalone;
 pub mod types;

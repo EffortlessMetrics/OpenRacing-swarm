@@ -15,8 +15,11 @@
     "required_artifacts",
     "registry_completeness",
     "missing_required_families",
+    "codec_status",
     "device",
-    "commands"
+    "families",
+    "commands",
+    "forbidden"
   ],
   "properties": {
     "schema_version": {"const": 1},
@@ -41,8 +44,117 @@
       "type": "array",
       "items": {"type": "string"}
     },
+    "codec_status": {
+      "const": "semantic_only"
+    },
     "device": {"type":"object"},
-    "commands": {"type":"array","minItems":1}
+    "families": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["id", "complete", "commands"],
+        "properties": {
+          "id": {
+            "enum": [
+              "authority_state",
+              "gain_safety",
+              "temperatures",
+              "compatibility_mode"
+            ]
+          },
+          "complete": {"type": "boolean"},
+          "commands": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "commands": {
+      "type":"array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "family",
+          "group",
+          "command",
+          "name",
+          "risk_class",
+          "allowed_for_read_only_status_probe",
+          "allowed_for_native_plan",
+          "hardware_output_authorized"
+        ],
+        "properties": {
+          "id": {"type": "string"},
+          "family": {
+            "enum": [
+              "authority_state",
+              "gain_safety",
+              "temperatures",
+              "compatibility_mode"
+            ]
+          },
+          "group": {"type": "integer", "minimum": 0, "maximum": 255},
+          "command": {"type": "integer", "minimum": 0, "maximum": 255},
+          "name": {"type": "string"},
+          "risk_class": {
+            "enum": [
+              "safe_observe",
+              "vendor_status",
+              "standard_pidff",
+              "vendor_control_candidate",
+              "vendor_output_candidate",
+              "configuration_candidate",
+              "firmware_or_dfu_forbidden",
+              "unknown_do_not_send"
+            ]
+          },
+          "allowed_for_read_only_status_probe": {"type": "boolean"},
+          "allowed_for_native_plan": {"type": "boolean"},
+          "hardware_output_authorized": {"const": false}
+        },
+        "additionalProperties": true
+      }
+    },
+    "forbidden": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "risk_class", "sendable_without_review"],
+        "properties": {
+          "id": {"type": "string"},
+          "risk_class": {
+            "enum": [
+              "configuration_candidate",
+              "firmware_or_dfu_forbidden",
+              "unknown_do_not_send"
+            ]
+          },
+          "sendable_without_review": {"const": false}
+        },
+        "additionalProperties": true
+      }
+    }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "registry_completeness": {"const": "complete"}
+        },
+        "required": ["registry_completeness"]
+      },
+      "then": {
+        "properties": {
+          "missing_required_families": {"maxItems": 0},
+          "commands": {"minItems": 15}
+        }
+      }
+    }
+  ],
   "additionalProperties": true
 }

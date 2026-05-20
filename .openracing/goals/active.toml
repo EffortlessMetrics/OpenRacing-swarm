@@ -10,6 +10,7 @@ handoff = "plans/moza-native-visible-lane/handoff.md"
 
 specs = [
   "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md",
+  "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md",
 ]
 
 adrs = [
@@ -600,6 +601,24 @@ blocked_by = "n/a"
 commands = [
   "cargo run --locked -p wheelctl --bin wheelctl -- moza pre-output-readiness --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/pre-output-readiness.json --json",
   "cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-pre-output-refresh.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw \"expected native-visible verifier to remain blocked\" }",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "vendor-command-registry-risk-policy"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "fixtures/moza/r5/vendor-command-registry.json"
+claim_boundary = "No-output semantic registry only; completes required vendor command families and risk policy tests without codec framing, transport, read-only hardware probes, authorization receipts, hardware writes, native-visible, smoke-ready, coexistence, simulator, firmware, or release-ready claims."
+blocked_by = "n/a"
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_authority_registry -- --nocapture",
+  "cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings",
   "cargo run --locked -p openracing-tools --bin package-surface -- --check",
   "python scripts/policy_file.py",
   "git diff --check",
