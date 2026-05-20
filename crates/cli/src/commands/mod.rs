@@ -884,6 +884,34 @@ pub enum MozaCommands {
         overwrite: bool,
     },
 
+    /// Send one exact authorized Moza vendor-authority frame over the R5 serial interface
+    VendorAuthorityAttempt {
+        /// Serial/CDC port to use, e.g. COM4 or /dev/ttyACM0
+        #[arg(long)]
+        serial_port: String,
+        /// Serial baud rate for the Moza vendor authority interface
+        #[arg(long, default_value_t = 115200)]
+        baud_rate: u32,
+        /// Serial write timeout in milliseconds
+        #[arg(long, default_value_t = 250)]
+        timeout_ms: u64,
+        /// Exact vendor-authority authorization receipt to consume
+        #[arg(long)]
+        authorization: std::path::PathBuf,
+        /// Matching no-output vendor-authority smoke dry-run receipt
+        #[arg(long)]
+        smoke_dry_run: std::path::PathBuf,
+        /// Explicit acknowledgement required before sending the exact authorized frame once
+        #[arg(long)]
+        confirm_bounded_vendor_authority_attempt: bool,
+        /// Write the consumed attempt receipt to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing attempt receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
     /// Promote a validated Moza capture JSONL into a parser fixture file
     PromoteFixture {
         /// JSON Lines file produced by `wheelctl moza capture-input`

@@ -65,6 +65,7 @@ Provide a step-by-step implementation queue for Moza R5 vendor authority infrast
    - The attempt receipt MUST validate the exact authorization receipt and matching smoke dry-run receipt, then record `authorization_consumed=true`, `sent_authorized_frame=true`, `sent_authorized_frame_count=1`, exact frame/payload hashes, serial identity verification, and the command risk class.
    - The consumed attempt receipt MUST close the authorization gate by recording `hardware_output_authorized=false` after the attempt, while keeping `native_control_evidence=false`, `native_visible_ready=false`, `smoke_ready=false`, `sent_firmware_or_dfu_commands=false`, `sent_unknown_commands=false`, `direct_hid_report_0xaf_sent=false`, and `high_torque_enabled=false`.
    - Retrying the same command/frame MUST require a new bench-clear, new exact authorization receipt, new smoke dry-run receipt, and new attempt receipt path; an existing consumed attempt receipt is not reusable authorization.
+   - The executable `wheelctl moza vendor-authority-attempt` command MUST require `--confirm-bounded-vendor-authority-attempt`, validate authorization and smoke receipts, verify R5 USB serial identity before opening, send only the exact bound frame once, and write the consumed attempt receipt.
    - Do not add native-visible promotion, smoke-ready promotion, Pit House/SimHub/simulator dependencies, firmware/DFU behavior, high-torque enablement, direct HID report `0xaf`, or unknown host-to-device sends.
 10. **Post-authority PIDFF response comparison**
 11+. **Closed-loop motion ladder**
@@ -112,6 +113,20 @@ git diff --check
 ```powershell
 python scripts/cargo_fmt_workspace.py
 cargo test --locked -p wheelctl --bin wheelctl vendor_authority_attempt_schema -- --nocapture
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+## Proof commands (PR9 CLI)
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_authority_attempt -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl parse_moza_vendor_authority_attempt -- --nocapture
+cargo test --locked -p wheelctl --test cli_comprehensive_e2e_tests help_snapshots::snapshot_moza_help -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo hakari verify
 cargo run --locked -p openracing-tools --bin package-surface -- --check
 python scripts/policy_file.py
 git diff --check

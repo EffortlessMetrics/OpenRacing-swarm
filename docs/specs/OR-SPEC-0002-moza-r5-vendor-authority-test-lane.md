@@ -184,6 +184,13 @@ exact authorization receipt, a fresh smoke dry-run receipt, and a fresh attempt
 receipt path; a consumed attempt receipt is evidence, not reusable
 authorization.
 
+The executable attempt command MUST require explicit
+`--confirm-bounded-vendor-authority-attempt`, validate the exact authorization
+and smoke dry-run receipts, verify the R5 USB serial identity before opening the
+port, send only the exact hash-bound frame once, and write the consumed attempt
+receipt. Verifiers, bench wizards, and generators MUST NOT emit or auto-run the
+hardware attempt command.
+
 ### Post-authority PIDFF response and motion ladder
 
 After authority smoke, the lane may compare baseline vs post-authority PIDFF response and then proceed through a closed-loop motion ladder:

@@ -26,6 +26,7 @@ Commands:
   vendor-status-probe                Send read-only Moza vendor status queries over the R5 serial interface
   authorize-vendor-authority         Create a single-use exact Moza vendor-authority authorization receipt without sending traffic
   vendor-authority-smoke-dry-run     Validate an exact Moza vendor-authority authorization without sending traffic
+  vendor-authority-attempt           Send one exact authorized Moza vendor-authority frame over the R5 serial interface
   promote-fixture                    Promote a validated Moza capture JSONL into a parser fixture file
   promote-fixtures                   Promote every required Moza lane capture into parser fixture files
   zero                               Send bounded zero-torque output reports to a Moza wheelbase

@@ -2264,6 +2264,60 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_vendor_authority_attempt() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "vendor-authority-attempt",
+            "--serial-port",
+            "COM4",
+            "--baud-rate",
+            "115200",
+            "--timeout-ms",
+            "250",
+            "--authorization",
+            "target/moza-current/vendor-authority-authorization.json",
+            "--smoke-dry-run",
+            "target/moza-current/vendor-authority-smoke-dry-run.json",
+            "--confirm-bounded-vendor-authority-attempt",
+            "--json-out",
+            "target/moza-current/vendor-authority-attempt.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::VendorAuthorityAttempt {
+                serial_port,
+                baud_rate,
+                timeout_ms,
+                authorization,
+                smoke_dry_run,
+                confirm_bounded_vendor_authority_attempt,
+                json_out,
+                overwrite,
+            }) => {
+                assert_eq!(serial_port, "COM4");
+                assert_eq!(*baud_rate, 115200);
+                assert_eq!(*timeout_ms, 250);
+                assert_eq!(
+                    authorization.to_str(),
+                    Some("target/moza-current/vendor-authority-authorization.json")
+                );
+                assert_eq!(
+                    smoke_dry_run.to_str(),
+                    Some("target/moza-current/vendor-authority-smoke-dry-run.json")
+                );
+                assert!(*confirm_bounded_vendor_authority_attempt);
+                assert_eq!(
+                    json_out.to_str(),
+                    Some("target/moza-current/vendor-authority-attempt.json")
+                );
+                assert!(!overwrite);
+            }
+            _ => return Err("expected Moza VendorAuthorityAttempt command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_promote_fixture() -> TestResult {
         let cli = parse_cli([
             "wheelctl",
