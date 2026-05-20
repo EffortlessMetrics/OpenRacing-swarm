@@ -931,6 +931,25 @@ commands = [
 ]
 
 [[work_item]]
+id = "vendor-authority-precondition-bound-authorization"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "schemas/moza-vendor-authority-authorization.schema.json"
+claim_boundary = "Exact authorization gate hardening only; require the refreshed target-only hardware-doctor precondition receipt to be fresh, observe-only, R5 serial/CDC present, and vendor-app-free before creating a single-use authorization, while still opening no HID or serial device, sending no query/output/configuration/firmware writes, emitting no hardware attempt command, and making no native-control, native-visible, smoke-ready, or release-ready claim."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_authorization -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_handoff -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl parse_moza_authorize_vendor_authority -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

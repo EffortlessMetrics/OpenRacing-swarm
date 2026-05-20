@@ -92,6 +92,11 @@ Provide a step-by-step implementation queue for Moza R5 vendor authority infrast
    - Keep bench-wizard and artifact-index no-output, but surface a target-only `wheelctl hardware doctor` refresh command that operators must review immediately before exact authorization.
    - The refreshed receipt is current bench context only; it does not update checked-in lane evidence, create authorization, open HID, open serial, send queries, send output/configuration/firmware writes, or satisfy native-control/native-visible/smoke-ready/release-ready gates.
    - The handoff MUST continue to block authorization when a vendor app may own the R5 serial/CDC port or when the R5 serial/CDC interface is missing.
+10f. **Precondition-bound exact authorization**
+   - Require `wheelctl moza authorize-vendor-authority` to consume the refreshed target-only hardware-doctor precondition receipt before writing an exact authorization receipt.
+   - The authorization command MUST validate that the receipt is fresh, observe-only, successful, shows the R5 serial/CDC Ports interface for `0x346E:0x0004`, and shows no running vendor app process that may own the serial port.
+   - The authorization receipt MUST bind the precondition receipt path, R5 serial port/interface, precondition timestamp, and observe-only safety flags while keeping `native_control_evidence=false` and `native_visible_ready=false`.
+   - Do not open HID, open serial, send read-only queries, send output/configuration/firmware writes, emit the bounded attempt command, or claim native-control/native-visible/smoke-ready/release-ready.
 11+. **Closed-loop motion ladder**
 
 ## Required gating invariant
@@ -172,6 +177,19 @@ git diff --check
 ```powershell
 python scripts/cargo_fmt_workspace.py
 cargo test --locked -p wheelctl --bin wheelctl vendor_authority_handoff -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+## Proof commands (PR10f)
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_authority_authorization -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_authority_handoff -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl parse_moza_authorize_vendor_authority -- --nocapture
 cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
 cargo run --locked -p openracing-tools --bin package-surface -- --check
 python scripts/policy_file.py

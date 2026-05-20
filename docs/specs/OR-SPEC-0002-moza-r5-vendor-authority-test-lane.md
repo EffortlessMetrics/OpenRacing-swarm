@@ -155,6 +155,14 @@ a later consumed hardware attempt records real evidence. The authorization tool
 MUST NOT open HID, open serial, send read-only queries, or send
 output/configuration/firmware writes while creating the receipt.
 
+The authorization tool MUST validate a fresh target-only `wheelctl hardware
+doctor` precondition receipt before creating the exact authorization receipt.
+That precondition receipt MUST be successful and observe-only, show the R5
+serial/CDC Ports interface for `0x346E:0x0004`, and show no running vendor app
+process that may own the serial port. The authorization receipt MUST bind the
+precondition receipt path, timestamp, serial port/interface, and observe-only
+safety flags without promoting native-control or native-visible readiness.
+
 ### Vendor authority smoke contract
 
 The first authority smoke profile MUST be bounded and non-motion-claiming. A

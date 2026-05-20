@@ -567,6 +567,7 @@ struct VendorAuthorityAuthorizationRequest<'a> {
     json: bool,
     command_id: &'a str,
     frame_hex: &'a str,
+    precondition_hardware_doctor: &'a Path,
     authorized_by: &'a str,
     bench_clear_evidence: &'a str,
     expires_after_minutes: u64,
@@ -766,6 +767,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
         MozaCommands::AuthorizeVendorAuthority {
             command_id,
             frame_hex,
+            precondition_hardware_doctor,
             authorized_by,
             bench_clear_evidence,
             expires_after_minutes,
@@ -777,6 +779,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 json,
                 command_id,
                 frame_hex,
+                precondition_hardware_doctor,
                 authorized_by,
                 bench_clear_evidence,
                 expires_after_minutes: *expires_after_minutes,
@@ -2129,9 +2132,10 @@ fn moza_vendor_authority_navigation_summary(lane: &Path) -> Value {
 
 fn vendor_authority_authorization_command(lane: &Path) -> String {
     format!(
-        "wheelctl moza authorize-vendor-authority --command-id {} --frame-hex {} --authorized-by {} --bench-clear-evidence '{}' --expires-after-minutes {} --json-out {} --json --confirm-exact-vendor-authority-authorization",
+        "wheelctl moza authorize-vendor-authority --command-id {} --frame-hex {} --precondition-hardware-doctor {} --authorized-by {} --bench-clear-evidence '{}' --expires-after-minutes {} --json-out {} --json --confirm-exact-vendor-authority-authorization",
         VENDOR_AUTHORITY_HANDOFF_COMMAND_ID,
         VENDOR_AUTHORITY_HANDOFF_FRAME_HEX,
+        VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET,
         VENDOR_AUTHORITY_HANDOFF_AUTHORIZED_BY,
         VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE,
         VENDOR_AUTHORITY_HANDOFF_EXPIRES_AFTER_MINUTES,
@@ -26367,6 +26371,145 @@ fn selected_read_only_status_commands(
     Ok(selected)
 }
 
+#[derive(Debug)]
+struct VendorAuthorityPreconditionHardwareDoctor {
+    generated_at: String,
+    serial_port: String,
+    serial_interface: String,
+    vendor_app_matched_processes: Vec<String>,
+}
+
+fn validate_vendor_authority_precondition_hardware_doctor(
+    path: &Path,
+    max_age_minutes: u64,
+) -> Result<VendorAuthorityPreconditionHardwareDoctor> {
+    let receipt = read_json_path(path)?;
+    if !json_pointer_bool(&receipt, "/success")? {
+        return Err(anyhow!(
+            "precondition hardware doctor '{}' was not successful",
+            path.display()
+        ));
+    }
+    let command = json_pointer_string(&receipt, "/command")?;
+    if command != "wheelctl hardware doctor" {
+        return Err(anyhow!(
+            "precondition receipt '{}' has command `{command}`, expected `wheelctl hardware doctor`",
+            path.display()
+        ));
+    }
+
+    for field in [
+        "/no_hid_device_opened",
+        "/no_ffb_writes",
+        "/no_output_reports",
+        "/no_feature_reports",
+        "/no_serial_config_commands",
+        "/no_firmware_or_dfu_commands",
+    ] {
+        if !json_pointer_bool(&receipt, field)? {
+            return Err(anyhow!(
+                "precondition hardware doctor '{}' must keep `{field}` true",
+                path.display()
+            ));
+        }
+    }
+
+    let generated_at = json_pointer_string(&receipt, "/generated_at")
+        .or_else(|_| json_pointer_string(&receipt, "/generated_at_utc"))?
+        .to_string();
+    let generated_at_utc = chrono::DateTime::parse_from_rfc3339(&generated_at)
+        .with_context(|| {
+            format!(
+                "invalid precondition hardware doctor timestamp `{generated_at}` in '{}'",
+                path.display()
+            )
+        })?
+        .with_timezone(&chrono::Utc);
+    let now = chrono::Utc::now();
+    if generated_at_utc > now + chrono::Duration::seconds(30) {
+        return Err(anyhow!(
+            "precondition hardware doctor '{}' is from the future; rerun hardware doctor immediately before authorization",
+            path.display()
+        ));
+    }
+    let max_age = chrono::Duration::minutes(
+        i64::try_from(max_age_minutes).context("precondition max age minutes out of range")?,
+    );
+    if now.signed_duration_since(generated_at_utc) > max_age {
+        return Err(anyhow!(
+            "precondition hardware doctor '{}' is older than {max_age_minutes} minute(s); rerun hardware doctor immediately before authorization",
+            path.display()
+        ));
+    }
+
+    if !json_pointer_bool(&receipt, "/vendor_apps/process_scan_attempted")? {
+        return Err(anyhow!(
+            "precondition hardware doctor '{}' must scan vendor app processes before exact authorization",
+            path.display()
+        ));
+    }
+    let vendor_app_matched_processes =
+        json_pointer_string_array(&receipt, "/vendor_apps/matched_processes")?;
+    if json_pointer_bool(&receipt, "/vendor_apps/pit_house_running")?
+        || !vendor_app_matched_processes.is_empty()
+    {
+        return Err(anyhow!(
+            "precondition hardware doctor '{}' blocks exact authorization because vendor app process(es) may own the R5 serial/CDC port: {}",
+            path.display(),
+            vendor_app_matched_processes.join(", ")
+        ));
+    }
+
+    if !json_pointer_bool(&receipt, "/windows_pnp/scan_attempted")? {
+        return Err(anyhow!(
+            "precondition hardware doctor '{}' must include a Windows PnP scan before exact authorization",
+            path.display()
+        ));
+    }
+    if !json_pointer_bool(&receipt, "/windows_pnp/moza_vid_visible")? {
+        return Err(anyhow!(
+            "precondition hardware doctor '{}' does not show the Moza VID before exact authorization",
+            path.display()
+        ));
+    }
+    let devices = receipt
+        .pointer("/windows_pnp/devices")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            anyhow!(
+                "precondition hardware doctor '{}' is missing `/windows_pnp/devices`",
+                path.display()
+            )
+        })?;
+    for device in devices {
+        if json_string(device, "class") != Some("Ports")
+            || json_string(device, "vendor_id") != Some(MOZA_VENDOR_HEX)
+            || json_string(device, "product_id") != Some(VENDOR_AUTHORITY_HANDOFF_PRODUCT_ID)
+            || json_string(device, "status") != Some("OK")
+        {
+            continue;
+        }
+        let Some(serial_interface) = json_string(device, "friendly_name") else {
+            continue;
+        };
+        if let Some(serial_port) = windows_com_port_from_friendly_name(serial_interface) {
+            return Ok(VendorAuthorityPreconditionHardwareDoctor {
+                generated_at,
+                serial_port,
+                serial_interface: serial_interface.to_string(),
+                vendor_app_matched_processes,
+            });
+        }
+    }
+
+    Err(anyhow!(
+        "precondition hardware doctor '{}' does not show an OK R5 serial/CDC Ports interface for VID {} PID {}",
+        path.display(),
+        MOZA_VENDOR_HEX,
+        VENDOR_AUTHORITY_HANDOFF_PRODUCT_ID
+    ))
+}
+
 fn vendor_authority_authorization_receipt(
     request: &VendorAuthorityAuthorizationRequest<'_>,
 ) -> Result<VendorAuthorityAuthorizationReceipt> {
@@ -26386,6 +26529,10 @@ fn vendor_authority_authorization_receipt(
     validate_vendor_authority_bench_clear_evidence(
         request.bench_clear_evidence,
         request.command_id,
+    )?;
+    let precondition = validate_vendor_authority_precondition_hardware_doctor(
+        request.precondition_hardware_doctor,
+        request.expires_after_minutes,
     )?;
 
     let frame = parse_hex_bytes(request.frame_hex)
@@ -26426,6 +26573,25 @@ fn vendor_authority_authorization_receipt(
         expires_after_minutes: request.expires_after_minutes,
         authorized_by: request.authorized_by.to_string(),
         bench_clear_evidence: request.bench_clear_evidence.to_string(),
+        precondition_hardware_doctor_receipt: request
+            .precondition_hardware_doctor
+            .display()
+            .to_string(),
+        precondition_hardware_doctor_validated: true,
+        precondition_generated_at: precondition.generated_at,
+        precondition_max_age_minutes: request.expires_after_minutes,
+        precondition_r5_serial_present: true,
+        precondition_r5_serial_port: precondition.serial_port,
+        precondition_r5_serial_interface: precondition.serial_interface,
+        precondition_vendor_app_scan_attempted: true,
+        precondition_vendor_app_running: false,
+        precondition_vendor_app_matched_processes: precondition.vendor_app_matched_processes,
+        precondition_no_hid_device_opened: true,
+        precondition_no_ffb_writes: true,
+        precondition_no_output_reports: true,
+        precondition_no_feature_reports: true,
+        precondition_no_serial_config_commands: true,
+        precondition_no_firmware_or_dfu_commands: true,
         native_control_evidence: false,
         hardware_output_authorized: true,
         native_visible_ready: false,
@@ -27679,6 +27845,21 @@ fn json_pointer_string<'a>(value: &'a Value, path: &str) -> Result<&'a str> {
         .ok_or_else(|| anyhow!("missing or non-string JSON field `{path}`"))
 }
 
+fn json_pointer_string_array(value: &Value, path: &str) -> Result<Vec<String>> {
+    let array = value
+        .pointer(path)
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("missing or non-array JSON field `{path}`"))?;
+    let mut strings = Vec::with_capacity(array.len());
+    for item in array {
+        let Some(text) = item.as_str() else {
+            return Err(anyhow!("non-string item in JSON field `{path}`"));
+        };
+        strings.push(text.to_string());
+    }
+    Ok(strings)
+}
+
 fn json_pointer_bool(value: &Value, path: &str) -> Result<bool> {
     value
         .pointer(path)
@@ -28300,6 +28481,22 @@ struct VendorAuthorityAuthorizationReceipt {
     expires_after_minutes: u64,
     authorized_by: String,
     bench_clear_evidence: String,
+    precondition_hardware_doctor_receipt: String,
+    precondition_hardware_doctor_validated: bool,
+    precondition_generated_at: String,
+    precondition_max_age_minutes: u64,
+    precondition_r5_serial_present: bool,
+    precondition_r5_serial_port: String,
+    precondition_r5_serial_interface: String,
+    precondition_vendor_app_scan_attempted: bool,
+    precondition_vendor_app_running: bool,
+    precondition_vendor_app_matched_processes: Vec<String>,
+    precondition_no_hid_device_opened: bool,
+    precondition_no_ffb_writes: bool,
+    precondition_no_output_reports: bool,
+    precondition_no_feature_reports: bool,
+    precondition_no_serial_config_commands: bool,
+    precondition_no_firmware_or_dfu_commands: bool,
     native_control_evidence: bool,
     hardware_output_authorized: bool,
     native_visible_ready: bool,
@@ -35791,11 +35988,13 @@ mod tests {
 
     fn sample_vendor_authority_authorization_request<'a>(
         json_out: &'a Path,
+        precondition_hardware_doctor: &'a Path,
     ) -> VendorAuthorityAuthorizationRequest<'a> {
         VendorAuthorityAuthorizationRequest {
             json: false,
             command_id: "estop_set_ffb",
             frame_hex: "7E02461C0001F0",
+            precondition_hardware_doctor,
             authorized_by: "Steven",
             bench_clear_evidence: "bench clear for exact estop_set_ffb: R5 stable, hands clear, wheel clear",
             expires_after_minutes: 10,
@@ -35805,11 +36004,56 @@ mod tests {
         }
     }
 
+    fn write_vendor_authority_authorization_precondition(
+        path: &Path,
+        matched_processes: &[&str],
+    ) -> TestResult {
+        write_test_json_file(
+            path,
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl hardware doctor",
+                "generated_at": now_utc(),
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_output_reports": true,
+                "no_feature_reports": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "windows_pnp": {
+                    "scan_attempted": true,
+                    "moza_vid_visible": true,
+                    "serial_interface_count": 1,
+                    "devices": [
+                        {
+                            "status": "OK",
+                            "class": "Ports",
+                            "friendly_name": "USB Serial Device (COM4)",
+                            "vendor_id": "0x346E",
+                            "product_id": "0x0004",
+                            "interface_number": 0,
+                            "instance_id_present": true
+                        }
+                    ]
+                },
+                "vendor_apps": {
+                    "process_scan_attempted": true,
+                    "pit_house_running": !matched_processes.is_empty(),
+                    "matched_processes": matched_processes
+                }
+            }),
+        )
+    }
+
     #[test]
     fn vendor_authority_authorization_receipt_is_single_use_exact_and_non_claiming() -> TestResult {
         let dir = tempfile::tempdir()?;
         let json_out = dir.path().join("vendor-authority-authorization.json");
-        let request = sample_vendor_authority_authorization_request(&json_out);
+        let precondition = dir
+            .path()
+            .join("vendor-authority-precondition-hardware-doctor.json");
+        write_vendor_authority_authorization_precondition(&precondition, &[])?;
+        let request = sample_vendor_authority_authorization_request(&json_out, &precondition);
         let receipt = vendor_authority_authorization_receipt(&request)?;
         let value = serde_json::to_value(&receipt)?;
         let schema: Value = serde_json::from_str(include_str!(
@@ -35833,6 +36077,26 @@ mod tests {
         assert_eq!(json_bool(&value, "authorization_consumed"), Some(false));
         assert_eq!(json_bool(&value, "exact_authorization"), Some(true));
         assert_eq!(json_bool(&value, "single_use"), Some(true));
+        assert_eq!(
+            json_bool(&value, "precondition_hardware_doctor_validated"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&value, "precondition_r5_serial_present"),
+            Some(true)
+        );
+        assert_eq!(
+            json_string(&value, "precondition_r5_serial_port"),
+            Some("COM4")
+        );
+        assert_eq!(
+            json_string(&value, "precondition_r5_serial_interface"),
+            Some("USB Serial Device (COM4)")
+        );
+        assert_eq!(
+            json_bool(&value, "precondition_vendor_app_running"),
+            Some(false)
+        );
         assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
         assert_eq!(json_bool(&value, "no_serial_device_opened"), Some(true));
         assert_eq!(json_bool(&value, "no_serial_query_sent"), Some(true));
@@ -35874,8 +36138,15 @@ mod tests {
     async fn vendor_authority_authorization_command_writes_json_receipt() -> TestResult {
         let dir = tempfile::tempdir()?;
         let json_out = dir.path().join("vendor-authority-authorization.json");
-        authorize_vendor_authority(sample_vendor_authority_authorization_request(&json_out))
-            .await?;
+        let precondition = dir
+            .path()
+            .join("vendor-authority-precondition-hardware-doctor.json");
+        write_vendor_authority_authorization_precondition(&precondition, &[])?;
+        authorize_vendor_authority(sample_vendor_authority_authorization_request(
+            &json_out,
+            &precondition,
+        ))
+        .await?;
         let receipt = read_json_path(&json_out)?;
         assert_eq!(
             json_string(&receipt, "artifact_kind"),
@@ -35894,10 +36165,13 @@ mod tests {
     fn vendor_authority_authorization_rejects_read_only_command() -> TestResult {
         let dir = tempfile::tempdir()?;
         let json_out = dir.path().join("vendor-authority-authorization.json");
+        let precondition = dir
+            .path()
+            .join("vendor-authority-precondition-hardware-doctor.json");
         let request = VendorAuthorityAuthorizationRequest {
             command_id: "estop_get_ffb",
             frame_hex: "7E01461C01EF",
-            ..sample_vendor_authority_authorization_request(&json_out)
+            ..sample_vendor_authority_authorization_request(&json_out, &precondition)
         };
         let error = match vendor_authority_authorization_receipt(&request) {
             Ok(_) => return Err("read-only command must not authorize vendor authority".into()),
@@ -35914,9 +36188,13 @@ mod tests {
     fn vendor_authority_authorization_rejects_frame_command_mismatch() -> TestResult {
         let dir = tempfile::tempdir()?;
         let json_out = dir.path().join("vendor-authority-authorization.json");
+        let precondition = dir
+            .path()
+            .join("vendor-authority-precondition-hardware-doctor.json");
+        write_vendor_authority_authorization_precondition(&precondition, &[])?;
         let request = VendorAuthorityAuthorizationRequest {
             frame_hex: "7E0221120601C7",
-            ..sample_vendor_authority_authorization_request(&json_out)
+            ..sample_vendor_authority_authorization_request(&json_out, &precondition)
         };
         let error = match vendor_authority_authorization_receipt(&request) {
             Ok(_) => return Err("mismatched command frame must be rejected".into()),
@@ -35933,9 +36211,12 @@ mod tests {
     fn vendor_authority_authorization_rejects_generic_bench_clear() -> TestResult {
         let dir = tempfile::tempdir()?;
         let json_out = dir.path().join("vendor-authority-authorization.json");
+        let precondition = dir
+            .path()
+            .join("vendor-authority-precondition-hardware-doctor.json");
         let request = VendorAuthorityAuthorizationRequest {
             bench_clear_evidence: "bench clear",
-            ..sample_vendor_authority_authorization_request(&json_out)
+            ..sample_vendor_authority_authorization_request(&json_out, &precondition)
         };
         let error = match vendor_authority_authorization_receipt(&request) {
             Ok(_) => return Err("generic bench-clear must not authorize vendor authority".into()),
@@ -35951,12 +36232,84 @@ mod tests {
     }
 
     #[test]
+    fn vendor_authority_authorization_rejects_vendor_app_precondition() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let json_out = dir.path().join("vendor-authority-authorization.json");
+        let precondition = dir
+            .path()
+            .join("vendor-authority-precondition-hardware-doctor.json");
+        write_vendor_authority_authorization_precondition(&precondition, &["MOZA Pit House.exe"])?;
+        let request = sample_vendor_authority_authorization_request(&json_out, &precondition);
+        let error = match vendor_authority_authorization_receipt(&request) {
+            Ok(_) => return Err("running vendor app must block exact authorization".into()),
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("vendor app process(es) may own the R5 serial/CDC port"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_authorization_rejects_missing_r5_serial_precondition() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let json_out = dir.path().join("vendor-authority-authorization.json");
+        let precondition = dir
+            .path()
+            .join("vendor-authority-precondition-hardware-doctor.json");
+        write_test_json_file(
+            &precondition,
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl hardware doctor",
+                "generated_at": now_utc(),
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_output_reports": true,
+                "no_feature_reports": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "windows_pnp": {
+                    "scan_attempted": true,
+                    "moza_vid_visible": true,
+                    "devices": []
+                },
+                "vendor_apps": {
+                    "process_scan_attempted": true,
+                    "pit_house_running": false,
+                    "matched_processes": []
+                }
+            }),
+        )?;
+        let request = sample_vendor_authority_authorization_request(&json_out, &precondition);
+        let error = match vendor_authority_authorization_receipt(&request) {
+            Ok(_) => {
+                return Err("missing R5 serial interface must block exact authorization".into());
+            }
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("does not show an OK R5 serial/CDC"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn vendor_authority_authorization_requires_explicit_confirmation() -> TestResult {
         let dir = tempfile::tempdir()?;
         let json_out = dir.path().join("vendor-authority-authorization.json");
+        let precondition = dir
+            .path()
+            .join("vendor-authority-precondition-hardware-doctor.json");
         let request = VendorAuthorityAuthorizationRequest {
             confirm_exact_vendor_authority_authorization: false,
-            ..sample_vendor_authority_authorization_request(&json_out)
+            ..sample_vendor_authority_authorization_request(&json_out, &precondition)
         };
         let error = match vendor_authority_authorization_receipt(&request) {
             Ok(_) => {
@@ -35990,6 +36343,11 @@ mod tests {
             "authorization_consumed",
             "exact_authorization",
             "single_use",
+            "precondition_hardware_doctor_receipt",
+            "precondition_hardware_doctor_validated",
+            "precondition_r5_serial_present",
+            "precondition_r5_serial_port",
+            "precondition_vendor_app_running",
             "no_hid_device_opened",
             "no_serial_device_opened",
             "no_serial_query_sent",
@@ -36024,6 +36382,18 @@ mod tests {
         );
         assert_eq!(schema["properties"]["exact_authorization"]["const"], true);
         assert_eq!(schema["properties"]["single_use"]["const"], true);
+        assert_eq!(
+            schema["properties"]["precondition_hardware_doctor_validated"]["const"],
+            true
+        );
+        assert_eq!(
+            schema["properties"]["precondition_r5_serial_present"]["const"],
+            true
+        );
+        assert_eq!(
+            schema["properties"]["precondition_vendor_app_running"]["const"],
+            false
+        );
         assert_eq!(schema["properties"]["no_hid_device_opened"]["const"], true);
         assert_eq!(
             schema["properties"]["no_serial_device_opened"]["const"],
@@ -36045,7 +36415,11 @@ mod tests {
     fn sample_vendor_authority_authorization_value() -> TestResult<Value> {
         let dir = tempfile::tempdir()?;
         let json_out = dir.path().join("vendor-authority-authorization.json");
-        let request = sample_vendor_authority_authorization_request(&json_out);
+        let precondition = dir
+            .path()
+            .join("vendor-authority-precondition-hardware-doctor.json");
+        write_vendor_authority_authorization_precondition(&precondition, &[])?;
+        let request = sample_vendor_authority_authorization_request(&json_out, &precondition);
         let receipt = vendor_authority_authorization_receipt(&request)?;
         Ok(serde_json::to_value(receipt)?)
     }
@@ -39403,6 +39777,14 @@ mod tests {
             }
             if name == "create_exact_vendor_authority_authorization" {
                 assert!(
+                    command_text.contains("--precondition-hardware-doctor"),
+                    "authorization handoff should require the refreshed hardware doctor receipt: {command_text}"
+                );
+                assert!(
+                    command_text.contains(VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET),
+                    "authorization handoff should bind the live precondition receipt: {command_text}"
+                );
+                assert!(
                     command_text.contains("--authorized-by Steven"),
                     "authorization handoff should name the operator explicitly: {command_text}"
                 );
@@ -39429,6 +39811,7 @@ mod tests {
         assert!(markdown.contains(VENDOR_AUTHORITY_HANDOFF_COMMAND_ID));
         assert!(markdown.contains(VENDOR_AUTHORITY_HANDOFF_FRAME_HEX));
         assert!(markdown.contains(VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE));
+        assert!(markdown.contains("--precondition-hardware-doctor"));
         assert!(markdown.contains("--authorized-by Steven"));
         assert!(markdown.contains("--expires-after-minutes 10"));
         assert!(markdown.contains("Live precondition refresh command"));

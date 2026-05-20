@@ -848,6 +848,9 @@ pub enum MozaCommands {
         /// Full Moza serial frame bytes to bind, including start byte and checksum
         #[arg(long)]
         frame_hex: String,
+        /// Fresh target-only hardware doctor receipt reviewed before authorization
+        #[arg(long)]
+        precondition_hardware_doctor: std::path::PathBuf,
         /// Operator or host label granting bench-clear
         #[arg(long, default_value = "Steven")]
         authorized_by: String,

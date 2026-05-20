@@ -2190,6 +2190,8 @@ mod tests {
             "estop_set_ffb",
             "--frame-hex",
             "7E02461C0001F0",
+            "--precondition-hardware-doctor",
+            "target/moza-current/vendor-authority-precondition-hardware-doctor.json",
             "--authorized-by",
             "Steven",
             "--bench-clear-evidence",
@@ -2204,6 +2206,7 @@ mod tests {
             Commands::Moza(MozaCommands::AuthorizeVendorAuthority {
                 command_id,
                 frame_hex,
+                precondition_hardware_doctor,
                 authorized_by,
                 bench_clear_evidence,
                 expires_after_minutes,
@@ -2213,6 +2216,10 @@ mod tests {
             }) => {
                 assert_eq!(command_id, "estop_set_ffb");
                 assert_eq!(frame_hex, "7E02461C0001F0");
+                assert_eq!(
+                    precondition_hardware_doctor.to_str(),
+                    Some("target/moza-current/vendor-authority-precondition-hardware-doctor.json")
+                );
                 assert_eq!(authorized_by, "Steven");
                 assert!(bench_clear_evidence.contains("estop_set_ffb"));
                 assert_eq!(*expires_after_minutes, 10);
