@@ -662,6 +662,27 @@ commands = [
 ]
 
 [[work_item]]
+id = "vendor-no-output-cli-tools"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "crates/cli/src/commands/moza.rs"
+claim_boundary = "No-output CLI tooling only; adds wheelctl moza vendor-fake-transport to exercise checked-in synthetic serial fixture bytes through the fake transport and write a non-claiming receipt without HID opens, serial device opens, read-only hardware probes, query sends, authorization receipts, output writes, configuration writes, hardware writes, native-visible, smoke-ready, coexistence, simulator, firmware, or release-ready claims."
+blocked_by = "n/a"
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl parse_moza_vendor_fake_transport -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_fake_serial_transport -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza vendor-fake-transport --json-out target/moza-current/vendor-no-output-cli.json --json",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

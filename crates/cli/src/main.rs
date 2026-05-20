@@ -2118,6 +2118,27 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_vendor_fake_transport() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "vendor-fake-transport",
+            "--json-out",
+            "target/moza-current/vendor-no-output-cli.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::VendorFakeTransport { json_out }) => {
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/moza-current/vendor-no-output-cli.json")
+                );
+            }
+            _ => return Err("expected Moza VendorFakeTransport command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_promote_fixture() -> TestResult {
         let cli = parse_cli([
             "wheelctl",

@@ -13,6 +13,10 @@ use racing_wheel_hid_capture::{
     HidReportDescriptorMetadata, HidReportDescriptorReport, parse_hid_report_descriptor_metadata,
 };
 use racing_wheel_hid_moza_protocol::report::looks_like_live_r5_v1_extended_report;
+use racing_wheel_hid_moza_protocol::serial::fake_transport::{
+    FAKE_TRANSPORT_CODEC_STATUS, MozaFakeSerialTransport, MozaFakeSerialTransportError,
+};
+use racing_wheel_hid_moza_protocol::serial::vendor_authority::MozaSerialCodecStatus;
 use racing_wheel_hid_moza_protocol::{
     DeviceWriter, FfbMode, MOZA_VENDOR_ID, MozaDeviceCategory, MozaDirectTorqueEncoder,
     MozaInitState, MozaInputState, MozaProtocol, MozaTopologyHint, REPORT_LEN, VendorProtocol,
@@ -156,6 +160,10 @@ const R5_V1_LIVE_OUTPUT_REPORTS: &[(&str, usize)] = &[
 const R5_V1_LIVE_FEATURE_REPORT_IDS: &[&str] = &["0x11", "0x12", "0x13", "0xAF"];
 const MOZA_R5_MANIFEST_SCHEMA_JSON: &str =
     include_str!("../../../../ci/hardware/moza-r5/manifest.schema.json");
+const MOZA_VENDOR_SERIAL_CODEC_FIXTURES_JSON: &str =
+    include_str!("../../../../fixtures/moza/r5/vendor-serial-codec-fixtures.json");
+const MOZA_VENDOR_FAKE_SERIAL_TRANSPORT_JSON: &str =
+    include_str!("../../../../fixtures/moza/r5/vendor-fake-serial-transport.json");
 const SIMULATOR_FFB_PREREQUISITE_ARTIFACTS: [(&str, &str); 6] = [
     ("zero_torque_real_hardware", "zero-torque-proof.json"),
     ("watchdog_zero_output", "watchdog-proof.json"),
@@ -455,6 +463,15 @@ fn controlled_angle_profile_json_name_is_allowed(profile: &str) -> bool {
     .any(|allowed| profile == controlled_angle_profile_name(*allowed))
 }
 
+fn moza_serial_codec_status_name(status: MozaSerialCodecStatus) -> &'static str {
+    match status {
+        MozaSerialCodecStatus::SemanticOnly => "semantic_only",
+        MozaSerialCodecStatus::FixtureDecodeOnly => "fixture_decode_only",
+        MozaSerialCodecStatus::RoundTripVerified => "round_trip_verified",
+        MozaSerialCodecStatus::HardwareWriteEligible => "hardware_write_eligible",
+    }
+}
+
 fn controlled_angle_profile_requires_effect_lifecycle_plan(
     profile: MozaControlledAngleProfile,
 ) -> bool {
@@ -647,6 +664,9 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
         }
         MozaCommands::PreOutputReadiness { lane, json_out } => {
             pre_output_readiness(json, lane, json_out.as_deref()).await
+        }
+        MozaCommands::VendorFakeTransport { json_out } => {
+            vendor_fake_transport(json, json_out.as_deref()).await
         }
         MozaCommands::PromoteFixture {
             capture,
@@ -5639,6 +5659,12 @@ async fn pre_output_readiness(json: bool, lane: &Path, json_out: Option<&Path>) 
         )));
     }
     Ok(())
+}
+
+async fn vendor_fake_transport(json: bool, json_out: Option<&Path>) -> Result<()> {
+    let receipt = vendor_fake_transport_cli_receipt()?;
+    write_json_receipt(json_out, &receipt)?;
+    print_vendor_fake_transport_receipt(json, json_out, &receipt)
 }
 
 async fn audit_lane(
@@ -25242,6 +25268,188 @@ fn parse_hex_u8_token(token: &str) -> std::result::Result<u8, String> {
     u8::from_str_radix(value, 16).map_err(|_| format!("invalid byte token '{token}'"))
 }
 
+fn vendor_fake_transport_cli_receipt() -> Result<VendorFakeTransportCliReceipt> {
+    let codec_fixture: Value = serde_json::from_str(MOZA_VENDOR_SERIAL_CODEC_FIXTURES_JSON)
+        .context("failed to parse checked-in Moza serial codec fixture")?;
+    let transport_fixture: Value = serde_json::from_str(MOZA_VENDOR_FAKE_SERIAL_TRANSPORT_JSON)
+        .context("failed to parse checked-in Moza fake transport fixture")?;
+    let fixtures = vendor_serial_fixtures_by_id(&codec_fixture)?;
+    let accepted_fixture_ids = json_string_array_field(&transport_fixture, "accepted_fixture_ids")?;
+    let blocked_fixture_ids = json_string_array_field(&transport_fixture, "blocked_fixture_ids")?;
+    let mut transport = MozaFakeSerialTransport::new();
+    let mut accepted_exchanges = Vec::new();
+
+    for fixture_id in &accepted_fixture_ids {
+        let fixture = fixtures
+            .get(fixture_id.as_str())
+            .ok_or_else(|| anyhow!("accepted fixture `{fixture_id}` is missing"))?;
+        let frame = fixture_frame_bytes(fixture)?;
+        let exchange = transport
+            .submit_read_only_fixture_frame(&frame)
+            .with_context(|| format!("accepted fixture `{fixture_id}` failed fake transport"))?;
+        accepted_exchanges.push(VendorFakeTransportAcceptedExchange {
+            fixture_id: fixture_id.clone(),
+            command_name: exchange.command_name.to_string(),
+            group: exchange.group,
+            device_id: exchange.device_id,
+            command: exchange.command,
+            risk_class: exchange.risk_class.as_registry_str().to_string(),
+            synthetic_response_payload_hex: bytes_hex_compact(&exchange.synthetic_response_payload),
+        });
+    }
+
+    let mut blocked_exchanges = Vec::new();
+    for fixture_id in &blocked_fixture_ids {
+        let fixture = fixtures
+            .get(fixture_id.as_str())
+            .ok_or_else(|| anyhow!("blocked fixture `{fixture_id}` is missing"))?;
+        let frame = fixture_frame_bytes(fixture)?;
+        match transport.submit_read_only_fixture_frame(&frame) {
+            Err(MozaFakeSerialTransportError::AuthorizationRequired {
+                command_id,
+                risk_class,
+            }) => {
+                blocked_exchanges.push(VendorFakeTransportBlockedExchange {
+                    fixture_id: command_id.to_string(),
+                    reason: "requires_exact_authorization".to_string(),
+                    risk_class: risk_class.as_registry_str().to_string(),
+                });
+            }
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!("blocked fixture `{fixture_id}` failed unexpectedly")
+                });
+            }
+            Ok(exchange) => {
+                return Err(anyhow!(
+                    "write-like fixture `{}` unexpectedly passed fake transport",
+                    exchange.command_id
+                ));
+            }
+        }
+    }
+
+    let mut bad_checksum = parse_hex_bytes("7E01281302C9").map_err(anyhow::Error::msg)?;
+    let checksum_index = bad_checksum
+        .len()
+        .checked_sub(1)
+        .ok_or_else(|| anyhow!("bad checksum fixture is empty"))?;
+    bad_checksum[checksum_index] ^= 1;
+    let malformed_frame_rejected = matches!(
+        transport.submit_read_only_fixture_frame(&bad_checksum),
+        Err(MozaFakeSerialTransportError::Frame(_))
+    );
+    let unknown_command_rejected = matches!(
+        transport.submit_read_only_fixture_frame(
+            &parse_hex_bytes("7E01FF13019F").map_err(anyhow::Error::msg)?
+        ),
+        Err(MozaFakeSerialTransportError::Frame(_))
+    );
+
+    Ok(VendorFakeTransportCliReceipt {
+        success: true,
+        schema_version: 1,
+        artifact_kind: "moza_vendor_no_output_cli",
+        claim_scope: "software_cli_fake_transport_only",
+        command: "wheelctl moza vendor-fake-transport",
+        generated_at_utc: now_utc(),
+        native_control_evidence: false,
+        hardware_output_authorized: false,
+        native_visible_ready: false,
+        next_allowed_action: "Review this no-output CLI receipt before implementing the later read-only hardware status probe.",
+        blocked_actions: vec![
+            "serial device open",
+            "read-only hardware probe",
+            "serial query send",
+            "output write",
+            "configuration write",
+            "authorization receipt",
+            "hardware writes",
+            "native-visible claim",
+            "smoke-ready claim",
+            "release-ready claim",
+            "firmware or DFU command",
+            "unknown host-to-device command",
+        ],
+        required_artifacts: vec![
+            "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md",
+            "docs/hardware/moza-r5-vendor-authority-test-plan.md",
+            "fixtures/moza/r5/vendor-command-registry.json",
+            "fixtures/moza/r5/vendor-serial-codec-fixtures.json",
+            "fixtures/moza/r5/vendor-fake-serial-transport.json",
+            "crates/hid-moza-protocol/src/serial/fake_transport.rs",
+            "crates/cli/src/commands/moza.rs",
+        ],
+        no_hid_device_opened: true,
+        opened_serial_device: false,
+        no_ffb_writes: true,
+        no_output_reports: true,
+        no_feature_reports: true,
+        no_serial_config_commands: true,
+        no_firmware_or_dfu_commands: true,
+        sent_read_only_query_commands: false,
+        sent_output_writes: false,
+        sent_configuration_writes: false,
+        sent_firmware_or_dfu_commands: false,
+        real_hardware_validated: false,
+        transport_kind: "fake_only",
+        fake_transport_verified: true,
+        codec_status: moza_serial_codec_status_name(FAKE_TRANSPORT_CODEC_STATUS),
+        hardware_write_eligible: FAKE_TRANSPORT_CODEC_STATUS.allows_hardware_writes(),
+        fixture_source: "fixtures/moza/r5/vendor-serial-codec-fixtures.json",
+        fake_transport_fixture: "fixtures/moza/r5/vendor-fake-serial-transport.json",
+        accepted_fixture_count: accepted_exchanges.len(),
+        blocked_fixture_count: blocked_exchanges.len(),
+        accepted_exchanges,
+        blocked_exchanges,
+        malformed_frame_rejected,
+        unknown_command_rejected,
+        notes: vec![
+            "This command replays checked-in synthetic fixture bytes only.",
+            "It does not open HID or serial devices and sends no host-to-device traffic.",
+            "Write-like vendor output/configuration candidates remain blocked until a later exact authorization stage.",
+        ],
+    })
+}
+
+fn vendor_serial_fixtures_by_id(codec_fixture: &Value) -> Result<BTreeMap<&str, &Value>> {
+    let mut fixtures = BTreeMap::new();
+    let entries = codec_fixture
+        .get("fixtures")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("codec fixture is missing `fixtures` array"))?;
+    for fixture in entries {
+        let id = json_string(fixture, "id")
+            .ok_or_else(|| anyhow!("codec fixture entry is missing string `id`"))?;
+        if fixtures.insert(id, fixture).is_some() {
+            return Err(anyhow!("duplicate codec fixture `{id}`"));
+        }
+    }
+    Ok(fixtures)
+}
+
+fn json_string_array_field(value: &Value, field: &str) -> Result<Vec<String>> {
+    let array = value
+        .get(field)
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("missing `{field}` array"))?;
+    array
+        .iter()
+        .map(|entry| {
+            entry
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| anyhow!("`{field}` must contain strings"))
+        })
+        .collect()
+}
+
+fn fixture_frame_bytes(fixture: &Value) -> Result<Vec<u8>> {
+    let raw_frame_hex = json_string(fixture, "raw_frame_hex")
+        .ok_or_else(|| anyhow!("fixture is missing string `raw_frame_hex`"))?;
+    parse_hex_bytes(raw_frame_hex).map_err(anyhow::Error::msg)
+}
+
 #[derive(Default)]
 struct CaptureValidationSummary {
     total_reports: usize,
@@ -25404,6 +25612,65 @@ struct ProbeReceipt {
     no_firmware_or_dfu_commands: bool,
     devices: Vec<MozaDeviceRecord>,
     notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorFakeTransportCliReceipt {
+    success: bool,
+    schema_version: u8,
+    artifact_kind: &'static str,
+    claim_scope: &'static str,
+    command: &'static str,
+    generated_at_utc: String,
+    native_control_evidence: bool,
+    hardware_output_authorized: bool,
+    native_visible_ready: bool,
+    next_allowed_action: &'static str,
+    blocked_actions: Vec<&'static str>,
+    required_artifacts: Vec<&'static str>,
+    no_hid_device_opened: bool,
+    opened_serial_device: bool,
+    no_ffb_writes: bool,
+    no_output_reports: bool,
+    no_feature_reports: bool,
+    no_serial_config_commands: bool,
+    no_firmware_or_dfu_commands: bool,
+    sent_read_only_query_commands: bool,
+    sent_output_writes: bool,
+    sent_configuration_writes: bool,
+    sent_firmware_or_dfu_commands: bool,
+    real_hardware_validated: bool,
+    transport_kind: &'static str,
+    fake_transport_verified: bool,
+    codec_status: &'static str,
+    hardware_write_eligible: bool,
+    fixture_source: &'static str,
+    fake_transport_fixture: &'static str,
+    accepted_fixture_count: usize,
+    blocked_fixture_count: usize,
+    accepted_exchanges: Vec<VendorFakeTransportAcceptedExchange>,
+    blocked_exchanges: Vec<VendorFakeTransportBlockedExchange>,
+    malformed_frame_rejected: bool,
+    unknown_command_rejected: bool,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorFakeTransportAcceptedExchange {
+    fixture_id: String,
+    command_name: String,
+    group: u8,
+    device_id: u8,
+    command: u8,
+    risk_class: String,
+    synthetic_response_payload_hex: String,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorFakeTransportBlockedExchange {
+    fixture_id: String,
+    reason: String,
+    risk_class: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -31296,6 +31563,25 @@ fn print_pre_output_readiness_receipt(
     Ok(())
 }
 
+fn print_vendor_fake_transport_receipt(
+    json: bool,
+    json_out: Option<&Path>,
+    receipt: &VendorFakeTransportCliReceipt,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Moza vendor fake transport replayed {} read-only fixture(s), blocked {} write-like fixture(s), and sent no hardware traffic.",
+            receipt.accepted_fixture_count, receipt.blocked_fixture_count
+        );
+        if let Some(path) = json_out {
+            println!("Receipt: {}", path.display());
+        }
+    }
+    Ok(())
+}
+
 fn print_lane_audit_receipt(
     json: bool,
     json_out: Option<&Path>,
@@ -31934,6 +32220,170 @@ mod tests {
         }
         let contents = serde_json::to_string_pretty(&value)?;
         write_text_file(path, &contents)
+    }
+
+    #[test]
+    fn vendor_fake_transport_cli_receipt_is_non_claiming() -> TestResult {
+        let receipt = vendor_fake_transport_cli_receipt()?;
+        let value = serde_json::to_value(&receipt)?;
+
+        assert_eq!(
+            json_string(&value, "artifact_kind"),
+            Some("moza_vendor_no_output_cli")
+        );
+        assert_eq!(
+            json_string(&value, "claim_scope"),
+            Some("software_cli_fake_transport_only")
+        );
+        assert_eq!(json_bool(&value, "native_control_evidence"), Some(false));
+        assert_eq!(json_bool(&value, "hardware_output_authorized"), Some(false));
+        assert_eq!(json_bool(&value, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "opened_serial_device"), Some(false));
+        assert_eq!(json_bool(&value, "no_output_reports"), Some(true));
+        assert_eq!(json_bool(&value, "no_feature_reports"), Some(true));
+        assert_eq!(
+            json_bool(&value, "sent_read_only_query_commands"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "sent_output_writes"), Some(false));
+        assert_eq!(json_bool(&value, "sent_configuration_writes"), Some(false));
+        assert_eq!(
+            json_bool(&value, "sent_firmware_or_dfu_commands"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "real_hardware_validated"), Some(false));
+        assert_eq!(json_string(&value, "transport_kind"), Some("fake_only"));
+        assert_eq!(json_bool(&value, "fake_transport_verified"), Some(true));
+        assert_eq!(
+            json_string(&value, "codec_status"),
+            Some("round_trip_verified")
+        );
+        assert_eq!(json_bool(&value, "hardware_write_eligible"), Some(false));
+        assert_eq!(json_bool(&value, "malformed_frame_rejected"), Some(true));
+        assert_eq!(json_bool(&value, "unknown_command_rejected"), Some(true));
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_fake_transport_cli_schema_pins_safety_gates() -> TestResult {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-no-output-cli.schema.json"
+        ))?;
+        let required = schema
+            .get("required")
+            .and_then(Value::as_array)
+            .ok_or("schema must have a required array")?;
+        for field in [
+            "claim_scope",
+            "native_control_evidence",
+            "hardware_output_authorized",
+            "native_visible_ready",
+            "no_hid_device_opened",
+            "opened_serial_device",
+            "no_ffb_writes",
+            "no_serial_config_commands",
+            "no_firmware_or_dfu_commands",
+            "sent_read_only_query_commands",
+            "sent_output_writes",
+            "sent_configuration_writes",
+            "sent_firmware_or_dfu_commands",
+            "real_hardware_validated",
+        ] {
+            assert!(
+                required.iter().any(|entry| entry.as_str() == Some(field)),
+                "schema must require `{field}`"
+            );
+        }
+        assert_eq!(
+            schema["properties"]["claim_scope"]["const"],
+            "software_cli_fake_transport_only"
+        );
+        assert_eq!(
+            schema["properties"]["native_control_evidence"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["hardware_output_authorized"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["native_visible_ready"]["const"], false);
+        assert_eq!(schema["properties"]["opened_serial_device"]["const"], false);
+        assert_eq!(schema["properties"]["no_ffb_writes"]["const"], true);
+        assert_eq!(
+            schema["properties"]["no_serial_config_commands"]["const"],
+            true
+        );
+        assert_eq!(
+            schema["properties"]["no_firmware_or_dfu_commands"]["const"],
+            true
+        );
+        assert_eq!(
+            schema["properties"]["sent_read_only_query_commands"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["sent_output_writes"]["const"], false);
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_fake_transport_cli_records_expected_fixture_sets() -> TestResult {
+        let receipt = vendor_fake_transport_cli_receipt()?;
+        assert_eq!(receipt.accepted_fixture_count, 9);
+        assert_eq!(receipt.blocked_fixture_count, 6);
+        assert_eq!(
+            receipt
+                .accepted_exchanges
+                .iter()
+                .filter(|exchange| exchange.risk_class == "vendor_status")
+                .count(),
+            receipt.accepted_fixture_count
+        );
+        assert_eq!(
+            receipt
+                .blocked_exchanges
+                .iter()
+                .filter(|exchange| exchange.reason == "requires_exact_authorization")
+                .count(),
+            receipt.blocked_fixture_count
+        );
+        assert!(receipt.blocked_exchanges.iter().any(|exchange| {
+            exchange.fixture_id == "base_gain_set_overall_strength"
+                && exchange.risk_class == "configuration_candidate"
+        }));
+        assert!(receipt.blocked_exchanges.iter().any(|exchange| {
+            exchange.fixture_id == "main_misc_set_ffb_status"
+                && exchange.risk_class == "vendor_output_candidate"
+        }));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn vendor_fake_transport_command_writes_json_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let json_out = dir.path().join("vendor-no-output-cli.json");
+
+        vendor_fake_transport(false, Some(&json_out)).await?;
+
+        let value: Value = serde_json::from_str(&fs::read_to_string(&json_out)?)?;
+        assert_eq!(
+            json_string(&value, "command"),
+            Some("wheelctl moza vendor-fake-transport")
+        );
+        assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "opened_serial_device"), Some(false));
+        assert_eq!(
+            json_bool(&value, "sent_read_only_query_commands"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "sent_output_writes"), Some(false));
+        assert_eq!(json_u64(&value, "accepted_fixture_count"), Some(9));
+        assert_eq!(json_u64(&value, "blocked_fixture_count"), Some(6));
+
+        Ok(())
     }
 
     fn temp_lane_under_cwd() -> TestResult<(tempfile::TempDir, PathBuf)> {

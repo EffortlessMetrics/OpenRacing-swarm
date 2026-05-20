@@ -811,6 +811,13 @@ pub enum MozaCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
+    /// Replay checked-in Moza vendor serial fixtures through the fake transport
+    VendorFakeTransport {
+        /// Write the no-output fake-transport CLI receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
     /// Promote a validated Moza capture JSONL into a parser fixture file
     PromoteFixture {
         /// JSON Lines file produced by `wheelctl moza capture-input`

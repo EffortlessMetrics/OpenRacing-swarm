@@ -40,6 +40,10 @@ Provide a step-by-step implementation queue for Moza R5 vendor authority infrast
    - Record a `fake_transport_verified` artifact with `transport_kind=fake_only`, no serial open, no query send, no output/configuration writes, no hardware evidence, and no hardware-write eligibility.
    - Do not add CLI, hardware read-only probing, authorization receipts, serial device I/O, or hardware output behavior.
 5. **No-output CLI tools**
+   - Add a `wheelctl moza vendor-fake-transport` command that exercises only the software fake transport from checked-in fixtures.
+   - Emit a non-claiming CLI receipt with `claim_scope=software_cli_fake_transport_only`, no HID open, no serial open, no read-only query send, no output/configuration writes, no hardware evidence, and no hardware-write eligibility.
+   - Add a schema for the no-output CLI receipt and tests proving read-only status fixtures are accepted while write-like candidates remain blocked.
+   - Do not add read-only hardware probing, authorization receipts, serial device I/O, hardware output behavior, or readiness promotion.
 6. **Read-only vendor status probe**
 7. **Exact authorization support**
 8. **Vendor authority smoke dry-run**
@@ -66,6 +70,20 @@ git diff --check
 python scripts/cargo_fmt_workspace.py
 cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_authority_registry -- --nocapture
 cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+## Proof commands (PR5)
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl parse_moza_vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_fake_serial_transport -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p wheelctl --bin wheelctl -- moza vendor-fake-transport --json-out target/moza-current/vendor-no-output-cli.json --json
 cargo run --locked -p openracing-tools --bin package-surface -- --check
 python scripts/policy_file.py
 git diff --check
