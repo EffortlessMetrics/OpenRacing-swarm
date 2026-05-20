@@ -1,7 +1,7 @@
 {
   "success": true,
   "command": "wheelctl moza pre-output-readiness",
-  "generated_at_utc": "2026-05-19T02:31:18Z",
+  "generated_at_utc": "2026-05-20T04:49:27Z",
   "lane": "ci/hardware/moza-r5/2026-05-13",
   "stage": "pre_output_readiness",
   "ready_for_zero_torque": true,
@@ -12,42 +12,12 @@
   "native_visible_motion_proven": false,
   "input_semantic_mapping_complete": false,
   "input_role_semantics": {
-    "ambiguous_semantic_candidate_count": 4,
+    "ambiguous_semantic_candidate_count": 0,
     "blocks_native_control": false,
     "blocks_native_visible": false,
     "blocks_smoke_ready": false,
-    "generic_aux_role_count": 3,
+    "generic_aux_role_count": 1,
     "generic_aux_roles": [
-      {
-        "control": "brake",
-        "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
-        "missing_requirements": [],
-        "moving_required_axes": [
-          "r5_v1_extended_axis0_u16"
-        ],
-        "notes": [
-          "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
-        ],
-        "parser_visible": true,
-        "required": true,
-        "role": "brake",
-        "semantic_candidates": [
-          {
-            "ambiguous_with_controls": [],
-            "axis": "r5_v1_extended_axis0_u16",
-            "claim_status": "candidate_only",
-            "confidence": "isolated_candidate",
-            "control": "brake",
-            "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
-            "notes": [
-              "candidate comes from an isolated role capture and is not a parser semantic mapping"
-            ],
-            "readiness_claim": false,
-            "role": "brake"
-          }
-        ],
-        "semantic_status": "generic_aux"
-      },
       {
         "control": "clutch",
         "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
@@ -64,96 +34,30 @@
         "role": "clutch",
         "semantic_candidates": [
           {
-            "ambiguous_with_controls": [
-              "handbrake"
-            ],
-            "axis": "r5_v1_extended_aux0_u16",
-            "claim_status": "candidate_only",
-            "confidence": "ambiguous_candidate",
-            "control": "clutch",
-            "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
-            "notes": [
-              "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
-            ],
-            "readiness_claim": false,
-            "role": "clutch"
-          },
-          {
-            "ambiguous_with_controls": [
-              "handbrake"
-            ],
-            "axis": "r5_v1_extended_aux1_u16",
-            "claim_status": "candidate_only",
-            "confidence": "ambiguous_candidate",
-            "control": "clutch",
-            "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
-            "notes": [
-              "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
-            ],
-            "readiness_claim": false,
-            "role": "clutch"
-          }
-        ],
-        "semantic_status": "generic_aux"
-      },
-      {
-        "control": "handbrake",
-        "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
-        "missing_requirements": [],
-        "moving_required_axes": [
-          "r5_v1_extended_aux0_u16",
-          "r5_v1_extended_aux1_u16",
-          "r5_v1_extended_axis1_u16"
-        ],
-        "notes": [
-          "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
-        ],
-        "parser_visible": true,
-        "required": true,
-        "role": "handbrake",
-        "semantic_candidates": [
-          {
-            "ambiguous_with_controls": [
-              "clutch"
-            ],
-            "axis": "r5_v1_extended_aux0_u16",
-            "claim_status": "candidate_only",
-            "confidence": "ambiguous_candidate",
-            "control": "handbrake",
-            "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
-            "notes": [
-              "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
-            ],
-            "readiness_claim": false,
-            "role": "handbrake"
-          },
-          {
-            "ambiguous_with_controls": [
-              "clutch"
-            ],
-            "axis": "r5_v1_extended_aux1_u16",
-            "claim_status": "candidate_only",
-            "confidence": "ambiguous_candidate",
-            "control": "handbrake",
-            "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
-            "notes": [
-              "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
-            ],
-            "readiness_claim": false,
-            "role": "handbrake"
-          },
-          {
             "ambiguous_with_controls": [],
-            "axis": "r5_v1_extended_axis1_u16",
+            "axis": "r5_v1_extended_aux0_u16",
             "claim_status": "candidate_only",
             "confidence": "isolated_candidate",
-            "control": "handbrake",
-            "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
+            "control": "clutch",
+            "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
             "notes": [
               "candidate comes from an isolated role capture and is not a parser semantic mapping"
             ],
             "readiness_claim": false,
-            "role": "handbrake"
+            "role": "clutch"
+          },
+          {
+            "ambiguous_with_controls": [],
+            "axis": "r5_v1_extended_aux1_u16",
+            "claim_status": "candidate_only",
+            "confidence": "isolated_candidate",
+            "control": "clutch",
+            "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
+            "notes": [
+              "candidate comes from an isolated role capture and is not a parser semantic mapping"
+            ],
+            "readiness_claim": false,
+            "role": "clutch"
           }
         ],
         "semantic_status": "generic_aux"
@@ -177,30 +81,14 @@
         "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
         "missing_requirements": [],
         "moving_required_axes": [
-          "r5_v1_extended_axis0_u16"
+          "brake_u16"
         ],
-        "notes": [
-          "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
-        ],
+        "notes": [],
         "parser_visible": true,
         "required": true,
         "role": "brake",
-        "semantic_candidates": [
-          {
-            "ambiguous_with_controls": [],
-            "axis": "r5_v1_extended_axis0_u16",
-            "claim_status": "candidate_only",
-            "confidence": "isolated_candidate",
-            "control": "brake",
-            "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
-            "notes": [
-              "candidate comes from an isolated role capture and is not a parser semantic mapping"
-            ],
-            "readiness_claim": false,
-            "role": "brake"
-          }
-        ],
-        "semantic_status": "generic_aux"
+        "semantic_candidates": [],
+        "semantic_status": "proven"
       },
       {
         "control": "clutch",
@@ -218,31 +106,27 @@
         "role": "clutch",
         "semantic_candidates": [
           {
-            "ambiguous_with_controls": [
-              "handbrake"
-            ],
+            "ambiguous_with_controls": [],
             "axis": "r5_v1_extended_aux0_u16",
             "claim_status": "candidate_only",
-            "confidence": "ambiguous_candidate",
+            "confidence": "isolated_candidate",
             "control": "clutch",
             "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
             "notes": [
-              "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
+              "candidate comes from an isolated role capture and is not a parser semantic mapping"
             ],
             "readiness_claim": false,
             "role": "clutch"
           },
           {
-            "ambiguous_with_controls": [
-              "handbrake"
-            ],
+            "ambiguous_with_controls": [],
             "axis": "r5_v1_extended_aux1_u16",
             "claim_status": "candidate_only",
-            "confidence": "ambiguous_candidate",
+            "confidence": "isolated_candidate",
             "control": "clutch",
             "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
             "notes": [
-              "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
+              "candidate comes from an isolated role capture and is not a parser semantic mapping"
             ],
             "readiness_claim": false,
             "role": "clutch"
@@ -269,62 +153,14 @@
         "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
         "missing_requirements": [],
         "moving_required_axes": [
-          "r5_v1_extended_aux0_u16",
-          "r5_v1_extended_aux1_u16",
-          "r5_v1_extended_axis1_u16"
+          "handbrake_u16"
         ],
-        "notes": [
-          "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
-        ],
+        "notes": [],
         "parser_visible": true,
         "required": true,
         "role": "handbrake",
-        "semantic_candidates": [
-          {
-            "ambiguous_with_controls": [
-              "clutch"
-            ],
-            "axis": "r5_v1_extended_aux0_u16",
-            "claim_status": "candidate_only",
-            "confidence": "ambiguous_candidate",
-            "control": "handbrake",
-            "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
-            "notes": [
-              "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
-            ],
-            "readiness_claim": false,
-            "role": "handbrake"
-          },
-          {
-            "ambiguous_with_controls": [
-              "clutch"
-            ],
-            "axis": "r5_v1_extended_aux1_u16",
-            "claim_status": "candidate_only",
-            "confidence": "ambiguous_candidate",
-            "control": "handbrake",
-            "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
-            "notes": [
-              "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
-            ],
-            "readiness_claim": false,
-            "role": "handbrake"
-          },
-          {
-            "ambiguous_with_controls": [],
-            "axis": "r5_v1_extended_axis1_u16",
-            "claim_status": "candidate_only",
-            "confidence": "isolated_candidate",
-            "control": "handbrake",
-            "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
-            "notes": [
-              "candidate comes from an isolated role capture and is not a parser semantic mapping"
-            ],
-            "readiness_claim": false,
-            "role": "handbrake"
-          }
-        ],
-        "semantic_status": "generic_aux"
+        "semantic_candidates": [],
+        "semantic_status": "proven"
       },
       {
         "control": "ks_rim_controls",
@@ -372,23 +208,23 @@
         "semantic_status": "proven"
       }
     ],
-    "semantic_candidate_count": 6,
+    "semantic_candidate_count": 2,
     "semantic_mapping_complete": false,
     "semantic_status": "partial_generic_aux_mapping",
     "source_artifact": "native-visible-verification.json",
     "source_stage": "native_visible_ready",
     "status_counts": {
-      "generic_aux": 3,
-      "proven": 4
+      "generic_aux": 1,
+      "proven": 6
     },
-    "unproven_required_role_count": 3
+    "unproven_required_role_count": 1
   },
   "pit_house_compatibility": {
     "artifact_kind": "pit_house_external_compatibility_navigation",
     "availability_artifact": "pit-house-availability.json",
     "availability_artifact_exists": true,
     "availability_receipt_valid": true,
-    "availability_status": "not_installed_or_not_running",
+    "availability_status": "running_install_location_unknown",
     "blocks_native_control": false,
     "blocks_native_visible": false,
     "blocks_smoke_ready": true,
@@ -396,6 +232,7 @@
     "coexistence_artifact": "pit-house-coexistence.json",
     "coexistence_gate_details": "failed to read 'ci/hardware/moza-r5/2026-05-13\\pit-house-coexistence.json'",
     "coexistence_gate_status": "fail",
+    "install_guidance": "Install or update Pit House from the official MOZA Pit House Downloads support page; do not treat package-manager availability as authoritative evidence.",
     "missing_case_count": 4,
     "missing_cases": [
       "pit_house_open_idle_standard",
@@ -411,11 +248,13 @@
     "no_serial_config_commands": true,
     "notes": [
       "Pit House compatibility is external smoke evidence only; it is not a native-control prerequisite.",
+      "Pit House install/source guidance is operator navigation only and does not prove coexistence.",
       "Availability and case receipts are navigation evidence until pit-house-coexistence.json passes the verifier.",
       "If Pit House is absent, keep open-state cases and smoke-ready blocked instead of fabricating evidence."
     ],
     "observation_only_cases": [],
-    "pit_house_available": false,
+    "official_download_page": "https://support.mozaracing.com/en/support/solutions/articles/70000627795-moza-pit-house-downloads",
+    "pit_house_available": true,
     "pit_house_coexistence_claimed": false,
     "readiness_claim": false,
     "recorded_case_count": 1,
@@ -508,7 +347,7 @@
   "native_visible_motion_gate": {
     "name": "native_actuator_visible_smoke",
     "status": "fail",
-    "details": "native_actuator_visible_smoke: success=false, command_ok=true, receipt_path_ok=true, selector_matches_lane_endpoint=true, confirmed=Some(true), no_hid_device_opened=Some(false), hardware_output_enabled=Some(true), no_feature_reports=Some(true), no_ffb_writes=Some(false), no_direct_torque_reports=Some(true), no_high_torque=Some(true), high_torque=Some(false), no_nonzero_above_limit=Some(true), no_out_of_scope=true, prior_actuator_profile_smoke_validated=Some(true), steering_proof_validated=Some(true), pidff_effect_setup_proven=Some(true), final_stop_all_attempted=Some(true), final_stop_all_sent=Some(true), movement_observed=Some(false), movement_delta_ok=false, post_stop_stable=Some(true), generated_at_valid=true, strategy_ok=true, max_percent=5, duration_ms=2000, steering_sample_count=670, angle_delta_degrees=0.18127718013275285, movement_threshold_degrees=1, post_stop_sample_count=84, write_attempts=6, writes_ok=6, write_errors=0, command_log_entries=6, command_log_no_direct_report=true, r5_device=true; native_controlled_angle_smoke: native-controlled-angle-smoke.json: success=false, command_ok=true, receipt_path_ok=true, selector_matches_lane_endpoint=true, confirmed=Some(true), dry_run=Some(false), preflight_only=Some(false), hardware_output_enabled=Some(true), actual_hardware_writes_supported=Some(true), no_hid_device_opened=Some(false), no_feature_reports=Some(true), no_output_reports=Some(false), no_ffb_writes=Some(false), no_direct_torque_reports=Some(true), no_high_torque=Some(true), high_torque=Some(false), no_nonzero_above_limit=Some(true), no_out_of_scope=true, prior_actuator_profile_smoke_validated=Some(true), steering_proof_validated=Some(true), pidff_effect_setup_proven=Some(true), final_stop_all_attempted=Some(true), final_stop_all_sent=Some(true), controlled_angle_motion_proven=Some(false), movement_observed=Some(false), target_reached=Some(false), return_to_start_proven=Some(false), timeout_reached=Some(true), overshoot_detected=Some(false), no_steering_samples=Some(false), movement_delta_ok=false, post_stop_stable=Some(true), generated_at_valid=true, strategy_ok=true, profile=missing, profile_ok=false, target_degrees=1, movement_threshold_degrees=1, max_percent=5, duration_ms=2000, steering_sample_count=984, angle_delta_degrees=0.18127718013275285, post_stop_sample_count=118, write_attempts=5, writes_ok=5, write_errors=0, command_log_entries=5, command_log_no_direct_report=true, r5_device=true; native-controlled-angle-retry-smoke.json: success=false, command_ok=true, receipt_path_ok=true, selector_matches_lane_endpoint=true, confirmed=Some(true), dry_run=Some(false), preflight_only=Some(false), hardware_output_enabled=Some(true), actual_hardware_writes_supported=Some(true), no_hid_device_opened=Some(false), no_feature_reports=Some(true), no_output_reports=Some(false), no_ffb_writes=Some(false), no_direct_torque_reports=Some(true), no_high_torque=Some(true), high_torque=Some(false), no_nonzero_above_limit=Some(true), no_out_of_scope=true, prior_actuator_profile_smoke_validated=Some(true), steering_proof_validated=Some(true), pidff_effect_setup_proven=Some(true), final_stop_all_attempted=Some(true), final_stop_all_sent=Some(true), controlled_angle_motion_proven=Some(false), movement_observed=Some(false), target_reached=Some(false), return_to_start_proven=Some(false), timeout_reached=Some(true), overshoot_detected=Some(false), no_steering_samples=Some(false), movement_delta_ok=false, post_stop_stable=Some(true), generated_at_valid=true, strategy_ok=true, profile=bounded_pidff_micro_step_v2, profile_ok=true, target_degrees=1, movement_threshold_degrees=1, max_percent=5, duration_ms=2000, steering_sample_count=690, angle_delta_degrees=0.18127718013275285, post_stop_sample_count=84, write_attempts=33, writes_ok=33, write_errors=0, command_log_entries=33, command_log_no_direct_report=true, r5_device=true"
+    "details": "native_actuator_visible_smoke: success=false, command_ok=true, receipt_path_ok=true, selector_matches_lane_endpoint=true, confirmed=Some(true), no_hid_device_opened=Some(false), hardware_output_enabled=Some(true), no_feature_reports=Some(true), no_ffb_writes=Some(false), no_direct_torque_reports=Some(true), no_high_torque=Some(true), high_torque=Some(false), no_nonzero_above_limit=Some(true), no_out_of_scope=true, prior_actuator_profile_smoke_validated=Some(true), steering_proof_validated=Some(true), pidff_effect_setup_proven=Some(true), final_stop_all_attempted=Some(true), final_stop_all_sent=Some(true), movement_observed=Some(false), movement_delta_ok=false, post_stop_stable=Some(true), generated_at_valid=true, strategy_ok=true, max_percent=5, duration_ms=2000, steering_sample_count=670, angle_delta_degrees=0.18127718013275285, movement_threshold_degrees=1, post_stop_sample_count=84, write_attempts=6, writes_ok=6, write_errors=0, command_log_entries=6, command_log_no_direct_report=true, r5_device=true; native_controlled_angle_smoke: native-controlled-angle-smoke.json: success=false, command_ok=true, receipt_path_ok=true, selector_matches_lane_endpoint=true, confirmed=Some(true), dry_run=Some(false), preflight_only=Some(false), hardware_output_enabled=Some(true), actual_hardware_writes_supported=Some(true), no_hid_device_opened=Some(false), no_feature_reports=Some(true), no_output_reports=Some(false), no_ffb_writes=Some(false), no_direct_torque_reports=Some(true), no_high_torque=Some(true), high_torque=Some(false), no_nonzero_above_limit=Some(true), no_out_of_scope=true, prior_actuator_profile_smoke_validated=Some(true), steering_proof_validated=Some(true), pidff_effect_setup_proven=Some(true), final_stop_all_attempted=Some(true), final_stop_all_sent=Some(true), controlled_angle_motion_proven=Some(false), movement_observed=Some(false), target_reached=Some(false), return_to_start_proven=Some(false), timeout_reached=Some(true), overshoot_detected=Some(false), no_steering_samples=Some(false), movement_delta_ok=false, post_stop_stable=Some(true), generated_at_valid=true, strategy_ok=true, profile=missing, profile_ok=false, target_degrees=1, movement_threshold_degrees=1, max_percent=5, duration_ms=2000, steering_sample_count=984, angle_delta_degrees=0.18127718013275285, post_stop_sample_count=118, write_attempts=5, writes_ok=5, write_errors=0, command_log_entries=5, command_log_no_direct_report=true, r5_device=true; native-controlled-angle-retry-smoke.json: success=false, command_ok=true, receipt_path_ok=true, selector_matches_lane_endpoint=true, confirmed=Some(true), dry_run=Some(false), preflight_only=Some(false), hardware_output_enabled=Some(true), actual_hardware_writes_supported=Some(true), no_hid_device_opened=Some(false), no_feature_reports=Some(true), no_output_reports=Some(false), no_ffb_writes=Some(false), no_direct_torque_reports=Some(true), no_high_torque=Some(true), high_torque=Some(false), no_nonzero_above_limit=Some(true), no_out_of_scope=true, prior_actuator_profile_smoke_validated=Some(true), steering_proof_validated=Some(true), pidff_effect_setup_proven=Some(true), final_stop_all_attempted=Some(true), final_stop_all_sent=Some(true), controlled_angle_motion_proven=Some(false), movement_observed=Some(false), target_reached=Some(false), return_to_start_proven=Some(false), timeout_reached=Some(true), overshoot_detected=Some(false), no_steering_samples=Some(false), movement_delta_ok=false, post_stop_stable=Some(true), generated_at_valid=true, strategy_ok=true, profile=bounded_pidff_micro_step_v2, profile_ok=true, target_degrees=1, movement_threshold_degrees=1, max_percent=5, duration_ms=2000, steering_sample_count=690, angle_delta_degrees=0.18127718013275285, post_stop_sample_count=84, write_attempts=33, writes_ok=33, write_errors=0, command_log_entries=33, command_log_no_direct_report=true, r5_device=true; native-controlled-angle-attempt-03-smoke.json: success=false, command_ok=true, receipt_path_ok=true, selector_matches_lane_endpoint=true, confirmed=Some(true), dry_run=Some(false), preflight_only=Some(false), hardware_output_enabled=Some(true), actual_hardware_writes_supported=Some(true), no_hid_device_opened=Some(false), no_feature_reports=Some(true), no_output_reports=Some(false), no_ffb_writes=Some(false), no_direct_torque_reports=Some(true), no_high_torque=Some(true), high_torque=Some(false), no_nonzero_above_limit=Some(true), no_out_of_scope=true, prior_actuator_profile_smoke_validated=Some(true), steering_proof_validated=Some(true), pidff_effect_setup_proven=Some(true), final_stop_all_attempted=Some(true), final_stop_all_sent=Some(true), controlled_angle_motion_proven=Some(false), movement_observed=Some(false), target_reached=Some(false), return_to_start_proven=Some(false), timeout_reached=Some(true), overshoot_detected=Some(false), no_steering_samples=Some(false), movement_delta_ok=false, post_stop_stable=Some(true), generated_at_valid=true, strategy_ok=true, profile=bounded_pidff_effect_lifecycle_v1, profile_ok=true, target_degrees=1, movement_threshold_degrees=1, max_percent=5, duration_ms=2000, steering_sample_count=673, angle_delta_degrees=0.18127718013275285, post_stop_sample_count=84, write_attempts=4, writes_ok=4, write_errors=0, command_log_entries=4, command_log_no_direct_report=true, r5_device=true; native-controlled-angle-closed-loop-smoke.json: success=false, command_ok=true, receipt_path_ok=true, selector_matches_lane_endpoint=true, confirmed=Some(true), dry_run=Some(false), preflight_only=Some(false), hardware_output_enabled=Some(true), actual_hardware_writes_supported=Some(true), no_hid_device_opened=Some(false), no_feature_reports=Some(true), no_output_reports=Some(false), no_ffb_writes=Some(false), no_direct_torque_reports=Some(true), no_high_torque=Some(true), high_torque=Some(false), no_nonzero_above_limit=Some(true), no_out_of_scope=true, prior_actuator_profile_smoke_validated=Some(true), steering_proof_validated=Some(true), pidff_effect_setup_proven=Some(true), final_stop_all_attempted=Some(true), final_stop_all_sent=Some(true), controlled_angle_motion_proven=Some(false), movement_observed=Some(false), target_reached=Some(false), return_to_start_proven=Some(false), timeout_reached=Some(true), overshoot_detected=Some(false), no_steering_samples=Some(false), movement_delta_ok=false, post_stop_stable=Some(true), generated_at_valid=true, strategy_ok=true, profile=closed_loop_pidff_angle_v1, profile_ok=true, target_degrees=1, movement_threshold_degrees=1, max_percent=5, duration_ms=2000, steering_sample_count=669, angle_delta_degrees=0.13183794918745662, post_stop_sample_count=84, write_attempts=672, writes_ok=672, write_errors=0, command_log_entries=672, command_log_no_direct_report=true, r5_device=true"
   },
   "zero_output_strategies": [
     {

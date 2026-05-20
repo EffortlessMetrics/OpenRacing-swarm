@@ -589,6 +589,23 @@ commands = [
 ]
 
 [[work_item]]
+id = "refresh-pre-output-readiness-receipt"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-refresh-pre-output-readiness-receipt"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/pre-output-readiness.json"
+claim_boundary = "No-output generated receipt refresh only; updates pre-output readiness navigation from current checked-in lane receipts without opening HID, creating captures, authorizing output, or making native-control, native-visible, smoke-ready, coexistence, simulator, firmware, or release-ready claims."
+blocked_by = "n/a"
+commands = [
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza pre-output-readiness --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/pre-output-readiness.json --json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-pre-output-refresh.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw \"expected native-visible verifier to remain blocked\" }",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

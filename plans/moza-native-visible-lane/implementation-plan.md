@@ -57,12 +57,12 @@ receipts, classified summaries, and bundle manifests; raw pcapng and bundle ZIP
 files remain local scratch artifacts. Remaining scenarios stay navigation-only
 until matching pcap receipts and summaries exist.
 
-The latest lane analysis, role-status, and artifact-index receipts report six
-proven input roles and one remaining generic auxiliary role. Steering,
-throttle, brake, HBP handbrake, KS rim controls, and ES rim controls are
-parser-proven. The SR-P clutch capture is parser-visible through two live R5 V1
-extended auxiliary slots, but the role-specific clutch semantic mapping remains
-unproven:
+The latest pre-output, lane analysis, role-status, and artifact-index receipts
+report six proven input roles and one remaining generic auxiliary role.
+Steering, throttle, brake, HBP handbrake, KS rim controls, and ES rim controls
+are parser-proven. The SR-P clutch capture is parser-visible through two live
+R5 V1 extended auxiliary slots, but the role-specific clutch semantic mapping
+remains unproven:
 `input_semantic_mapping_complete=false`,
 `semantic_candidate_count=2`,
 `ambiguous_semantic_candidate_count=0`, and
@@ -1805,6 +1805,61 @@ git diff --check
 Remove only this source-of-truth status refresh from the active goal, plan,
 handoff, and audit. Do not alter checked-in hardware receipts, sniff artifacts,
 parser fixtures, or generated lane indexes.
+
+## Work item: refresh-pre-output-readiness-receipt
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: current no-output readiness navigation
+Blocked by: n/a
+
+### Goal
+
+Regenerate the checked-in `pre-output-readiness.json` receipt so the no-output
+readiness summary matches the current lane receipts after the brake/HBP
+semantic promotion, Pit House install-source guidance, and closed-loop
+undertravel evidence slices.
+
+### Production delta
+
+Refresh `ci/hardware/moza-r5/2026-05-13/pre-output-readiness.json` from
+`wheelctl moza pre-output-readiness`. The regenerated receipt records six
+parser-proven input roles, one remaining generic clutch role, current Pit House
+availability/source guidance, native response proven, and native visible motion
+still false.
+
+### Non-goals
+
+No hardware output, HID open, new capture, raw pcap commit, authorization,
+native-visible promotion, smoke-ready promotion, Pit House coexistence claim,
+simulator claim, firmware, serial config, DFU, or release-ready claim.
+
+### Acceptance
+
+- `pre-output-readiness.json` reports brake and HBP handbrake as proven axes.
+- SR-P clutch remains `generic_aux` with `readiness_claim=false`.
+- Pit House availability/source guidance is recorded without proving
+  coexistence.
+- Native-visible verification remains blocked.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- moza pre-output-readiness --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/pre-output-readiness.json --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-pre-output-refresh.json --json
+if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Restore the previous pre-output readiness receipt and remove this work-item
+entry. Do not alter parser mappings, Pit House receipts, sniff artifacts, or
+native-visible undertravel receipts.
 
 ## Work item: native-visible-promotion
 
