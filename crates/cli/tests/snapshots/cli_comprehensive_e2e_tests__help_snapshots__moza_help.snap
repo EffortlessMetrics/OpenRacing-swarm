@@ -11,6 +11,8 @@ Commands:
   init-lane                          Create a Moza R5 validation lane manifest and capture directory
   probe                              Probe connected Moza HID devices without sending FFB writes
   status                             Summarize Moza device and lane readiness without opening HID devices
+  artifact-index                     Render a no-output Markdown/JSON index of Moza lane artifacts
+  bench-wizard                       Render a no-output Moza bench frontier plan
   descriptor                         Capture descriptor metadata for connected Moza HID devices
   capture-input                      Capture input reports from one Moza HID device without FFB writes
   steering-stream-proof              Record native steering angle samples from the lane R5 endpoint without output writes
@@ -30,6 +32,7 @@ Commands:
   actuator-profile-smoke             Run a native bounded PIDFF actuator profile after steering feedback is proven
   actuator-visible-smoke             Run a bounded native actuator smoke that must prove visible steering motion
   controlled-angle-smoke             Preflight or run one authorized feedback-bounded native controlled-angle attempt
+  pidff-lifecycle-trace              Decode the PIDFF lifecycle recorded in a controlled-angle receipt without hardware output
   authorize-visible-output           Authorize one exact native visible-motion retry after fresh bench-clear
   authorize-controlled-angle-output  Authorize one exact native controlled-angle hardware attempt after fresh bench-clear
   receipt-template                   Write a non-claiming starter receipt for manual Pit House or simulator evidence
