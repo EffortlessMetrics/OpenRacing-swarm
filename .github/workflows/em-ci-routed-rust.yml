@@ -111,6 +111,11 @@ jobs:
             exit 0
           fi
 
+          if [[ "${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}" == recovery/import-openracing-main-* ]]; then
+            emit "github" "recovery_import_uses_github_hosted" "false" "$trusted"
+            exit 0
+          fi
+
           if [ -z "${GH_TOKEN:-}" ]; then
             emit "github" "runner_token_missing" "true" "$trusted"
             exit 0
