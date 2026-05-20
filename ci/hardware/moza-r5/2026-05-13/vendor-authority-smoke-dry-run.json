@@ -1,0 +1,88 @@
+{
+  "success": true,
+  "schema_version": 1,
+  "artifact_kind": "moza_vendor_authority_smoke",
+  "claim_scope": "software_vendor_authority_smoke_dry_run",
+  "command": "wheelctl moza vendor-authority-smoke-dry-run",
+  "generated_at_utc": "2026-05-20T20:46:15Z",
+  "authorization_receipt": "ci\\hardware\\moza-r5\\2026-05-13\\vendor-authority-authorization.json",
+  "authorization_receipt_validated": true,
+  "authorization_consumed": false,
+  "exact_authorization": true,
+  "single_use_authorization": true,
+  "native_control_evidence": false,
+  "hardware_output_authorized": false,
+  "native_visible_ready": false,
+  "next_allowed_action": "Review this dry-run receipt before a separate bounded hardware authority attempt consumes the exact authorization receipt.",
+  "blocked_actions": [
+    "hardware send from dry-run command",
+    "authorization reuse",
+    "payload drift",
+    "configuration drift",
+    "firmware or DFU command",
+    "unknown host-to-device command",
+    "high-torque enablement",
+    "native-control claim",
+    "native-visible claim",
+    "smoke-ready claim",
+    "release-ready claim"
+  ],
+  "required_artifacts": [
+    "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md",
+    "docs/hardware/moza-r5-vendor-authority-test-plan.md",
+    "schemas/moza-vendor-authority-authorization.schema.json",
+    "schemas/moza-vendor-authority-smoke.schema.json",
+    "crates/hid-moza-protocol/src/serial/frame.rs",
+    "crates/hid-moza-protocol/src/serial/vendor_authority.rs",
+    "crates/cli/src/commands/moza.rs"
+  ],
+  "no_hid_device_opened": true,
+  "no_serial_device_opened": true,
+  "no_serial_query_sent": true,
+  "sent_output_writes": false,
+  "sent_configuration_writes": false,
+  "sent_firmware_or_dfu_commands": false,
+  "commands_sent": [],
+  "transport_kind": "dry_run_only",
+  "codec_status": "fixture_decode_verified_exact_frame",
+  "hardware_write_eligible": false,
+  "planned_next_output": {
+    "allowed": false,
+    "reason": "dry-run validates exact authorization only; the later hardware attempt must consume the authorization receipt",
+    "requires_exact_authorization_receipt": true,
+    "requires_bounded_hardware_attempt_command": true,
+    "command_id": "estop_set_ffb",
+    "command_name": "EstopCtrl_SetFfb",
+    "family": "authority_state",
+    "risk_class": "vendor_output_candidate",
+    "frame_sha256": "5ceac21f0e50faf287404178143f03abdea04acdc10c0d935f8dfb11b939dffe",
+    "payload_sha256": "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a"
+  },
+  "dry_run_checks": [
+    {
+      "check": "authorization_schema_valid",
+      "passed": true
+    },
+    {
+      "check": "authorization_not_consumed",
+      "passed": true
+    },
+    {
+      "check": "frame_hash_bound",
+      "passed": true
+    },
+    {
+      "check": "payload_hash_bound",
+      "passed": true
+    },
+    {
+      "check": "no_hardware_traffic_sent",
+      "passed": true
+    }
+  ],
+  "notes": [
+    "This dry-run validates a prior exact vendor-authority authorization receipt only.",
+    "It does not consume authorization and does not open HID, open serial, send queries, or send output/configuration/firmware writes.",
+    "It is not native-control, native-visible, smoke-ready, coexistence, simulator, or release-ready proof."
+  ]
+}

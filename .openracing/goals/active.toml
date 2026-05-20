@@ -950,6 +950,22 @@ commands = [
 ]
 
 [[work_item]]
+id = "vendor-authority-consumed-attempt-evidence"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-authority-attempt.json"
+claim_boundary = "Consumed exact vendor-authority attempt evidence only; records one bench-authorized estop_set_ffb serial frame after a fresh precondition-bound authorization and no-output smoke dry-run, consumes authorization, closes hardware_output_authorized=false, and makes no native-control, native-visible, smoke-ready, release-ready, PIDFF follow-up, retry, high-torque, firmware, or simulator claim."
+commands = [
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_attempt -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl checked_in_moza_lane_index_matches_artifact_index_renderer -- --nocapture",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

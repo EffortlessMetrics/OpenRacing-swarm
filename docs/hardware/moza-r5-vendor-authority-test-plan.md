@@ -97,6 +97,11 @@ Provide a step-by-step implementation queue for Moza R5 vendor authority infrast
    - The authorization command MUST validate that the receipt is fresh, observe-only, successful, shows the R5 serial/CDC Ports interface for `0x346E:0x0004`, and shows no running vendor app process that may own the serial port.
    - The authorization receipt MUST bind the precondition receipt path, R5 serial port/interface, precondition timestamp, and observe-only safety flags while keeping `native_control_evidence=false` and `native_visible_ready=false`.
    - Do not open HID, open serial, send read-only queries, send output/configuration/firmware writes, emit the bounded attempt command, or claim native-control/native-visible/smoke-ready/release-ready.
+10g. **Consumed exact authority attempt evidence**
+   - Record one bench-authorized `estop_set_ffb` vendor-authority attempt receipt after a fresh precondition-bound authorization and no-output smoke dry-run.
+   - The attempt receipt MUST consume the authorization, verify the R5 serial identity, record exactly one sent authorized frame, and close `hardware_output_authorized=false` after the send.
+   - The lane index MUST surface `vendor_authority_attempt_recorded` and the next allowed action as post-authority PIDFF response comparison before any motion claim.
+   - Do not retry the vendor-authority frame, add PIDFF follow-up output, claim native-control/native-visible/smoke-ready/release-ready, or treat the consumed receipt as reusable authorization.
 11+. **Closed-loop motion ladder**
 
 ## Required gating invariant
@@ -191,6 +196,16 @@ cargo test --locked -p wheelctl --bin wheelctl vendor_authority_authorization --
 cargo test --locked -p wheelctl --bin wheelctl vendor_authority_handoff -- --nocapture
 cargo test --locked -p wheelctl --bin wheelctl parse_moza_authorize_vendor_authority -- --nocapture
 cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+## Proof commands (PR10g)
+
+```powershell
+cargo test --locked -p wheelctl --bin wheelctl vendor_authority_attempt -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl checked_in_moza_lane_index_matches_artifact_index_renderer -- --nocapture
 cargo run --locked -p openracing-tools --bin package-surface -- --check
 python scripts/policy_file.py
 git diff --check

@@ -32,8 +32,8 @@ This section is diagnostic navigation only. `generic_aux` roles are valid parser
 
 This section is native-control research navigation only. It does not open HID, send serial traffic, create authorization, emit the hardware attempt command, or claim native-visible readiness.
 
-- State: `ready_for_exact_authority_handoff`
-- Next allowed action: Create an exact authorization receipt after fresh command-bound bench-clear, then run a no-output smoke dry-run.
+- State: `vendor_authority_attempt_recorded`
+- Next allowed action: Record post-authority PIDFF response comparison before any motion claim.
 - Hardware output authorized: `false`
 - Native visible ready: `false`
 - Hardware attempt command emitted: `false`
@@ -138,6 +138,9 @@ This section is protocol research/support navigation only. Passive sniff artifac
 | `parser-fixture-validation.json` | `json` | `passive_input_or_descriptor_evidence` |
 | `passive-verification.json` | `json` | `passive_input_or_descriptor_evidence` |
 | `role-status-sync.json` | `json` | `passive_input_or_descriptor_evidence` |
+| `vendor-authority-attempt.json` | `json` | `passive_input_or_descriptor_evidence` |
+| `vendor-authority-authorization.json` | `json` | `passive_input_or_descriptor_evidence` |
+| `vendor-authority-smoke-dry-run.json` | `json` | `passive_input_or_descriptor_evidence` |
 
 ## Zero, Watchdog, Disconnect
 
