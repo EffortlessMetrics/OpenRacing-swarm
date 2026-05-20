@@ -643,6 +643,25 @@ commands = [
 ]
 
 [[work_item]]
+id = "vendor-fake-serial-transport"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "fixtures/moza/r5/vendor-fake-serial-transport.json"
+claim_boundary = "No-output fake transport only; replays checked-in synthetic serial fixture bytes through the decoder, accepts only read-only status fixtures, and rejects write-like candidates without CLI, serial device open, query sends, read-only hardware probes, authorization receipts, output writes, configuration writes, hardware writes, native-visible, smoke-ready, coexistence, simulator, firmware, or release-ready claims."
+blocked_by = "n/a"
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_fake_serial_transport -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_serial_codec_fixtures -- --nocapture",
+  "cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

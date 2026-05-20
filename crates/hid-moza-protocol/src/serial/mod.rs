@@ -3,6 +3,8 @@
 //! This module does not expose wire codecs or hardware send paths.
 
 #[doc(hidden)]
+pub mod fake_transport;
+#[doc(hidden)]
 pub mod frame;
 #[doc(hidden)]
 pub mod vendor_authority;
