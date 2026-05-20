@@ -1580,6 +1580,7 @@ fn validate_sniff_scenario(value: &str) -> Result<()> {
         "enumeration"
         | "vendor-app-closed-idle"
         | "pit-house-open-idle"
+        | "pit-house-full-controls"
         | "pit-house-setting-change"
         | "pit-house-firmware-page-observed"
         | "simhub-open-idle"

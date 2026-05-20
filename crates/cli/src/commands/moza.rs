@@ -1726,6 +1726,9 @@ fn moza_passive_sniff_capture_action(scenario: &str) -> String {
         "pit-house-open-idle" => {
             "Open MOZA Pit House, wait for device discovery to settle, leave the app idle, and do not open firmware or update pages.".to_string()
         }
+        "pit-house-full-controls" => {
+            "With MOZA Pit House open and settled, move the wheel, pedals, HBP handbrake, paddles, wheel buttons, thumb controls, and encoders in the recorded operator order; do not open firmware or update pages.".to_string()
+        }
         "pit-house-setting-change" => {
             "In MOZA Pit House, record one explicit setting name, starting value, ending value, and whether it was restored; do not open firmware or update pages.".to_string()
         }
@@ -1746,7 +1749,9 @@ fn moza_passive_sniff_capture_action(scenario: &str) -> String {
 
 fn moza_passive_sniff_external_app(scenario: &str) -> &'static str {
     match scenario {
-        "pit-house-open-idle" | "pit-house-setting-change" => "MOZA Pit House",
+        "pit-house-open-idle" | "pit-house-full-controls" | "pit-house-setting-change" => {
+            "MOZA Pit House"
+        }
         "simhub-open-idle" | "simhub-output-session" => "SimHub",
         "simulator-session-start-stop" => "external simulator or bridge",
         _ => "external USB observer",
@@ -2210,6 +2215,12 @@ fn moza_passive_sniff_navigation_requirements()
             "Pit House open idle",
             "vendor-app baseline traffic",
             "do not open firmware or update pages",
+        ),
+        (
+            "pit-house-full-controls",
+            "Pit House full controls",
+            "vendor-app input/status traffic while wheel, pedals, HBP, and wheel controls move",
+            "record operator action order and keep firmware or update pages closed",
         ),
         (
             "pit-house-setting-change",
@@ -33315,7 +33326,7 @@ mod tests {
         assert_eq!(json_bool(sniff, "blocks_native_control"), Some(false));
         assert_eq!(json_bool(sniff, "blocks_native_visible"), Some(false));
         assert_eq!(json_bool(sniff, "blocks_smoke_ready"), Some(false));
-        assert_eq!(json_u64(sniff, "required_scenario_count"), Some(5));
+        assert_eq!(json_u64(sniff, "required_scenario_count"), Some(6));
         assert_eq!(json_u64(sniff, "recorded_scenario_count"), Some(0));
 
         let missing = sniff
@@ -33327,6 +33338,12 @@ mod tests {
                 .iter()
                 .any(|scenario| scenario.as_str() == Some("pit-house-open-idle")),
             "expected Pit House open-idle sniff scenario to be missing navigation only: {missing:?}"
+        );
+        assert!(
+            missing
+                .iter()
+                .any(|scenario| scenario.as_str() == Some("pit-house-full-controls")),
+            "expected Pit House full-controls sniff scenario to be missing navigation only: {missing:?}"
         );
 
         let scenarios = sniff
@@ -33350,6 +33367,26 @@ mod tests {
             json_bool(pit_house_open_idle, "readiness_claim"),
             Some(false)
         );
+        let pit_house_full_controls = scenarios
+            .iter()
+            .find(|scenario| json_string(scenario, "scenario") == Some("pit-house-full-controls"))
+            .ok_or("expected pit-house-full-controls scenario")?;
+        assert_eq!(
+            json_string(pit_house_full_controls, "status"),
+            Some("missing")
+        );
+        assert_eq!(
+            json_bool(pit_house_full_controls, "navigation_blocker_only"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(pit_house_full_controls, "blocks_native_visible"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(pit_house_full_controls, "readiness_claim"),
+            Some(false)
+        );
 
         let markdown = render_moza_lane_artifact_index_markdown(&receipt);
         assert!(markdown.contains("Passive USB Sniffing"));
@@ -33360,6 +33397,9 @@ mod tests {
                 "| `pit-house-open-idle` | `missing` | `missing` | `missing` | `missing` |"
             )
         );
+        assert!(markdown.contains(
+            "| `pit-house-full-controls` | `missing` | `missing` | `missing` | `missing` |"
+        ));
         Ok(())
     }
 
@@ -33377,7 +33417,7 @@ mod tests {
         assert_eq!(json_bool(sniff, "blocks_native_control"), Some(false));
         assert_eq!(json_bool(sniff, "blocks_native_visible"), Some(false));
         assert_eq!(json_bool(sniff, "blocks_smoke_ready"), Some(false));
-        assert_eq!(json_u64(sniff, "required_scenario_count"), Some(5));
+        assert_eq!(json_u64(sniff, "required_scenario_count"), Some(6));
         assert_eq!(json_u64(sniff, "recorded_scenario_count"), Some(1));
         assert_eq!(
             json_bool(&receipt, "hardware_output_authorized"),
@@ -33424,12 +33464,21 @@ mod tests {
                 .any(|scenario| scenario.as_str() == Some("simhub-output-session")),
             "expected missing SimHub sniff scenario to remain navigation-only: {missing:?}"
         );
+        assert!(
+            missing
+                .iter()
+                .any(|scenario| scenario.as_str() == Some("pit-house-full-controls")),
+            "expected missing Pit House full-controls scenario to remain navigation-only: {missing:?}"
+        );
         let markdown = render_moza_bench_wizard_markdown(&receipt);
         assert!(markdown.contains("Passive USB Sniffing"));
         assert!(markdown.contains("protocol research/support navigation only"));
         assert!(markdown.contains("do not authorize output"));
         assert!(markdown.contains(
             "| `pit-house-open-idle` | `summary_recorded` | `present_non_claiming` | `present_non_claiming` | `present_non_claiming` |"
+        ));
+        assert!(markdown.contains(
+            "| `pit-house-full-controls` | `missing` | `missing` | `missing` | `missing` |"
         ));
         Ok(())
     }

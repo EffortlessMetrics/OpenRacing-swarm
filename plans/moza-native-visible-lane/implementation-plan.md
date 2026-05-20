@@ -50,10 +50,12 @@ to concrete receipts and confirms that the objective is still incomplete:
 native-visible, Pit House coexistence, simulator telemetry, bounded simulator
 FFB, and smoke-ready promotion remain missing.
 
-`ci/hardware/sniff/moza-r5/2026-05-13` now contains plan-only passive USB sniff
-artifacts for Pit House, SimHub, and simulator protocol research. The artifact
-index marks those plans as `present_non_claiming`; each scenario remains
-`partial_or_unaccepted` until a matching pcap receipt and summary exist.
+`ci/hardware/sniff/moza-r5/2026-05-13` now contains passive USB sniff artifacts
+for Pit House, SimHub, and simulator protocol research. The Pit House
+`open-idle` and `full-controls` scenarios have checked-in non-claiming plans,
+receipts, classified summaries, and bundle manifests; raw pcapng and bundle ZIP
+files remain local scratch artifacts. Remaining scenarios stay navigation-only
+until matching pcap receipts and summaries exist.
 
 The latest pre-output and artifact-index receipts also surface diagnostic
 candidate-only R5 V1 extended slots for the brake, clutch, and handbrake
@@ -1663,6 +1665,81 @@ git diff --check
 Remove only the R5 V1 brake/HBP parser mapping, regenerated no-output receipts,
 tests, and this work-item entry. Do not remove source captures, closed-loop
 output receipts, Pit House artifacts, or native-visible failure evidence.
+
+## Work item: pit-house-full-controls-sniff-evidence
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: passive protocol evidence review before any future output family
+Blocked by: n/a
+
+### Goal
+
+Record the Pit House full-controls passive USB sniff capture as checked-in,
+non-claiming protocol/support evidence after the open-idle capture.
+
+### Production delta
+
+Added the `pit-house-full-controls` passive sniff scenario, generated its
+`sniff-plan.json`, and checked in `sniff-receipt.json`,
+`sniff-summary.json`, and `sniff-bundle-manifest.json` under
+`ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls`.
+
+The receipt records the operator's 60.131 second Pit House 1.3.8.38 release
+capture, the action order of wheel, HBP handbrake, gas, brake, clutch, and
+wheel-button movement, and confirms that OpenRacing opened no HID device and
+sent no output, feature, serial, firmware, or DFU commands. The summary records
+only device-to-host input/status report `0x01`, no standard PIDFF output
+reports, and no vendor/device-specific host-to-device decode candidates.
+
+### Non-goals
+
+No hardware output, no OpenRacing HID open, no raw pcap commit, no bundle ZIP
+commit, no vendor report decode claim, no native-control claim, no
+native-visible promotion, no smoke-ready promotion, no Pit House coexistence
+claim, no simulator claim, no semantic-control promotion, no serial config, no
+firmware, and no DFU.
+
+### Acceptance
+
+- The scenario taxonomy accepts `pit-house-full-controls` for plans and
+  receipts.
+- The receipt records `openracing_hardware_output=false`,
+  `openracing_hid_device_opened=false`, and all readiness claims false.
+- The classified summary records only input/status traffic for report `0x01`
+  and `decode_recommended=false`.
+- The bundle manifest records `includes_raw_pcapng=false`.
+- The artifact index records `pit-house-full-controls` as present non-claiming
+  evidence while leaving native-visible, smoke-ready, coexistence, and release
+  claims blocked.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-plan --family moza-r5 --scenario pit-house-full-controls --lane ci/hardware/moza-r5/2026-05-13 --operator Steven --device-note "Moza R5 PID 0x0004 with KS/ES wheels, SR-P pedals, and HBP handbrake attached through the R5 hub" --capture-tool usbpcap --capture-tool wireshark --capture-tool tshark --platform-hint windows --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-plan.json --json
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-receipt --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-plan.json --pcapng target/sniff/pit-house-full-controls/capture.pcapng --operator Steven --app "MOZA Pit House 1.3.8.38 release" --scenario pit-house-full-controls --evidence <operator-evidence> --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-receipt.json --json
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-summary --pcapng target/sniff/pit-house-full-controls/capture.pcapng --vendor 0x346E --product 0x0004 --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-summary.json --md-out target/sniff/pit-house-full-controls/sniff-summary.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-bundle --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-plan.json --receipt ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-receipt.json --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-summary.json --operator-notes target/sniff/pit-house-full-controls/operator-notes.md --out target/sniff/pit-house-full-controls/openracing-sniff-bundle.zip --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-bundle-manifest.json --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-pit-house-full-controls.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json
+.\target\debug\wheelctl.exe moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-pit-house-full-controls.json --json
+if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo test --locked -p wheelctl --bin wheelctl passive_sniff -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl artifact_index -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the `pit-house-full-controls` scenario wiring, generated
+non-claiming sniff artifacts, artifact-index refresh, tests, and this work-item
+entry. Do not remove Pit House open-idle evidence, controlled-angle receipts,
+semantic-input artifacts, or local raw pcap artifacts.
 
 ## Work item: native-visible-promotion
 

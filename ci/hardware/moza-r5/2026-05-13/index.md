@@ -66,7 +66,7 @@ This section is external-smoke navigation only. Simulator telemetry and bounded 
 
 This section is protocol research/support navigation only. Passive sniff artifacts do not authorize output, do not satisfy native-visible or smoke-ready gates, and are not required for native OpenRacing control.
 
-- Recorded scenarios: `1` / `5`
+- Recorded scenarios: `2` / `6`
 - Readiness claim: `false`
 - Blocks native control: `false`
 - Blocks native visible: `false`
@@ -75,6 +75,7 @@ This section is protocol research/support navigation only. Passive sniff artifac
 | Scenario | Status | Plan | Receipt | Summary |
 | --- | --- | --- | --- | --- |
 | `pit-house-open-idle` | `summary_recorded` | `present_non_claiming` | `present_non_claiming` | `present_non_claiming` |
+| `pit-house-full-controls` | `summary_recorded` | `present_non_claiming` | `present_non_claiming` | `present_non_claiming` |
 | `pit-house-setting-change` | `partial_or_unaccepted` | `present_non_claiming` | `missing` | `missing` |
 | `simhub-open-idle` | `partial_or_unaccepted` | `present_non_claiming` | `missing` | `missing` |
 | `simhub-output-session` | `partial_or_unaccepted` | `present_non_claiming` | `missing` | `missing` |

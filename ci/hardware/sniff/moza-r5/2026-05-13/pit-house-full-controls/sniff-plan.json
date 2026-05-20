@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "success": true,
+  "command": "wheelctl hardware sniff-plan",
+  "generated_at_utc": "2026-05-20T02:28:58Z",
+  "family": "moza-r5",
+  "scenario": "pit-house-full-controls",
+  "lane": "ci/hardware/moza-r5/2026-05-13",
+  "operator": "Steven",
+  "device_note": "Moza R5 PID 0x0004 with KS/ES wheels, SR-P pedals, and HBP handbrake attached through the R5 hub",
+  "capture_kind": "software_usb_urb_capture",
+  "capture_tools": [
+    "tshark",
+    "usbpcap",
+    "wireshark"
+  ],
+  "platform_hint": "windows",
+  "allowed_actions": [
+    "capture host-side USB URBs with Wireshark, USBPcap, tshark, or usbmon",
+    "observe operating-system, vendor-app, simulator, or bridge traffic",
+    "record operator notes, scenario details, pcapng hashes, and support evidence",
+    "stop capture and save the passive observation as .pcapng"
+  ],
+  "forbidden_actions": [
+    "install Zadig",
+    "replace HID driver",
+    "switch device to WinUSB",
+    "run OpenRacing output commands",
+    "send OpenRacing HID output reports",
+    "send OpenRacing HID feature reports",
+    "touch serial configuration",
+    "open firmware update flows",
+    "run firmware or DFU tools"
+  ],
+  "pre_capture_checklist": [
+    "confirm the target device stack is attached before starting capture",
+    "start USBPcap, Wireshark, tshark, or usbmon before launching or changing the external app",
+    "keep OpenRacing hardware output commands stopped for this passive capture",
+    "keep firmware, update, DFU, driver replacement, Zadig, and WinUSB conversion flows closed"
+  ],
+  "post_capture_checklist": [
+    "stop capture and save the pcapng in local scratch storage",
+    "record operator notes before bundling",
+    "run sniff-receipt, sniff-notes-template, and sniff-summary before treating the capture as lane evidence",
+    "do not commit raw pcapng unless it is separately reviewed for size, sensitivity, and operator consent"
+  ],
+  "operator_notes_required": [
+    "scenario performed",
+    "external app, simulator, or OS stack observed",
+    "capture duration or start/stop times",
+    "device stack attached",
+    "whether firmware/update/DFU pages stayed closed",
+    "whether raw pcapng was kept local or reviewed for bundling"
+  ],
+  "raw_pcap_commit_default": false,
+  "evidence_status": "passive_external_usb_observation",
+  "native_control_evidence": false,
+  "openracing_hardware_output": false,
+  "external_app_may_have_sent_output": true,
+  "satisfies_native_response_ready": false,
+  "satisfies_native_visible_ready": false,
+  "satisfies_smoke_ready": false,
+  "satisfies_release_ready": false,
+  "readiness_claims": {
+    "satisfies_native_response_ready": false,
+    "satisfies_native_visible_ready": false,
+    "satisfies_smoke_ready": false,
+    "satisfies_release_ready": false
+  },
+  "notes": [
+    "passive sniffing observes host-side USB traffic only",
+    "this plan is protocol research/support evidence, not OpenRacing hardware output",
+    "sniff artifacts cannot satisfy native response, native visible, smoke, or release gates"
+  ]
+}
