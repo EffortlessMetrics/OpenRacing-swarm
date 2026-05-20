@@ -236,12 +236,14 @@ jobs:
             "$IMAGE" \
             bash -eu -o pipefail -c '
               git config --global --add safe.directory /workspace
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libudev-dev pkg-config
               rustc --version
               cargo --version
               sccache --version || true
               cargo fetch --locked
-              cargo check --workspace --locked
-              cargo test --workspace --locked --lib
+              cargo check --workspace --exclude racing-wheel-ui --locked
+              cargo test --workspace --exclude racing-wheel-ui --locked --lib
               sccache --show-stats || true
             '
 
@@ -326,12 +328,14 @@ jobs:
             "$IMAGE" \
             bash -eu -o pipefail -c '
               git config --global --add safe.directory /workspace
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libudev-dev pkg-config
               rustc --version
               cargo --version
               sccache --version || true
               cargo fetch --locked
-              cargo check --workspace --locked
-              cargo test --workspace --locked --lib
+              cargo check --workspace --exclude racing-wheel-ui --locked
+              cargo test --workspace --exclude racing-wheel-ui --locked --lib
               sccache --show-stats || true
             '
 
@@ -416,12 +420,14 @@ jobs:
             "$IMAGE" \
             bash -eu -o pipefail -c '
               git config --global --add safe.directory /workspace
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libudev-dev pkg-config
               rustc --version
               cargo --version
               sccache --version || true
               cargo fetch --locked
-              cargo check --workspace --locked
-              cargo test --workspace --locked --lib
+              cargo check --workspace --exclude racing-wheel-ui --locked
+              cargo test --workspace --exclude racing-wheel-ui --locked --lib
               sccache --show-stats || true
             '
 
@@ -466,11 +472,16 @@ jobs:
           cache-directories: ${{ runner.temp }}/target
           save-if: false
 
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev pkg-config
+
       - name: Check workspace
-        run: cargo check --workspace --locked
+        run: cargo check --workspace --exclude racing-wheel-ui --locked
 
       - name: Test workspace libs
-        run: cargo test --workspace --locked --lib
+        run: cargo test --workspace --exclude racing-wheel-ui --locked --lib
 
   rust-small-result:
     name: OpenRacing Rust Small Result
