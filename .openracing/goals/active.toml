@@ -782,6 +782,25 @@ commands = [
 ]
 
 [[work_item]]
+id = "vendor-authority-attempt-handoff"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "crates/cli/src/commands/moza.rs"
+claim_boundary = "No-output operator handoff only; artifact-index and bench-wizard surface the exact vendor-authority command id, frame, required bench-clear text, authorization receipt, and smoke dry-run paths after closed-loop PIDFF undertravel, but they do not create authorization, emit the hardware attempt command, run serial writes, native-control, native-visible, smoke-ready, coexistence, simulator, or release-ready claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_handoff -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl checked_in_moza_lane_index_matches_artifact_index_renderer -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo hakari verify",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

@@ -125,6 +125,15 @@ const NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE: &str =
     "native-controlled-angle-closed-loop-smoke.json";
 const NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_FAILURE_ANALYSIS_FILE: &str =
     "native-controlled-angle-closed-loop-failure-analysis.json";
+const VENDOR_AUTHORITY_AUTHORIZATION_FILE: &str = "vendor-authority-authorization.json";
+const VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE: &str = "vendor-authority-smoke-dry-run.json";
+const VENDOR_AUTHORITY_ATTEMPT_FILE: &str = "vendor-authority-attempt.json";
+const VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE: &str = "vendor-post-authority-pidff-response.json";
+const VENDOR_AUTHORITY_HANDOFF_COMMAND_ID: &str = "estop_set_ffb";
+const VENDOR_AUTHORITY_HANDOFF_FRAME_HEX: &str = "7E02461C0001F0";
+const VENDOR_AUTHORITY_HANDOFF_PAYLOAD_HEX: &str = "01";
+const VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE: &str =
+    "bench clear for exact estop_set_ffb: R5 stable, hands clear, wheel clear";
 const NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILES: &[&str] = &[
     NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE,
     NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE,
@@ -1475,6 +1484,7 @@ fn moza_artifact_index_receipt(
     let input_role_semantics = moza_input_role_semantics_summary(lane);
     let pit_house_compatibility = moza_pit_house_compatibility_summary(lane);
     let simulator_compatibility = moza_simulator_compatibility_summary(lane);
+    let vendor_authority_navigation = moza_vendor_authority_navigation_summary(lane);
     let passive_sniff_navigation = moza_passive_sniff_navigation_summary(lane);
     Ok(serde_json::json!({
         "success": true,
@@ -1498,6 +1508,7 @@ fn moza_artifact_index_receipt(
         "input_role_semantics": input_role_semantics,
         "pit_house_compatibility": pit_house_compatibility,
         "simulator_compatibility": simulator_compatibility,
+        "vendor_authority_navigation": vendor_authority_navigation,
         "passive_sniff_navigation": passive_sniff_navigation,
         "required_artifact_index": support_status
             .get("artifact_index")
@@ -1544,6 +1555,7 @@ fn moza_bench_wizard_receipt(
     let input_role_semantics = moza_input_role_semantics_summary(lane);
     let pit_house_compatibility = moza_pit_house_compatibility_summary(lane);
     let simulator_compatibility = moza_simulator_compatibility_summary(lane);
+    let vendor_authority_navigation = moza_vendor_authority_navigation_summary(lane);
     let passive_sniff_navigation = moza_passive_sniff_navigation_summary(lane);
 
     Ok(serde_json::json!({
@@ -1571,6 +1583,7 @@ fn moza_bench_wizard_receipt(
         "input_role_semantics": input_role_semantics,
         "pit_house_compatibility": pit_house_compatibility,
         "simulator_compatibility": simulator_compatibility,
+        "vendor_authority_navigation": vendor_authority_navigation,
         "passive_sniff_navigation": passive_sniff_navigation,
         "safe_no_output_commands": moza_bench_wizard_safe_no_output_commands(lane),
         "active_blockers": moza_bench_wizard_active_blockers(lane),
@@ -1626,6 +1639,18 @@ fn moza_bench_wizard_next_operator_step(lane: &Path, readiness: &Value, frontier
         });
     }
 
+    if lane.join(VENDOR_AUTHORITY_ATTEMPT_FILE).is_file() {
+        return serde_json::json!({
+            "kind": "post_authority_pidff_response_comparison",
+            "summary": "a bounded vendor-authority attempt receipt is recorded; compare baseline and post-authority PIDFF response before any motion claim or further output",
+            "hardware_output_allowed_now": false,
+            "authorization_created_by_wizard": false,
+            "no_openracing_output": true,
+            "vendor_authority_attempt_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
+            "planned_post_authority_receipt": VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE
+        });
+    }
+
     if lane
         .join(NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE)
         .is_file()
@@ -1634,6 +1659,12 @@ fn moza_bench_wizard_next_operator_step(lane: &Path, readiness: &Value, frontier
             .join(NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE)
             .is_file()
         {
+            if lane
+                .join(NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE)
+                .is_file()
+            {
+                return moza_vendor_authority_next_operator_step(lane);
+            }
             if let Some(step) = moza_passive_sniff_next_operator_step(lane) {
                 return step;
             }
@@ -1694,6 +1725,212 @@ fn moza_bench_wizard_next_operator_step(lane: &Path, readiness: &Value, frontier
         "summary": "refresh no-output readiness and verifier receipts before selecting the next lane action",
         "hardware_output_allowed_now": false
     })
+}
+
+fn moza_vendor_authority_next_operator_step(lane: &Path) -> Value {
+    let authorization_path = lane.join(VENDOR_AUTHORITY_AUTHORIZATION_FILE);
+    let smoke_path = lane.join(VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE);
+    let authorization_recorded = authorization_path.is_file();
+    let smoke_dry_run_recorded = smoke_path.is_file();
+
+    if authorization_recorded && smoke_dry_run_recorded {
+        return serde_json::json!({
+            "kind": "awaiting_separate_vendor_authority_attempt",
+            "summary": "exact vendor-authority authorization and no-output smoke dry-run receipts are recorded; any serial write still requires a separately requested bounded attempt and this wizard emits no hardware attempt command",
+            "hardware_output_allowed_now": false,
+            "authorization_created_by_wizard": false,
+            "authorization_receipt_recorded": true,
+            "smoke_dry_run_receipt_recorded": true,
+            "hardware_attempt_command_emitted": false,
+            "attempt_command_must_be_operator_requested": true,
+            "authorization_receipt": VENDOR_AUTHORITY_AUTHORIZATION_FILE,
+            "smoke_dry_run_receipt": VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE,
+            "planned_output_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
+            "blocked_actions": vendor_authority_handoff_blocked_actions()
+        });
+    }
+
+    if authorization_recorded {
+        return serde_json::json!({
+            "kind": "awaiting_vendor_authority_smoke_dry_run",
+            "summary": "exact vendor-authority authorization is recorded; run only the no-output smoke dry-run before any separate bounded hardware attempt",
+            "hardware_output_allowed_now": false,
+            "authorization_created_by_wizard": false,
+            "authorization_receipt_recorded": true,
+            "smoke_dry_run_receipt_recorded": false,
+            "hardware_attempt_command_emitted": false,
+            "authorization_receipt": VENDOR_AUTHORITY_AUTHORIZATION_FILE,
+            "required_smoke_dry_run_receipt": VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE,
+            "commands": [
+                {
+                    "name": "validate_vendor_authority_smoke_dry_run",
+                    "output_enabled": false,
+                    "opens_serial": false,
+                    "sends_read_only_query": false,
+                    "sends_output": false,
+                    "command": vendor_authority_smoke_dry_run_command(lane)
+                }
+            ],
+            "blocked_actions": vendor_authority_handoff_blocked_actions()
+        });
+    }
+
+    serde_json::json!({
+        "kind": "prepare_vendor_authority_attempt_handoff",
+        "summary": "closed-loop standard PIDFF undertravel is recorded; prepare the exact vendor-authority authorization and no-output smoke dry-run without emitting a hardware attempt command",
+        "hardware_output_allowed_now": false,
+        "authorization_created_by_wizard": false,
+        "authorization_receipt_recorded": false,
+        "smoke_dry_run_receipt_recorded": false,
+        "hardware_attempt_command_emitted": false,
+        "attempt_command_must_be_operator_requested": true,
+        "no_openracing_output": true,
+        "required_bench_clear_evidence": VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE,
+        "command_id": VENDOR_AUTHORITY_HANDOFF_COMMAND_ID,
+        "frame_hex": VENDOR_AUTHORITY_HANDOFF_FRAME_HEX,
+        "payload_hex": VENDOR_AUTHORITY_HANDOFF_PAYLOAD_HEX,
+        "risk_class": "vendor_output_candidate",
+        "authorization_receipt": VENDOR_AUTHORITY_AUTHORIZATION_FILE,
+        "smoke_dry_run_receipt": VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE,
+        "planned_output_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
+        "commands": [
+            {
+                "name": "create_exact_vendor_authority_authorization",
+                "output_enabled": false,
+                "opens_hid": false,
+                "opens_serial": false,
+                "sends_read_only_query": false,
+                "sends_output": false,
+                "creates_single_use_authorization": true,
+                "requires_fresh_operator_bench_clear": true,
+                "command": vendor_authority_authorization_command(lane)
+            },
+            {
+                "name": "validate_vendor_authority_smoke_dry_run",
+                "output_enabled": false,
+                "opens_serial": false,
+                "sends_read_only_query": false,
+                "sends_output": false,
+                "requires_authorization_receipt": VENDOR_AUTHORITY_AUTHORIZATION_FILE,
+                "command": vendor_authority_smoke_dry_run_command(lane)
+            }
+        ],
+        "blocked_actions": vendor_authority_handoff_blocked_actions()
+    })
+}
+
+fn moza_vendor_authority_navigation_summary(lane: &Path) -> Value {
+    let authorization_recorded = lane.join(VENDOR_AUTHORITY_AUTHORIZATION_FILE).is_file();
+    let smoke_dry_run_recorded = lane.join(VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE).is_file();
+    let attempt_recorded = lane.join(VENDOR_AUTHORITY_ATTEMPT_FILE).is_file();
+    let closed_loop_undertravel_recorded = lane
+        .join(NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE)
+        .is_file();
+    let standard_pidff_diagnosis_recorded = lane
+        .join(NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE)
+        .is_file();
+    let state = if attempt_recorded {
+        "vendor_authority_attempt_recorded"
+    } else if authorization_recorded && smoke_dry_run_recorded {
+        "awaiting_separate_bounded_attempt"
+    } else if authorization_recorded {
+        "awaiting_no_output_smoke_dry_run"
+    } else if closed_loop_undertravel_recorded && standard_pidff_diagnosis_recorded {
+        "ready_for_exact_authority_handoff"
+    } else {
+        "awaiting_closed_loop_undertravel_evidence"
+    };
+
+    serde_json::json!({
+        "artifact_kind": "moza_vendor_authority_navigation",
+        "claim_scope": "native_control_vendor_authority_navigation_only",
+        "state": state,
+        "native_control_evidence": false,
+        "hardware_output_authorized": false,
+        "native_visible_ready": false,
+        "smoke_ready": false,
+        "no_hid_device_opened": true,
+        "no_ffb_writes": true,
+        "no_output_reports": true,
+        "no_feature_reports": true,
+        "no_serial_config_commands": true,
+        "no_firmware_or_dfu_commands": true,
+        "pit_house_dependency": false,
+        "simulator_dependency": false,
+        "closed_loop_undertravel_recorded": closed_loop_undertravel_recorded,
+        "standard_pidff_diagnosis_recorded": standard_pidff_diagnosis_recorded,
+        "authorization_receipt_recorded": authorization_recorded,
+        "smoke_dry_run_receipt_recorded": smoke_dry_run_recorded,
+        "vendor_authority_attempt_recorded": attempt_recorded,
+        "hardware_attempt_command_emitted": false,
+        "next_allowed_action": if attempt_recorded {
+            "Record post-authority PIDFF response comparison before any motion claim."
+        } else if authorization_recorded && smoke_dry_run_recorded {
+            "A separately requested bounded hardware attempt may consume the exact receipts; this navigation does not emit the serial write command."
+        } else if authorization_recorded {
+            "Run the no-output vendor-authority smoke dry-run before any separate bounded attempt."
+        } else if closed_loop_undertravel_recorded && standard_pidff_diagnosis_recorded {
+            "Create an exact authorization receipt after fresh command-bound bench-clear, then run a no-output smoke dry-run."
+        } else {
+            "Preserve undertravel evidence and finish the vendor-authority prerequisites before any hardware attempt."
+        },
+        "exact_command": {
+            "command_id": VENDOR_AUTHORITY_HANDOFF_COMMAND_ID,
+            "frame_hex": VENDOR_AUTHORITY_HANDOFF_FRAME_HEX,
+            "payload_hex": VENDOR_AUTHORITY_HANDOFF_PAYLOAD_HEX,
+            "risk_class": "vendor_output_candidate",
+            "requires_exact_authorization": true,
+            "hardware_attempt_command_emitted": false
+        },
+        "artifacts": {
+            "authorization_receipt": VENDOR_AUTHORITY_AUTHORIZATION_FILE,
+            "smoke_dry_run_receipt": VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE,
+            "attempt_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
+            "post_authority_pidff_response_receipt": VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE
+        },
+        "required_bench_clear_evidence": VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE,
+        "blocked_actions": vendor_authority_handoff_blocked_actions(),
+        "notes": [
+            "Vendor-authority navigation is native-control research support; it is not a Pit House, SimHub, or simulator dependency.",
+            "The bench wizard may surface no-output authorization and smoke commands, but it must not emit the hardware attempt command.",
+            "A consumed attempt receipt remains non-claiming until later PIDFF response comparison and native-visible verification pass."
+        ]
+    })
+}
+
+fn vendor_authority_authorization_command(lane: &Path) -> String {
+    format!(
+        "wheelctl moza authorize-vendor-authority --command-id {} --frame-hex {} --bench-clear-evidence '{}' --json-out {} --json --confirm-exact-vendor-authority-authorization",
+        VENDOR_AUTHORITY_HANDOFF_COMMAND_ID,
+        VENDOR_AUTHORITY_HANDOFF_FRAME_HEX,
+        VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE,
+        lane.join(VENDOR_AUTHORITY_AUTHORIZATION_FILE).display()
+    )
+}
+
+fn vendor_authority_smoke_dry_run_command(lane: &Path) -> String {
+    format!(
+        "wheelctl moza vendor-authority-smoke-dry-run --authorization {} --json-out {} --json --confirm-no-output-smoke-dry-run",
+        lane.join(VENDOR_AUTHORITY_AUTHORIZATION_FILE).display(),
+        lane.join(VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE).display()
+    )
+}
+
+fn vendor_authority_handoff_blocked_actions() -> Vec<&'static str> {
+    vec![
+        "hardware attempt command from bench-wizard",
+        "authorization reuse",
+        "payload drift",
+        "configuration drift",
+        "firmware or DFU command",
+        "unknown host-to-device command",
+        "direct HID report 0xaf",
+        "high torque",
+        "native-control claim",
+        "native-visible claim",
+        "smoke-ready claim",
+        "release-ready claim",
+    ]
 }
 
 fn moza_passive_sniff_next_operator_step(lane: &Path) -> Option<Value> {
@@ -32123,6 +32360,7 @@ fn render_moza_lane_artifact_index_markdown(receipt: &Value) -> String {
     out.push_str(&format!("- Release ready: `{release_ready}`\n\n"));
 
     push_input_role_semantics_markdown(&mut out, receipt);
+    push_vendor_authority_navigation_markdown(&mut out, receipt);
     push_pit_house_compatibility_markdown(&mut out, receipt);
     push_simulator_compatibility_markdown(&mut out, receipt);
     push_passive_sniff_navigation_markdown(&mut out, receipt);
@@ -32235,6 +32473,7 @@ fn render_moza_bench_wizard_markdown(receipt: &Value) -> String {
     push_next_operator_step_commands_markdown(&mut out, step);
 
     push_input_role_semantics_markdown(&mut out, receipt);
+    push_vendor_authority_navigation_markdown(&mut out, receipt);
     push_pit_house_compatibility_markdown(&mut out, receipt);
     push_simulator_compatibility_markdown(&mut out, receipt);
     push_passive_sniff_navigation_markdown(&mut out, receipt);
@@ -32279,7 +32518,7 @@ fn render_moza_bench_wizard_markdown(receipt: &Value) -> String {
     out.push('\n');
 
     out.push_str("## Output Boundary\n\n");
-    out.push_str("Output is not authorized by this wizard. Any real controlled-angle attempt needs a separate fresh command-bound bench-clear plus exact authorization receipt. Do not use this wizard as permission to rerun, raise force, extend dwell, run 30/90 degrees, use direct report 0x20, high torque, serial config, firmware, or DFU.\n\n");
+    out.push_str("Output is not authorized by this wizard. Any real controlled-angle or vendor-authority attempt needs a separate fresh command-bound bench-clear plus exact authorization receipt. Do not use this wizard as permission to rerun, raise force, extend dwell, run 30/90 degrees, use direct report 0x20, high torque, serial config, firmware, or DFU.\n\n");
     if let Some(evidence) = step
         .get("required_bench_clear_evidence")
         .and_then(Value::as_str)
@@ -32299,6 +32538,20 @@ fn render_moza_bench_wizard_markdown(receipt: &Value) -> String {
         out.push_str(&format!(
             "- Planned output receipt: `{}`\n",
             markdown_escape(planned_output)
+        ));
+    }
+    if let Some(smoke) = step.get("smoke_dry_run_receipt").and_then(Value::as_str) {
+        out.push_str(&format!(
+            "- Smoke dry-run receipt: `{}`\n",
+            markdown_escape(smoke)
+        ));
+    }
+    if let Some(emitted) = step
+        .get("hardware_attempt_command_emitted")
+        .and_then(Value::as_bool)
+    {
+        out.push_str(&format!(
+            "- Hardware attempt command emitted by wizard: `{emitted}`\n"
         ));
     }
     if step.get("authorization_receipt").is_some() || step.get("planned_output_receipt").is_some() {
@@ -32405,6 +32658,83 @@ fn push_input_role_semantics_markdown(out: &mut String, receipt: &Value) {
         }
         out.push('\n');
     }
+}
+
+fn push_vendor_authority_navigation_markdown(out: &mut String, receipt: &Value) {
+    let Some(summary) = receipt.get("vendor_authority_navigation") else {
+        return;
+    };
+    if summary.is_null() {
+        return;
+    }
+
+    let state = json_string(summary, "state").unwrap_or("unknown");
+    let next_allowed_action =
+        json_string(summary, "next_allowed_action").unwrap_or("review source-of-truth");
+    let hardware_output_authorized =
+        json_bool(summary, "hardware_output_authorized").unwrap_or(false);
+    let native_visible_ready = json_bool(summary, "native_visible_ready").unwrap_or(false);
+    let hardware_attempt_command_emitted =
+        json_bool(summary, "hardware_attempt_command_emitted").unwrap_or(false);
+    let command = summary.get("exact_command").unwrap_or(&Value::Null);
+    let command_id = json_string(command, "command_id").unwrap_or("unknown");
+    let frame_hex = json_string(command, "frame_hex").unwrap_or("unknown");
+    let payload_hex = json_string(command, "payload_hex").unwrap_or("unknown");
+    let risk_class = json_string(command, "risk_class").unwrap_or("unknown");
+
+    out.push_str("## Vendor Authority Handoff\n\n");
+    out.push_str("This section is native-control research navigation only. It does not open HID, send serial traffic, create authorization, emit the hardware attempt command, or claim native-visible readiness.\n\n");
+    out.push_str(&format!("- State: `{}`\n", markdown_escape(state)));
+    out.push_str(&format!(
+        "- Next allowed action: {}\n",
+        markdown_escape(next_allowed_action)
+    ));
+    out.push_str(&format!(
+        "- Hardware output authorized: `{hardware_output_authorized}`\n"
+    ));
+    out.push_str(&format!(
+        "- Native visible ready: `{native_visible_ready}`\n"
+    ));
+    out.push_str(&format!(
+        "- Hardware attempt command emitted: `{hardware_attempt_command_emitted}`\n"
+    ));
+    out.push_str(&format!(
+        "- Exact command: `{}` frame `{}` payload `{}` risk `{}`\n",
+        markdown_escape(command_id),
+        markdown_escape(frame_hex),
+        markdown_escape(payload_hex),
+        markdown_escape(risk_class)
+    ));
+    if let Some(evidence) = summary
+        .get("required_bench_clear_evidence")
+        .and_then(Value::as_str)
+    {
+        out.push_str(&format!(
+            "- Required bench-clear evidence: `{}`\n",
+            markdown_escape(evidence)
+        ));
+    }
+    if let Some(artifacts) = summary.get("artifacts") {
+        out.push_str("\n| Artifact | Path |\n");
+        out.push_str("| --- | --- |\n");
+        for (label, pointer) in [
+            ("authorization", "authorization_receipt"),
+            ("smoke_dry_run", "smoke_dry_run_receipt"),
+            ("attempt", "attempt_receipt"),
+            (
+                "post_authority_pidff_response",
+                "post_authority_pidff_response_receipt",
+            ),
+        ] {
+            let path = json_string(artifacts, pointer).unwrap_or("unknown");
+            out.push_str(&format!(
+                "| `{}` | `{}` |\n",
+                markdown_escape(label),
+                markdown_escape(path)
+            ));
+        }
+    }
+    out.push('\n');
 }
 
 fn push_pit_house_compatibility_markdown(out: &mut String, receipt: &Value) {
@@ -37084,6 +37414,201 @@ mod tests {
                 "bundle_sniff_evidence".to_string()
             ]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn bench_wizard_surfaces_vendor_authority_handoff_after_closed_loop_undertravel() -> TestResult
+    {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        let selector = "hid-0x346E-0x0004-if2-0x0001-0x0004";
+        write_failed_controlled_angle_output_receipt_at(
+            dir.path(),
+            selector,
+            NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE,
+        )?;
+        write_failed_controlled_angle_closed_loop_output_receipt(dir.path(), selector)?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE),
+            &serde_json::json!({
+                "schema_version": 1,
+                "success": true,
+                "command": "wheelctl moza standard-pidff-path-diagnosis",
+                "classification": "standard_pidff_controlled_angle_path_ineffective_in_current_r5_mode",
+                "native_visible_claimed": false,
+                "smoke_ready_claimed": false,
+                "planned_next_output": {
+                    "allowed": false
+                }
+            }),
+        )?;
+        write_passive_sniff_plan_artifact(dir.path(), "pit-house-setting-change")?;
+
+        let receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
+        let navigation = receipt
+            .get("vendor_authority_navigation")
+            .ok_or("expected vendor_authority_navigation")?;
+        assert_eq!(
+            json_string(navigation, "state"),
+            Some("ready_for_exact_authority_handoff")
+        );
+        assert_eq!(
+            json_bool(navigation, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(navigation, "native_control_evidence"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(navigation, "hardware_attempt_command_emitted"),
+            Some(false)
+        );
+        assert_eq!(
+            navigation
+                .pointer("/exact_command/command_id")
+                .and_then(Value::as_str),
+            Some(VENDOR_AUTHORITY_HANDOFF_COMMAND_ID)
+        );
+        assert_eq!(
+            navigation
+                .pointer("/exact_command/frame_hex")
+                .and_then(Value::as_str),
+            Some(VENDOR_AUTHORITY_HANDOFF_FRAME_HEX)
+        );
+
+        let step = receipt
+            .get("next_operator_step")
+            .ok_or("expected next operator step")?;
+        assert_eq!(
+            json_string(step, "kind"),
+            Some("prepare_vendor_authority_attempt_handoff")
+        );
+        assert_eq!(json_bool(step, "hardware_output_allowed_now"), Some(false));
+        assert_eq!(
+            json_bool(step, "authorization_created_by_wizard"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(step, "hardware_attempt_command_emitted"),
+            Some(false)
+        );
+        assert_eq!(
+            json_string(step, "required_bench_clear_evidence"),
+            Some(VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE)
+        );
+        assert_eq!(
+            json_string(step, "authorization_receipt"),
+            Some(VENDOR_AUTHORITY_AUTHORIZATION_FILE)
+        );
+        assert_eq!(
+            json_string(step, "smoke_dry_run_receipt"),
+            Some(VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE)
+        );
+        assert_eq!(
+            json_string(step, "planned_output_receipt"),
+            Some(VENDOR_AUTHORITY_ATTEMPT_FILE)
+        );
+
+        let commands = step
+            .get("commands")
+            .and_then(Value::as_array)
+            .ok_or("expected no-output handoff commands")?;
+        assert_eq!(commands.len(), 2);
+        let mut command_names = Vec::new();
+        for command in commands {
+            assert_eq!(json_bool(command, "output_enabled"), Some(false));
+            assert_eq!(json_bool(command, "opens_serial"), Some(false));
+            assert_eq!(json_bool(command, "sends_output"), Some(false));
+            let name = json_string(command, "name").ok_or("missing command name")?;
+            let command_text = json_string(command, "command").ok_or("missing command text")?;
+            assert!(
+                !command_text.contains("vendor-authority-attempt")
+                    && !command_text.contains("--confirm-bounded-vendor-authority-attempt")
+                    && !command_text.contains("--serial-port"),
+                "bench wizard must not emit the hardware attempt command: {command_text}"
+            );
+            let args = split_generated_command(command_text)?;
+            parse_cli(args).map_err(|error| {
+                format!(
+                    "generated vendor-authority handoff command failed to parse: {command_text}\n{error}"
+                )
+            })?;
+            command_names.push(name.to_string());
+        }
+        assert_eq!(
+            command_names,
+            vec![
+                "create_exact_vendor_authority_authorization".to_string(),
+                "validate_vendor_authority_smoke_dry_run".to_string()
+            ]
+        );
+
+        let markdown = render_moza_bench_wizard_markdown(&receipt);
+        assert!(markdown.contains("Vendor Authority Handoff"));
+        assert!(markdown.contains("native-control research navigation only"));
+        assert!(markdown.contains("Hardware attempt command emitted: `false`"));
+        assert!(markdown.contains(VENDOR_AUTHORITY_HANDOFF_COMMAND_ID));
+        assert!(markdown.contains(VENDOR_AUTHORITY_HANDOFF_FRAME_HEX));
+        assert!(markdown.contains(VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE));
+        assert!(!markdown.contains("--confirm-bounded-vendor-authority-attempt"));
+        Ok(())
+    }
+
+    #[test]
+    fn artifact_index_surfaces_vendor_authority_handoff_without_claims() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        let selector = "hid-0x346E-0x0004-if2-0x0001-0x0004";
+        write_failed_controlled_angle_output_receipt_at(
+            dir.path(),
+            selector,
+            NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE,
+        )?;
+        write_failed_controlled_angle_closed_loop_output_receipt(dir.path(), selector)?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE),
+            &serde_json::json!({
+                "schema_version": 1,
+                "success": true,
+                "command": "wheelctl moza standard-pidff-path-diagnosis",
+                "classification": "standard_pidff_controlled_angle_path_ineffective_in_current_r5_mode",
+                "native_visible_claimed": false,
+                "smoke_ready_claimed": false,
+                "planned_next_output": {
+                    "allowed": false
+                }
+            }),
+        )?;
+
+        let receipt = moza_artifact_index_receipt(dir.path(), None, None)?;
+        let navigation = receipt
+            .get("vendor_authority_navigation")
+            .ok_or("expected vendor_authority_navigation")?;
+        assert_eq!(
+            json_string(navigation, "claim_scope"),
+            Some("native_control_vendor_authority_navigation_only")
+        );
+        assert_eq!(
+            json_string(navigation, "state"),
+            Some("ready_for_exact_authority_handoff")
+        );
+        assert_eq!(
+            json_bool(navigation, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(json_bool(navigation, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(navigation, "pit_house_dependency"), Some(false));
+        assert_eq!(
+            json_bool(navigation, "hardware_attempt_command_emitted"),
+            Some(false)
+        );
+        let markdown = render_moza_lane_artifact_index_markdown(&receipt);
+        assert!(markdown.contains("Vendor Authority Handoff"));
+        assert!(markdown.contains("ready_for_exact_authority_handoff"));
+        assert!(markdown.contains("Hardware attempt command emitted: `false`"));
+        assert!(markdown.contains("vendor-authority-attempt.json"));
         Ok(())
     }
 

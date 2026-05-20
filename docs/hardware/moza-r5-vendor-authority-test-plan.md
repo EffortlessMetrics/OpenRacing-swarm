@@ -67,6 +67,11 @@ Provide a step-by-step implementation queue for Moza R5 vendor authority infrast
    - Retrying the same command/frame MUST require a new bench-clear, new exact authorization receipt, new smoke dry-run receipt, and new attempt receipt path; an existing consumed attempt receipt is not reusable authorization.
    - The executable `wheelctl moza vendor-authority-attempt` command MUST require `--confirm-bounded-vendor-authority-attempt`, validate authorization and smoke receipts, verify R5 USB serial identity before opening, send only the exact bound frame once, and write the consumed attempt receipt.
    - Do not add native-visible promotion, smoke-ready promotion, Pit House/SimHub/simulator dependencies, firmware/DFU behavior, high-torque enablement, direct HID report `0xaf`, or unknown host-to-device sends.
+9b. **No-output operator handoff**
+   - Surface the current vendor-authority frontier in artifact-index and bench-wizard navigation after closed-loop standard PIDFF undertravel is recorded.
+   - The handoff may show the exact command id, hash-bound frame bytes, required bench-clear text, authorization receipt path, and no-output smoke dry-run path.
+   - The handoff MUST keep `hardware_output_authorized=false`, create no authorization receipt itself, emit no hardware attempt command, and make Pit House/SimHub/simulator evidence non-blocking for native control.
+   - Bench-wizard and artifact-index remain read-only navigation; a real serial write still requires a separate explicit operator request and the guarded `vendor-authority-attempt` command.
 10. **Post-authority PIDFF response comparison**
 11+. **Closed-loop motion ladder**
 
@@ -125,6 +130,19 @@ python scripts/cargo_fmt_workspace.py
 cargo test --locked -p wheelctl --bin wheelctl vendor_authority_attempt -- --nocapture
 cargo test --locked -p wheelctl --bin wheelctl parse_moza_vendor_authority_attempt -- --nocapture
 cargo test --locked -p wheelctl --test cli_comprehensive_e2e_tests help_snapshots::snapshot_moza_help -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo hakari verify
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+## Proof commands (PR9 handoff)
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_authority_handoff -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl checked_in_moza_lane_index_matches_artifact_index_renderer -- --nocapture
 cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
 cargo hakari verify
 cargo run --locked -p openracing-tools --bin package-surface -- --check

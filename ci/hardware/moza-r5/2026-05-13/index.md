@@ -28,6 +28,25 @@ This section is diagnostic navigation only. `generic_aux` roles are valid parser
 | --- | --- | --- | --- | --- |
 | `clutch` | `clutch` | `captures/r5-clutch-only-sweep.jsonl` | `generic_aux` | `r5_v1_extended_aux0_u16, r5_v1_extended_aux1_u16` |
 
+## Vendor Authority Handoff
+
+This section is native-control research navigation only. It does not open HID, send serial traffic, create authorization, emit the hardware attempt command, or claim native-visible readiness.
+
+- State: `ready_for_exact_authority_handoff`
+- Next allowed action: Create an exact authorization receipt after fresh command-bound bench-clear, then run a no-output smoke dry-run.
+- Hardware output authorized: `false`
+- Native visible ready: `false`
+- Hardware attempt command emitted: `false`
+- Exact command: `estop_set_ffb` frame `7E02461C0001F0` payload `01` risk `vendor_output_candidate`
+- Required bench-clear evidence: `bench clear for exact estop_set_ffb: R5 stable, hands clear, wheel clear`
+
+| Artifact | Path |
+| --- | --- |
+| `authorization` | `vendor-authority-authorization.json` |
+| `smoke_dry_run` | `vendor-authority-smoke-dry-run.json` |
+| `attempt` | `vendor-authority-attempt.json` |
+| `post_authority_pidff_response` | `vendor-post-authority-pidff-response.json` |
+
 ## Pit House Compatibility
 
 This section is external-smoke navigation only. Pit House is not required for native OpenRacing control, and these artifacts do not authorize hardware output.
