@@ -88,6 +88,10 @@ Provide a step-by-step implementation queue for Moza R5 vendor authority infrast
 10d. **Explicit authorization handoff command**
    - Keep bench-wizard no-output, but make the displayed exact authorization command include the explicit operator label and bounded expiry instead of relying on CLI defaults.
    - The generated command MUST parse through the normal CLI parser and MUST still omit the bounded hardware attempt command, serial port, read-only query send, output write, firmware/DFU behavior, native-control claim, native-visible claim, smoke-ready claim, and release-ready claim.
+10e. **Live pre-authority hardware-doctor handoff**
+   - Keep bench-wizard and artifact-index no-output, but surface a target-only `wheelctl hardware doctor` refresh command that operators must review immediately before exact authorization.
+   - The refreshed receipt is current bench context only; it does not update checked-in lane evidence, create authorization, open HID, open serial, send queries, send output/configuration/firmware writes, or satisfy native-control/native-visible/smoke-ready/release-ready gates.
+   - The handoff MUST continue to block authorization when a vendor app may own the R5 serial/CDC port or when the R5 serial/CDC interface is missing.
 11+. **Closed-loop motion ladder**
 
 ## Required gating invariant
@@ -153,6 +157,17 @@ git diff --check
 ```
 
 ## Proof commands (PR10d)
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_authority_handoff -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+## Proof commands (PR10e)
 
 ```powershell
 python scripts/cargo_fmt_workspace.py

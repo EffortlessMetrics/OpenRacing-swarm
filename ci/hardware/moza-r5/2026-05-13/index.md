@@ -44,6 +44,8 @@ This section is native-control research navigation only. It does not open HID, s
 - Handoff opens serial: `false`; sends output: `false`
 - R5 serial port hints: `COM4`
 - Serial precondition guidance: Before creating short-lived exact authorization or running the separate bounded attempt, close or release Pit House and any other app that may own the R5 serial/CDC port; this is an exclusive-port precondition, not a Pit House dependency for native control.
+- Live precondition refresh command: `wheelctl hardware doctor --json-out target/moza-current/vendor-authority-precondition-hardware-doctor.json --json`
+- Live precondition receipt: `target/moza-current/vendor-authority-precondition-hardware-doctor.json`
 
 | Artifact | Path |
 | --- | --- |

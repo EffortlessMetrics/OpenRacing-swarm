@@ -914,6 +914,23 @@ commands = [
 ]
 
 [[work_item]]
+id = "vendor-authority-live-hardware-doctor-handoff"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "crates/cli/src/commands/moza.rs"
+claim_boundary = "No-output bench-wizard/artifact-index handoff hardening only; surfaces a target-only hardware-doctor refresh command that must be reviewed immediately before exact authorization while still creating no authorization receipt, opening no HID or serial device, emitting no hardware attempt command, sending no query/output/configuration/firmware writes, and making no native-control, native-visible, smoke-ready, or release-ready claim."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_handoff -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

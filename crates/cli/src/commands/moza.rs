@@ -139,6 +139,8 @@ const VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE: &str =
     "bench clear for exact estop_set_ffb: R5 stable, hands clear, wheel clear";
 const VENDOR_AUTHORITY_HANDOFF_AUTHORIZED_BY: &str = "Steven";
 const VENDOR_AUTHORITY_HANDOFF_EXPIRES_AFTER_MINUTES: u64 = 10;
+const VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET: &str =
+    "target/moza-current/vendor-authority-precondition-hardware-doctor.json";
 const NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILES: &[&str] = &[
     NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE,
     NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE,
@@ -1846,6 +1848,22 @@ fn moza_vendor_authority_next_operator_step(lane: &Path) -> Value {
         "planned_output_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
         "commands": [
             {
+                "name": "refresh_live_vendor_authority_precondition",
+                "output_enabled": false,
+                "opens_hid": false,
+                "opens_serial": false,
+                "sends_read_only_query": false,
+                "sends_output": false,
+                "sends_configuration_write": false,
+                "sends_firmware_or_dfu_command": false,
+                "creates_single_use_authorization": false,
+                "must_be_reviewed_immediately_before_authorization": true,
+                "blocked_if_vendor_app_running": true,
+                "blocked_if_r5_serial_missing": true,
+                "json_out": VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET,
+                "command": vendor_authority_live_hardware_doctor_command()
+            },
+            {
                 "name": "create_exact_vendor_authority_authorization",
                 "output_enabled": false,
                 "opens_hid": false,
@@ -1884,6 +1902,11 @@ fn moza_vendor_authority_serial_precondition(lane: &Path) -> Value {
         "sends_configuration_write": false,
         "sends_firmware_or_dfu_command": false,
         "source_artifact": "hardware-doctor.json",
+        "live_precondition_receipt": VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET,
+        "live_precondition_command": vendor_authority_live_hardware_doctor_command(),
+        "live_precondition_must_be_reviewed_immediately_before_authorization": true,
+        "blocked_if_vendor_app_running": true,
+        "blocked_if_r5_serial_missing": true,
         "serial_port_hints": hints,
         "serial_interface_hints": interfaces,
         "guidance": "Before creating short-lived exact authorization or running the separate bounded attempt, close or release Pit House and any other app that may own the R5 serial/CDC port; this is an exclusive-port precondition, not a Pit House dependency for native control."
@@ -2113,6 +2136,13 @@ fn vendor_authority_authorization_command(lane: &Path) -> String {
         VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE,
         VENDOR_AUTHORITY_HANDOFF_EXPIRES_AFTER_MINUTES,
         lane.join(VENDOR_AUTHORITY_AUTHORIZATION_FILE).display()
+    )
+}
+
+fn vendor_authority_live_hardware_doctor_command() -> String {
+    format!(
+        "wheelctl hardware doctor --json-out {} --json",
+        VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET
     )
 }
 
@@ -33759,6 +33789,18 @@ fn push_vendor_authority_navigation_markdown(out: &mut String, receipt: &Value) 
                 markdown_escape(guidance)
             ));
         }
+        if let Some(command) = json_string(precondition, "live_precondition_command") {
+            out.push_str(&format!(
+                "- Live precondition refresh command: `{}`\n",
+                markdown_escape(command)
+            ));
+        }
+        if let Some(receipt) = json_string(precondition, "live_precondition_receipt") {
+            out.push_str(&format!(
+                "- Live precondition receipt: `{}`\n",
+                markdown_escape(receipt)
+            ));
+        }
     }
     if let Some(artifacts) = summary.get("artifacts") {
         out.push_str("\n| Artifact | Path |\n");
@@ -39295,12 +39337,29 @@ mod tests {
                 .and_then(Value::as_str),
             Some("COM4")
         );
+        assert_eq!(
+            step.pointer("/serial_precondition/live_precondition_receipt")
+                .and_then(Value::as_str),
+            Some(VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET)
+        );
+        assert_eq!(
+            step.pointer(
+                "/serial_precondition/live_precondition_must_be_reviewed_immediately_before_authorization"
+            )
+            .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            step.pointer("/serial_precondition/blocked_if_vendor_app_running")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
 
         let commands = step
             .get("commands")
             .and_then(Value::as_array)
             .ok_or("expected no-output handoff commands")?;
-        assert_eq!(commands.len(), 2);
+        assert_eq!(commands.len(), 3);
         let mut command_names = Vec::new();
         for command in commands {
             assert_eq!(json_bool(command, "output_enabled"), Some(false));
@@ -39320,6 +39379,28 @@ mod tests {
                     "generated vendor-authority handoff command failed to parse: {command_text}\n{error}"
                 )
             })?;
+            if name == "refresh_live_vendor_authority_precondition" {
+                assert!(
+                    command_text.contains("wheelctl hardware doctor"),
+                    "live precondition handoff should refresh hardware doctor: {command_text}"
+                );
+                assert!(
+                    command_text.contains(VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET),
+                    "live precondition handoff should write a target-only receipt: {command_text}"
+                );
+                assert_eq!(
+                    json_bool(command, "must_be_reviewed_immediately_before_authorization"),
+                    Some(true)
+                );
+                assert_eq!(
+                    json_bool(command, "blocked_if_vendor_app_running"),
+                    Some(true)
+                );
+                assert_eq!(
+                    json_bool(command, "blocked_if_r5_serial_missing"),
+                    Some(true)
+                );
+            }
             if name == "create_exact_vendor_authority_authorization" {
                 assert!(
                     command_text.contains("--authorized-by Steven"),
@@ -39335,6 +39416,7 @@ mod tests {
         assert_eq!(
             command_names,
             vec![
+                "refresh_live_vendor_authority_precondition".to_string(),
                 "create_exact_vendor_authority_authorization".to_string(),
                 "validate_vendor_authority_smoke_dry_run".to_string()
             ]
@@ -39349,6 +39431,8 @@ mod tests {
         assert!(markdown.contains(VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE));
         assert!(markdown.contains("--authorized-by Steven"));
         assert!(markdown.contains("--expires-after-minutes 10"));
+        assert!(markdown.contains("Live precondition refresh command"));
+        assert!(markdown.contains(VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET));
         assert!(markdown.contains("Requires exclusive R5 serial/CDC access"));
         assert!(markdown.contains("Pit House dependency: `false`; serial-owner risk: `true`"));
         assert!(markdown.contains("R5 serial port hints: `COM4`"));
@@ -39423,11 +39507,25 @@ mod tests {
                 .and_then(Value::as_str),
             Some("COM4")
         );
+        assert_eq!(
+            navigation
+                .pointer("/serial_precondition/live_precondition_receipt")
+                .and_then(Value::as_str),
+            Some(VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET)
+        );
+        assert_eq!(
+            navigation
+                .pointer("/serial_precondition/blocked_if_vendor_app_running")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
         let markdown = render_moza_lane_artifact_index_markdown(&receipt);
         assert!(markdown.contains("Vendor Authority Handoff"));
         assert!(markdown.contains("ready_for_exact_authority_handoff"));
         assert!(markdown.contains("Hardware attempt command emitted: `false`"));
         assert!(markdown.contains("Requires exclusive R5 serial/CDC access"));
+        assert!(markdown.contains("Live precondition refresh command"));
+        assert!(markdown.contains(VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET));
         assert!(markdown.contains("R5 serial port hints: `COM4`"));
         assert!(markdown.contains("vendor-authority-attempt.json"));
         Ok(())
