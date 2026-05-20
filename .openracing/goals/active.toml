@@ -822,6 +822,24 @@ commands = [
 ]
 
 [[work_item]]
+id = "vendor-authority-attempt-blocked-receipt"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "schemas/moza-vendor-authority-attempt-blocked.schema.json"
+claim_boundary = "Blocked-before-send vendor-authority attempt receipt only; if the guarded attempt validates exact receipts and R5 serial identity but fails before opening serial or sending the frame, record a non-claiming blocked receipt without consuming authorization, satisfying the consumed attempt gate, sending output/configuration/firmware writes, native-control, native-visible, smoke-ready, coexistence, simulator, firmware, or release-ready claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_attempt_blocked -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_handoff -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

@@ -77,6 +77,10 @@ Provide a step-by-step implementation queue for Moza R5 vendor authority infrast
    - The comparison MUST validate that the attempt receipt is consumed/non-claiming, both PIDFF response receipts are safe cleanup receipts, the post response is not stale relative to the attempt, and the PIDFF profile/strategy/envelope is comparable.
    - The comparison receipt MUST keep `native_control_evidence=false`, `hardware_output_authorized=false`, `native_visible_ready=false`, and `smoke_ready=false`; even a visible-motion-looking post response remains a verifier candidate only.
    - Bench-wizard may emit only the no-output comparison command after the attempt and post-response receipts exist; it MUST NOT emit the bounded vendor-authority attempt command or any PIDFF output command.
+10b. **Blocked-before-send attempt receipt**
+   - Add a separate non-claiming receipt for a guarded vendor-authority attempt that validates the exact receipts and R5 serial identity but fails before opening the serial port or sending the frame, such as a port-owner/access-denied condition.
+   - The blocked receipt MUST NOT satisfy the consumed attempt schema or post-authority comparison gate. It must record `success=false`, `authorization_consumed=false`, `opened_serial_device=false`, `sent_authorized_frame=false`, `sent_authorized_frame_count=0`, `hardware_output_authorized=false`, `native_control_evidence=false`, `native_visible_ready=false`, and `smoke_ready=false`.
+   - Bench-wizard/artifact-index navigation may surface the blocked state, but retry still requires fresh bench-clear, fresh exact authorization, fresh smoke dry-run, and a fresh attempt receipt path.
 11+. **Closed-loop motion ladder**
 
 ## Required gating invariant
@@ -164,6 +168,18 @@ cargo test --locked -p wheelctl --bin wheelctl parse_moza_vendor_post_authority_
 cargo test --locked -p wheelctl --test cli_comprehensive_e2e_tests help_snapshots::snapshot_moza_help -- --nocapture
 cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
 cargo hakari verify
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+## Proof commands (PR10b)
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_authority_attempt_blocked -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_authority_handoff -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
 cargo run --locked -p openracing-tools --bin package-surface -- --check
 python scripts/policy_file.py
 git diff --check

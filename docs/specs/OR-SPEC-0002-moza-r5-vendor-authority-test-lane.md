@@ -191,6 +191,17 @@ port, send only the exact hash-bound frame once, and write the consumed attempt
 receipt. Verifiers, bench wizards, and generators MUST NOT emit or auto-run the
 hardware attempt command.
 
+If the executable command validates the exact receipts and R5 serial identity
+but blocks before opening the serial port or sending the frame, it MUST write a
+separate blocked-before-send receipt instead of a consumed attempt receipt. That
+receipt MUST set `success=false`, `authorization_consumed=false`,
+`opened_serial_device=false`, `sent_authorized_frame=false`,
+`sent_authorized_frame_count=0`, `hardware_output_authorized=false`,
+`native_control_evidence=false`, `native_visible_ready=false`, and
+`smoke_ready=false`. A blocked-before-send receipt is diagnostic evidence only;
+retry still requires fresh bench-clear, fresh exact authorization, fresh
+smoke dry-run, and a fresh attempt receipt path.
+
 ### Post-authority PIDFF response and motion ladder
 
 After authority smoke, the lane may compare baseline vs post-authority PIDFF response and then proceed through a closed-loop motion ladder:
