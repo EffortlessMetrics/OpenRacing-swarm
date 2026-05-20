@@ -16,13 +16,13 @@ use racing_wheel_hid_moza_protocol::report::looks_like_live_r5_v1_extended_repor
 use racing_wheel_hid_moza_protocol::serial::fake_transport::{
     FAKE_TRANSPORT_CODEC_STATUS, MozaFakeSerialTransport, MozaFakeSerialTransportError,
 };
-use racing_wheel_hid_moza_protocol::serial::frame::MESSAGE_START;
+use racing_wheel_hid_moza_protocol::serial::frame::{MESSAGE_START, decode_fixture_frame};
 use racing_wheel_hid_moza_protocol::serial::status_probe::{
     READ_ONLY_STATUS_CODEC_STATUS, decode_read_only_status_response, encode_read_only_status_query,
     read_only_status_commands,
 };
 use racing_wheel_hid_moza_protocol::serial::vendor_authority::{
-    MozaSerialCodecStatus, MozaVendorCommand, REQUIRED_VENDOR_COMMANDS,
+    MozaRiskClass, MozaSerialCodecStatus, MozaVendorCommand, REQUIRED_VENDOR_COMMANDS,
 };
 use racing_wheel_hid_moza_protocol::{
     DeviceWriter, FfbMode, MOZA_VENDOR_ID, MozaDeviceCategory, MozaDirectTorqueEncoder,
@@ -31,6 +31,7 @@ use racing_wheel_hid_moza_protocol::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
@@ -546,6 +547,18 @@ struct VendorStatusProbeRequest<'a> {
     json_out: Option<&'a Path>,
 }
 
+struct VendorAuthorityAuthorizationRequest<'a> {
+    json: bool,
+    command_id: &'a str,
+    frame_hex: &'a str,
+    authorized_by: &'a str,
+    bench_clear_evidence: &'a str,
+    expires_after_minutes: u64,
+    confirm_exact_vendor_authority_authorization: bool,
+    json_out: &'a Path,
+    overwrite: bool,
+}
+
 struct PitHouseCaseRequest<'a> {
     json: bool,
     lane: &'a Path,
@@ -701,6 +714,30 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 command_ids,
                 confirm_read_only_query: *confirm_read_only_query,
                 json_out: json_out.as_deref(),
+            })
+            .await
+        }
+        MozaCommands::AuthorizeVendorAuthority {
+            command_id,
+            frame_hex,
+            authorized_by,
+            bench_clear_evidence,
+            expires_after_minutes,
+            confirm_exact_vendor_authority_authorization,
+            json_out,
+            overwrite,
+        } => {
+            authorize_vendor_authority(VendorAuthorityAuthorizationRequest {
+                json,
+                command_id,
+                frame_hex,
+                authorized_by,
+                bench_clear_evidence,
+                expires_after_minutes: *expires_after_minutes,
+                confirm_exact_vendor_authority_authorization:
+                    *confirm_exact_vendor_authority_authorization,
+                json_out,
+                overwrite: *overwrite,
             })
             .await
         }
@@ -5740,6 +5777,26 @@ async fn vendor_status_probe(request: VendorStatusProbeRequest<'_>) -> Result<()
             receipt.failed_response_count
         ))
     }
+}
+
+async fn authorize_vendor_authority(
+    request: VendorAuthorityAuthorizationRequest<'_>,
+) -> Result<()> {
+    if !request.confirm_exact_vendor_authority_authorization {
+        return Err(anyhow!(
+            "--confirm-exact-vendor-authority-authorization is required before creating a Moza vendor-authority authorization receipt"
+        ));
+    }
+    if request.expires_after_minutes == 0 || request.expires_after_minutes > 60 {
+        return Err(anyhow!(
+            "--expires-after-minutes must be in the bounded range 1..=60"
+        ));
+    }
+
+    ensure_receipt_writable(request.json_out, request.overwrite)?;
+    let receipt = vendor_authority_authorization_receipt(&request)?;
+    write_json_file(request.json_out, &receipt)?;
+    print_vendor_authority_authorization_receipt(request.json, request.json_out, &receipt)
 }
 
 async fn audit_lane(
@@ -25599,6 +25656,195 @@ fn selected_read_only_status_commands(
     Ok(selected)
 }
 
+fn vendor_authority_authorization_receipt(
+    request: &VendorAuthorityAuthorizationRequest<'_>,
+) -> Result<VendorAuthorityAuthorizationReceipt> {
+    if !request.confirm_exact_vendor_authority_authorization {
+        return Err(anyhow!(
+            "--confirm-exact-vendor-authority-authorization is required before creating a Moza vendor-authority authorization receipt"
+        ));
+    }
+    if request.expires_after_minutes == 0 || request.expires_after_minutes > 60 {
+        return Err(anyhow!(
+            "--expires-after-minutes must be in the bounded range 1..=60"
+        ));
+    }
+
+    let command = vendor_command_by_id(request.command_id)?;
+    ensure_vendor_authority_exact_authorization_candidate(command)?;
+    validate_vendor_authority_bench_clear_evidence(
+        request.bench_clear_evidence,
+        request.command_id,
+    )?;
+
+    let frame = parse_hex_bytes(request.frame_hex)
+        .map_err(|error| anyhow!("failed to parse --frame-hex: {error}"))?;
+    let decoded = decode_fixture_frame(&frame).context("failed to decode authorized frame")?;
+    if decoded.command.id != command.id {
+        return Err(anyhow!(
+            "--frame-hex command `{}` does not match --command-id `{}`",
+            decoded.command.id,
+            command.id
+        ));
+    }
+    if decoded.device_id != command.device_id {
+        return Err(anyhow!(
+            "--frame-hex device id 0x{:02X} does not match registry device id 0x{:02X} for `{}`",
+            decoded.device_id,
+            command.device_id,
+            command.id
+        ));
+    }
+    if decoded.payload.is_empty() {
+        return Err(anyhow!(
+            "exact vendor-authority authorization requires a non-empty payload for `{}`",
+            command.id
+        ));
+    }
+
+    let generated_at_utc = now_utc();
+    let expires_at_utc = authorization_expiration_utc(request.expires_after_minutes)?;
+    Ok(VendorAuthorityAuthorizationReceipt {
+        success: true,
+        schema_version: 1,
+        artifact_kind: "moza_vendor_authority_authorization",
+        claim_scope: "single_use_exact_vendor_authority_authorization",
+        command: "wheelctl moza authorize-vendor-authority",
+        generated_at_utc,
+        expires_at_utc,
+        expires_after_minutes: request.expires_after_minutes,
+        authorized_by: request.authorized_by.to_string(),
+        bench_clear_evidence: request.bench_clear_evidence.to_string(),
+        native_control_evidence: false,
+        hardware_output_authorized: true,
+        native_visible_ready: false,
+        next_allowed_action: "Run only a matching no-output vendor authority smoke dry-run before any hardware send consumes this receipt.",
+        blocked_actions: vec![
+            "hardware send before no-output smoke dry-run",
+            "any command other than the authorized frame hash",
+            "payload drift",
+            "configuration drift",
+            "firmware or DFU command",
+            "unknown host-to-device command",
+            "high-torque enablement",
+            "native-control claim",
+            "native-visible claim",
+            "smoke-ready claim",
+            "release-ready claim",
+        ],
+        required_artifacts: vec![
+            "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md",
+            "docs/hardware/moza-r5-vendor-authority-test-plan.md",
+            "fixtures/moza/r5/vendor-command-registry.json",
+            "schemas/moza-vendor-authority-authorization.schema.json",
+            "crates/hid-moza-protocol/src/serial/frame.rs",
+            "crates/hid-moza-protocol/src/serial/vendor_authority.rs",
+            "crates/cli/src/commands/moza.rs",
+        ],
+        authorization_consumed: false,
+        exact_authorization: true,
+        single_use: true,
+        no_hid_device_opened: true,
+        no_serial_device_opened: true,
+        no_serial_query_sent: true,
+        sent_output_writes: false,
+        sent_configuration_writes: false,
+        sent_firmware_or_dfu_commands: false,
+        transport_kind: "authorization_receipt_only",
+        codec_status: "fixture_decode_verified_exact_frame",
+        hardware_write_eligible: true,
+        authorized_command: VendorAuthorityAuthorizedCommand {
+            command_id: command.id.to_string(),
+            command_name: command.name.to_string(),
+            family: command.family.to_string(),
+            group: command.group,
+            device_id: command.device_id,
+            command: command.command,
+            risk_class: command.risk_class.as_registry_str().to_string(),
+            read_only_status_probe_allowed: command.read_only_status_probe_allowed,
+        },
+        authorized_frame: VendorAuthorityAuthorizedFrame {
+            frame_hex: bytes_hex_compact(&frame),
+            frame_sha256: sha256_hex(&frame),
+            frame_len: frame.len(),
+            payload_hex: bytes_hex_compact(decoded.payload),
+            payload_sha256: sha256_hex(decoded.payload),
+            payload_len: decoded.payload.len(),
+            checksum: hex_u8(decoded.checksum),
+        },
+        forbidden_commands: REQUIRED_VENDOR_COMMANDS
+            .iter()
+            .filter(|candidate| !candidate.risk_class.requires_exact_authorization())
+            .map(|candidate| candidate.id.to_string())
+            .collect(),
+        notes: vec![
+            "This receipt authorizes exactly one later vendor-authority frame by command tuple and frame hash.",
+            "This command does not open HID, open serial, send queries, or send output/configuration/firmware writes.",
+            "The receipt is not native-control, native-visible, smoke-ready, coexistence, simulator, or release-ready proof.",
+        ],
+    })
+}
+
+fn vendor_command_by_id(command_id: &str) -> Result<&'static MozaVendorCommand> {
+    REQUIRED_VENDOR_COMMANDS
+        .iter()
+        .find(|candidate| candidate.id == command_id)
+        .ok_or_else(|| anyhow!("unknown Moza vendor command `{command_id}`"))
+}
+
+fn ensure_vendor_authority_exact_authorization_candidate(
+    command: &MozaVendorCommand,
+) -> Result<()> {
+    match command.risk_class {
+        MozaRiskClass::VendorControlCandidate
+        | MozaRiskClass::VendorOutputCandidate
+        | MozaRiskClass::ConfigurationCandidate => Ok(()),
+        MozaRiskClass::FirmwareOrDfuForbidden | MozaRiskClass::UnknownDoNotSend => Err(anyhow!(
+            "command `{}` is {:?} and must never be authorized",
+            command.id,
+            command.risk_class
+        )),
+        _ => Err(anyhow!(
+            "command `{}` is {:?} and does not require exact vendor-authority authorization",
+            command.id,
+            command.risk_class
+        )),
+    }
+}
+
+fn validate_vendor_authority_bench_clear_evidence(evidence: &str, command_id: &str) -> Result<()> {
+    let lower = evidence.to_ascii_lowercase();
+    for required in [
+        "bench clear",
+        "exact",
+        command_id,
+        "r5 stable",
+        "hands clear",
+        "wheel clear",
+    ] {
+        if !lower.contains(&required.to_ascii_lowercase()) {
+            return Err(anyhow!(
+                "bench-clear evidence must include `{required}` for the exact vendor-authority command"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn authorization_expiration_utc(expires_after_minutes: u64) -> Result<String> {
+    let expires_at = chrono::Utc::now()
+        .checked_add_signed(chrono::Duration::minutes(
+            i64::try_from(expires_after_minutes).context("expiration minutes out of range")?,
+        ))
+        .ok_or_else(|| anyhow!("failed to compute authorization expiration"))?;
+    Ok(expires_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
 fn moza_serial_port_identity(serial_port: &str) -> Result<VendorStatusProbePortIdentity> {
     let requested = normalize_serial_port_name(serial_port);
     let ports = serialport::available_ports()
@@ -26123,6 +26369,65 @@ struct VendorStatusProbeResponse {
     decoded: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorAuthorityAuthorizationReceipt {
+    success: bool,
+    schema_version: u8,
+    artifact_kind: &'static str,
+    claim_scope: &'static str,
+    command: &'static str,
+    generated_at_utc: String,
+    expires_at_utc: String,
+    expires_after_minutes: u64,
+    authorized_by: String,
+    bench_clear_evidence: String,
+    native_control_evidence: bool,
+    hardware_output_authorized: bool,
+    native_visible_ready: bool,
+    next_allowed_action: &'static str,
+    blocked_actions: Vec<&'static str>,
+    required_artifacts: Vec<&'static str>,
+    authorization_consumed: bool,
+    exact_authorization: bool,
+    single_use: bool,
+    no_hid_device_opened: bool,
+    no_serial_device_opened: bool,
+    no_serial_query_sent: bool,
+    sent_output_writes: bool,
+    sent_configuration_writes: bool,
+    sent_firmware_or_dfu_commands: bool,
+    transport_kind: &'static str,
+    codec_status: &'static str,
+    hardware_write_eligible: bool,
+    authorized_command: VendorAuthorityAuthorizedCommand,
+    authorized_frame: VendorAuthorityAuthorizedFrame,
+    forbidden_commands: Vec<String>,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorAuthorityAuthorizedCommand {
+    command_id: String,
+    command_name: String,
+    family: String,
+    group: u8,
+    device_id: u8,
+    command: u8,
+    risk_class: String,
+    read_only_status_probe_allowed: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorAuthorityAuthorizedFrame {
+    frame_hex: String,
+    frame_sha256: String,
+    frame_len: usize,
+    payload_hex: String,
+    payload_sha256: String,
+    payload_len: usize,
+    checksum: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -32055,6 +32360,23 @@ fn print_vendor_status_probe_receipt(
     Ok(())
 }
 
+fn print_vendor_authority_authorization_receipt(
+    json: bool,
+    json_out: &Path,
+    receipt: &VendorAuthorityAuthorizationReceipt,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Moza vendor-authority authorization recorded for {} with frame hash {}; no HID/serial/output traffic was sent.",
+            receipt.authorized_command.command_id, receipt.authorized_frame.frame_sha256
+        );
+        println!("Receipt: {}", json_out.display());
+    }
+    Ok(())
+}
+
 fn print_lane_audit_receipt(
     json: bool,
     json_out: Option<&Path>,
@@ -33037,8 +33359,10 @@ mod tests {
     #[test]
     fn vendor_status_probe_rejects_write_like_command_selection() -> TestResult {
         let command_ids = vec!["base_gain_set_overall_strength".to_string()];
-        let error = selected_read_only_status_commands(&command_ids)
-            .expect_err("write-like commands must not be status probe eligible");
+        let error = match selected_read_only_status_commands(&command_ids) {
+            Ok(_) => return Err("write-like commands must not be status probe eligible".into()),
+            Err(error) => error,
+        };
 
         assert!(
             error
@@ -33047,6 +33371,259 @@ mod tests {
             "unexpected error: {error}"
         );
 
+        Ok(())
+    }
+
+    fn sample_vendor_authority_authorization_request<'a>(
+        json_out: &'a Path,
+    ) -> VendorAuthorityAuthorizationRequest<'a> {
+        VendorAuthorityAuthorizationRequest {
+            json: false,
+            command_id: "estop_set_ffb",
+            frame_hex: "7E02461C0001F0",
+            authorized_by: "Steven",
+            bench_clear_evidence: "bench clear for exact estop_set_ffb: R5 stable, hands clear, wheel clear",
+            expires_after_minutes: 10,
+            confirm_exact_vendor_authority_authorization: true,
+            json_out,
+            overwrite: false,
+        }
+    }
+
+    #[test]
+    fn vendor_authority_authorization_receipt_is_single_use_exact_and_non_claiming() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let json_out = dir.path().join("vendor-authority-authorization.json");
+        let request = sample_vendor_authority_authorization_request(&json_out);
+        let receipt = vendor_authority_authorization_receipt(&request)?;
+        let value = serde_json::to_value(&receipt)?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-authority-authorization.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&value).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        assert_eq!(
+            json_string(&value, "artifact_kind"),
+            Some("moza_vendor_authority_authorization")
+        );
+        assert_eq!(
+            json_string(&value, "claim_scope"),
+            Some("single_use_exact_vendor_authority_authorization")
+        );
+        assert_eq!(json_bool(&value, "native_control_evidence"), Some(false));
+        assert_eq!(json_bool(&value, "hardware_output_authorized"), Some(true));
+        assert_eq!(json_bool(&value, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(&value, "authorization_consumed"), Some(false));
+        assert_eq!(json_bool(&value, "exact_authorization"), Some(true));
+        assert_eq!(json_bool(&value, "single_use"), Some(true));
+        assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "no_serial_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "no_serial_query_sent"), Some(true));
+        assert_eq!(json_bool(&value, "sent_output_writes"), Some(false));
+        assert_eq!(json_bool(&value, "sent_configuration_writes"), Some(false));
+        assert_eq!(
+            json_bool(&value, "sent_firmware_or_dfu_commands"),
+            Some(false)
+        );
+        assert_eq!(
+            value
+                .pointer("/authorized_command/command_id")
+                .and_then(Value::as_str),
+            Some("estop_set_ffb")
+        );
+        assert_eq!(
+            value
+                .pointer("/authorized_command/risk_class")
+                .and_then(Value::as_str),
+            Some("vendor_output_candidate")
+        );
+        assert_eq!(
+            value
+                .pointer("/authorized_frame/frame_hex")
+                .and_then(Value::as_str),
+            Some("7E02461C0001F0")
+        );
+        assert_eq!(
+            value
+                .pointer("/authorized_frame/payload_hex")
+                .and_then(Value::as_str),
+            Some("01")
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn vendor_authority_authorization_command_writes_json_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let json_out = dir.path().join("vendor-authority-authorization.json");
+        authorize_vendor_authority(sample_vendor_authority_authorization_request(&json_out))
+            .await?;
+        let receipt = read_json_path(&json_out)?;
+        assert_eq!(
+            json_string(&receipt, "artifact_kind"),
+            Some("moza_vendor_authority_authorization")
+        );
+        assert_eq!(
+            receipt
+                .pointer("/authorized_command/command_id")
+                .and_then(Value::as_str),
+            Some("estop_set_ffb")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_authorization_rejects_read_only_command() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let json_out = dir.path().join("vendor-authority-authorization.json");
+        let request = VendorAuthorityAuthorizationRequest {
+            command_id: "estop_get_ffb",
+            frame_hex: "7E01461C01EF",
+            ..sample_vendor_authority_authorization_request(&json_out)
+        };
+        let error = match vendor_authority_authorization_receipt(&request) {
+            Ok(_) => return Err("read-only command must not authorize vendor authority".into()),
+            Err(error) => error,
+        };
+        assert!(
+            error.to_string().contains("does not require exact"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_authorization_rejects_frame_command_mismatch() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let json_out = dir.path().join("vendor-authority-authorization.json");
+        let request = VendorAuthorityAuthorizationRequest {
+            frame_hex: "7E0221120601C7",
+            ..sample_vendor_authority_authorization_request(&json_out)
+        };
+        let error = match vendor_authority_authorization_receipt(&request) {
+            Ok(_) => return Err("mismatched command frame must be rejected".into()),
+            Err(error) => error,
+        };
+        assert!(
+            error.to_string().contains("does not match --command-id"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_authorization_rejects_generic_bench_clear() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let json_out = dir.path().join("vendor-authority-authorization.json");
+        let request = VendorAuthorityAuthorizationRequest {
+            bench_clear_evidence: "bench clear",
+            ..sample_vendor_authority_authorization_request(&json_out)
+        };
+        let error = match vendor_authority_authorization_receipt(&request) {
+            Ok(_) => return Err("generic bench-clear must not authorize vendor authority".into()),
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("bench-clear evidence must include"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_authorization_requires_explicit_confirmation() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let json_out = dir.path().join("vendor-authority-authorization.json");
+        let request = VendorAuthorityAuthorizationRequest {
+            confirm_exact_vendor_authority_authorization: false,
+            ..sample_vendor_authority_authorization_request(&json_out)
+        };
+        let error = match vendor_authority_authorization_receipt(&request) {
+            Ok(_) => {
+                return Err("missing confirmation must not authorize vendor authority".into());
+            }
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("--confirm-exact-vendor-authority-authorization"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_authorization_schema_requires_single_use_gates() -> TestResult {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-authority-authorization.schema.json"
+        ))?;
+        let required = schema
+            .get("required")
+            .and_then(Value::as_array)
+            .ok_or("schema must have a required array")?;
+        for field in [
+            "claim_scope",
+            "native_control_evidence",
+            "hardware_output_authorized",
+            "native_visible_ready",
+            "authorization_consumed",
+            "exact_authorization",
+            "single_use",
+            "no_hid_device_opened",
+            "no_serial_device_opened",
+            "no_serial_query_sent",
+            "sent_output_writes",
+            "sent_configuration_writes",
+            "sent_firmware_or_dfu_commands",
+            "authorized_command",
+            "authorized_frame",
+            "forbidden_commands",
+        ] {
+            assert!(
+                required.iter().any(|entry| entry.as_str() == Some(field)),
+                "schema must require `{field}`"
+            );
+        }
+        assert_eq!(
+            schema["properties"]["claim_scope"]["const"],
+            "single_use_exact_vendor_authority_authorization"
+        );
+        assert_eq!(
+            schema["properties"]["native_control_evidence"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["hardware_output_authorized"]["const"],
+            true
+        );
+        assert_eq!(schema["properties"]["native_visible_ready"]["const"], false);
+        assert_eq!(
+            schema["properties"]["authorization_consumed"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["exact_authorization"]["const"], true);
+        assert_eq!(schema["properties"]["single_use"]["const"], true);
+        assert_eq!(schema["properties"]["no_hid_device_opened"]["const"], true);
+        assert_eq!(
+            schema["properties"]["no_serial_device_opened"]["const"],
+            true
+        );
+        assert_eq!(schema["properties"]["no_serial_query_sent"]["const"], true);
+        assert_eq!(schema["properties"]["sent_output_writes"]["const"], false);
+        assert_eq!(
+            schema["properties"]["sent_configuration_writes"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["sent_firmware_or_dfu_commands"]["const"],
+            false
+        );
         Ok(())
     }
 

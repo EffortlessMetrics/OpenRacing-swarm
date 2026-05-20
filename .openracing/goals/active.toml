@@ -706,6 +706,26 @@ commands = [
 ]
 
 [[work_item]]
+id = "vendor-exact-authorization-support"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "schemas/moza-vendor-authority-authorization.schema.json"
+claim_boundary = "Exact authorization receipt support only; adds wheelctl moza authorize-vendor-authority to create a single-use command/frame/hash-bound authorization receipt without opening HID, opening serial, sending queries, sending output/configuration/firmware writes, consuming authorization, native-control, native-visible, smoke-ready, coexistence, simulator, or release-ready claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_authorization -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl parse_moza_authorize_vendor_authority -- --nocapture",
+  "cargo test --locked -p wheelctl --test cli_comprehensive_e2e_tests help_snapshots::snapshot_moza_help -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo hakari verify",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

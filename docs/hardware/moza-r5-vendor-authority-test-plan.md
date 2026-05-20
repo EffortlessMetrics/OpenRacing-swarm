@@ -50,6 +50,11 @@ Provide a step-by-step implementation queue for Moza R5 vendor authority infrast
    - Send only registry-allowed vendor status queries, record decoded status responses, and emit a non-claiming receipt with `sent_read_only_query_commands=true`, `sent_output_writes=false`, `sent_configuration_writes=false`, `sent_firmware_or_dfu_commands=false`, `hardware_output_authorized=false`, and `native_control_evidence=false`.
    - Do not add exact authorization, output/configuration writes, firmware/DFU behavior, native-visible promotion, smoke-ready promotion, or simulator claims.
 7. **Exact authorization support**
+   - Add a guarded `wheelctl moza authorize-vendor-authority` command that creates a single-use authorization receipt without opening HID, opening serial, sending read-only queries, or sending output/configuration/firmware writes.
+   - Require explicit `--confirm-exact-vendor-authority-authorization`, command-bound bench-clear evidence, a registry command id, and a full decoded frame whose tuple, device id, checksum, frame hash, and payload hash are bound into the receipt.
+   - Accept only registry commands whose risk class requires exact authorization; reject read-only status commands, standard PIDFF commands, firmware/DFU, unknown, empty-payload, tuple-mismatched, and checksum-invalid frames.
+   - Keep `native_control_evidence=false` and `native_visible_ready=false`; this receipt authorizes only one later exact vendor-authority frame after the no-output dry-run stage reviews and consumes it.
+   - Do not add hardware send behavior, serial transport writes, native-visible promotion, smoke-ready promotion, coexistence claims, simulator claims, or readiness promotion.
 8. **Vendor authority smoke dry-run**
 9. **First bounded hardware authority attempt**
 10. **Post-authority PIDFF response comparison**
@@ -102,6 +107,20 @@ cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_authority_re
 cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
 cargo test --locked -p wheelctl --bin wheelctl parse_moza_vendor_status_probe -- --nocapture
 cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo hakari verify
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+## Proof commands (PR7)
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_authority_authorization -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl parse_moza_authorize_vendor_authority -- --nocapture
+cargo test --locked -p wheelctl --test cli_comprehensive_e2e_tests help_snapshots::snapshot_moza_help -- --nocapture
 cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
 cargo hakari verify
 cargo run --locked -p openracing-tools --bin package-surface -- --check

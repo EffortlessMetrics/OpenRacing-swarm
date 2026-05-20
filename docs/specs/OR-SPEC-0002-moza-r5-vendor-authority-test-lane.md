@@ -149,6 +149,11 @@ traffic from output/configuration writes. It MUST set:
 ### Authorization contract
 
 Any vendor write MUST be exact-command authorized, hash-bound, command-bound, consumable once, and rejection-tested for payload drift, unknown commands, and generic bench-clear phrases.
+The authorization receipt MAY set `hardware_output_authorized=true`, but it MUST
+also keep `native_control_evidence=false` and `native_visible_ready=false` until
+a later consumed hardware attempt records real evidence. The authorization tool
+MUST NOT open HID, open serial, send read-only queries, or send
+output/configuration/firmware writes while creating the receipt.
 
 ### Vendor authority smoke contract
 

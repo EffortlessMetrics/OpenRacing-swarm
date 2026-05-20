@@ -2181,6 +2181,54 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_authorize_vendor_authority() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "authorize-vendor-authority",
+            "--command-id",
+            "estop_set_ffb",
+            "--frame-hex",
+            "7E02461C0001F0",
+            "--authorized-by",
+            "Steven",
+            "--bench-clear-evidence",
+            "bench clear for exact estop_set_ffb: R5 stable, hands clear, wheel clear",
+            "--expires-after-minutes",
+            "10",
+            "--confirm-exact-vendor-authority-authorization",
+            "--json-out",
+            "target/moza-current/vendor-authority-authorization.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::AuthorizeVendorAuthority {
+                command_id,
+                frame_hex,
+                authorized_by,
+                bench_clear_evidence,
+                expires_after_minutes,
+                confirm_exact_vendor_authority_authorization,
+                json_out,
+                overwrite,
+            }) => {
+                assert_eq!(command_id, "estop_set_ffb");
+                assert_eq!(frame_hex, "7E02461C0001F0");
+                assert_eq!(authorized_by, "Steven");
+                assert!(bench_clear_evidence.contains("estop_set_ffb"));
+                assert_eq!(*expires_after_minutes, 10);
+                assert!(*confirm_exact_vendor_authority_authorization);
+                assert_eq!(
+                    json_out.to_str(),
+                    Some("target/moza-current/vendor-authority-authorization.json")
+                );
+                assert!(!overwrite);
+            }
+            _ => return Err("expected Moza AuthorizeVendorAuthority command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_promote_fixture() -> TestResult {
         let cli = parse_cli([
             "wheelctl",

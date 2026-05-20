@@ -840,6 +840,34 @@ pub enum MozaCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
+    /// Create a single-use exact Moza vendor-authority authorization receipt without sending traffic
+    AuthorizeVendorAuthority {
+        /// Registry command id being authorized for the later exact frame
+        #[arg(long)]
+        command_id: String,
+        /// Full Moza serial frame bytes to bind, including start byte and checksum
+        #[arg(long)]
+        frame_hex: String,
+        /// Operator or host label granting bench-clear
+        #[arg(long, default_value = "Steven")]
+        authorized_by: String,
+        /// Fresh command-bound bench-clear evidence naming the exact command id, stable R5, hands clear, and wheel clear
+        #[arg(long)]
+        bench_clear_evidence: String,
+        /// Expiration window for this single-use authorization receipt
+        #[arg(long, default_value_t = 10)]
+        expires_after_minutes: u64,
+        /// Explicit acknowledgement required before creating a vendor-authority authorization receipt
+        #[arg(long)]
+        confirm_exact_vendor_authority_authorization: bool,
+        /// Write the authorization receipt to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing authorization receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
     /// Promote a validated Moza capture JSONL into a parser fixture file
     PromoteFixture {
         /// JSON Lines file produced by `wheelctl moza capture-input`
