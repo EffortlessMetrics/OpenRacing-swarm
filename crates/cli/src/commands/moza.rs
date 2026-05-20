@@ -37,6 +37,7 @@ use crate::error::CliError;
 mod descriptor_input;
 mod formatting;
 mod json_value;
+mod safety_checks;
 
 use descriptor_input::{read_report_descriptor_bin_file, read_report_descriptor_hex_file};
 use formatting::{
@@ -44,6 +45,10 @@ use formatting::{
     utc_timestamp_pair_is_ordered,
 };
 use json_value::{json_bool, json_f64, json_i64, json_string, json_u64};
+use safety_checks::{
+    no_out_of_scope_device_commands, receipt_failure, short_hid_write_error,
+    short_zero_output_write_error,
+};
 
 const DIRECT_TORQUE_REPORT_ID: &str = "0x20";
 const SIMULATOR_FFB_WRITER_COMMAND: &str = "wheeld --hardware-lane moza-r5";
@@ -164,35 +169,6 @@ const SIMULATOR_FFB_PREREQUISITE_ARTIFACTS: [(&str, &str); 6] = [
     ("init_standard_handshake", "init-standard.json"),
     ("low_torque_bounded", "low-torque-proof.json"),
 ];
-
-fn short_hid_write_error(bytes_written: usize) -> Option<String> {
-    if bytes_written == REPORT_LEN {
-        None
-    } else {
-        Some(format!(
-            "short_hid_write: expected {REPORT_LEN} bytes, wrote {bytes_written}"
-        ))
-    }
-}
-
-fn short_zero_output_write_error(expected_len: usize, bytes_written: usize) -> Option<String> {
-    if bytes_written >= expected_len {
-        None
-    } else {
-        Some(format!(
-            "short_hid_write: expected {expected_len} bytes, wrote {bytes_written}"
-        ))
-    }
-}
-
-fn no_out_of_scope_device_commands(receipt: &Value) -> bool {
-    json_bool(receipt, "no_serial_config_commands") == Some(true)
-        && json_bool(receipt, "no_firmware_or_dfu_commands") == Some(true)
-}
-
-fn receipt_failure(message: impl Into<String>) -> anyhow::Error {
-    CliError::ReceiptFailure(message.into()).into()
-}
 
 struct TorqueTestRequest<'a> {
     json: bool,
@@ -3927,7 +3903,7 @@ async fn torque_test(request: TorqueTestRequest<'_>) -> Result<()> {
             match device.write(&payload) {
                 Ok(n) => {
                     receipt.bytes_written_total += n;
-                    if let Some(error) = short_hid_write_error(n) {
+                    if let Some(error) = short_hid_write_error(REPORT_LEN, n) {
                         receipt.write_errors += 1;
                         receipt.abort_reason = Some(error.clone());
                         receipt.record_command(LowTorqueCommandRecord::partial(
@@ -3977,7 +3953,7 @@ async fn torque_test(request: TorqueTestRequest<'_>) -> Result<()> {
     match device.write(&final_zero) {
         Ok(n) => {
             receipt.bytes_written_total += n;
-            if let Some(error) = short_hid_write_error(n) {
+            if let Some(error) = short_hid_write_error(REPORT_LEN, n) {
                 receipt.write_errors += 1;
                 receipt.final_zero_error = Some(error.clone());
                 receipt.record_command(LowTorqueCommandRecord::partial(
