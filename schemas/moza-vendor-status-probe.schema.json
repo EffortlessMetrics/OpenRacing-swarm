@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","artifact_kind","claim_scope","sent_writes"],"properties":{"schema_version":{"const":1},"artifact_kind":{"const":"moza_vendor_status_probe"},"claim_scope":{"const":"read_only_hardware"},"sent_writes":{"const":false}},"additionalProperties":true}

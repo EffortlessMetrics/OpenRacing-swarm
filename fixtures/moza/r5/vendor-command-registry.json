@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "moza_vendor_command_registry",
+  "claim_scope": "protocol_research_only",
+  "native_control_evidence": false,
+  "hardware_output_authorized": false,
+  "device": {
+    "vid_pid": "0x346E:0x0004",
+    "model": "MOZA R5 Base",
+    "interface_serial": "MI_00",
+    "interface_hid": "MI_02"
+  },
+  "commands": [
+    {"id":"estop_set_ffb","group":70,"command":0,"name":"EstopCtrl_SetFfb","risk_class":"vendor_output_candidate","allowed_for_native_plan":false},
+    {"id":"estop_get_ffb","group":70,"command":1,"name":"EstopCtrl_GetFfb","risk_class":"vendor_status","allowed_for_native_plan":true},
+    {"id":"main_misc_set_ffb_status","group":33,"command":6,"name":"MainMiscCtrl_SetFfbStatus","risk_class":"vendor_output_candidate","allowed_for_native_plan":false},
+    {"id":"main_misc_get_ffb_status","group":33,"command":7,"name":"MainMiscCtrl_GetFfbStatus","risk_class":"vendor_status","allowed_for_native_plan":true}
+  ],
+  "forbidden": [
+    "group_10_eeprom",
+    "firmware_or_dfu",
+    "hid_report_0xaf",
+    "unknown_host_to_device"
+  ]
+}
