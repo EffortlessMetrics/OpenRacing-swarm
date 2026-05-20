@@ -45,6 +45,16 @@ undertravel after 672 successful bounded PIDFF writes, and
 `native-controlled-angle-closed-loop-failure-analysis.json` records the
 no-output classification. No further hardware output is authorized.
 
+The vendor-authority rail is recorded through one consumed `estop_set_ffb`
+attempt and one post-authority PIDFF response comparison. The attempt sent only
+the exact authorized frame `7E02461C0001F0`, consumed its authorization, and
+closed `hardware_output_authorized=false`. The follow-up comparison at
+`vendor-post-authority-pidff-response.json` classifies
+`post_authority_pidff_response_regressed`: baseline `0.18127718013275285`
+degrees, post-authority `0.032959487296864154` degrees, delta change
+`-0.1483176928358887` degrees. This does not unlock native-visible motion or
+authorize another output attempt.
+
 `docs/hardware/moza-r5-completion-audit.md` maps the broader Moza lane objective
 to concrete receipts and confirms that the objective is still incomplete:
 native-visible, Pit House coexistence, simulator telemetry, bounded simulator
@@ -103,6 +113,9 @@ full input semantic mapping incomplete.
 The current blocked-state handoff is
 `plans/moza-native-visible-lane/handoff.md`. Use it when no active goal work
 item is ready; do not invent new no-output work just to keep the lane moving.
+After the post-authority PIDFF response comparison, the handoff should point at
+review-only protocol analysis and the remaining no-output evidence gaps, not at
+another hardware-output attempt.
 
 ## Work item: activate-source-of-truth
 
@@ -1987,6 +2000,62 @@ Restore the previous pre-output readiness receipt and remove this work-item
 entry. Do not alter Pit House case receipts, vendor-authority navigation,
 native-control receipts, native-visible undertravel evidence, or simulator
 artifacts.
+
+## Work item: post-authority-pidff-regression-doc-refresh
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked specs:
+- docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+- docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: accurate no-output handoff after the consumed vendor-authority attempt
+Blocked by: n/a
+
+### Goal
+
+Refresh source-of-truth docs after the post-authority PIDFF response comparison
+recorded a regression rather than a native-visible unlock.
+
+### Production delta
+
+Add `docs/hardware/moza-r5-post-authority-pidff-response.md` and refresh the
+handoff/completion-audit current-state text so the lane records
+`post_authority_pidff_response_regressed`, keeps native-visible blocked, and
+returns to no-output protocol review before any future output family.
+
+### Non-goals
+
+No hardware output, no authorization receipt, no vendor-authority retry, no
+post-authority PIDFF rerun, no force increase, no longer dwell, no larger angle,
+no direct HID report `0xaf`, no high torque, no serial config, no firmware, no
+DFU, and no readiness promotion.
+
+### Acceptance
+
+- Docs identify the consumed vendor-authority attempt and post-authority PIDFF
+  response comparison as non-claiming evidence.
+- The recorded comparison values are preserved: baseline
+  `0.18127718013275285`, post-authority `0.032959487296864154`, and delta
+  change `-0.1483176928358887`.
+- Handoff no longer points at pre-#664 state as the current frontier.
+- Native-visible verifier remains blocked on `native_actuator_visible_smoke`.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-after-post-authority-doc-refresh.json --md-out target/moza-current/bench-wizard-after-post-authority-doc-refresh.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-post-authority-doc-refresh.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the docs/source-of-truth refresh. Do not remove the consumed
+vendor-authority attempt, post-authority PIDFF receipts, or earlier undertravel
+receipts.
 
 ## Work item: native-visible-promotion
 

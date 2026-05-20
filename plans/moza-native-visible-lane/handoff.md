@@ -34,13 +34,26 @@ steering-angle error, sent 672 bounded reports with zero write errors, timed out
 at `angle_delta_degrees=0.13183794918745662`, sent final Stop All/final zero,
 and stayed post-stop stable.
 
+The vendor-authority rail has now also run exactly one `estop_set_ffb` attempt
+through the exact authorization gate. The consumed attempt sent only
+`7E02461C0001F0`, consumed `vendor-authority-authorization.json`, and closed
+hardware output authorization again. The separately authorized post-authority
+PIDFF response receipt then recorded a lower response than the preserved
+baseline: baseline `0.18127718013275285` degrees, post-authority
+`0.032959487296864154` degrees, delta change `-0.1483176928358887` degrees.
+`vendor-post-authority-pidff-response.json` classifies this as
+`post_authority_pidff_response_regressed`. It is diagnostic evidence only, not
+native-control or native-visible proof.
+
 `native-controlled-angle-attempt-03-failure-analysis.json` classifies attempt 03
 as safe undertravel and keeps native visible motion unclaimed.
 `native-pidff-standard-path-diagnosis.json` classifies the standard PIDFF
 controlled-angle path as ineffective in the current R5 device mode after three
 same-band undertravel attempts. `native-controlled-angle-closed-loop-failure-analysis.json`
 classifies the feedback-bounded attempt as safe undertravel and keeps native
-visible motion unclaimed.
+visible motion unclaimed. `vendor-post-authority-pidff-response.json` extends
+that diagnosis: the tested vendor-authority frame did not improve the comparable
+standard PIDFF response under the same 5 percent / 2000 ms envelope.
 
 Six passive sniff scenario plans now exist under
 `ci/hardware/sniff/moza-r5/2026-05-13`. The `pit-house-open-idle` and
@@ -67,6 +80,8 @@ The broader Moza objective remains incomplete:
 | Standard PIDFF path diagnosis | `native-pidff-standard-path-diagnosis.json` | Recorded no-output architecture diagnosis |
 | Closed-loop controlled-angle output | `native-controlled-angle-closed-loop-smoke.json` | Recorded safe undertravel |
 | Closed-loop failure analysis | `native-controlled-angle-closed-loop-failure-analysis.json` | Recorded no-output classification |
+| Consumed vendor-authority attempt | `vendor-authority-attempt.json` | Recorded exact one-frame non-claiming attempt |
+| Post-authority PIDFF response | `vendor-post-authority-pidff-smoke.json`; `vendor-post-authority-pidff-response.json`; [post-authority PIDFF response diagnosis](../../docs/hardware/moza-r5-post-authority-pidff-response.md) | Recorded regression versus baseline; no native-visible claim |
 | Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence |
 | Remaining passive sniff plans | `pit-house-setting-change`, `simhub-open-idle`, `simhub-output-session`, `simulator-session-start-stop` sniff plans | Plan-only, non-claiming |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |
@@ -81,17 +96,22 @@ role-specific clutch mapping remains diagnostic with `readiness_claim=false`.
 
 ## Required Next Event
 
-The next operator step from the bench wizard is the no-output passive
-`pit-house-setting-change` sniff capture, or equivalent no-output
-vendor-specific protocol investigation. Passive USB sniff captures may produce
-non-claiming `sniff-receipt.json`, `sniff-summary.json`, and bundle manifest
-artifacts, but those are protocol/coexistence evidence, not native readiness
-evidence. Preserve all four controlled-angle undertravel receipts and their
-authorization, smoke, verification, analysis, standard-PIDFF diagnosis,
-closed-loop failure analysis, and sniff artifacts. Do not create another
-authorization or output receipt from verifier guidance. Any future output family
-requires decoded protocol evidence, a reviewed vendor-control plan, fresh
-command-bound bench clear, and a new exact authorization.
+The next operator step from the bench wizard is now review-only:
+`post_authority_pidff_response_comparison_recorded`. It emits no hardware output
+command and no authorization command. The next implementation work should return
+to no-output vendor-specific protocol investigation, such as the remaining
+passive sniff scenarios or decoded report review, before any future motion
+ladder plan.
+
+Passive USB sniff captures may produce non-claiming `sniff-receipt.json`,
+`sniff-summary.json`, and bundle manifest artifacts, but those are
+protocol/coexistence evidence, not native readiness evidence. Preserve all four
+controlled-angle undertravel receipts, the consumed vendor-authority attempt,
+the post-authority PIDFF response receipts, and their analysis/diagnosis
+artifacts. Do not create another authorization or output receipt from verifier
+guidance. Any future output family requires decoded protocol evidence, a
+reviewed vendor-control plan, fresh command-bound bench clear, and a new exact
+authorization.
 
 ## Do Not Do
 
@@ -99,6 +119,8 @@ command-bound bench clear, and a new exact authorization.
 - Do not run hardware output.
 - Do not rerun attempt 03, the closed-loop attempt, or either previous 1 degree
   attempt.
+- Do not retry `estop_set_ffb` or reuse the consumed vendor-authority attempt.
+- Do not rerun the post-authority PIDFF response capture.
 - Do not keep iterating standard PIDFF profile variants without new protocol
   evidence.
 - Do not raise force, extend dwell, or jump to 3, 5, 30, or 90 degrees.

@@ -45,6 +45,7 @@ status_docs = [
   "docs/hardware/moza-r5-pidff-lifecycle-trace.md",
   "docs/hardware/moza-r5-pidff-effect-lifecycle-plan.md",
   "docs/hardware/moza-r5-standard-pidff-path-diagnosis.md",
+  "docs/hardware/moza-r5-post-authority-pidff-response.md",
   "docs/hardware/moza-r5-vendor-control-investigation.md",
   "plans/moza-native-visible-lane/handoff.md",
 ]
@@ -995,6 +996,22 @@ commands = [
   "cargo test --locked -p wheelctl --bin wheelctl vendor_post_authority_pidff_response -- --nocapture",
   "cargo test --locked -p wheelctl --bin wheelctl checked_in_moza_lane_index_matches_artifact_index_renderer -- --nocapture",
   "cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-post-authority-pidff.json --json",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "post-authority-pidff-regression-doc-refresh"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-post-authority-pidff-regression-doc-refresh"
+current_pointer = "docs/hardware/moza-r5-post-authority-pidff-response.md"
+claim_boundary = "Docs/source-of-truth refresh only; records that the consumed vendor-authority attempt and post-authority PIDFF response comparison regressed versus baseline and leaves native-control, native-visible, smoke-ready, release-ready, retry, force-escalation, high-torque, direct HID report 0xaf, serial config, firmware, Pit House, simulator, and coexistence claims false."
+commands = [
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-after-post-authority-doc-refresh.json --md-out target/moza-current/bench-wizard-after-post-authority-doc-refresh.md --json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-post-authority-doc-refresh.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw \"expected native-visible verifier to remain blocked\" }",
   "cargo run --locked -p openracing-tools --bin package-surface -- --check",
   "python scripts/policy_file.py",
   "git diff --check",

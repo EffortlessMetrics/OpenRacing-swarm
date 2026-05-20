@@ -52,9 +52,20 @@ vendor-specific enable/control path investigation before any future output
 family is proposed. The standard PIDFF path diagnosis records that three
 bounded standard-PIDFF-family controlled-angle attempts remained in the same
 undertravel band, and the closed-loop attempt records that feedback-bounded
-PIDFF control also stayed below the visible-motion threshold. The vendor-control
-investigation now has six passive sniff scenario plans for Pit House, SimHub,
-and simulator sessions. Two Pit House scenarios, `pit-house-open-idle` and
+PIDFF control also stayed below the visible-motion threshold.
+
+The exact vendor-authority rail has also run one consumed
+`estop_set_ffb` attempt and one separately authorized post-authority PIDFF
+response capture. The comparison receipt classifies the result as
+`post_authority_pidff_response_regressed`: baseline response was
+`0.18127718013275285` degrees, post-authority response was
+`0.032959487296864154` degrees, and the delta change was
+`-0.1483176928358887` degrees. This is useful protocol evidence, but it is not
+native-control proof, native-visible proof, or authorization to retry.
+
+The vendor-control investigation now has six passive sniff scenario plans for
+Pit House, SimHub, and simulator sessions. Two Pit House scenarios,
+`pit-house-open-idle` and
 `pit-house-full-controls`, have checked-in non-claiming receipts, summaries,
 and bundle manifests. The other four scenarios remain navigation-only until
 matching pcap receipts and summaries exist.
@@ -84,7 +95,9 @@ matching pcap receipts and summaries exist.
 | Attempt-03 failure analysis exists | `native-controlled-angle-attempt-03-failure-analysis.json` | Pass as no-output classification | Analysis classifies safe undertravel in the same response band and keeps rerun, force escalation, native-visible, smoke-ready, and release-ready claims false. |
 | Standard PIDFF path diagnosis exists | `native-pidff-standard-path-diagnosis.json`; [Moza R5 Standard PIDFF Path Diagnosis](moza-r5-standard-pidff-path-diagnosis.md) | Pass as no-output architecture diagnosis | Diagnosis classifies `standard_pidff_controlled_angle_path_ineffective_in_current_r5_mode`, preserves all three controlled-angle receipts, keeps `planned_next_output.allowed=false`, and identifies no-output vendor-specific protocol investigation as next. |
 | Closed-loop controlled-angle path exists | `native-controlled-angle-closed-loop-preflight.json`; `native-controlled-angle-closed-loop-authorization.json`; `native-controlled-angle-closed-loop-smoke.json`; `native-controlled-angle-closed-loop-failure-analysis.json` | Pass as safe failed evidence | The closed-loop attempt used `closed-loop-pidff-angle-v1`, wrote 672 bounded PIDFF reports with zero write errors, sent final Stop All/final zero, stayed post-stop stable, and timed out before target at `angle_delta_degrees=0.13183794918745662`. It is not visible-motion proof and authorizes no further output. |
-| Pit House compatibility navigation is current | `pit-house-availability.json`, `artifact-index`, and `bench-wizard` `pit_house_compatibility`; `ci/hardware/moza-r5/2026-05-13/index.md` Pit House Compatibility section | Pass as non-claiming navigation | The lane records `pit_house_available=true`, `availability_status=running_install_location_unknown`, `recorded_case_count=1/5`, `pit_house_coexistence_claimed=false`, `readiness_claim=false`, `blocks_native_control=false`, and `blocks_native_visible=false`. Missing open/direct/mode-change/firmware-page cases remain external smoke blockers. |
+| Vendor-authority attempt exists | `vendor-authority-authorization.json`; `vendor-authority-smoke-dry-run.json`; `vendor-authority-attempt.json` | Pass as exact one-frame non-claiming evidence | The attempt consumed a fresh precondition-bound authorization, sent only the hash-bound `estop_set_ffb` frame once, closed `hardware_output_authorized=false`, and kept native-control/native-visible/smoke-ready/release-ready claims false. |
+| Post-authority PIDFF comparison exists | `vendor-post-authority-pidff-smoke.json`; `vendor-post-authority-pidff-response.json`; [Moza R5 Post-Authority PIDFF Response](moza-r5-post-authority-pidff-response.md) | Pass as no-output comparison diagnosis | The comparison classifies `post_authority_pidff_response_regressed`: baseline `0.18127718013275285` degrees versus post-authority `0.032959487296864154` degrees. It authorizes no retry and does not claim native-visible readiness. |
+| Pit House compatibility navigation is current | `pit-house-availability.json`, `artifact-index`, and `bench-wizard` `pit_house_compatibility`; `ci/hardware/moza-r5/2026-05-13/index.md` Pit House Compatibility section | Pass as non-claiming navigation | The lane records `pit_house_available=true`, `availability_status=running_install_location_unknown`, `recorded_case_count=2/5`, `pit_house_coexistence_claimed=false`, `readiness_claim=false`, `blocks_native_control=false`, and `blocks_native_visible=false`. Missing direct/mode-change/firmware-page cases remain external smoke blockers. |
 | Pit House coexistence proven | `pit-house-coexistence.json`; smoke-ready verifier | Missing | `pit-house-availability.json` is non-claiming availability evidence only. Coexistence matrix is not proven. |
 | Simulator compatibility navigation is current | `pre-output-readiness.json`, `artifact-index`, and `bench-wizard` `simulator_compatibility`; `ci/hardware/moza-r5/2026-05-13/index.md` Simulator Compatibility section | Pass as non-claiming navigation | The lane records `recorded_artifact_count=0/2`, `simulator_telemetry_claimed=false`, `bounded_simulator_ffb_claimed=false`, `readiness_claim=false`, `blocks_native_control=false`, and `blocks_native_visible=false`. Missing telemetry and bounded FFB artifacts remain external smoke blockers. |
 | Passive USB sniff navigation is current | `artifact-index` and `bench-wizard` `passive_sniff_navigation`; `ci/hardware/moza-r5/2026-05-13/index.md` Passive USB Sniffing section | Pass as non-claiming navigation | The lane records 2/6 passive sniff scenarios with non-claiming summaries: `pit-house-open-idle` and `pit-house-full-controls`. The remaining four scenarios are plan-only and still `partial_or_unaccepted` until pcap receipts and summaries exist. `readiness_claim=false`, `blocks_native_control=false`, `blocks_native_visible=false`, and `blocks_smoke_ready=false`. |
@@ -124,6 +137,12 @@ attempt_03.analysis=native-controlled-angle-attempt-03-failure-analysis.json com
 closed_loop.authorization=native-controlled-angle-closed-loop-authorization.json consumed
 closed_loop.output=native-controlled-angle-closed-loop-smoke.json safe_undertravel
 closed_loop.analysis=native-controlled-angle-closed-loop-failure-analysis.json complete_no_output
+vendor_authority.attempt=vendor-authority-attempt.json consumed_non_claiming
+post_authority_pidff.classification=post_authority_pidff_response_regressed
+post_authority_pidff.baseline_delta_degrees=0.18127718013275285
+post_authority_pidff.post_delta_degrees=0.032959487296864154
+post_authority_pidff.delta_change_degrees=-0.1483176928358887
+next_operator_step=post_authority_pidff_response_comparison_recorded
 ```
 
 The current input-role semantic evidence remains diagnostic:
@@ -143,7 +162,7 @@ The current external-compatibility navigation is also diagnostic only:
 ```text
 pit_house_compatibility.pit_house_available=true
 pit_house_compatibility.availability_status=running_install_location_unknown
-pit_house_compatibility.recorded_case_count=1
+pit_house_compatibility.recorded_case_count=2
 pit_house_compatibility.required_case_count=5
 pit_house_compatibility.pit_house_coexistence_claimed=false
 pit_house_compatibility.blocks_native_control=false
@@ -179,14 +198,16 @@ failed gates:
 2. Capture the remaining passive USB sniff scenarios, generate non-claiming
    receipts and summaries, decode vendor reports, map report IDs, identify
    enable/gain/mode handshakes, and design a reviewed plan.
-3. A reviewed future-output plan only if new protocol evidence justifies a new
+3. Post-authority PIDFF response review and no-output protocol analysis before
+   any future output family.
+4. A reviewed future-output plan only if new protocol evidence justifies a new
    output family.
-4. If a future receipt passes, native-visible verifier, manifest promotion, and
+5. If a future receipt passes, native-visible verifier, manifest promotion, and
    lane audit.
-5. Pit House coexistence matrix.
-6. Real simulator telemetry proof.
-7. Bounded simulator FFB smoke receipt.
-8. Smoke-ready verification, manifest promotion, and lane audit.
+6. Pit House coexistence matrix.
+7. Real simulator telemetry proof.
+8. Bounded simulator FFB smoke receipt.
+9. Smoke-ready verification, manifest promotion, and lane audit.
 
 ## Claim Boundary
 
