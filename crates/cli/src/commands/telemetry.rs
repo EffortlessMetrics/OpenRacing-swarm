@@ -5,7 +5,6 @@ use crate::error::CliError;
 use anyhow::{Context, Result, anyhow};
 use chrono::{SecondsFormat, Utc};
 use openracing_telemetry_adapters::simhub::parse_simhub_packet;
-use serde::Serialize;
 use serde_json::Value;
 use std::fs::File;
 use std::io::Write;
@@ -14,90 +13,20 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 use tokio::net::UdpSocket;
 
-const REGISTER_COMMAND_APPLICATION: u8 = 1;
-const PROTOCOL_VERSION: u8 = 4;
-const MSG_REGISTRATION_RESULT: u8 = 1;
-const MAX_PACKET_SIZE: usize = 4096;
-const CAPTURE_MAGIC: &[u8; 8] = b"ORACAPv1";
-const RECORD_COMMAND: &str = "wheelctl telemetry record";
-#[cfg(test)]
-const DEFAULT_SIMHUB_PORT: u16 = 5555;
-
 mod normalized;
+mod protocol;
+mod types;
 mod virtual_ffb;
 
 use normalized::{normalized_f64, validated_normalized_snapshots};
+#[cfg(test)]
+use protocol::DEFAULT_SIMHUB_PORT;
+use protocol::{
+    CAPTURE_MAGIC, MAX_PACKET_SIZE, MSG_REGISTRATION_RESULT, PROTOCOL_VERSION, RECORD_COMMAND,
+    REGISTER_COMMAND_APPLICATION,
+};
+use types::{CaptureSummary, LiveRecordSummary, ProbeAttempt, ProbeSummary, RecordSummary};
 use virtual_ffb::write_virtual_ffb_log;
-
-#[derive(Debug, Serialize)]
-struct ProbeAttempt {
-    attempt: u32,
-    status: String,
-    elapsed_ms: u64,
-    response_size: usize,
-    message_type: Option<u8>,
-    registration_connection_id: Option<i32>,
-    registration_success: Option<bool>,
-    registration_readonly: Option<bool>,
-    registration_error: Option<String>,
-    error: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct ProbeSummary {
-    game_id: String,
-    endpoint: String,
-    attempts: u32,
-    any_response: bool,
-    attempts_detail: Vec<ProbeAttempt>,
-}
-
-#[derive(Debug, Serialize)]
-struct CaptureSummary {
-    game_id: String,
-    listen: String,
-    duration_seconds: u64,
-    packets_captured: u64,
-    bytes_written: u64,
-    output: String,
-}
-
-#[derive(Debug, Serialize)]
-struct RecordSummary {
-    command: &'static str,
-    game: String,
-    telemetry_source: String,
-    input: String,
-    output: String,
-    recorder_session_id: String,
-    normalized_snapshot_count: u64,
-    duration_ms: u64,
-    hardware_output_enabled: bool,
-    no_hid_device_opened: bool,
-    no_ffb_writes: bool,
-    no_serial_config_commands: bool,
-    no_firmware_or_dfu_commands: bool,
-}
-
-#[derive(Debug, Serialize)]
-struct LiveRecordSummary {
-    command: &'static str,
-    game: String,
-    telemetry_source: String,
-    input: String,
-    output: String,
-    recorder_session_id: String,
-    normalized_snapshot_count: u64,
-    duration_ms: u64,
-    packets_received: u64,
-    bytes_received: u64,
-    parse_errors: u64,
-    hardware_output_enabled: bool,
-    no_hid_device_opened: bool,
-    no_ffb_writes: bool,
-    no_serial_config_commands: bool,
-    no_firmware_or_dfu_commands: bool,
-}
 
 /// Execute telemetry command.
 pub async fn execute(cmd: &TelemetryCommands, json: bool) -> Result<()> {
