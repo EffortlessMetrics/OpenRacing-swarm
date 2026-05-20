@@ -85,6 +85,9 @@ Provide a step-by-step implementation queue for Moza R5 vendor authority infrast
    - Surface an exclusive R5 serial/CDC access precondition in artifact-index and bench-wizard navigation before short-lived authorization or a separate bounded attempt.
    - Derive serial-port hints from stored `hardware-doctor.json` only; do not inspect live serial devices, open serial, create authorization, emit an attempt command, or send output from navigation.
    - The handoff may warn that Pit House or another vendor app can own the serial/CDC port, but it MUST keep Pit House non-blocking for native control and keep all readiness/control claims false.
+10d. **Explicit authorization handoff command**
+   - Keep bench-wizard no-output, but make the displayed exact authorization command include the explicit operator label and bounded expiry instead of relying on CLI defaults.
+   - The generated command MUST parse through the normal CLI parser and MUST still omit the bounded hardware attempt command, serial port, read-only query send, output write, firmware/DFU behavior, native-control claim, native-visible claim, smoke-ready claim, and release-ready claim.
 11+. **Closed-loop motion ladder**
 
 ## Required gating invariant
@@ -144,6 +147,17 @@ cargo test --locked -p wheelctl --bin wheelctl parse_moza_vendor_authority_attem
 cargo test --locked -p wheelctl --test cli_comprehensive_e2e_tests help_snapshots::snapshot_moza_help -- --nocapture
 cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
 cargo hakari verify
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+## Proof commands (PR10d)
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_authority_handoff -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
 cargo run --locked -p openracing-tools --bin package-surface -- --check
 python scripts/policy_file.py
 git diff --check

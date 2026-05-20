@@ -137,6 +137,8 @@ const VENDOR_AUTHORITY_HANDOFF_PAYLOAD_HEX: &str = "01";
 const VENDOR_AUTHORITY_HANDOFF_PRODUCT_ID: &str = "0x0004";
 const VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE: &str =
     "bench clear for exact estop_set_ffb: R5 stable, hands clear, wheel clear";
+const VENDOR_AUTHORITY_HANDOFF_AUTHORIZED_BY: &str = "Steven";
+const VENDOR_AUTHORITY_HANDOFF_EXPIRES_AFTER_MINUTES: u64 = 10;
 const NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILES: &[&str] = &[
     NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE,
     NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE,
@@ -2104,10 +2106,12 @@ fn moza_vendor_authority_navigation_summary(lane: &Path) -> Value {
 
 fn vendor_authority_authorization_command(lane: &Path) -> String {
     format!(
-        "wheelctl moza authorize-vendor-authority --command-id {} --frame-hex {} --bench-clear-evidence '{}' --json-out {} --json --confirm-exact-vendor-authority-authorization",
+        "wheelctl moza authorize-vendor-authority --command-id {} --frame-hex {} --authorized-by {} --bench-clear-evidence '{}' --expires-after-minutes {} --json-out {} --json --confirm-exact-vendor-authority-authorization",
         VENDOR_AUTHORITY_HANDOFF_COMMAND_ID,
         VENDOR_AUTHORITY_HANDOFF_FRAME_HEX,
+        VENDOR_AUTHORITY_HANDOFF_AUTHORIZED_BY,
         VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE,
+        VENDOR_AUTHORITY_HANDOFF_EXPIRES_AFTER_MINUTES,
         lane.join(VENDOR_AUTHORITY_AUTHORIZATION_FILE).display()
     )
 }
@@ -39316,6 +39320,16 @@ mod tests {
                     "generated vendor-authority handoff command failed to parse: {command_text}\n{error}"
                 )
             })?;
+            if name == "create_exact_vendor_authority_authorization" {
+                assert!(
+                    command_text.contains("--authorized-by Steven"),
+                    "authorization handoff should name the operator explicitly: {command_text}"
+                );
+                assert!(
+                    command_text.contains("--expires-after-minutes 10"),
+                    "authorization handoff should spell out the bounded expiry: {command_text}"
+                );
+            }
             command_names.push(name.to_string());
         }
         assert_eq!(
@@ -39333,6 +39347,8 @@ mod tests {
         assert!(markdown.contains(VENDOR_AUTHORITY_HANDOFF_COMMAND_ID));
         assert!(markdown.contains(VENDOR_AUTHORITY_HANDOFF_FRAME_HEX));
         assert!(markdown.contains(VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE));
+        assert!(markdown.contains("--authorized-by Steven"));
+        assert!(markdown.contains("--expires-after-minutes 10"));
         assert!(markdown.contains("Requires exclusive R5 serial/CDC access"));
         assert!(markdown.contains("Pit House dependency: `false`; serial-owner risk: `true`"));
         assert!(markdown.contains("R5 serial port hints: `COM4`"));
