@@ -840,6 +840,23 @@ commands = [
 ]
 
 [[work_item]]
+id = "vendor-authority-serial-precondition-handoff"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "crates/cli/src/commands/moza.rs"
+claim_boundary = "No-output operator navigation only; artifact-index and bench-wizard surface exclusive R5 serial/CDC access guidance and stored serial-port hints before exact vendor-authority authorization or a separate bounded attempt, without opening live serial, creating authorization, emitting hardware attempt commands, running output/configuration/firmware writes, native-control, native-visible, smoke-ready, Pit House dependency, simulator, or release-ready claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_handoff -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

@@ -39,6 +39,11 @@ This section is native-control research navigation only. It does not open HID, s
 - Hardware attempt command emitted: `false`
 - Exact command: `estop_set_ffb` frame `7E02461C0001F0` payload `01` risk `vendor_output_candidate`
 - Required bench-clear evidence: `bench clear for exact estop_set_ffb: R5 stable, hands clear, wheel clear`
+- Requires exclusive R5 serial/CDC access before separate attempt: `true`
+- Pit House dependency: `false`; serial-owner risk: `true`
+- Handoff opens serial: `false`; sends output: `false`
+- R5 serial port hints: `COM4`
+- Serial precondition guidance: Before creating short-lived exact authorization or running the separate bounded attempt, close or release Pit House and any other app that may own the R5 serial/CDC port; this is an exclusive-port precondition, not a Pit House dependency for native control.
 
 | Artifact | Path |
 | --- | --- |

@@ -191,6 +191,11 @@ port, send only the exact hash-bound frame once, and write the consumed attempt
 receipt. Verifiers, bench wizards, and generators MUST NOT emit or auto-run the
 hardware attempt command.
 
+No-output navigation MAY surface an exclusive R5 serial/CDC access precondition
+and stored serial-port hints before authorization or attempt. That guidance MAY
+name Pit House as a possible serial-port owner, but it MUST keep Pit House a
+witness/compatibility lane rather than a native-control dependency.
+
 If the executable command validates the exact receipts and R5 serial identity
 but blocks before opening the serial port or sending the frame, it MUST write a
 separate blocked-before-send receipt instead of a consumed attempt receipt. That

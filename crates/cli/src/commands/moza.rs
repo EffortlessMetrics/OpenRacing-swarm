@@ -134,6 +134,7 @@ const VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE: &str = "vendor-post-authority-p
 const VENDOR_AUTHORITY_HANDOFF_COMMAND_ID: &str = "estop_set_ffb";
 const VENDOR_AUTHORITY_HANDOFF_FRAME_HEX: &str = "7E02461C0001F0";
 const VENDOR_AUTHORITY_HANDOFF_PAYLOAD_HEX: &str = "01";
+const VENDOR_AUTHORITY_HANDOFF_PRODUCT_ID: &str = "0x0004";
 const VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE: &str =
     "bench clear for exact estop_set_ffb: R5 stable, hands clear, wheel clear";
 const NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILES: &[&str] = &[
@@ -1756,6 +1757,7 @@ fn moza_vendor_authority_next_operator_step(lane: &Path) -> Value {
     let blocked_attempt_recorded = lane.join(VENDOR_AUTHORITY_ATTEMPT_BLOCKED_FILE).is_file();
     let authorization_recorded = authorization_path.is_file();
     let smoke_dry_run_recorded = smoke_path.is_file();
+    let serial_precondition = moza_vendor_authority_serial_precondition(lane);
 
     if blocked_attempt_recorded {
         return serde_json::json!({
@@ -1771,6 +1773,7 @@ fn moza_vendor_authority_next_operator_step(lane: &Path) -> Value {
             "required_bench_clear_evidence": VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE,
             "requires_fresh_authorization_for_retry": true,
             "requires_fresh_smoke_dry_run_for_retry": true,
+            "serial_precondition": serial_precondition,
             "planned_output_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
             "blocked_actions": vendor_authority_handoff_blocked_actions()
         });
@@ -1788,6 +1791,7 @@ fn moza_vendor_authority_next_operator_step(lane: &Path) -> Value {
             "attempt_command_must_be_operator_requested": true,
             "authorization_receipt": VENDOR_AUTHORITY_AUTHORIZATION_FILE,
             "smoke_dry_run_receipt": VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE,
+            "serial_precondition": serial_precondition,
             "planned_output_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
             "blocked_actions": vendor_authority_handoff_blocked_actions()
         });
@@ -1804,6 +1808,7 @@ fn moza_vendor_authority_next_operator_step(lane: &Path) -> Value {
             "hardware_attempt_command_emitted": false,
             "authorization_receipt": VENDOR_AUTHORITY_AUTHORIZATION_FILE,
             "required_smoke_dry_run_receipt": VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE,
+            "serial_precondition": serial_precondition,
             "commands": [
                 {
                     "name": "validate_vendor_authority_smoke_dry_run",
@@ -1835,6 +1840,7 @@ fn moza_vendor_authority_next_operator_step(lane: &Path) -> Value {
         "risk_class": "vendor_output_candidate",
         "authorization_receipt": VENDOR_AUTHORITY_AUTHORIZATION_FILE,
         "smoke_dry_run_receipt": VENDOR_AUTHORITY_SMOKE_DRY_RUN_FILE,
+        "serial_precondition": serial_precondition,
         "planned_output_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
         "commands": [
             {
@@ -1860,6 +1866,82 @@ fn moza_vendor_authority_next_operator_step(lane: &Path) -> Value {
         ],
         "blocked_actions": vendor_authority_handoff_blocked_actions()
     })
+}
+
+fn moza_vendor_authority_serial_precondition(lane: &Path) -> Value {
+    let hints = moza_vendor_authority_serial_port_hints(lane);
+    let interfaces = moza_vendor_authority_serial_interface_hints(lane);
+    serde_json::json!({
+        "requires_exclusive_r5_serial_cdc_access": true,
+        "pit_house_dependency": false,
+        "pit_house_serial_owner_risk": true,
+        "other_vendor_app_serial_owner_risk": true,
+        "opens_serial": false,
+        "sends_read_only_query": false,
+        "sends_output": false,
+        "sends_configuration_write": false,
+        "sends_firmware_or_dfu_command": false,
+        "source_artifact": "hardware-doctor.json",
+        "serial_port_hints": hints,
+        "serial_interface_hints": interfaces,
+        "guidance": "Before creating short-lived exact authorization or running the separate bounded attempt, close or release Pit House and any other app that may own the R5 serial/CDC port; this is an exclusive-port precondition, not a Pit House dependency for native control."
+    })
+}
+
+fn moza_vendor_authority_serial_port_hints(lane: &Path) -> Vec<String> {
+    moza_vendor_authority_serial_hints(lane, true)
+}
+
+fn moza_vendor_authority_serial_interface_hints(lane: &Path) -> Vec<String> {
+    moza_vendor_authority_serial_hints(lane, false)
+}
+
+fn moza_vendor_authority_serial_hints(lane: &Path, ports_only: bool) -> Vec<String> {
+    let Ok(receipt) = read_json_value(lane, "hardware-doctor.json") else {
+        return Vec::new();
+    };
+    let mut hints = BTreeSet::new();
+    let Some(devices) = receipt
+        .pointer("/windows_pnp/devices")
+        .and_then(Value::as_array)
+    else {
+        return Vec::new();
+    };
+    for device in devices {
+        if json_string(device, "class") != Some("Ports")
+            || json_string(device, "vendor_id") != Some(MOZA_VENDOR_HEX)
+            || json_string(device, "product_id") != Some(VENDOR_AUTHORITY_HANDOFF_PRODUCT_ID)
+        {
+            continue;
+        }
+        let Some(friendly_name) = json_string(device, "friendly_name") else {
+            continue;
+        };
+        if ports_only {
+            if let Some(port) = windows_com_port_from_friendly_name(friendly_name) {
+                hints.insert(port);
+            }
+        } else {
+            hints.insert(friendly_name.to_string());
+        }
+    }
+    hints.into_iter().collect()
+}
+
+fn windows_com_port_from_friendly_name(friendly_name: &str) -> Option<String> {
+    let marker = "(COM";
+    let start = friendly_name.find(marker)? + 1;
+    let suffix = &friendly_name[start..];
+    let end = suffix.find(')')?;
+    let candidate = &suffix[..end];
+    if candidate.len() > 3
+        && candidate.starts_with("COM")
+        && candidate[3..].chars().all(|ch| ch.is_ascii_digit())
+    {
+        Some(candidate.to_string())
+    } else {
+        None
+    }
 }
 
 fn moza_post_authority_pidff_response_next_operator_step(lane: &Path) -> Value {
@@ -2009,9 +2091,11 @@ fn moza_vendor_authority_navigation_summary(lane: &Path) -> Value {
             "post_authority_pidff_response_receipt": VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE
         },
         "required_bench_clear_evidence": VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE,
+        "serial_precondition": moza_vendor_authority_serial_precondition(lane),
         "blocked_actions": vendor_authority_handoff_blocked_actions(),
         "notes": [
             "Vendor-authority navigation is native-control research support; it is not a Pit House, SimHub, or simulator dependency.",
+            "Pit House may still own the R5 serial/CDC port; release exclusive serial owners before creating short-lived authorization or running the separate bounded attempt.",
             "The bench wizard may surface no-output authorization and smoke commands, but it must not emit the hardware attempt command.",
             "A consumed attempt receipt remains non-claiming until later PIDFF response comparison and native-visible verification pass."
         ]
@@ -33635,6 +33719,43 @@ fn push_vendor_authority_navigation_markdown(out: &mut String, receipt: &Value) 
             markdown_escape(evidence)
         ));
     }
+    if let Some(precondition) = summary.get("serial_precondition") {
+        let requires_exclusive =
+            json_bool(precondition, "requires_exclusive_r5_serial_cdc_access").unwrap_or(false);
+        let pit_house_dependency = json_bool(precondition, "pit_house_dependency").unwrap_or(false);
+        let pit_house_owner_risk =
+            json_bool(precondition, "pit_house_serial_owner_risk").unwrap_or(false);
+        let opens_serial = json_bool(precondition, "opens_serial").unwrap_or(false);
+        let sends_output = json_bool(precondition, "sends_output").unwrap_or(false);
+        out.push_str(&format!(
+            "- Requires exclusive R5 serial/CDC access before separate attempt: `{requires_exclusive}`\n"
+        ));
+        out.push_str(&format!(
+            "- Pit House dependency: `{pit_house_dependency}`; serial-owner risk: `{pit_house_owner_risk}`\n"
+        ));
+        out.push_str(&format!(
+            "- Handoff opens serial: `{opens_serial}`; sends output: `{sends_output}`\n"
+        ));
+        if let Some(hints) = precondition
+            .get("serial_port_hints")
+            .and_then(Value::as_array)
+            .filter(|hints| !hints.is_empty())
+        {
+            let rendered_hints = hints
+                .iter()
+                .filter_map(Value::as_str)
+                .map(markdown_escape)
+                .collect::<Vec<_>>()
+                .join("`, `");
+            out.push_str(&format!("- R5 serial port hints: `{rendered_hints}`\n"));
+        }
+        if let Some(guidance) = json_string(precondition, "guidance") {
+            out.push_str(&format!(
+                "- Serial precondition guidance: {}\n",
+                markdown_escape(guidance)
+            ));
+        }
+    }
     if let Some(artifacts) = summary.get("artifacts") {
         out.push_str("\n| Artifact | Path |\n");
         out.push_str("| --- | --- |\n");
@@ -38985,12 +39106,59 @@ mod tests {
         Ok(())
     }
 
+    fn write_vendor_authority_serial_hardware_doctor(lane: &Path) -> TestResult {
+        write_test_json_file(
+            &lane.join("hardware-doctor.json"),
+            &serde_json::json!({
+                "success": true,
+                "command": "wheelctl hardware doctor",
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_output_reports": true,
+                "no_feature_reports": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "windows_pnp": {
+                    "scan_attempted": true,
+                    "moza_vid_visible": true,
+                    "serial_interface_count": 1,
+                    "devices": [
+                        {
+                            "status": "OK",
+                            "class": "Ports",
+                            "friendly_name": "USB Serial Device (COM4)",
+                            "vendor_id": "0x346E",
+                            "product_id": "0x0004",
+                            "interface_number": 0,
+                            "instance_id_present": true
+                        },
+                        {
+                            "status": "OK",
+                            "class": "HIDClass",
+                            "friendly_name": "USB Input Device",
+                            "vendor_id": "0x346E",
+                            "product_id": "0x0004",
+                            "interface_number": 2,
+                            "instance_id_present": true
+                        }
+                    ]
+                },
+                "vendor_apps": {
+                    "process_scan_attempted": true,
+                    "pit_house_running": true,
+                    "matched_processes": ["MOZA Pit House.exe"]
+                }
+            }),
+        )
+    }
+
     #[test]
     fn bench_wizard_surfaces_vendor_authority_handoff_after_closed_loop_undertravel() -> TestResult
     {
         let dir = tempfile::tempdir()?;
         fs::create_dir_all(dir.path())?;
         let selector = "hid-0x346E-0x0004-if2-0x0001-0x0004";
+        write_vendor_authority_serial_hardware_doctor(dir.path())?;
         write_failed_controlled_angle_output_receipt_at(
             dir.path(),
             selector,
@@ -39045,6 +39213,46 @@ mod tests {
                 .and_then(Value::as_str),
             Some(VENDOR_AUTHORITY_HANDOFF_FRAME_HEX)
         );
+        let serial_precondition = navigation
+            .get("serial_precondition")
+            .ok_or("expected serial precondition")?;
+        assert_eq!(
+            json_bool(
+                serial_precondition,
+                "requires_exclusive_r5_serial_cdc_access"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(serial_precondition, "pit_house_dependency"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(serial_precondition, "pit_house_serial_owner_risk"),
+            Some(true)
+        );
+        assert_eq!(json_bool(serial_precondition, "opens_serial"), Some(false));
+        assert_eq!(json_bool(serial_precondition, "sends_output"), Some(false));
+        let serial_port_hints = serial_precondition
+            .get("serial_port_hints")
+            .and_then(Value::as_array)
+            .ok_or("expected serial port hints")?;
+        assert!(
+            serial_port_hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("COM4")),
+            "expected COM4 port hint: {serial_precondition}"
+        );
+        let serial_interface_hints = serial_precondition
+            .get("serial_interface_hints")
+            .and_then(Value::as_array)
+            .ok_or("expected serial interface hints")?;
+        assert!(
+            serial_interface_hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("USB Serial Device (COM4)")),
+            "expected friendly interface hint: {serial_precondition}"
+        );
 
         let step = receipt
             .get("next_operator_step")
@@ -39077,6 +39285,11 @@ mod tests {
         assert_eq!(
             json_string(step, "planned_output_receipt"),
             Some(VENDOR_AUTHORITY_ATTEMPT_FILE)
+        );
+        assert_eq!(
+            step.pointer("/serial_precondition/serial_port_hints/0")
+                .and_then(Value::as_str),
+            Some("COM4")
         );
 
         let commands = step
@@ -39120,6 +39333,9 @@ mod tests {
         assert!(markdown.contains(VENDOR_AUTHORITY_HANDOFF_COMMAND_ID));
         assert!(markdown.contains(VENDOR_AUTHORITY_HANDOFF_FRAME_HEX));
         assert!(markdown.contains(VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE));
+        assert!(markdown.contains("Requires exclusive R5 serial/CDC access"));
+        assert!(markdown.contains("Pit House dependency: `false`; serial-owner risk: `true`"));
+        assert!(markdown.contains("R5 serial port hints: `COM4`"));
         assert!(!markdown.contains("--confirm-bounded-vendor-authority-attempt"));
         Ok(())
     }
@@ -39129,6 +39345,7 @@ mod tests {
         let dir = tempfile::tempdir()?;
         fs::create_dir_all(dir.path())?;
         let selector = "hid-0x346E-0x0004-if2-0x0001-0x0004";
+        write_vendor_authority_serial_hardware_doctor(dir.path())?;
         write_failed_controlled_angle_output_receipt_at(
             dir.path(),
             selector,
@@ -39172,10 +39389,30 @@ mod tests {
             json_bool(navigation, "hardware_attempt_command_emitted"),
             Some(false)
         );
+        assert_eq!(
+            navigation
+                .pointer("/serial_precondition/requires_exclusive_r5_serial_cdc_access")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            navigation
+                .pointer("/serial_precondition/pit_house_dependency")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            navigation
+                .pointer("/serial_precondition/serial_port_hints/0")
+                .and_then(Value::as_str),
+            Some("COM4")
+        );
         let markdown = render_moza_lane_artifact_index_markdown(&receipt);
         assert!(markdown.contains("Vendor Authority Handoff"));
         assert!(markdown.contains("ready_for_exact_authority_handoff"));
         assert!(markdown.contains("Hardware attempt command emitted: `false`"));
+        assert!(markdown.contains("Requires exclusive R5 serial/CDC access"));
+        assert!(markdown.contains("R5 serial port hints: `COM4`"));
         assert!(markdown.contains("vendor-authority-attempt.json"));
         Ok(())
     }

@@ -81,6 +81,10 @@ Provide a step-by-step implementation queue for Moza R5 vendor authority infrast
    - Add a separate non-claiming receipt for a guarded vendor-authority attempt that validates the exact receipts and R5 serial identity but fails before opening the serial port or sending the frame, such as a port-owner/access-denied condition.
    - The blocked receipt MUST NOT satisfy the consumed attempt schema or post-authority comparison gate. It must record `success=false`, `authorization_consumed=false`, `opened_serial_device=false`, `sent_authorized_frame=false`, `sent_authorized_frame_count=0`, `hardware_output_authorized=false`, `native_control_evidence=false`, `native_visible_ready=false`, and `smoke_ready=false`.
    - Bench-wizard/artifact-index navigation may surface the blocked state, but retry still requires fresh bench-clear, fresh exact authorization, fresh smoke dry-run, and a fresh attempt receipt path.
+10c. **Vendor serial precondition handoff**
+   - Surface an exclusive R5 serial/CDC access precondition in artifact-index and bench-wizard navigation before short-lived authorization or a separate bounded attempt.
+   - Derive serial-port hints from stored `hardware-doctor.json` only; do not inspect live serial devices, open serial, create authorization, emit an attempt command, or send output from navigation.
+   - The handoff may warn that Pit House or another vendor app can own the serial/CDC port, but it MUST keep Pit House non-blocking for native control and keep all readiness/control claims false.
 11+. **Closed-loop motion ladder**
 
 ## Required gating invariant
