@@ -4,6 +4,28 @@
   "claim_scope": "protocol_research_only",
   "native_control_evidence": false,
   "hardware_output_authorized": false,
+  "native_visible_ready": false,
+  "next_allowed_action": "Complete the missing command families in PR2 before codec, transport, probe, authorization, or hardware-write work builds on this registry.",
+  "blocked_actions": [
+    "codec implementation",
+    "fake transport verification",
+    "read-only hardware probe",
+    "authorization receipt",
+    "hardware writes",
+    "native-visible claim",
+    "smoke-ready claim"
+  ],
+  "required_artifacts": [
+    "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md",
+    "docs/hardware/moza-r5-vendor-authority-test-plan.md",
+    "fixtures/moza/r5/vendor-command-registry.json"
+  ],
+  "registry_completeness": "partial_pr1_starter",
+  "missing_required_families": [
+    "gain/safety",
+    "temperatures",
+    "compatibility mode"
+  ],
   "device": {
     "vid_pid": "0x346E:0x0004",
     "model": "MOZA R5 Base",
@@ -21,5 +43,9 @@
     "firmware_or_dfu",
     "hid_report_0xaf",
     "unknown_host_to_device"
+  ],
+  "notes": [
+    "PR1 starter fixture records only the authority/state family.",
+    "PR2 must complete all required command families before implementation work builds on this registry."
   ]
 }

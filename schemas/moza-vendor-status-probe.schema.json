@@ -1,1 +1,41 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","artifact_kind","claim_scope","sent_writes"],"properties":{"schema_version":{"const":1},"artifact_kind":{"const":"moza_vendor_status_probe"},"claim_scope":{"const":"read_only_hardware"},"sent_writes":{"const":false}},"additionalProperties":true}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "artifact_kind",
+    "claim_scope",
+    "native_control_evidence",
+    "hardware_output_authorized",
+    "native_visible_ready",
+    "next_allowed_action",
+    "blocked_actions",
+    "required_artifacts",
+    "sent_read_only_query_commands",
+    "sent_output_writes",
+    "sent_configuration_writes",
+    "sent_firmware_or_dfu_commands"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "artifact_kind": {"const": "moza_vendor_status_probe"},
+    "claim_scope": {"const": "read_only_hardware"},
+    "native_control_evidence": {"const": false},
+    "hardware_output_authorized": {"const": false},
+    "native_visible_ready": {"const": false},
+    "next_allowed_action": {"type": "string"},
+    "blocked_actions": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "required_artifacts": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "sent_read_only_query_commands": {"const": true},
+    "sent_output_writes": {"const": false},
+    "sent_configuration_writes": {"const": false},
+    "sent_firmware_or_dfu_commands": {"const": false}
+  },
+  "additionalProperties": true
+}

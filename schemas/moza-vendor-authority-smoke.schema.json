@@ -1,1 +1,37 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","artifact_kind","claim_scope","authorization_consumed","commands_sent","native_visible_ready"],"properties":{"schema_version":{"const":1},"artifact_kind":{"const":"moza_vendor_authority_smoke"},"claim_scope":{"const":"hardware_vendor_control"},"authorization_consumed":{"const":true},"commands_sent":{"type":"array"},"native_visible_ready":{"const":false}},"additionalProperties":true}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "artifact_kind",
+    "claim_scope",
+    "native_control_evidence",
+    "hardware_output_authorized",
+    "native_visible_ready",
+    "next_allowed_action",
+    "blocked_actions",
+    "required_artifacts",
+    "authorization_consumed",
+    "commands_sent"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "artifact_kind": {"const": "moza_vendor_authority_smoke"},
+    "claim_scope": {"const": "hardware_vendor_control_non_claiming"},
+    "native_control_evidence": {"const": false},
+    "hardware_output_authorized": {"const": false},
+    "native_visible_ready": {"const": false},
+    "next_allowed_action": {"type": "string"},
+    "blocked_actions": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "required_artifacts": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "authorization_consumed": {"type": "boolean"},
+    "commands_sent": {"type": "array"}
+  },
+  "additionalProperties": true
+}

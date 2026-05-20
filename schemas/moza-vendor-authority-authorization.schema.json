@@ -1,1 +1,39 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","artifact_kind","authorization_consumed","allowed_commands","forbidden_commands"],"properties":{"schema_version":{"const":1},"artifact_kind":{"const":"moza_vendor_authority_authorization"},"authorization_consumed":{"type":"boolean"},"allowed_commands":{"type":"array"},"forbidden_commands":{"type":"array"}},"additionalProperties":true}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "artifact_kind",
+    "claim_scope",
+    "native_control_evidence",
+    "hardware_output_authorized",
+    "native_visible_ready",
+    "next_allowed_action",
+    "blocked_actions",
+    "required_artifacts",
+    "authorization_consumed",
+    "allowed_commands",
+    "forbidden_commands"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "artifact_kind": {"const": "moza_vendor_authority_authorization"},
+    "claim_scope": {"const": "authorization_scaffold_no_output"},
+    "native_control_evidence": {"const": false},
+    "hardware_output_authorized": {"const": false},
+    "native_visible_ready": {"const": false},
+    "next_allowed_action": {"type": "string"},
+    "blocked_actions": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "required_artifacts": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "authorization_consumed": {"const": false},
+    "allowed_commands": {"type": "array"},
+    "forbidden_commands": {"type": "array"}
+  },
+  "additionalProperties": true
+}

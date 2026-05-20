@@ -17,10 +17,12 @@ Provide a step-by-step implementation queue for Moza R5 vendor authority infrast
 1. **Spec + schemas only**
    - Add OR-SPEC-0002.
    - Add five schemas for registry/status-plan/authorization/smoke receipts.
-   - Add fixture skeleton for command registry.
+   - Add PR1 partial fixture skeleton for the authority/state command family.
+   - Explicitly defer gain/safety, temperature, and compatibility mode command families to PR2.
    - No runtime implementation.
 
 2. **Command registry + risk policy tests**
+   - Complete all required command families before codec, probe, authorization, or hardware-write work builds on the registry.
 3. **Semantic-only serial codec + fixtures**
 4. **Fake serial transport**
 5. **No-output CLI tools**
@@ -34,6 +36,7 @@ Provide a step-by-step implementation queue for Moza R5 vendor authority infrast
 ## Required gating invariant
 
 No stage may claim native-visible readiness without strict verifier acceptance of real movement evidence.
+PR1 schema and fixture artifacts remain non-claiming: `native_control_evidence=false`, `hardware_output_authorized=false`, and `native_visible_ready=false`.
 
 ## Proof commands (PR1)
 

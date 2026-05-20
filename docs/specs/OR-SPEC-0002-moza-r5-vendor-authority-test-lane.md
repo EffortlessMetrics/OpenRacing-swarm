@@ -5,7 +5,7 @@ Owner: hardware
 Created: 2026-05-20
 Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
 Linked ADRs: docs/adr/0009-hardware-validation-evidence-state-machine.md
-Linked plan: plans/moza-native-visible-lane/moza-r5-vendor-authority-test-plan.md
+Linked plan: docs/hardware/moza-r5-vendor-authority-test-plan.md
 Linked issues: n/a
 Linked PRs: n/a
 Support-tier impact: no support-tier promotion; this defines no-output and read-only gates only.
@@ -83,6 +83,11 @@ Required command families:
 - Temperatures: `[43,4]`, `[43,5]`, `[43,6]`
 - Compatibility mode: `[31,19]`, `[31,23]`
 
+The PR1 fixture may be a partial starter registry that records only the
+authority/state family. It MUST mark itself as partial and MUST list the missing
+required families. PR2 must complete the registry before any codec, transport,
+probe, authorization, or hardware-write work builds on it.
+
 Required fenced/forbidden classes:
 
 - group 10 EEPROM manipulation
@@ -126,7 +131,20 @@ Initial required state is `SemanticOnly`. No hardware-write eligibility exists u
 
 ### Read-only status probe contract
 
-First hardware-capable step is read-only status probing. It MUST set `sent_writes=false`, `hardware_output_authorized=false`, and `native_control_evidence=false`.
+First hardware-capable step is read-only status probing. A read-only query may
+still transmit a host-to-device request frame, so it MUST distinguish query
+traffic from output/configuration writes. It MUST set:
+
+```json
+{
+  "sent_read_only_query_commands": true,
+  "sent_output_writes": false,
+  "sent_configuration_writes": false,
+  "sent_firmware_or_dfu_commands": false,
+  "hardware_output_authorized": false,
+  "native_control_evidence": false
+}
+```
 
 ### Authorization contract
 

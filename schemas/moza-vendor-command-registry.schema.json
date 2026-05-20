@@ -3,13 +3,44 @@
   "$id": "https://openracing.dev/schemas/moza-vendor-command-registry.schema.json",
   "title": "Moza Vendor Command Registry",
   "type": "object",
-  "required": ["schema_version","artifact_kind","claim_scope","native_control_evidence","hardware_output_authorized","device","commands"],
+  "required": [
+    "schema_version",
+    "artifact_kind",
+    "claim_scope",
+    "native_control_evidence",
+    "hardware_output_authorized",
+    "native_visible_ready",
+    "next_allowed_action",
+    "blocked_actions",
+    "required_artifacts",
+    "registry_completeness",
+    "missing_required_families",
+    "device",
+    "commands"
+  ],
   "properties": {
     "schema_version": {"const": 1},
     "artifact_kind": {"const": "moza_vendor_command_registry"},
     "claim_scope": {"const": "protocol_research_only"},
-    "native_control_evidence": {"type":"boolean"},
+    "native_control_evidence": {"const": false},
     "hardware_output_authorized": {"const": false},
+    "native_visible_ready": {"const": false},
+    "next_allowed_action": {"type": "string"},
+    "blocked_actions": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "required_artifacts": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "registry_completeness": {
+      "enum": ["partial_pr1_starter", "complete"]
+    },
+    "missing_required_families": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
     "device": {"type":"object"},
     "commands": {"type":"array","minItems":1}
   },
