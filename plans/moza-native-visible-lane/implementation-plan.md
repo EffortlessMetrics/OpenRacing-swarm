@@ -1932,6 +1932,62 @@ Remove only the open-standard Pit House evidence, observation, case artifact,
 artifact-index refresh, and this work-item entry. Do not alter closed Pit House,
 Pit House sniff, native-control, native-visible, or simulator receipts.
 
+## Work item: refresh-pre-output-readiness-after-pit-house-open-standard
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: current pre-output navigation after the Pit House open-standard case
+Blocked by: checked-in `pit-house-open-standard.json`
+
+### Goal
+
+Refresh the generated pre-output readiness receipt so it reflects the
+checked-in Pit House open-standard case while preserving all native-visible and
+smoke-ready claim boundaries.
+
+### Production delta
+
+Regenerate `ci/hardware/moza-r5/2026-05-13/pre-output-readiness.json` with
+`wheelctl moza pre-output-readiness`. The receipt now records 2 of 5 Pit House
+compatibility cases, keeps the parent `pit-house-coexistence.json` gate failed,
+and leaves native-visible motion unproven.
+
+### Non-goals
+
+No hardware output, HID open, serial open, authorization receipt, vendor
+authority attempt, Pit House parent coexistence proof, native-visible
+promotion, smoke-ready promotion, simulator artifact, firmware, DFU, high
+torque, or release-ready claim.
+
+### Acceptance
+
+- `pre-output-readiness.json` records `recorded_case_count=2` for Pit House
+  compatibility.
+- `pit_house_open_idle_standard` is no longer listed as a missing Pit House
+  case.
+- `pit_house_coexistence_claimed=false` and `readiness_claim=false` remain set.
+- Native-visible verification still fails closed.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- moza pre-output-readiness --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/pre-output-readiness.json --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-pit-house-open-standard-pre-output-refresh.json --json
+if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Restore the previous pre-output readiness receipt and remove this work-item
+entry. Do not alter Pit House case receipts, vendor-authority navigation,
+native-control receipts, native-visible undertravel evidence, or simulator
+artifacts.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

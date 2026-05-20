@@ -1,7 +1,7 @@
 {
   "success": true,
   "command": "wheelctl moza pre-output-readiness",
-  "generated_at_utc": "2026-05-20T04:49:27Z",
+  "generated_at_utc": "2026-05-20T18:39:16Z",
   "lane": "ci/hardware/moza-r5/2026-05-13",
   "stage": "pre_output_readiness",
   "ready_for_zero_torque": true,
@@ -233,9 +233,8 @@
     "coexistence_gate_details": "failed to read 'ci/hardware/moza-r5/2026-05-13\\pit-house-coexistence.json'",
     "coexistence_gate_status": "fail",
     "install_guidance": "Install or update Pit House from the official MOZA Pit House Downloads support page; do not treat package-manager availability as authoritative evidence.",
-    "missing_case_count": 4,
+    "missing_case_count": 3,
     "missing_cases": [
-      "pit_house_open_idle_standard",
       "pit_house_open_direct",
       "pit_house_mode_change_during_run",
       "pit_house_firmware_update_page_open"
@@ -257,7 +256,7 @@
     "pit_house_available": true,
     "pit_house_coexistence_claimed": false,
     "readiness_claim": false,
-    "recorded_case_count": 1,
+    "recorded_case_count": 2,
     "recorded_cases": [
       {
         "case": "pit_house_closed",
@@ -265,6 +264,15 @@
         "case_recorded": true,
         "label": "closed",
         "observation_artifact": "pit-house-observation-closed.json",
+        "observation_recorded": true,
+        "readiness_claim": false
+      },
+      {
+        "case": "pit_house_open_idle_standard",
+        "case_artifact": "pit-house-open-standard.json",
+        "case_recorded": true,
+        "label": "open_standard",
+        "observation_artifact": "pit-house-observation-open-standard.json",
         "observation_recorded": true,
         "readiness_claim": false
       }
