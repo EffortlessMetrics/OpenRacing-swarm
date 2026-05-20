@@ -57,11 +57,17 @@ receipts, classified summaries, and bundle manifests; raw pcapng and bundle ZIP
 files remain local scratch artifacts. Remaining scenarios stay navigation-only
 until matching pcap receipts and summaries exist.
 
-The latest pre-output and artifact-index receipts also surface diagnostic
-candidate-only R5 V1 extended slots for the brake, clutch, and handbrake
-captures. Those candidates keep the passive evidence navigable while preserving
-`input_semantic_mapping_complete=false`; they do not prove role-specific input
-semantics or readiness.
+The latest lane analysis, role-status, and artifact-index receipts report six
+proven input roles and one remaining generic auxiliary role. Steering,
+throttle, brake, HBP handbrake, KS rim controls, and ES rim controls are
+parser-proven. The SR-P clutch capture is parser-visible through two live R5 V1
+extended auxiliary slots, but the role-specific clutch semantic mapping remains
+unproven:
+`input_semantic_mapping_complete=false`,
+`semantic_candidate_count=2`,
+`ambiguous_semantic_candidate_count=0`, and
+`unproven_required_role_count=1`. The clutch candidates are diagnostic
+navigation only and keep `readiness_claim=false`.
 
 The artifact-index and bench-wizard regression coverage now explicitly checks
 that valid failed native-visible and smoke-ready verifier receipts remain useful
@@ -88,10 +94,11 @@ as first-class frontier artifacts. After attempt 03, the required table marks
 `native_visible_not_claimed` remains preserved.
 
 The stored input analysis artifacts now include the same candidate-only R5 V1
-extended-slot details that the readiness and artifact-index renderers surface.
-`lane-capture-analysis.json` and `role-status-sync.json` identify brake,
-clutch, and handbrake candidates as diagnostic only with `readiness_claim=false`;
-they still leave role-specific input semantics incomplete.
+extended-slot details that the role-status and artifact-index renderers surface.
+`lane-capture-analysis.json` and `role-status-sync.json` identify brake and HBP
+handbrake as proven semantic axes, and identify only the clutch auxiliary slots
+as diagnostic candidates with `readiness_claim=false`; they still leave the
+full input semantic mapping incomplete.
 
 The current blocked-state handoff is
 `plans/moza-native-visible-lane/handoff.md`. Use it when no active goal work
@@ -1740,6 +1747,64 @@ Remove only the `pit-house-full-controls` scenario wiring, generated
 non-claiming sniff artifacts, artifact-index refresh, tests, and this work-item
 entry. Do not remove Pit House open-idle evidence, controlled-angle receipts,
 semantic-input artifacts, or local raw pcap artifacts.
+
+## Work item: moza-current-state-status-refresh
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: accurate source-of-truth handoff after semantic-input and passive-sniff slices
+Blocked by: n/a
+
+### Goal
+
+Refresh the human source-of-truth status docs so they match the current
+checked-in lane after the brake/HBP semantic promotion and Pit House
+full-controls sniff evidence slices.
+
+### Production delta
+
+Update the active goal work-item ledger, this implementation plan, the blocked
+handoff, and the completion audit to record that brake and HBP handbrake are
+parser-proven, SR-P clutch remains generic auxiliary evidence, Pit House
+availability is recorded, and passive sniff navigation has two recorded
+non-claiming scenarios out of six.
+
+### Non-goals
+
+No hardware output, HID open, new capture, raw pcap commit, receipt rewrite,
+native-control claim, native-visible promotion, smoke-ready promotion, Pit
+House coexistence claim, simulator claim, firmware, serial config, DFU, or
+release-ready claim.
+
+### Acceptance
+
+- The handoff names `pit-house-open-idle` and `pit-house-full-controls` as
+  recorded non-claiming passive sniff evidence.
+- The completion audit records brake and HBP handbrake as parser-proven while
+  keeping SR-P clutch generic and semantic mapping incomplete.
+- Pit House availability and official install-source guidance are surfaced as
+  non-claiming navigation only.
+- Native-visible verification remains blocked.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-status-refresh.json --md-out target/moza-current/artifact-index-after-status-refresh.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-after-status-refresh.json --md-out target/moza-current/bench-wizard-after-status-refresh.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-status-refresh.json --json
+if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only this source-of-truth status refresh from the active goal, plan,
+handoff, and audit. Do not alter checked-in hardware receipts, sniff artifacts,
+parser fixtures, or generated lane indexes.
 
 ## Work item: native-visible-promotion
 

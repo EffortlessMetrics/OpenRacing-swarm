@@ -1,7 +1,7 @@
 # Moza Native Visible Lane Handoff
 
 Status: blocked
-Last verified: 2026-05-19
+Last verified: 2026-05-20
 Lane: `ci/hardware/moza-r5/2026-05-13`
 Active goal: `.openracing/goals/active.toml`
 
@@ -40,10 +40,17 @@ as safe undertravel and keeps native visible motion unclaimed.
 controlled-angle path as ineffective in the current R5 device mode after three
 same-band undertravel attempts. `native-controlled-angle-closed-loop-failure-analysis.json`
 classifies the feedback-bounded attempt as safe undertravel and keeps native
-visible motion unclaimed. Five passive sniff plan artifacts now exist under
-`ci/hardware/sniff/moza-r5/2026-05-13`; they are plan-only protocol research
-artifacts, not receipts or readiness claims. No further hardware output is
-authorized.
+visible motion unclaimed.
+
+Six passive sniff scenario plans now exist under
+`ci/hardware/sniff/moza-r5/2026-05-13`. The `pit-house-open-idle` and
+`pit-house-full-controls` scenarios have checked-in non-claiming sniff
+receipts, classified summaries, and bundle manifests. The remaining
+`pit-house-setting-change`, `simhub-open-idle`, `simhub-output-session`, and
+`simulator-session-start-stop` scenarios remain navigation-only until matching
+pcap receipts and summaries exist. No passive sniff artifact authorizes
+hardware output or satisfies native-visible, smoke-ready, or coexistence gates.
+No further hardware output is authorized.
 
 ## Completion Audit Summary
 
@@ -60,25 +67,28 @@ The broader Moza objective remains incomplete:
 | Standard PIDFF path diagnosis | `native-pidff-standard-path-diagnosis.json` | Recorded no-output architecture diagnosis |
 | Closed-loop controlled-angle output | `native-controlled-angle-closed-loop-smoke.json` | Recorded safe undertravel |
 | Closed-loop failure analysis | `native-controlled-angle-closed-loop-failure-analysis.json` | Recorded no-output classification |
-| Vendor-control sniff plans | `ci/hardware/sniff/moza-r5/2026-05-13/*/sniff-plan.json` | Plan-only, non-claiming |
+| Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence |
+| Remaining passive sniff plans | `pit-house-setting-change`, `simhub-open-idle`, `simhub-output-session`, `simulator-session-start-stop` sniff plans | Plan-only, non-claiming |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |
 | Simulator telemetry | `simulator-telemetry-proof.json` | Missing |
 | Bounded simulator FFB | `simulator-ffb-smoke.json` | Missing |
 | Smoke-ready promotion and audit | smoke-ready verifier, promotion, audit | Not eligible |
 
-Input topology remains partially semantic: brake, clutch, and handbrake are
-parser-visible through generic R5 V1 extended fields, but role-specific semantic
-mapping remains diagnostic with `readiness_claim=false`.
+Input topology remains partially semantic: steering, throttle, brake, HBP
+handbrake, KS rim controls, and ES rim controls are parser-proven. SR-P clutch
+is parser-visible through two live R5 V1 extended auxiliary fields, but the
+role-specific clutch mapping remains diagnostic with `readiness_claim=false`.
 
 ## Required Next Event
 
-The next native-visible step is no-output Moza vendor-specific protocol
-investigation before any future output family. Passive USB sniff captures may
-produce non-claiming `sniff-receipt.json`, `sniff-summary.json`, and bundle
-manifest artifacts, but those are protocol/coexistence evidence, not native
-readiness evidence. Preserve all four controlled-angle undertravel receipts and
-their authorization, smoke, verification, analysis, standard-PIDFF diagnosis,
-closed-loop failure analysis, and sniff plan artifacts. Do not create another
+The next operator step from the bench wizard is the no-output passive
+`pit-house-setting-change` sniff capture, or equivalent no-output
+vendor-specific protocol investigation. Passive USB sniff captures may produce
+non-claiming `sniff-receipt.json`, `sniff-summary.json`, and bundle manifest
+artifacts, but those are protocol/coexistence evidence, not native readiness
+evidence. Preserve all four controlled-angle undertravel receipts and their
+authorization, smoke, verification, analysis, standard-PIDFF diagnosis,
+closed-loop failure analysis, and sniff artifacts. Do not create another
 authorization or output receipt from verifier guidance. Any future output family
 requires decoded protocol evidence, a reviewed vendor-control plan, fresh
 command-bound bench clear, and a new exact authorization.

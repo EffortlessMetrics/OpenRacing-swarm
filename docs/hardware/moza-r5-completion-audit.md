@@ -53,8 +53,11 @@ family is proposed. The standard PIDFF path diagnosis records that three
 bounded standard-PIDFF-family controlled-angle attempts remained in the same
 undertravel band, and the closed-loop attempt records that feedback-bounded
 PIDFF control also stayed below the visible-motion threshold. The vendor-control
-investigation now has plan-only passive sniff artifacts for Pit House, SimHub,
-and simulator sessions.
+investigation now has six passive sniff scenario plans for Pit House, SimHub,
+and simulator sessions. Two Pit House scenarios, `pit-house-open-idle` and
+`pit-house-full-controls`, have checked-in non-claiming receipts, summaries,
+and bundle manifests. The other four scenarios remain navigation-only until
+matching pcap receipts and summaries exist.
 
 ## Prompt-To-Artifact Checklist
 
@@ -62,8 +65,8 @@ and simulator sessions.
 | --- | --- | --- | --- |
 | Dated real hardware lane exists for Steven's Moza stack | `ci/hardware/moza-r5/2026-05-13/manifest.json`; `device-list.json`; `moza-probe.json`; `hid-list.json`; `descriptor.json`; verifier endpoint and role evidence | Pass | Manifest completion state is `native_response_ready`; release, simulator, and high-torque validation are false. |
 | R5 wheelbase observed | `verify-bundle --stage native-visible-ready`; gates `moza_r5_observed`, `manifest_r5_pid_consistency` | Pass | Current verifier found matching R5 `0x346E:0x0004` evidence across lane receipts and captures. |
-| KS/ES wheels, SR-P pedals, and HBP handbrake represented | Verifier `role_evidence`; captures `ks-controls.jsonl`, `es-controls.jsonl`, `r5-throttle-only-sweep.jsonl`, `r5-brake-only-sweep.jsonl`, `r5-clutch-only-sweep.jsonl`, `r5-handbrake-only-sweep.jsonl` | Pass with semantic caveats | KS, ES, steering, and throttle are parser-proven. Brake, clutch, and handbrake are parser-visible through generic R5 V1 extended fields; semantic naming remains unproven and diagnostic only. |
-| Input role semantic mapping complete | `pre-output-readiness.json` `input_semantic_mapping_complete=false`; `input_role_semantics`; `artifact-index` Input Role Semantics section | Partial | Six candidate-only R5 V1 extended slots are surfaced for brake, clutch, and handbrake. Four candidates are ambiguous across clutch/handbrake captures. Every candidate has `claim_status=candidate_only` and `readiness_claim=false`; these help navigation but do not prove role-specific semantics. |
+| KS/ES wheels, SR-P pedals, and HBP handbrake represented | Verifier `role_evidence`; captures `ks-controls.jsonl`, `es-controls.jsonl`, `r5-throttle-only-sweep.jsonl`, `r5-brake-only-sweep.jsonl`, `r5-clutch-only-sweep.jsonl`, `r5-handbrake-only-sweep.jsonl` | Pass with one semantic caveat | KS, ES, steering, throttle, brake, and HBP handbrake are parser-proven. SR-P clutch is parser-visible through generic R5 V1 extended fields; role-specific clutch semantic naming remains unproven and diagnostic only. |
+| Input role semantic mapping complete | `lane-capture-analysis.json`; `role-status-sync.json`; `artifact-index` Input Role Semantics section | Partial | Two candidate-only R5 V1 extended slots are surfaced for clutch. No candidate is ambiguous. Each candidate has `readiness_claim=false`; these help navigation but do not prove role-specific clutch semantics. |
 | Passive enumeration proven | `passive-verification.json`; `manifest-promotion-passive.json`; `lane-audit-passive.json`; verifier passive gates | Pass | Passive verifier and audit pass. |
 | Descriptor capture proven | `descriptor.json`; verifier gate `descriptor_metadata` | Pass | Descriptor metadata is complete for the R5 record. |
 | Input parsing proven | Passive capture files; verifier gate `passive_captures_parse` | Pass | Current verifier replayed 128215 passive capture reports through Moza parsers. |
@@ -81,10 +84,10 @@ and simulator sessions.
 | Attempt-03 failure analysis exists | `native-controlled-angle-attempt-03-failure-analysis.json` | Pass as no-output classification | Analysis classifies safe undertravel in the same response band and keeps rerun, force escalation, native-visible, smoke-ready, and release-ready claims false. |
 | Standard PIDFF path diagnosis exists | `native-pidff-standard-path-diagnosis.json`; [Moza R5 Standard PIDFF Path Diagnosis](moza-r5-standard-pidff-path-diagnosis.md) | Pass as no-output architecture diagnosis | Diagnosis classifies `standard_pidff_controlled_angle_path_ineffective_in_current_r5_mode`, preserves all three controlled-angle receipts, keeps `planned_next_output.allowed=false`, and identifies no-output vendor-specific protocol investigation as next. |
 | Closed-loop controlled-angle path exists | `native-controlled-angle-closed-loop-preflight.json`; `native-controlled-angle-closed-loop-authorization.json`; `native-controlled-angle-closed-loop-smoke.json`; `native-controlled-angle-closed-loop-failure-analysis.json` | Pass as safe failed evidence | The closed-loop attempt used `closed-loop-pidff-angle-v1`, wrote 672 bounded PIDFF reports with zero write errors, sent final Stop All/final zero, stayed post-stop stable, and timed out before target at `angle_delta_degrees=0.13183794918745662`. It is not visible-motion proof and authorizes no further output. |
-| Pit House compatibility navigation is current | `pre-output-readiness.json`, `artifact-index`, and `bench-wizard` `pit_house_compatibility`; `ci/hardware/moza-r5/2026-05-13/index.md` Pit House Compatibility section | Pass as non-claiming navigation | The lane records `pit_house_available=false`, `recorded_case_count=1/5`, `pit_house_coexistence_claimed=false`, `readiness_claim=false`, `blocks_native_control=false`, and `blocks_native_visible=false`. Missing open/direct/mode-change/firmware-page cases remain external smoke blockers. |
+| Pit House compatibility navigation is current | `pit-house-availability.json`, `artifact-index`, and `bench-wizard` `pit_house_compatibility`; `ci/hardware/moza-r5/2026-05-13/index.md` Pit House Compatibility section | Pass as non-claiming navigation | The lane records `pit_house_available=true`, `availability_status=running_install_location_unknown`, `recorded_case_count=1/5`, `pit_house_coexistence_claimed=false`, `readiness_claim=false`, `blocks_native_control=false`, and `blocks_native_visible=false`. Missing open/direct/mode-change/firmware-page cases remain external smoke blockers. |
 | Pit House coexistence proven | `pit-house-coexistence.json`; smoke-ready verifier | Missing | `pit-house-availability.json` is non-claiming availability evidence only. Coexistence matrix is not proven. |
 | Simulator compatibility navigation is current | `pre-output-readiness.json`, `artifact-index`, and `bench-wizard` `simulator_compatibility`; `ci/hardware/moza-r5/2026-05-13/index.md` Simulator Compatibility section | Pass as non-claiming navigation | The lane records `recorded_artifact_count=0/2`, `simulator_telemetry_claimed=false`, `bounded_simulator_ffb_claimed=false`, `readiness_claim=false`, `blocks_native_control=false`, and `blocks_native_visible=false`. Missing telemetry and bounded FFB artifacts remain external smoke blockers. |
-| Passive USB sniff navigation is current | `artifact-index` and `bench-wizard` `passive_sniff_navigation`; `ci/hardware/moza-r5/2026-05-13/index.md` Passive USB Sniffing section | Pass as non-claiming navigation | The lane records plan-only artifacts for 5/5 passive sniff scenarios. They are `present_non_claiming` but still `partial_or_unaccepted` until pcap receipts and summaries exist. `readiness_claim=false`, `blocks_native_control=false`, `blocks_native_visible=false`, and `blocks_smoke_ready=false`. |
+| Passive USB sniff navigation is current | `artifact-index` and `bench-wizard` `passive_sniff_navigation`; `ci/hardware/moza-r5/2026-05-13/index.md` Passive USB Sniffing section | Pass as non-claiming navigation | The lane records 2/6 passive sniff scenarios with non-claiming summaries: `pit-house-open-idle` and `pit-house-full-controls`. The remaining four scenarios are plan-only and still `partial_or_unaccepted` until pcap receipts and summaries exist. `readiness_claim=false`, `blocks_native_control=false`, `blocks_native_visible=false`, and `blocks_smoke_ready=false`. |
 | Simulator telemetry proof exists | `simulator-telemetry-proof.json`; smoke-ready verifier | Missing | No real simulator telemetry receipt exists. |
 | Bounded sim-to-Moza FFB smoke exists | `simulator-ffb-smoke.json`; smoke-ready verifier | Missing | No bounded simulator FFB receipt or output log exists. |
 | Smoke-ready verification passes | `smoke-ready-verification.json`; current smoke-ready verifier state | Missing | Current smoke-ready verification fails native visible motion, Pit House coexistence, simulator telemetry, and simulator FFB. |
@@ -129,15 +132,17 @@ The current input-role semantic evidence remains diagnostic:
 input_semantic_mapping_complete=false
 semantic_status=partial_generic_aux_mapping
 semantic_mapping_complete=false
-semantic_candidate_count=6
-ambiguous_semantic_candidate_count=4
-unproven_required_role_count=3
+semantic_candidate_count=2
+ambiguous_semantic_candidate_count=0
+unproven_required_role_count=1
 readiness_claim=false
 ```
 
 The current external-compatibility navigation is also diagnostic only:
 
 ```text
+pit_house_compatibility.pit_house_available=true
+pit_house_compatibility.availability_status=running_install_location_unknown
 pit_house_compatibility.recorded_case_count=1
 pit_house_compatibility.required_case_count=5
 pit_house_compatibility.pit_house_coexistence_claimed=false
@@ -149,8 +154,8 @@ simulator_compatibility.simulator_telemetry_claimed=false
 simulator_compatibility.bounded_simulator_ffb_claimed=false
 simulator_compatibility.blocks_native_control=false
 simulator_compatibility.blocks_native_visible=false
-passive_sniff_navigation.recorded_scenario_count=0
-passive_sniff_navigation.required_scenario_count=5
+passive_sniff_navigation.recorded_scenario_count=2
+passive_sniff_navigation.required_scenario_count=6
 passive_sniff_navigation.readiness_claim=false
 passive_sniff_navigation.blocks_native_control=false
 passive_sniff_navigation.blocks_native_visible=false
@@ -169,17 +174,19 @@ failed gates:
 
 ## Missing Work
 
-1. Capture the planned passive USB sniff scenarios, generate non-claiming
+1. Resolve the SR-P clutch semantic mapping if product-quality input topology
+   requires role-specific clutch naming before smoke-ready.
+2. Capture the remaining passive USB sniff scenarios, generate non-claiming
    receipts and summaries, decode vendor reports, map report IDs, identify
    enable/gain/mode handshakes, and design a reviewed plan.
-2. A reviewed future-output plan only if new protocol evidence justifies a new
+3. A reviewed future-output plan only if new protocol evidence justifies a new
    output family.
-3. If a future receipt passes, native-visible verifier, manifest promotion, and
+4. If a future receipt passes, native-visible verifier, manifest promotion, and
    lane audit.
-4. Pit House coexistence matrix.
-5. Real simulator telemetry proof.
-6. Bounded simulator FFB smoke receipt.
-7. Smoke-ready verification, manifest promotion, and lane audit.
+5. Pit House coexistence matrix.
+6. Real simulator telemetry proof.
+7. Bounded simulator FFB smoke receipt.
+8. Smoke-ready verification, manifest promotion, and lane audit.
 
 ## Claim Boundary
 
