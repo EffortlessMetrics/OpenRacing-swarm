@@ -984,6 +984,23 @@ commands = [
 ]
 
 [[work_item]]
+id = "vendor-post-authority-pidff-response-evidence"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-post-authority-pidff-response.json"
+claim_boundary = "Post-authority PIDFF response evidence only; records one separately authorized 5 percent, 2000 ms constant-low-force PIDFF response capture after the consumed vendor-authority attempt plus a no-output comparison receipt, preserving final Stop All cleanup and leaving native-control, native-visible, smoke-ready, release-ready, retry, force-escalation, high-torque, direct HID report 0xaf, serial config, firmware, Pit House, simulator, and coexistence claims false."
+commands = [
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_post_authority_pidff_response -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl checked_in_moza_lane_index_matches_artifact_index_renderer -- --nocapture",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-post-authority-pidff.json --json",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

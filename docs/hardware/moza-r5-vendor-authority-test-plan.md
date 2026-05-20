@@ -108,6 +108,12 @@ Provide a step-by-step implementation queue for Moza R5 vendor authority infrast
    - The post-authority output remains bounded to descriptor-proven PIDFF reports, 5 percent maximum, 2000 ms maximum, final Stop All cleanup, no direct torque report, no high torque, no serial configuration, and no firmware/DFU behavior.
    - The consumed authorization state MUST close `hardware_output_authorized=false` after the response receipt and keep any visible-looking result as comparison/verifier candidate evidence only.
    - Do not claim native-control/native-visible/smoke-ready/release-ready, overwrite baseline evidence, emit commands from bench-wizard, or reuse the consumed vendor-authority attempt as authorization.
+10i. **Post-authority PIDFF response evidence**
+   - Record the separately authorized post-authority PIDFF response receipt and no-output comparison receipt after the consumed vendor-authority attempt.
+   - The evidence MUST preserve the baseline PIDFF response receipt, record the post-authority response at `vendor-post-authority-pidff-smoke.json`, and write `vendor-post-authority-pidff-response.json`.
+   - The comparison MUST keep `native_control_evidence=false`, `hardware_output_authorized=false`, `native_visible_ready=false`, and `smoke_ready=false` regardless of whether the response improves, regresses, or looks like a visible-motion candidate.
+   - The lane index MUST surface the recorded post-authority comparison and the next action as strict verifier review before any motion claim.
+   - Do not authorize another output, retry the vendor-authority frame, promote native-visible, promote smoke-ready, or treat a PIDFF response comparison as native-control proof.
 11+. **Closed-loop motion ladder**
 
 ## Required gating invariant

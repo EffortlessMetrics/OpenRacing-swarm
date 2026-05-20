@@ -32,8 +32,8 @@ This section is diagnostic navigation only. `generic_aux` roles are valid parser
 
 This section is native-control research navigation only. It does not open HID, send serial traffic, create authorization, emit the hardware attempt command, or claim native-visible readiness.
 
-- State: `vendor_authority_attempt_recorded`
-- Next allowed action: Record post-authority PIDFF response comparison before any motion claim.
+- State: `post_authority_pidff_response_recorded`
+- Next allowed action: Review post-authority PIDFF response comparison and run strict verifier before any motion claim.
 - Hardware output authorized: `false`
 - Native visible ready: `false`
 - Hardware attempt command emitted: `false`
@@ -200,6 +200,8 @@ This section is protocol research/support navigation only. Passive sniff artifac
 | `native-pidff-semantics-diagnosis.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 | `native-pidff-standard-path-diagnosis.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 | `native-visible-verification.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
+| `vendor-post-authority-pidff-response.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
+| `vendor-post-authority-pidff-smoke.json` | `json` | `native_visible_or_pidff_diagnosis_evidence` |
 
 ## Pit House External Compatibility
 
