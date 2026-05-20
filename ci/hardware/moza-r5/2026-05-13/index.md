@@ -34,8 +34,10 @@ This section is diagnostic navigation only. `generic_aux` roles are valid parser
 
 This section is external-smoke navigation only. Pit House is not required for native OpenRacing control, and these artifacts do not authorize hardware output.
 
-- Availability status: `not_installed_or_not_running`
-- Pit House available: `false`
+- Availability status: `running_install_location_unknown`
+- Pit House available: `true`
+- Official download page: `https://support.mozaracing.com/en/support/solutions/articles/70000627795-moza-pit-house-downloads`
+- Install guidance: Install or update Pit House from the official MOZA Pit House Downloads support page; do not treat package-manager availability as authoritative evidence.
 - Coexistence gate status: `fail`
 - Pit House coexistence claimed: `false`
 - Recorded cases: `1` / `5`

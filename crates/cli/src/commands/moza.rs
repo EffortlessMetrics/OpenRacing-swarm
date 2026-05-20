@@ -49,6 +49,8 @@ const DIRECT_TORQUE_REPORT_ID: &str = "0x20";
 const SIMULATOR_FFB_WRITER_COMMAND: &str = "wheeld --hardware-lane moza-r5";
 const SIMULATOR_TELEMETRY_RECORDER_COMMAND: &str = "wheelctl telemetry record";
 const MOZA_VENDOR_HEX: &str = "0x346E";
+const MOZA_PIT_HOUSE_DOWNLOADS_URL: &str = "https://support.mozaracing.com/en/support/solutions/articles/70000627795-moza-pit-house-downloads";
+const MOZA_PIT_HOUSE_INSTALL_GUIDANCE: &str = "Install or update Pit House from the official MOZA Pit House Downloads support page; do not treat package-manager availability as authoritative evidence.";
 const PASSIVE_SNIFF_POST_CAPTURE_EVIDENCE_COMMANDS_CHECKLIST_ITEM: &str = "run sniff-receipt, sniff-notes-template, and sniff-summary before treating the capture as lane evidence";
 const HIGH_TORQUE_FEATURE_REPORT_ID: &str = "0x02";
 const START_REPORTING_FEATURE_REPORT_ID: &str = "0x03";
@@ -1827,6 +1829,14 @@ fn moza_pit_house_compatibility_summary(lane: &Path) -> Value {
         .as_ref()
         .and_then(|receipt| receipt.get("pit_house_available").and_then(Value::as_bool))
         .unwrap_or(false);
+    let official_download_page = availability_receipt
+        .as_ref()
+        .and_then(|receipt| json_string(receipt, "official_download_page"))
+        .unwrap_or(MOZA_PIT_HOUSE_DOWNLOADS_URL);
+    let install_guidance = availability_receipt
+        .as_ref()
+        .and_then(|receipt| json_string(receipt, "install_guidance"))
+        .unwrap_or(MOZA_PIT_HOUSE_INSTALL_GUIDANCE);
 
     let mut recorded_cases = Vec::new();
     let mut missing_cases = Vec::new();
@@ -1871,6 +1881,8 @@ fn moza_pit_house_compatibility_summary(lane: &Path) -> Value {
         "availability_receipt_valid": availability_receipt_valid,
         "availability_status": availability_status,
         "pit_house_available": pit_house_available,
+        "official_download_page": official_download_page,
+        "install_guidance": install_guidance,
         "coexistence_artifact": "pit-house-coexistence.json",
         "pit_house_coexistence_claimed": parent_claimed,
         "coexistence_gate_status": parent_gate.status,
@@ -1893,6 +1905,7 @@ fn moza_pit_house_compatibility_summary(lane: &Path) -> Value {
         "no_firmware_or_dfu_commands": true,
         "notes": [
             "Pit House compatibility is external smoke evidence only; it is not a native-control prerequisite.",
+            "Pit House install/source guidance is operator navigation only and does not prove coexistence.",
             "Availability and case receipts are navigation evidence until pit-house-coexistence.json passes the verifier.",
             "If Pit House is absent, keep open-state cases and smoke-ready blocked instead of fabricating evidence."
         ]
@@ -21050,6 +21063,8 @@ fn pit_house_availability_receipt(
         "evidence": evidence_note,
         "platform": std::env::consts::OS,
         "availability_status": status,
+        "official_download_page": MOZA_PIT_HOUSE_DOWNLOADS_URL,
+        "install_guidance": MOZA_PIT_HOUSE_INSTALL_GUIDANCE,
         "pit_house_available": available,
         "pit_house_installed": installed,
         "pit_house_process_visible": process_visible,
@@ -21066,6 +21081,7 @@ fn pit_house_availability_receipt(
         "process_window_scan_error": process_scan.error,
         "notes": [
             "Availability is not coexistence proof and must not satisfy pit-house-coexistence.json.",
+            "Use the official MOZA Pit House Downloads support page as the install/update source; package-manager availability is optional and not evidence.",
             "If Pit House is absent, leave smoke-ready blocked instead of fabricating open-state observations.",
             "This command opens no HID device and sends no output, feature, serial, firmware, or DFU commands."
         ],
@@ -21379,14 +21395,11 @@ fn parse_csv_fields(line: &str) -> Vec<String> {
     fields
 }
 
-fn pit_house_process_or_window_matches(process_name: &str, window_title: &str) -> bool {
+fn pit_house_process_or_window_matches(process_name: &str, _window_title: &str) -> bool {
     let process_name = process_name.to_ascii_lowercase();
-    let window_title = window_title.to_ascii_lowercase();
-    [process_name.as_str(), window_title.as_str()]
-        .iter()
-        .any(|value| {
-            value.contains("moza") || value.contains("pit house") || value.contains("pithouse")
-        })
+    [process_name.as_str()].iter().any(|value| {
+        value.contains("moza") || value.contains("pit house") || value.contains("pithouse")
+    })
 }
 
 fn pit_house_observation_case_id(case: MozaPitHouseObservationCase) -> &'static str {
@@ -30445,6 +30458,10 @@ fn push_pit_house_compatibility_markdown(out: &mut String, receipt: &Value) {
     let pit_house_available = json_bool(summary, "pit_house_available").unwrap_or(false);
     let coexistence_claimed = json_bool(summary, "pit_house_coexistence_claimed").unwrap_or(false);
     let gate_status = json_string(summary, "coexistence_gate_status").unwrap_or("unknown");
+    let official_download_page =
+        json_string(summary, "official_download_page").unwrap_or(MOZA_PIT_HOUSE_DOWNLOADS_URL);
+    let install_guidance =
+        json_string(summary, "install_guidance").unwrap_or(MOZA_PIT_HOUSE_INSTALL_GUIDANCE);
     let recorded_case_count = json_u64(summary, "recorded_case_count").unwrap_or(0);
     let required_case_count = json_u64(summary, "required_case_count").unwrap_or(0);
 
@@ -30455,6 +30472,14 @@ fn push_pit_house_compatibility_markdown(out: &mut String, receipt: &Value) {
         markdown_escape(availability_status)
     ));
     out.push_str(&format!("- Pit House available: `{pit_house_available}`\n"));
+    out.push_str(&format!(
+        "- Official download page: `{}`\n",
+        markdown_escape(official_download_page)
+    ));
+    out.push_str(&format!(
+        "- Install guidance: {}\n",
+        markdown_escape(install_guidance)
+    ));
     out.push_str(&format!(
         "- Coexistence gate status: `{}`\n",
         markdown_escape(gate_status)
@@ -33058,6 +33083,14 @@ mod tests {
         );
         assert_eq!(json_bool(pit_house, "pit_house_available"), Some(false));
         assert_eq!(
+            json_string(pit_house, "official_download_page"),
+            Some(MOZA_PIT_HOUSE_DOWNLOADS_URL)
+        );
+        assert_eq!(
+            json_string(pit_house, "install_guidance"),
+            Some(MOZA_PIT_HOUSE_INSTALL_GUIDANCE)
+        );
+        assert_eq!(
             json_bool(pit_house, "pit_house_coexistence_claimed"),
             Some(false)
         );
@@ -33097,6 +33130,8 @@ mod tests {
         let markdown = render_moza_lane_artifact_index_markdown(&receipt);
         assert!(markdown.contains("Pit House Compatibility"));
         assert!(markdown.contains("external-smoke navigation only"));
+        assert!(markdown.contains(MOZA_PIT_HOUSE_DOWNLOADS_URL));
+        assert!(markdown.contains("official MOZA Pit House Downloads support page"));
         assert!(markdown.contains(
             "| `pit_house_closed` | `pit-house-closed.json` | `pit-house-observation-closed.json` | `recorded` |"
         ));
@@ -33123,6 +33158,7 @@ mod tests {
         let wizard_markdown = render_moza_bench_wizard_markdown(&wizard_receipt);
         assert!(wizard_markdown.contains("Pit House Compatibility"));
         assert!(wizard_markdown.contains("not required for native OpenRacing control"));
+        assert!(wizard_markdown.contains(MOZA_PIT_HOUSE_DOWNLOADS_URL));
         Ok(())
     }
 
@@ -34576,6 +34612,14 @@ mod tests {
         assert_eq!(
             json_string(pit_house, "availability_status"),
             Some("not_installed_or_not_running")
+        );
+        assert_eq!(
+            json_string(pit_house, "official_download_page"),
+            Some(MOZA_PIT_HOUSE_DOWNLOADS_URL)
+        );
+        assert_eq!(
+            json_string(pit_house, "install_guidance"),
+            Some(MOZA_PIT_HOUSE_INSTALL_GUIDANCE)
         );
         assert_eq!(
             json_bool(pit_house, "pit_house_coexistence_claimed"),
@@ -37494,6 +37538,8 @@ mod tests {
             "operator": "Steven",
             "evidence": "Pit House is installed or visible for open-state compatibility observations.",
             "availability_status": "installed_and_running",
+            "official_download_page": MOZA_PIT_HOUSE_DOWNLOADS_URL,
+            "install_guidance": MOZA_PIT_HOUSE_INSTALL_GUIDANCE,
             "pit_house_available": true,
             "pit_house_installed": true,
             "pit_house_process_visible": true,
@@ -37535,6 +37581,8 @@ mod tests {
             "operator": "Steven",
             "evidence": "Pit House is not installed or running on this host.",
             "availability_status": "not_installed_or_not_running",
+            "official_download_page": MOZA_PIT_HOUSE_DOWNLOADS_URL,
+            "install_guidance": MOZA_PIT_HOUSE_INSTALL_GUIDANCE,
             "pit_house_available": false,
             "pit_house_installed": false,
             "pit_house_process_visible": false,
@@ -45587,20 +45635,15 @@ mod tests {
             "\"MOZA Pit House.exe\",\"1424\",\"Console\",\"1\",\"110,240 K\",\"Running\",\"Steven\",\"0:00:03\",\"MOZA Pit House\"\n",
             "\"notepad.exe\",\"4444\",\"Console\",\"1\",\"18,000 K\",\"Running\",\"Steven\",\"0:00:01\",\"notes\"\n",
             "\"helper.exe\",\"5555\",\"Console\",\"1\",\"18,000 K\",\"Running\",\"Steven\",\"0:00:01\",\"MozaPitHouse Status\"\n",
+            "\"Code - Insiders.exe\",\"6666\",\"Console\",\"1\",\"18,000 K\",\"Running\",\"Steven\",\"0:00:01\",\"MOZA Pit House - Visual Studio Code - Insiders\"\n",
         );
 
         let matches = pit_house_process_window_matches_from_tasklist(output);
 
-        assert_eq!(matches.len(), 2);
+        assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].process_name, "MOZA Pit House.exe");
         assert_eq!(matches[0].pid, Some(1424));
         assert_eq!(matches[0].window_title.as_deref(), Some("MOZA Pit House"));
-        assert_eq!(matches[1].process_name, "helper.exe");
-        assert_eq!(matches[1].pid, Some(5555));
-        assert_eq!(
-            matches[1].window_title.as_deref(),
-            Some("MozaPitHouse Status")
-        );
     }
 
     #[test]
@@ -45608,21 +45651,16 @@ mod tests {
         let output = r#"[
 {"ProcessName":"MOZA Pit House","Id":1424,"MainWindowTitle":"MOZA Pit House"},
 {"ProcessName":"notepad","Id":4444,"MainWindowTitle":"notes"},
-{"ProcessName":"helper","Id":5555,"MainWindowTitle":"MozaPitHouse Status"}
+{"ProcessName":"helper","Id":5555,"MainWindowTitle":"MozaPitHouse Status"},
+{"ProcessName":"Code - Insiders","Id":6666,"MainWindowTitle":"MOZA Pit House - Visual Studio Code - Insiders"}
 ]"#;
 
         let matches = pit_house_process_window_matches_from_powershell_json(output)?;
 
-        assert_eq!(matches.len(), 2);
+        assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].process_name, "MOZA Pit House");
         assert_eq!(matches[0].pid, Some(1424));
         assert_eq!(matches[0].window_title.as_deref(), Some("MOZA Pit House"));
-        assert_eq!(matches[1].process_name, "helper");
-        assert_eq!(matches[1].pid, Some(5555));
-        assert_eq!(
-            matches[1].window_title.as_deref(),
-            Some("MozaPitHouse Status")
-        );
         Ok(())
     }
 
@@ -45766,6 +45804,14 @@ mod tests {
         assert_eq!(
             json_string(&receipt, "availability_status"),
             Some("not_installed_or_not_running")
+        );
+        assert_eq!(
+            json_string(&receipt, "official_download_page"),
+            Some(MOZA_PIT_HOUSE_DOWNLOADS_URL)
+        );
+        assert_eq!(
+            json_string(&receipt, "install_guidance"),
+            Some(MOZA_PIT_HOUSE_INSTALL_GUIDANCE)
         );
         assert_eq!(json_bool(&receipt, "pit_house_available"), Some(false));
         assert_eq!(

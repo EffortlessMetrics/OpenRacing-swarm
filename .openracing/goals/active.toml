@@ -497,6 +497,27 @@ commands = [
 ]
 
 [[work_item]]
+id = "pit-house-install-source-guidance"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-pit-house-install-source-guidance"
+current_pointer = "crates/cli/src/commands/moza.rs"
+claim_boundary = "No-output operator navigation only; Pit House availability receipts and navigation surfaces point to the official MOZA Pit House Downloads source without installing, launching, capturing, opening HID, authorizing output, or making native-control, native-visible, smoke-ready, coexistence, firmware, or semantic-control claims."
+blocked_by = "n/a"
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl pit_house -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl artifact_index -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl bench_wizard -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  ".\\target\\debug\\wheelctl.exe moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-native-visible-after-pit-house-install-guidance.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw \"expected native-visible verifier to remain blocked\" }",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

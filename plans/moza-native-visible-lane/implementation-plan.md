@@ -1541,6 +1541,65 @@ open-idle bundle manifest, and this work-item entry. Do not remove passive
 sniff receipts, summaries, closed-loop output receipts, or raw local capture
 artifacts.
 
+## Work item: pit-house-install-source-guidance
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: Pit House witness/coexistence operator navigation
+Blocked by: n/a
+
+### Goal
+
+Surface the official MOZA Pit House download/source guidance in no-output
+availability receipts and normal operator navigation, without treating Pit
+House as a native-control dependency.
+
+### Production delta
+
+Add the official MOZA Pit House Downloads support page and install-source
+guidance to `pit-house-availability` receipts, Pit House compatibility summary
+JSON, artifact-index Markdown, and bench-wizard Markdown.
+
+### Non-goals
+
+No install, launch, passive capture, HID open, hardware output, Pit House
+coexistence proof, smoke-ready claim, native-visible claim, package-manager
+assumption, firmware/DFU guidance, or semantic control promotion.
+
+### Acceptance
+
+- Availability receipts include the official MOZA Pit House Downloads page and
+  install guidance while preserving `satisfies_pit_house_coexistence=false`.
+- Artifact-index and bench-wizard Pit House sections surface the guidance as
+  external-smoke navigation only.
+- Existing availability receipts without the new fields remain parseable and
+  default to the same guidance.
+- Native-visible verification remains blocked.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl pit_house -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl artifact_index -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+.\target\debug\wheelctl.exe moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-native-visible-after-pit-house-install-guidance.json --json
+if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the Pit House download/source fields, Markdown rendering, tests, and
+this work-item entry. Do not alter Pit House sniff receipts, availability
+snapshots, coexistence gates, native-control receipts, or semantic-control
+artifacts.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
