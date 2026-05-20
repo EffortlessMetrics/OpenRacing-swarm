@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "fixture_id": "r5_aggregated_idle_after_controls",
-  "generated_at_utc": "2026-05-15T00:37:58Z",
+  "generated_at_utc": "2026-05-20T01:15:57Z",
   "source_capture": "captures/r5-aggregated-idle-after-controls.jsonl",
   "no_ffb_writes": true,
   "total_reports": 2375,
@@ -21,8 +21,8 @@
   },
   "axis_ranges": {
     "brake_u16": {
-      "min": 0,
-      "max": 0
+      "min": 32768,
+      "max": 32768
     },
     "buttons0_u8": {
       "min": 8,
@@ -41,8 +41,8 @@
       "max": 0
     },
     "handbrake_u16": {
-      "min": 0,
-      "max": 0
+      "min": 32769,
+      "max": 32769
     },
     "hat_u8": {
       "min": 0,
@@ -108,9 +108,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -148,9 +148,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -188,9 +188,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -228,9 +228,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -268,9 +268,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -308,9 +308,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -348,9 +348,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -388,9 +388,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -428,9 +428,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -468,9 +468,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -508,9 +508,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -548,9 +548,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -588,9 +588,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -628,9 +628,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -668,9 +668,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -708,9 +708,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -748,9 +748,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -788,9 +788,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -828,9 +828,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -868,9 +868,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -908,9 +908,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -948,9 +948,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -988,9 +988,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1028,9 +1028,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1068,9 +1068,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1108,9 +1108,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1148,9 +1148,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1188,9 +1188,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1228,9 +1228,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1268,9 +1268,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1308,9 +1308,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1348,9 +1348,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1388,9 +1388,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1428,9 +1428,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1468,9 +1468,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1508,9 +1508,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1548,9 +1548,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1588,9 +1588,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1628,9 +1628,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1668,9 +1668,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1708,9 +1708,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1748,9 +1748,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1788,9 +1788,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1828,9 +1828,9 @@
       "parsed": {
         "steering_u16": 33932,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1868,9 +1868,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1908,9 +1908,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1948,9 +1948,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -1988,9 +1988,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2028,9 +2028,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2068,9 +2068,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2108,9 +2108,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2148,9 +2148,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2188,9 +2188,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2228,9 +2228,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2268,9 +2268,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2308,9 +2308,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2348,9 +2348,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2388,9 +2388,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2428,9 +2428,9 @@
       "parsed": {
         "steering_u16": 33932,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2468,9 +2468,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2508,9 +2508,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2548,9 +2548,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2588,9 +2588,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2628,9 +2628,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2668,9 +2668,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2708,9 +2708,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2748,9 +2748,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2788,9 +2788,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2828,9 +2828,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2868,9 +2868,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2908,9 +2908,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2948,9 +2948,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -2988,9 +2988,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3028,9 +3028,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3068,9 +3068,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3108,9 +3108,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3148,9 +3148,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3188,9 +3188,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3228,9 +3228,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3268,9 +3268,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3308,9 +3308,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3348,9 +3348,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3388,9 +3388,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3428,9 +3428,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3468,9 +3468,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3508,9 +3508,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3548,9 +3548,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3588,9 +3588,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3628,9 +3628,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3668,9 +3668,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3708,9 +3708,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3748,9 +3748,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3788,9 +3788,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3828,9 +3828,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3868,9 +3868,9 @@
       "parsed": {
         "steering_u16": 33932,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3908,9 +3908,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3948,9 +3948,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -3988,9 +3988,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4028,9 +4028,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4068,9 +4068,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4108,9 +4108,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4148,9 +4148,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4188,9 +4188,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4228,9 +4228,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4268,9 +4268,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4308,9 +4308,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4348,9 +4348,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4388,9 +4388,9 @@
       "parsed": {
         "steering_u16": 33922,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4428,9 +4428,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4468,9 +4468,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4508,9 +4508,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4548,9 +4548,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4588,9 +4588,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4628,9 +4628,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4668,9 +4668,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4708,9 +4708,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4748,9 +4748,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4788,9 +4788,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4828,9 +4828,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4868,9 +4868,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4908,9 +4908,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4948,9 +4948,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -4988,9 +4988,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5028,9 +5028,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5068,9 +5068,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5108,9 +5108,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5148,9 +5148,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5188,9 +5188,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5228,9 +5228,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5268,9 +5268,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5308,9 +5308,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5348,9 +5348,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5388,9 +5388,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5428,9 +5428,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5468,9 +5468,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5508,9 +5508,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5548,9 +5548,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5588,9 +5588,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5628,9 +5628,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5668,9 +5668,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5708,9 +5708,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5748,9 +5748,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5788,9 +5788,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5828,9 +5828,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5868,9 +5868,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5908,9 +5908,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5948,9 +5948,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -5988,9 +5988,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6028,9 +6028,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6068,9 +6068,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6108,9 +6108,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6148,9 +6148,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6188,9 +6188,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6228,9 +6228,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6268,9 +6268,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6308,9 +6308,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6348,9 +6348,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6388,9 +6388,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6428,9 +6428,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6468,9 +6468,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6508,9 +6508,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6548,9 +6548,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6588,9 +6588,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6628,9 +6628,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6668,9 +6668,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6708,9 +6708,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6748,9 +6748,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6788,9 +6788,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6828,9 +6828,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6868,9 +6868,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6908,9 +6908,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6948,9 +6948,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -6988,9 +6988,9 @@
       "parsed": {
         "steering_u16": 33922,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7028,9 +7028,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7068,9 +7068,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7108,9 +7108,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7148,9 +7148,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7188,9 +7188,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7228,9 +7228,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7268,9 +7268,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7308,9 +7308,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7348,9 +7348,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7388,9 +7388,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7428,9 +7428,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7468,9 +7468,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7508,9 +7508,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7548,9 +7548,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7588,9 +7588,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7628,9 +7628,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7668,9 +7668,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7708,9 +7708,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7748,9 +7748,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7788,9 +7788,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7828,9 +7828,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7868,9 +7868,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7908,9 +7908,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7948,9 +7948,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -7988,9 +7988,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8028,9 +8028,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8068,9 +8068,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8108,9 +8108,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8148,9 +8148,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8188,9 +8188,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8228,9 +8228,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8268,9 +8268,9 @@
       "parsed": {
         "steering_u16": 33932,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8308,9 +8308,9 @@
       "parsed": {
         "steering_u16": 33932,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8348,9 +8348,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8388,9 +8388,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8428,9 +8428,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8468,9 +8468,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8508,9 +8508,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8548,9 +8548,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8588,9 +8588,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8628,9 +8628,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8668,9 +8668,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8708,9 +8708,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8748,9 +8748,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8788,9 +8788,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8828,9 +8828,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8868,9 +8868,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8908,9 +8908,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8948,9 +8948,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -8988,9 +8988,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9028,9 +9028,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9068,9 +9068,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9108,9 +9108,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9148,9 +9148,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9188,9 +9188,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9228,9 +9228,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9268,9 +9268,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9308,9 +9308,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9348,9 +9348,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9388,9 +9388,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9428,9 +9428,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9468,9 +9468,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9508,9 +9508,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9548,9 +9548,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9588,9 +9588,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9628,9 +9628,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9668,9 +9668,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9708,9 +9708,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9748,9 +9748,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9788,9 +9788,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9828,9 +9828,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9868,9 +9868,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9908,9 +9908,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9948,9 +9948,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -9988,9 +9988,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -10028,9 +10028,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -10068,9 +10068,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -10108,9 +10108,9 @@
       "parsed": {
         "steering_u16": 33924,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -10148,9 +10148,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -10188,9 +10188,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -10228,9 +10228,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -10268,9 +10268,9 @@
       "parsed": {
         "steering_u16": 33927,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",
@@ -10308,9 +10308,9 @@
       "parsed": {
         "steering_u16": 33930,
         "throttle_u16": 32768,
-        "brake_u16": 0,
+        "brake_u16": 32768,
         "clutch_u16": 0,
-        "handbrake_u16": 0,
+        "handbrake_u16": 32769,
         "buttons_hex": [
           "0x08",
           "0x00",

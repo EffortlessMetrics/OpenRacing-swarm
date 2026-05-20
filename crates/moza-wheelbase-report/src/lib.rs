@@ -43,8 +43,12 @@ pub mod input_report {
     /// Byte offset where the live R5 V1 extended axis block exposes the first
     /// moving pedal-like slot observed during SR-P-through-wheelbase capture.
     pub const R5_V1_EXTENDED_AXIS0_START: usize = 11;
+    /// Byte offset where isolated live R5 V1 through-hub brake captures moved.
+    pub const R5_V1_EXTENDED_BRAKE_START: usize = R5_V1_EXTENDED_AXIS0_START;
     /// Byte offset for the second observed live R5 V1 extended axis slot.
     pub const R5_V1_EXTENDED_AXIS1_START: usize = 13;
+    /// Byte offset where isolated live R5 V1 through-hub HBP captures moved.
+    pub const R5_V1_EXTENDED_HANDBRAKE_START: usize = R5_V1_EXTENDED_AXIS1_START;
     /// Byte offset for the third observed live R5 V1 extended axis slot.
     pub const R5_V1_EXTENDED_AXIS2_START: usize = 15;
     /// Byte offset for an axis-like KS control observed in live R5 V1 + KS captures.
@@ -199,9 +203,9 @@ impl WheelbaseInputLayout {
 
     const R5_V1_EXTENDED: Self = Self {
         throttle_start: Some(input_report::R5_V1_EXTENDED_THROTTLE_START),
-        brake_start: None,
+        brake_start: Some(input_report::R5_V1_EXTENDED_BRAKE_START),
         clutch_start: None,
-        handbrake_start: None,
+        handbrake_start: Some(input_report::R5_V1_EXTENDED_HANDBRAKE_START),
         buttons_start: input_report::R5_V1_EXTENDED_BUTTONS_START,
         hat_start: input_report::R5_V1_EXTENDED_HAT_START,
         funky_start: None,
@@ -510,9 +514,9 @@ mod tests {
             Some(0x1357)
         );
         assert_eq!(parsed.pedals.throttle, 0x3456);
-        assert_eq!(parsed.pedals.brake, 0);
+        assert_eq!(parsed.pedals.brake, 0x5678);
         assert_eq!(parsed.pedals.clutch, None);
-        assert_eq!(parsed.pedals.handbrake, None);
+        assert_eq!(parsed.pedals.handbrake, Some(0x9ABC));
         assert_eq!(parsed.buttons[0], 0x08);
         assert_eq!(parsed.buttons[1], 0x04);
         assert_eq!(parsed.buttons[10], 0x80);

@@ -518,6 +518,34 @@ commands = [
 ]
 
 [[work_item]]
+id = "brake-hbp-semantic-promotion"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-brake-hbp-semantic-promotion"
+current_pointer = "crates/moza-wheelbase-report/src/lib.rs"
+claim_boundary = "Parser and no-output artifact refresh only; promotes checked-in isolated R5 V1 through-hub brake and HBP handbrake samples to semantic axes while leaving clutch generic and making no wheel-button, native-control, native-visible, smoke-ready, Pit House coexistence, hardware-output, authorization, HID-open, or new-capture claims."
+blocked_by = "n/a"
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p racing-wheel-moza-wheelbase-report --all-features -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl input_role -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl artifact_index -- --nocapture",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza validate-captures --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/parser-fixture-validation.json --json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza promote-fixtures --lane ci/hardware/moza-r5/2026-05-13 --fixture-dir crates/hid-moza-protocol/fixtures/moza-r5-2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/fixture-promotion.json --overwrite --json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza analyze-lane --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/lane-capture-analysis.json --json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza sync-role-status --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/role-status-sync.json --json",
+  ".\\target\\debug\\wheelctl.exe moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out ci/hardware/moza-r5/2026-05-13/native-visible-verification.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw \"expected native-visible verifier to remain blocked\" }",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-artifact-index-after-brake-hbp-semantics.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json",
+  ".\\target\\debug\\wheelctl.exe moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-native-visible-after-brake-hbp-semantics.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw \"expected native-visible verifier to remain blocked\" }",
+  "cargo clippy --locked -p racing-wheel-moza-wheelbase-report --all-features -- -D warnings",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

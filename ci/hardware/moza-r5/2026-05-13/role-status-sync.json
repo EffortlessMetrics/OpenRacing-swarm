@@ -3,11 +3,11 @@
   "check_only": false,
   "command": "wheelctl moza sync-role-status",
   "failed_captures": [],
-  "generated_at_utc": "2026-05-18T23:51:13Z",
+  "generated_at_utc": "2026-05-20T01:16:42Z",
   "lane": "ci/hardware/moza-r5/2026-05-13",
   "lane_analysis_success": true,
   "manifest": "manifest.json",
-  "manifest_written": false,
+  "manifest_written": true,
   "missing_control_evidence": [],
   "no_feature_reports": true,
   "no_ffb_writes": true,
@@ -22,40 +22,24 @@
     "lane_analysis_success may remain false while missing roles are recorded honestly"
   ],
   "role_count": 7,
-  "stale_control_count": 0,
+  "stale_control_count": 2,
   "status_updates": [
     {
-      "changed": false,
+      "changed": true,
       "connection": "wheelbase_hub",
       "control": "brake",
       "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
       "missing_requirements": [],
       "moving_required_axes": [
-        "r5_v1_extended_axis0_u16"
+        "brake_u16"
       ],
-      "new_semantic_status": "generic_aux",
-      "notes": [
-        "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
-      ],
+      "new_semantic_status": "proven",
+      "notes": [],
       "old_semantic_status": "generic_aux",
       "parser_visible": true,
       "required": true,
       "role": "brake",
-      "semantic_candidates": [
-        {
-          "ambiguous_with_controls": [],
-          "axis": "r5_v1_extended_axis0_u16",
-          "claim_status": "candidate_only",
-          "confidence": "isolated_candidate",
-          "control": "brake",
-          "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
-          "notes": [
-            "candidate comes from an isolated role capture and is not a parser semantic mapping"
-          ],
-          "readiness_claim": false,
-          "role": "brake"
-        }
-      ],
+      "semantic_candidates": [],
       "source_endpoint": "moza-r5-if2"
     },
     {
@@ -78,31 +62,27 @@
       "role": "clutch",
       "semantic_candidates": [
         {
-          "ambiguous_with_controls": [
-            "handbrake"
-          ],
+          "ambiguous_with_controls": [],
           "axis": "r5_v1_extended_aux0_u16",
           "claim_status": "candidate_only",
-          "confidence": "ambiguous_candidate",
+          "confidence": "isolated_candidate",
           "control": "clutch",
           "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
           "notes": [
-            "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
+            "candidate comes from an isolated role capture and is not a parser semantic mapping"
           ],
           "readiness_claim": false,
           "role": "clutch"
         },
         {
-          "ambiguous_with_controls": [
-            "handbrake"
-          ],
+          "ambiguous_with_controls": [],
           "axis": "r5_v1_extended_aux1_u16",
           "claim_status": "candidate_only",
-          "confidence": "ambiguous_candidate",
+          "confidence": "isolated_candidate",
           "control": "clutch",
           "evidence_capture": "captures/r5-clutch-only-sweep.jsonl",
           "notes": [
-            "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
+            "candidate comes from an isolated role capture and is not a parser semantic mapping"
           ],
           "readiness_claim": false,
           "role": "clutch"
@@ -129,69 +109,21 @@
       "source_endpoint": "moza-r5-if2"
     },
     {
-      "changed": false,
+      "changed": true,
       "connection": "wheelbase_hub",
       "control": "handbrake",
       "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
       "missing_requirements": [],
       "moving_required_axes": [
-        "r5_v1_extended_aux0_u16",
-        "r5_v1_extended_aux1_u16",
-        "r5_v1_extended_axis1_u16"
+        "handbrake_u16"
       ],
-      "new_semantic_status": "generic_aux",
-      "notes": [
-        "role is backed by generic live R5 V1 extended fields; semantic control naming remains unproven"
-      ],
+      "new_semantic_status": "proven",
+      "notes": [],
       "old_semantic_status": "generic_aux",
       "parser_visible": true,
       "required": true,
       "role": "handbrake",
-      "semantic_candidates": [
-        {
-          "ambiguous_with_controls": [
-            "clutch"
-          ],
-          "axis": "r5_v1_extended_aux0_u16",
-          "claim_status": "candidate_only",
-          "confidence": "ambiguous_candidate",
-          "control": "handbrake",
-          "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
-          "notes": [
-            "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
-          ],
-          "readiness_claim": false,
-          "role": "handbrake"
-        },
-        {
-          "ambiguous_with_controls": [
-            "clutch"
-          ],
-          "axis": "r5_v1_extended_aux1_u16",
-          "claim_status": "candidate_only",
-          "confidence": "ambiguous_candidate",
-          "control": "handbrake",
-          "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
-          "notes": [
-            "candidate axis also moved in another isolated role capture; keep semantic status generic_aux"
-          ],
-          "readiness_claim": false,
-          "role": "handbrake"
-        },
-        {
-          "ambiguous_with_controls": [],
-          "axis": "r5_v1_extended_axis1_u16",
-          "claim_status": "candidate_only",
-          "confidence": "isolated_candidate",
-          "control": "handbrake",
-          "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
-          "notes": [
-            "candidate comes from an isolated role capture and is not a parser semantic mapping"
-          ],
-          "readiness_claim": false,
-          "role": "handbrake"
-        }
-      ],
+      "semantic_candidates": [],
       "source_endpoint": "moza-r5-if2"
     },
     {

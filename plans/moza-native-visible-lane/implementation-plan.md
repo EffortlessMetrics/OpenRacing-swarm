@@ -1600,6 +1600,70 @@ this work-item entry. Do not alter Pit House sniff receipts, availability
 snapshots, coexistence gates, native-control receipts, or semantic-control
 artifacts.
 
+## Work item: brake-hbp-semantic-promotion
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: input topology cleanup for checked-in SR-P/HBP captures
+Blocked by: n/a
+
+### Goal
+
+Promote only the checked-in isolated R5 V1 through-hub brake and HBP
+handbrake evidence from generic auxiliary slots to parser semantic axes.
+
+### Production delta
+
+Map the live R5 V1 extended byte-11 axis to `brake_u16` and byte-13 axis to
+`handbrake_u16`, then regenerate the no-output capture validation,
+fixture-promotion, lane-analysis, role-status, blocked native-visible verifier,
+and artifact-index receipts from the stored captures.
+
+### Non-goals
+
+No clutch semantic promotion, wheel-button naming, rotary semantic promotion,
+native-visible promotion, smoke-ready promotion, Pit House coexistence claim,
+hardware output, authorization receipt, HID open, or new capture.
+
+### Acceptance
+
+- Brake reports `semantic_status=proven` with `moving_required_axes=["brake_u16"]`.
+- Handbrake reports `semantic_status=proven` with
+  `moving_required_axes=["handbrake_u16"]`.
+- Clutch remains `generic_aux` and `input_semantic_mapping_complete=false`.
+- Native-visible verification remains blocked.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p racing-wheel-moza-wheelbase-report --all-features -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl input_role -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl artifact_index -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- moza validate-captures --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/parser-fixture-validation.json --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza promote-fixtures --lane ci/hardware/moza-r5/2026-05-13 --fixture-dir crates/hid-moza-protocol/fixtures/moza-r5-2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/fixture-promotion.json --overwrite --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza analyze-lane --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/lane-capture-analysis.json --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza sync-role-status --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/role-status-sync.json --json
+.\target\debug\wheelctl.exe moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out ci/hardware/moza-r5/2026-05-13/native-visible-verification.json --json
+if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-artifact-index-after-brake-hbp-semantics.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json
+.\target\debug\wheelctl.exe moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-native-visible-after-brake-hbp-semantics.json --json
+if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo clippy --locked -p racing-wheel-moza-wheelbase-report --all-features -- -D warnings
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the R5 V1 brake/HBP parser mapping, regenerated no-output receipts,
+tests, and this work-item entry. Do not remove source captures, closed-loop
+output receipts, Pit House artifacts, or native-visible failure evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

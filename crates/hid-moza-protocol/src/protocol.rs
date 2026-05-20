@@ -976,9 +976,9 @@ mod tests {
             .ok_or("expected live R5 V1 extended wheelbase parse")?;
 
         assert_eq!(parsed.throttle_u16, 0x3456);
-        assert_eq!(parsed.brake_u16, 0);
+        assert_eq!(parsed.brake_u16, 0x8000);
         assert_eq!(parsed.clutch_u16, 0);
-        assert_eq!(parsed.handbrake_u16, 0);
+        assert_eq!(parsed.handbrake_u16, 0x8001);
         assert_eq!(parsed.buttons[0], 0x08);
         assert_eq!(parsed.buttons[1], 0x04);
         assert_eq!(parsed.buttons[10], 0x80);

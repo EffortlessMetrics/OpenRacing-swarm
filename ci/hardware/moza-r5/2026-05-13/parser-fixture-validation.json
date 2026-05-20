@@ -1,8 +1,8 @@
 {
   "success": true,
   "command": "wheelctl moza validate-captures",
-  "generated_at_utc": "2026-05-15T01:59:11Z",
-  "lane": "ci\\hardware\\moza-r5\\2026-05-13",
+  "generated_at_utc": "2026-05-20T01:15:27Z",
+  "lane": "ci/hardware/moza-r5/2026-05-13",
   "no_ffb_writes": true,
   "no_serial_config_commands": true,
   "no_firmware_or_dfu_commands": true,
@@ -44,8 +44,8 @@
       },
       "axis_ranges": {
         "brake_u16": {
-          "min": 0,
-          "max": 0
+          "min": 32768,
+          "max": 32768
         },
         "buttons0_u8": {
           "min": 8,
@@ -64,8 +64,8 @@
           "max": 0
         },
         "handbrake_u16": {
-          "min": 0,
-          "max": 0
+          "min": 32769,
+          "max": 32769
         },
         "hat_u8": {
           "min": 0,
@@ -154,8 +154,8 @@
       },
       "axis_ranges": {
         "brake_u16": {
-          "min": 0,
-          "max": 0
+          "min": 32768,
+          "max": 32768
         },
         "buttons0_u8": {
           "min": 8,
@@ -174,8 +174,8 @@
           "max": 0
         },
         "handbrake_u16": {
-          "min": 0,
-          "max": 0
+          "min": 32769,
+          "max": 32769
         },
         "hat_u8": {
           "min": 0,
@@ -277,8 +277,8 @@
       },
       "axis_ranges": {
         "brake_u16": {
-          "min": 0,
-          "max": 0
+          "min": 32768,
+          "max": 32768
         },
         "buttons0_u8": {
           "min": 8,
@@ -297,8 +297,8 @@
           "max": 0
         },
         "handbrake_u16": {
-          "min": 0,
-          "max": 0
+          "min": 32769,
+          "max": 32769
         },
         "hat_u8": {
           "min": 0,
@@ -361,24 +361,11 @@
       "required_product_ids": [
         "0x0004"
       ],
-      "required_axis_variation": [],
-      "required_axis_values": [],
-      "required_any_axis_variation": [
-        {
-          "group": "hub_control_axis",
-          "axes": [
-            "throttle_u16",
-            "brake_u16",
-            "clutch_u16",
-            "handbrake_u16",
-            "r5_v1_extended_axis0_u16",
-            "r5_v1_extended_axis1_u16",
-            "r5_v1_extended_axis2_u16",
-            "r5_v1_extended_aux0_u16",
-            "r5_v1_extended_aux1_u16"
-          ]
-        }
+      "required_axis_variation": [
+        "brake_u16"
       ],
+      "required_axis_values": [],
+      "required_any_axis_variation": [],
       "success": true,
       "missing_requirements": [],
       "total_reports": 22854,
@@ -400,8 +387,8 @@
       },
       "axis_ranges": {
         "brake_u16": {
-          "min": 0,
-          "max": 0
+          "min": 33,
+          "max": 65435
         },
         "buttons0_u8": {
           "min": 8,
@@ -420,8 +407,8 @@
           "max": 0
         },
         "handbrake_u16": {
-          "min": 0,
-          "max": 0
+          "min": 32769,
+          "max": 32769
         },
         "hat_u8": {
           "min": 0,
@@ -523,8 +510,8 @@
       },
       "axis_ranges": {
         "brake_u16": {
-          "min": 0,
-          "max": 0
+          "min": 32768,
+          "max": 32768
         },
         "buttons0_u8": {
           "min": 8,
@@ -543,8 +530,8 @@
           "max": 0
         },
         "handbrake_u16": {
-          "min": 0,
-          "max": 0
+          "min": 32769,
+          "max": 32769
         },
         "hat_u8": {
           "min": 0,
@@ -607,24 +594,11 @@
       "required_product_ids": [
         "0x0004"
       ],
-      "required_axis_variation": [],
-      "required_axis_values": [],
-      "required_any_axis_variation": [
-        {
-          "group": "hub_control_axis",
-          "axes": [
-            "throttle_u16",
-            "brake_u16",
-            "clutch_u16",
-            "handbrake_u16",
-            "r5_v1_extended_axis0_u16",
-            "r5_v1_extended_axis1_u16",
-            "r5_v1_extended_axis2_u16",
-            "r5_v1_extended_aux0_u16",
-            "r5_v1_extended_aux1_u16"
-          ]
-        }
+      "required_axis_variation": [
+        "handbrake_u16"
       ],
+      "required_axis_values": [],
+      "required_any_axis_variation": [],
       "success": true,
       "missing_requirements": [],
       "total_reports": 23491,
@@ -646,8 +620,8 @@
       },
       "axis_ranges": {
         "brake_u16": {
-          "min": 0,
-          "max": 0
+          "min": 32768,
+          "max": 32768
         },
         "buttons0_u8": {
           "min": 8,
@@ -666,8 +640,8 @@
           "max": 0
         },
         "handbrake_u16": {
-          "min": 0,
-          "max": 0
+          "min": 191,
+          "max": 65232
         },
         "hat_u8": {
           "min": 0,
@@ -754,8 +728,8 @@
       },
       "axis_ranges": {
         "brake_u16": {
-          "min": 0,
-          "max": 0
+          "min": 32768,
+          "max": 32768
         },
         "buttons0_u8": {
           "min": 8,
@@ -774,8 +748,8 @@
           "max": 0
         },
         "handbrake_u16": {
-          "min": 0,
-          "max": 0
+          "min": 32769,
+          "max": 32769
         },
         "hat_u8": {
           "min": 0,
@@ -878,8 +852,8 @@
       },
       "axis_ranges": {
         "brake_u16": {
-          "min": 0,
-          "max": 0
+          "min": 32768,
+          "max": 32768
         },
         "buttons0_u8": {
           "min": 8,
@@ -898,8 +872,8 @@
           "max": 0
         },
         "handbrake_u16": {
-          "min": 0,
-          "max": 0
+          "min": 32769,
+          "max": 32769
         },
         "hat_u8": {
           "min": 0,
@@ -994,8 +968,8 @@
       },
       "axis_ranges": {
         "brake_u16": {
-          "min": 0,
-          "max": 0
+          "min": 32768,
+          "max": 32768
         },
         "buttons0_u8": {
           "min": 8,
@@ -1014,8 +988,8 @@
           "max": 0
         },
         "handbrake_u16": {
-          "min": 0,
-          "max": 0
+          "min": 32769,
+          "max": 32769
         },
         "hat_u8": {
           "min": 0,

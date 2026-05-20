@@ -16852,6 +16852,7 @@ fn passive_capture_requirements() -> &'static [PassiveCaptureRequirement] {
     const NONE: &[&str] = &[];
     const STEERING: &[&str] = &["steering_u16"];
     const PEDALS: &[&str] = &["throttle_u16", "brake_u16"];
+    const BRAKE: &[&str] = &["brake_u16"];
     const HANDBRAKE: &[&str] = &["handbrake_u16"];
     const NO_EXACT: &[(&str, u16)] = &[];
     const NO_ANY: &[(&str, &[&str])] = &[];
@@ -16919,9 +16920,9 @@ fn passive_capture_requirements() -> &'static [PassiveCaptureRequirement] {
             fixture_id: "r5_brake_only_sweep",
             required_category: "wheelbase",
             expected_products: PassiveCaptureProductRequirement::ManifestR5,
-            required_axis_variation: NONE,
+            required_axis_variation: BRAKE,
             required_axis_values: NO_EXACT,
-            required_any_axis_variation: HUB_CONTROL_GROUPS,
+            required_any_axis_variation: NO_ANY,
             min_report_len: None,
             always_required: false,
             default_required: true,
@@ -16943,9 +16944,9 @@ fn passive_capture_requirements() -> &'static [PassiveCaptureRequirement] {
             fixture_id: "r5_handbrake_only_sweep",
             required_category: "wheelbase",
             expected_products: PassiveCaptureProductRequirement::ManifestR5,
-            required_axis_variation: NONE,
+            required_axis_variation: HANDBRAKE,
             required_axis_values: NO_EXACT,
-            required_any_axis_variation: HUB_CONTROL_GROUPS,
+            required_any_axis_variation: NO_ANY,
             min_report_len: None,
             always_required: false,
             default_required: true,
@@ -52047,7 +52048,7 @@ mod tests {
                 .axis_ranges
                 .get("brake_u16")
                 .and_then(|axis| axis.max),
-            Some(0)
+            Some(0x8000)
         );
         assert_eq!(
             receipt
@@ -52061,7 +52062,7 @@ mod tests {
                 .axis_ranges
                 .get("handbrake_u16")
                 .and_then(|axis| axis.max),
-            Some(0)
+            Some(0x8001)
         );
         Ok(())
     }
@@ -52344,6 +52345,139 @@ mod tests {
                 .iter()
                 .any(|note| note.contains("semantic control naming remains unproven"))
         );
+    }
+
+    #[test]
+    fn input_role_requirements_promote_brake_hbp_semantic_axes_only() -> TestResult {
+        fn varied_axis(min: u16, max: u16) -> AxisRange {
+            AxisRange {
+                min: Some(min),
+                max: Some(max),
+            }
+        }
+
+        fn requirement(path: &str) -> TestResult<&'static PassiveCaptureRequirement> {
+            passive_capture_requirements()
+                .iter()
+                .find(|requirement| requirement.relative_path == path)
+                .ok_or_else(|| format!("missing requirement for {path}").into())
+        }
+
+        fn analysis_entry(
+            capture: &str,
+            moving_required_axes: Vec<String>,
+        ) -> LaneCaptureAnalysisEntry {
+            LaneCaptureAnalysisEntry {
+                capture: capture.to_string(),
+                fixture_id: capture.replace("captures/", "").replace(".jsonl", ""),
+                success: true,
+                total_reports: 2,
+                decoded_reports: 2,
+                rejected_reports: 0,
+                moving_bytes: Vec::new(),
+                unique_moving_bytes_vs_idle: Vec::new(),
+                moving_words_le: Vec::new(),
+                unique_moving_words_le_vs_idle: Vec::new(),
+                moving_required_axes,
+                control_evidence_ok: true,
+                missing_requirements: Vec::new(),
+            }
+        }
+
+        let mut brake_ranges = BTreeMap::new();
+        brake_ranges.insert("brake_u16".to_string(), varied_axis(33, 65435));
+        brake_ranges.insert(
+            "r5_v1_extended_axis0_u16".to_string(),
+            varied_axis(33, 65435),
+        );
+        let brake_axes = moving_required_axes(
+            requirement("captures/r5-brake-only-sweep.jsonl")?,
+            &brake_ranges,
+        );
+        assert_eq!(brake_axes, vec!["brake_u16".to_string()]);
+
+        let mut handbrake_ranges = BTreeMap::new();
+        handbrake_ranges.insert("handbrake_u16".to_string(), varied_axis(191, 65232));
+        handbrake_ranges.insert(
+            "r5_v1_extended_axis1_u16".to_string(),
+            varied_axis(191, 65232),
+        );
+        handbrake_ranges.insert("r5_v1_extended_aux0_u16".to_string(), varied_axis(0, 65358));
+        handbrake_ranges.insert("r5_v1_extended_aux1_u16".to_string(), varied_axis(0, 49057));
+        let handbrake_axes = moving_required_axes(
+            requirement("captures/r5-handbrake-only-sweep.jsonl")?,
+            &handbrake_ranges,
+        );
+        assert_eq!(handbrake_axes, vec!["handbrake_u16".to_string()]);
+
+        let mut clutch_ranges = BTreeMap::new();
+        clutch_ranges.insert("r5_v1_extended_aux0_u16".to_string(), varied_axis(0, 62092));
+        clutch_ranges.insert("r5_v1_extended_aux1_u16".to_string(), varied_axis(0, 48959));
+        let clutch_axes = moving_required_axes(
+            requirement("captures/r5-clutch-only-sweep.jsonl")?,
+            &clutch_ranges,
+        );
+        assert_eq!(
+            clutch_axes,
+            vec![
+                "r5_v1_extended_aux0_u16".to_string(),
+                "r5_v1_extended_aux1_u16".to_string()
+            ]
+        );
+
+        let mut notes = Vec::new();
+        assert_eq!(
+            role_semantic_status(
+                true,
+                Some(&analysis_entry(
+                    "captures/r5-brake-only-sweep.jsonl",
+                    brake_axes
+                )),
+                &mut notes
+            ),
+            "proven"
+        );
+        assert!(
+            notes.is_empty(),
+            "semantic brake evidence should not leave generic notes: {notes:?}"
+        );
+
+        let mut notes = Vec::new();
+        assert_eq!(
+            role_semantic_status(
+                true,
+                Some(&analysis_entry(
+                    "captures/r5-handbrake-only-sweep.jsonl",
+                    handbrake_axes
+                )),
+                &mut notes
+            ),
+            "proven"
+        );
+        assert!(
+            notes.is_empty(),
+            "semantic handbrake evidence should not leave generic notes: {notes:?}"
+        );
+
+        let mut notes = Vec::new();
+        assert_eq!(
+            role_semantic_status(
+                true,
+                Some(&analysis_entry(
+                    "captures/r5-clutch-only-sweep.jsonl",
+                    clutch_axes
+                )),
+                &mut notes
+            ),
+            "generic_aux"
+        );
+        assert!(
+            notes
+                .iter()
+                .any(|note| note.contains("semantic control naming remains unproven")),
+            "clutch should remain generic_aux: {notes:?}"
+        );
+        Ok(())
     }
 
     #[test]

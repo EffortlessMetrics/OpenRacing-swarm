@@ -102,7 +102,7 @@
         "evidence_capture": "captures/r5-brake-only-sweep.jsonl",
         "required": true,
         "role": "brake",
-        "semantic_status": "generic_aux",
+        "semantic_status": "proven",
         "source_endpoint": "moza-r5-if2"
       },
       "clutch": {
@@ -127,7 +127,7 @@
         "evidence_capture": "captures/r5-handbrake-only-sweep.jsonl",
         "required": true,
         "role": "handbrake",
-        "semantic_status": "generic_aux",
+        "semantic_status": "proven",
         "source_endpoint": "moza-r5-if2"
       },
       "ks_rim_controls": {
