@@ -34236,6 +34236,212 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn vendor_authority_attempt_schema_pins_consumed_non_claiming_gates() -> TestResult {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-authority-attempt.schema.json"
+        ))?;
+        let required = schema
+            .get("required")
+            .and_then(Value::as_array)
+            .ok_or("schema must have a required array")?;
+        for field in [
+            "claim_scope",
+            "authorization_receipt_validated",
+            "smoke_dry_run_receipt_validated",
+            "authorization_consumed",
+            "native_control_evidence",
+            "hardware_output_authorized",
+            "native_visible_ready",
+            "smoke_ready",
+            "serial_identity_verified",
+            "no_hid_device_opened",
+            "opened_serial_device",
+            "sent_authorized_frame",
+            "sent_authorized_frame_count",
+            "sent_output_writes",
+            "sent_configuration_writes",
+            "sent_firmware_or_dfu_commands",
+            "sent_unknown_commands",
+            "direct_hid_report_0xaf_sent",
+            "high_torque_enabled",
+            "authorized_command",
+            "authorized_frame",
+            "authorization_consumption",
+            "planned_next_output",
+        ] {
+            assert!(
+                required.iter().any(|entry| entry.as_str() == Some(field)),
+                "schema must require `{field}`"
+            );
+        }
+        assert_eq!(
+            schema["properties"]["claim_scope"]["const"],
+            "bounded_vendor_authority_attempt_recorded"
+        );
+        assert_eq!(
+            schema["properties"]["authorization_consumed"]["const"],
+            true
+        );
+        assert_eq!(
+            schema["properties"]["native_control_evidence"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["hardware_output_authorized"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["native_visible_ready"]["const"], false);
+        assert_eq!(schema["properties"]["smoke_ready"]["const"], false);
+        assert_eq!(
+            schema["properties"]["serial_identity_verified"]["const"],
+            true
+        );
+        assert_eq!(schema["properties"]["no_hid_device_opened"]["const"], true);
+        assert_eq!(schema["properties"]["opened_serial_device"]["const"], true);
+        assert_eq!(schema["properties"]["sent_authorized_frame"]["const"], true);
+        assert_eq!(
+            schema["properties"]["sent_authorized_frame_count"]["const"],
+            1
+        );
+        assert_eq!(
+            schema["properties"]["sent_firmware_or_dfu_commands"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["sent_unknown_commands"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["direct_hid_report_0xaf_sent"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["high_torque_enabled"]["const"], false);
+        assert_eq!(
+            schema["properties"]["authorization_consumption"]["properties"]["authorization_reuse_allowed"]
+                ["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["authorization_consumption"]["properties"]["requires_new_authorization_for_retry"]
+                ["const"],
+            true
+        );
+        assert_eq!(
+            schema["properties"]["planned_next_output"]["properties"]["allowed"]["const"],
+            false
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_attempt_schema_validates_single_output_write_consumption() -> TestResult {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-authority-attempt.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let mut receipt = serde_json::json!({
+            "success": true,
+            "schema_version": 1,
+            "artifact_kind": "moza_vendor_authority_attempt",
+            "claim_scope": "bounded_vendor_authority_attempt_recorded",
+            "command": "wheelctl moza vendor-authority-attempt",
+            "generated_at_utc": "2026-05-20T12:00:00Z",
+            "authorization_receipt": "target/moza-current/vendor-authority-authorization.json",
+            "smoke_dry_run_receipt": "target/moza-current/vendor-authority-smoke-dry-run.json",
+            "authorization_receipt_validated": true,
+            "smoke_dry_run_receipt_validated": true,
+            "authorization_consumed": true,
+            "exact_authorization": true,
+            "single_use_authorization": true,
+            "native_control_evidence": false,
+            "hardware_output_authorized": false,
+            "native_visible_ready": false,
+            "smoke_ready": false,
+            "next_allowed_action": "Record post-authority PIDFF response comparison before any motion claim.",
+            "blocked_actions": [
+                "native_visible_promotion",
+                "smoke_ready_promotion",
+                "authorization_reuse",
+                "firmware_or_dfu"
+            ],
+            "required_artifacts": [
+                "fresh_authorization_for_retry",
+                "fresh_smoke_dry_run_for_retry"
+            ],
+            "serial_identity_verified": true,
+            "no_hid_device_opened": true,
+            "opened_serial_device": true,
+            "sent_read_only_query_commands": false,
+            "sent_authorized_frame": true,
+            "sent_authorized_frame_count": 1,
+            "sent_output_writes": true,
+            "sent_configuration_writes": false,
+            "sent_firmware_or_dfu_commands": false,
+            "sent_unknown_commands": false,
+            "direct_hid_report_0xaf_sent": false,
+            "high_torque_enabled": false,
+            "transport_kind": "serial_bounded_authority_attempt",
+            "codec_status": "fixture_decode_verified_exact_frame",
+            "hardware_write_eligible": false
+        });
+        receipt["blocked_actions"] = serde_json::json!([
+            "native_visible_promotion",
+            "smoke_ready_promotion",
+            "authorization_reuse",
+            "firmware_or_dfu"
+        ]);
+        receipt["required_artifacts"] = serde_json::json!([
+            "fresh_authorization_for_retry",
+            "fresh_smoke_dry_run_for_retry"
+        ]);
+        receipt["authorized_command"] = serde_json::json!({
+            "command_id": "estop_set_ffb",
+            "command_name": "E-stop / FFB authority set",
+            "family": "authority_state",
+            "group": 70,
+            "device_id": 28,
+            "command": 0,
+            "risk_class": "vendor_output_candidate",
+            "read_only_status_probe_allowed": false
+        });
+        receipt["authorized_frame"] = serde_json::json!({
+            "frame_hex": "7E02461C0001F0",
+            "frame_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "frame_len": 7,
+            "payload_hex": "01",
+            "payload_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "payload_len": 1,
+            "checksum": "0xF0",
+            "written_frame_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "written_frame_len": 7
+        });
+        receipt["authorization_consumption"] = serde_json::json!({
+            "consumption_recorded": true,
+            "authorization_reuse_allowed": false,
+            "requires_new_bench_clear_for_retry": true,
+            "requires_new_authorization_for_retry": true,
+            "requires_new_smoke_dry_run_for_retry": true,
+            "requires_new_attempt_receipt_for_retry": true
+        });
+        receipt["planned_next_output"] = serde_json::json!({
+            "allowed": false,
+            "reason": "The first authority attempt is consumed evidence, not reusable authorization."
+        });
+        let errors: Vec<_> = validator.iter_errors(&receipt).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        let mut drifted_receipt = receipt;
+        drifted_receipt["sent_output_writes"] = serde_json::json!(false);
+        let drift_errors: Vec<_> = validator.iter_errors(&drifted_receipt).collect();
+        assert!(
+            !drift_errors.is_empty(),
+            "vendor_output_candidate must require sent_output_writes=true"
+        );
+
+        Ok(())
+    }
+
     fn temp_lane_under_cwd() -> TestResult<(tempfile::TempDir, PathBuf)> {
         let cwd = std::env::current_dir()?;
         let root = cwd.join("target").join("moza-path-tests");

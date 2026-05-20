@@ -8,7 +8,7 @@ Linked ADRs: docs/adr/0009-hardware-validation-evidence-state-machine.md
 Linked plan: docs/hardware/moza-r5-vendor-authority-test-plan.md
 Linked issues: n/a
 Linked PRs: n/a
-Support-tier impact: no support-tier promotion; this defines no-output and read-only gates only.
+Support-tier impact: no support-tier promotion; this defines non-claiming evidence gates through the first bounded authority attempt receipt.
 Policy impact: no new policy exception
 
 ## Scope
@@ -165,6 +165,24 @@ authorization, or send output/configuration/firmware writes. It MUST keep
 `native_control_evidence=false`, `hardware_output_authorized=false`,
 `native_visible_ready=false`, `authorization_consumed=false`, `commands_sent=[]`,
 and `planned_next_output.allowed=false`.
+
+### First bounded hardware authority attempt contract
+
+The first hardware authority attempt MUST consume exactly one matching
+authorization receipt and exactly one matching smoke dry-run receipt. The
+consumed attempt receipt MUST record the exact command id, risk class, tuple,
+frame hash, payload hash, serial identity verification, and a single authorized
+frame send.
+
+The attempt receipt MUST close the authorization gate after the attempt by
+recording `authorization_consumed=true` and `hardware_output_authorized=false`.
+It MUST keep `native_control_evidence=false`, `native_visible_ready=false`,
+`smoke_ready=false`, `sent_firmware_or_dfu_commands=false`,
+`sent_unknown_commands=false`, `direct_hid_report_0xaf_sent=false`, and
+`high_torque_enabled=false`. A retry MUST require a fresh bench-clear, a fresh
+exact authorization receipt, a fresh smoke dry-run receipt, and a fresh attempt
+receipt path; a consumed attempt receipt is evidence, not reusable
+authorization.
 
 ### Post-authority PIDFF response and motion ladder
 
