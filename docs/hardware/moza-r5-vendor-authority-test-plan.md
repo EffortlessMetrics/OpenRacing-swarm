@@ -30,6 +30,10 @@ Provide a step-by-step implementation queue for Moza R5 vendor authority infrast
      read-only probe eligibility and native-plan eligibility until a future
      exact authorization stage.
 3. **Semantic-only serial codec + fixtures**
+   - Add fixture-only serial frame decode for checked-in bytes.
+   - Validate message start, declared length, checksum, and registry tuple mapping.
+   - Record a `fixture_decode_only` state artifact with no serial open, no query send, no output/configuration writes, and no hardware-write eligibility.
+   - Do not add encode, transport, CLI, read-only probe, authorization, or hardware output behavior.
 4. **Fake serial transport**
 5. **No-output CLI tools**
 6. **Read-only vendor status probe**
@@ -57,6 +61,17 @@ git diff --check
 ```powershell
 python scripts/cargo_fmt_workspace.py
 cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_authority_registry -- --nocapture
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+## Proof commands (PR3)
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_serial_codec_fixtures -- --nocapture
 cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
 cargo run --locked -p openracing-tools --bin package-surface -- --check
 python scripts/policy_file.py

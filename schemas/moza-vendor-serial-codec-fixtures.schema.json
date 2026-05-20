@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openracing.dev/schemas/moza-vendor-serial-codec-fixtures.schema.json",
+  "title": "Moza Vendor Serial Codec Fixtures",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "artifact_kind",
+    "claim_scope",
+    "native_control_evidence",
+    "hardware_output_authorized",
+    "native_visible_ready",
+    "next_allowed_action",
+    "blocked_actions",
+    "required_artifacts",
+    "codec_status",
+    "sent_read_only_query_commands",
+    "sent_output_writes",
+    "sent_configuration_writes",
+    "sent_firmware_or_dfu_commands",
+    "fixture_source",
+    "fixtures"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "artifact_kind": {"const": "moza_vendor_serial_codec_fixture"},
+    "claim_scope": {"const": "software_fixture_decode_only"},
+    "native_control_evidence": {"const": false},
+    "hardware_output_authorized": {"const": false},
+    "native_visible_ready": {"const": false},
+    "next_allowed_action": {"type": "string"},
+    "blocked_actions": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "required_artifacts": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "codec_status": {"const": "fixture_decode_only"},
+    "sent_read_only_query_commands": {"const": false},
+    "sent_output_writes": {"const": false},
+    "sent_configuration_writes": {"const": false},
+    "sent_firmware_or_dfu_commands": {"const": false},
+    "fixture_source": {"const": "synthetic_id_only_frames_from_registry_tuples"},
+    "fixtures": {
+      "type": "array",
+      "minItems": 15,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "family",
+          "group",
+          "device_id",
+          "device_name",
+          "command",
+          "raw_frame_hex",
+          "payload_len",
+          "checksum_valid",
+          "risk_class",
+          "hardware_output_authorized",
+          "sendable_on_hardware"
+        ],
+        "properties": {
+          "id": {"type": "string"},
+          "family": {
+            "enum": [
+              "authority_state",
+              "gain_safety",
+              "temperatures",
+              "compatibility_mode"
+            ]
+          },
+          "group": {"type": "integer", "minimum": 0, "maximum": 255},
+          "device_id": {"type": "integer", "minimum": 0, "maximum": 255},
+          "device_name": {"type": "string"},
+          "command": {"type": "integer", "minimum": 0, "maximum": 255},
+          "raw_frame_hex": {"type": "string", "pattern": "^[0-9A-F]+$"},
+          "payload_len": {"const": 0},
+          "checksum_valid": {"const": true},
+          "risk_class": {
+            "enum": [
+              "vendor_status",
+              "vendor_output_candidate",
+              "configuration_candidate"
+            ]
+          },
+          "hardware_output_authorized": {"const": false},
+          "sendable_on_hardware": {"const": false}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}
