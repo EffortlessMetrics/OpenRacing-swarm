@@ -45,6 +45,10 @@ Provide a step-by-step implementation queue for Moza R5 vendor authority infrast
    - Add a schema for the no-output CLI receipt and tests proving read-only status fixtures are accepted while write-like candidates remain blocked.
    - Do not add read-only hardware probing, authorization receipts, serial device I/O, hardware output behavior, or readiness promotion.
 6. **Read-only vendor status probe**
+   - Add a guarded `wheelctl moza vendor-status-probe` command for the R5 serial/CDC interface.
+   - Require explicit `--confirm-read-only-query` and USB VID/PID port identity matching before opening the serial port or sending query frames.
+   - Send only registry-allowed vendor status queries, record decoded status responses, and emit a non-claiming receipt with `sent_read_only_query_commands=true`, `sent_output_writes=false`, `sent_configuration_writes=false`, `sent_firmware_or_dfu_commands=false`, `hardware_output_authorized=false`, and `native_control_evidence=false`.
+   - Do not add exact authorization, output/configuration writes, firmware/DFU behavior, native-visible promotion, smoke-ready promotion, or simulator claims.
 7. **Exact authorization support**
 8. **Vendor authority smoke dry-run**
 9. **First bounded hardware authority attempt**
@@ -84,6 +88,22 @@ cargo test --locked -p wheelctl --bin wheelctl parse_moza_vendor_fake_transport 
 cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_fake_serial_transport -- --nocapture
 cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
 cargo run --locked -p wheelctl --bin wheelctl -- moza vendor-fake-transport --json-out target/moza-current/vendor-no-output-cli.json --json
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+## Proof commands (PR6)
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_status_probe -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_authority_registry -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl parse_moza_vendor_status_probe -- --nocapture
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo hakari verify
 cargo run --locked -p openracing-tools --bin package-surface -- --check
 python scripts/policy_file.py
 git diff --check

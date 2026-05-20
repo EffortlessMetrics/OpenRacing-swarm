@@ -683,6 +683,29 @@ commands = [
 ]
 
 [[work_item]]
+id = "vendor-read-only-status-probe"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "crates/cli/src/commands/moza.rs"
+claim_boundary = "Read-only serial status probe tooling only; adds wheelctl moza vendor-status-probe with explicit confirmation and MOZA R5 USB serial identity gating, sends only registry-allowed read-only status queries, and writes a non-claiming receipt without HID opens, output writes, configuration writes, firmware/DFU commands, authorization receipts, native-control, native-visible, smoke-ready, coexistence, simulator, or release-ready claims."
+blocked_by = "n/a"
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_status_probe -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_authority_registry -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl parse_moza_vendor_status_probe -- --nocapture",
+  "cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo hakari verify",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

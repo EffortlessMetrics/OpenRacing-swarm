@@ -81,6 +81,7 @@
           "id",
           "family",
           "group",
+          "device_id",
           "command",
           "name",
           "risk_class",
@@ -99,6 +100,7 @@
             ]
           },
           "group": {"type": "integer", "minimum": 0, "maximum": 255},
+          "device_id": {"type": "integer", "minimum": 0, "maximum": 255},
           "command": {"type": "integer", "minimum": 0, "maximum": 255},
           "name": {"type": "string"},
           "risk_class": {

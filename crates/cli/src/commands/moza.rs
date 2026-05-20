@@ -16,7 +16,14 @@ use racing_wheel_hid_moza_protocol::report::looks_like_live_r5_v1_extended_repor
 use racing_wheel_hid_moza_protocol::serial::fake_transport::{
     FAKE_TRANSPORT_CODEC_STATUS, MozaFakeSerialTransport, MozaFakeSerialTransportError,
 };
-use racing_wheel_hid_moza_protocol::serial::vendor_authority::MozaSerialCodecStatus;
+use racing_wheel_hid_moza_protocol::serial::frame::MESSAGE_START;
+use racing_wheel_hid_moza_protocol::serial::status_probe::{
+    READ_ONLY_STATUS_CODEC_STATUS, decode_read_only_status_response, encode_read_only_status_query,
+    read_only_status_commands,
+};
+use racing_wheel_hid_moza_protocol::serial::vendor_authority::{
+    MozaSerialCodecStatus, MozaVendorCommand, REQUIRED_VENDOR_COMMANDS,
+};
 use racing_wheel_hid_moza_protocol::{
     DeviceWriter, FfbMode, MOZA_VENDOR_ID, MozaDeviceCategory, MozaDirectTorqueEncoder,
     MozaInitState, MozaInputState, MozaProtocol, MozaTopologyHint, REPORT_LEN, VendorProtocol,
@@ -26,7 +33,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -529,6 +536,16 @@ struct PitHouseAvailabilityRequest<'a> {
     overwrite: bool,
 }
 
+struct VendorStatusProbeRequest<'a> {
+    json: bool,
+    serial_port: &'a str,
+    baud_rate: u32,
+    timeout_ms: u64,
+    command_ids: &'a [String],
+    confirm_read_only_query: bool,
+    json_out: Option<&'a Path>,
+}
+
 struct PitHouseCaseRequest<'a> {
     json: bool,
     lane: &'a Path,
@@ -667,6 +684,25 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
         }
         MozaCommands::VendorFakeTransport { json_out } => {
             vendor_fake_transport(json, json_out.as_deref()).await
+        }
+        MozaCommands::VendorStatusProbe {
+            serial_port,
+            baud_rate,
+            timeout_ms,
+            command_ids,
+            confirm_read_only_query,
+            json_out,
+        } => {
+            vendor_status_probe(VendorStatusProbeRequest {
+                json,
+                serial_port,
+                baud_rate: *baud_rate,
+                timeout_ms: *timeout_ms,
+                command_ids,
+                confirm_read_only_query: *confirm_read_only_query,
+                json_out: json_out.as_deref(),
+            })
+            .await
         }
         MozaCommands::PromoteFixture {
             capture,
@@ -5665,6 +5701,45 @@ async fn vendor_fake_transport(json: bool, json_out: Option<&Path>) -> Result<()
     let receipt = vendor_fake_transport_cli_receipt()?;
     write_json_receipt(json_out, &receipt)?;
     print_vendor_fake_transport_receipt(json, json_out, &receipt)
+}
+
+async fn vendor_status_probe(request: VendorStatusProbeRequest<'_>) -> Result<()> {
+    if !request.confirm_read_only_query {
+        return Err(anyhow!(
+            "--confirm-read-only-query is required before sending Moza vendor status queries"
+        ));
+    }
+    if request.timeout_ms == 0 {
+        return Err(anyhow!("--timeout-ms must be greater than zero"));
+    }
+
+    let commands = selected_read_only_status_commands(request.command_ids)?;
+    let port_identity = moza_serial_port_identity(request.serial_port)?;
+    let mut transport = SerialPortStatusProbeTransport::open(
+        request.serial_port,
+        request.baud_rate,
+        request.timeout_ms,
+    )?;
+    let receipt = vendor_status_probe_receipt_with_transport(
+        request.serial_port,
+        request.baud_rate,
+        request.timeout_ms,
+        &commands,
+        port_identity,
+        &mut transport,
+    )?;
+
+    write_json_receipt(request.json_out, &receipt)?;
+    print_vendor_status_probe_receipt(request.json, request.json_out, &receipt)?;
+    if receipt.success {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "Moza vendor status probe failed: {} decoded response(s), {} failure(s)",
+            receipt.decoded_response_count,
+            receipt.failed_response_count
+        ))
+    }
 }
 
 async fn audit_lane(
@@ -25268,6 +25343,308 @@ fn parse_hex_u8_token(token: &str) -> std::result::Result<u8, String> {
     u8::from_str_radix(value, 16).map_err(|_| format!("invalid byte token '{token}'"))
 }
 
+trait VendorStatusProbeTransport {
+    fn write_query(&mut self, command: &MozaVendorCommand, frame: &[u8]) -> Result<()>;
+    fn read_response_frame(
+        &mut self,
+        command: &MozaVendorCommand,
+        timeout_ms: u64,
+    ) -> Result<Vec<u8>>;
+}
+
+struct SerialPortStatusProbeTransport {
+    port: Box<dyn serialport::SerialPort>,
+}
+
+impl SerialPortStatusProbeTransport {
+    fn open(serial_port: &str, baud_rate: u32, timeout_ms: u64) -> Result<Self> {
+        let port = serialport::new(serial_port, baud_rate)
+            .timeout(Duration::from_millis(timeout_ms))
+            .open()
+            .with_context(|| {
+                format!(
+                    "failed to open Moza R5 read-only status serial port `{serial_port}` at {baud_rate} baud"
+                )
+            })?;
+        Ok(Self { port })
+    }
+}
+
+impl VendorStatusProbeTransport for SerialPortStatusProbeTransport {
+    fn write_query(&mut self, command: &MozaVendorCommand, frame: &[u8]) -> Result<()> {
+        self.port
+            .write_all(frame)
+            .with_context(|| format!("failed to send read-only status query `{}`", command.id))?;
+        self.port
+            .flush()
+            .with_context(|| format!("failed to flush read-only status query `{}`", command.id))
+    }
+
+    fn read_response_frame(
+        &mut self,
+        command: &MozaVendorCommand,
+        timeout_ms: u64,
+    ) -> Result<Vec<u8>> {
+        self.port
+            .set_timeout(Duration::from_millis(timeout_ms))
+            .with_context(|| {
+                format!(
+                    "failed to set read timeout before status query `{}`",
+                    command.id
+                )
+            })?;
+        read_moza_serial_frame(&mut *self.port, 256)
+            .with_context(|| format!("failed to read status response `{}`", command.id))
+    }
+}
+
+fn read_moza_serial_frame(reader: &mut dyn Read, max_frame_len: usize) -> Result<Vec<u8>> {
+    let mut skipped = 0usize;
+    let mut start = [0u8; 1];
+    loop {
+        reader
+            .read_exact(&mut start)
+            .context("failed to read Moza serial frame start byte")?;
+        if start[0] == MESSAGE_START {
+            break;
+        }
+        skipped += 1;
+        if skipped > max_frame_len {
+            return Err(anyhow!(
+                "failed to find Moza serial frame start byte within {max_frame_len} byte(s)"
+            ));
+        }
+    }
+
+    let mut len = [0u8; 1];
+    reader
+        .read_exact(&mut len)
+        .context("failed to read Moza serial frame length byte")?;
+    let expected_len = 5 + usize::from(len[0]);
+    if expected_len > max_frame_len {
+        return Err(anyhow!(
+            "Moza serial frame length {expected_len} exceeds cap {max_frame_len}"
+        ));
+    }
+
+    let mut frame = vec![MESSAGE_START, len[0]];
+    frame.resize(expected_len, 0);
+    reader
+        .read_exact(&mut frame[2..])
+        .context("failed to read Moza serial frame body")?;
+    Ok(frame)
+}
+
+fn vendor_status_probe_receipt_with_transport(
+    serial_port: &str,
+    baud_rate: u32,
+    timeout_ms: u64,
+    commands: &[&'static MozaVendorCommand],
+    port_identity: VendorStatusProbePortIdentity,
+    transport: &mut dyn VendorStatusProbeTransport,
+) -> Result<VendorStatusProbeReceipt> {
+    if commands.is_empty() {
+        return Err(anyhow!(
+            "at least one read-only vendor status command must be selected"
+        ));
+    }
+
+    let mut responses = Vec::new();
+    let mut sent_query_count = 0usize;
+    let mut decoded_response_count = 0usize;
+    let mut failed_response_count = 0usize;
+
+    for command in commands {
+        let query_frame = encode_read_only_status_query(command)
+            .with_context(|| format!("failed to encode read-only status query `{}`", command.id))?;
+        let mut response = VendorStatusProbeResponse {
+            command_id: command.id.to_string(),
+            command_name: command.name.to_string(),
+            group: command.group,
+            device_id: command.device_id,
+            command: command.command,
+            risk_class: command.risk_class.as_registry_str().to_string(),
+            query_frame_hex: bytes_hex_compact(&query_frame),
+            response_frame_hex: None,
+            response_payload_hex: None,
+            response_payload_len: None,
+            decoded: false,
+            error: None,
+        };
+
+        match transport.write_query(command, &query_frame) {
+            Ok(()) => {
+                sent_query_count += 1;
+            }
+            Err(error) => {
+                failed_response_count += 1;
+                response.error = Some(error.to_string());
+                responses.push(response);
+                continue;
+            }
+        }
+
+        match transport.read_response_frame(command, timeout_ms) {
+            Ok(response_frame) => {
+                response.response_frame_hex = Some(bytes_hex_compact(&response_frame));
+                match decode_read_only_status_response(command, &response_frame) {
+                    Ok(decoded) => {
+                        decoded_response_count += 1;
+                        response.decoded = true;
+                        response.response_payload_len = Some(decoded.payload.len());
+                        response.response_payload_hex = Some(bytes_hex_compact(decoded.payload));
+                    }
+                    Err(error) => {
+                        failed_response_count += 1;
+                        response.error = Some(error.to_string());
+                    }
+                }
+            }
+            Err(error) => {
+                failed_response_count += 1;
+                response.error = Some(error.to_string());
+            }
+        }
+
+        responses.push(response);
+    }
+
+    Ok(VendorStatusProbeReceipt {
+        success: failed_response_count == 0 && decoded_response_count == commands.len(),
+        schema_version: 1,
+        artifact_kind: "moza_vendor_status_probe",
+        claim_scope: "read_only_hardware",
+        command: "wheelctl moza vendor-status-probe",
+        generated_at_utc: now_utc(),
+        native_control_evidence: false,
+        hardware_output_authorized: false,
+        native_visible_ready: false,
+        next_allowed_action: "Review this read-only status receipt before implementing exact authorization support.",
+        blocked_actions: vec![
+            "output write",
+            "configuration write",
+            "authorization receipt",
+            "hardware writes",
+            "native-control claim",
+            "native-visible claim",
+            "smoke-ready claim",
+            "release-ready claim",
+            "firmware or DFU command",
+            "unknown host-to-device command",
+        ],
+        required_artifacts: vec![
+            "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md",
+            "docs/hardware/moza-r5-vendor-authority-test-plan.md",
+            "fixtures/moza/r5/vendor-command-registry.json",
+            "fixtures/moza/r5/vendor-serial-codec-fixtures.json",
+            "schemas/moza-vendor-status-probe.schema.json",
+            "crates/hid-moza-protocol/src/serial/status_probe.rs",
+            "crates/cli/src/commands/moza.rs",
+        ],
+        serial_port: serial_port.to_string(),
+        baud_rate,
+        timeout_ms,
+        expected_vid: hex_u16(MOZA_VENDOR_ID),
+        expected_pid: hex_u16(product_ids::R5_V1),
+        port_identity,
+        no_hid_device_opened: true,
+        opened_serial_device: true,
+        serial_identity_verified: true,
+        no_ffb_writes: true,
+        no_output_reports: true,
+        no_feature_reports: true,
+        no_serial_config_commands: true,
+        no_firmware_or_dfu_commands: true,
+        sent_read_only_query_commands: sent_query_count > 0,
+        sent_read_only_query_count: sent_query_count,
+        sent_output_writes: false,
+        sent_configuration_writes: false,
+        sent_firmware_or_dfu_commands: false,
+        real_hardware_status_evidence: failed_response_count == 0 && decoded_response_count > 0,
+        transport_kind: "serial_read_only",
+        codec_status: moza_serial_codec_status_name(READ_ONLY_STATUS_CODEC_STATUS),
+        hardware_write_eligible: READ_ONLY_STATUS_CODEC_STATUS.allows_hardware_writes(),
+        selected_command_count: commands.len(),
+        decoded_response_count,
+        failed_response_count,
+        responses,
+        notes: vec![
+            "This command sends only registry-allowed read-only vendor status queries.",
+            "It never sends output, configuration, firmware, DFU, or unknown commands.",
+            "A successful receipt is status/protocol evidence only and is not native-control, native-visible, smoke-ready, or release-ready proof.",
+        ],
+    })
+}
+
+fn selected_read_only_status_commands(
+    command_ids: &[String],
+) -> Result<Vec<&'static MozaVendorCommand>> {
+    if command_ids.is_empty() {
+        return Ok(read_only_status_commands().collect());
+    }
+
+    let mut selected = Vec::new();
+    for command_id in command_ids {
+        let command = REQUIRED_VENDOR_COMMANDS
+            .iter()
+            .find(|candidate| candidate.id == command_id)
+            .ok_or_else(|| anyhow!("unknown Moza vendor command `{command_id}`"))?;
+        if !command.read_only_status_probe_allowed {
+            return Err(anyhow!(
+                "command `{command_id}` is not read-only status probe eligible"
+            ));
+        }
+        selected.push(command);
+    }
+    Ok(selected)
+}
+
+fn moza_serial_port_identity(serial_port: &str) -> Result<VendorStatusProbePortIdentity> {
+    let requested = normalize_serial_port_name(serial_port);
+    let ports = serialport::available_ports()
+        .context("failed to enumerate serial ports before Moza read-only status probe")?;
+
+    let port_info = ports
+        .into_iter()
+        .find(|port| normalize_serial_port_name(&port.port_name) == requested)
+        .ok_or_else(|| anyhow!("serial port `{serial_port}` was not found"))?;
+
+    match port_info.port_type {
+        serialport::SerialPortType::UsbPort(info)
+            if info.vid == MOZA_VENDOR_ID && info.pid == product_ids::R5_V1 =>
+        {
+            Ok(VendorStatusProbePortIdentity {
+                port_name: port_info.port_name,
+                port_type: "usb".to_string(),
+                vendor_id: Some(hex_u16(info.vid)),
+                product_id: Some(hex_u16(info.pid)),
+                manufacturer: info.manufacturer,
+                product: info.product,
+                serial_number_present: info.serial_number.is_some(),
+            })
+        }
+        serialport::SerialPortType::UsbPort(info) => Err(anyhow!(
+            "serial port `{}` is USB {:04X}:{:04X}, expected MOZA R5 {:04X}:{:04X}",
+            port_info.port_name,
+            info.vid,
+            info.pid,
+            MOZA_VENDOR_ID,
+            product_ids::R5_V1
+        )),
+        _ => Err(anyhow!(
+            "serial port `{}` is not a USB serial port with MOZA R5 identity",
+            port_info.port_name
+        )),
+    }
+}
+
+fn normalize_serial_port_name(serial_port: &str) -> String {
+    serial_port
+        .trim()
+        .trim_start_matches(r"\\.\")
+        .to_ascii_lowercase()
+}
+
 fn vendor_fake_transport_cli_receipt() -> Result<VendorFakeTransportCliReceipt> {
     let codec_fixture: Value = serde_json::from_str(MOZA_VENDOR_SERIAL_CODEC_FIXTURES_JSON)
         .context("failed to parse checked-in Moza serial codec fixture")?;
@@ -25671,6 +26048,81 @@ struct VendorFakeTransportBlockedExchange {
     fixture_id: String,
     reason: String,
     risk_class: String,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorStatusProbeReceipt {
+    success: bool,
+    schema_version: u8,
+    artifact_kind: &'static str,
+    claim_scope: &'static str,
+    command: &'static str,
+    generated_at_utc: String,
+    native_control_evidence: bool,
+    hardware_output_authorized: bool,
+    native_visible_ready: bool,
+    next_allowed_action: &'static str,
+    blocked_actions: Vec<&'static str>,
+    required_artifacts: Vec<&'static str>,
+    serial_port: String,
+    baud_rate: u32,
+    timeout_ms: u64,
+    expected_vid: String,
+    expected_pid: String,
+    port_identity: VendorStatusProbePortIdentity,
+    no_hid_device_opened: bool,
+    opened_serial_device: bool,
+    serial_identity_verified: bool,
+    no_ffb_writes: bool,
+    no_output_reports: bool,
+    no_feature_reports: bool,
+    no_serial_config_commands: bool,
+    no_firmware_or_dfu_commands: bool,
+    sent_read_only_query_commands: bool,
+    sent_read_only_query_count: usize,
+    sent_output_writes: bool,
+    sent_configuration_writes: bool,
+    sent_firmware_or_dfu_commands: bool,
+    real_hardware_status_evidence: bool,
+    transport_kind: &'static str,
+    codec_status: &'static str,
+    hardware_write_eligible: bool,
+    selected_command_count: usize,
+    decoded_response_count: usize,
+    failed_response_count: usize,
+    responses: Vec<VendorStatusProbeResponse>,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorStatusProbePortIdentity {
+    port_name: String,
+    port_type: String,
+    vendor_id: Option<String>,
+    product_id: Option<String>,
+    manufacturer: Option<String>,
+    product: Option<String>,
+    serial_number_present: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorStatusProbeResponse {
+    command_id: String,
+    command_name: String,
+    group: u8,
+    device_id: u8,
+    command: u8,
+    risk_class: String,
+    query_frame_hex: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_frame_hex: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_payload_hex: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_payload_len: Option<usize>,
+    decoded: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -31582,6 +32034,27 @@ fn print_vendor_fake_transport_receipt(
     Ok(())
 }
 
+fn print_vendor_status_probe_receipt(
+    json: bool,
+    json_out: Option<&Path>,
+    receipt: &VendorStatusProbeReceipt,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Moza vendor status probe sent {} read-only query command(s), decoded {} response(s), and recorded {} failure(s); no output/configuration/firmware writes were sent.",
+            receipt.sent_read_only_query_count,
+            receipt.decoded_response_count,
+            receipt.failed_response_count
+        );
+        if let Some(path) = json_out {
+            println!("Receipt: {}", path.display());
+        }
+    }
+    Ok(())
+}
+
 fn print_lane_audit_receipt(
     json: bool,
     json_out: Option<&Path>,
@@ -32382,6 +32855,197 @@ mod tests {
         assert_eq!(json_bool(&value, "sent_output_writes"), Some(false));
         assert_eq!(json_u64(&value, "accepted_fixture_count"), Some(9));
         assert_eq!(json_u64(&value, "blocked_fixture_count"), Some(6));
+
+        Ok(())
+    }
+
+    struct FakeVendorStatusProbeTransport {
+        responses: BTreeMap<&'static str, Vec<u8>>,
+        writes: Vec<Vec<u8>>,
+    }
+
+    impl FakeVendorStatusProbeTransport {
+        fn with_status_responses(commands: &[&'static MozaVendorCommand]) -> TestResult<Self> {
+            let mut responses = BTreeMap::new();
+            for command in commands {
+                responses.insert(command.id, encode_read_only_status_query(command)?);
+            }
+            Ok(Self {
+                responses,
+                writes: Vec::new(),
+            })
+        }
+    }
+
+    impl VendorStatusProbeTransport for FakeVendorStatusProbeTransport {
+        fn write_query(&mut self, _command: &MozaVendorCommand, frame: &[u8]) -> Result<()> {
+            self.writes.push(frame.to_vec());
+            Ok(())
+        }
+
+        fn read_response_frame(
+            &mut self,
+            command: &MozaVendorCommand,
+            _timeout_ms: u64,
+        ) -> Result<Vec<u8>> {
+            self.responses
+                .get(command.id)
+                .cloned()
+                .ok_or_else(|| anyhow!("missing fake response `{}`", command.id))
+        }
+    }
+
+    fn sample_vendor_status_port_identity() -> VendorStatusProbePortIdentity {
+        VendorStatusProbePortIdentity {
+            port_name: "COM4".to_string(),
+            port_type: "usb".to_string(),
+            vendor_id: Some("0x346E".to_string()),
+            product_id: Some("0x0004".to_string()),
+            manufacturer: Some("MOZA".to_string()),
+            product: Some("MOZA R5 Base".to_string()),
+            serial_number_present: true,
+        }
+    }
+
+    #[test]
+    fn vendor_status_probe_receipt_is_read_only_and_non_claiming() -> TestResult {
+        let commands = selected_read_only_status_commands(&[])?;
+        let mut transport = FakeVendorStatusProbeTransport::with_status_responses(&commands)?;
+
+        let receipt = vendor_status_probe_receipt_with_transport(
+            "COM4",
+            115200,
+            250,
+            &commands,
+            sample_vendor_status_port_identity(),
+            &mut transport,
+        )?;
+        let value = serde_json::to_value(&receipt)?;
+
+        assert_eq!(
+            json_string(&value, "artifact_kind"),
+            Some("moza_vendor_status_probe")
+        );
+        assert_eq!(
+            json_string(&value, "claim_scope"),
+            Some("read_only_hardware")
+        );
+        assert_eq!(json_bool(&value, "native_control_evidence"), Some(false));
+        assert_eq!(json_bool(&value, "hardware_output_authorized"), Some(false));
+        assert_eq!(json_bool(&value, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "opened_serial_device"), Some(true));
+        assert_eq!(json_bool(&value, "serial_identity_verified"), Some(true));
+        assert_eq!(json_bool(&value, "no_output_reports"), Some(true));
+        assert_eq!(json_bool(&value, "no_feature_reports"), Some(true));
+        assert_eq!(
+            json_bool(&value, "sent_read_only_query_commands"),
+            Some(true)
+        );
+        assert_eq!(json_bool(&value, "sent_output_writes"), Some(false));
+        assert_eq!(json_bool(&value, "sent_configuration_writes"), Some(false));
+        assert_eq!(
+            json_bool(&value, "sent_firmware_or_dfu_commands"),
+            Some(false)
+        );
+        assert_eq!(
+            json_string(&value, "transport_kind"),
+            Some("serial_read_only")
+        );
+        assert_eq!(
+            json_string(&value, "codec_status"),
+            Some("round_trip_verified")
+        );
+        assert_eq!(json_bool(&value, "hardware_write_eligible"), Some(false));
+        assert_eq!(json_u64(&value, "selected_command_count"), Some(9));
+        assert_eq!(json_u64(&value, "sent_read_only_query_count"), Some(9));
+        assert_eq!(json_u64(&value, "decoded_response_count"), Some(9));
+        assert_eq!(json_u64(&value, "failed_response_count"), Some(0));
+        assert_eq!(transport.writes.len(), 9);
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_probe_schema_pins_read_only_gates() -> TestResult {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-status-probe.schema.json"
+        ))?;
+        let required = schema
+            .get("required")
+            .and_then(Value::as_array)
+            .ok_or("schema must have a required array")?;
+        for field in [
+            "claim_scope",
+            "native_control_evidence",
+            "hardware_output_authorized",
+            "native_visible_ready",
+            "no_hid_device_opened",
+            "opened_serial_device",
+            "serial_identity_verified",
+            "no_output_reports",
+            "no_feature_reports",
+            "sent_read_only_query_commands",
+            "sent_output_writes",
+            "sent_configuration_writes",
+            "sent_firmware_or_dfu_commands",
+            "transport_kind",
+            "codec_status",
+            "hardware_write_eligible",
+            "responses",
+        ] {
+            assert!(
+                required.iter().any(|entry| entry.as_str() == Some(field)),
+                "schema must require `{field}`"
+            );
+        }
+        assert_eq!(
+            schema["properties"]["claim_scope"]["const"],
+            "read_only_hardware"
+        );
+        assert_eq!(
+            schema["properties"]["native_control_evidence"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["hardware_output_authorized"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["native_visible_ready"]["const"], false);
+        assert_eq!(schema["properties"]["opened_serial_device"]["const"], true);
+        assert_eq!(
+            schema["properties"]["sent_read_only_query_commands"]["const"],
+            true
+        );
+        assert_eq!(schema["properties"]["sent_output_writes"]["const"], false);
+        assert_eq!(
+            schema["properties"]["sent_configuration_writes"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["sent_firmware_or_dfu_commands"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["hardware_write_eligible"]["const"],
+            false
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_probe_rejects_write_like_command_selection() -> TestResult {
+        let command_ids = vec!["base_gain_set_overall_strength".to_string()];
+        let error = selected_read_only_status_commands(&command_ids)
+            .expect_err("write-like commands must not be status probe eligible");
+
+        assert!(
+            error
+                .to_string()
+                .contains("not read-only status probe eligible"),
+            "unexpected error: {error}"
+        );
 
         Ok(())
     }

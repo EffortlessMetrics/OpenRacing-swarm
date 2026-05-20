@@ -818,6 +818,28 @@ pub enum MozaCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
+    /// Send read-only Moza vendor status queries over the R5 serial interface
+    VendorStatusProbe {
+        /// Serial/CDC port to query, e.g. COM4 or /dev/ttyACM0
+        #[arg(long)]
+        serial_port: String,
+        /// Serial baud rate for the Moza vendor status interface
+        #[arg(long, default_value_t = 115200)]
+        baud_rate: u32,
+        /// Per-command response timeout in milliseconds
+        #[arg(long, default_value_t = 250)]
+        timeout_ms: u64,
+        /// Probe only the named read-only command id; repeat to select multiple
+        #[arg(long = "command")]
+        command_ids: Vec<String>,
+        /// Explicit acknowledgement required before sending read-only query commands
+        #[arg(long)]
+        confirm_read_only_query: bool,
+        /// Write the read-only status probe receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
     /// Promote a validated Moza capture JSONL into a parser fixture file
     PromoteFixture {
         /// JSON Lines file produced by `wheelctl moza capture-input`

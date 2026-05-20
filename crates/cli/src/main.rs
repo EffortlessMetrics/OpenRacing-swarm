@@ -2139,6 +2139,48 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_vendor_status_probe() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "vendor-status-probe",
+            "--serial-port",
+            "COM4",
+            "--baud-rate",
+            "115200",
+            "--timeout-ms",
+            "500",
+            "--command",
+            "estop_get_ffb",
+            "--confirm-read-only-query",
+            "--json-out",
+            "target/moza-current/vendor-status-probe.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::VendorStatusProbe {
+                serial_port,
+                baud_rate,
+                timeout_ms,
+                command_ids,
+                confirm_read_only_query,
+                json_out,
+            }) => {
+                assert_eq!(serial_port, "COM4");
+                assert_eq!(*baud_rate, 115200);
+                assert_eq!(*timeout_ms, 500);
+                assert_eq!(command_ids, &["estop_get_ffb".to_string()]);
+                assert!(*confirm_read_only_query);
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/moza-current/vendor-status-probe.json")
+                );
+            }
+            _ => return Err("expected Moza VendorStatusProbe command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_promote_fixture() -> TestResult {
         let cli = parse_cli([
             "wheelctl",
