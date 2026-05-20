@@ -102,6 +102,12 @@ Provide a step-by-step implementation queue for Moza R5 vendor authority infrast
    - The attempt receipt MUST consume the authorization, verify the R5 serial identity, record exactly one sent authorized frame, and close `hardware_output_authorized=false` after the send.
    - The lane index MUST surface `vendor_authority_attempt_recorded` and the next allowed action as post-authority PIDFF response comparison before any motion claim.
    - Do not retry the vendor-authority frame, add PIDFF follow-up output, claim native-control/native-visible/smoke-ready/release-ready, or treat the consumed receipt as reusable authorization.
+10h. **Post-authority PIDFF smoke authorization**
+   - Add a guarded way to authorize the separately captured post-authority PIDFF response receipt at `vendor-post-authority-pidff-smoke.json` without replacing `native-actuator-visible-smoke.json`.
+   - The authorization MUST validate the consumed vendor-authority attempt receipt, the preserved baseline response-only receipt, the exact R5 endpoint, and the exact post-authority PIDFF output command before any HID open.
+   - The post-authority output remains bounded to descriptor-proven PIDFF reports, 5 percent maximum, 2000 ms maximum, final Stop All cleanup, no direct torque report, no high torque, no serial configuration, and no firmware/DFU behavior.
+   - The consumed authorization state MUST close `hardware_output_authorized=false` after the response receipt and keep any visible-looking result as comparison/verifier candidate evidence only.
+   - Do not claim native-control/native-visible/smoke-ready/release-ready, overwrite baseline evidence, emit commands from bench-wizard, or reuse the consumed vendor-authority attempt as authorization.
 11+. **Closed-loop motion ladder**
 
 ## Required gating invariant

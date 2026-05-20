@@ -1343,6 +1343,9 @@ pub enum MozaCommands {
         /// Optional lane-relative preserved copy of the current response-only receipt
         #[arg(long)]
         preserve_receipt: Option<std::path::PathBuf>,
+        /// Same-lane output receipt path the exact authorized command must write
+        #[arg(long)]
+        planned_output: Option<std::path::PathBuf>,
         /// Update the native visible-motion follow-up plan JSON
         #[arg(long)]
         json_out: Option<std::path::PathBuf>,

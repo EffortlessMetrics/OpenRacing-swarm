@@ -966,6 +966,24 @@ commands = [
 ]
 
 [[work_item]]
+id = "vendor-post-authority-pidff-smoke-authorization"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "docs/hardware/moza-r5-vendor-authority-test-plan.md#pr-sequence"
+current_pointer = "crates/cli/src/commands/moza.rs"
+claim_boundary = "Guarded post-authority PIDFF smoke authorization only; permits one exact descriptor-proven PIDFF response capture at vendor-post-authority-pidff-smoke.json after a consumed vendor-authority attempt, without replacing native-actuator-visible-smoke.json, reusing vendor authority, emitting commands from bench-wizard, high torque, direct HID report 0xaf, serial config, firmware, native-control, native-visible, smoke-ready, simulator, coexistence, or release-ready claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl post_authority_pidff_smoke -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_post_authority_pidff_response -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

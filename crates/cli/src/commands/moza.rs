@@ -95,6 +95,9 @@ const PIDFF_BOUNDED_EFFECT_CLASSIFICATION: &str = "bounded_low_torque_pidff";
 const PIDFF_STOP_ALL_CLEANUP_CLASSIFICATION: &str = "pidff_stop_all_cleanup";
 const PIDFF_PLANNED_STOP_ALL_CLASSIFICATION: &str = "planned_pidff_stop_all";
 const NATIVE_ACTUATOR_RESPONSE_MIN_DELTA_DEGREES: f64 = 0.10;
+const NATIVE_ACTUATOR_VISIBLE_SMOKE_FILE: &str = "native-actuator-visible-smoke.json";
+const NATIVE_ACTUATOR_VISIBLE_RESPONSE_ONLY_FILE: &str =
+    "native-actuator-visible-smoke-response-only.json";
 const NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE: &str = "native-actuator-visible-follow-up-plan.json";
 const NATIVE_CONTROLLED_ANGLE_PLAN_FILE: &str = "native-controlled-angle-plan.json";
 const NATIVE_CONTROLLED_ANGLE_SMOKE_FILE: &str = "native-controlled-angle-smoke.json";
@@ -152,6 +155,10 @@ const NATIVE_CONTROLLED_ANGLE_OUTPUT_FILES: &[&str] = &[
     NATIVE_CONTROLLED_ANGLE_RETRY_SMOKE_FILE,
     NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE,
     NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE,
+];
+const NATIVE_VISIBLE_OUTPUT_FILES: &[&str] = &[
+    NATIVE_ACTUATOR_VISIBLE_SMOKE_FILE,
+    VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE,
 ];
 const NATIVE_CONTROLLED_ANGLE_PREFLIGHT_FILES: &[&str] = &[
     NATIVE_CONTROLLED_ANGLE_SMOKE_FILE,
@@ -320,6 +327,7 @@ struct AuthorizeVisibleOutputRequest<'a> {
     duration_ms: u64,
     movement_threshold_degrees: f64,
     preserve_receipt: Option<&'a Path>,
+    planned_output: Option<&'a Path>,
     json_out: Option<&'a Path>,
     overwrite: bool,
 }
@@ -1152,6 +1160,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             duration_ms,
             movement_threshold_degrees,
             preserve_receipt,
+            planned_output,
             json_out,
             overwrite,
         } => {
@@ -1170,6 +1179,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 duration_ms: *duration_ms,
                 movement_threshold_degrees: *movement_threshold_degrees,
                 preserve_receipt: preserve_receipt.as_deref(),
+                planned_output: planned_output.as_deref(),
                 json_out: json_out.as_deref(),
                 overwrite: *overwrite,
             })
@@ -6500,6 +6510,7 @@ async fn authorize_visible_output(request: AuthorizeVisibleOutputRequest<'_>) ->
         duration_ms,
         movement_threshold_degrees,
         preserve_receipt,
+        planned_output,
         json_out,
         overwrite,
     } = request;
@@ -6566,40 +6577,68 @@ async fn authorize_visible_output(request: AuthorizeVisibleOutputRequest<'_>) ->
         ));
     }
 
-    let preserved_path = preserve_receipt
+    let current_visible_path = lane.join(NATIVE_ACTUATOR_VISIBLE_SMOKE_FILE);
+    let planned_output_path = planned_output
         .map(|path| lane_output_artifact_path(lane, path))
         .transpose()?
-        .unwrap_or_else(|| lane.join("native-actuator-visible-smoke-response-only.json"));
-    let current_visible_path = lane.join("native-actuator-visible-smoke.json");
-    if path_value_matches(
-        &current_visible_path,
-        Some(&preserved_path.display().to_string()),
-    ) {
-        return Err(anyhow!(
-            "--preserve-receipt must not point at the live replacement receipt '{}'",
-            current_visible_path.display()
-        ));
+        .unwrap_or_else(|| current_visible_path.clone());
+    let planned_output_file =
+        native_visible_output_relative_path(lane, &planned_output_path, "--planned-output")?;
+    let replaces_live_visible_receipt = planned_output_file == NATIVE_ACTUATOR_VISIBLE_SMOKE_FILE;
+    if planned_output_file == VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE {
+        validate_post_authority_pidff_smoke_context(lane)?;
+        if planned_output_path.exists() && !overwrite {
+            return Err(anyhow!(
+                "{} already exists; pass --overwrite only after confirming the post-authority PIDFF response receipt can be replaced",
+                planned_output_path.display()
+            ));
+        }
     }
-    if preserved_path.exists() && !overwrite {
-        return Err(anyhow!(
-            "{} already exists; pass --overwrite only after confirming it is the same preserved response-only receipt",
-            preserved_path.display()
-        ));
-    }
-    if let Some(parent) = preserved_path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create '{}'", parent.display()))?;
-    }
-    fs::copy(&current_visible_path, &preserved_path).with_context(|| {
-        format!(
-            "failed to preserve response-only receipt '{}' as '{}'",
-            current_visible_path.display(),
-            preserved_path.display()
-        )
-    })?;
+
+    let preserved_path = if replaces_live_visible_receipt {
+        let preserved_path = preserve_receipt
+            .map(|path| lane_output_artifact_path(lane, path))
+            .transpose()?
+            .unwrap_or_else(|| lane.join(NATIVE_ACTUATOR_VISIBLE_RESPONSE_ONLY_FILE));
+        if path_value_matches(
+            &current_visible_path,
+            Some(&preserved_path.display().to_string()),
+        ) {
+            return Err(anyhow!(
+                "--preserve-receipt must not point at the live replacement receipt '{}'",
+                current_visible_path.display()
+            ));
+        }
+        if preserved_path.exists() && !overwrite {
+            return Err(anyhow!(
+                "{} already exists; pass --overwrite only after confirming it is the same preserved response-only receipt",
+                preserved_path.display()
+            ));
+        }
+        if let Some(parent) = preserved_path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create '{}'", parent.display()))?;
+        }
+        fs::copy(&current_visible_path, &preserved_path).with_context(|| {
+            format!(
+                "failed to preserve response-only receipt '{}' as '{}'",
+                current_visible_path.display(),
+                preserved_path.display()
+            )
+        })?;
+        preserved_path
+    } else {
+        if preserve_receipt.is_some() {
+            return Err(anyhow!(
+                "--preserve-receipt is only valid when --planned-output replaces '{}'",
+                current_visible_path.display()
+            ));
+        }
+        lane.join(NATIVE_ACTUATOR_VISIBLE_RESPONSE_ONLY_FILE)
+    };
 
     let planned_command = native_visible_output_command(
         lane,
@@ -6609,6 +6648,7 @@ async fn authorize_visible_output(request: AuthorizeVisibleOutputRequest<'_>) ->
         max_percent,
         duration_ms,
         movement_threshold_degrees,
+        planned_output_file,
     );
     validate_authorized_native_visible_command(
         lane,
@@ -6619,7 +6659,7 @@ async fn authorize_visible_output(request: AuthorizeVisibleOutputRequest<'_>) ->
         max_percent,
         duration_ms,
         movement_threshold_degrees,
-        &current_visible_path,
+        &planned_output_path,
     )?;
 
     let authorized_at = now_utc();
@@ -6648,8 +6688,10 @@ async fn authorize_visible_output(request: AuthorizeVisibleOutputRequest<'_>) ->
         "movement_threshold_degrees": movement_threshold_degrees,
         "operator": operator,
         "authorized_at_utc": plan["authorized_at_utc"].clone(),
-        "must_preserve_failed_receipt": true,
+        "must_preserve_failed_receipt": replaces_live_visible_receipt,
         "preserved_receipt": lane_relative_or_display(lane, &preserved_path),
+        "planned_output": planned_output_file,
+        "post_authority_pidff_response_capture": planned_output_file == VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE,
         "requires_fresh_bench_clear": false
     });
     update_native_visible_authorization_checks(
@@ -6660,7 +6702,11 @@ async fn authorize_visible_output(request: AuthorizeVisibleOutputRequest<'_>) ->
     );
     plan["notes"] = serde_json::json!([
         "Authorization artifact only: this file is not evidence that visible motion passed.",
-        "The response-only visible-motion receipt was preserved before authorizing replacement.",
+        if replaces_live_visible_receipt {
+            "The response-only visible-motion receipt was preserved before authorizing replacement."
+        } else {
+            "The post-authority PIDFF response command writes a separate receipt and does not replace native-visible evidence."
+        },
         "The planned output command is exact and remains capped at 5 percent for up to 2000 ms through descriptor-proven PIDFF bounded-effect reports."
     ]);
     plan["observed_failure_summary"]["preserved_receipt"] =
@@ -9159,12 +9205,10 @@ fn validate_native_actuator_visible_smoke_preflight(
         let json_out = json_out.ok_or_else(|| {
             anyhow!("--json-out is required before actual native actuator visible-motion writes")
         })?;
-        require_lane_artifact_path(
-            lane,
-            json_out,
-            "native-actuator-visible-smoke.json",
-            "--json-out",
-        )?;
+        let output_file = native_visible_output_relative_path(lane, json_out, "--json-out")?;
+        if output_file == VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE {
+            validate_post_authority_pidff_smoke_context(lane)?;
+        }
         validate_native_visible_retry_authorization(
             lane,
             selector,
@@ -9340,13 +9384,19 @@ fn consume_native_visible_output_authorization(
         json_out,
     )?;
 
+    let output_file = native_visible_output_relative_path(lane, json_out, "--json-out")?;
+    let post_authority_pidff_capture = output_file == VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE;
     let visible_passed = json_bool(receipt, "success") == Some(true);
-    let evidence_status = if visible_passed {
+    let evidence_status = if post_authority_pidff_capture {
+        "post_authority_pidff_response_consumed_no_motion_claim"
+    } else if visible_passed {
         "exact_output_attempt_consumed_visible_motion_proven"
     } else {
         "exact_output_attempt_consumed_visible_motion_unproven"
     };
-    let review_decision = if visible_passed {
+    let review_decision = if post_authority_pidff_capture {
+        "post_authority_pidff_response_recorded_pending_comparison"
+    } else if visible_passed {
         "authorized_output_consumed_visible_motion_proven"
     } else {
         "authorized_output_consumed_visible_motion_unproven"
@@ -9365,12 +9415,19 @@ fn consume_native_visible_output_authorization(
     plan["planned_next_output"]["duration_ms"] = serde_json::json!("not_authorized");
     plan["planned_next_output"]["force_percent"] = serde_json::json!("not_authorized");
     plan["last_output_attempt"] = serde_json::json!({
-        "status": if visible_passed {
+        "status": if post_authority_pidff_capture {
+            if visible_passed {
+                "post_authority_visible_motion_candidate_requires_verifier"
+            } else {
+                "post_authority_pidff_response_recorded_no_motion_claim"
+            }
+        } else if visible_passed {
             "visible_motion_proven"
         } else {
             "visible_motion_unproven"
         },
         "receipt": lane_relative_or_display(lane, json_out),
+        "post_authority_pidff_response_capture": post_authority_pidff_capture,
         "profile": json_string(receipt, "profile"),
         "strategy": json_string(receipt, "output_strategy"),
         "max_percent": json_f64(receipt, "max_percent"),
@@ -9392,7 +9449,11 @@ fn consume_native_visible_output_authorization(
     update_native_visible_consumed_authorization_checks(&mut plan, visible_passed);
     plan["notes"] = serde_json::json!([
         "Authorization artifact only: this file is not evidence that visible motion passed.",
-        "The exact authorized native visible-motion command has been consumed by the recorded output receipt.",
+        if post_authority_pidff_capture {
+            "The exact authorized post-authority PIDFF response command has been consumed by a separate non-claiming receipt."
+        } else {
+            "The exact authorized native visible-motion command has been consumed by the recorded output receipt."
+        },
         "No further hardware-output command is authorized by this artifact; use a separate reviewed plan and fresh bench-clear before any rerun, longer duration, higher force, or controlled-angle profile."
     ]);
 
@@ -9824,6 +9885,7 @@ fn native_visible_output_command(
     max_percent: f32,
     duration_ms: u64,
     movement_threshold_degrees: f64,
+    json_out_relative_path: &str,
 ) -> String {
     format!(
         "wheelctl moza actuator-visible-smoke --device {} --lane {} --prior-actuator-proof {} --steering-proof {} --profile {} --strategy {} --max-percent {} --duration-ms {} --movement-threshold-degrees {} --confirm-actuator-visible --json-out {} --json",
@@ -9836,7 +9898,7 @@ fn native_visible_output_command(
         compact_f32(max_percent),
         duration_ms,
         compact_f64(movement_threshold_degrees),
-        lane_path_arg(lane, "native-actuator-visible-smoke.json")
+        lane_path_arg(lane, json_out_relative_path)
     )
 }
 
@@ -10006,6 +10068,37 @@ fn require_one_of_lane_artifact_paths(
         "{label} '{}' must resolve to one of these same-lane artifacts: {allowed}",
         path.display()
     ))
+}
+
+fn native_visible_output_relative_path(
+    lane: &Path,
+    output: &Path,
+    label: &str,
+) -> Result<&'static str> {
+    require_one_of_lane_artifact_paths(lane, output, NATIVE_VISIBLE_OUTPUT_FILES, label)
+}
+
+fn validate_post_authority_pidff_smoke_context(lane: &Path) -> Result<()> {
+    let attempt_path = lane.join(VENDOR_AUTHORITY_ATTEMPT_FILE);
+    let attempt = read_json_value(lane, VENDOR_AUTHORITY_ATTEMPT_FILE).with_context(|| {
+        format!(
+            "post-authority PIDFF smoke requires consumed vendor-authority attempt receipt '{}'",
+            attempt_path.display()
+        )
+    })?;
+    validate_vendor_authority_attempt_schema(&attempt)?;
+    validate_vendor_authority_attempt_gates(&attempt)?;
+
+    let baseline_path = lane.join(NATIVE_ACTUATOR_VISIBLE_RESPONSE_ONLY_FILE);
+    let baseline =
+        read_json_value(lane, NATIVE_ACTUATOR_VISIBLE_RESPONSE_ONLY_FILE).with_context(|| {
+            format!(
+                "post-authority PIDFF smoke requires preserved baseline response receipt '{}'",
+                baseline_path.display()
+            )
+        })?;
+    native_pidff_response_summary(&baseline_path, &baseline, "baseline")?;
+    Ok(())
 }
 
 fn controlled_angle_authorization_relative_path(
@@ -50310,6 +50403,7 @@ mod tests {
             duration_ms: 2_000,
             movement_threshold_degrees: 1.0,
             preserve_receipt: None,
+            planned_output: None,
             json_out: Some(&dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE)),
             overwrite: false,
         })
@@ -50400,6 +50494,7 @@ mod tests {
             duration_ms: 2_000,
             movement_threshold_degrees: 1.0,
             preserve_receipt: None,
+            planned_output: None,
             json_out: Some(&dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE)),
             overwrite: false,
         })
@@ -50447,6 +50542,126 @@ mod tests {
         .map(|error| error.to_string())
         .ok_or("expected consumed authorization to block a second output")?;
         assert!(message.contains("blocks another hardware-output attempt"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn authorize_visible_output_can_target_post_authority_pidff_smoke_without_claiming()
+    -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_native_actuator_visible_prerequisite_receipts(dir.path())?;
+        let visible_receipt_path = dir.path().join(NATIVE_ACTUATOR_VISIBLE_SMOKE_FILE);
+        write_test_json_file(
+            &visible_receipt_path,
+            &failed_native_actuator_visible_smoke_receipt(dir.path(), product_ids::R5_V1),
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE),
+            &moza_receipt_template(MozaReceiptTemplateKind::VisibleMotionFollowUp),
+        )?;
+        write_test_json_file(
+            &dir.path().join(VENDOR_AUTHORITY_ATTEMPT_FILE),
+            &sample_vendor_authority_attempt_value("2026-05-20T12:00:00Z")?,
+        )?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_ACTUATOR_VISIBLE_RESPONSE_ONLY_FILE),
+            &sample_native_pidff_response("2026-05-20T11:55:00Z", 0.181, false),
+        )?;
+
+        let post_path = dir.path().join(VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE);
+        authorize_visible_output(AuthorizeVisibleOutputRequest {
+            json: false,
+            lane: dir.path(),
+            selector: "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            operator: "Steven",
+            bench_clear_evidence:
+                "Bench clear for exact post-authority constant PIDFF response capture.",
+            ffb_mode_evidence:
+                "Vendor authority attempt consumed; Pit House closed; no simulator FFB active.",
+            prior_actuator_proof: Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            steering_proof: Some(&dir.path().join("steering-angle-stream-proof.json")),
+            profile: MozaActuatorProfile::ConstantLowForce,
+            strategy: MozaLowTorqueStrategy::PidffBoundedEffect,
+            max_percent: 5.0,
+            duration_ms: 2_000,
+            movement_threshold_degrees: 1.0,
+            preserve_receipt: None,
+            planned_output: Some(&post_path),
+            json_out: Some(&dir.path().join(NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE)),
+            overwrite: false,
+        })
+        .await?;
+
+        let plan = read_json_value(dir.path(), NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE)?;
+        let planned = plan
+            .get("planned_next_output")
+            .ok_or("expected planned_next_output")?;
+        assert_eq!(json_bool(&plan, "hardware_output_authorized"), Some(true));
+        assert_eq!(json_bool(planned, "allowed"), Some(true));
+        assert_eq!(
+            json_bool(planned, "post_authority_pidff_response_capture"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(planned, "must_preserve_failed_receipt"),
+            Some(false)
+        );
+        assert_eq!(
+            json_string(planned, "planned_output"),
+            Some(VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE)
+        );
+        assert!(
+            json_string(planned, "command")
+                .map(|command| {
+                    command.contains("--profile constant-low-force")
+                        && command.contains(VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE)
+                        && !command.contains("--dry-run")
+                })
+                .unwrap_or(false)
+        );
+
+        validate_native_actuator_visible_smoke_preflight(
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            dir.path(),
+            Some(&dir.path().join("native-actuator-profile-smoke.json")),
+            Some(&dir.path().join("steering-angle-stream-proof.json")),
+            Some(&post_path),
+            MozaActuatorProfile::ConstantLowForce,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.0,
+            2_000,
+            1.0,
+            false,
+        )?;
+
+        let post_receipt = sample_native_pidff_response("2026-05-20T12:05:00Z", 1.250, true);
+        consume_native_visible_output_authorization(
+            dir.path(),
+            "hid-0x346E-0x0004-if2-0x0001-0x0004",
+            MozaActuatorProfile::ConstantLowForce,
+            MozaLowTorqueStrategy::PidffBoundedEffect,
+            5.0,
+            2_000,
+            1.0,
+            &post_path,
+            &post_receipt,
+        )?;
+
+        let consumed = read_json_value(dir.path(), NATIVE_VISIBLE_FOLLOW_UP_PLAN_FILE)?;
+        assert_eq!(
+            json_string(&consumed, "evidence_status"),
+            Some("post_authority_pidff_response_consumed_no_motion_claim")
+        );
+        assert_eq!(
+            json_bool(&consumed, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(
+            consumed
+                .pointer("/last_output_attempt/status")
+                .and_then(Value::as_str),
+            Some("post_authority_visible_motion_candidate_requires_verifier")
+        );
         Ok(())
     }
 
