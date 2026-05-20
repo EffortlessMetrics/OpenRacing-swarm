@@ -75,6 +75,9 @@ pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
             };
             sniff_receipt(json, &request, json_out.as_deref()).await
         }
+        HardwareCommands::SniffNotesTemplate { plan, out } => {
+            sniff_notes_template(json, plan, out).await
+        }
         HardwareCommands::SniffSummary {
             pcapng,
             vendor,
@@ -241,6 +244,32 @@ async fn sniff_receipt(
     print_sniff_receipt(json, json_out, &receipt)
 }
 
+async fn sniff_notes_template(json: bool, plan: &Path, out: &Path) -> Result<()> {
+    let stored_plan = read_and_validate_sniff_plan(plan)?;
+    let template = render_sniff_operator_notes_template(plan, &stored_plan);
+    write_text_file(out, &template)?;
+    let receipt = HardwareSniffNotesTemplateReceipt {
+        schema_version: 1,
+        success: true,
+        command: "wheelctl hardware sniff-notes-template",
+        generated_at_utc: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        plan_path: required_path_display(plan, "plan")?,
+        out_path: required_path_display(out, "out")?,
+        scenario: stored_plan.scenario,
+        operator: stored_plan.operator,
+        device_note: stored_plan.device_note,
+        evidence_status: SNIFF_EVIDENCE_STATUS,
+        native_control_evidence: false,
+        openracing_hardware_output: false,
+        satisfies_native_response_ready: false,
+        satisfies_native_visible_ready: false,
+        satisfies_smoke_ready: false,
+        satisfies_release_ready: false,
+        readiness_claims: HardwareSniffReadinessClaims::none(),
+    };
+    print_sniff_notes_template(json, out, &receipt)
+}
+
 async fn sniff_summary(
     json: bool,
     request: &HardwareSniffSummaryRequest<'_>,
@@ -291,6 +320,22 @@ fn build_hardware_sniff_plan(
         platform_hint: platform_hint.as_str().to_string(),
         allowed_actions: SNIFF_ALLOWED_ACTIONS.to_vec(),
         forbidden_actions: SNIFF_FORBIDDEN_ACTIONS.to_vec(),
+        pre_capture_checklist: SNIFF_PRE_CAPTURE_CHECKLIST
+            .iter()
+            .copied()
+            .map(str::to_string)
+            .collect(),
+        post_capture_checklist: SNIFF_POST_CAPTURE_CHECKLIST
+            .iter()
+            .copied()
+            .map(str::to_string)
+            .collect(),
+        operator_notes_required: SNIFF_OPERATOR_NOTES_REQUIRED
+            .iter()
+            .copied()
+            .map(str::to_string)
+            .collect(),
+        raw_pcap_commit_default: false,
         evidence_status: SNIFF_EVIDENCE_STATUS,
         native_control_evidence: false,
         openracing_hardware_output: false,
@@ -1250,8 +1295,24 @@ fn read_and_validate_sniff_plan(path: &Path) -> Result<StoredHardwareSniffPlan> 
             path.display()
         );
     }
+    required_text(&plan.family, "family")?;
+    required_text(&plan.lane, "lane")?;
     validate_sniff_scenario(&plan.scenario)
         .with_context(|| format!("sniff plan '{}' has invalid scenario", path.display()))?;
+    if plan.pre_capture_checklist.is_empty()
+        || plan.post_capture_checklist.is_empty()
+        || plan.operator_notes_required.is_empty()
+        || plan.raw_pcap_commit_default
+        || !plan
+            .post_capture_checklist
+            .iter()
+            .any(|item| item == SNIFF_POST_CAPTURE_EVIDENCE_COMMANDS_CHECKLIST_ITEM)
+    {
+        anyhow::bail!(
+            "sniff plan '{}' is missing the passive capture operator handoff; refresh it with wheelctl hardware sniff-plan",
+            path.display()
+        );
+    }
     if plan.native_control_evidence
         || plan.openracing_hardware_output
         || !plan.external_app_may_have_sent_output
@@ -1549,6 +1610,26 @@ fn render_sniff_plan_markdown(plan: &HardwareSniffPlanArtifact) -> String {
     for action in &plan.forbidden_actions {
         out.push_str(&format!("- {action}\n"));
     }
+
+    out.push_str("\n## Pre-Capture Checklist\n\n");
+    for item in &plan.pre_capture_checklist {
+        out.push_str(&format!("- {item}\n"));
+    }
+
+    out.push_str("\n## Post-Capture Checklist\n\n");
+    for item in &plan.post_capture_checklist {
+        out.push_str(&format!("- {item}\n"));
+    }
+
+    out.push_str("\n## Operator Notes Required\n\n");
+    for item in &plan.operator_notes_required {
+        out.push_str(&format!("- {item}\n"));
+    }
+    out.push_str(&format!(
+        "\nRaw pcapng commit default: `{}`\n",
+        plan.raw_pcap_commit_default
+    ));
+
     out.push_str("\n## Readiness Claims\n\n");
     out.push_str("- native response ready: false\n");
     out.push_str("- native visible ready: false\n");
@@ -1556,6 +1637,44 @@ fn render_sniff_plan_markdown(plan: &HardwareSniffPlanArtifact) -> String {
     out.push_str("- release ready: false\n\n");
     out.push_str("OpenRacing hardware output: false\n");
     out.push_str("External app may have sent output: true\n");
+    out
+}
+
+fn render_sniff_operator_notes_template(
+    plan_path: &Path,
+    plan: &StoredHardwareSniffPlan,
+) -> String {
+    let mut out = String::new();
+    out.push_str("# Passive USB Sniff Operator Notes\n\n");
+    out.push_str("This template is non-claiming protocol research/support evidence.\n\n");
+    out.push_str(&format!("Plan: `{}`\n", plan_path.display()));
+    out.push_str(&format!("Family: `{}`\n", plan.family));
+    out.push_str(&format!("Scenario: `{}`\n", plan.scenario));
+    out.push_str(&format!("Lane: `{}`\n", plan.lane));
+    out.push_str(&format!("Operator: `{}`\n", plan.operator));
+    out.push_str(&format!("Device: `{}`\n\n", plan.device_note));
+
+    out.push_str("## Required Notes\n\n");
+    for field in &plan.operator_notes_required {
+        out.push_str(&format!("- [ ] {field}:\n"));
+    }
+
+    out.push_str("\n## Capture Safety Confirmations\n\n");
+    for item in &plan.pre_capture_checklist {
+        out.push_str(&format!("- [ ] Pre-capture: {item}\n"));
+    }
+    for item in &plan.post_capture_checklist {
+        out.push_str(&format!("- [ ] Post-capture: {item}\n"));
+    }
+    out.push_str(&format!(
+        "- [ ] Raw pcapng commit default remained `{}`\n",
+        plan.raw_pcap_commit_default
+    ));
+
+    out.push_str("\n## Claim Boundaries\n\n");
+    out.push_str("- [ ] OpenRacing opened no HID device for this capture.\n");
+    out.push_str("- [ ] OpenRacing sent no output, feature, serial, firmware, or DFU commands.\n");
+    out.push_str("- [ ] This note does not claim native response, native visible, smoke, or release readiness.\n");
     out
 }
 
@@ -4370,6 +4489,26 @@ fn print_sniff_receipt(
     Ok(())
 }
 
+fn print_sniff_notes_template(
+    json: bool,
+    out: &Path,
+    receipt: &HardwareSniffNotesTemplateReceipt,
+) -> Result<()> {
+    if json {
+        write_stdout_line(&serde_json::to_string_pretty(receipt)?)?;
+        return Ok(());
+    }
+
+    write_stdout_line(&format!(
+        "Passive USB sniff operator notes template created: {}",
+        out.display()
+    ))?;
+    write_stdout_line(
+        "Non-claiming: native response, native visible, smoke, release, and OpenRacing hardware output are false.",
+    )?;
+    Ok(())
+}
+
 fn print_sniff_summary(
     json: bool,
     json_out: Option<&Path>,
@@ -4652,6 +4791,27 @@ const SNIFF_FORBIDDEN_ACTIONS: &[&str] = &[
     "open firmware update flows",
     "run firmware or DFU tools",
 ];
+const SNIFF_PRE_CAPTURE_CHECKLIST: &[&str] = &[
+    "confirm the target device stack is attached before starting capture",
+    "start USBPcap, Wireshark, tshark, or usbmon before launching or changing the external app",
+    "keep OpenRacing hardware output commands stopped for this passive capture",
+    "keep firmware, update, DFU, driver replacement, Zadig, and WinUSB conversion flows closed",
+];
+const SNIFF_POST_CAPTURE_CHECKLIST: &[&str] = &[
+    "stop capture and save the pcapng in local scratch storage",
+    "record operator notes before bundling",
+    SNIFF_POST_CAPTURE_EVIDENCE_COMMANDS_CHECKLIST_ITEM,
+    "do not commit raw pcapng unless it is separately reviewed for size, sensitivity, and operator consent",
+];
+const SNIFF_POST_CAPTURE_EVIDENCE_COMMANDS_CHECKLIST_ITEM: &str = "run sniff-receipt, sniff-notes-template, and sniff-summary before treating the capture as lane evidence";
+const SNIFF_OPERATOR_NOTES_REQUIRED: &[&str] = &[
+    "scenario performed",
+    "external app, simulator, or OS stack observed",
+    "capture duration or start/stop times",
+    "device stack attached",
+    "whether firmware/update/DFU pages stayed closed",
+    "whether raw pcapng was kept local or reviewed for bundling",
+];
 
 #[derive(Debug)]
 struct HardwareSniffPlanRequest<'a> {
@@ -4718,6 +4878,10 @@ struct HardwareSniffPlanArtifact {
     platform_hint: String,
     allowed_actions: Vec<&'static str>,
     forbidden_actions: Vec<&'static str>,
+    pre_capture_checklist: Vec<String>,
+    post_capture_checklist: Vec<String>,
+    operator_notes_required: Vec<String>,
+    raw_pcap_commit_default: bool,
     evidence_status: &'static str,
     native_control_evidence: bool,
     openracing_hardware_output: bool,
@@ -4756,6 +4920,27 @@ struct HardwareSniffReceiptArtifact {
     openracing_firmware_or_dfu_commands: bool,
     external_app_observed: bool,
     external_app_may_have_sent_output: bool,
+    satisfies_native_response_ready: bool,
+    satisfies_native_visible_ready: bool,
+    satisfies_smoke_ready: bool,
+    satisfies_release_ready: bool,
+    readiness_claims: HardwareSniffReadinessClaims,
+}
+
+#[derive(Debug, Serialize)]
+struct HardwareSniffNotesTemplateReceipt {
+    schema_version: u32,
+    success: bool,
+    command: &'static str,
+    generated_at_utc: String,
+    plan_path: String,
+    out_path: String,
+    scenario: String,
+    operator: String,
+    device_note: String,
+    evidence_status: &'static str,
+    native_control_evidence: bool,
+    openracing_hardware_output: bool,
     satisfies_native_response_ready: bool,
     satisfies_native_visible_ready: bool,
     satisfies_smoke_ready: bool,
@@ -5179,9 +5364,15 @@ struct StoredHardwareSniffPlan {
     schema_version: u32,
     success: bool,
     command: String,
+    family: String,
     scenario: String,
+    lane: String,
     operator: String,
     device_note: String,
+    pre_capture_checklist: Vec<String>,
+    post_capture_checklist: Vec<String>,
+    operator_notes_required: Vec<String>,
+    raw_pcap_commit_default: bool,
     evidence_status: String,
     native_control_evidence: bool,
     openracing_hardware_output: bool,
@@ -5916,6 +6107,81 @@ mod tests {
                     "markdown missing forbidden action: {action}"
                 );
             }
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_plan_carries_operator_capture_handoff() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let plan = sample_plan(dir.path())?;
+            let markdown = render_sniff_plan_markdown(&plan);
+
+            assert!(!plan.raw_pcap_commit_default);
+            assert!(plan.pre_capture_checklist.iter().any(|item| {
+                item == "keep OpenRacing hardware output commands stopped for this passive capture"
+            }));
+            assert!(plan.post_capture_checklist.iter().any(|item| {
+                item == "do not commit raw pcapng unless it is separately reviewed for size, sensitivity, and operator consent"
+            }));
+            assert!(
+                plan.post_capture_checklist
+                    .iter()
+                    .any(|item| { item == SNIFF_POST_CAPTURE_EVIDENCE_COMMANDS_CHECKLIST_ITEM })
+            );
+            assert!(
+                plan.operator_notes_required
+                    .iter()
+                    .any(|item| item == "scenario performed")
+            );
+            assert!(markdown.contains("## Operator Notes Required"));
+            assert!(markdown.contains("sniff-notes-template"));
+            assert!(markdown.contains("Raw pcapng commit default: `false`"));
+            assert_schema_valid("sniff-plan.schema.json", &serde_json::to_value(&plan)?)?;
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_notes_template_renders_required_operator_fields() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let plan_path = write_sample_plan(dir.path())?;
+            let plan = read_and_validate_sniff_plan(&plan_path)?;
+            let notes = render_sniff_operator_notes_template(&plan_path, &plan);
+
+            assert!(notes.contains("# Passive USB Sniff Operator Notes"));
+            assert!(notes.contains("- [ ] scenario performed:"));
+            assert!(notes.contains("- [ ] device stack attached:"));
+            assert!(notes.contains("OpenRacing sent no output"));
+            assert!(notes.contains("native visible"));
+            assert!(notes.contains("sniff-notes-template"));
+            assert!(notes.contains("Raw pcapng commit default remained `false`"));
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_plan_validation_rejects_stale_notes_template_handoff() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let mut plan = serde_json::to_value(sample_plan(dir.path())?)?;
+            let Some(items) = plan
+                .get_mut("post_capture_checklist")
+                .and_then(serde_json::Value::as_array_mut)
+            else {
+                return Err("expected post_capture_checklist array".into());
+            };
+            items.retain(|item| {
+                item.as_str() != Some(SNIFF_POST_CAPTURE_EVIDENCE_COMMANDS_CHECKLIST_ITEM)
+            });
+            let plan_path = dir.path().join("sniff-plan.json");
+            write_json_file(&plan_path, &plan)?;
+
+            let error = read_and_validate_sniff_plan(&plan_path)
+                .err()
+                .ok_or("expected stale sniff plan to be rejected")?;
+            assert!(
+                error
+                    .to_string()
+                    .contains("missing the passive capture operator handoff"),
+                "unexpected error: {error}"
+            );
             Ok(())
         }
 

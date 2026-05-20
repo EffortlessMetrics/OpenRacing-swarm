@@ -2,7 +2,7 @@
   "schema_version": 1,
   "success": true,
   "command": "wheelctl hardware sniff-plan",
-  "generated_at_utc": "2026-05-19T05:48:47Z",
+  "generated_at_utc": "2026-05-19T23:46:14Z",
   "family": "moza-r5",
   "scenario": "pit-house-setting-change",
   "lane": "ci/hardware/moza-r5/2026-05-13",
@@ -32,6 +32,27 @@
     "open firmware update flows",
     "run firmware or DFU tools"
   ],
+  "pre_capture_checklist": [
+    "confirm the target device stack is attached before starting capture",
+    "start USBPcap, Wireshark, tshark, or usbmon before launching or changing the external app",
+    "keep OpenRacing hardware output commands stopped for this passive capture",
+    "keep firmware, update, DFU, driver replacement, Zadig, and WinUSB conversion flows closed"
+  ],
+  "post_capture_checklist": [
+    "stop capture and save the pcapng in local scratch storage",
+    "record operator notes before bundling",
+    "run sniff-receipt, sniff-notes-template, and sniff-summary before treating the capture as lane evidence",
+    "do not commit raw pcapng unless it is separately reviewed for size, sensitivity, and operator consent"
+  ],
+  "operator_notes_required": [
+    "scenario performed",
+    "external app, simulator, or OS stack observed",
+    "capture duration or start/stop times",
+    "device stack attached",
+    "whether firmware/update/DFU pages stayed closed",
+    "whether raw pcapng was kept local or reviewed for bundling"
+  ],
+  "raw_pcap_commit_default": false,
   "evidence_status": "passive_external_usb_observation",
   "native_control_evidence": false,
   "openracing_hardware_output": false,

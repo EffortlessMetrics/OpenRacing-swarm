@@ -19,6 +19,10 @@
     "platform_hint",
     "allowed_actions",
     "forbidden_actions",
+    "pre_capture_checklist",
+    "post_capture_checklist",
+    "operator_notes_required",
+    "raw_pcap_commit_default",
     "evidence_status",
     "native_control_evidence",
     "openracing_hardware_output",
@@ -146,6 +150,83 @@
           }
         }
       ]
+    },
+    "pre_capture_checklist": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "allOf": [
+        {
+          "contains": {
+            "const": "keep OpenRacing hardware output commands stopped for this passive capture"
+          }
+        },
+        {
+          "contains": {
+            "const": "keep firmware, update, DFU, driver replacement, Zadig, and WinUSB conversion flows closed"
+          }
+        }
+      ]
+    },
+    "post_capture_checklist": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "allOf": [
+        {
+          "contains": {
+            "const": "record operator notes before bundling"
+          }
+        },
+        {
+          "contains": {
+            "const": "run sniff-receipt, sniff-notes-template, and sniff-summary before treating the capture as lane evidence"
+          }
+        },
+        {
+          "contains": {
+            "const": "do not commit raw pcapng unless it is separately reviewed for size, sensitivity, and operator consent"
+          }
+        }
+      ]
+    },
+    "operator_notes_required": {
+      "type": "array",
+      "minItems": 6,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "allOf": [
+        {
+          "contains": {
+            "const": "scenario performed"
+          }
+        },
+        {
+          "contains": {
+            "const": "device stack attached"
+          }
+        },
+        {
+          "contains": {
+            "const": "whether firmware/update/DFU pages stayed closed"
+          }
+        }
+      ]
+    },
+    "raw_pcap_commit_default": {
+      "type": "boolean",
+      "const": false
     },
     "evidence_status": {
       "type": "string",

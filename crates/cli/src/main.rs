@@ -558,6 +558,33 @@ mod tests {
     }
 
     #[test]
+    fn parse_hardware_sniff_notes_template() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "hardware",
+            "sniff-notes-template",
+            "--plan",
+            "target/sniff/pit-house-open-idle/sniff-plan.json",
+            "--out",
+            "target/sniff/pit-house-open-idle/operator-notes.md",
+        ])?;
+        match &cli.command {
+            Commands::Hardware(HardwareCommands::SniffNotesTemplate { plan, out }) => {
+                assert_eq!(
+                    plan.to_str(),
+                    Some("target/sniff/pit-house-open-idle/sniff-plan.json")
+                );
+                assert_eq!(
+                    out.to_str(),
+                    Some("target/sniff/pit-house-open-idle/operator-notes.md")
+                );
+            }
+            _ => return Err("expected Hardware SniffNotesTemplate command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_hardware_sniff_summary() -> TestResult {
         let cli = parse_cli([
             "wheelctl",

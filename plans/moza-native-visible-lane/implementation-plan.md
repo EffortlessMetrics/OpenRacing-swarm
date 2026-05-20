@@ -1463,6 +1463,84 @@ Remove only the Pit House open-idle receipt, summary, bundle manifest,
 artifact-index refresh, and this plan entry. Do not remove sniff plans,
 controlled-angle receipts, or local raw pcap artifacts.
 
+## Work item: passive-sniff-operator-notes-template
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: passive capture handoff hardening before remaining external evidence captures
+Blocked by: n/a
+
+### Goal
+
+Make passive sniff capture handoffs produce a repeatable operator-notes
+template from the accepted sniff plan, and require refreshed plans to carry the
+capture checklist fields that keep no-output claim boundaries reviewable.
+
+### Production delta
+
+Added `wheelctl hardware sniff-notes-template --plan <sniff-plan.json> --out
+<operator-notes.md>`. The command reads a validated non-claiming sniff plan,
+writes a Markdown operator-notes template, and prints a non-claiming receipt to
+stdout. It does not open HID, send output, create authorization, or write a
+readiness receipt.
+
+Expanded `sniff-plan.schema.json`, generated sniff plans, and plan validation
+with:
+
+- `pre_capture_checklist`
+- `post_capture_checklist`
+- `operator_notes_required`
+- `raw_pcap_commit_default=false`
+
+The bench wizard now includes the no-output `sniff-notes-template` command in
+passive capture handoffs, and stale sniff plans without the notes-template
+handoff are not accepted as navigation-ready. The Pit House open-idle bundle
+manifest was refreshed because the checked-in plan hash changed; raw pcapng and
+bundle ZIP remain local.
+
+### Non-goals
+
+No hardware output, no OpenRacing HID open, no raw pcap commit, no bundle ZIP
+commit, no vendor report decode claim, no native-control claim, no
+native-visible promotion, no smoke-ready promotion, no serial config, no
+firmware, and no DFU.
+
+### Acceptance
+
+- `sniff-plan` artifacts include operator capture handoff fields and
+  `raw_pcap_commit_default=false`.
+- `sniff-notes-template` renders required note fields and claim-boundary
+  confirmations from the validated plan.
+- Bench-wizard passive sniff commands parse and remain in the no-output
+  `wheelctl hardware` namespace.
+- Stale sniff plans missing the notes-template handoff are rejected.
+- Native-visible and smoke-ready remain blocked.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_plan -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl sniff_notes_template -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_sniff_next_operator_commands_parse -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+.\target\debug\wheelctl.exe moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-native-visible-after-sniff-notes-template.json --json
+if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the `sniff-notes-template` CLI path, sniff-plan checklist schema and
+artifact refreshes, bench-wizard handoff command, refreshed Pit House
+open-idle bundle manifest, and this work-item entry. Do not remove passive
+sniff receipts, summaries, closed-loop output receipts, or raw local capture
+artifacts.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

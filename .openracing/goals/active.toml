@@ -476,6 +476,27 @@ commands = [
 ]
 
 [[work_item]]
+id = "passive-sniff-operator-notes-template"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-passive-sniff-operator-notes-template"
+current_pointer = "crates/cli/src/commands/hardware.rs"
+claim_boundary = "No-output operator handoff only; sniff plans carry capture checklists, required operator-note fields, and raw-pcap commit default false, while sniff-notes-template writes a non-claiming Markdown notes template without HID opens, hardware output, authorization, native-control, native-visible, smoke-ready, or release-ready claims."
+blocked_by = "n/a"
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl sniff_plan -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl sniff_notes_template -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl bench_wizard_sniff_next_operator_commands_parse -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  ".\\target\\debug\\wheelctl.exe moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-native-visible-after-sniff-notes-template.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw \"expected native-visible verifier to remain blocked\" }",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

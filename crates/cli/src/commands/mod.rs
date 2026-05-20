@@ -412,6 +412,16 @@ pub enum HardwareCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
+    /// Create a passive USB sniff operator-notes template from a sniff plan
+    SniffNotesTemplate {
+        /// Sniff plan JSON artifact to read
+        #[arg(long)]
+        plan: std::path::PathBuf,
+        /// Output Markdown operator notes template path
+        #[arg(long)]
+        out: std::path::PathBuf,
+    },
+
     /// Summarize a passive USB pcapng capture without sending hardware output
     SniffSummary {
         /// Passive USB capture saved as .pcapng

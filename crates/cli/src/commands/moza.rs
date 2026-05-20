@@ -49,6 +49,7 @@ const DIRECT_TORQUE_REPORT_ID: &str = "0x20";
 const SIMULATOR_FFB_WRITER_COMMAND: &str = "wheeld --hardware-lane moza-r5";
 const SIMULATOR_TELEMETRY_RECORDER_COMMAND: &str = "wheelctl telemetry record";
 const MOZA_VENDOR_HEX: &str = "0x346E";
+const PASSIVE_SNIFF_POST_CAPTURE_EVIDENCE_COMMANDS_CHECKLIST_ITEM: &str = "run sniff-receipt, sniff-notes-template, and sniff-summary before treating the capture as lane evidence";
 const HIGH_TORQUE_FEATURE_REPORT_ID: &str = "0x02";
 const START_REPORTING_FEATURE_REPORT_ID: &str = "0x03";
 const FFB_MODE_FEATURE_REPORT_ID: &str = "0x11";
@@ -1577,7 +1578,7 @@ fn moza_passive_sniff_next_operator_step(lane: &Path) -> Option<Value> {
         return Some(serde_json::json!({
             "kind": "capture_passive_vendor_sniff",
             "summary": format!(
-                "standard PIDFF path diagnosis is recorded; next evidence is the {label} passive USB capture, followed by non-claiming sniff receipt and summary artifacts"
+                "standard PIDFF path diagnosis is recorded; next evidence is the {label} passive USB capture, followed by non-claiming sniff receipt, operator notes, and summary artifacts"
             ),
             "scenario": scenario,
             "label": label,
@@ -1613,6 +1614,15 @@ fn moza_passive_sniff_next_operator_step(lane: &Path) -> Option<Value> {
                     )
                 },
                 {
+                    "name": "write_operator_notes_template",
+                    "output_enabled": false,
+                    "command": format!(
+                        "wheelctl hardware sniff-notes-template --plan {} --out {}",
+                        command_arg(&plan_artifact.display().to_string()),
+                        command_arg(&local_operator_notes.display().to_string())
+                    )
+                },
+                {
                     "name": "summarize_sniff_capture",
                     "output_enabled": false,
                     "command": format!(
@@ -1642,7 +1652,7 @@ fn moza_passive_sniff_next_operator_step(lane: &Path) -> Option<Value> {
             "notes": [
                 "commands are no-output OpenRacing artifact commands; the pcapng capture itself is created by USBPcap/Wireshark/tshark outside OpenRacing",
                 "do not commit raw pcapng unless separate review approves raw capture, size, sensitivity, and operator consent",
-                "sniff receipt, summary, and bundle artifacts remain protocol research/support evidence only"
+                "sniff receipt, operator notes, summary, and bundle artifacts remain protocol research/support evidence only"
             ]
         }));
     }
@@ -1679,8 +1689,8 @@ fn moza_passive_sniff_capture_checklist(
                 "Stop capture and save the pcapng as {}.",
                 local_pcapng.display()
             ),
-            "Run the no-output wheelctl hardware sniff-receipt and sniff-summary commands from this bench-wizard handoff.".to_string(),
-            "Create operator notes before bundling and do not commit raw pcapng unless separately reviewed.".to_string()
+            "Run the no-output wheelctl hardware sniff-receipt, sniff-notes-template, and sniff-summary commands from this bench-wizard handoff.".to_string(),
+            "Fill operator notes before bundling and do not commit raw pcapng unless separately reviewed.".to_string()
         ],
         "operator_notes_required": [
             "scenario performed",
@@ -2110,13 +2120,56 @@ fn passive_sniff_artifact_status(path: &Path, expected_command: &str) -> &'stati
 }
 
 fn passive_sniff_artifact_is_non_claiming(value: &Value, expected_command: &str) -> bool {
-    json_string(value, "command") == Some(expected_command)
+    let carries_required_plan_handoff = expected_command != "wheelctl hardware sniff-plan"
+        || (json_array_contains_string(
+            value,
+            "pre_capture_checklist",
+            "keep OpenRacing hardware output commands stopped for this passive capture",
+        ) && json_array_contains_string(
+            value,
+            "pre_capture_checklist",
+            "keep firmware, update, DFU, driver replacement, Zadig, and WinUSB conversion flows closed",
+        ) && json_array_contains_string(
+            value,
+            "post_capture_checklist",
+            "record operator notes before bundling",
+        ) && json_array_contains_string(
+            value,
+            "post_capture_checklist",
+            PASSIVE_SNIFF_POST_CAPTURE_EVIDENCE_COMMANDS_CHECKLIST_ITEM,
+        ) && json_array_contains_string(
+            value,
+            "post_capture_checklist",
+            "do not commit raw pcapng unless it is separately reviewed for size, sensitivity, and operator consent",
+        ) && json_array_contains_string(
+            value,
+            "operator_notes_required",
+            "scenario performed",
+        ) && json_array_contains_string(
+            value,
+            "operator_notes_required",
+            "device stack attached",
+        ) && json_array_contains_string(
+            value,
+            "operator_notes_required",
+            "whether firmware/update/DFU pages stayed closed",
+        ) && json_bool(value, "raw_pcap_commit_default") == Some(false));
+
+    carries_required_plan_handoff
+        && json_string(value, "command") == Some(expected_command)
         && json_bool(value, "native_control_evidence") == Some(false)
         && json_bool(value, "openracing_hardware_output") == Some(false)
         && json_bool(value, "satisfies_native_response_ready") == Some(false)
         && json_bool(value, "satisfies_native_visible_ready") == Some(false)
         && json_bool(value, "satisfies_smoke_ready") == Some(false)
         && json_bool(value, "satisfies_release_ready") == Some(false)
+}
+
+fn json_array_contains_string(value: &Value, field: &str, expected: &str) -> bool {
+    value
+        .get(field)
+        .and_then(Value::as_array)
+        .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(expected)))
 }
 
 fn moza_passive_sniff_committed_dir(lane: &Path, scenario: &str) -> PathBuf {
@@ -33433,6 +33486,11 @@ mod tests {
                     .is_some_and(|text| text.contains("wheelctl hardware sniff-receipt"))
         }));
         assert!(commands.iter().any(|command| {
+            json_string(command, "name") == Some("write_operator_notes_template")
+                && json_string(command, "command")
+                    .is_some_and(|text| text.contains("wheelctl hardware sniff-notes-template"))
+        }));
+        assert!(commands.iter().any(|command| {
             json_string(command, "name") == Some("summarize_sniff_capture")
                 && json_string(command, "command")
                     .is_some_and(|text| text.contains("wheelctl hardware sniff-summary"))
@@ -33453,8 +33511,83 @@ mod tests {
         assert!(markdown.contains("MOZA Pit House"));
         assert!(markdown.contains("capture.pcapng"));
         assert!(markdown.contains("wheelctl hardware sniff-receipt"));
+        assert!(markdown.contains("wheelctl hardware sniff-notes-template"));
         assert!(markdown.contains("wheelctl hardware sniff-summary"));
         assert!(markdown.contains("do not authorize output"));
+        Ok(())
+    }
+
+    #[test]
+    fn passive_sniff_plan_requires_operator_handoff() -> TestResult {
+        let mut plan = serde_json::json!({
+            "schema_version": 1,
+            "success": true,
+            "command": "wheelctl hardware sniff-plan",
+            "generated_at_utc": "2026-05-18T00:00:00Z",
+            "family": "moza",
+            "scenario": "pit-house-open-idle",
+            "lane": "ci/hardware/moza-r5/2026-05-13",
+            "operator": "Steven",
+            "device_note": "R5 + KS connected",
+            "capture_kind": "software_usb_urb_capture",
+            "capture_tools": ["wireshark", "usbpcap", "tshark"],
+            "platform_hint": "windows",
+            "allowed_actions": ["observe USB traffic"],
+            "forbidden_actions": ["run OpenRacing output commands"],
+            "evidence_status": "passive_external_usb_observation",
+            "native_control_evidence": false,
+            "openracing_hardware_output": false,
+            "external_app_may_have_sent_output": true,
+            "satisfies_native_response_ready": false,
+            "satisfies_native_visible_ready": false,
+            "satisfies_smoke_ready": false,
+            "satisfies_release_ready": false,
+            "readiness_claims": {
+                "satisfies_native_response_ready": false,
+                "satisfies_native_visible_ready": false,
+                "satisfies_smoke_ready": false,
+                "satisfies_release_ready": false
+            },
+            "notes": ["protocol research/support evidence only"]
+        });
+
+        assert!(
+            !passive_sniff_artifact_is_non_claiming(&plan, "wheelctl hardware sniff-plan"),
+            "stale plans without operator handoff must not be accepted as navigation-ready"
+        );
+
+        plan["pre_capture_checklist"] = serde_json::json!([
+            "confirm the target device stack is attached before starting capture",
+            "start USBPcap, Wireshark, tshark, or usbmon before launching or changing the external app",
+            "keep OpenRacing hardware output commands stopped for this passive capture",
+            "keep firmware, update, DFU, driver replacement, Zadig, and WinUSB conversion flows closed"
+        ]);
+        plan["post_capture_checklist"] =
+            serde_json::json!(["record operator notes before bundling"]);
+        plan["operator_notes_required"] = serde_json::json!([
+            "scenario performed",
+            "external app, simulator, or OS stack observed",
+            "capture duration or start/stop times",
+            "device stack attached",
+            "whether firmware/update/DFU pages stayed closed",
+            "whether raw pcapng was kept local or reviewed for bundling"
+        ]);
+        plan["raw_pcap_commit_default"] = serde_json::json!(false);
+        assert!(
+            !passive_sniff_artifact_is_non_claiming(&plan, "wheelctl hardware sniff-plan"),
+            "stale plans without the notes-template command handoff must not be accepted"
+        );
+
+        plan["post_capture_checklist"] = serde_json::json!([
+            "stop capture and save the pcapng in local scratch storage",
+            "record operator notes before bundling",
+            PASSIVE_SNIFF_POST_CAPTURE_EVIDENCE_COMMANDS_CHECKLIST_ITEM,
+            "do not commit raw pcapng unless it is separately reviewed for size, sensitivity, and operator consent"
+        ]);
+        assert!(passive_sniff_artifact_is_non_claiming(
+            &plan,
+            "wheelctl hardware sniff-plan"
+        ));
         Ok(())
     }
 
@@ -33521,6 +33654,7 @@ mod tests {
             names,
             vec![
                 "record_sniff_receipt".to_string(),
+                "write_operator_notes_template".to_string(),
                 "summarize_sniff_capture".to_string(),
                 "bundle_sniff_evidence".to_string()
             ]
@@ -37673,6 +37807,27 @@ mod tests {
                 "platform_hint": "windows",
                 "allowed_actions": ["observe USB traffic"],
                 "forbidden_actions": ["run OpenRacing output commands"],
+                "pre_capture_checklist": [
+                    "confirm the target device stack is attached before starting capture",
+                    "start USBPcap, Wireshark, tshark, or usbmon before launching or changing the external app",
+                    "keep OpenRacing hardware output commands stopped for this passive capture",
+                    "keep firmware, update, DFU, driver replacement, Zadig, and WinUSB conversion flows closed"
+                ],
+                "post_capture_checklist": [
+                    "stop capture and save the pcapng in local scratch storage",
+                    "record operator notes before bundling",
+                    PASSIVE_SNIFF_POST_CAPTURE_EVIDENCE_COMMANDS_CHECKLIST_ITEM,
+                    "do not commit raw pcapng unless it is separately reviewed for size, sensitivity, and operator consent"
+                ],
+                "operator_notes_required": [
+                    "scenario performed",
+                    "external app, simulator, or OS stack observed",
+                    "capture duration or start/stop times",
+                    "device stack attached",
+                    "whether firmware/update/DFU pages stayed closed",
+                    "whether raw pcapng was kept local or reviewed for bundling"
+                ],
+                "raw_pcap_commit_default": false,
                 "evidence_status": "passive_external_usb_observation",
                 "native_control_evidence": false,
                 "openracing_hardware_output": false,
