@@ -94,7 +94,12 @@ The protocol crate validates those samples as observed wire-shape fixtures and
 now regression-checks their repeated packet-order hints: `0x5A/0x1B/0x00`
 precedes `0x5D/0x1B/0x01`, and `0x25/0x19/0x02`,
 `0x25/0x19/0x03`, then `0x25/0x19/0x01` repeat as an ordered triad. That is
-sequence-shape evidence only, not a semantic decode or sendability claim.
+sequence-shape evidence only, not a semantic decode or sendability claim. The
+review now also records payload-shape morphology for those same 30
+decode-candidate samples: the five top unknown commanded tuples have checksum
+valid samples, remain `unknown_commanded`, and their sampled payloads are either
+empty or `0000`. That payload-shape summary is fixture evidence only; empty or
+zero-filled observed payloads do not make an unknown tuple semantic or sendable.
 
 The latest pre-output, lane analysis, role-status, and artifact-index receipts
 report six proven input roles and one remaining generic auxiliary role.
@@ -2940,6 +2945,84 @@ Revert only the passive tuple sequence regression and source-of-truth updates.
 Do not remove checked-in passive sniff summaries,
 `vendor-protocol-evidence-review.json`, sample-frame preservation, observed
 frame-shape decoding, consumed hardware attempts, prior undertravel evidence, or
+tuple frequency and registry coverage fields.
+
+## Work item: passive-sniff-tuple-payload-shape-review
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: future semantic decode of high-frequency passive vendor-control tuples
+Blocked by: checked-in `vendor-protocol-evidence-review.json` decode-candidate sample frames
+
+### Goal
+
+Preserve payload-shape morphology for the highest-frequency unknown commanded
+passive tuple samples so future semantic decode work can distinguish empty,
+zero-filled, and non-zero observed payload families without treating the tuples
+as sendable.
+
+### Production Delta
+
+Extend `wheelctl moza vendor-protocol-evidence-review` with
+`decode_candidate_payload_shape_summary`, derived from the existing
+decode-candidate sample frames. Surface the same summary through
+artifact-index and bench-wizard decode-priority navigation, refresh
+`vendor-protocol-evidence-review.json` and the checked-in lane index, and add a
+protocol crate regression that pins the current sample payload shapes.
+
+### Non-goals
+
+No HID open, serial open, read-only query send, hardware output, authorization
+receipt, PIDFF rerun, force increase, direct HID report `0xaf`, high torque,
+serial config, firmware, DFU, native-control claim, native-visible claim,
+smoke-ready claim, Pit House coexistence claim, simulator claim, release-ready
+claim, raw `.pcapng` commit, semantic command decode, registry promotion, or
+tuple sendability claim.
+
+### Acceptance
+
+- `vendor-protocol-evidence-review.json` records
+  `decode_candidate_payload_shape_summary.claim_scope` as
+  `no_output_passive_tuple_payload_shape_review`.
+- The payload-shape summary reports five tuple shapes and 30 samples for the
+  highest-frequency unknown commanded tuples.
+- All sampled tuple payloads are recorded as empty or zero-filled, with
+  `0x5A/0x1B/0x00` empty and `0x5D/0x1B/0x01` plus the `0x25/0x19/0x01..03`
+  triad zero-filled as `0000`.
+- The summary pins `hardware_output_authorized=false`,
+  `native_control_evidence=false`,
+  `output_sendability_claim=false`, and
+  `protocol_evidence_sufficient_for_output_plan=false`.
+- Artifact-index and bench-wizard Markdown render payload-shape navigation
+  without emitting a hardware attempt command.
+- Native-visible verifier remains blocked on `native_actuator_visible_smoke`.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_authority_navigation_surfaces_decode_priority_without_claims -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_passive_tuple_samples -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- moza vendor-protocol-evidence-review --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json --json --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-passive-payload-shapes.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-passive-payload-shapes.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the payload-shape summary generation, schema additions, protocol
+regression, refreshed protocol review receipt, refreshed artifact index, and
+source-of-truth updates. Do not remove checked-in passive sniff summaries,
+sample-frame preservation, observed frame-shape decoding, packet-order
+regression coverage, consumed hardware attempts, prior undertravel evidence, or
 tuple frequency and registry coverage fields.
 
 ## Work item: native-visible-promotion

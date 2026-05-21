@@ -113,6 +113,16 @@ fn sample_frames_for_tuple<'a>(
     )))
 }
 
+fn payload_shape_for_tuple<'a>(
+    shapes: &'a [Value],
+    tuple_id: &str,
+) -> Result<&'a Value, io::Error> {
+    shapes
+        .iter()
+        .find(|shape| str_field(shape, "tuple_id").is_ok_and(|id| id == tuple_id))
+        .ok_or_else(|| invalid_data(format!("missing payload shape for tuple `{tuple_id}`")))
+}
+
 fn find_sample_frame<'a>(
     fixtures: &'a [Value],
     tuple_id: &str,
@@ -147,6 +157,92 @@ fn assert_unknown_sample_remains_non_sendable(sample: &Value) -> TestResult {
         Err(MozaSerialFrameError::UnknownCommand { group, command })
             if group == observed.group && command == observed.command_id
     ));
+
+    Ok(())
+}
+
+#[test]
+fn passive_decode_candidate_samples_preserve_payload_shape_hints() -> TestResult {
+    let review = protocol_evidence_review()?;
+    let summary = value_at(
+        &review,
+        "/passive_tuple_registry_coverage/decode_candidate_payload_shape_summary",
+    )?;
+
+    assert_eq!(
+        str_field(summary, "claim_scope")?,
+        "no_output_passive_tuple_payload_shape_review"
+    );
+    assert_eq!(
+        str_field(summary, "sample_scope")?,
+        "highest_frequency_unknown_commanded_tuples"
+    );
+    assert_eq!(usize_field(summary, "tuple_count")?, 5);
+    assert_eq!(usize_field(summary, "sample_count")?, 30);
+    assert_eq!(usize_field(summary, "unique_payload_shape_count")?, 5);
+    assert!(bool_field(summary, "all_samples_checksum_valid")?);
+    assert!(bool_field(summary, "all_samples_unknown_commanded")?);
+    assert!(bool_field(
+        summary,
+        "all_sample_payloads_empty_or_zero_filled"
+    )?);
+    assert!(!bool_field(summary, "hardware_output_authorized")?);
+    assert!(!bool_field(summary, "native_control_evidence")?);
+    assert!(!bool_field(summary, "output_sendability_claim")?);
+    assert!(!bool_field(
+        summary,
+        "protocol_evidence_sufficient_for_output_plan"
+    )?);
+
+    let shapes = array_at(summary, "/tuple_payload_shapes")?;
+    let empty_status = payload_shape_for_tuple(shapes, "0x5A/0x1B/0x00")?;
+    assert_eq!(usize_field(empty_status, "sample_count")?, 6);
+    assert_eq!(usize_field(empty_status, "payload_len_min")?, 0);
+    assert_eq!(usize_field(empty_status, "payload_len_max")?, 0);
+    assert_eq!(
+        array_at(empty_status, "/unique_payload_hex_values")?
+            .first()
+            .and_then(Value::as_str),
+        Some("")
+    );
+    assert_eq!(
+        array_at(empty_status, "/payload_kinds")?
+            .first()
+            .and_then(Value::as_str),
+        Some("empty")
+    );
+    assert!(!bool_field(empty_status, "hardware_output_authorized")?);
+    assert!(!bool_field(empty_status, "output_sendability_claim")?);
+
+    for tuple_id in [
+        "0x5D/0x1B/0x01",
+        "0x25/0x19/0x01",
+        "0x25/0x19/0x02",
+        "0x25/0x19/0x03",
+    ] {
+        let zero_status = payload_shape_for_tuple(shapes, tuple_id)?;
+        assert_eq!(usize_field(zero_status, "sample_count")?, 6);
+        assert_eq!(usize_field(zero_status, "payload_len_min")?, 2);
+        assert_eq!(usize_field(zero_status, "payload_len_max")?, 2);
+        assert_eq!(
+            array_at(zero_status, "/unique_payload_hex_values")?
+                .first()
+                .and_then(Value::as_str),
+            Some("0000")
+        );
+        assert_eq!(
+            array_at(zero_status, "/payload_kinds")?
+                .first()
+                .and_then(Value::as_str),
+            Some("zero_filled")
+        );
+        assert!(bool_field(
+            zero_status,
+            "all_sample_payloads_empty_or_zero_filled"
+        )?);
+        assert!(!bool_field(zero_status, "hardware_output_authorized")?);
+        assert!(!bool_field(zero_status, "output_sendability_claim")?);
+    }
 
     Ok(())
 }

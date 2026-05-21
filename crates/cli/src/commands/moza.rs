@@ -2337,6 +2337,26 @@ fn moza_vendor_protocol_decode_priority(lane: &Path) -> Value {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let decode_candidate_payload_shape_summary = coverage
+        .get("decode_candidate_payload_shape_summary")
+        .cloned()
+        .unwrap_or_else(|| {
+            serde_json::json!({
+                "claim_scope": "no_output_passive_tuple_payload_shape_review",
+                "sample_scope": "not_recorded",
+                "tuple_count": 0,
+                "sample_count": 0,
+                "unique_payload_shape_count": 0,
+                "all_samples_checksum_valid": false,
+                "all_samples_unknown_commanded": false,
+                "all_sample_payloads_empty_or_zero_filled": false,
+                "tuple_payload_shapes": [],
+                "hardware_output_authorized": false,
+                "native_control_evidence": false,
+                "output_sendability_claim": false,
+                "protocol_evidence_sufficient_for_output_plan": false
+            })
+        });
     serde_json::json!({
         "claim_scope": "no_output_vendor_protocol_decode_priority_navigation",
         "source_receipt": VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE,
@@ -2352,6 +2372,7 @@ fn moza_vendor_protocol_decode_priority(lane: &Path) -> Value {
         "decode_candidate_sample_count": decode_candidate_sample_count,
         "decode_candidate_sample_tuple_ids": decode_candidate_sample_tuple_ids,
         "decode_candidate_sample_fixtures": decode_candidate_sample_fixtures,
+        "decode_candidate_payload_shape_summary": decode_candidate_payload_shape_summary,
         "unknown_tuple_risk_class": json_string(coverage, "unknown_tuple_risk_class").unwrap_or("unknown_do_not_send"),
         "hardware_output_authorized": false,
         "native_control_evidence": false,
@@ -28654,6 +28675,8 @@ fn vendor_protocol_passive_tuple_registry_coverage(
         .iter()
         .map(|fixture| fixture.tuple_id.clone())
         .collect::<Vec<_>>();
+    let decode_candidate_payload_shape_summary =
+        vendor_protocol_decode_candidate_payload_shape_summary(&decode_candidate_sample_fixtures);
 
     Ok(VendorProtocolPassiveTupleRegistryCoverage {
         review_scope: "checked_in_passive_tuple_ids_vs_semantic_registry",
@@ -28678,6 +28701,7 @@ fn vendor_protocol_passive_tuple_registry_coverage(
         decode_candidate_sample_count,
         decode_candidate_sample_tuple_ids,
         decode_candidate_sample_fixtures,
+        decode_candidate_payload_shape_summary,
         unknown_tuple_risk_class: "unknown_do_not_send",
         protocol_evidence_sufficient_for_output_plan: false,
         hardware_output_authorized: false,
@@ -28729,6 +28753,111 @@ fn vendor_protocol_decode_candidate_sample_fixtures(
             })
         })
         .collect()
+}
+
+fn vendor_protocol_decode_candidate_payload_shape_summary(
+    fixtures: &[VendorProtocolDecodeCandidateSampleFixture],
+) -> VendorProtocolDecodeCandidatePayloadShapeSummary {
+    let mut sample_count = 0usize;
+    let mut all_samples_checksum_valid = !fixtures.is_empty();
+    let mut all_samples_unknown_commanded = !fixtures.is_empty();
+    let mut all_sample_payloads_empty_or_zero_filled = !fixtures.is_empty();
+    let mut tuple_payload_shapes = Vec::new();
+
+    for fixture in fixtures {
+        all_samples_unknown_commanded &= fixture.registry_status == "unknown_commanded";
+
+        let mut payload_len_min = None;
+        let mut payload_len_max = None;
+        let mut payload_hex_values = BTreeSet::new();
+        let mut payload_kinds = BTreeSet::new();
+        let mut fixture_all_checksum_valid = !fixture.sample_frames.is_empty();
+        let mut fixture_all_empty_or_zero = !fixture.sample_frames.is_empty();
+
+        for sample in &fixture.sample_frames {
+            sample_count = sample_count.saturating_add(1);
+            fixture_all_checksum_valid &= sample.checksum_valid;
+            all_samples_checksum_valid &= sample.checksum_valid;
+            fixture_all_empty_or_zero &= payload_is_empty_or_zero_filled(&sample.payload_hex);
+            all_sample_payloads_empty_or_zero_filled &=
+                payload_is_empty_or_zero_filled(&sample.payload_hex);
+            payload_hex_values.insert(sample.payload_hex.clone());
+            payload_kinds.insert(payload_shape_kind(&sample.payload_hex).to_string());
+            payload_len_min = Some(payload_len_min.map_or(sample.payload_len, |current: u64| {
+                current.min(sample.payload_len)
+            }));
+            payload_len_max = Some(payload_len_max.map_or(sample.payload_len, |current: u64| {
+                current.max(sample.payload_len)
+            }));
+        }
+
+        tuple_payload_shapes.push(VendorProtocolDecodeCandidatePayloadShape {
+            tuple_id: fixture.tuple_id.clone(),
+            registry_status: fixture.registry_status,
+            sample_count: fixture.sample_frames.len(),
+            payload_len_min: payload_len_min.unwrap_or(0),
+            payload_len_max: payload_len_max.unwrap_or(0),
+            unique_payload_hex_values: payload_hex_values.into_iter().collect(),
+            payload_kinds: payload_kinds.into_iter().collect(),
+            all_samples_checksum_valid: fixture_all_checksum_valid,
+            all_sample_payloads_empty_or_zero_filled: fixture_all_empty_or_zero,
+            hardware_output_authorized: false,
+            output_sendability_claim: false,
+        });
+    }
+
+    let unique_payload_shape_count = tuple_payload_shapes
+        .iter()
+        .map(|shape| {
+            format!(
+                "{}:{}..{}:{:?}",
+                shape.tuple_id,
+                shape.payload_len_min,
+                shape.payload_len_max,
+                shape.unique_payload_hex_values
+            )
+        })
+        .collect::<BTreeSet<_>>()
+        .len();
+
+    VendorProtocolDecodeCandidatePayloadShapeSummary {
+        claim_scope: "no_output_passive_tuple_payload_shape_review",
+        sample_scope: "highest_frequency_unknown_commanded_tuples",
+        tuple_count: tuple_payload_shapes.len(),
+        sample_count,
+        unique_payload_shape_count,
+        all_samples_checksum_valid,
+        all_samples_unknown_commanded,
+        all_sample_payloads_empty_or_zero_filled,
+        tuple_payload_shapes,
+        hardware_output_authorized: false,
+        native_control_evidence: false,
+        output_sendability_claim: false,
+        protocol_evidence_sufficient_for_output_plan: false,
+        notes: vec![
+            "Payload morphology is fixture evidence only; it does not decode tuple semantics.",
+            "Empty or zero-filled observed payloads do not make unknown commanded tuples sendable.",
+        ],
+    }
+}
+
+fn payload_is_empty_or_zero_filled(payload_hex: &str) -> bool {
+    payload_hex.is_empty()
+        || (payload_hex.len().is_multiple_of(2)
+            && payload_hex
+                .as_bytes()
+                .chunks_exact(2)
+                .all(|pair| pair == b"00"))
+}
+
+fn payload_shape_kind(payload_hex: &str) -> &'static str {
+    if payload_hex.is_empty() {
+        "empty"
+    } else if payload_is_empty_or_zero_filled(payload_hex) {
+        "zero_filled"
+    } else {
+        "non_zero_observed"
+    }
 }
 
 fn vendor_protocol_tuple_frequency_summary(
@@ -30670,6 +30799,7 @@ struct VendorProtocolPassiveTupleRegistryCoverage {
     decode_candidate_sample_count: usize,
     decode_candidate_sample_tuple_ids: Vec<String>,
     decode_candidate_sample_fixtures: Vec<VendorProtocolDecodeCandidateSampleFixture>,
+    decode_candidate_payload_shape_summary: VendorProtocolDecodeCandidatePayloadShapeSummary,
     unknown_tuple_risk_class: &'static str,
     protocol_evidence_sufficient_for_output_plan: bool,
     hardware_output_authorized: bool,
@@ -30685,6 +30815,39 @@ struct VendorProtocolDecodeCandidateSampleFixture {
     total_count: u64,
     sample_count: usize,
     sample_frames: Vec<VendorProtocolTupleSampleFrame>,
+    hardware_output_authorized: bool,
+    output_sendability_claim: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorProtocolDecodeCandidatePayloadShapeSummary {
+    claim_scope: &'static str,
+    sample_scope: &'static str,
+    tuple_count: usize,
+    sample_count: usize,
+    unique_payload_shape_count: usize,
+    all_samples_checksum_valid: bool,
+    all_samples_unknown_commanded: bool,
+    all_sample_payloads_empty_or_zero_filled: bool,
+    tuple_payload_shapes: Vec<VendorProtocolDecodeCandidatePayloadShape>,
+    hardware_output_authorized: bool,
+    native_control_evidence: bool,
+    output_sendability_claim: bool,
+    protocol_evidence_sufficient_for_output_plan: bool,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorProtocolDecodeCandidatePayloadShape {
+    tuple_id: String,
+    registry_status: &'static str,
+    sample_count: usize,
+    payload_len_min: u64,
+    payload_len_max: u64,
+    unique_payload_hex_values: Vec<String>,
+    payload_kinds: Vec<String>,
+    all_samples_checksum_valid: bool,
+    all_sample_payloads_empty_or_zero_filled: bool,
     hardware_output_authorized: bool,
     output_sendability_claim: bool,
 }
@@ -35982,6 +36145,21 @@ fn push_vendor_authority_navigation_markdown(out: &mut String, receipt: &Value) 
         out.push_str(&format!(
             "- Decode candidate sample frames: `{sample_count}`\n"
         ));
+        if let Some(shape_summary) = priority
+            .get("decode_candidate_payload_shape_summary")
+            .filter(|summary| !summary.is_null())
+        {
+            let all_empty_or_zero =
+                json_bool(shape_summary, "all_sample_payloads_empty_or_zero_filled")
+                    .unwrap_or(false);
+            let shape_count = json_u64(shape_summary, "unique_payload_shape_count").unwrap_or(0);
+            out.push_str(&format!(
+                "- Decode candidate payload shapes: `{shape_count}`\n"
+            ));
+            out.push_str(&format!(
+                "- Payloads empty or zero-filled in samples: `{all_empty_or_zero}`\n"
+            ));
+        }
         if let Some(tuples) = priority
             .get("top_unknown_commanded_tuples")
             .and_then(Value::as_array)
@@ -36002,6 +36180,46 @@ fn push_vendor_authority_navigation_markdown(out: &mut String, receipt: &Value) 
                     payload_len_min,
                     payload_len_max,
                     scenario_count
+                ));
+            }
+        }
+        if let Some(shapes) = priority
+            .pointer("/decode_candidate_payload_shape_summary/tuple_payload_shapes")
+            .and_then(Value::as_array)
+            .filter(|shapes| !shapes.is_empty())
+        {
+            out.push_str(
+                "\n| Payload shape tuple | Samples | Payload bytes | Payload kinds | Sendable |\n",
+            );
+            out.push_str("| --- | ---: | ---: | --- | --- |\n");
+            for shape in shapes {
+                let tuple_id = json_string(shape, "tuple_id").unwrap_or("unknown");
+                let sample_count = json_u64(shape, "sample_count").unwrap_or(0);
+                let payload_len_min = json_u64(shape, "payload_len_min").unwrap_or(0);
+                let payload_len_max = json_u64(shape, "payload_len_max").unwrap_or(0);
+                let payload_kinds = shape
+                    .get("payload_kinds")
+                    .and_then(Value::as_array)
+                    .map(|kinds| {
+                        kinds
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(markdown_escape)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    })
+                    .filter(|kinds| !kinds.is_empty())
+                    .unwrap_or_else(|| "unknown".to_string());
+                let output_sendability_claim =
+                    json_bool(shape, "output_sendability_claim").unwrap_or(false);
+                out.push_str(&format!(
+                    "| `{}` | {} | {}..{} | `{}` | `{}` |\n",
+                    markdown_escape(tuple_id),
+                    sample_count,
+                    payload_len_min,
+                    payload_len_max,
+                    payload_kinds,
+                    output_sendability_claim
                 ));
             }
         }
@@ -40088,6 +40306,48 @@ mod tests {
         );
         assert_eq!(
             value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_payload_shape_summary/claim_scope")
+                .and_then(Value::as_str),
+            Some("no_output_passive_tuple_payload_shape_review")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_payload_shape_summary/sample_count")
+                .and_then(Value::as_u64),
+            Some(2)
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_payload_shape_summary/all_samples_unknown_commanded")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_payload_shape_summary/all_sample_payloads_empty_or_zero_filled")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_payload_shape_summary/tuple_payload_shapes/0/tuple_id")
+                .and_then(Value::as_str),
+            Some("0x5A/0x1B/0x00")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_payload_shape_summary/tuple_payload_shapes/0/payload_kinds/0")
+                .and_then(Value::as_str),
+            Some("empty")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_payload_shape_summary/output_sendability_claim")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            value
                 .pointer(
                     "/passive_tuple_registry_coverage/tuple_frequency_summary/0/registry_status"
                 )
@@ -40379,6 +40639,7 @@ mod tests {
             "decode_candidate_sample_count",
             "decode_candidate_sample_tuple_ids",
             "decode_candidate_sample_fixtures",
+            "decode_candidate_payload_shape_summary",
         ] {
             assert!(
                 passive_tuple_required
@@ -40391,6 +40652,26 @@ mod tests {
             schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_sample_scope"]
                 ["const"],
             "highest_frequency_unknown_commanded_tuples"
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_payload_shape_summary"]
+                ["properties"]["claim_scope"]["const"],
+            "no_output_passive_tuple_payload_shape_review"
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_payload_shape_summary"]
+                ["properties"]["hardware_output_authorized"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_payload_shape_summary"]
+                ["properties"]["native_control_evidence"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_payload_shape_summary"]
+                ["properties"]["output_sendability_claim"]["const"],
+            false
         );
         Ok(())
     }
@@ -42773,6 +43054,35 @@ mod tests {
                             "output_sendability_claim": false
                         }
                     ],
+                    "decode_candidate_payload_shape_summary": {
+                        "claim_scope": "no_output_passive_tuple_payload_shape_review",
+                        "sample_scope": "highest_frequency_unknown_commanded_tuples",
+                        "tuple_count": 1,
+                        "sample_count": 3,
+                        "unique_payload_shape_count": 1,
+                        "all_samples_checksum_valid": true,
+                        "all_samples_unknown_commanded": true,
+                        "all_sample_payloads_empty_or_zero_filled": true,
+                        "tuple_payload_shapes": [
+                            {
+                                "tuple_id": "0x5A/0x1B/0x00",
+                                "registry_status": "unknown_commanded",
+                                "sample_count": 3,
+                                "payload_len_min": 0,
+                                "payload_len_max": 0,
+                                "unique_payload_hex_values": [""],
+                                "payload_kinds": ["empty"],
+                                "all_samples_checksum_valid": true,
+                                "all_sample_payloads_empty_or_zero_filled": true,
+                                "hardware_output_authorized": false,
+                                "output_sendability_claim": false
+                            }
+                        ],
+                        "hardware_output_authorized": false,
+                        "native_control_evidence": false,
+                        "output_sendability_claim": false,
+                        "protocol_evidence_sufficient_for_output_plan": false
+                    },
                     "tuple_frequency_summary": [
                         {
                             "tuple_id": "0x5D/0x1B/0x01",
@@ -42852,6 +43162,32 @@ mod tests {
             Some("7E015A1B0001")
         );
         assert_eq!(
+            priority
+                .pointer("/decode_candidate_payload_shape_summary/claim_scope")
+                .and_then(Value::as_str),
+            Some("no_output_passive_tuple_payload_shape_review")
+        );
+        assert_eq!(
+            priority
+                .pointer("/decode_candidate_payload_shape_summary/all_sample_payloads_empty_or_zero_filled")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            priority
+                .pointer(
+                    "/decode_candidate_payload_shape_summary/tuple_payload_shapes/0/payload_kinds/0"
+                )
+                .and_then(Value::as_str),
+            Some("empty")
+        );
+        assert_eq!(
+            priority
+                .pointer("/decode_candidate_payload_shape_summary/output_sendability_claim")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
             json_bool(priority, "hardware_output_authorized"),
             Some(false)
         );
@@ -42868,6 +43204,9 @@ mod tests {
         assert!(artifact_markdown.contains("0x5A/0x1B/0x00"));
         assert!(artifact_markdown.contains("1896"));
         assert!(artifact_markdown.contains("Decode candidate sample frames: `3`"));
+        assert!(artifact_markdown.contains("Decode candidate payload shapes: `1`"));
+        assert!(artifact_markdown.contains("Payloads empty or zero-filled in samples: `true`"));
+        assert!(artifact_markdown.contains("Payload shape tuple"));
         assert!(artifact_markdown.contains("7E015A1B0001"));
         assert!(artifact_markdown.contains("Output sendability claim: `false`"));
 

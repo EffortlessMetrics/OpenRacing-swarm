@@ -137,6 +137,10 @@ promoting them into semantic registry commands.
 Observed sample regressions MAY also preserve packet-order hints for repeated
 unknown tuple groups, but those hints MUST remain non-sendable protocol-shape
 evidence until a future semantic decode and reviewed authorization path exists.
+Observed sample regressions MAY preserve payload-shape morphology for repeated
+unknown tuple groups, including empty, zero-filled, and non-zero observed
+payload classes, but those shapes MUST remain non-sendable fixture evidence and
+MUST NOT be treated as semantic command decode or output eligibility.
 
 ### Read-only status probe contract
 
