@@ -2726,6 +2726,7 @@ fn moza_passive_sniff_capture_checklist(
                 "Create the local scratch directory {} before starting the capture.",
                 local_dir.display()
             ),
+            "Run wheelctl hardware doctor --json-out target/moza-current/passive-sniff-capture-hardware-doctor.json --json and prefer any /tools/usbpcap_descriptor_capture/usbpcap_moza_device_hints entry when selecting the USBPcap interface and device filter.".to_string(),
             "Start USBPcap, Wireshark, or tshark capture on the USB controller that contains the Moza R5 before starting the external app.".to_string(),
             moza_passive_sniff_capture_action(scenario),
             format!(
