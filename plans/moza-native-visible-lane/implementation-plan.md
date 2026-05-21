@@ -3750,6 +3750,72 @@ focused tests, and source-of-truth updates. Do not remove passive sniff plans,
 checked-in sniff evidence, local raw capture attempts, consumed hardware
 attempts, or protocol evidence review receipts.
 
+## Work item: sniff-notes-template-json-out
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: receipt-backed passive USBPcap capture handoff
+Blocked by: `sniff-notes-template` constructed a non-claiming JSON receipt but
+could only emit it to stdout, while the rest of the passive sniff pipeline uses
+file-backed receipt artifacts.
+
+### Goal
+
+Let the passive capture operator-notes handoff preserve its non-claiming receipt
+as a file, so the `pit-house-setting-change` scratch evidence can keep a
+machine-readable record of the exact plan, hardware-doctor hint source, and
+operator-notes output path used for the capture.
+
+### Production Delta
+
+Add `--json-out` to `wheelctl hardware sniff-notes-template`, write the existing
+`HardwareSniffNotesTemplateReceipt` to that path, and surface
+`target\sniff\<scenario>\sniff-notes-template-receipt.json` in the bench-wizard
+`write_operator_notes_template` command.
+
+### Non-goals
+
+No HID open, serial open, read-only query send, hardware output, authorization
+receipt, PIDFF rerun, force increase, direct HID report `0xaf`, high torque,
+serial config, firmware, DFU, native-control claim, native-visible claim,
+smoke-ready claim, Pit House coexistence claim, simulator claim,
+release-ready claim, raw `.pcapng` commit, sniff receipt, sniff summary, bundle
+manifest, semantic command decode, registry promotion, or tuple sendability
+claim.
+
+### Acceptance
+
+- `sniff-notes-template --json-out` writes the same non-claiming receipt shape
+  that the command already emits with `--json`.
+- Bench-wizard generated `write_operator_notes_template` commands include the
+  local notes-template receipt path.
+- The receipt keeps native-control, native-visible, smoke-ready, release-ready,
+  and OpenRacing hardware-output claims false.
+- No pcap, sniff receipt, summary, bundle, semantic decode, hardware output, or
+  readiness claim is created.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_notes_template -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_sniff_next_operator_commands_parse -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- --json hardware sniff-notes-template --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-plan.json --hardware-doctor target/moza-current/passive-sniff-capture-hardware-doctor.json --out target/sniff/pit-house-setting-change/operator-notes.md --json-out target/sniff/pit-house-setting-change/sniff-notes-template-receipt.json
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the optional `sniff-notes-template --json-out` plumbing,
+bench-wizard command rendering, focused tests, and source-of-truth updates. Do
+not remove passive sniff plans, checked-in sniff evidence, local raw capture
+attempts, consumed hardware attempts, or protocol evidence review receipts.
+
 ## Work item: sniff-summary-usb-setup-payload-gaps
 
 Status: completed
