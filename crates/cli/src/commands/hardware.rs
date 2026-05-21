@@ -806,6 +806,9 @@ fn build_hardware_sniff_bundle(
         None
     };
 
+    let operator_notes_bytes =
+        read_and_validate_sniff_bundle_operator_notes(request.operator_notes, &plan)?;
+
     let mut entries = vec![
         SniffBundleZipEntry::bytes(
             sniff_bundle_path("README.md"),
@@ -823,10 +826,7 @@ fn build_hardware_sniff_bundle(
             sniff_bundle_path("sniff-summary.json"),
             read_required_artifact(request.summary, "sniff summary")?,
         ),
-        SniffBundleZipEntry::bytes(
-            sniff_bundle_path("operator-notes.md"),
-            read_required_artifact(request.operator_notes, "operator notes")?,
-        ),
+        SniffBundleZipEntry::bytes(sniff_bundle_path("operator-notes.md"), operator_notes_bytes),
     ];
     if let Some(bytes) = operator_notes_receipt_bytes {
         entries.push(SniffBundleZipEntry::bytes(
@@ -975,6 +975,62 @@ fn read_required_artifact(path: &Path, label: &str) -> Result<Vec<u8>> {
         anyhow::bail!("{label} artifact not found: {}", path.display());
     }
     fs::read(path).with_context(|| format!("failed to read {label} artifact '{}'", path.display()))
+}
+
+fn read_and_validate_sniff_bundle_operator_notes(
+    path: &Path,
+    plan: &StoredHardwareSniffPlan,
+) -> Result<Vec<u8>> {
+    let bytes = read_required_artifact(path, "operator notes")?;
+    validate_sniff_bundle_operator_notes(path, plan, &bytes)?;
+    Ok(bytes)
+}
+
+fn validate_sniff_bundle_operator_notes(
+    path: &Path,
+    plan: &StoredHardwareSniffPlan,
+    bytes: &[u8],
+) -> Result<()> {
+    let required_fields = bundle_operator_note_value_fields(plan);
+    if required_fields.is_empty() {
+        return Ok(());
+    }
+
+    let notes = std::str::from_utf8(bytes)
+        .with_context(|| format!("operator notes '{}' are not valid UTF-8", path.display()))?;
+    for field in required_fields {
+        if operator_note_field_value(notes, field).is_none() {
+            anyhow::bail!(
+                "operator notes '{}' are missing completed required field '{}' for scenario '{}'",
+                path.display(),
+                field,
+                plan.scenario
+            );
+        }
+    }
+    Ok(())
+}
+
+fn bundle_operator_note_value_fields(plan: &StoredHardwareSniffPlan) -> Vec<&'static str> {
+    if plan.scenario == "pit-house-setting-change" {
+        PIT_HOUSE_SETTING_CHANGE_OPERATOR_NOTES_REQUIRED.to_vec()
+    } else {
+        Vec::new()
+    }
+}
+
+fn operator_note_field_value<'a>(notes: &'a str, field: &str) -> Option<&'a str> {
+    notes.lines().find_map(|line| {
+        let line = line.trim();
+        let line = line
+            .strip_prefix("- [ ] ")
+            .or_else(|| line.strip_prefix("- [x] "))
+            .or_else(|| line.strip_prefix("- [X] "))
+            .unwrap_or(line);
+        let rest = line.strip_prefix(field)?.trim_start();
+        let value = rest.strip_prefix(':')?.trim();
+        (!value.is_empty()).then_some(value)
+    })
 }
 
 fn parse_tshark_usb_packets(tshark_json: &str) -> Result<Vec<TsharkUsbPacket>> {
@@ -7551,7 +7607,10 @@ mod tests {
             Ok(())
         }
 
-        fn sample_plan(lane: &Path) -> Result<HardwareSniffPlanArtifact> {
+        fn sample_plan_for_scenario(
+            lane: &Path,
+            scenario: HardwareSniffScenario,
+        ) -> Result<HardwareSniffPlanArtifact> {
             let capture_tools = vec![
                 HardwareSniffCaptureTool::Wireshark,
                 HardwareSniffCaptureTool::UsbPcap,
@@ -7559,7 +7618,7 @@ mod tests {
             ];
             build_hardware_sniff_plan(&HardwareSniffPlanRequest {
                 family: "moza-r5",
-                scenario: HardwareSniffScenario::PitHouseOpenIdle,
+                scenario,
                 lane,
                 operator: "Steven",
                 device_note: "R5 V2 with KS rim, SR-P pedals, and HBP handbrake",
@@ -7635,11 +7694,16 @@ mod tests {
             }
         }
 
-        fn write_bundle_fixture(dir: &Path, pcapng_bytes: &[u8]) -> Result<BundleFixturePaths> {
+        fn write_bundle_fixture_for_scenario(
+            dir: &Path,
+            scenario: HardwareSniffScenario,
+            pcapng_bytes: &[u8],
+            operator_notes_text: &str,
+        ) -> Result<BundleFixturePaths> {
             let pcapng = dir.join("capture.pcapng");
             fs::write(&pcapng, pcapng_bytes)?;
 
-            let plan = sample_plan(dir)?;
+            let plan = sample_plan_for_scenario(dir, scenario)?;
             let plan_path = dir.join("sniff-plan.json");
             write_json_file(&plan_path, &plan)?;
 
@@ -7660,10 +7724,7 @@ mod tests {
             write_json_file(&summary_path, &summary)?;
 
             let operator_notes = dir.join("operator-notes.md");
-            fs::write(
-                &operator_notes,
-                "# Operator Notes\n\nPassive USB observation fixture.\n",
-            )?;
+            fs::write(&operator_notes, operator_notes_text)?;
 
             Ok(BundleFixturePaths {
                 plan: plan_path,
@@ -7673,6 +7734,15 @@ mod tests {
                 pcapng,
                 out: dir.join("openracing-sniff-bundle.zip"),
             })
+        }
+
+        fn write_bundle_fixture(dir: &Path, pcapng_bytes: &[u8]) -> Result<BundleFixturePaths> {
+            write_bundle_fixture_for_scenario(
+                dir,
+                HardwareSniffScenario::PitHouseOpenIdle,
+                pcapng_bytes,
+                "# Operator Notes\n\nPassive USB observation fixture.\n",
+            )
         }
 
         fn build_bundle(
@@ -7786,6 +7856,53 @@ mod tests {
                 artifact.path == receipt_archive_path
                     && artifact.sha256 == sha256_hex(&receipt_bytes)
             }));
+            assert!(!manifest.openracing_hardware_output);
+            assert!(!manifest.satisfies_native_visible_ready);
+            Ok(())
+        }
+
+        #[test]
+        fn rejects_setting_change_bundle_with_blank_required_operator_notes() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = write_bundle_fixture_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseSettingChange,
+                b"synthetic pcapng bytes",
+                "# Operator Notes\n\n- [ ] exact Pit House setting changed:\n- [ ] starting setting value:\n- [ ] ending setting value:\n- [ ] whether the setting value was restored:\n",
+            )?;
+
+            let error = match build_bundle(&paths, false) {
+                Ok(_) => {
+                    return Err(
+                        "setting-change bundle with blank operator notes should be rejected".into(),
+                    );
+                }
+                Err(error) => error.to_string(),
+            };
+
+            assert!(
+                error
+                    .contains("missing completed required field 'exact Pit House setting changed'"),
+                "{error}"
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn accepts_setting_change_bundle_with_completed_required_operator_notes() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = write_bundle_fixture_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseSettingChange,
+                b"synthetic pcapng bytes",
+                "# Operator Notes\n\n- [x] exact Pit House setting changed: Road Sensitivity\n- [x] starting setting value: 5\n- [x] ending setting value: 6\n- [x] whether the setting value was restored: yes, restored to 5\n",
+            )?;
+
+            let manifest = build_bundle(&paths, false)?;
+            let names = zip_entry_names(&paths.out)?;
+
+            assert!(manifest.success);
+            assert!(names.contains(&sniff_bundle_path("operator-notes.md")));
             assert!(!manifest.openracing_hardware_output);
             assert!(!manifest.satisfies_native_visible_ready);
             Ok(())

@@ -1581,6 +1581,24 @@ commands = [
 ]
 
 [[work_item]]
+id = "sniff-bundle-setting-change-notes-validation"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-sniff-bundle-setting-change-notes-validation"
+current_pointer = "crates/cli/src/commands/hardware.rs"
+claim_boundary = "No-output bundle validation hardening only; sniff-bundle rejects Pit House setting-change bundles whose operator notes leave the exact setting, starting value, ending value, or restore status blank, without creating a pcap, sniff receipt, summary, bundle, HID open, serial open, query send, hardware output, authorization, native-control, native-visible, smoke-ready, coexistence, simulator, firmware, release-ready, semantic decode, registry promotion, or tuple sendability claim."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl sniff_bundle -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl sniff_notes_template -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

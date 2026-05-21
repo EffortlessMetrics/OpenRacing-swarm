@@ -4093,6 +4093,68 @@ checked-in sniff evidence, local raw capture attempts, consumed hardware
 attempts, protocol evidence review receipts, or the existing
 `wheelctl hardware` sniff handoff commands.
 
+## Work item: sniff-bundle-setting-change-notes-validation
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: accepting the Pit House setting-change passive correlation bundle
+Blocked by: the setting-change plan and notes template required the exact Pit
+House setting, starting value, ending value, and restore status, but
+`sniff-bundle` did not fail closed if those scenario-specific fields remained
+blank in `operator-notes.md`.
+
+### Goal
+
+Require completed setting-change operator notes before a Pit House
+setting-change bundle can be accepted as passive correlation evidence.
+
+### Production Delta
+
+Validate `operator-notes.md` during `wheelctl hardware sniff-bundle` for the
+`pit-house-setting-change` scenario. The bundle now rejects blank values for
+the exact Pit House setting changed, starting value, ending value, and restore
+status. Other passive scenarios keep the existing bundle behavior.
+
+### Non-goals
+
+No pcap creation, raw `.pcapng` commit, sniff receipt creation, sniff summary
+creation, HID open, serial open, read-only query send, hardware output,
+authorization, PIDFF rerun, direct HID report `0xaf`, high torque, serial
+config, firmware, DFU, native-control claim, native-visible claim, smoke-ready
+claim, Pit House coexistence claim, simulator claim, release-ready claim,
+semantic command decode, registry promotion, tuple sendability claim, or
+promotion of the eventual setting-change bundle without a real capture.
+
+### Acceptance
+
+- `sniff-bundle` rejects a `pit-house-setting-change` bundle when any required
+  setting-change operator-note value is blank.
+- `sniff-bundle` accepts a `pit-house-setting-change` bundle when those fields
+  are completed.
+- Existing non-setting-change passive bundle behavior remains unchanged.
+- The validator remains no-output and does not create or claim readiness.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_bundle -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl sniff_notes_template -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the setting-change operator-notes bundle validation, focused tests,
+and source-of-truth updates. Do not remove passive sniff plans, checked-in sniff
+evidence, local raw capture attempts, consumed hardware attempts, protocol
+evidence review receipts, or existing no-output capture handoff commands.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
