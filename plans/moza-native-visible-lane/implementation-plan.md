@@ -3681,6 +3681,72 @@ source-of-truth updates. Do not remove passive sniff plans, checked-in sniff
 evidence, local raw capture attempts, consumed hardware attempts, or protocol
 evidence review receipts.
 
+## Work item: sniff-summary-usb-setup-payload-gaps
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: cleaner passive vendor protocol evidence summaries
+Blocked by: the passive `pit-house-open-idle` and `pit-house-full-controls`
+summary evidence showed residual host-to-device payload export gaps on the
+endpoint-zero setup packet locator, even though USB setup stages are not vendor
+payload bytes to decode.
+
+### Goal
+
+Make `wheelctl hardware sniff-summary` distinguish USB control setup stages
+from missing vendor payload bytes, so future passive summaries do not overstate
+payload-export gaps when tshark exposes setup fields but no command payload
+field.
+
+### Production Delta
+
+Detect `usb.setup.*` fields while parsing tshark JSON, classify those packets
+as control transfers, and exclude setup-only packets from
+`host_to_device_payload_missing_packet_count` and
+`host_to_device_payload_export_gap`. Keep ordinary host-to-device transfers
+with declared data length and no extractable payload classified as payload
+export gaps.
+
+### Non-goals
+
+No raw pcap commit, checked-in sniff summary regeneration without the reviewed
+raw capture, sniff receipt creation, bundle creation, HID open, serial open,
+read-only query send, hardware output, authorization, PIDFF rerun, direct HID
+report `0xaf`, high torque, serial config, firmware, DFU, native-control
+claim, native-visible claim, smoke-ready claim, Pit House coexistence claim,
+simulator claim, release-ready claim, semantic command decode, registry
+promotion, or tuple sendability claim.
+
+### Acceptance
+
+- Setup-stage packets with `usb.setup.*`, endpoint zero, and `usb.data_len=8`
+  do not create payload-export gaps.
+- Ordinary undecoded host-to-device packets with data length and no payload
+  still create payload-export gaps.
+- Sniff summary receipts remain protocol research/support evidence only.
+- Existing passive captures and summaries are not regenerated unless their raw
+  pcap source is available and separately reviewed.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_summary -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the setup-stage tshark parser detection, payload-coverage
+exclusion, focused test, and source-of-truth updates. Do not remove committed
+passive sniff artifacts, local raw capture attempts, consumed hardware
+attempts, or protocol evidence review receipts.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

@@ -1467,6 +1467,23 @@ commands = [
 ]
 
 [[work_item]]
+id = "sniff-summary-usb-setup-payload-gaps"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-sniff-summary-usb-setup-payload-gaps"
+current_pointer = "crates/cli/src/commands/hardware.rs"
+claim_boundary = "No-output sniff-summary parser hardening only; USB control setup stages are not counted as missing vendor payload bytes when no payload field is present. This does not create or regenerate pcap, sniff receipt, sniff summary, bundle, HID open, serial open, query send, hardware output, authorization, native-control, native-visible, smoke-ready, coexistence, simulator, firmware, release-ready, semantic decode, registry promotion, or tuple sendability claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl sniff_summary -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

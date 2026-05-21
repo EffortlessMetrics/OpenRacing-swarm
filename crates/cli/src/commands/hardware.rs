@@ -944,6 +944,13 @@ fn parse_tshark_usb_packet(
         .or_else(|| payload.as_ref().and_then(|bytes| bytes.first().copied()));
     let data_len = first_usize_field(&fields, &["usb.data_len"]);
 
+    let control_setup_stage = tshark_usb_setup_fields_present(&fields);
+    let transfer_type = if control_setup_stage {
+        Some(SniffUsbTransferType::Control)
+    } else {
+        parse_packet_transfer_type(&fields, endpoint_address)
+    };
+
     Ok(TsharkUsbPacket {
         packet_ordinal,
         frame_number: first_u64_field(&fields, &["frame.number"]),
@@ -974,10 +981,11 @@ fn parse_tshark_usb_packet(
         ),
         endpoint_address,
         direction,
-        transfer_type: parse_packet_transfer_type(&fields, endpoint_address),
+        transfer_type,
         data_len,
         report_id,
         payload,
+        control_setup_stage,
         descriptor_kind: parse_packet_descriptor_kind(&fields),
     })
 }
@@ -1227,6 +1235,18 @@ fn parse_transfer_type_text(value: &str) -> Option<SniffUsbTransferType> {
     } else {
         Some(SniffUsbTransferType::Other)
     }
+}
+
+fn tshark_usb_setup_fields_present(fields: &BTreeMap<String, Vec<String>>) -> bool {
+    [
+        "usb.setup.bmRequestType",
+        "usb.setup.bRequest",
+        "usb.setup.wValue",
+        "usb.setup.wIndex",
+        "usb.setup.wLength",
+    ]
+    .iter()
+    .any(|field| fields.contains_key(*field))
 }
 
 fn first_payload_field(fields: &BTreeMap<String, Vec<String>>) -> Option<String> {
@@ -5989,7 +6009,7 @@ impl HardwareSniffHostToDevicePayloadCoverage {
         if let Some(data_len) = packet.data_len.filter(|data_len| *data_len > 0) {
             self.data_len_packet_count = self.data_len_packet_count.saturating_add(1);
             self.data_len_bytes = self.data_len_bytes.saturating_add(data_len);
-            if packet.payload.is_none() {
+            if packet.payload.is_none() && !packet.control_setup_stage {
                 self.payload_missing_packet_count =
                     self.payload_missing_packet_count.saturating_add(1);
                 if self.payload_missing_packet_examples.len()
@@ -6114,6 +6134,7 @@ struct TsharkUsbPacket {
     data_len: Option<usize>,
     report_id: Option<u8>,
     payload: Option<Vec<u8>>,
+    control_setup_stage: bool,
     descriptor_kind: Option<SniffDescriptorKind>,
 }
 
@@ -8202,6 +8223,85 @@ mod tests {
                     .any(|note| note.contains("declare data length but no payload bytes")),
                 "decode-gap note should explain why a raw protocol review is still needed"
             );
+            assert_schema_valid(
+                "sniff-summary.schema.json",
+                &serde_json::to_value(&summary)?,
+            )?;
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_summary_does_not_treat_usb_setup_stage_as_payload_gap() -> TestResult {
+            let usb_setup_stage_fixture = r#"[
+              {
+                "_source": {
+                  "layers": {
+                    "frame": { "frame.number": "5" },
+                    "usb": {
+                      "usb.bus_id": "2",
+                      "usb.device_address": "3",
+                      "usb.idVendor": "0x346e",
+                      "usb.idProduct": "0x0004",
+                      "usb.interface_number": "0",
+                      "usb.endpoint_address": "0x00",
+                      "usb.endpoint_direction": "OUT",
+                      "usb.transfer_type": "URB_CONTROL out",
+                      "usb.data_len": "8",
+                      "usb.setup.bmRequestType": "0x21",
+                      "usb.setup.bRequest": "0x09",
+                      "usb.setup.wValue": "0x0200",
+                      "usb.setup.wIndex": "0x0000",
+                      "usb.setup.wLength": "0"
+                    }
+                  }
+                }
+              }
+            ]"#;
+            let summary = build_hardware_sniff_summary_from_tshark_json(
+                HardwareSniffSummaryConfig {
+                    filters: HardwareSniffSummaryFilters {
+                        vendor_id: Some("0x346E".to_string()),
+                        product_id: Some("0x0004".to_string()),
+                        interface_number: Some(0),
+                    },
+                    include_payload_samples: false,
+                    max_samples_per_report: 2,
+                },
+                sha256_hex(b"usb setup stage fixture"),
+                true,
+                Some("TShark synthetic setup fixture".to_string()),
+                usb_setup_stage_fixture,
+            )?;
+
+            assert!(summary.success);
+            assert_eq!(summary.usb_transfer_summary.host_to_device, 1);
+            assert_eq!(summary.usb_transfer_summary.control, 1);
+            assert!(summary.observed_reports.is_empty());
+            let classification_summary = &summary.report_classification_summary;
+            assert_eq!(classification_summary.host_to_device_packet_count, 1);
+            assert_eq!(
+                classification_summary.host_to_device_data_len_packet_count,
+                1
+            );
+            assert_eq!(classification_summary.host_to_device_data_len_bytes, 8);
+            assert_eq!(
+                classification_summary.host_to_device_payload_extracted_packet_count,
+                0
+            );
+            assert_eq!(
+                classification_summary.host_to_device_payload_missing_packet_count,
+                0
+            );
+            assert!(
+                classification_summary
+                    .host_to_device_payload_missing_packet_examples
+                    .is_empty()
+            );
+            assert!(!classification_summary.host_to_device_payload_export_gap);
+            assert!(classification_summary.host_to_device_decode_gap);
+            assert!(classification_summary.decode_recommended);
+            assert!(!classification_summary.native_control_evidence);
+            assert!(!classification_summary.readiness_claim);
             assert_schema_valid(
                 "sniff-summary.schema.json",
                 &serde_json::to_value(&summary)?,
