@@ -2357,6 +2357,29 @@ fn moza_vendor_protocol_decode_priority(lane: &Path) -> Value {
                 "protocol_evidence_sufficient_for_output_plan": false
             })
         });
+    let decode_candidate_packet_group_summary = coverage
+        .get("decode_candidate_packet_group_summary")
+        .cloned()
+        .unwrap_or_else(|| {
+            serde_json::json!({
+                "claim_scope": "no_output_passive_tuple_packet_group_review",
+                "sample_scope": "not_recorded",
+                "packet_group_count": 0,
+                "sample_count": 0,
+                "unique_packet_pattern_count": 0,
+                "repeated_contiguous_motif_count": 0,
+                "all_packet_groups_checksum_valid": false,
+                "all_packet_groups_unknown_commanded": false,
+                "all_packet_groups_non_sendable": false,
+                "packet_groups": [],
+                "packet_patterns": [],
+                "repeated_contiguous_motifs": [],
+                "hardware_output_authorized": false,
+                "native_control_evidence": false,
+                "output_sendability_claim": false,
+                "protocol_evidence_sufficient_for_output_plan": false
+            })
+        });
     serde_json::json!({
         "claim_scope": "no_output_vendor_protocol_decode_priority_navigation",
         "source_receipt": VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE,
@@ -2373,6 +2396,7 @@ fn moza_vendor_protocol_decode_priority(lane: &Path) -> Value {
         "decode_candidate_sample_tuple_ids": decode_candidate_sample_tuple_ids,
         "decode_candidate_sample_fixtures": decode_candidate_sample_fixtures,
         "decode_candidate_payload_shape_summary": decode_candidate_payload_shape_summary,
+        "decode_candidate_packet_group_summary": decode_candidate_packet_group_summary,
         "unknown_tuple_risk_class": json_string(coverage, "unknown_tuple_risk_class").unwrap_or("unknown_do_not_send"),
         "hardware_output_authorized": false,
         "native_control_evidence": false,
@@ -28677,6 +28701,8 @@ fn vendor_protocol_passive_tuple_registry_coverage(
         .collect::<Vec<_>>();
     let decode_candidate_payload_shape_summary =
         vendor_protocol_decode_candidate_payload_shape_summary(&decode_candidate_sample_fixtures);
+    let decode_candidate_packet_group_summary =
+        vendor_protocol_decode_candidate_packet_group_summary(&decode_candidate_sample_fixtures);
 
     Ok(VendorProtocolPassiveTupleRegistryCoverage {
         review_scope: "checked_in_passive_tuple_ids_vs_semantic_registry",
@@ -28702,6 +28728,7 @@ fn vendor_protocol_passive_tuple_registry_coverage(
         decode_candidate_sample_tuple_ids,
         decode_candidate_sample_fixtures,
         decode_candidate_payload_shape_summary,
+        decode_candidate_packet_group_summary,
         unknown_tuple_risk_class: "unknown_do_not_send",
         protocol_evidence_sufficient_for_output_plan: false,
         hardware_output_authorized: false,
@@ -28857,6 +28884,164 @@ fn payload_shape_kind(payload_hex: &str) -> &'static str {
         "zero_filled"
     } else {
         "non_zero_observed"
+    }
+}
+
+fn vendor_protocol_decode_candidate_packet_group_summary(
+    fixtures: &[VendorProtocolDecodeCandidateSampleFixture],
+) -> VendorProtocolDecodeCandidatePacketGroupSummary {
+    let mut registry_status_by_tuple_id = BTreeMap::new();
+    let mut samples_by_packet: BTreeMap<(String, u64), Vec<&VendorProtocolTupleSampleFrame>> =
+        BTreeMap::new();
+
+    for fixture in fixtures {
+        registry_status_by_tuple_id.insert(fixture.tuple_id.as_str(), fixture.registry_status);
+        for sample in &fixture.sample_frames {
+            samples_by_packet
+                .entry((sample.scenario.clone(), sample.packet_ordinal))
+                .or_default()
+                .push(sample);
+        }
+    }
+
+    let mut packet_groups = Vec::new();
+    let mut pattern_accumulators: BTreeMap<String, VendorProtocolPacketPatternAccumulator> =
+        BTreeMap::new();
+    let mut motif_accumulators: BTreeMap<String, VendorProtocolPacketMotifAccumulator> =
+        BTreeMap::new();
+    let mut sample_count = 0usize;
+    let mut all_packet_groups_checksum_valid = !samples_by_packet.is_empty();
+    let mut all_packet_groups_unknown_commanded = !samples_by_packet.is_empty();
+
+    for ((scenario, packet_ordinal), mut samples) in samples_by_packet {
+        samples.sort_by_key(|sample| sample.frame_ordinal_in_packet);
+        let tuple_sequence = samples
+            .iter()
+            .map(|sample| sample.tuple_id.clone())
+            .collect::<Vec<_>>();
+        let frame_hex_sequence = samples
+            .iter()
+            .map(|sample| sample.frame_hex.clone())
+            .collect::<Vec<_>>();
+        let frame_ordinal_min = samples
+            .iter()
+            .map(|sample| sample.frame_ordinal_in_packet)
+            .min()
+            .unwrap_or(0);
+        let frame_ordinal_max = samples
+            .iter()
+            .map(|sample| sample.frame_ordinal_in_packet)
+            .max()
+            .unwrap_or(0);
+        let all_samples_checksum_valid = samples.iter().all(|sample| sample.checksum_valid);
+        let all_samples_unknown_commanded = samples.iter().all(|sample| {
+            registry_status_by_tuple_id
+                .get(sample.tuple_id.as_str())
+                .is_some_and(|status| *status == "unknown_commanded")
+        });
+        all_packet_groups_checksum_valid &= all_samples_checksum_valid;
+        all_packet_groups_unknown_commanded &= all_samples_unknown_commanded;
+        sample_count = sample_count.saturating_add(samples.len());
+
+        let pattern_key = tuple_sequence.join(" -> ");
+        let pattern = pattern_accumulators
+            .entry(pattern_key.clone())
+            .or_insert_with(|| VendorProtocolPacketPatternAccumulator {
+                tuple_sequence: tuple_sequence.clone(),
+                observed_packet_count: 0,
+                sample_count: 0,
+                scenarios: BTreeSet::new(),
+            });
+        pattern.observed_packet_count = pattern.observed_packet_count.saturating_add(1);
+        pattern.sample_count = pattern.sample_count.saturating_add(samples.len());
+        pattern.scenarios.insert(scenario.clone());
+
+        for motif_len in 2..=3 {
+            if tuple_sequence.len() < motif_len {
+                continue;
+            }
+            for window in tuple_sequence.windows(motif_len) {
+                let motif_sequence = window.to_vec();
+                let motif_key = motif_sequence.join(" -> ");
+                let motif = motif_accumulators.entry(motif_key).or_insert_with(|| {
+                    VendorProtocolPacketMotifAccumulator {
+                        tuple_sequence: motif_sequence,
+                        motif_len,
+                        observed_count: 0,
+                        scenarios: BTreeSet::new(),
+                    }
+                });
+                motif.observed_count = motif.observed_count.saturating_add(1);
+                motif.scenarios.insert(scenario.clone());
+            }
+        }
+
+        packet_groups.push(VendorProtocolDecodeCandidatePacketGroup {
+            scenario,
+            packet_ordinal,
+            frame_ordinal_min,
+            frame_ordinal_max,
+            tuple_sequence,
+            frame_hex_sequence,
+            sample_count: samples.len(),
+            all_samples_checksum_valid,
+            all_samples_unknown_commanded,
+            hardware_output_authorized: false,
+            output_sendability_claim: false,
+        });
+    }
+
+    let packet_patterns = pattern_accumulators
+        .into_values()
+        .map(|pattern| VendorProtocolDecodeCandidatePacketPattern {
+            tuple_sequence: pattern.tuple_sequence,
+            observed_packet_count: pattern.observed_packet_count,
+            sample_count: pattern.sample_count,
+            scenario_count: pattern.scenarios.len(),
+            scenarios: pattern.scenarios.into_iter().collect(),
+            hardware_output_authorized: false,
+            output_sendability_claim: false,
+        })
+        .collect::<Vec<_>>();
+    let repeated_contiguous_motifs = motif_accumulators
+        .into_values()
+        .filter(|motif| motif.observed_count >= 2)
+        .map(|motif| VendorProtocolDecodeCandidateRepeatedMotif {
+            tuple_sequence: motif.tuple_sequence,
+            motif_len: motif.motif_len,
+            observed_count: motif.observed_count,
+            scenario_count: motif.scenarios.len(),
+            scenarios: motif.scenarios.into_iter().collect(),
+            hardware_output_authorized: false,
+            output_sendability_claim: false,
+        })
+        .collect::<Vec<_>>();
+    let all_packet_groups_non_sendable = !packet_groups.is_empty()
+        && packet_groups
+            .iter()
+            .all(|group| !group.hardware_output_authorized && !group.output_sendability_claim);
+
+    VendorProtocolDecodeCandidatePacketGroupSummary {
+        claim_scope: "no_output_passive_tuple_packet_group_review",
+        sample_scope: "highest_frequency_unknown_commanded_tuples",
+        packet_group_count: packet_groups.len(),
+        sample_count,
+        unique_packet_pattern_count: packet_patterns.len(),
+        repeated_contiguous_motif_count: repeated_contiguous_motifs.len(),
+        all_packet_groups_checksum_valid,
+        all_packet_groups_unknown_commanded,
+        all_packet_groups_non_sendable,
+        packet_groups,
+        packet_patterns,
+        repeated_contiguous_motifs,
+        hardware_output_authorized: false,
+        native_control_evidence: false,
+        output_sendability_claim: false,
+        protocol_evidence_sufficient_for_output_plan: false,
+        notes: vec![
+            "Packet grouping is fixture evidence only; it does not decode tuple semantics.",
+            "Repeated unknown tuple motifs remain unknown_do_not_send and non-sendable.",
+        ],
     }
 }
 
@@ -30800,6 +30985,7 @@ struct VendorProtocolPassiveTupleRegistryCoverage {
     decode_candidate_sample_tuple_ids: Vec<String>,
     decode_candidate_sample_fixtures: Vec<VendorProtocolDecodeCandidateSampleFixture>,
     decode_candidate_payload_shape_summary: VendorProtocolDecodeCandidatePayloadShapeSummary,
+    decode_candidate_packet_group_summary: VendorProtocolDecodeCandidatePacketGroupSummary,
     unknown_tuple_risk_class: &'static str,
     protocol_evidence_sufficient_for_output_plan: bool,
     hardware_output_authorized: bool,
@@ -30848,6 +31034,80 @@ struct VendorProtocolDecodeCandidatePayloadShape {
     payload_kinds: Vec<String>,
     all_samples_checksum_valid: bool,
     all_sample_payloads_empty_or_zero_filled: bool,
+    hardware_output_authorized: bool,
+    output_sendability_claim: bool,
+}
+
+#[derive(Debug)]
+struct VendorProtocolPacketPatternAccumulator {
+    tuple_sequence: Vec<String>,
+    observed_packet_count: usize,
+    sample_count: usize,
+    scenarios: BTreeSet<String>,
+}
+
+#[derive(Debug)]
+struct VendorProtocolPacketMotifAccumulator {
+    tuple_sequence: Vec<String>,
+    motif_len: usize,
+    observed_count: usize,
+    scenarios: BTreeSet<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorProtocolDecodeCandidatePacketGroupSummary {
+    claim_scope: &'static str,
+    sample_scope: &'static str,
+    packet_group_count: usize,
+    sample_count: usize,
+    unique_packet_pattern_count: usize,
+    repeated_contiguous_motif_count: usize,
+    all_packet_groups_checksum_valid: bool,
+    all_packet_groups_unknown_commanded: bool,
+    all_packet_groups_non_sendable: bool,
+    packet_groups: Vec<VendorProtocolDecodeCandidatePacketGroup>,
+    packet_patterns: Vec<VendorProtocolDecodeCandidatePacketPattern>,
+    repeated_contiguous_motifs: Vec<VendorProtocolDecodeCandidateRepeatedMotif>,
+    hardware_output_authorized: bool,
+    native_control_evidence: bool,
+    output_sendability_claim: bool,
+    protocol_evidence_sufficient_for_output_plan: bool,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorProtocolDecodeCandidatePacketGroup {
+    scenario: String,
+    packet_ordinal: u64,
+    frame_ordinal_min: u64,
+    frame_ordinal_max: u64,
+    tuple_sequence: Vec<String>,
+    frame_hex_sequence: Vec<String>,
+    sample_count: usize,
+    all_samples_checksum_valid: bool,
+    all_samples_unknown_commanded: bool,
+    hardware_output_authorized: bool,
+    output_sendability_claim: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorProtocolDecodeCandidatePacketPattern {
+    tuple_sequence: Vec<String>,
+    observed_packet_count: usize,
+    sample_count: usize,
+    scenario_count: usize,
+    scenarios: Vec<String>,
+    hardware_output_authorized: bool,
+    output_sendability_claim: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorProtocolDecodeCandidateRepeatedMotif {
+    tuple_sequence: Vec<String>,
+    motif_len: usize,
+    observed_count: usize,
+    scenario_count: usize,
+    scenarios: Vec<String>,
     hardware_output_authorized: bool,
     output_sendability_claim: bool,
 }
@@ -36160,6 +36420,20 @@ fn push_vendor_authority_navigation_markdown(out: &mut String, receipt: &Value) 
                 "- Payloads empty or zero-filled in samples: `{all_empty_or_zero}`\n"
             ));
         }
+        if let Some(group_summary) = priority
+            .get("decode_candidate_packet_group_summary")
+            .filter(|summary| !summary.is_null())
+        {
+            let packet_group_count = json_u64(group_summary, "packet_group_count").unwrap_or(0);
+            let pattern_count = json_u64(group_summary, "unique_packet_pattern_count").unwrap_or(0);
+            let motif_count =
+                json_u64(group_summary, "repeated_contiguous_motif_count").unwrap_or(0);
+            out.push_str(&format!(
+                "- Decode candidate packet groups: `{packet_group_count}`\n"
+            ));
+            out.push_str(&format!("- Unique packet patterns: `{pattern_count}`\n"));
+            out.push_str(&format!("- Repeated contiguous motifs: `{motif_count}`\n"));
+        }
         if let Some(tuples) = priority
             .get("top_unknown_commanded_tuples")
             .and_then(Value::as_array)
@@ -36220,6 +36494,68 @@ fn push_vendor_authority_navigation_markdown(out: &mut String, receipt: &Value) 
                     payload_len_max,
                     payload_kinds,
                     output_sendability_claim
+                ));
+            }
+        }
+        if let Some(patterns) = priority
+            .pointer("/decode_candidate_packet_group_summary/packet_patterns")
+            .and_then(Value::as_array)
+            .filter(|patterns| !patterns.is_empty())
+        {
+            out.push_str("\n| Packet group pattern | Packets | Samples | Scenarios | Sendable |\n");
+            out.push_str("| --- | ---: | ---: | ---: | --- |\n");
+            for pattern in patterns {
+                let tuple_sequence = pattern
+                    .get("tuple_sequence")
+                    .and_then(Value::as_array)
+                    .map(|tuples| {
+                        tuples
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(markdown_escape)
+                            .collect::<Vec<_>>()
+                            .join(" -> ")
+                    })
+                    .filter(|sequence| !sequence.is_empty())
+                    .unwrap_or_else(|| "unknown".to_string());
+                let observed_packet_count = json_u64(pattern, "observed_packet_count").unwrap_or(0);
+                let sample_count = json_u64(pattern, "sample_count").unwrap_or(0);
+                let scenario_count = json_u64(pattern, "scenario_count").unwrap_or(0);
+                let output_sendability_claim =
+                    json_bool(pattern, "output_sendability_claim").unwrap_or(false);
+                out.push_str(&format!(
+                    "| `{tuple_sequence}` | {observed_packet_count} | {sample_count} | {scenario_count} | `{output_sendability_claim}` |\n"
+                ));
+            }
+        }
+        if let Some(motifs) = priority
+            .pointer("/decode_candidate_packet_group_summary/repeated_contiguous_motifs")
+            .and_then(Value::as_array)
+            .filter(|motifs| !motifs.is_empty())
+        {
+            out.push_str("\n| Repeated motif | Length | Observed | Scenarios | Sendable |\n");
+            out.push_str("| --- | ---: | ---: | ---: | --- |\n");
+            for motif in motifs {
+                let tuple_sequence = motif
+                    .get("tuple_sequence")
+                    .and_then(Value::as_array)
+                    .map(|tuples| {
+                        tuples
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(markdown_escape)
+                            .collect::<Vec<_>>()
+                            .join(" -> ")
+                    })
+                    .filter(|sequence| !sequence.is_empty())
+                    .unwrap_or_else(|| "unknown".to_string());
+                let motif_len = json_u64(motif, "motif_len").unwrap_or(0);
+                let observed_count = json_u64(motif, "observed_count").unwrap_or(0);
+                let scenario_count = json_u64(motif, "scenario_count").unwrap_or(0);
+                let output_sendability_claim =
+                    json_bool(motif, "output_sendability_claim").unwrap_or(false);
+                out.push_str(&format!(
+                    "| `{tuple_sequence}` | {motif_len} | {observed_count} | {scenario_count} | `{output_sendability_claim}` |\n"
                 ));
             }
         }
@@ -40348,6 +40684,60 @@ mod tests {
         );
         assert_eq!(
             value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_packet_group_summary/claim_scope")
+                .and_then(Value::as_str),
+            Some("no_output_passive_tuple_packet_group_review")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_packet_group_summary/packet_group_count")
+                .and_then(Value::as_u64),
+            Some(2)
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_packet_group_summary/sample_count")
+                .and_then(Value::as_u64),
+            Some(2)
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_packet_group_summary/unique_packet_pattern_count")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_packet_group_summary/repeated_contiguous_motif_count")
+                .and_then(Value::as_u64),
+            Some(0)
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_packet_group_summary/all_packet_groups_unknown_commanded")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_packet_group_summary/packet_patterns/0/tuple_sequence/0")
+                .and_then(Value::as_str),
+            Some("0x5A/0x1B/0x00")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_packet_group_summary/packet_patterns/0/observed_packet_count")
+                .and_then(Value::as_u64),
+            Some(2)
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_packet_group_summary/output_sendability_claim")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            value
                 .pointer(
                     "/passive_tuple_registry_coverage/tuple_frequency_summary/0/registry_status"
                 )
@@ -40640,6 +41030,7 @@ mod tests {
             "decode_candidate_sample_tuple_ids",
             "decode_candidate_sample_fixtures",
             "decode_candidate_payload_shape_summary",
+            "decode_candidate_packet_group_summary",
         ] {
             assert!(
                 passive_tuple_required
@@ -40670,6 +41061,26 @@ mod tests {
         );
         assert_eq!(
             schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_payload_shape_summary"]
+                ["properties"]["output_sendability_claim"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_packet_group_summary"]
+                ["properties"]["claim_scope"]["const"],
+            "no_output_passive_tuple_packet_group_review"
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_packet_group_summary"]
+                ["properties"]["hardware_output_authorized"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_packet_group_summary"]
+                ["properties"]["native_control_evidence"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_packet_group_summary"]
                 ["properties"]["output_sendability_claim"]["const"],
             false
         );
@@ -43083,6 +43494,48 @@ mod tests {
                         "output_sendability_claim": false,
                         "protocol_evidence_sufficient_for_output_plan": false
                     },
+                    "decode_candidate_packet_group_summary": {
+                        "claim_scope": "no_output_passive_tuple_packet_group_review",
+                        "sample_scope": "highest_frequency_unknown_commanded_tuples",
+                        "packet_group_count": 1,
+                        "sample_count": 3,
+                        "unique_packet_pattern_count": 1,
+                        "repeated_contiguous_motif_count": 0,
+                        "all_packet_groups_checksum_valid": true,
+                        "all_packet_groups_unknown_commanded": true,
+                        "all_packet_groups_non_sendable": true,
+                        "packet_groups": [
+                            {
+                                "scenario": "pit-house-open-idle",
+                                "packet_ordinal": 1,
+                                "frame_ordinal_min": 1,
+                                "frame_ordinal_max": 1,
+                                "tuple_sequence": ["0x5A/0x1B/0x00"],
+                                "frame_hex_sequence": ["7E015A1B0001"],
+                                "sample_count": 3,
+                                "all_samples_checksum_valid": true,
+                                "all_samples_unknown_commanded": true,
+                                "hardware_output_authorized": false,
+                                "output_sendability_claim": false
+                            }
+                        ],
+                        "packet_patterns": [
+                            {
+                                "tuple_sequence": ["0x5A/0x1B/0x00"],
+                                "observed_packet_count": 1,
+                                "sample_count": 3,
+                                "scenario_count": 1,
+                                "scenarios": ["pit-house-open-idle"],
+                                "hardware_output_authorized": false,
+                                "output_sendability_claim": false
+                            }
+                        ],
+                        "repeated_contiguous_motifs": [],
+                        "hardware_output_authorized": false,
+                        "native_control_evidence": false,
+                        "output_sendability_claim": false,
+                        "protocol_evidence_sufficient_for_output_plan": false
+                    },
                     "tuple_frequency_summary": [
                         {
                             "tuple_id": "0x5D/0x1B/0x01",
@@ -43188,6 +43641,32 @@ mod tests {
             Some(false)
         );
         assert_eq!(
+            priority
+                .pointer("/decode_candidate_packet_group_summary/claim_scope")
+                .and_then(Value::as_str),
+            Some("no_output_passive_tuple_packet_group_review")
+        );
+        assert_eq!(
+            priority
+                .pointer("/decode_candidate_packet_group_summary/packet_group_count")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            priority
+                .pointer(
+                    "/decode_candidate_packet_group_summary/packet_patterns/0/tuple_sequence/0"
+                )
+                .and_then(Value::as_str),
+            Some("0x5A/0x1B/0x00")
+        );
+        assert_eq!(
+            priority
+                .pointer("/decode_candidate_packet_group_summary/output_sendability_claim")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
             json_bool(priority, "hardware_output_authorized"),
             Some(false)
         );
@@ -43206,6 +43685,8 @@ mod tests {
         assert!(artifact_markdown.contains("Decode candidate sample frames: `3`"));
         assert!(artifact_markdown.contains("Decode candidate payload shapes: `1`"));
         assert!(artifact_markdown.contains("Payloads empty or zero-filled in samples: `true`"));
+        assert!(artifact_markdown.contains("Decode candidate packet groups: `1`"));
+        assert!(artifact_markdown.contains("Packet group pattern"));
         assert!(artifact_markdown.contains("Payload shape tuple"));
         assert!(artifact_markdown.contains("7E015A1B0001"));
         assert!(artifact_markdown.contains("Output sendability claim: `false`"));

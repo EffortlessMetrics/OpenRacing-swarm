@@ -1288,6 +1288,30 @@ commands = [
 ]
 
 [[work_item]]
+id = "passive-sniff-tuple-packet-group-review"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-passive-sniff-tuple-packet-group-review"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json"
+claim_boundary = "No-output passive tuple packet-group review only; summarizes packet-local grouping and repeated contiguous motifs for checked-in Pit House decode-candidate sample frames while keeping unknown tuples out of the semantic registry and without opening HID, opening serial, sending read-only queries, sending hardware output, creating authorization, native-control, native-visible, smoke-ready, coexistence, simulator, firmware, release-ready, semantic command, registry promotion, or tuple sendability claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_navigation_surfaces_decode_priority_without_claims -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_passive_tuple_samples -- --nocapture",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza vendor-protocol-evidence-review --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json --json --overwrite",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-passive-packet-groups.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-after-passive-packet-groups.json --md-out target/moza-current/bench-wizard-after-passive-packet-groups.md --json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-passive-packet-groups.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw \"expected native-visible verifier to remain blocked\" }",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

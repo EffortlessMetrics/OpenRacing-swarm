@@ -68,6 +68,9 @@ Frequency-ranked tuples are decode-priority navigation only. They do not make an
 - Decode candidate sample frames: `30`
 - Decode candidate payload shapes: `5`
 - Payloads empty or zero-filled in samples: `true`
+- Decode candidate packet groups: `11`
+- Unique packet patterns: `3`
+- Repeated contiguous motifs: `4`
 
 | Tuple | Count | Payload bytes | Scenarios |
 | --- | ---: | ---: | ---: |
@@ -84,6 +87,19 @@ Frequency-ranked tuples are decode-priority navigation only. They do not make an
 | `0x25/0x19/0x01` | 6 | 2..2 | `zero_filled` | `false` |
 | `0x25/0x19/0x02` | 6 | 2..2 | `zero_filled` | `false` |
 | `0x25/0x19/0x03` | 6 | 2..2 | `zero_filled` | `false` |
+
+| Packet group pattern | Packets | Samples | Scenarios | Sendable |
+| --- | ---: | ---: | ---: | --- |
+| `0x25/0x19/0x02 -> 0x25/0x19/0x03 -> 0x25/0x19/0x01` | 5 | 15 | 2 | `false` |
+| `0x5A/0x1B/0x00 -> 0x5D/0x1B/0x01` | 5 | 10 | 2 | `false` |
+| `0x5A/0x1B/0x00 -> 0x5D/0x1B/0x01 -> 0x25/0x19/0x02 -> 0x25/0x19/0x03 -> 0x25/0x19/0x01` | 1 | 5 | 1 | `false` |
+
+| Repeated motif | Length | Observed | Scenarios | Sendable |
+| --- | ---: | ---: | ---: | --- |
+| `0x25/0x19/0x02 -> 0x25/0x19/0x03` | 2 | 6 | 2 | `false` |
+| `0x25/0x19/0x02 -> 0x25/0x19/0x03 -> 0x25/0x19/0x01` | 3 | 6 | 2 | `false` |
+| `0x25/0x19/0x03 -> 0x25/0x19/0x01` | 2 | 6 | 2 | `false` |
+| `0x5A/0x1B/0x00 -> 0x5D/0x1B/0x01` | 2 | 6 | 2 | `false` |
 
 | Sample fixture tuple | Samples | First frame | First payload bytes | Sendable |
 | --- | ---: | --- | ---: | --- |
