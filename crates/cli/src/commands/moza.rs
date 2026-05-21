@@ -27887,6 +27887,7 @@ fn vendor_protocol_sniff_scenario_review(
             host_to_device_serial_frame_commandless_count: 0,
             host_to_device_serial_frame_shape_decode_gap: false,
             host_to_device_serial_frame_tuple_ids: Vec::new(),
+            host_to_device_serial_frame_tuple_counts: Vec::new(),
             device_to_host_packets: 0,
             standard_pidff_output_report_count: 0,
             vendor_or_device_specific_output_candidate_count: 0,
@@ -27986,6 +27987,8 @@ fn vendor_protocol_sniff_scenario_review(
         .unwrap_or(false);
     let host_to_device_serial_frame_tuple_ids =
         usbcom_serial_frame_tuple_ids(usbcom_serial_frame_summary);
+    let host_to_device_serial_frame_tuple_counts =
+        usbcom_serial_frame_tuple_counts(usbcom_serial_frame_summary);
     let mut notes =
         vec!["checked-in passive summary is non-claiming protocol evidence".to_string()];
     if host_to_device_decode_gap {
@@ -28060,6 +28063,7 @@ fn vendor_protocol_sniff_scenario_review(
         host_to_device_serial_frame_commandless_count,
         host_to_device_serial_frame_shape_decode_gap,
         host_to_device_serial_frame_tuple_ids,
+        host_to_device_serial_frame_tuple_counts,
         device_to_host_packets: summary
             .pointer("/usb_transfer_summary/device_to_host")
             .and_then(Value::as_u64)
@@ -28126,6 +28130,50 @@ fn usbcom_serial_frame_tuple_ids(summary: Option<&Value>) -> Vec<String> {
                         .and_then(Value::as_str)
                         .unwrap_or("none");
                     Some(format!("{group}/{device_id}/{command}"))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn usbcom_serial_frame_tuple_counts(summary: Option<&Value>) -> Vec<VendorProtocolTupleCount> {
+    summary
+        .and_then(|summary| summary.get("tuple_counts"))
+        .and_then(Value::as_array)
+        .map(|tuples| {
+            tuples
+                .iter()
+                .filter_map(|tuple| {
+                    let group = tuple.get("group").and_then(Value::as_str)?;
+                    let device_id = tuple.get("device_id").and_then(Value::as_str)?;
+                    let command = tuple
+                        .get("command")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                    let command_for_tuple = command.as_deref().unwrap_or("none");
+                    Some(VendorProtocolTupleCount {
+                        tuple_id: format!("{group}/{device_id}/{command_for_tuple}"),
+                        group: group.to_string(),
+                        device_id: device_id.to_string(),
+                        command,
+                        payload_len_min: tuple
+                            .get("payload_len_min")
+                            .and_then(Value::as_u64)
+                            .unwrap_or(0),
+                        payload_len_max: tuple
+                            .get("payload_len_max")
+                            .and_then(Value::as_u64)
+                            .unwrap_or(0),
+                        count: tuple.get("count").and_then(Value::as_u64).unwrap_or(0),
+                        checksum_valid_count: tuple
+                            .get("checksum_valid_count")
+                            .and_then(Value::as_u64)
+                            .unwrap_or(0),
+                        checksum_invalid_count: tuple
+                            .get("checksum_invalid_count")
+                            .and_then(Value::as_u64)
+                            .unwrap_or(0),
+                    })
                 })
                 .collect()
         })
@@ -28276,14 +28324,17 @@ fn vendor_protocol_passive_tuple_registry_coverage(
     let mut commandless_tuple_ids = Vec::new();
     let mut unknown_commanded_tuple_ids = Vec::new();
     let mut malformed_tuple_ids = Vec::new();
+    let mut registry_status_by_tuple_id: BTreeMap<String, &'static str> = BTreeMap::new();
 
     for tuple_id in &sniff_evidence.host_to_device_serial_frame_tuple_ids {
         let Some(tuple) = parse_passive_serial_tuple_id(tuple_id) else {
             malformed_tuple_ids.push(tuple_id.clone());
+            registry_status_by_tuple_id.insert(tuple_id.clone(), "malformed");
             continue;
         };
         let Some(command_id) = tuple.command else {
             commandless_tuple_ids.push(tuple_id.clone());
+            registry_status_by_tuple_id.insert(tuple_id.clone(), "commandless");
             continue;
         };
         if let Some(command) = registry_commands.get(&(tuple.group, tuple.device_id, command_id)) {
@@ -28291,16 +28342,27 @@ fn vendor_protocol_passive_tuple_registry_coverage(
             if command.read_only_status_probe_allowed {
                 known_read_only_status_tuple_ids.push(tuple_id.clone());
             }
-            if matches!(
+            let write_like = matches!(
                 command.risk_class,
                 "vendor_control_candidate"
                     | "vendor_output_candidate"
                     | "configuration_candidate"
                     | "firmware_or_dfu_forbidden"
                     | "unknown_do_not_send"
-            ) {
+            );
+            if write_like {
                 known_write_like_tuple_ids.push(tuple_id.clone());
             }
+            registry_status_by_tuple_id.insert(
+                tuple_id.clone(),
+                if command.read_only_status_probe_allowed {
+                    "known_read_only_status"
+                } else if write_like {
+                    "known_write_like"
+                } else {
+                    "known_registry_other"
+                },
+            );
             known_registry_matches.push(VendorProtocolTupleRegistryMatch {
                 tuple_id: tuple_id.clone(),
                 command_id: command.id.to_string(),
@@ -28312,8 +28374,22 @@ fn vendor_protocol_passive_tuple_registry_coverage(
             });
         } else {
             unknown_commanded_tuple_ids.push(tuple_id.clone());
+            registry_status_by_tuple_id.insert(tuple_id.clone(), "unknown_commanded");
         }
     }
+    let tuple_frequency_summary =
+        vendor_protocol_tuple_frequency_summary(sniff_evidence, &registry_status_by_tuple_id);
+    let highest_frequency_tuple_ids = tuple_frequency_summary
+        .iter()
+        .take(10)
+        .map(|tuple| tuple.tuple_id.clone())
+        .collect();
+    let highest_frequency_unknown_commanded_tuple_ids = tuple_frequency_summary
+        .iter()
+        .filter(|tuple| tuple.registry_status == "unknown_commanded")
+        .take(10)
+        .map(|tuple| tuple.tuple_id.clone())
+        .collect();
 
     Ok(VendorProtocolPassiveTupleRegistryCoverage {
         review_scope: "checked_in_passive_tuple_ids_vs_semantic_registry",
@@ -28331,6 +28407,9 @@ fn vendor_protocol_passive_tuple_registry_coverage(
         commandless_tuple_ids,
         unknown_commanded_tuple_ids,
         malformed_tuple_ids,
+        tuple_frequency_summary,
+        highest_frequency_tuple_ids,
+        highest_frequency_unknown_commanded_tuple_ids,
         unknown_tuple_risk_class: "unknown_do_not_send",
         protocol_evidence_sufficient_for_output_plan: false,
         hardware_output_authorized: false,
@@ -28342,6 +28421,88 @@ fn vendor_protocol_passive_tuple_registry_coverage(
             "Known read-only status tuples are protocol evidence only and do not create output, configuration, native-control, or native-visible claims.",
         ],
     })
+}
+
+fn vendor_protocol_tuple_frequency_summary(
+    sniff_evidence: &VendorProtocolSniffEvidence,
+    registry_status_by_tuple_id: &BTreeMap<String, &'static str>,
+) -> Vec<VendorProtocolTupleFrequencySummary> {
+    let mut accumulators: BTreeMap<String, VendorProtocolTupleFrequencyAccumulator> =
+        BTreeMap::new();
+    for scenario in &sniff_evidence.scenarios {
+        for tuple in &scenario.host_to_device_serial_frame_tuple_counts {
+            let accumulator = accumulators.entry(tuple.tuple_id.clone()).or_default();
+            accumulator.total_count = accumulator.total_count.saturating_add(tuple.count);
+            accumulator.checksum_valid_count = accumulator
+                .checksum_valid_count
+                .saturating_add(tuple.checksum_valid_count);
+            accumulator.checksum_invalid_count = accumulator
+                .checksum_invalid_count
+                .saturating_add(tuple.checksum_invalid_count);
+            accumulator.payload_len_min = Some(
+                accumulator
+                    .payload_len_min
+                    .map_or(tuple.payload_len_min, |current| {
+                        current.min(tuple.payload_len_min)
+                    }),
+            );
+            accumulator.payload_len_max = Some(
+                accumulator
+                    .payload_len_max
+                    .map_or(tuple.payload_len_max, |current| {
+                        current.max(tuple.payload_len_max)
+                    }),
+            );
+            accumulator
+                .scenarios
+                .push(VendorProtocolTupleScenarioFrequency {
+                    scenario: scenario.scenario.clone(),
+                    count: tuple.count,
+                    checksum_valid_count: tuple.checksum_valid_count,
+                    checksum_invalid_count: tuple.checksum_invalid_count,
+                    payload_len_min: tuple.payload_len_min,
+                    payload_len_max: tuple.payload_len_max,
+                });
+        }
+    }
+    let mut summaries: Vec<_> = accumulators
+        .into_iter()
+        .map(
+            |(tuple_id, accumulator)| VendorProtocolTupleFrequencySummary {
+                registry_status: registry_status_by_tuple_id
+                    .get(&tuple_id)
+                    .copied()
+                    .unwrap_or("unknown_do_not_send"),
+                tuple_id,
+                total_count: accumulator.total_count,
+                checksum_valid_count: accumulator.checksum_valid_count,
+                checksum_invalid_count: accumulator.checksum_invalid_count,
+                payload_len_min: accumulator.payload_len_min.unwrap_or(0),
+                payload_len_max: accumulator.payload_len_max.unwrap_or(0),
+                scenario_count: accumulator.scenarios.len(),
+                scenarios: accumulator.scenarios,
+                hardware_output_authorized: false,
+                output_sendability_claim: false,
+            },
+        )
+        .collect();
+    summaries.sort_by(|left, right| {
+        right
+            .total_count
+            .cmp(&left.total_count)
+            .then_with(|| left.tuple_id.cmp(&right.tuple_id))
+    });
+    summaries
+}
+
+#[derive(Default)]
+struct VendorProtocolTupleFrequencyAccumulator {
+    total_count: u64,
+    checksum_valid_count: u64,
+    checksum_invalid_count: u64,
+    payload_len_min: Option<u64>,
+    payload_len_max: Option<u64>,
+    scenarios: Vec<VendorProtocolTupleScenarioFrequency>,
 }
 
 struct VendorProtocolRegistryTupleCommand<'a> {
@@ -30116,6 +30277,7 @@ struct VendorProtocolSniffScenarioReview {
     host_to_device_serial_frame_commandless_count: u64,
     host_to_device_serial_frame_shape_decode_gap: bool,
     host_to_device_serial_frame_tuple_ids: Vec<String>,
+    host_to_device_serial_frame_tuple_counts: Vec<VendorProtocolTupleCount>,
     device_to_host_packets: u64,
     standard_pidff_output_report_count: u64,
     vendor_or_device_specific_output_candidate_count: u64,
@@ -30126,6 +30288,19 @@ struct VendorProtocolSniffScenarioReview {
     native_control_evidence: bool,
     readiness_claim: bool,
     notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct VendorProtocolTupleCount {
+    tuple_id: String,
+    group: String,
+    device_id: String,
+    command: Option<String>,
+    payload_len_min: u64,
+    payload_len_max: u64,
+    count: u64,
+    checksum_valid_count: u64,
+    checksum_invalid_count: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -30158,6 +30333,9 @@ struct VendorProtocolPassiveTupleRegistryCoverage {
     commandless_tuple_ids: Vec<String>,
     unknown_commanded_tuple_ids: Vec<String>,
     malformed_tuple_ids: Vec<String>,
+    tuple_frequency_summary: Vec<VendorProtocolTupleFrequencySummary>,
+    highest_frequency_tuple_ids: Vec<String>,
+    highest_frequency_unknown_commanded_tuple_ids: Vec<String>,
     unknown_tuple_risk_class: &'static str,
     protocol_evidence_sufficient_for_output_plan: bool,
     hardware_output_authorized: bool,
@@ -30175,6 +30353,31 @@ struct VendorProtocolTupleRegistryMatch {
     read_only_status_probe_allowed: bool,
     hardware_output_authorized: bool,
     output_sendability_claim: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct VendorProtocolTupleFrequencySummary {
+    tuple_id: String,
+    registry_status: &'static str,
+    total_count: u64,
+    checksum_valid_count: u64,
+    checksum_invalid_count: u64,
+    payload_len_min: u64,
+    payload_len_max: u64,
+    scenario_count: usize,
+    scenarios: Vec<VendorProtocolTupleScenarioFrequency>,
+    hardware_output_authorized: bool,
+    output_sendability_claim: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct VendorProtocolTupleScenarioFrequency {
+    scenario: String,
+    count: u64,
+    checksum_valid_count: u64,
+    checksum_invalid_count: u64,
+    payload_len_min: u64,
+    payload_len_max: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -39335,6 +39538,40 @@ mod tests {
                 .pointer("/passive_tuple_registry_coverage/unknown_commanded_tuple_ids/0")
                 .and_then(Value::as_str),
             Some("0x5A/0x1B/0x00")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/highest_frequency_tuple_ids/0")
+                .and_then(Value::as_str),
+            Some("0x5A/0x1B/0x00")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/highest_frequency_unknown_commanded_tuple_ids/0")
+                .and_then(Value::as_str),
+            Some("0x5A/0x1B/0x00")
+        );
+        assert_eq!(
+            value
+                .pointer(
+                    "/passive_tuple_registry_coverage/tuple_frequency_summary/0/registry_status"
+                )
+                .and_then(Value::as_str),
+            Some("unknown_commanded")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/tuple_frequency_summary/0/total_count")
+                .and_then(Value::as_u64),
+            Some(5)
+        );
+        assert_eq!(
+            value
+                .pointer(
+                    "/passive_tuple_registry_coverage/tuple_frequency_summary/1/registry_status"
+                )
+                .and_then(Value::as_str),
+            Some("known_read_only_status")
         );
         assert_eq!(
             value

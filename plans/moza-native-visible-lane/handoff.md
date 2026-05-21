@@ -92,7 +92,12 @@ checksums, and no frame-shape decode gap. The review preserves 30 tuple IDs and
 matches, `0x28/0x13/0x02` (`base_gain_get_overall_strength`), and that match is
 read-only status evidence only. The remaining passive tuple evidence is 12
 commandless tuple IDs and 17 unknown commanded tuple IDs, with zero known
-write-like tuple matches. This does not decode an approved semantic enable/mode
+write-like tuple matches. The same review now ranks per-scenario tuple
+frequency so the first decode targets are explicit: `0x5A/0x1B/0x00` appears
+1,896 times, `0x5D/0x1B/0x01` appears 1,894 times, and
+`0x25/0x19/0x01`, `0x25/0x19/0x02`, and `0x25/0x19/0x03` each appear 624
+times. Those high-frequency tuples remain `unknown_commanded` and
+`unknown_do_not_send`. This does not decode an approved semantic enable/mode
 command, make any tuple sendable, authorize hardware output, or unblock
 native-visible promotion.
 
@@ -113,7 +118,7 @@ The broader Moza objective remains incomplete:
 | Closed-loop failure analysis | `native-controlled-angle-closed-loop-failure-analysis.json` | Recorded no-output classification |
 | Consumed vendor-authority attempt | `vendor-authority-attempt.json` | Recorded exact one-frame non-claiming attempt |
 | Post-authority PIDFF response | `vendor-post-authority-pidff-smoke.json`; `vendor-post-authority-pidff-response.json`; [post-authority PIDFF response diagnosis](../../docs/hardware/moza-r5-post-authority-pidff-response.md) | Recorded regression versus baseline; no native-visible claim |
-| Vendor protocol evidence review | `vendor-protocol-evidence-review.json` | Recorded no-output review, host-to-device candidate `0x7E`, 7,863 checksum-valid candidate frames, one read-only registry tuple match, 12 commandless tuple IDs, 17 unknown commanded tuple IDs, partial residual payload export gap, and no sufficient semantic protocol evidence for any output plan |
+| Vendor protocol evidence review | `vendor-protocol-evidence-review.json` | Recorded no-output review, host-to-device candidate `0x7E`, 7,863 checksum-valid candidate frames, one read-only registry tuple match, 12 commandless tuple IDs, 17 unknown commanded tuple IDs, frequency-ranked unknown commanded tuples headed by `0x5A/0x1B/0x00` and `0x5D/0x1B/0x01`, partial residual payload export gap, and no sufficient semantic protocol evidence for any output plan |
 | Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence |
 | Remaining passive sniff plans | `pit-house-setting-change`, `simhub-open-idle`, `simhub-output-session`, `simulator-session-start-stop` sniff plans | Plan-only, non-claiming |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |
@@ -136,12 +141,14 @@ ID `0x7E`, 7,863 checksum-valid candidate frames, and 30 tuple IDs, but those
 tuples are not decoded into an approved semantic command and still cannot
 authorize output. The registry comparison currently finds only one read-only
 status tuple, `0x28/0x13/0x02`, and fences 12 commandless plus 17 unknown
-commanded tuple IDs as `unknown_do_not_send`. It emits no hardware output
-command and no authorization command. The next implementation work should
-continue vendor-specific protocol investigation, such as mapping the unknown
-`0x7E` USBCOM tuple stream to semantic commands, completing the remaining
-passive sniff scenarios, or adding decoded report fixtures, before any future
-motion ladder plan.
+commanded tuple IDs as `unknown_do_not_send`. The frequency review makes the
+highest-count unknown commanded decode targets `0x5A/0x1B/0x00`,
+`0x5D/0x1B/0x01`, `0x25/0x19/0x01`, `0x25/0x19/0x02`, and
+`0x25/0x19/0x03`. It emits no hardware output command and no authorization
+command. The next implementation work should continue vendor-specific protocol
+investigation, such as mapping the frequency-ranked unknown `0x7E` USBCOM tuple
+stream to semantic commands, completing the remaining passive sniff scenarios,
+or adding decoded report fixtures, before any future motion ladder plan.
 
 Passive USB sniff captures may produce non-claiming `sniff-receipt.json`,
 `sniff-summary.json`, and bundle manifest artifacts, but those are
