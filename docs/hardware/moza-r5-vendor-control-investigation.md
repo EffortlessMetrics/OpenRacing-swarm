@@ -32,9 +32,12 @@ commanded tuples as `0x5A/0x1B/0x00` (1,896 frames),
 bench-wizard surface the same queue as no-output `vendor_protocol_decode_priority`
 navigation with bounded sample frame examples for the top unknown tuples. The
 protocol crate now validates those sample frames as observed wire-shape fixtures
-while keeping them unknown to the semantic registry. The next step is to map
-those unknown tuple IDs or fill remaining no-output capture gaps before
-proposing any vendor-control output path.
+while keeping them unknown to the semantic registry. It also records repeated
+packet-order hints in those samples: the `0x5A/0x1B/0x00` then
+`0x5D/0x1B/0x01` pair and the ordered `0x25/0x19/0x02`,
+`0x25/0x19/0x03`, `0x25/0x19/0x01` triad. The next step is to map those
+unknown tuple IDs or fill remaining no-output capture gaps before proposing any
+vendor-control output path.
 
 ## Current Artifacts
 
@@ -70,8 +73,9 @@ Handoff section. The tuple IDs and sample frames remain protocol-shape,
 registry-coverage, frequency-prioritization, and fixture evidence only. The
 protocol crate observed-frame decoder accepts the checksum-valid shape of those
 samples, while the semantic fixture decoder still rejects them as unknown
-commands. No tuple is sendable without a future semantic decode, reviewed plan,
-fresh bench clear, and exact authorization.
+commands. The same sample regression preserves the repeated pair and triad order
+as observed sequence-shape evidence only. No tuple is sendable without a future
+semantic decode, reviewed plan, fresh bench clear, and exact authorization.
 
 ## Boundaries
 
