@@ -66,6 +66,8 @@ Frequency-ranked tuples are decode-priority navigation only. They do not make an
 - Output sendability claim: `false`
 - Decode candidate sample scope: `highest_frequency_unknown_commanded_tuples`
 - Decode candidate sample frames: `30`
+- Decode candidate payload shapes: `5`
+- Payloads empty or zero-filled in samples: `true`
 
 | Tuple | Count | Payload bytes | Scenarios |
 | --- | ---: | ---: | ---: |
@@ -74,6 +76,14 @@ Frequency-ranked tuples are decode-priority navigation only. They do not make an
 | `0x25/0x19/0x01` | 624 | 2..2 | 2 |
 | `0x25/0x19/0x02` | 624 | 2..2 | 2 |
 | `0x25/0x19/0x03` | 624 | 2..2 | 2 |
+
+| Payload shape tuple | Samples | Payload bytes | Payload kinds | Sendable |
+| --- | ---: | ---: | --- | --- |
+| `0x5A/0x1B/0x00` | 6 | 0..0 | `empty` | `false` |
+| `0x5D/0x1B/0x01` | 6 | 2..2 | `zero_filled` | `false` |
+| `0x25/0x19/0x01` | 6 | 2..2 | `zero_filled` | `false` |
+| `0x25/0x19/0x02` | 6 | 2..2 | `zero_filled` | `false` |
+| `0x25/0x19/0x03` | 6 | 2..2 | `zero_filled` | `false` |
 
 | Sample fixture tuple | Samples | First frame | First payload bytes | Sendable |
 | --- | ---: | --- | ---: | --- |

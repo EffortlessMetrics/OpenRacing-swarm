@@ -35,9 +35,12 @@ protocol crate now validates those sample frames as observed wire-shape fixtures
 while keeping them unknown to the semantic registry. It also records repeated
 packet-order hints in those samples: the `0x5A/0x1B/0x00` then
 `0x5D/0x1B/0x01` pair and the ordered `0x25/0x19/0x02`,
-`0x25/0x19/0x03`, `0x25/0x19/0x01` triad. The next step is to map those
-unknown tuple IDs or fill remaining no-output capture gaps before proposing any
-vendor-control output path.
+`0x25/0x19/0x03`, `0x25/0x19/0x01` triad. The review also records
+payload-shape morphology for those top unknown samples: all are checksum-valid
+unknown-commanded samples, with empty `0x5A/0x1B/0x00` payloads and zero-filled
+`0000` payloads for the `0x5D` and `0x25` samples. The next step is to map
+those unknown tuple IDs or fill remaining no-output capture gaps before
+proposing any vendor-control output path.
 
 ## Current Artifacts
 
@@ -74,8 +77,9 @@ registry-coverage, frequency-prioritization, and fixture evidence only. The
 protocol crate observed-frame decoder accepts the checksum-valid shape of those
 samples, while the semantic fixture decoder still rejects them as unknown
 commands. The same sample regression preserves the repeated pair and triad order
-as observed sequence-shape evidence only. No tuple is sendable without a future
-semantic decode, reviewed plan, fresh bench clear, and exact authorization.
+and empty/zero-filled payload-shape hints as observed evidence only. No tuple is
+sendable without a future semantic decode, reviewed plan, fresh bench clear, and
+exact authorization.
 
 ## Boundaries
 

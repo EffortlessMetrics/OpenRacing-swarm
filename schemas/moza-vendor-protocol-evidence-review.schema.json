@@ -336,6 +336,7 @@
         "decode_candidate_sample_count",
         "decode_candidate_sample_tuple_ids",
         "decode_candidate_sample_fixtures",
+        "decode_candidate_payload_shape_summary",
         "unknown_tuple_risk_class",
         "protocol_evidence_sufficient_for_output_plan",
         "hardware_output_authorized",
@@ -516,6 +517,91 @@
             },
             "additionalProperties": true
           }
+        },
+        "decode_candidate_payload_shape_summary": {
+          "type": "object",
+          "required": [
+            "claim_scope",
+            "sample_scope",
+            "tuple_count",
+            "sample_count",
+            "unique_payload_shape_count",
+            "all_samples_checksum_valid",
+            "all_samples_unknown_commanded",
+            "all_sample_payloads_empty_or_zero_filled",
+            "tuple_payload_shapes",
+            "hardware_output_authorized",
+            "native_control_evidence",
+            "output_sendability_claim",
+            "protocol_evidence_sufficient_for_output_plan"
+          ],
+          "properties": {
+            "claim_scope": {
+              "const": "no_output_passive_tuple_payload_shape_review"
+            },
+            "sample_scope": {
+              "const": "highest_frequency_unknown_commanded_tuples"
+            },
+            "tuple_count": { "type": "integer", "minimum": 0 },
+            "sample_count": { "type": "integer", "minimum": 0 },
+            "unique_payload_shape_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "all_samples_checksum_valid": { "type": "boolean" },
+            "all_samples_unknown_commanded": { "type": "boolean" },
+            "all_sample_payloads_empty_or_zero_filled": { "type": "boolean" },
+            "tuple_payload_shapes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "tuple_id",
+                  "registry_status",
+                  "sample_count",
+                  "payload_len_min",
+                  "payload_len_max",
+                  "unique_payload_hex_values",
+                  "payload_kinds",
+                  "all_samples_checksum_valid",
+                  "all_sample_payloads_empty_or_zero_filled",
+                  "hardware_output_authorized",
+                  "output_sendability_claim"
+                ],
+                "properties": {
+                  "tuple_id": { "type": "string" },
+                  "registry_status": { "const": "unknown_commanded" },
+                  "sample_count": { "type": "integer", "minimum": 0 },
+                  "payload_len_min": { "type": "integer", "minimum": 0 },
+                  "payload_len_max": { "type": "integer", "minimum": 0 },
+                  "unique_payload_hex_values": {
+                    "type": "array",
+                    "items": { "$ref": "#/$defs/hex_bytes_compact_or_empty" },
+                    "uniqueItems": true
+                  },
+                  "payload_kinds": {
+                    "type": "array",
+                    "items": {
+                      "enum": ["empty", "zero_filled", "non_zero_observed"]
+                    },
+                    "uniqueItems": true
+                  },
+                  "all_samples_checksum_valid": { "type": "boolean" },
+                  "all_sample_payloads_empty_or_zero_filled": {
+                    "type": "boolean"
+                  },
+                  "hardware_output_authorized": { "const": false },
+                  "output_sendability_claim": { "const": false }
+                },
+                "additionalProperties": true
+              }
+            },
+            "hardware_output_authorized": { "const": false },
+            "native_control_evidence": { "const": false },
+            "output_sendability_claim": { "const": false },
+            "protocol_evidence_sufficient_for_output_plan": { "const": false }
+          },
+          "additionalProperties": true
         },
         "unknown_tuple_risk_class": { "const": "unknown_do_not_send" },
         "protocol_evidence_sufficient_for_output_plan": { "const": false },
