@@ -1971,32 +1971,52 @@ fn moza_vendor_authority_serial_hints(lane: &Path, ports_only: bool) -> Vec<Stri
     let Ok(receipt) = read_json_value(lane, "hardware-doctor.json") else {
         return Vec::new();
     };
-    let mut hints = BTreeSet::new();
-    let Some(devices) = receipt
-        .pointer("/windows_pnp/devices")
-        .and_then(Value::as_array)
-    else {
-        return Vec::new();
-    };
-    for device in devices {
-        if json_string(device, "class") != Some("Ports")
-            || json_string(device, "vendor_id") != Some(MOZA_VENDOR_HEX)
-            || json_string(device, "product_id") != Some(VENDOR_AUTHORITY_HANDOFF_PRODUCT_ID)
-        {
-            continue;
-        }
-        let Some(friendly_name) = json_string(device, "friendly_name") else {
-            continue;
+
+    vendor_authority_serial_hints::collect_serial_hints(&receipt, ports_only)
+}
+
+mod vendor_authority_serial_hints {
+    use super::*;
+
+    pub(super) fn collect_serial_hints(receipt: &Value, ports_only: bool) -> Vec<String> {
+        let Some(devices) = windows_pnp_devices(receipt) else {
+            return Vec::new();
         };
-        if ports_only {
-            if let Some(port) = windows_com_port_from_friendly_name(friendly_name) {
-                hints.insert(port);
+
+        let mut hints = BTreeSet::new();
+        for device in devices {
+            if !is_vendor_authority_serial_device(device) {
+                continue;
             }
+
+            if let Some(hint) = extract_hint(device, ports_only) {
+                hints.insert(hint);
+            }
+        }
+
+        hints.into_iter().collect()
+    }
+
+    fn windows_pnp_devices(receipt: &Value) -> Option<&Vec<Value>> {
+        receipt
+            .pointer("/windows_pnp/devices")
+            .and_then(Value::as_array)
+    }
+
+    fn is_vendor_authority_serial_device(device: &Value) -> bool {
+        json_string(device, "class") == Some("Ports")
+            && json_string(device, "vendor_id") == Some(MOZA_VENDOR_HEX)
+            && json_string(device, "product_id") == Some(VENDOR_AUTHORITY_HANDOFF_PRODUCT_ID)
+    }
+
+    fn extract_hint(device: &Value, ports_only: bool) -> Option<String> {
+        let friendly_name = json_string(device, "friendly_name")?;
+        if ports_only {
+            windows_com_port_from_friendly_name(friendly_name)
         } else {
-            hints.insert(friendly_name.to_string());
+            Some(friendly_name.to_string())
         }
     }
-    hints.into_iter().collect()
 }
 
 fn windows_com_port_from_friendly_name(friendly_name: &str) -> Option<String> {
