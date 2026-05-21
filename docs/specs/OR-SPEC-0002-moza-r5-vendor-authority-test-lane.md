@@ -145,6 +145,13 @@ Observed sample regressions MAY preserve packet-local grouping and repeated
 contiguous motif morphology for unknown tuple groups, but those packet groups
 MUST remain non-sendable fixture evidence and MUST NOT be treated as semantic
 command decode, registry promotion, output eligibility, or authorization input.
+Passive fixture morphology MAY preserve low-confidence semantic hypotheses for
+repeated unknown tuple groups as decode questions. Those hypotheses MUST be
+marked pattern-only, MUST keep `semantic_decode_claim=false`,
+`registry_promotion_claim=false`, `hardware_output_authorized=false`, and
+`output_sendability_claim=false`, and MUST NOT be used as registry entries,
+authorization inputs, or hardware-output eligibility without later external
+correlation and reviewed semantic decoder coverage.
 Passive sniff summaries MAY also preserve bounded packet/frame locator examples
 for host-to-device USB transfers that declare data length but do not expose
 payload bytes through the current tshark export. Those residual payload export

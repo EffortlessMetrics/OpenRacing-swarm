@@ -2380,6 +2380,26 @@ fn moza_vendor_protocol_decode_priority(lane: &Path) -> Value {
                 "protocol_evidence_sufficient_for_output_plan": false
             })
         });
+    let decode_candidate_semantic_hypothesis_summary = coverage
+        .get("decode_candidate_semantic_hypothesis_summary")
+        .cloned()
+        .unwrap_or_else(|| {
+            serde_json::json!({
+                "claim_scope": "no_output_passive_tuple_semantic_hypothesis_review",
+                "sample_scope": "not_recorded",
+                "tuple_count": 0,
+                "hypothesis_count": 0,
+                "all_hypotheses_unknown_commanded": false,
+                "all_hypotheses_non_sendable": false,
+                "tuple_hypotheses": [],
+                "semantic_decode_claim": false,
+                "registry_promotion_claim": false,
+                "hardware_output_authorized": false,
+                "native_control_evidence": false,
+                "output_sendability_claim": false,
+                "protocol_evidence_sufficient_for_output_plan": false
+            })
+        });
     let payload_export_gap_summary = review
         .pointer("/sniff_evidence/payload_export_gap_summary")
         .cloned()
@@ -2412,6 +2432,7 @@ fn moza_vendor_protocol_decode_priority(lane: &Path) -> Value {
         "decode_candidate_sample_fixtures": decode_candidate_sample_fixtures,
         "decode_candidate_payload_shape_summary": decode_candidate_payload_shape_summary,
         "decode_candidate_packet_group_summary": decode_candidate_packet_group_summary,
+        "decode_candidate_semantic_hypothesis_summary": decode_candidate_semantic_hypothesis_summary,
         "payload_export_gap_summary": payload_export_gap_summary,
         "unknown_tuple_risk_class": json_string(coverage, "unknown_tuple_risk_class").unwrap_or("unknown_do_not_send"),
         "hardware_output_authorized": false,
@@ -28796,6 +28817,12 @@ fn vendor_protocol_passive_tuple_registry_coverage(
         vendor_protocol_decode_candidate_payload_shape_summary(&decode_candidate_sample_fixtures);
     let decode_candidate_packet_group_summary =
         vendor_protocol_decode_candidate_packet_group_summary(&decode_candidate_sample_fixtures);
+    let decode_candidate_semantic_hypothesis_summary =
+        vendor_protocol_decode_candidate_semantic_hypothesis_summary(
+            &decode_candidate_sample_fixtures,
+            &decode_candidate_payload_shape_summary,
+            &decode_candidate_packet_group_summary,
+        );
 
     Ok(VendorProtocolPassiveTupleRegistryCoverage {
         review_scope: "checked_in_passive_tuple_ids_vs_semantic_registry",
@@ -28822,6 +28849,7 @@ fn vendor_protocol_passive_tuple_registry_coverage(
         decode_candidate_sample_fixtures,
         decode_candidate_payload_shape_summary,
         decode_candidate_packet_group_summary,
+        decode_candidate_semantic_hypothesis_summary,
         unknown_tuple_risk_class: "unknown_do_not_send",
         protocol_evidence_sufficient_for_output_plan: false,
         hardware_output_authorized: false,
@@ -28958,6 +28986,141 @@ fn vendor_protocol_decode_candidate_payload_shape_summary(
             "Payload morphology is fixture evidence only; it does not decode tuple semantics.",
             "Empty or zero-filled observed payloads do not make unknown commanded tuples sendable.",
         ],
+    }
+}
+
+fn vendor_protocol_decode_candidate_semantic_hypothesis_summary(
+    fixtures: &[VendorProtocolDecodeCandidateSampleFixture],
+    payload_shape_summary: &VendorProtocolDecodeCandidatePayloadShapeSummary,
+    packet_group_summary: &VendorProtocolDecodeCandidatePacketGroupSummary,
+) -> VendorProtocolDecodeCandidateSemanticHypothesisSummary {
+    let mut tuple_hypotheses = Vec::new();
+    let mut all_hypotheses_unknown_commanded = !fixtures.is_empty();
+
+    for fixture in fixtures {
+        all_hypotheses_unknown_commanded &= fixture.registry_status == "unknown_commanded";
+        let payload_shape = payload_shape_summary
+            .tuple_payload_shapes
+            .iter()
+            .find(|shape| shape.tuple_id == fixture.tuple_id);
+        let payload_len_min = payload_shape.map_or(0, |shape| shape.payload_len_min);
+        let payload_len_max = payload_shape.map_or(0, |shape| shape.payload_len_max);
+        let payload_kinds = payload_shape
+            .map(|shape| shape.payload_kinds.clone())
+            .unwrap_or_default();
+        let observed_pattern_hint =
+            vendor_protocol_decode_candidate_pattern_hint(&fixture.tuple_id);
+        let semantic_hypothesis =
+            vendor_protocol_decode_candidate_semantic_hypothesis(&fixture.tuple_id);
+        let packet_patterns = packet_group_summary
+            .packet_patterns
+            .iter()
+            .filter(|pattern| {
+                pattern
+                    .tuple_sequence
+                    .iter()
+                    .any(|tuple_id| tuple_id == &fixture.tuple_id)
+            })
+            .map(|pattern| pattern.tuple_sequence.join(" -> "))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let repeated_motifs = packet_group_summary
+            .repeated_contiguous_motifs
+            .iter()
+            .filter(|motif| {
+                motif
+                    .tuple_sequence
+                    .iter()
+                    .any(|tuple_id| tuple_id == &fixture.tuple_id)
+            })
+            .map(|motif| motif.tuple_sequence.join(" -> "))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let mut evidence_basis = vec![
+            format!("observed_count={}", fixture.total_count),
+            format!("sample_count={}", fixture.sample_count),
+            format!("payload_len={}..{}", payload_len_min, payload_len_max),
+        ];
+        if !payload_kinds.is_empty() {
+            evidence_basis.push(format!("payload_kinds={}", payload_kinds.join(",")));
+        }
+        if !packet_patterns.is_empty() {
+            evidence_basis.push(format!("packet_patterns={}", packet_patterns.join(" | ")));
+        }
+        if !repeated_motifs.is_empty() {
+            evidence_basis.push(format!("repeated_motifs={}", repeated_motifs.join(" | ")));
+        }
+
+        tuple_hypotheses.push(VendorProtocolDecodeCandidateSemanticHypothesis {
+            tuple_id: fixture.tuple_id.clone(),
+            registry_status: fixture.registry_status,
+            total_count: fixture.total_count,
+            payload_len_min,
+            payload_len_max,
+            payload_kinds,
+            observed_pattern_hint,
+            semantic_hypothesis,
+            confidence: "low_pattern_only",
+            evidence_basis,
+            required_next_evidence: vec![
+                "correlate the tuple with a named Pit House UI state transition or setting",
+                "capture device-to-host response/ack timing for the same tuple",
+                "add fixture-backed semantic decoder coverage before any registry promotion",
+                "keep the tuple unknown_do_not_send until a reviewed plan and exact authorization exist",
+            ],
+            semantic_decode_claim: false,
+            registry_promotion_claim: false,
+            hardware_output_authorized: false,
+            output_sendability_claim: false,
+        });
+    }
+
+    VendorProtocolDecodeCandidateSemanticHypothesisSummary {
+        claim_scope: "no_output_passive_tuple_semantic_hypothesis_review",
+        sample_scope: "highest_frequency_unknown_commanded_tuples",
+        tuple_count: tuple_hypotheses.len(),
+        hypothesis_count: tuple_hypotheses.len(),
+        all_hypotheses_unknown_commanded,
+        all_hypotheses_non_sendable: !tuple_hypotheses.is_empty()
+            && tuple_hypotheses.iter().all(|hypothesis| {
+                !hypothesis.hardware_output_authorized
+                    && !hypothesis.output_sendability_claim
+                    && !hypothesis.semantic_decode_claim
+                    && !hypothesis.registry_promotion_claim
+            }),
+        tuple_hypotheses,
+        semantic_decode_claim: false,
+        registry_promotion_claim: false,
+        hardware_output_authorized: false,
+        native_control_evidence: false,
+        output_sendability_claim: false,
+        protocol_evidence_sufficient_for_output_plan: false,
+        notes: vec![
+            "Hypotheses are decode questions derived from passive fixture morphology; they are not semantic command definitions.",
+            "Unknown commanded tuples remain unknown_do_not_send and non-sendable until external correlation and reviewed decoder coverage exist.",
+        ],
+    }
+}
+
+fn vendor_protocol_decode_candidate_pattern_hint(tuple_id: &str) -> &'static str {
+    if tuple_id.starts_with("0x5A/0x1B/") || tuple_id.starts_with("0x5D/0x1B/") {
+        "repeated_high_frequency_0x1b_pair"
+    } else if tuple_id.starts_with("0x25/0x19/") {
+        "repeated_zero_payload_0x19_triad"
+    } else {
+        "unclassified_unknown_commanded_pattern"
+    }
+}
+
+fn vendor_protocol_decode_candidate_semantic_hypothesis(tuple_id: &str) -> &'static str {
+    if tuple_id.starts_with("0x5A/0x1B/") || tuple_id.starts_with("0x5D/0x1B/") {
+        "session_or_status_keepalive_candidate"
+    } else if tuple_id.starts_with("0x25/0x19/") {
+        "base_status_or_mode_poll_candidate"
+    } else {
+        "unknown_commanded_candidate"
     }
 }
 
@@ -31124,6 +31287,8 @@ struct VendorProtocolPassiveTupleRegistryCoverage {
     decode_candidate_sample_fixtures: Vec<VendorProtocolDecodeCandidateSampleFixture>,
     decode_candidate_payload_shape_summary: VendorProtocolDecodeCandidatePayloadShapeSummary,
     decode_candidate_packet_group_summary: VendorProtocolDecodeCandidatePacketGroupSummary,
+    decode_candidate_semantic_hypothesis_summary:
+        VendorProtocolDecodeCandidateSemanticHypothesisSummary,
     unknown_tuple_risk_class: &'static str,
     protocol_evidence_sufficient_for_output_plan: bool,
     hardware_output_authorized: bool,
@@ -31246,6 +31411,43 @@ struct VendorProtocolDecodeCandidateRepeatedMotif {
     observed_count: usize,
     scenario_count: usize,
     scenarios: Vec<String>,
+    hardware_output_authorized: bool,
+    output_sendability_claim: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorProtocolDecodeCandidateSemanticHypothesisSummary {
+    claim_scope: &'static str,
+    sample_scope: &'static str,
+    tuple_count: usize,
+    hypothesis_count: usize,
+    all_hypotheses_unknown_commanded: bool,
+    all_hypotheses_non_sendable: bool,
+    tuple_hypotheses: Vec<VendorProtocolDecodeCandidateSemanticHypothesis>,
+    semantic_decode_claim: bool,
+    registry_promotion_claim: bool,
+    hardware_output_authorized: bool,
+    native_control_evidence: bool,
+    output_sendability_claim: bool,
+    protocol_evidence_sufficient_for_output_plan: bool,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorProtocolDecodeCandidateSemanticHypothesis {
+    tuple_id: String,
+    registry_status: &'static str,
+    total_count: u64,
+    payload_len_min: u64,
+    payload_len_max: u64,
+    payload_kinds: Vec<String>,
+    observed_pattern_hint: &'static str,
+    semantic_hypothesis: &'static str,
+    confidence: &'static str,
+    evidence_basis: Vec<String>,
+    required_next_evidence: Vec<&'static str>,
+    semantic_decode_claim: bool,
+    registry_promotion_claim: bool,
     hardware_output_authorized: bool,
     output_sendability_claim: bool,
 }
@@ -36572,6 +36774,25 @@ fn push_vendor_authority_navigation_markdown(out: &mut String, receipt: &Value) 
             out.push_str(&format!("- Unique packet patterns: `{pattern_count}`\n"));
             out.push_str(&format!("- Repeated contiguous motifs: `{motif_count}`\n"));
         }
+        if let Some(hypothesis_summary) = priority
+            .get("decode_candidate_semantic_hypothesis_summary")
+            .filter(|summary| !summary.is_null())
+        {
+            let hypothesis_count = json_u64(hypothesis_summary, "hypothesis_count").unwrap_or(0);
+            let semantic_decode_claim =
+                json_bool(hypothesis_summary, "semantic_decode_claim").unwrap_or(false);
+            let registry_promotion_claim =
+                json_bool(hypothesis_summary, "registry_promotion_claim").unwrap_or(false);
+            out.push_str(&format!(
+                "- Semantic hypothesis count: `{hypothesis_count}`\n"
+            ));
+            out.push_str(&format!(
+                "- Semantic decode claim: `{semantic_decode_claim}`\n"
+            ));
+            out.push_str(&format!(
+                "- Registry promotion claim: `{registry_promotion_claim}`\n"
+            ));
+        }
         if let Some(payload_gap_summary) = priority
             .get("payload_export_gap_summary")
             .filter(|summary| !summary.is_null())
@@ -36643,6 +36864,32 @@ fn push_vendor_authority_navigation_markdown(out: &mut String, receipt: &Value) 
                     payload_len_min,
                     payload_len_max,
                     scenario_count
+                ));
+            }
+        }
+        if let Some(hypotheses) = priority
+            .pointer("/decode_candidate_semantic_hypothesis_summary/tuple_hypotheses")
+            .and_then(Value::as_array)
+            .filter(|hypotheses| !hypotheses.is_empty())
+        {
+            out.push_str("\n| Semantic hypothesis tuple | Pattern hint | Hypothesis | Confidence | Sendable |\n");
+            out.push_str("| --- | --- | --- | --- | --- |\n");
+            for hypothesis in hypotheses {
+                let tuple_id = json_string(hypothesis, "tuple_id").unwrap_or("unknown");
+                let pattern_hint =
+                    json_string(hypothesis, "observed_pattern_hint").unwrap_or("unknown");
+                let semantic_hypothesis =
+                    json_string(hypothesis, "semantic_hypothesis").unwrap_or("unknown");
+                let confidence = json_string(hypothesis, "confidence").unwrap_or("unknown");
+                let output_sendability_claim =
+                    json_bool(hypothesis, "output_sendability_claim").unwrap_or(false);
+                out.push_str(&format!(
+                    "| `{}` | `{}` | `{}` | `{}` | `{}` |\n",
+                    markdown_escape(tuple_id),
+                    markdown_escape(pattern_hint),
+                    markdown_escape(semantic_hypothesis),
+                    markdown_escape(confidence),
+                    output_sendability_claim
                 ));
             }
         }
@@ -40943,6 +41190,54 @@ mod tests {
         );
         assert_eq!(
             value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_semantic_hypothesis_summary/claim_scope")
+                .and_then(Value::as_str),
+            Some("no_output_passive_tuple_semantic_hypothesis_review")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_semantic_hypothesis_summary/hypothesis_count")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_semantic_hypothesis_summary/tuple_hypotheses/0/tuple_id")
+                .and_then(Value::as_str),
+            Some("0x5A/0x1B/0x00")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_semantic_hypothesis_summary/tuple_hypotheses/0/semantic_hypothesis")
+                .and_then(Value::as_str),
+            Some("session_or_status_keepalive_candidate")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_semantic_hypothesis_summary/tuple_hypotheses/0/confidence")
+                .and_then(Value::as_str),
+            Some("low_pattern_only")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_semantic_hypothesis_summary/tuple_hypotheses/0/semantic_decode_claim")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_semantic_hypothesis_summary/semantic_decode_claim")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_semantic_hypothesis_summary/registry_promotion_claim")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            value
                 .pointer(
                     "/passive_tuple_registry_coverage/tuple_frequency_summary/0/registry_status"
                 )
@@ -41311,6 +41606,7 @@ mod tests {
             "decode_candidate_sample_fixtures",
             "decode_candidate_payload_shape_summary",
             "decode_candidate_packet_group_summary",
+            "decode_candidate_semantic_hypothesis_summary",
         ] {
             assert!(
                 passive_tuple_required
@@ -41361,6 +41657,36 @@ mod tests {
         );
         assert_eq!(
             schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_packet_group_summary"]
+                ["properties"]["output_sendability_claim"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_semantic_hypothesis_summary"]
+                ["properties"]["claim_scope"]["const"],
+            "no_output_passive_tuple_semantic_hypothesis_review"
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_semantic_hypothesis_summary"]
+                ["properties"]["semantic_decode_claim"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_semantic_hypothesis_summary"]
+                ["properties"]["registry_promotion_claim"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_semantic_hypothesis_summary"]
+                ["properties"]["hardware_output_authorized"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_semantic_hypothesis_summary"]
+                ["properties"]["native_control_evidence"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_semantic_hypothesis_summary"]
                 ["properties"]["output_sendability_claim"]["const"],
             false
         );
@@ -43856,6 +44182,44 @@ mod tests {
                         "output_sendability_claim": false,
                         "protocol_evidence_sufficient_for_output_plan": false
                     },
+                    "decode_candidate_semantic_hypothesis_summary": {
+                        "claim_scope": "no_output_passive_tuple_semantic_hypothesis_review",
+                        "sample_scope": "highest_frequency_unknown_commanded_tuples",
+                        "tuple_count": 1,
+                        "hypothesis_count": 1,
+                        "all_hypotheses_unknown_commanded": true,
+                        "all_hypotheses_non_sendable": true,
+                        "tuple_hypotheses": [
+                            {
+                                "tuple_id": "0x5A/0x1B/0x00",
+                                "registry_status": "unknown_commanded",
+                                "total_count": 1896,
+                                "payload_len_min": 0,
+                                "payload_len_max": 0,
+                                "payload_kinds": ["empty"],
+                                "observed_pattern_hint": "repeated_high_frequency_0x1b_pair",
+                                "semantic_hypothesis": "session_or_status_keepalive_candidate",
+                                "confidence": "low_pattern_only",
+                                "evidence_basis": [
+                                    "observed_count=1896",
+                                    "payload_len=0..0"
+                                ],
+                                "required_next_evidence": [
+                                    "correlate the tuple with a named Pit House UI state transition or setting"
+                                ],
+                                "semantic_decode_claim": false,
+                                "registry_promotion_claim": false,
+                                "hardware_output_authorized": false,
+                                "output_sendability_claim": false
+                            }
+                        ],
+                        "semantic_decode_claim": false,
+                        "registry_promotion_claim": false,
+                        "hardware_output_authorized": false,
+                        "native_control_evidence": false,
+                        "output_sendability_claim": false,
+                        "protocol_evidence_sufficient_for_output_plan": false
+                    },
                     "tuple_frequency_summary": [
                         {
                             "tuple_id": "0x5D/0x1B/0x01",
@@ -43988,6 +44352,36 @@ mod tests {
         );
         assert_eq!(
             priority
+                .pointer("/decode_candidate_semantic_hypothesis_summary/claim_scope")
+                .and_then(Value::as_str),
+            Some("no_output_passive_tuple_semantic_hypothesis_review")
+        );
+        assert_eq!(
+            priority
+                .pointer("/decode_candidate_semantic_hypothesis_summary/hypothesis_count")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            priority
+                .pointer("/decode_candidate_semantic_hypothesis_summary/tuple_hypotheses/0/semantic_hypothesis")
+                .and_then(Value::as_str),
+            Some("session_or_status_keepalive_candidate")
+        );
+        assert_eq!(
+            priority
+                .pointer("/decode_candidate_semantic_hypothesis_summary/semantic_decode_claim")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            priority
+                .pointer("/decode_candidate_semantic_hypothesis_summary/registry_promotion_claim")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            priority
                 .pointer("/payload_export_gap_summary/claim_scope")
                 .and_then(Value::as_str),
             Some("no_output_passive_payload_export_gap_review")
@@ -44030,6 +44424,10 @@ mod tests {
         assert!(artifact_markdown.contains("Decode candidate payload shapes: `1`"));
         assert!(artifact_markdown.contains("Payloads empty or zero-filled in samples: `true`"));
         assert!(artifact_markdown.contains("Decode candidate packet groups: `1`"));
+        assert!(artifact_markdown.contains("Semantic hypothesis count: `1`"));
+        assert!(artifact_markdown.contains("Semantic decode claim: `false`"));
+        assert!(artifact_markdown.contains("Semantic hypothesis tuple"));
+        assert!(artifact_markdown.contains("session_or_status_keepalive_candidate"));
         assert!(artifact_markdown.contains("Residual payload export gap packets: `2`"));
         assert!(artifact_markdown.contains("Payload gap scenario"));
         assert!(artifact_markdown.contains("Packet group pattern"));

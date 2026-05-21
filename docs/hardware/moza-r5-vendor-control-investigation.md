@@ -40,8 +40,14 @@ patterns are the `0x5A/0x1B/0x00` then `0x5D/0x1B/0x01` pair, the ordered
 five-frame packet that contains both. The review also records payload-shape
 morphology for those top unknown samples: all are checksum-valid
 unknown-commanded samples, with empty `0x5A/0x1B/0x00` payloads and zero-filled
-`0000` payloads for the `0x5D` and `0x25` samples. The next step is to map
-those unknown tuple IDs or fill remaining no-output capture gaps before
+`0000` payloads for the `0x5D` and `0x25` samples. The review now preserves
+pattern-only semantic hypotheses for that same queue:
+`0x5A/0x1B/*` and `0x5D/0x1B/*` are
+`session_or_status_keepalive_candidate`, while `0x25/0x19/*` is
+`base_status_or_mode_poll_candidate`. Those labels are low-confidence decode
+questions, not semantic commands, registry entries, or sendable output
+candidates. The next step is to correlate those hypotheses with named Pit
+House state transitions or fill remaining no-output capture gaps before
 proposing any vendor-control output path.
 
 ## Current Artifacts
@@ -80,11 +86,14 @@ protocol crate observed-frame decoder accepts the checksum-valid shape of those
 samples, while the semantic fixture decoder still rejects them as unknown
 commands. The same sample regression preserves packet-local pair, triad, and
 combined five-frame group morphology plus empty/zero-filled payload-shape hints
-as observed evidence only. The review also preserves the two remaining payload
-export gaps as packet/frame locators, one in `pit-house-open-idle` and one in
-`pit-house-full-controls`, with `payload_extracted=false` and no sendability or
-output claim. No tuple or residual packet is sendable without a future semantic
-decode, reviewed plan, fresh bench clear, and exact authorization.
+as observed evidence only. It also records low-confidence pattern-only semantic
+hypotheses for those samples while keeping every tuple `unknown_commanded`,
+non-sendable, and ineligible for registry promotion. The review also preserves
+the two remaining payload export gaps as packet/frame locators, one in
+`pit-house-open-idle` and one in `pit-house-full-controls`, with
+`payload_extracted=false` and no sendability or output claim. No tuple,
+hypothesis, or residual packet is sendable without a future semantic decode,
+reviewed plan, fresh bench clear, and exact authorization.
 
 ## Boundaries
 

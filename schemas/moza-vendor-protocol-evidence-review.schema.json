@@ -411,6 +411,7 @@
         "decode_candidate_sample_fixtures",
         "decode_candidate_payload_shape_summary",
         "decode_candidate_packet_group_summary",
+        "decode_candidate_semantic_hypothesis_summary",
         "unknown_tuple_risk_class",
         "protocol_evidence_sufficient_for_output_plan",
         "hardware_output_authorized",
@@ -820,6 +821,96 @@
                 "additionalProperties": true
               }
             },
+            "hardware_output_authorized": { "const": false },
+            "native_control_evidence": { "const": false },
+            "output_sendability_claim": { "const": false },
+            "protocol_evidence_sufficient_for_output_plan": { "const": false }
+          },
+          "additionalProperties": true
+        },
+        "decode_candidate_semantic_hypothesis_summary": {
+          "type": "object",
+          "required": [
+            "claim_scope",
+            "sample_scope",
+            "tuple_count",
+            "hypothesis_count",
+            "all_hypotheses_unknown_commanded",
+            "all_hypotheses_non_sendable",
+            "tuple_hypotheses",
+            "semantic_decode_claim",
+            "registry_promotion_claim",
+            "hardware_output_authorized",
+            "native_control_evidence",
+            "output_sendability_claim",
+            "protocol_evidence_sufficient_for_output_plan"
+          ],
+          "properties": {
+            "claim_scope": {
+              "const": "no_output_passive_tuple_semantic_hypothesis_review"
+            },
+            "sample_scope": {
+              "const": "highest_frequency_unknown_commanded_tuples"
+            },
+            "tuple_count": { "type": "integer", "minimum": 0 },
+            "hypothesis_count": { "type": "integer", "minimum": 0 },
+            "all_hypotheses_unknown_commanded": { "type": "boolean" },
+            "all_hypotheses_non_sendable": { "type": "boolean" },
+            "tuple_hypotheses": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "tuple_id",
+                  "registry_status",
+                  "total_count",
+                  "payload_len_min",
+                  "payload_len_max",
+                  "payload_kinds",
+                  "observed_pattern_hint",
+                  "semantic_hypothesis",
+                  "confidence",
+                  "evidence_basis",
+                  "required_next_evidence",
+                  "semantic_decode_claim",
+                  "registry_promotion_claim",
+                  "hardware_output_authorized",
+                  "output_sendability_claim"
+                ],
+                "properties": {
+                  "tuple_id": { "type": "string" },
+                  "registry_status": { "const": "unknown_commanded" },
+                  "total_count": { "type": "integer", "minimum": 0 },
+                  "payload_len_min": { "type": "integer", "minimum": 0 },
+                  "payload_len_max": { "type": "integer", "minimum": 0 },
+                  "payload_kinds": {
+                    "type": "array",
+                    "items": {
+                      "enum": ["empty", "zero_filled", "non_zero_observed"]
+                    },
+                    "uniqueItems": true
+                  },
+                  "observed_pattern_hint": { "type": "string" },
+                  "semantic_hypothesis": { "type": "string" },
+                  "confidence": { "const": "low_pattern_only" },
+                  "evidence_basis": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "required_next_evidence": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "semantic_decode_claim": { "const": false },
+                  "registry_promotion_claim": { "const": false },
+                  "hardware_output_authorized": { "const": false },
+                  "output_sendability_claim": { "const": false }
+                },
+                "additionalProperties": true
+              }
+            },
+            "semantic_decode_claim": { "const": false },
+            "registry_promotion_claim": { "const": false },
             "hardware_output_authorized": { "const": false },
             "native_control_evidence": { "const": false },
             "output_sendability_claim": { "const": false },

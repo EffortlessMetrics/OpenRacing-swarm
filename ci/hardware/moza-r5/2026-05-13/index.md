@@ -71,6 +71,9 @@ Frequency-ranked tuples are decode-priority navigation only. They do not make an
 - Decode candidate packet groups: `11`
 - Unique packet patterns: `3`
 - Repeated contiguous motifs: `4`
+- Semantic hypothesis count: `5`
+- Semantic decode claim: `false`
+- Registry promotion claim: `false`
 - Residual payload export gap packets: `2`
 - Payload export gap scenarios: `2`
 - Payload gap sendability claim: `false`
@@ -87,6 +90,14 @@ Frequency-ranked tuples are decode-priority navigation only. They do not make an
 | `0x25/0x19/0x01` | 624 | 2..2 | 2 |
 | `0x25/0x19/0x02` | 624 | 2..2 | 2 |
 | `0x25/0x19/0x03` | 624 | 2..2 | 2 |
+
+| Semantic hypothesis tuple | Pattern hint | Hypothesis | Confidence | Sendable |
+| --- | --- | --- | --- | --- |
+| `0x5A/0x1B/0x00` | `repeated_high_frequency_0x1b_pair` | `session_or_status_keepalive_candidate` | `low_pattern_only` | `false` |
+| `0x5D/0x1B/0x01` | `repeated_high_frequency_0x1b_pair` | `session_or_status_keepalive_candidate` | `low_pattern_only` | `false` |
+| `0x25/0x19/0x01` | `repeated_zero_payload_0x19_triad` | `base_status_or_mode_poll_candidate` | `low_pattern_only` | `false` |
+| `0x25/0x19/0x02` | `repeated_zero_payload_0x19_triad` | `base_status_or_mode_poll_candidate` | `low_pattern_only` | `false` |
+| `0x25/0x19/0x03` | `repeated_zero_payload_0x19_triad` | `base_status_or_mode_poll_candidate` | `low_pattern_only` | `false` |
 
 | Payload shape tuple | Samples | Payload bytes | Payload kinds | Sendable |
 | --- | ---: | ---: | --- | --- |
