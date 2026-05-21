@@ -273,6 +273,21 @@
           "type": "integer",
           "minimum": 0
         },
+        "host_to_device_packet_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "host_to_device_classified_packet_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "host_to_device_unclassified_packet_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "host_to_device_decode_gap": {
+          "type": "boolean"
+        },
         "host_to_device_report_ids": {
           "type": "array",
           "items": {
