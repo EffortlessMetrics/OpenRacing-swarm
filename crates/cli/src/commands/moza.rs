@@ -2118,6 +2118,7 @@ fn moza_vendor_authority_navigation_summary(lane: &Path) -> Value {
     let standard_pidff_diagnosis_recorded = lane
         .join(NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE)
         .is_file();
+    let vendor_protocol_decode_priority = moza_vendor_protocol_decode_priority(lane);
     let state = if protocol_evidence_review_recorded {
         "protocol_evidence_review_recorded"
     } else if post_pidff_comparison_recorded {
@@ -2161,6 +2162,7 @@ fn moza_vendor_authority_navigation_summary(lane: &Path) -> Value {
         "post_authority_pidff_smoke_recorded": post_pidff_smoke_recorded,
         "post_authority_pidff_response_recorded": post_pidff_comparison_recorded,
         "vendor_protocol_evidence_review_recorded": protocol_evidence_review_recorded,
+        "vendor_protocol_decode_priority": vendor_protocol_decode_priority,
         "hardware_attempt_command_emitted": false,
         "next_allowed_action": if protocol_evidence_review_recorded {
             "Continue no-output vendor protocol investigation; finish remaining passive sniff scenarios or decode reviewed protocol candidates before any future output plan."
@@ -2205,6 +2207,104 @@ fn moza_vendor_authority_navigation_summary(lane: &Path) -> Value {
             "The bench wizard may surface no-output authorization and smoke commands, but it must not emit the hardware attempt command.",
             "A consumed attempt receipt remains non-claiming until later PIDFF response comparison and native-visible verification pass.",
             "A vendor protocol evidence review receipt is no-output diagnosis and does not authorize a future output family."
+        ]
+    })
+}
+
+fn moza_vendor_protocol_decode_priority(lane: &Path) -> Value {
+    let Ok(review) = read_json_value(lane, VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE) else {
+        return Value::Null;
+    };
+    let Some(coverage) = review.get("passive_tuple_registry_coverage") else {
+        return serde_json::json!({
+            "claim_scope": "no_output_vendor_protocol_decode_priority_navigation",
+            "source_receipt": VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE,
+            "status": "missing_passive_tuple_registry_coverage",
+            "hardware_output_authorized": false,
+            "native_control_evidence": false,
+            "native_visible_ready": false,
+            "output_sendability_claim": false,
+            "protocol_evidence_sufficient_for_output_plan": false,
+            "unknown_tuple_risk_class": "unknown_do_not_send",
+            "notes": [
+                "Vendor protocol review exists but does not contain passive tuple registry coverage."
+            ]
+        });
+    };
+    let tuple_summaries = coverage
+        .get("tuple_frequency_summary")
+        .and_then(Value::as_array)
+        .map(|tuples| {
+            let mut tuples = tuples
+                .iter()
+                .filter(|tuple| json_string(tuple, "registry_status") == Some("unknown_commanded"))
+                .collect::<Vec<_>>();
+            tuples.sort_by(|left, right| {
+                json_u64(right, "total_count")
+                    .unwrap_or(0)
+                    .cmp(&json_u64(left, "total_count").unwrap_or(0))
+                    .then_with(|| {
+                        json_string(left, "tuple_id")
+                            .unwrap_or("unknown")
+                            .cmp(json_string(right, "tuple_id").unwrap_or("unknown"))
+                    })
+            });
+            tuples
+                .into_iter()
+                .take(5)
+                .map(|tuple| {
+                    serde_json::json!({
+                        "tuple_id": json_string(tuple, "tuple_id").unwrap_or("unknown"),
+                        "registry_status": json_string(tuple, "registry_status").unwrap_or("unknown"),
+                        "total_count": json_u64(tuple, "total_count").unwrap_or(0),
+                        "payload_len_min": json_u64(tuple, "payload_len_min").unwrap_or(0),
+                        "payload_len_max": json_u64(tuple, "payload_len_max").unwrap_or(0),
+                        "scenario_count": json_u64(tuple, "scenario_count").unwrap_or(0),
+                        "hardware_output_authorized": false,
+                        "output_sendability_claim": false
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let highest_frequency_unknown_commanded_tuple_ids = coverage
+        .get("highest_frequency_unknown_commanded_tuple_ids")
+        .and_then(Value::as_array)
+        .map(|tuples| {
+            tuples
+                .iter()
+                .filter_map(Value::as_str)
+                .take(5)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    serde_json::json!({
+        "claim_scope": "no_output_vendor_protocol_decode_priority_navigation",
+        "source_receipt": VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE,
+        "status": if tuple_summaries.is_empty() {
+            "no_unknown_commanded_tuple_frequency"
+        } else {
+            "frequency_ranked_unknown_commanded_tuples"
+        },
+        "priority_basis": "descending_checked_in_passive_tuple_frequency",
+        "highest_frequency_unknown_commanded_tuple_ids": highest_frequency_unknown_commanded_tuple_ids,
+        "top_unknown_commanded_tuples": tuple_summaries,
+        "unknown_tuple_risk_class": json_string(coverage, "unknown_tuple_risk_class").unwrap_or("unknown_do_not_send"),
+        "hardware_output_authorized": false,
+        "native_control_evidence": false,
+        "native_visible_ready": false,
+        "output_sendability_claim": false,
+        "protocol_evidence_sufficient_for_output_plan": false,
+        "next_required_evidence": [
+            "semantic command decode",
+            "fixture-backed decoder coverage",
+            "reviewed no-output plan",
+            "fresh exact authorization before any future write"
+        ],
+        "notes": [
+            "Frequency ranking is decode priority only; it is not evidence that any tuple is safe to send.",
+            "Unknown commanded tuples remain unknown_do_not_send until future semantic decode and reviewed authorization gates exist."
         ]
     })
 }
@@ -35603,6 +35703,54 @@ fn push_vendor_authority_navigation_markdown(out: &mut String, receipt: &Value) 
             ));
         }
     }
+    if let Some(priority) = summary
+        .get("vendor_protocol_decode_priority")
+        .filter(|priority| !priority.is_null())
+    {
+        let status = json_string(priority, "status").unwrap_or("unknown");
+        let source = json_string(priority, "source_receipt").unwrap_or("unknown");
+        let risk_class =
+            json_string(priority, "unknown_tuple_risk_class").unwrap_or("unknown_do_not_send");
+        let output_sendability_claim =
+            json_bool(priority, "output_sendability_claim").unwrap_or(false);
+        out.push_str("\n### Protocol Decode Priority\n\n");
+        out.push_str("Frequency-ranked tuples are decode-priority navigation only. They do not make an unknown tuple sendable.\n\n");
+        out.push_str(&format!("- Status: `{}`\n", markdown_escape(status)));
+        out.push_str(&format!(
+            "- Source receipt: `{}`\n",
+            markdown_escape(source)
+        ));
+        out.push_str(&format!(
+            "- Unknown tuple risk class: `{}`\n",
+            markdown_escape(risk_class)
+        ));
+        out.push_str(&format!(
+            "- Output sendability claim: `{output_sendability_claim}`\n"
+        ));
+        if let Some(tuples) = priority
+            .get("top_unknown_commanded_tuples")
+            .and_then(Value::as_array)
+            .filter(|tuples| !tuples.is_empty())
+        {
+            out.push_str("\n| Tuple | Count | Payload bytes | Scenarios |\n");
+            out.push_str("| --- | ---: | ---: | ---: |\n");
+            for tuple in tuples {
+                let tuple_id = json_string(tuple, "tuple_id").unwrap_or("unknown");
+                let total_count = json_u64(tuple, "total_count").unwrap_or(0);
+                let payload_len_min = json_u64(tuple, "payload_len_min").unwrap_or(0);
+                let payload_len_max = json_u64(tuple, "payload_len_max").unwrap_or(0);
+                let scenario_count = json_u64(tuple, "scenario_count").unwrap_or(0);
+                out.push_str(&format!(
+                    "| `{}` | {} | {}..{} | {} |\n",
+                    markdown_escape(tuple_id),
+                    total_count,
+                    payload_len_min,
+                    payload_len_max,
+                    scenario_count
+                ));
+            }
+        }
+    }
     out.push('\n');
 }
 
@@ -42140,6 +42288,137 @@ mod tests {
         assert!(markdown.contains(VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET));
         assert!(markdown.contains("R5 serial port hints: `COM4`"));
         assert!(markdown.contains("vendor-authority-attempt.json"));
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_authority_navigation_surfaces_decode_priority_without_claims() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        let selector = "hid-0x346E-0x0004-if2-0x0001-0x0004";
+        write_vendor_authority_serial_hardware_doctor(dir.path())?;
+        write_failed_controlled_angle_output_receipt_at(
+            dir.path(),
+            selector,
+            NATIVE_CONTROLLED_ANGLE_ATTEMPT_03_SMOKE_FILE,
+        )?;
+        write_failed_controlled_angle_closed_loop_output_receipt(dir.path(), selector)?;
+        write_test_json_file(
+            &dir.path().join(NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE),
+            &serde_json::json!({
+                "schema_version": 1,
+                "success": true,
+                "command": "wheelctl moza standard-pidff-path-diagnosis",
+                "classification": "standard_pidff_controlled_angle_path_ineffective_in_current_r5_mode",
+                "native_visible_claimed": false,
+                "smoke_ready_claimed": false,
+                "planned_next_output": {
+                    "allowed": false
+                }
+            }),
+        )?;
+        write_test_json_file(
+            &dir.path().join(VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE),
+            &serde_json::json!({
+                "artifact_kind": "moza_vendor_protocol_evidence_review",
+                "passive_tuple_registry_coverage": {
+                    "unknown_tuple_risk_class": "unknown_do_not_send",
+                    "highest_frequency_unknown_commanded_tuple_ids": [
+                        "0x5A/0x1B/0x00",
+                        "0x5D/0x1B/0x01"
+                    ],
+                    "tuple_frequency_summary": [
+                        {
+                            "tuple_id": "0x5D/0x1B/0x01",
+                            "registry_status": "unknown_commanded",
+                            "total_count": 1894,
+                            "payload_len_min": 2,
+                            "payload_len_max": 2,
+                            "scenario_count": 2,
+                            "hardware_output_authorized": false,
+                            "output_sendability_claim": false
+                        },
+                        {
+                            "tuple_id": "0x5A/0x1B/0x00",
+                            "registry_status": "unknown_commanded",
+                            "total_count": 1896,
+                            "payload_len_min": 0,
+                            "payload_len_max": 0,
+                            "scenario_count": 2,
+                            "hardware_output_authorized": false,
+                            "output_sendability_claim": false
+                        },
+                        {
+                            "tuple_id": "0x28/0x13/0x02",
+                            "registry_status": "known_read_only_status",
+                            "total_count": 3,
+                            "payload_len_min": 2,
+                            "payload_len_max": 2,
+                            "scenario_count": 1,
+                            "hardware_output_authorized": false,
+                            "output_sendability_claim": false
+                        }
+                    ]
+                }
+            }),
+        )?;
+
+        let receipt = moza_artifact_index_receipt(dir.path(), None, None)?;
+        let priority = receipt
+            .pointer("/vendor_authority_navigation/vendor_protocol_decode_priority")
+            .ok_or("expected decode priority navigation")?;
+        assert_eq!(
+            json_string(priority, "claim_scope"),
+            Some("no_output_vendor_protocol_decode_priority_navigation")
+        );
+        assert_eq!(
+            json_string(priority, "status"),
+            Some("frequency_ranked_unknown_commanded_tuples")
+        );
+        assert_eq!(
+            priority
+                .pointer("/top_unknown_commanded_tuples/0/tuple_id")
+                .and_then(Value::as_str),
+            Some("0x5A/0x1B/0x00")
+        );
+        assert_eq!(
+            priority
+                .pointer("/top_unknown_commanded_tuples/0/total_count")
+                .and_then(Value::as_u64),
+            Some(1896)
+        );
+        assert_eq!(
+            json_bool(priority, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(json_bool(priority, "native_control_evidence"), Some(false));
+        assert_eq!(json_bool(priority, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(priority, "output_sendability_claim"), Some(false));
+        assert_eq!(
+            json_bool(priority, "protocol_evidence_sufficient_for_output_plan"),
+            Some(false)
+        );
+
+        let artifact_markdown = render_moza_lane_artifact_index_markdown(&receipt);
+        assert!(artifact_markdown.contains("Protocol Decode Priority"));
+        assert!(artifact_markdown.contains("0x5A/0x1B/0x00"));
+        assert!(artifact_markdown.contains("1896"));
+        assert!(artifact_markdown.contains("Output sendability claim: `false`"));
+
+        let wizard_receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
+        let wizard_priority = wizard_receipt
+            .pointer("/vendor_authority_navigation/vendor_protocol_decode_priority")
+            .ok_or("expected bench wizard decode priority navigation")?;
+        assert_eq!(
+            wizard_priority
+                .pointer("/highest_frequency_unknown_commanded_tuple_ids/0")
+                .and_then(Value::as_str),
+            Some("0x5A/0x1B/0x00")
+        );
+        let wizard_markdown = render_moza_bench_wizard_markdown(&wizard_receipt);
+        assert!(wizard_markdown.contains("Protocol Decode Priority"));
+        assert!(wizard_markdown.contains("unknown tuple sendable"));
+        assert!(!wizard_markdown.contains("vendor-authority-attempt --serial-port"));
         Ok(())
     }
 
