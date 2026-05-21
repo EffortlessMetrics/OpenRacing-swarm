@@ -425,17 +425,27 @@ impl WheelClient {
 /// meaning the user likely intended to reach a local wheeld and a mock
 /// fallback is appropriate.
 fn is_local_endpoint(ep: &str) -> bool {
-    // Strip the scheme prefix to get the authority
-    let authority = ep
-        .strip_prefix("http://")
-        .or_else(|| ep.strip_prefix("https://"))
-        .unwrap_or(ep);
+    endpoint::is_local_host(endpoint::host(ep))
+}
 
-    let host = authority.split(':').next().unwrap_or(authority);
-    matches!(
-        host,
-        "localhost" | "127.0.0.1" | "::1" | "[::1]" | "0.0.0.0"
-    )
+mod endpoint {
+    pub(super) fn host(endpoint: &str) -> &str {
+        authority(endpoint).split(':').next().unwrap_or(endpoint)
+    }
+
+    fn authority(endpoint: &str) -> &str {
+        endpoint
+            .strip_prefix("http://")
+            .or_else(|| endpoint.strip_prefix("https://"))
+            .unwrap_or(endpoint)
+    }
+
+    pub(super) fn is_local_host(host: &str) -> bool {
+        matches!(
+            host,
+            "localhost" | "127.0.0.1" | "::1" | "[::1]" | "0.0.0.0"
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------
