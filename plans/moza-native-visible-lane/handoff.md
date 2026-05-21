@@ -87,9 +87,14 @@ payload bytes.
 Those extracted host-to-device payloads now parse into 7,863 length-prefixed
 `0x7E` serial-frame candidates with 7,863 valid checksums, zero invalid
 checksums, and no frame-shape decode gap. The review preserves 30 tuple IDs and
-1,467 commandless frames as protocol-shape evidence only. This does not decode
-an approved semantic enable/mode command, make any tuple sendable, authorize
-hardware output, or unblock native-visible promotion.
+1,467 commandless frames as protocol-shape evidence only. It also compares the
+30 distinct passive tuple IDs to the semantic vendor command registry: one tuple
+matches, `0x28/0x13/0x02` (`base_gain_get_overall_strength`), and that match is
+read-only status evidence only. The remaining passive tuple evidence is 12
+commandless tuple IDs and 17 unknown commanded tuple IDs, with zero known
+write-like tuple matches. This does not decode an approved semantic enable/mode
+command, make any tuple sendable, authorize hardware output, or unblock
+native-visible promotion.
 
 ## Completion Audit Summary
 
@@ -108,7 +113,7 @@ The broader Moza objective remains incomplete:
 | Closed-loop failure analysis | `native-controlled-angle-closed-loop-failure-analysis.json` | Recorded no-output classification |
 | Consumed vendor-authority attempt | `vendor-authority-attempt.json` | Recorded exact one-frame non-claiming attempt |
 | Post-authority PIDFF response | `vendor-post-authority-pidff-smoke.json`; `vendor-post-authority-pidff-response.json`; [post-authority PIDFF response diagnosis](../../docs/hardware/moza-r5-post-authority-pidff-response.md) | Recorded regression versus baseline; no native-visible claim |
-| Vendor protocol evidence review | `vendor-protocol-evidence-review.json` | Recorded no-output review, host-to-device candidate `0x7E`, 7,863 checksum-valid candidate frames, partial residual payload export gap, and no sufficient semantic protocol evidence for any output plan |
+| Vendor protocol evidence review | `vendor-protocol-evidence-review.json` | Recorded no-output review, host-to-device candidate `0x7E`, 7,863 checksum-valid candidate frames, one read-only registry tuple match, 12 commandless tuple IDs, 17 unknown commanded tuple IDs, partial residual payload export gap, and no sufficient semantic protocol evidence for any output plan |
 | Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence |
 | Remaining passive sniff plans | `pit-house-setting-change`, `simhub-open-idle`, `simhub-output-session`, `simulator-session-start-stop` sniff plans | Plan-only, non-claiming |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |
@@ -129,11 +134,14 @@ without finding a decoded enable path. It now extracts and frame-shape parses
 the Pit House USB CDC payload stream far enough to surface candidate frame/report
 ID `0x7E`, 7,863 checksum-valid candidate frames, and 30 tuple IDs, but those
 tuples are not decoded into an approved semantic command and still cannot
-authorize output. It emits no hardware output command and no authorization
-command. The next implementation work should continue vendor-specific protocol
-investigation, such as mapping the `0x7E` USBCOM tuple stream to semantic
-commands, completing the remaining passive sniff scenarios, or adding decoded
-report fixtures, before any future motion ladder plan.
+authorize output. The registry comparison currently finds only one read-only
+status tuple, `0x28/0x13/0x02`, and fences 12 commandless plus 17 unknown
+commanded tuple IDs as `unknown_do_not_send`. It emits no hardware output
+command and no authorization command. The next implementation work should
+continue vendor-specific protocol investigation, such as mapping the unknown
+`0x7E` USBCOM tuple stream to semantic commands, completing the remaining
+passive sniff scenarios, or adding decoded report fixtures, before any future
+motion ladder plan.
 
 Passive USB sniff captures may produce non-claiming `sniff-receipt.json`,
 `sniff-summary.json`, and bundle manifest artifacts, but those are

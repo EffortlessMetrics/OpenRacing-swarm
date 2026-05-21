@@ -1138,6 +1138,26 @@ commands = [
 ]
 
 [[work_item]]
+id = "passive-sniff-tuple-registry-coverage"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-passive-sniff-tuple-registry-coverage"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json"
+claim_boundary = "No-output passive tuple registry coverage only; compares checked-in Pit House 0x7E tuple IDs to the semantic vendor command registry and fences read-only, commandless, and unknown tuples without opening HID, opening serial, sending read-only queries, sending hardware output, creating authorization, native-control, native-visible, smoke-ready, coexistence, simulator, firmware, release-ready, or tuple sendability claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza vendor-protocol-evidence-review --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json --json --overwrite",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-passive-tuple-registry-review.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-passive-tuple-registry-review.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw \"expected native-visible verifier to remain blocked\" }",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

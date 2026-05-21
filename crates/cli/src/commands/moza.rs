@@ -27535,6 +27535,8 @@ fn vendor_protocol_evidence_review_receipt(
     let sniff_evidence = vendor_protocol_sniff_evidence_review(sniff_root)?;
     let command_registry_review =
         vendor_protocol_command_registry_review(command_registry_path, command_registry)?;
+    let passive_tuple_registry_coverage =
+        vendor_protocol_passive_tuple_registry_coverage(&sniff_evidence, command_registry)?;
     let post_authority_pidff_result = vendor_protocol_post_authority_pidff_result(
         attempt_path,
         attempt,
@@ -27579,6 +27581,7 @@ fn vendor_protocol_evidence_review_receipt(
         protocol_evidence_sufficient_for_output_plan,
         sniff_evidence,
         command_registry_review,
+        passive_tuple_registry_coverage,
         post_authority_pidff_result,
         next_allowed_action: "Continue no-output vendor protocol evidence review: finish remaining passive sniff scenarios, decode protocol candidates, and require a new reviewed plan before any future output family.",
         blocked_actions: vec![
@@ -28224,6 +28227,165 @@ fn vendor_protocol_command_registry_review(
         write_candidate_command_ids,
         hardware_output_authorized_any,
     })
+}
+
+fn vendor_protocol_passive_tuple_registry_coverage(
+    sniff_evidence: &VendorProtocolSniffEvidence,
+    command_registry: &Value,
+) -> Result<VendorProtocolPassiveTupleRegistryCoverage> {
+    let commands = command_registry
+        .get("commands")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("vendor command registry is missing commands array"))?;
+    let mut registry_commands: BTreeMap<(u8, u8, u8), VendorProtocolRegistryTupleCommand<'_>> =
+        BTreeMap::new();
+    for command in commands {
+        let Some(group) = json_u8_value(command.get("group")) else {
+            continue;
+        };
+        let Some(device_id) = json_u8_value(command.get("device_id")) else {
+            continue;
+        };
+        let Some(command_id) = json_u8_value(command.get("command")) else {
+            continue;
+        };
+        let Some(id) = json_string(command, "id") else {
+            continue;
+        };
+        registry_commands.insert(
+            (group, device_id, command_id),
+            VendorProtocolRegistryTupleCommand {
+                id,
+                family: json_string(command, "family").unwrap_or("unknown"),
+                risk_class: json_string(command, "risk_class").unwrap_or("unknown_do_not_send"),
+                read_only_status_probe_allowed: json_bool(
+                    command,
+                    "allowed_for_read_only_status_probe",
+                )
+                .unwrap_or(false),
+                hardware_output_authorized: json_bool(command, "hardware_output_authorized")
+                    .unwrap_or(false),
+            },
+        );
+    }
+
+    let mut known_registry_matches = Vec::new();
+    let mut known_registry_tuple_ids = Vec::new();
+    let mut known_read_only_status_tuple_ids = Vec::new();
+    let mut known_write_like_tuple_ids = Vec::new();
+    let mut commandless_tuple_ids = Vec::new();
+    let mut unknown_commanded_tuple_ids = Vec::new();
+    let mut malformed_tuple_ids = Vec::new();
+
+    for tuple_id in &sniff_evidence.host_to_device_serial_frame_tuple_ids {
+        let Some(tuple) = parse_passive_serial_tuple_id(tuple_id) else {
+            malformed_tuple_ids.push(tuple_id.clone());
+            continue;
+        };
+        let Some(command_id) = tuple.command else {
+            commandless_tuple_ids.push(tuple_id.clone());
+            continue;
+        };
+        if let Some(command) = registry_commands.get(&(tuple.group, tuple.device_id, command_id)) {
+            known_registry_tuple_ids.push(tuple_id.clone());
+            if command.read_only_status_probe_allowed {
+                known_read_only_status_tuple_ids.push(tuple_id.clone());
+            }
+            if matches!(
+                command.risk_class,
+                "vendor_control_candidate"
+                    | "vendor_output_candidate"
+                    | "configuration_candidate"
+                    | "firmware_or_dfu_forbidden"
+                    | "unknown_do_not_send"
+            ) {
+                known_write_like_tuple_ids.push(tuple_id.clone());
+            }
+            known_registry_matches.push(VendorProtocolTupleRegistryMatch {
+                tuple_id: tuple_id.clone(),
+                command_id: command.id.to_string(),
+                family: command.family.to_string(),
+                risk_class: command.risk_class.to_string(),
+                read_only_status_probe_allowed: command.read_only_status_probe_allowed,
+                hardware_output_authorized: command.hardware_output_authorized,
+                output_sendability_claim: false,
+            });
+        } else {
+            unknown_commanded_tuple_ids.push(tuple_id.clone());
+        }
+    }
+
+    Ok(VendorProtocolPassiveTupleRegistryCoverage {
+        review_scope: "checked_in_passive_tuple_ids_vs_semantic_registry",
+        total_tuple_id_count: sniff_evidence.host_to_device_serial_frame_tuple_ids.len(),
+        known_registry_tuple_count: known_registry_tuple_ids.len(),
+        known_read_only_status_tuple_count: known_read_only_status_tuple_ids.len(),
+        known_write_like_tuple_count: known_write_like_tuple_ids.len(),
+        commandless_tuple_count: commandless_tuple_ids.len(),
+        unknown_commanded_tuple_count: unknown_commanded_tuple_ids.len(),
+        malformed_tuple_count: malformed_tuple_ids.len(),
+        known_registry_matches,
+        known_registry_tuple_ids,
+        known_read_only_status_tuple_ids,
+        known_write_like_tuple_ids,
+        commandless_tuple_ids,
+        unknown_commanded_tuple_ids,
+        malformed_tuple_ids,
+        unknown_tuple_risk_class: "unknown_do_not_send",
+        protocol_evidence_sufficient_for_output_plan: false,
+        hardware_output_authorized: false,
+        native_control_evidence: false,
+        output_sendability_claim: false,
+        notes: vec![
+            "Passive tuple IDs are compared to the semantic registry only; this does not decode payload semantics or authorize sends.",
+            "Unknown commanded tuples and commandless tuples remain fenced as not sendable until a future semantic decode and reviewed plan exist.",
+            "Known read-only status tuples are protocol evidence only and do not create output, configuration, native-control, or native-visible claims.",
+        ],
+    })
+}
+
+struct VendorProtocolRegistryTupleCommand<'a> {
+    id: &'a str,
+    family: &'a str,
+    risk_class: &'a str,
+    read_only_status_probe_allowed: bool,
+    hardware_output_authorized: bool,
+}
+
+struct PassiveSerialTupleId {
+    group: u8,
+    device_id: u8,
+    command: Option<u8>,
+}
+
+fn parse_passive_serial_tuple_id(tuple_id: &str) -> Option<PassiveSerialTupleId> {
+    let mut parts = tuple_id.split('/');
+    let group = parse_hex_selector(parts.next()?).and_then(u16_to_u8)?;
+    let device_id = parse_hex_selector(parts.next()?).and_then(u16_to_u8)?;
+    let command_part = parts.next()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    let command = if command_part == "none" {
+        None
+    } else {
+        Some(parse_hex_selector(command_part).and_then(u16_to_u8)?)
+    };
+    Some(PassiveSerialTupleId {
+        group,
+        device_id,
+        command,
+    })
+}
+
+fn u16_to_u8(value: u16) -> Option<u8> {
+    u8::try_from(value).ok()
+}
+
+fn json_u8_value(value: Option<&Value>) -> Option<u8> {
+    value
+        .and_then(Value::as_u64)
+        .and_then(|value| u8::try_from(value).ok())
 }
 
 fn vendor_protocol_post_authority_pidff_result(
@@ -29878,6 +30040,7 @@ struct VendorProtocolEvidenceReviewReceipt {
     protocol_evidence_sufficient_for_output_plan: bool,
     sniff_evidence: VendorProtocolSniffEvidence,
     command_registry_review: VendorProtocolCommandRegistryReview,
+    passive_tuple_registry_coverage: VendorProtocolPassiveTupleRegistryCoverage,
     post_authority_pidff_result: VendorProtocolPostAuthorityPidffResult,
     next_allowed_action: &'static str,
     blocked_actions: Vec<&'static str>,
@@ -29976,6 +30139,42 @@ struct VendorProtocolCommandRegistryReview {
     read_only_status_command_ids: Vec<String>,
     write_candidate_command_ids: Vec<String>,
     hardware_output_authorized_any: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorProtocolPassiveTupleRegistryCoverage {
+    review_scope: &'static str,
+    total_tuple_id_count: usize,
+    known_registry_tuple_count: usize,
+    known_read_only_status_tuple_count: usize,
+    known_write_like_tuple_count: usize,
+    commandless_tuple_count: usize,
+    unknown_commanded_tuple_count: usize,
+    malformed_tuple_count: usize,
+    known_registry_matches: Vec<VendorProtocolTupleRegistryMatch>,
+    known_registry_tuple_ids: Vec<String>,
+    known_read_only_status_tuple_ids: Vec<String>,
+    known_write_like_tuple_ids: Vec<String>,
+    commandless_tuple_ids: Vec<String>,
+    unknown_commanded_tuple_ids: Vec<String>,
+    malformed_tuple_ids: Vec<String>,
+    unknown_tuple_risk_class: &'static str,
+    protocol_evidence_sufficient_for_output_plan: bool,
+    hardware_output_authorized: bool,
+    native_control_evidence: bool,
+    output_sendability_claim: bool,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorProtocolTupleRegistryMatch {
+    tuple_id: String,
+    command_id: String,
+    family: String,
+    risk_class: String,
+    read_only_status_probe_allowed: bool,
+    hardware_output_authorized: bool,
+    output_sendability_claim: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -38914,6 +39113,16 @@ mod tests {
                 "frame_shape_decode_gap": false,
                 "tuple_counts": [
                     {
+                        "group": "0x28",
+                        "device_id": "0x13",
+                        "command": "0x02",
+                        "payload_len_min": 0,
+                        "payload_len_max": 0,
+                        "count": 1,
+                        "checksum_valid_count": 1,
+                        "checksum_invalid_count": 0
+                    },
+                    {
                         "group": "0x5A",
                         "device_id": "0x1B",
                         "command": "0x00",
@@ -39095,7 +39304,49 @@ mod tests {
                 .and_then(Value::as_array)
                 .and_then(|tuples| tuples.first())
                 .and_then(Value::as_str),
+            Some("0x28/0x13/0x02")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/total_tuple_id_count")
+                .and_then(Value::as_u64),
+            Some(2)
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/known_registry_tuple_count")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/known_read_only_status_tuple_ids/0")
+                .and_then(Value::as_str),
+            Some("0x28/0x13/0x02")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/unknown_commanded_tuple_count")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/unknown_commanded_tuple_ids/0")
+                .and_then(Value::as_str),
             Some("0x5A/0x1B/0x00")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/hardware_output_authorized")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/output_sendability_claim")
+                .and_then(Value::as_bool),
+            Some(false)
         );
         assert_eq!(
             value
