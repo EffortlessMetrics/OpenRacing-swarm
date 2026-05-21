@@ -2400,6 +2400,34 @@ fn moza_vendor_protocol_decode_priority(lane: &Path) -> Value {
                 "protocol_evidence_sufficient_for_output_plan": false
             })
         });
+    let decode_candidate_semantic_correlation_plan = coverage
+        .get("decode_candidate_semantic_correlation_plan")
+        .cloned()
+        .unwrap_or_else(|| {
+            serde_json::json!({
+                "claim_scope": "no_output_passive_tuple_semantic_correlation_plan",
+                "source_hypothesis_scope": "no_output_passive_tuple_semantic_hypothesis_review",
+                "hypothesis_count": 0,
+                "correlation_target_count": 0,
+                "all_targets_non_sendable": false,
+                "targets": [],
+                "next_allowed_action": "capture or summarize named passive correlation scenarios; no output",
+                "blocked_actions": [
+                    "send unknown vendor tuples",
+                    "promote semantic command registry entries",
+                    "create vendor authorization receipts",
+                    "run hardware output",
+                    "claim native-visible readiness"
+                ],
+                "required_artifacts": [],
+                "semantic_decode_claim": false,
+                "registry_promotion_claim": false,
+                "hardware_output_authorized": false,
+                "native_control_evidence": false,
+                "output_sendability_claim": false,
+                "protocol_evidence_sufficient_for_output_plan": false
+            })
+        });
     let payload_export_gap_summary = review
         .pointer("/sniff_evidence/payload_export_gap_summary")
         .cloned()
@@ -2433,6 +2461,7 @@ fn moza_vendor_protocol_decode_priority(lane: &Path) -> Value {
         "decode_candidate_payload_shape_summary": decode_candidate_payload_shape_summary,
         "decode_candidate_packet_group_summary": decode_candidate_packet_group_summary,
         "decode_candidate_semantic_hypothesis_summary": decode_candidate_semantic_hypothesis_summary,
+        "decode_candidate_semantic_correlation_plan": decode_candidate_semantic_correlation_plan,
         "payload_export_gap_summary": payload_export_gap_summary,
         "unknown_tuple_risk_class": json_string(coverage, "unknown_tuple_risk_class").unwrap_or("unknown_do_not_send"),
         "hardware_output_authorized": false,
@@ -28823,6 +28852,11 @@ fn vendor_protocol_passive_tuple_registry_coverage(
             &decode_candidate_payload_shape_summary,
             &decode_candidate_packet_group_summary,
         );
+    let decode_candidate_semantic_correlation_plan =
+        vendor_protocol_decode_candidate_semantic_correlation_plan(
+            sniff_evidence,
+            &decode_candidate_semantic_hypothesis_summary,
+        );
 
     Ok(VendorProtocolPassiveTupleRegistryCoverage {
         review_scope: "checked_in_passive_tuple_ids_vs_semantic_registry",
@@ -28850,6 +28884,7 @@ fn vendor_protocol_passive_tuple_registry_coverage(
         decode_candidate_payload_shape_summary,
         decode_candidate_packet_group_summary,
         decode_candidate_semantic_hypothesis_summary,
+        decode_candidate_semantic_correlation_plan,
         unknown_tuple_risk_class: "unknown_do_not_send",
         protocol_evidence_sufficient_for_output_plan: false,
         hardware_output_authorized: false,
@@ -29100,6 +29135,143 @@ fn vendor_protocol_decode_candidate_semantic_hypothesis_summary(
         notes: vec![
             "Hypotheses are decode questions derived from passive fixture morphology; they are not semantic command definitions.",
             "Unknown commanded tuples remain unknown_do_not_send and non-sendable until external correlation and reviewed decoder coverage exist.",
+        ],
+    }
+}
+
+fn vendor_protocol_decode_candidate_semantic_correlation_plan(
+    sniff_evidence: &VendorProtocolSniffEvidence,
+    hypothesis_summary: &VendorProtocolDecodeCandidateSemanticHypothesisSummary,
+) -> VendorProtocolDecodeCandidateSemanticCorrelationPlan {
+    let mut tuple_ids_by_hypothesis: BTreeMap<&'static str, BTreeSet<String>> = BTreeMap::new();
+    for hypothesis in &hypothesis_summary.tuple_hypotheses {
+        tuple_ids_by_hypothesis
+            .entry(hypothesis.semantic_hypothesis)
+            .or_default()
+            .insert(hypothesis.tuple_id.clone());
+    }
+
+    let missing_correlation_scenarios = sniff_evidence.missing_scenarios.clone();
+    let next_capture_priority =
+        vendor_protocol_next_semantic_correlation_capture(&missing_correlation_scenarios);
+    let mut targets = Vec::new();
+
+    for (semantic_hypothesis, tuple_ids) in tuple_ids_by_hypothesis {
+        let tuple_ids = tuple_ids.into_iter().collect::<Vec<_>>();
+        let observed_completed_scenarios =
+            vendor_protocol_observed_completed_scenarios_for_tuples(sniff_evidence, &tuple_ids);
+        targets.push(VendorProtocolDecodeCandidateSemanticCorrelationTarget {
+            semantic_hypothesis,
+            tuple_ids,
+            observed_completed_scenarios,
+            missing_correlation_scenarios: missing_correlation_scenarios.clone(),
+            required_correlation_questions: vendor_protocol_semantic_correlation_questions(
+                semantic_hypothesis,
+            ),
+            next_capture_priority: next_capture_priority.clone(),
+            semantic_decode_claim: false,
+            registry_promotion_claim: false,
+            hardware_output_authorized: false,
+            output_sendability_claim: false,
+        });
+    }
+
+    let required_artifacts =
+        vendor_protocol_semantic_correlation_required_artifacts(&missing_correlation_scenarios);
+    let all_targets_non_sendable = !targets.is_empty()
+        && targets.iter().all(|target| {
+            !target.semantic_decode_claim
+                && !target.registry_promotion_claim
+                && !target.hardware_output_authorized
+                && !target.output_sendability_claim
+        });
+
+    VendorProtocolDecodeCandidateSemanticCorrelationPlan {
+        claim_scope: "no_output_passive_tuple_semantic_correlation_plan",
+        source_hypothesis_scope: hypothesis_summary.claim_scope,
+        hypothesis_count: hypothesis_summary.hypothesis_count,
+        correlation_target_count: targets.len(),
+        all_targets_non_sendable,
+        targets,
+        next_allowed_action: "capture or summarize named passive correlation scenarios; no output",
+        blocked_actions: vec![
+            "send unknown vendor tuples",
+            "promote semantic command registry entries",
+            "create vendor authorization receipts",
+            "run hardware output",
+            "claim native-visible readiness",
+        ],
+        required_artifacts,
+        semantic_decode_claim: false,
+        registry_promotion_claim: false,
+        hardware_output_authorized: false,
+        native_control_evidence: false,
+        output_sendability_claim: false,
+        protocol_evidence_sufficient_for_output_plan: false,
+        notes: vec![
+            "Correlation targets are capture questions for passive evidence only; they are not semantic command definitions.",
+            "Missing correlation scenarios must produce non-claiming sniff receipts and summaries before any tuple can move toward registry review.",
+        ],
+    }
+}
+
+fn vendor_protocol_observed_completed_scenarios_for_tuples(
+    sniff_evidence: &VendorProtocolSniffEvidence,
+    tuple_ids: &[String],
+) -> Vec<String> {
+    sniff_evidence
+        .scenarios
+        .iter()
+        .filter(|scenario| scenario.summary_validated)
+        .filter(|scenario| {
+            scenario
+                .host_to_device_serial_frame_tuple_counts
+                .iter()
+                .any(|count| tuple_ids.iter().any(|tuple_id| tuple_id == &count.tuple_id))
+        })
+        .map(|scenario| scenario.scenario.clone())
+        .collect()
+}
+
+fn vendor_protocol_next_semantic_correlation_capture(missing_scenarios: &[String]) -> String {
+    missing_scenarios
+        .iter()
+        .find(|scenario| scenario.as_str() == "pit-house-setting-change")
+        .or_else(|| missing_scenarios.first())
+        .cloned()
+        .unwrap_or_else(|| "none_remaining".to_string())
+}
+
+fn vendor_protocol_semantic_correlation_required_artifacts(
+    missing_scenarios: &[String],
+) -> Vec<String> {
+    missing_scenarios
+        .iter()
+        .flat_map(|scenario| {
+            [
+                format!("ci/hardware/sniff/moza-r5/2026-05-13/{scenario}/sniff-receipt.json"),
+                format!("ci/hardware/sniff/moza-r5/2026-05-13/{scenario}/sniff-summary.json"),
+            ]
+        })
+        .collect()
+}
+
+fn vendor_protocol_semantic_correlation_questions(semantic_hypothesis: &str) -> Vec<&'static str> {
+    match semantic_hypothesis {
+        "session_or_status_keepalive_candidate" => vec![
+            "does tuple cadence change when Pit House setting changes?",
+            "does tuple cadence persist without Pit House when SimHub or simulator observe the device?",
+            "is there a device-to-host response, ack, or status delta tied to the tuple pair?",
+        ],
+        "base_status_or_mode_poll_candidate" => vec![
+            "does the triad change around a named Pit House setting or mode state?",
+            "does the triad appear during SimHub or simulator sessions without Pit House?",
+            "is the triad a read/status poll rather than a volatile mode enable?",
+        ],
+        _ => vec![
+            "which named passive scenario changes tuple cadence or payload shape?",
+            "is there a paired device-to-host response, ack, or status delta?",
+            "does fixture-backed semantic decoder coverage explain the tuple before registry promotion?",
         ],
     }
 }
@@ -31289,6 +31461,8 @@ struct VendorProtocolPassiveTupleRegistryCoverage {
     decode_candidate_packet_group_summary: VendorProtocolDecodeCandidatePacketGroupSummary,
     decode_candidate_semantic_hypothesis_summary:
         VendorProtocolDecodeCandidateSemanticHypothesisSummary,
+    decode_candidate_semantic_correlation_plan:
+        VendorProtocolDecodeCandidateSemanticCorrelationPlan,
     unknown_tuple_risk_class: &'static str,
     protocol_evidence_sufficient_for_output_plan: bool,
     hardware_output_authorized: bool,
@@ -31446,6 +31620,40 @@ struct VendorProtocolDecodeCandidateSemanticHypothesis {
     confidence: &'static str,
     evidence_basis: Vec<String>,
     required_next_evidence: Vec<&'static str>,
+    semantic_decode_claim: bool,
+    registry_promotion_claim: bool,
+    hardware_output_authorized: bool,
+    output_sendability_claim: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorProtocolDecodeCandidateSemanticCorrelationPlan {
+    claim_scope: &'static str,
+    source_hypothesis_scope: &'static str,
+    hypothesis_count: usize,
+    correlation_target_count: usize,
+    all_targets_non_sendable: bool,
+    targets: Vec<VendorProtocolDecodeCandidateSemanticCorrelationTarget>,
+    next_allowed_action: &'static str,
+    blocked_actions: Vec<&'static str>,
+    required_artifacts: Vec<String>,
+    semantic_decode_claim: bool,
+    registry_promotion_claim: bool,
+    hardware_output_authorized: bool,
+    native_control_evidence: bool,
+    output_sendability_claim: bool,
+    protocol_evidence_sufficient_for_output_plan: bool,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorProtocolDecodeCandidateSemanticCorrelationTarget {
+    semantic_hypothesis: &'static str,
+    tuple_ids: Vec<String>,
+    observed_completed_scenarios: Vec<String>,
+    missing_correlation_scenarios: Vec<String>,
+    required_correlation_questions: Vec<&'static str>,
+    next_capture_priority: String,
     semantic_decode_claim: bool,
     registry_promotion_claim: bool,
     hardware_output_authorized: bool,
@@ -36793,6 +37001,64 @@ fn push_vendor_authority_navigation_markdown(out: &mut String, receipt: &Value) 
                 "- Registry promotion claim: `{registry_promotion_claim}`\n"
             ));
         }
+        if let Some(correlation_plan) = priority
+            .get("decode_candidate_semantic_correlation_plan")
+            .filter(|plan| !plan.is_null())
+        {
+            let target_count = json_u64(correlation_plan, "correlation_target_count").unwrap_or(0);
+            let output_sendability_claim =
+                json_bool(correlation_plan, "output_sendability_claim").unwrap_or(false);
+            let next_allowed_action =
+                json_string(correlation_plan, "next_allowed_action").unwrap_or("not recorded");
+            out.push_str(&format!(
+                "- Semantic correlation target count: `{target_count}`\n"
+            ));
+            out.push_str(&format!(
+                "- Semantic correlation sendability claim: `{output_sendability_claim}`\n"
+            ));
+            out.push_str(&format!(
+                "- Semantic correlation next action: `{}`\n",
+                markdown_escape(next_allowed_action)
+            ));
+            if let Some(targets) = correlation_plan
+                .get("targets")
+                .and_then(Value::as_array)
+                .filter(|targets| !targets.is_empty())
+            {
+                out.push_str(
+                    "\n| Correlation target | Tuples | Observed completed scenarios | Missing scenarios | Next capture | Sendable |\n",
+                );
+                out.push_str("| --- | --- | --- | --- | --- | --- |\n");
+                for target in targets {
+                    let semantic_hypothesis =
+                        json_string(target, "semantic_hypothesis").unwrap_or("unknown");
+                    let tuple_ids = json_string_array_value(target.get("tuple_ids"))
+                        .into_iter()
+                        .map(|tuple_id| format!("`{}`", markdown_escape(&tuple_id)))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let observed_completed_scenarios =
+                        json_string_array_value(target.get("observed_completed_scenarios"))
+                            .join(", ");
+                    let missing_correlation_scenarios =
+                        json_string_array_value(target.get("missing_correlation_scenarios"))
+                            .join(", ");
+                    let next_capture_priority =
+                        json_string(target, "next_capture_priority").unwrap_or("unknown");
+                    let output_sendability_claim =
+                        json_bool(target, "output_sendability_claim").unwrap_or(false);
+                    out.push_str(&format!(
+                        "| `{}` | {} | `{}` | `{}` | `{}` | `{}` |\n",
+                        markdown_escape(semantic_hypothesis),
+                        tuple_ids,
+                        markdown_escape(&observed_completed_scenarios),
+                        markdown_escape(&missing_correlation_scenarios),
+                        markdown_escape(next_capture_priority),
+                        output_sendability_claim
+                    ));
+                }
+            }
+        }
         if let Some(payload_gap_summary) = priority
             .get("payload_export_gap_summary")
             .filter(|summary| !summary.is_null())
@@ -41238,6 +41504,60 @@ mod tests {
         );
         assert_eq!(
             value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_semantic_correlation_plan/claim_scope")
+                .and_then(Value::as_str),
+            Some("no_output_passive_tuple_semantic_correlation_plan")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_semantic_correlation_plan/source_hypothesis_scope")
+                .and_then(Value::as_str),
+            Some("no_output_passive_tuple_semantic_hypothesis_review")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_semantic_correlation_plan/correlation_target_count")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_semantic_correlation_plan/targets/0/semantic_hypothesis")
+                .and_then(Value::as_str),
+            Some("session_or_status_keepalive_candidate")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_semantic_correlation_plan/targets/0/next_capture_priority")
+                .and_then(Value::as_str),
+            Some("pit-house-setting-change")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_semantic_correlation_plan/targets/0/observed_completed_scenarios/0")
+                .and_then(Value::as_str),
+            Some("pit-house-open-idle")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_semantic_correlation_plan/targets/0/missing_correlation_scenarios/0")
+                .and_then(Value::as_str),
+            Some("pit-house-setting-change")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_semantic_correlation_plan/required_artifacts/0")
+                .and_then(Value::as_str),
+            Some("ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-receipt.json")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_semantic_correlation_plan/output_sendability_claim")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            value
                 .pointer(
                     "/passive_tuple_registry_coverage/tuple_frequency_summary/0/registry_status"
                 )
@@ -41607,6 +41927,7 @@ mod tests {
             "decode_candidate_payload_shape_summary",
             "decode_candidate_packet_group_summary",
             "decode_candidate_semantic_hypothesis_summary",
+            "decode_candidate_semantic_correlation_plan",
         ] {
             assert!(
                 passive_tuple_required
@@ -41687,6 +42008,41 @@ mod tests {
         );
         assert_eq!(
             schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_semantic_hypothesis_summary"]
+                ["properties"]["output_sendability_claim"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_semantic_correlation_plan"]
+                ["properties"]["claim_scope"]["const"],
+            "no_output_passive_tuple_semantic_correlation_plan"
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_semantic_correlation_plan"]
+                ["properties"]["source_hypothesis_scope"]["const"],
+            "no_output_passive_tuple_semantic_hypothesis_review"
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_semantic_correlation_plan"]
+                ["properties"]["semantic_decode_claim"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_semantic_correlation_plan"]
+                ["properties"]["registry_promotion_claim"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_semantic_correlation_plan"]
+                ["properties"]["hardware_output_authorized"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_semantic_correlation_plan"]
+                ["properties"]["native_control_evidence"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_semantic_correlation_plan"]
                 ["properties"]["output_sendability_claim"]["const"],
             false
         );
@@ -44220,6 +44576,47 @@ mod tests {
                         "output_sendability_claim": false,
                         "protocol_evidence_sufficient_for_output_plan": false
                     },
+                    "decode_candidate_semantic_correlation_plan": {
+                        "claim_scope": "no_output_passive_tuple_semantic_correlation_plan",
+                        "source_hypothesis_scope": "no_output_passive_tuple_semantic_hypothesis_review",
+                        "hypothesis_count": 1,
+                        "correlation_target_count": 1,
+                        "all_targets_non_sendable": true,
+                        "targets": [
+                            {
+                                "semantic_hypothesis": "session_or_status_keepalive_candidate",
+                                "tuple_ids": ["0x5A/0x1B/0x00"],
+                                "observed_completed_scenarios": ["pit-house-open-idle"],
+                                "missing_correlation_scenarios": ["pit-house-setting-change"],
+                                "required_correlation_questions": [
+                                    "does tuple cadence change when Pit House setting changes?"
+                                ],
+                                "next_capture_priority": "pit-house-setting-change",
+                                "semantic_decode_claim": false,
+                                "registry_promotion_claim": false,
+                                "hardware_output_authorized": false,
+                                "output_sendability_claim": false
+                            }
+                        ],
+                        "next_allowed_action": "capture or summarize named passive correlation scenarios; no output",
+                        "blocked_actions": [
+                            "send unknown vendor tuples",
+                            "promote semantic command registry entries",
+                            "create vendor authorization receipts",
+                            "run hardware output",
+                            "claim native-visible readiness"
+                        ],
+                        "required_artifacts": [
+                            "ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-receipt.json",
+                            "ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-summary.json"
+                        ],
+                        "semantic_decode_claim": false,
+                        "registry_promotion_claim": false,
+                        "hardware_output_authorized": false,
+                        "native_control_evidence": false,
+                        "output_sendability_claim": false,
+                        "protocol_evidence_sufficient_for_output_plan": false
+                    },
                     "tuple_frequency_summary": [
                         {
                             "tuple_id": "0x5D/0x1B/0x01",
@@ -44382,6 +44779,48 @@ mod tests {
         );
         assert_eq!(
             priority
+                .pointer("/decode_candidate_semantic_correlation_plan/claim_scope")
+                .and_then(Value::as_str),
+            Some("no_output_passive_tuple_semantic_correlation_plan")
+        );
+        assert_eq!(
+            priority
+                .pointer("/decode_candidate_semantic_correlation_plan/correlation_target_count")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            priority
+                .pointer(
+                    "/decode_candidate_semantic_correlation_plan/targets/0/semantic_hypothesis"
+                )
+                .and_then(Value::as_str),
+            Some("session_or_status_keepalive_candidate")
+        );
+        assert_eq!(
+            priority
+                .pointer(
+                    "/decode_candidate_semantic_correlation_plan/targets/0/next_capture_priority"
+                )
+                .and_then(Value::as_str),
+            Some("pit-house-setting-change")
+        );
+        assert_eq!(
+            priority
+                .pointer(
+                    "/decode_candidate_semantic_correlation_plan/targets/0/output_sendability_claim"
+                )
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            priority
+                .pointer("/decode_candidate_semantic_correlation_plan/output_sendability_claim")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            priority
                 .pointer("/payload_export_gap_summary/claim_scope")
                 .and_then(Value::as_str),
             Some("no_output_passive_payload_export_gap_review")
@@ -44428,6 +44867,10 @@ mod tests {
         assert!(artifact_markdown.contains("Semantic decode claim: `false`"));
         assert!(artifact_markdown.contains("Semantic hypothesis tuple"));
         assert!(artifact_markdown.contains("session_or_status_keepalive_candidate"));
+        assert!(artifact_markdown.contains("Semantic correlation target count: `1`"));
+        assert!(artifact_markdown.contains("Semantic correlation next action"));
+        assert!(artifact_markdown.contains("Correlation target"));
+        assert!(artifact_markdown.contains("pit-house-setting-change"));
         assert!(artifact_markdown.contains("Residual payload export gap packets: `2`"));
         assert!(artifact_markdown.contains("Payload gap scenario"));
         assert!(artifact_markdown.contains("Packet group pattern"));

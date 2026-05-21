@@ -152,6 +152,15 @@ marked pattern-only, MUST keep `semantic_decode_claim=false`,
 `output_sendability_claim=false`, and MUST NOT be used as registry entries,
 authorization inputs, or hardware-output eligibility without later external
 correlation and reviewed semantic decoder coverage.
+No-output receipts MAY derive a passive semantic correlation plan from those
+hypotheses and the checked-in passive scenario state. The plan MUST keep
+`semantic_decode_claim=false`, `registry_promotion_claim=false`,
+`hardware_output_authorized=false`, `native_control_evidence=false`,
+`output_sendability_claim=false`, and
+`protocol_evidence_sufficient_for_output_plan=false`. It MAY name required
+passive capture artifacts and state-transition questions, but MUST NOT make any
+tuple sendable, create an authorization input, or satisfy native-visible,
+smoke-ready, coexistence, simulator, or release-ready gates.
 Passive sniff summaries MAY also preserve bounded packet/frame locator examples
 for host-to-device USB transfers that declare data length but do not expose
 payload bytes through the current tshark export. Those residual payload export

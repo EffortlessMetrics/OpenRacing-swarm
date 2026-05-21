@@ -74,6 +74,14 @@ Frequency-ranked tuples are decode-priority navigation only. They do not make an
 - Semantic hypothesis count: `5`
 - Semantic decode claim: `false`
 - Registry promotion claim: `false`
+- Semantic correlation target count: `2`
+- Semantic correlation sendability claim: `false`
+- Semantic correlation next action: `capture or summarize named passive correlation scenarios; no output`
+
+| Correlation target | Tuples | Observed completed scenarios | Missing scenarios | Next capture | Sendable |
+| --- | --- | --- | --- | --- | --- |
+| `base_status_or_mode_poll_candidate` | `0x25/0x19/0x01`, `0x25/0x19/0x02`, `0x25/0x19/0x03` | `pit-house-open-idle, pit-house-full-controls` | `pit-house-setting-change, simhub-open-idle, simhub-output-session, simulator-session-start-stop` | `pit-house-setting-change` | `false` |
+| `session_or_status_keepalive_candidate` | `0x5A/0x1B/0x00`, `0x5D/0x1B/0x01` | `pit-house-open-idle, pit-house-full-controls` | `pit-house-setting-change, simhub-open-idle, simhub-output-session, simulator-session-start-stop` | `pit-house-setting-change` | `false` |
 - Residual payload export gap packets: `2`
 - Payload export gap scenarios: `2`
 - Payload gap sendability claim: `false`
