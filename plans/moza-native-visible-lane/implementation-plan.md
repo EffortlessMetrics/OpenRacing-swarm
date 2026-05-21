@@ -4022,6 +4022,77 @@ exclusion, focused test, and source-of-truth updates. Do not remove committed
 passive sniff artifacts, local raw capture attempts, consumed hardware
 attempts, or protocol evidence review receipts.
 
+## Work item: bench-wizard-usbpcap-capture-command
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: operator execution of the next passive Pit House setting-change capture
+Blocked by: bench-wizard routed the next passive scenario to receipt, notes,
+summary, and bundle commands, but the USBPcap capture command itself was only
+visible inside the checklist/notes path rather than as a first-class operator
+command template.
+
+### Goal
+
+Make the passive capture handoff easier to execute by surfacing the external
+USBPcap capture command template directly in `wheelctl moza bench-wizard`.
+The command remains operator-owned external capture guidance only.
+
+### Production Delta
+
+Add an `external_capture_commands` section to the passive sniff next-operator
+step. It contains `run_external_usbpcap_capture`, marks it as not an
+OpenRacing command, keeps OpenRacing output flags false, requires a fresh
+hardware-doctor USBPcap hint before use, and renders the command template in
+bench-wizard Markdown.
+
+### Non-goals
+
+No pcap creation, raw `.pcapng` commit, sniff receipt creation, sniff summary
+creation, sniff bundle creation, HID open, serial open, read-only query send,
+OpenRacing hardware output, authorization, PIDFF rerun, direct HID report
+`0xaf`, high torque, serial config, firmware, DFU, native-control claim,
+native-visible claim, smoke-ready claim, Pit House coexistence claim, simulator
+claim, release-ready claim, semantic command decode, registry promotion, tuple
+sendability claim, or parsing the external USBPcap command through the
+OpenRacing CLI parser.
+
+### Acceptance
+
+- Bench-wizard passive sniff next-step JSON includes
+  `external_capture_commands[0].name = run_external_usbpcap_capture`.
+- The external command template points at
+  `target\sniff\<scenario>\capture.pcapng` and requires replacing placeholders
+  from the fresh hardware-doctor USBPcap Moza device hint.
+- The command is explicitly `openracing_command=false`,
+  `output_enabled=false`, `openracing_hardware_output=false`, and
+  `raw_pcapng_commit_default=false`.
+- Existing generated `wheelctl hardware ...` sniff handoff commands remain
+  parseable and no-output.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_sniff_next_operator_commands_parse -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_review_routes_next_missing_passive_correlation_capture -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-usbpcap-capture-command.json --md-out target/moza-current/bench-wizard-usbpcap-capture-command.md --json
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the bench-wizard external capture command-template rendering,
+focused tests, and source-of-truth updates. Do not remove passive sniff plans,
+checked-in sniff evidence, local raw capture attempts, consumed hardware
+attempts, protocol evidence review receipts, or the existing
+`wheelctl hardware` sniff handoff commands.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
