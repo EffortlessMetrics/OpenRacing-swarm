@@ -79,7 +79,17 @@ pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
             plan,
             hardware_doctor,
             out,
-        } => sniff_notes_template(json, plan, hardware_doctor.as_deref(), out).await,
+            json_out,
+        } => {
+            sniff_notes_template(
+                json,
+                plan,
+                hardware_doctor.as_deref(),
+                out,
+                json_out.as_deref(),
+            )
+            .await
+        }
         HardwareCommands::SniffSummary {
             pcapng,
             vendor,
@@ -251,6 +261,7 @@ async fn sniff_notes_template(
     plan: &Path,
     hardware_doctor: Option<&Path>,
     out: &Path,
+    json_out: Option<&Path>,
 ) -> Result<()> {
     let stored_plan = read_and_validate_sniff_plan(plan)?;
     let capture_hints = sniff_notes_capture_hints_from_hardware_doctor(hardware_doctor)?;
@@ -279,7 +290,8 @@ async fn sniff_notes_template(
         satisfies_release_ready: false,
         readiness_claims: HardwareSniffReadinessClaims::none(),
     };
-    print_sniff_notes_template(json, out, &receipt)
+    write_json_receipt(json_out, &receipt)?;
+    print_sniff_notes_template(json, out, json_out, &receipt)
 }
 
 async fn sniff_summary(
@@ -4937,6 +4949,7 @@ fn print_sniff_receipt(
 fn print_sniff_notes_template(
     json: bool,
     out: &Path,
+    json_out: Option<&Path>,
     receipt: &HardwareSniffNotesTemplateReceipt,
 ) -> Result<()> {
     if json {
@@ -4951,6 +4964,9 @@ fn print_sniff_notes_template(
     write_stdout_line(
         "Non-claiming: native response, native visible, smoke, release, and OpenRacing hardware output are false.",
     )?;
+    if let Some(path) = json_out {
+        write_stdout_line(&format!("Receipt: {}", path.display()))?;
+    }
     Ok(())
 }
 
@@ -7205,6 +7221,43 @@ mod tests {
             );
             assert!(notes.contains("MOZA Windows Driver"));
             assert!(notes.contains("OpenRacing output"));
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn sniff_notes_template_writes_json_receipt_when_requested() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let plan =
+                sample_plan_for_scenario(dir.path(), HardwareSniffScenario::PitHouseSettingChange)?;
+            let plan_path = dir.path().join("sniff-plan.json");
+            write_json_file(&plan_path, &plan)?;
+            let notes_path = dir.path().join("operator-notes.md");
+            let json_out = dir.path().join("sniff-notes-template-receipt.json");
+
+            sniff_notes_template(false, &plan_path, None, &notes_path, Some(&json_out)).await?;
+
+            let value: serde_json::Value = read_json_file(&json_out)?;
+            assert!(notes_path.is_file());
+            assert_eq!(
+                value.get("command").and_then(serde_json::Value::as_str),
+                Some("wheelctl hardware sniff-notes-template")
+            );
+            assert_eq!(
+                value
+                    .get("openracing_hardware_output")
+                    .and_then(serde_json::Value::as_bool),
+                Some(false)
+            );
+            assert_eq!(
+                value
+                    .get("satisfies_native_visible_ready")
+                    .and_then(serde_json::Value::as_bool),
+                Some(false)
+            );
+            assert_eq!(
+                value.get("scenario").and_then(serde_json::Value::as_str),
+                Some("pit-house-setting-change")
+            );
             Ok(())
         }
 

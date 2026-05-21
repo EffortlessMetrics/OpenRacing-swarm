@@ -423,6 +423,9 @@ pub enum HardwareCommands {
         /// Output Markdown operator notes template path
         #[arg(long)]
         out: std::path::PathBuf,
+        /// Write the sniff notes template JSON receipt to this file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
     },
 
     /// Summarize a passive USB pcapng capture without sending hardware output

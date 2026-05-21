@@ -569,12 +569,15 @@ mod tests {
             "target/moza-current/passive-sniff-capture-hardware-doctor.json",
             "--out",
             "target/sniff/pit-house-open-idle/operator-notes.md",
+            "--json-out",
+            "target/sniff/pit-house-open-idle/sniff-notes-template-receipt.json",
         ])?;
         match &cli.command {
             Commands::Hardware(HardwareCommands::SniffNotesTemplate {
                 plan,
                 hardware_doctor,
                 out,
+                json_out,
             }) => {
                 assert_eq!(
                     plan.to_str(),
@@ -587,6 +590,10 @@ mod tests {
                 assert_eq!(
                     out.to_str(),
                     Some("target/sniff/pit-house-open-idle/operator-notes.md")
+                );
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/sniff/pit-house-open-idle/sniff-notes-template-receipt.json")
                 );
             }
             _ => return Err("expected Hardware SniffNotesTemplate command".into()),

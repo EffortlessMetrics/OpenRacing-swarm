@@ -2612,6 +2612,7 @@ fn moza_passive_sniff_next_operator_step(lane: &Path) -> Option<Value> {
         let local_pcapng = local_dir.join("capture.pcapng");
         let local_summary_md = local_dir.join("sniff-summary.md");
         let local_operator_notes = local_dir.join("operator-notes.md");
+        let local_operator_notes_receipt = local_dir.join("sniff-notes-template-receipt.json");
         let local_bundle = local_dir.join("openracing-sniff-bundle.zip");
         let app = moza_passive_sniff_external_app(scenario);
         let evidence = format!(
@@ -2660,9 +2661,10 @@ fn moza_passive_sniff_next_operator_step(lane: &Path) -> Option<Value> {
                     "name": "write_operator_notes_template",
                     "output_enabled": false,
                     "command": format!(
-                        "wheelctl hardware sniff-notes-template --plan {} --hardware-doctor target/moza-current/passive-sniff-capture-hardware-doctor.json --out {}",
+                        "wheelctl hardware sniff-notes-template --plan {} --hardware-doctor target/moza-current/passive-sniff-capture-hardware-doctor.json --out {} --json-out {}",
                         command_arg(&plan_artifact.display().to_string()),
-                        command_arg(&local_operator_notes.display().to_string())
+                        command_arg(&local_operator_notes.display().to_string()),
+                        command_arg(&local_operator_notes_receipt.display().to_string())
                     )
                 },
                 {
@@ -41904,8 +41906,11 @@ mod tests {
             .ok_or("expected passive capture commands")?;
         assert!(commands.iter().any(|command| {
             json_string(command, "name") == Some("write_operator_notes_template")
-                && json_string(command, "command")
-                    .is_some_and(|text| text.contains("wheelctl hardware sniff-notes-template"))
+                && json_string(command, "command").is_some_and(|text| {
+                    text.contains("wheelctl hardware sniff-notes-template")
+                        && text.contains("--json-out")
+                        && text.contains("sniff-notes-template-receipt.json")
+                })
         }));
         assert!(commands.iter().all(|command| {
             json_bool(command, "output_enabled") == Some(false)
