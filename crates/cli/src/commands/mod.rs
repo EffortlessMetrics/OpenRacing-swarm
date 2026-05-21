@@ -417,6 +417,9 @@ pub enum HardwareCommands {
         /// Sniff plan JSON artifact to read
         #[arg(long)]
         plan: std::path::PathBuf,
+        /// Optional hardware doctor JSON receipt with USBPcap capture hints
+        #[arg(long)]
+        hardware_doctor: Option<std::path::PathBuf>,
         /// Output Markdown operator notes template path
         #[arg(long)]
         out: std::path::PathBuf,
