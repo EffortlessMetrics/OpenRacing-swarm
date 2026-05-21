@@ -663,7 +663,8 @@ fn build_hardware_sniff_summary_from_tshark_json(
         .into_values()
         .map(|report| report.build(config.include_payload_samples))
         .collect();
-    let report_classification_summary = summarize_sniff_report_classifications(&observed_reports);
+    let report_classification_summary =
+        summarize_sniff_report_classifications(&observed_reports, transfer_summary.host_to_device);
 
     Ok(HardwareSniffSummaryArtifact {
         schema_version: 1,
@@ -5135,6 +5136,10 @@ struct HardwareSniffReportClassificationSummary {
     standard_pidff_output_report_count: usize,
     vendor_or_device_specific_output_candidate_count: usize,
     input_or_status_report_count: usize,
+    host_to_device_packet_count: usize,
+    host_to_device_classified_packet_count: usize,
+    host_to_device_unclassified_packet_count: usize,
+    host_to_device_decode_gap: bool,
     host_to_device_report_ids: Vec<String>,
     standard_pidff_output_report_ids: Vec<String>,
     vendor_or_device_specific_output_candidate_report_ids: Vec<String>,
@@ -5146,10 +5151,12 @@ struct HardwareSniffReportClassificationSummary {
 
 fn summarize_sniff_report_classifications(
     reports: &[HardwareSniffObservedReport],
+    host_to_device_packet_count: usize,
 ) -> HardwareSniffReportClassificationSummary {
     let mut standard_pidff_output_report_count = 0;
     let mut vendor_or_device_specific_output_candidate_count = 0;
     let mut input_or_status_report_count = 0;
+    let mut host_to_device_classified_packet_count = 0usize;
     let mut host_to_device_report_ids = BTreeSet::new();
     let mut standard_pidff_output_report_ids = BTreeSet::new();
     let mut vendor_or_device_specific_output_candidate_report_ids = BTreeSet::new();
@@ -5157,6 +5164,8 @@ fn summarize_sniff_report_classifications(
     for report in reports {
         if report.direction == "host_to_device" {
             host_to_device_report_ids.insert(report.report_id.clone());
+            host_to_device_classified_packet_count =
+                host_to_device_classified_packet_count.saturating_add(report.count);
         }
         match report.classification.category.as_str() {
             "standard_pidff_output_report" => {
@@ -5175,11 +5184,21 @@ fn summarize_sniff_report_classifications(
         }
     }
 
-    let decode_recommended = vendor_or_device_specific_output_candidate_count > 0;
-    let notes = if decode_recommended {
+    let host_to_device_unclassified_packet_count =
+        host_to_device_packet_count.saturating_sub(host_to_device_classified_packet_count);
+    let host_to_device_decode_gap =
+        host_to_device_packet_count > 0 && host_to_device_unclassified_packet_count > 0;
+    let decode_recommended =
+        vendor_or_device_specific_output_candidate_count > 0 || host_to_device_decode_gap;
+    let notes = if vendor_or_device_specific_output_candidate_count > 0 {
         vec![
             "vendor/device-specific host-to-device report candidates are present; decode them before designing any future OpenRacing output plan".to_string(),
             "classification summary is protocol navigation only and does not prove native control or readiness".to_string(),
+        ]
+    } else if host_to_device_decode_gap {
+        vec![
+            "host-to-device USB transfers were observed without extractable HID report IDs; inspect raw payload export or dissector output before designing any future OpenRacing output plan".to_string(),
+            "host-to-device decode gaps are protocol navigation only and do not prove native control or readiness".to_string(),
         ]
     } else {
         vec![
@@ -5192,6 +5211,10 @@ fn summarize_sniff_report_classifications(
         standard_pidff_output_report_count,
         vendor_or_device_specific_output_candidate_count,
         input_or_status_report_count,
+        host_to_device_packet_count,
+        host_to_device_classified_packet_count,
+        host_to_device_unclassified_packet_count,
+        host_to_device_decode_gap,
         host_to_device_report_ids: host_to_device_report_ids.into_iter().collect(),
         standard_pidff_output_report_ids: standard_pidff_output_report_ids.into_iter().collect(),
         vendor_or_device_specific_output_candidate_report_ids:
@@ -6339,7 +6362,7 @@ mod tests {
                 payload_hex_samples: None,
             }];
             let report_classification_summary =
-                summarize_sniff_report_classifications(&observed_reports);
+                summarize_sniff_report_classifications(&observed_reports, 0);
 
             HardwareSniffSummaryArtifact {
                 schema_version: 1,
@@ -7122,6 +7145,73 @@ mod tests {
             assert!(!classification_summary.native_control_evidence);
             assert!(!classification_summary.readiness_claim);
 
+            assert_schema_valid(
+                "sniff-summary.schema.json",
+                &serde_json::to_value(&summary)?,
+            )?;
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_summary_surfaces_host_to_device_decode_gaps() -> TestResult {
+            let undecoded_host_output_fixture = r#"[
+              {
+                "_source": {
+                  "layers": {
+                    "usb": {
+                      "usb.bus_id": "1",
+                      "usb.device_address": "12",
+                      "usb.idVendor": "0x346e",
+                      "usb.idProduct": "0x0014",
+                      "usb.interface_number": "2",
+                      "usb.endpoint_address": "0x02",
+                      "usb.endpoint_direction": "OUT",
+                      "usb.transfer_type": "Interrupt"
+                    }
+                  }
+                }
+              }
+            ]"#;
+            let summary = build_hardware_sniff_summary_from_tshark_json(
+                HardwareSniffSummaryConfig {
+                    filters: HardwareSniffSummaryFilters {
+                        vendor_id: Some("0x346E".to_string()),
+                        product_id: Some("0x0014".to_string()),
+                        interface_number: Some(2),
+                    },
+                    include_payload_samples: false,
+                    max_samples_per_report: 2,
+                },
+                sha256_hex(b"undecoded host output fixture"),
+                true,
+                Some("TShark synthetic undecoded host fixture".to_string()),
+                undecoded_host_output_fixture,
+            )?;
+
+            assert!(summary.success);
+            assert_eq!(summary.usb_transfer_summary.host_to_device, 1);
+            assert!(summary.observed_reports.is_empty());
+            let classification_summary = &summary.report_classification_summary;
+            assert_eq!(classification_summary.host_to_device_packet_count, 1);
+            assert_eq!(
+                classification_summary.host_to_device_classified_packet_count,
+                0
+            );
+            assert_eq!(
+                classification_summary.host_to_device_unclassified_packet_count,
+                1
+            );
+            assert!(classification_summary.host_to_device_decode_gap);
+            assert!(classification_summary.decode_recommended);
+            assert!(!classification_summary.native_control_evidence);
+            assert!(!classification_summary.readiness_claim);
+            assert!(
+                classification_summary
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("without extractable HID report IDs")),
+                "decode-gap note should explain why a raw protocol review is still needed"
+            );
             assert_schema_valid(
                 "sniff-summary.schema.json",
                 &serde_json::to_value(&summary)?,

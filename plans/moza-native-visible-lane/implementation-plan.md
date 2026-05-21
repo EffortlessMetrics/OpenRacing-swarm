@@ -2129,6 +2129,72 @@ Remove the command, schema, tests, and generated
 artifacts, vendor command registry, consumed vendor-authority attempt,
 post-authority PIDFF response receipts, or prior undertravel evidence.
 
+## Work item: passive-sniff-decode-gap-review
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked specs:
+- docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+- docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: reviewed protocol evidence boundary before any future output family
+Blocked by: checked-in passive sniff summaries with host-to-device traffic
+
+### Goal
+
+Make passive sniff evidence distinguish "no decoded output candidate" from
+"host-to-device traffic exists but the summary cannot map it to report IDs."
+The latter is the current checked-in state and should route work to raw payload
+decode/export review, not to output.
+
+### Production delta
+
+Extend `wheelctl hardware sniff-summary` classification output for future
+summaries with host-to-device classified/unclassified packet counts and a
+decode-gap flag. Refresh `wheelctl moza vendor-protocol-evidence-review` so it
+derives the same gap from existing checked-in summaries and records it in the
+review receipt.
+
+### Non-goals
+
+No HID open, serial open, read-only query send, hardware output, authorization
+receipt, PIDFF rerun, force increase, direct HID report `0xaf`, high torque,
+serial config, firmware, DFU, native-control claim, native-visible claim,
+smoke-ready claim, Pit House coexistence claim, simulator claim, or release-ready
+claim.
+
+### Acceptance
+
+- Future `sniff-summary` receipts expose host-to-device packet coverage and
+  decode gaps without serializing raw payload samples by default.
+- Existing checked-in Pit House summaries remain non-claiming but the protocol
+  review records their host-to-device decode gap.
+- `planned_next_output.allowed=false`, `native_control_evidence=false`,
+  `hardware_output_authorized=false`, `native_visible_ready=false`, and
+  `smoke_ready=false` remain pinned.
+- Native-visible verifier remains blocked on `native_actuator_visible_smoke`.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_summary_surfaces_host_to_device_decode_gaps -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- moza vendor-protocol-evidence-review --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json --json --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-passive-sniff-decode-gap-review.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-passive-sniff-decode-gap-review.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the decode-gap fields, tests, schema additions, refreshed protocol
+review receipt, and source-of-truth updates. Do not remove passive sniff
+artifacts, consumed hardware attempts, or prior undertravel evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

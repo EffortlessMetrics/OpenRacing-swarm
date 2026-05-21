@@ -124,6 +124,12 @@ classification is protocol navigation only; it MUST keep
 `native_control_evidence=false`, MUST NOT create readiness claims, and MUST NOT
 authorize a future output plan by itself.
 
+If a passive summary records host-to-device USB transfers that cannot be mapped
+to report IDs or payload candidates, the lane MAY record a host-to-device decode
+gap. That gap is a no-output protocol research finding only; it MUST route to
+raw payload export or decoded-report review and MUST NOT authorize output or
+readiness promotion.
+
 Given a stored verifier receipt that is syntactically valid but failed its requested stage, the artifact index MAY mark the file itself as `pass`, but it MUST expose the claim status as `stage_failed`. Artifact validity MUST NOT be treated as native-visible readiness.
 
 ## Proof requirements

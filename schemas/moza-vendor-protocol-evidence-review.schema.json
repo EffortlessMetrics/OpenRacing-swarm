@@ -78,6 +78,9 @@
         "missing_scenario_count",
         "completed_scenarios",
         "missing_scenarios",
+        "total_host_to_device_unclassified_packets",
+        "host_to_device_decode_gap_detected",
+        "decode_gap_scenarios",
         "decode_recommended_by_summaries",
         "passive_summaries_native_control_evidence",
         "scenarios"
@@ -94,6 +97,15 @@
           "type": "array",
           "items": { "type": "string" }
         },
+        "total_host_to_device_unclassified_packets": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "host_to_device_decode_gap_detected": { "type": "boolean" },
+        "decode_gap_scenarios": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
         "decode_recommended_by_summaries": { "type": "boolean" },
         "passive_summaries_native_control_evidence": { "const": false },
         "scenarios": {
@@ -104,6 +116,8 @@
               "scenario",
               "status",
               "summary_validated",
+              "host_to_device_unclassified_packet_count",
+              "host_to_device_decode_gap",
               "native_control_evidence",
               "readiness_claim"
             ],
@@ -111,6 +125,11 @@
               "scenario": { "type": "string" },
               "status": { "type": "string" },
               "summary_validated": { "type": "boolean" },
+              "host_to_device_unclassified_packet_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "host_to_device_decode_gap": { "type": "boolean" },
               "native_control_evidence": { "const": false },
               "readiness_claim": { "const": false }
             },
