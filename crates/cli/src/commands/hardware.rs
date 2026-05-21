@@ -1675,10 +1675,16 @@ fn sniff_notes_capture_hints_from_hardware_doctor(
         .flatten()
         .filter_map(sniff_notes_capture_hint_from_value)
         .collect::<Vec<_>>();
+    let usbpcap_extcap_path = receipt
+        .pointer("/tools/usbpcap_descriptor_capture/usbpcap_extcap_path")
+        .and_then(serde_json::Value::as_str)
+        .filter(|path| !path.trim().is_empty())
+        .map(str::to_string);
 
     Ok(Some(HardwareSniffNotesCaptureHints {
         source: required_path_display(path, "hardware-doctor")?,
         receipt_flags,
+        usbpcap_extcap_path,
         hint_count: hints.len(),
         hints,
         notes: vec![
@@ -1721,6 +1727,28 @@ fn sniff_notes_capture_hint_from_value(
         matched_device_displays,
         suggested_capture_filter,
     })
+}
+
+fn sniff_notes_local_capture_path(plan: &StoredHardwareSniffPlan) -> String {
+    format!("target\\sniff\\{}\\capture.pcapng", plan.scenario)
+}
+
+fn usbpcapcmd_capture_command(
+    extcap_path: &str,
+    hint: &HardwareSniffNotesUsbPcapHint,
+    capture_path: &str,
+) -> String {
+    format!(
+        "& {} -d {} --devices {} --inject-descriptors -o {}",
+        powershell_double_quoted_arg(extcap_path),
+        powershell_double_quoted_arg(&hint.usbpcap_interface),
+        hint.capture_devices_value,
+        powershell_double_quoted_arg(capture_path)
+    )
+}
+
+fn powershell_double_quoted_arg(value: &str) -> String {
+    format!("\"{}\"", value.replace('`', "``").replace('"', "`\""))
 }
 
 fn json_bool_field(value: &serde_json::Value, field: &str) -> bool {
@@ -1814,6 +1842,7 @@ fn render_sniff_operator_notes_template(
                 "- [ ] No Moza USBPcap device hint was present in the hardware doctor receipt.\n",
             );
         } else {
+            let local_capture_path = sniff_notes_local_capture_path(plan);
             for hint in &capture_hints.hints {
                 out.push_str(&format!(
                     "- [ ] USBPcap interface used: `{}`\n",
@@ -1823,6 +1852,18 @@ fn render_sniff_operator_notes_template(
                     "- [ ] USBPcap device filter used: `--devices {}`\n",
                     hint.capture_devices_value
                 ));
+                if let Some(extcap_path) = &capture_hints.usbpcap_extcap_path {
+                    out.push_str(
+                        "- [ ] External USBPcapCMD capture command; run outside OpenRacing and stop it after the scenario:\n\n",
+                    );
+                    out.push_str("```powershell\n");
+                    out.push_str(&usbpcapcmd_capture_command(
+                        extcap_path,
+                        hint,
+                        &local_capture_path,
+                    ));
+                    out.push_str("\n```\n");
+                }
                 out.push_str(&format!(
                     "- [ ] Suggested capture filter: `{}`\n",
                     hint.suggested_capture_filter
@@ -5384,6 +5425,8 @@ struct HardwareSniffNotesTemplateReceipt {
 struct HardwareSniffNotesCaptureHints {
     source: String,
     receipt_flags: HardwareSniffNotesDoctorFlags,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    usbpcap_extcap_path: Option<String>,
     hint_count: usize,
     hints: Vec<HardwareSniffNotesUsbPcapHint>,
     notes: Vec<String>,
@@ -7109,7 +7152,10 @@ mod tests {
         #[test]
         fn sniff_notes_template_renders_hardware_doctor_usbpcap_hints() -> TestResult {
             let dir = tempfile::tempdir()?;
-            let plan_path = write_sample_plan(dir.path())?;
+            let plan =
+                sample_plan_for_scenario(dir.path(), HardwareSniffScenario::PitHouseSettingChange)?;
+            let plan_path = dir.path().join("sniff-plan.json");
+            write_json_file(&plan_path, &plan)?;
             let plan = read_and_validate_sniff_plan(&plan_path)?;
             let doctor_path = dir.path().join("hardware-doctor.json");
             let doctor = serde_json::json!({
@@ -7121,6 +7167,7 @@ mod tests {
                 "no_firmware_or_dfu_commands": true,
                 "tools": {
                     "usbpcap_descriptor_capture": {
+                        "usbpcap_extcap_path": "C:\\Program Files\\Wireshark\\extcap\\USBPcapCMD.exe",
                         "usbpcap_moza_device_hints": [
                             {
                                 "usbpcap_interface": "\\\\.\\USBPcap2",
@@ -7143,10 +7190,19 @@ mod tests {
                 render_sniff_operator_notes_template(&plan_path, &plan, Some(&capture_hints));
 
             assert!(capture_hints.receipt_flags.all_no_output_flags_true());
+            assert_eq!(
+                capture_hints.usbpcap_extcap_path.as_deref(),
+                Some(r"C:\Program Files\Wireshark\extcap\USBPcapCMD.exe")
+            );
             assert_eq!(capture_hints.hint_count, 1);
             assert!(notes.contains("## Capture Tool Hints"));
             assert!(notes.contains("USBPcap interface used: `\\\\.\\USBPcap2`"));
             assert!(notes.contains("USBPcap device filter used: `--devices 3`"));
+            let expected_command = r#"& "C:\Program Files\Wireshark\extcap\USBPcapCMD.exe" -d "\\.\USBPcap2" --devices 3 --inject-descriptors -o "target\sniff\pit-house-setting-change\capture.pcapng""#;
+            assert!(
+                notes.contains(expected_command),
+                "operator notes missing capture command:\n{notes}"
+            );
             assert!(notes.contains("MOZA Windows Driver"));
             assert!(notes.contains("OpenRacing output"));
             Ok(())
