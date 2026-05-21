@@ -3955,6 +3955,10 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
             usbpcap_interfaces_present: false,
             usbpcap_interface_count: 0,
             usbpcap_interfaces: Vec::new(),
+            usbpcap_device_scan_attempted: false,
+            usbpcap_moza_device_hint_count: 0,
+            usbpcap_moza_device_hints: Vec::new(),
+            usbpcap_device_scan_errors: Vec::new(),
             ready_for_usbpcap_descriptor_capture: false,
             access_guidance: usbpcap_descriptor_capture_guidance(
                 false,
@@ -3982,6 +3986,10 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
             usbpcap_interfaces_present: false,
             usbpcap_interface_count: 0,
             usbpcap_interfaces: Vec::new(),
+            usbpcap_device_scan_attempted: false,
+            usbpcap_moza_device_hint_count: 0,
+            usbpcap_moza_device_hints: Vec::new(),
+            usbpcap_device_scan_errors: Vec::new(),
             ready_for_usbpcap_descriptor_capture: false,
             access_guidance: usbpcap_descriptor_capture_guidance(
                 true,
@@ -4006,6 +4014,10 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
             usbpcap_interfaces_present: false,
             usbpcap_interface_count: 0,
             usbpcap_interfaces: Vec::new(),
+            usbpcap_device_scan_attempted: false,
+            usbpcap_moza_device_hint_count: 0,
+            usbpcap_moza_device_hints: Vec::new(),
+            usbpcap_device_scan_errors: Vec::new(),
             ready_for_usbpcap_descriptor_capture: false,
             access_guidance: usbpcap_descriptor_capture_guidance(
                 true,
@@ -4024,6 +4036,8 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let interfaces = usbpcap_interfaces_from_tshark_list(&stdout);
     let ready_for_usbpcap_descriptor_capture = !interfaces.is_empty();
+    let (usbpcap_device_scan_attempted, usbpcap_moza_device_hints, usbpcap_device_scan_errors) =
+        usbpcap_moza_device_hints_from_extcap(usbpcap_extcap_path.as_deref(), &interfaces);
     UsbPcapDescriptorCaptureChecks {
         tshark_present: true,
         tshark_path: Some(tshark_path.display().to_string()),
@@ -4035,6 +4049,10 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
         usbpcap_interfaces_present: ready_for_usbpcap_descriptor_capture,
         usbpcap_interface_count: interfaces.len(),
         usbpcap_interfaces: interfaces,
+        usbpcap_device_scan_attempted,
+        usbpcap_moza_device_hint_count: usbpcap_moza_device_hints.len(),
+        usbpcap_moza_device_hints,
+        usbpcap_device_scan_errors,
         ready_for_usbpcap_descriptor_capture,
         access_guidance: usbpcap_descriptor_capture_guidance(
             true,
@@ -4045,6 +4063,151 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
         ),
         error: None,
     }
+}
+
+fn usbpcap_moza_device_hints_from_extcap(
+    usbpcap_extcap_path: Option<&str>,
+    interfaces: &[String],
+) -> (bool, Vec<UsbPcapMozaDeviceHint>, Vec<String>) {
+    let Some(usbpcap_extcap_path) = usbpcap_extcap_path else {
+        return (false, Vec::new(), Vec::new());
+    };
+
+    let mut hints = Vec::new();
+    let mut errors = Vec::new();
+    for interface in interfaces {
+        let Some(interface_value) = usbpcap_interface_value_from_tshark_line(interface) else {
+            errors.push(format!(
+                "could not derive USBPcap extcap interface value from `{interface}`"
+            ));
+            continue;
+        };
+        let output = Command::new(usbpcap_extcap_path)
+            .args([
+                "--extcap-config",
+                "--extcap-interface",
+                interface_value.as_str(),
+            ])
+            .output();
+        match output {
+            Ok(output) if output.status.success() => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                hints.extend(usbpcap_moza_device_hints_from_extcap_config(
+                    &interface_value,
+                    &stdout,
+                ));
+            }
+            Ok(output) => errors.push(format!(
+                "USBPcap extcap config failed for {interface_value}: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )),
+            Err(error) => errors.push(format!(
+                "failed to run USBPcap extcap config for {interface_value}: {error}"
+            )),
+        }
+    }
+
+    (true, hints, errors)
+}
+
+fn usbpcap_interface_value_from_tshark_line(line: &str) -> Option<String> {
+    if let Some(start) = line.find(r"\\.\USBPcap") {
+        let value = line[start..]
+            .split(|ch: char| ch.is_whitespace() || ch == '(')
+            .next()
+            .unwrap_or_default();
+        if !value.is_empty() {
+            return Some(value.to_string());
+        }
+    }
+
+    let marker = "USBPcap";
+    let start = line.find(marker)?;
+    let suffix = line[start + marker.len()..]
+        .chars()
+        .take_while(|ch| ch.is_ascii_digit())
+        .collect::<String>();
+    if suffix.is_empty() {
+        None
+    } else {
+        Some(format!(r"\\.\USBPcap{suffix}"))
+    }
+}
+
+fn usbpcap_moza_device_hints_from_extcap_config(
+    interface_value: &str,
+    output: &str,
+) -> Vec<UsbPcapMozaDeviceHint> {
+    let devices = output
+        .lines()
+        .filter_map(usbpcap_extcap_device_from_config_line)
+        .collect::<Vec<_>>();
+    let mut grouped: BTreeMap<String, (Vec<String>, Vec<String>)> = BTreeMap::new();
+
+    for device in devices {
+        let display_lower = device.display.to_ascii_lowercase();
+        let moza_relevant =
+            display_lower.contains("moza") || display_lower.contains("usb serial device (com");
+        if !moza_relevant {
+            continue;
+        }
+        let capture_value = device
+            .value
+            .split_once('_')
+            .map(|(root, _)| root)
+            .unwrap_or(device.value.as_str())
+            .to_string();
+        let entry = grouped
+            .entry(capture_value)
+            .or_insert_with(|| (Vec::new(), Vec::new()));
+        entry.0.push(device.value);
+        entry.1.push(device.display);
+    }
+
+    grouped
+        .into_iter()
+        .map(
+            |(capture_devices_value, (matched_device_values, matched_device_displays))| {
+                UsbPcapMozaDeviceHint {
+                    usbpcap_interface: interface_value.to_string(),
+                    capture_devices_value: capture_devices_value.clone(),
+                    matched_device_values,
+                    matched_device_displays,
+                    suggested_capture_filter: format!(
+                        "select {interface_value} with USBPcap --devices {capture_devices_value}"
+                    ),
+                }
+            },
+        )
+        .collect()
+}
+
+fn usbpcap_extcap_device_from_config_line(line: &str) -> Option<UsbPcapExtcapDevice> {
+    if !line.starts_with("value ") || !line.contains("{arg=99}") {
+        return None;
+    }
+    let fields = usbpcap_extcap_braced_fields(line);
+    Some(UsbPcapExtcapDevice {
+        value: fields.get("value")?.to_string(),
+        display: fields.get("display")?.to_string(),
+    })
+}
+
+fn usbpcap_extcap_braced_fields(line: &str) -> BTreeMap<String, String> {
+    let mut fields = BTreeMap::new();
+    let mut rest = line;
+    while let Some(start) = rest.find('{') {
+        rest = &rest[start + 1..];
+        let Some(end) = rest.find('}') else {
+            break;
+        };
+        let field = &rest[..end];
+        if let Some((key, value)) = field.split_once('=') {
+            fields.insert(key.to_string(), value.to_string());
+        }
+        rest = &rest[end + 1..];
+    }
+    fields
 }
 
 fn find_usbpcap_extcap_path() -> Option<PathBuf> {
@@ -6006,10 +6169,30 @@ struct UsbPcapDescriptorCaptureChecks {
     usbpcap_interfaces_present: bool,
     usbpcap_interface_count: usize,
     usbpcap_interfaces: Vec<String>,
+    usbpcap_device_scan_attempted: bool,
+    usbpcap_moza_device_hint_count: usize,
+    usbpcap_moza_device_hints: Vec<UsbPcapMozaDeviceHint>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    usbpcap_device_scan_errors: Vec<String>,
     ready_for_usbpcap_descriptor_capture: bool,
     access_guidance: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct UsbPcapMozaDeviceHint {
+    usbpcap_interface: String,
+    capture_devices_value: String,
+    matched_device_values: Vec<String>,
+    matched_device_displays: Vec<String>,
+    suggested_capture_filter: String,
+}
+
+#[derive(Debug)]
+struct UsbPcapExtcapDevice {
+    value: String,
+    display: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -6380,6 +6563,10 @@ mod tests {
                     usbpcap_interfaces_present: false,
                     usbpcap_interface_count: 0,
                     usbpcap_interfaces: Vec::new(),
+                    usbpcap_device_scan_attempted: false,
+                    usbpcap_moza_device_hint_count: 0,
+                    usbpcap_moza_device_hints: Vec::new(),
+                    usbpcap_device_scan_errors: Vec::new(),
                     ready_for_usbpcap_descriptor_capture: false,
                     access_guidance: usbpcap_descriptor_capture_guidance(
                         true, false, false, false, None,
@@ -8051,6 +8238,51 @@ mod tests {
                 "3. USBPcap2 (USBPcap2)".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn usbpcap_interface_value_parser_handles_tshark_display_forms() {
+        assert_eq!(
+            usbpcap_interface_value_from_tshark_line("10. \\\\.\\USBPcap2 (USBPcap2)").as_deref(),
+            Some(r"\\.\USBPcap2")
+        );
+        assert_eq!(
+            usbpcap_interface_value_from_tshark_line("3. USBPcap1 (USBPcap1)").as_deref(),
+            Some(r"\\.\USBPcap1")
+        );
+    }
+
+    #[test]
+    fn usbpcap_extcap_config_parser_surfaces_moza_device_filter_hint() {
+        let output = r#"arg {number=99}{call=--devices}{display=Attached USB Devices}{type=multicheck}
+value {arg=99}{value=3}{display=[3] USB Composite Device}{enabled=true}
+value {arg=99}{value=3_1}{display=USB Serial Device (COM4)}{enabled=false}{parent=3}
+value {arg=99}{value=3_2}{display=USB Input Device}{enabled=false}{parent=3}
+value {arg=99}{value=3_3}{display=MOZA Windows Driver}{enabled=false}{parent=3_2}
+value {arg=99}{value=2}{display=[2] Generic USB Hub}{enabled=true}"#;
+
+        let hints = usbpcap_moza_device_hints_from_extcap_config(r"\\.\USBPcap2", output);
+
+        assert_eq!(hints.len(), 1);
+        let hint = &hints[0];
+        assert_eq!(hint.usbpcap_interface, r"\\.\USBPcap2");
+        assert_eq!(hint.capture_devices_value, "3");
+        assert!(
+            hint.matched_device_values
+                .iter()
+                .any(|value| value == "3_1")
+        );
+        assert!(
+            hint.matched_device_values
+                .iter()
+                .any(|value| value == "3_3")
+        );
+        assert!(
+            hint.matched_device_displays
+                .iter()
+                .any(|display| display.contains("MOZA Windows Driver"))
+        );
+        assert!(hint.suggested_capture_filter.contains("--devices 3"));
     }
 
     #[test]

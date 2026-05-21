@@ -3541,6 +3541,75 @@ test, and source-of-truth updates. Do not remove passive sniff plans,
 checked-in sniff evidence, consumed hardware attempts, or protocol evidence
 review receipts.
 
+## Work item: hardware-doctor-usbpcap-device-hints
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: deterministic passive USBPcap capture setup for setting-change evidence
+Blocked by: `wheelctl hardware doctor` listed USBPcap root interfaces but did
+not surface the attached USBPcap device value that identifies the Moza stack for
+device-filtered passive captures.
+
+### Goal
+
+Make the no-output hardware doctor receipt expose USBPcap extcap device-filter
+hints when the Moza R5 stack is visible, so the next passive setting-change
+capture can select the correct controller and device without manual
+rediscovery.
+
+### Production Delta
+
+Extend `wheelctl hardware doctor` USBPcap diagnostics to run
+`USBPcapCMD --extcap-config` for discovered USBPcap interfaces, parse attached
+device entries, and record Moza-relevant device hints such as the USBPcap
+interface and `--devices` value. Update the passive capture checklist to tell
+operators to refresh hardware doctor and prefer
+`/tools/usbpcap_descriptor_capture/usbpcap_moza_device_hints` when selecting the
+capture interface/filter.
+
+### Non-goals
+
+No HID open, serial open, read-only query send, hardware output, authorization
+receipt, PIDFF rerun, force increase, direct HID report `0xaf`, high torque,
+serial config, firmware, DFU, native-control claim, native-visible claim,
+smoke-ready claim, Pit House coexistence claim, simulator claim,
+release-ready claim, raw `.pcapng` commit, semantic command decode, registry
+promotion, or tuple sendability claim.
+
+### Acceptance
+
+- `hardware doctor` remains observe-only and keeps all write/output/firmware
+  false flags intact.
+- USBPcap extcap config parsing records Moza-relevant hints with interface,
+  capture-device value, matched child devices, and suggested capture filter.
+- The passive capture checklist references the hardware-doctor
+  `usbpcap_moza_device_hints` path before the operator starts USBPcap/Wireshark.
+- No sniff receipt, summary, bundle manifest, raw capture, semantic decode,
+  registry promotion, hardware output, or readiness claim is created.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl usbpcap -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_sniff_next_operator_commands_parse -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- --json hardware doctor --json-out target/moza-current/hardware-doctor-usbpcap-device-hints.json
+cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-usbpcap-device-hints.json --md-out target/moza-current/bench-wizard-usbpcap-device-hints.md --json
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the hardware-doctor USBPcap device-hint parsing, passive capture
+checklist wording, focused tests, and source-of-truth updates. Do not remove
+passive sniff plans, checked-in sniff evidence, consumed hardware attempts, or
+protocol evidence review receipts.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
