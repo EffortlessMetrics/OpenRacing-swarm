@@ -937,6 +937,31 @@ pub enum MozaCommands {
         overwrite: bool,
     },
 
+    /// Review checked-in Moza vendor protocol evidence without sending traffic
+    VendorProtocolEvidenceReview {
+        /// Lane artifact directory, e.g. ci/hardware/moza-r5/2026-05-13
+        #[arg(long)]
+        lane: std::path::PathBuf,
+        /// Passive sniff evidence root; defaults to ci/hardware/sniff/moza-r5/<date>
+        #[arg(long)]
+        sniff_root: Option<std::path::PathBuf>,
+        /// Vendor command registry; defaults to fixtures/moza/r5/vendor-command-registry.json
+        #[arg(long)]
+        command_registry: Option<std::path::PathBuf>,
+        /// Consumed vendor-authority attempt receipt; defaults to lane/vendor-authority-attempt.json
+        #[arg(long)]
+        attempt: Option<std::path::PathBuf>,
+        /// Post-authority PIDFF comparison receipt; defaults to lane/vendor-post-authority-pidff-response.json
+        #[arg(long)]
+        post_authority_response: Option<std::path::PathBuf>,
+        /// Write the non-claiming evidence review receipt to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing evidence review receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
     /// Promote a validated Moza capture JSONL into a parser fixture file
     PromoteFixture {
         /// JSON Lines file produced by `wheelctl moza capture-input`

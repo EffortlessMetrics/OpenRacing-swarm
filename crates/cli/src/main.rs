@@ -2379,6 +2379,67 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_vendor_protocol_evidence_review() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "vendor-protocol-evidence-review",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
+            "--sniff-root",
+            "ci/hardware/sniff/moza-r5/2026-05-13",
+            "--command-registry",
+            "fixtures/moza/r5/vendor-command-registry.json",
+            "--attempt",
+            "ci/hardware/moza-r5/2026-05-13/vendor-authority-attempt.json",
+            "--post-authority-response",
+            "ci/hardware/moza-r5/2026-05-13/vendor-post-authority-pidff-response.json",
+            "--json-out",
+            "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::VendorProtocolEvidenceReview {
+                lane,
+                sniff_root,
+                command_registry,
+                attempt,
+                post_authority_response,
+                json_out,
+                overwrite,
+            }) => {
+                assert_eq!(lane.to_str(), Some("ci/hardware/moza-r5/2026-05-13"));
+                assert_eq!(
+                    sniff_root.as_ref().and_then(|path| path.to_str()),
+                    Some("ci/hardware/sniff/moza-r5/2026-05-13")
+                );
+                assert_eq!(
+                    command_registry.as_ref().and_then(|path| path.to_str()),
+                    Some("fixtures/moza/r5/vendor-command-registry.json")
+                );
+                assert_eq!(
+                    attempt.as_ref().and_then(|path| path.to_str()),
+                    Some("ci/hardware/moza-r5/2026-05-13/vendor-authority-attempt.json")
+                );
+                assert_eq!(
+                    post_authority_response
+                        .as_ref()
+                        .and_then(|path| path.to_str()),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/vendor-post-authority-pidff-response.json"
+                    )
+                );
+                assert_eq!(
+                    json_out.to_str(),
+                    Some("ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json")
+                );
+                assert!(!overwrite);
+            }
+            _ => return Err("expected Moza VendorProtocolEvidenceReview command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_promote_fixture() -> TestResult {
         let cli = parse_cli([
             "wheelctl",

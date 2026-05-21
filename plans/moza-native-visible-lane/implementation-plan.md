@@ -2057,6 +2057,78 @@ Revert only the docs/source-of-truth refresh. Do not remove the consumed
 vendor-authority attempt, post-authority PIDFF receipts, or earlier undertravel
 receipts.
 
+## Work item: vendor-protocol-evidence-review
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked specs:
+- docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+- docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: reviewed protocol evidence boundary before any future output family
+Blocked by: post-authority PIDFF regression receipt and checked-in passive sniff summaries
+
+### Goal
+
+Record a no-output protocol-evidence review that ties together the current
+passive sniff summaries, vendor command registry, consumed `estop_set_ffb`
+attempt, and post-authority PIDFF response regression before any future
+vendor-control output plan.
+
+### Production delta
+
+Add `wheelctl moza vendor-protocol-evidence-review`, its receipt schema, tests,
+and the checked-in receipt
+`ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json`.
+
+The receipt classifies the current state as
+`estop_set_ffb_regressed_and_protocol_enable_path_still_undecoded`, records that
+only two of six passive sniff scenarios have checked-in summaries, and keeps
+`planned_next_output.allowed=false`.
+
+### Non-goals
+
+No HID open, serial open, read-only query send, hardware output, authorization
+receipt, `estop_set_ffb` retry, PIDFF rerun, force increase, direct HID report
+`0xaf`, high torque, serial config, firmware, DFU, native-control claim,
+native-visible claim, smoke-ready claim, Pit House coexistence claim, simulator
+claim, or release-ready claim.
+
+### Acceptance
+
+- The command reads checked-in receipts and summaries only.
+- Receipt validation pins `native_control_evidence=false`,
+  `hardware_output_authorized=false`, `native_visible_ready=false`,
+  `smoke_ready=false`, and `planned_next_output.allowed=false`.
+- Current passive summaries remain non-claiming and do not decode a new output
+  candidate.
+- The consumed `estop_set_ffb` attempt and post-authority PIDFF regression are
+  preserved as negative evidence, not retried.
+- Native-visible verifier remains blocked on `native_actuator_visible_smoke`.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture
+cargo test --locked -p wheelctl --test cli_comprehensive_e2e_tests help_snapshots::snapshot_moza_help -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- moza vendor-protocol-evidence-review --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json --json --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-vendor-protocol-evidence-review.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-after-vendor-protocol-evidence-review.json --md-out target/moza-current/bench-wizard-after-vendor-protocol-evidence-review.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-vendor-protocol-evidence-review.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove the command, schema, tests, and generated
+`vendor-protocol-evidence-review.json` receipt. Do not remove the passive sniff
+artifacts, vendor command registry, consumed vendor-authority attempt,
+post-authority PIDFF response receipts, or prior undertravel evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

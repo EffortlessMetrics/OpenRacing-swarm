@@ -1,13 +1,15 @@
 # Moza Native Visible Lane Handoff
 
 Status: blocked
-Last verified: 2026-05-20
+Last verified: 2026-05-21
 Lane: `ci/hardware/moza-r5/2026-05-13`
 Active goal: `.openracing/goals/active.toml`
 
 This handoff exists because the active goal has no `ready` work item. The next
 implementation steps are blocked by real hardware or external evidence, and
-agents must not invent more no-output work to move the lane.
+agents must not invent more no-output churn to move the lane. No-output work is
+only useful when it consumes checked-in evidence, tightens a gate, or preserves a
+claim boundary.
 
 ## Verified Frontier
 
@@ -65,6 +67,13 @@ pcap receipts and summaries exist. No passive sniff artifact authorizes
 hardware output or satisfies native-visible, smoke-ready, or coexistence gates.
 No further hardware output is authorized.
 
+`vendor-protocol-evidence-review.json` now records a no-output review across the
+checked-in passive sniff summaries, command registry, consumed vendor-authority
+attempt, and post-authority PIDFF comparison. It classifies the current state as
+`estop_set_ffb_regressed_and_protocol_enable_path_still_undecoded`, records that
+the current summaries do not expose a decoded output candidate, and keeps
+`planned_next_output.allowed=false`.
+
 ## Completion Audit Summary
 
 The broader Moza objective remains incomplete:
@@ -82,6 +91,7 @@ The broader Moza objective remains incomplete:
 | Closed-loop failure analysis | `native-controlled-angle-closed-loop-failure-analysis.json` | Recorded no-output classification |
 | Consumed vendor-authority attempt | `vendor-authority-attempt.json` | Recorded exact one-frame non-claiming attempt |
 | Post-authority PIDFF response | `vendor-post-authority-pidff-smoke.json`; `vendor-post-authority-pidff-response.json`; [post-authority PIDFF response diagnosis](../../docs/hardware/moza-r5-post-authority-pidff-response.md) | Recorded regression versus baseline; no native-visible claim |
+| Vendor protocol evidence review | `vendor-protocol-evidence-review.json` | Recorded no-output review; protocol evidence still insufficient for any output plan |
 | Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence |
 | Remaining passive sniff plans | `pit-house-setting-change`, `simhub-open-idle`, `simhub-output-session`, `simulator-session-start-stop` sniff plans | Plan-only, non-claiming |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |
@@ -96,20 +106,21 @@ role-specific clutch mapping remains diagnostic with `readiness_claim=false`.
 
 ## Required Next Event
 
-The next operator step from the bench wizard is now review-only:
-`post_authority_pidff_response_comparison_recorded`. It emits no hardware output
-command and no authorization command. The next implementation work should return
-to no-output vendor-specific protocol investigation, such as the remaining
-passive sniff scenarios or decoded report review, before any future motion
-ladder plan.
+The next operator step remains review-only: current evidence has recorded the
+post-authority PIDFF regression and reviewed the checked-in protocol evidence
+without finding a decoded enable path. It emits no hardware output command and
+no authorization command. The next implementation work should continue
+vendor-specific protocol investigation, such as the remaining passive sniff
+scenarios or decoded report review, before any future motion ladder plan.
 
 Passive USB sniff captures may produce non-claiming `sniff-receipt.json`,
 `sniff-summary.json`, and bundle manifest artifacts, but those are
 protocol/coexistence evidence, not native readiness evidence. Preserve all four
 controlled-angle undertravel receipts, the consumed vendor-authority attempt,
-the post-authority PIDFF response receipts, and their analysis/diagnosis
-artifacts. Do not create another authorization or output receipt from verifier
-guidance. Any future output family requires decoded protocol evidence, a
+the post-authority PIDFF response receipts, the protocol evidence review, and
+their analysis/diagnosis artifacts. Do not create another authorization or
+output receipt from verifier guidance. Any future output family requires decoded
+protocol evidence, a
 reviewed vendor-control plan, fresh command-bound bench clear, and a new exact
 authorization.
 
