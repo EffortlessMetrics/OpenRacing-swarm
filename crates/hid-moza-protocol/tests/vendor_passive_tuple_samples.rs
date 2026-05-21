@@ -137,6 +137,22 @@ fn semantic_hypothesis_for_tuple<'a>(
         })
 }
 
+fn semantic_correlation_target_for_hypothesis<'a>(
+    targets: &'a [Value],
+    semantic_hypothesis: &str,
+) -> Result<&'a Value, io::Error> {
+    targets
+        .iter()
+        .find(|target| {
+            str_field(target, "semantic_hypothesis").is_ok_and(|id| id == semantic_hypothesis)
+        })
+        .ok_or_else(|| {
+            invalid_data(format!(
+                "missing semantic correlation target for `{semantic_hypothesis}`"
+            ))
+        })
+}
+
 fn string_array_at<'a>(value: &'a Value, pointer: &str) -> Result<Vec<&'a str>, io::Error> {
     array_at(value, pointer)?
         .iter()
@@ -296,6 +312,87 @@ fn passive_decode_candidate_samples_preserve_non_sendable_semantic_hypotheses() 
     assert!(!bool_field(triad, "registry_promotion_claim")?);
     assert!(!bool_field(triad, "hardware_output_authorized")?);
     assert!(!bool_field(triad, "output_sendability_claim")?);
+
+    Ok(())
+}
+
+#[test]
+fn passive_decode_candidate_samples_preserve_non_sendable_correlation_plan() -> TestResult {
+    let review = protocol_evidence_review()?;
+    let plan = value_at(
+        &review,
+        "/passive_tuple_registry_coverage/decode_candidate_semantic_correlation_plan",
+    )?;
+
+    assert_eq!(
+        str_field(plan, "claim_scope")?,
+        "no_output_passive_tuple_semantic_correlation_plan"
+    );
+    assert_eq!(
+        str_field(plan, "source_hypothesis_scope")?,
+        "no_output_passive_tuple_semantic_hypothesis_review"
+    );
+    assert_eq!(usize_field(plan, "hypothesis_count")?, 5);
+    assert_eq!(usize_field(plan, "correlation_target_count")?, 2);
+    assert!(bool_field(plan, "all_targets_non_sendable")?);
+    assert!(!bool_field(plan, "semantic_decode_claim")?);
+    assert!(!bool_field(plan, "registry_promotion_claim")?);
+    assert!(!bool_field(plan, "hardware_output_authorized")?);
+    assert!(!bool_field(plan, "native_control_evidence")?);
+    assert!(!bool_field(plan, "output_sendability_claim")?);
+    assert!(!bool_field(
+        plan,
+        "protocol_evidence_sufficient_for_output_plan"
+    )?);
+
+    let targets = array_at(plan, "/targets")?;
+    let keepalive = semantic_correlation_target_for_hypothesis(
+        targets,
+        "session_or_status_keepalive_candidate",
+    )?;
+    assert_eq!(
+        string_array_at(keepalive, "/tuple_ids")?,
+        ["0x5A/0x1B/0x00", "0x5D/0x1B/0x01"]
+    );
+    assert_eq!(
+        string_array_at(keepalive, "/observed_completed_scenarios")?,
+        ["pit-house-open-idle", "pit-house-full-controls"]
+    );
+    assert_eq!(
+        string_array_at(keepalive, "/missing_correlation_scenarios")?,
+        [
+            "pit-house-setting-change",
+            "simhub-open-idle",
+            "simhub-output-session",
+            "simulator-session-start-stop"
+        ]
+    );
+    assert_eq!(
+        str_field(keepalive, "next_capture_priority")?,
+        "pit-house-setting-change"
+    );
+    assert!(!bool_field(keepalive, "output_sendability_claim")?);
+
+    let triad =
+        semantic_correlation_target_for_hypothesis(targets, "base_status_or_mode_poll_candidate")?;
+    assert_eq!(
+        string_array_at(triad, "/tuple_ids")?,
+        ["0x25/0x19/0x01", "0x25/0x19/0x02", "0x25/0x19/0x03"]
+    );
+    assert_eq!(
+        str_field(triad, "next_capture_priority")?,
+        "pit-house-setting-change"
+    );
+    assert!(!bool_field(triad, "semantic_decode_claim")?);
+    assert!(!bool_field(triad, "registry_promotion_claim")?);
+    assert!(!bool_field(triad, "hardware_output_authorized")?);
+    assert!(!bool_field(triad, "output_sendability_claim")?);
+
+    assert!(
+        string_array_at(plan, "/required_artifacts")?
+            .iter()
+            .any(|artifact| artifact.ends_with("pit-house-setting-change/sniff-summary.json"))
+    );
 
     Ok(())
 }

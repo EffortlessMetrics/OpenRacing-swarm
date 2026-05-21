@@ -132,6 +132,16 @@ semantic hypotheses for those same samples: the `0x5A/0x1B/*` and
 pattern-only decode questions. Every tuple remains `unknown_commanded`,
 `unknown_do_not_send`, non-sendable, and ineligible for registry promotion or
 hardware output.
+The review now converts those hypotheses into a no-output semantic correlation
+plan. It groups the five tuple hypotheses into two non-sendable correlation
+targets, records that both targets are observed in the completed
+`pit-house-open-idle` and `pit-house-full-controls` summaries, and names
+`pit-house-setting-change` as the next passive capture priority before the
+remaining SimHub and simulator scenarios. The plan pins
+`semantic_decode_claim=false`, `registry_promotion_claim=false`,
+`hardware_output_authorized=false`, `native_control_evidence=false`,
+`output_sendability_claim=false`, and
+`protocol_evidence_sufficient_for_output_plan=false`.
 
 ## Completion Audit Summary
 
@@ -150,7 +160,7 @@ The broader Moza objective remains incomplete:
 | Closed-loop failure analysis | `native-controlled-angle-closed-loop-failure-analysis.json` | Recorded no-output classification |
 | Consumed vendor-authority attempt | `vendor-authority-attempt.json` | Recorded exact one-frame non-claiming attempt |
 | Post-authority PIDFF response | `vendor-post-authority-pidff-smoke.json`; `vendor-post-authority-pidff-response.json`; [post-authority PIDFF response diagnosis](../../docs/hardware/moza-r5-post-authority-pidff-response.md) | Recorded regression versus baseline; no native-visible claim |
-| Vendor protocol evidence review | `vendor-protocol-evidence-review.json`; artifact-index/bench-wizard `vendor_protocol_decode_priority` | Recorded no-output review, host-to-device candidate `0x7E`, 7,863 checksum-valid candidate frames, 159 bounded passive tuple sample frames, one read-only registry tuple match, 12 commandless tuple IDs, 17 unknown commanded tuple IDs, frequency-ranked unknown commanded tuples headed by `0x5A/0x1B/0x00` and `0x5D/0x1B/0x01`, 30 decode-candidate sample frames for the top unknown tuples, protocol-crate observed-frame, packet-order, payload-shape, packet-group, and low-confidence semantic-hypothesis regression coverage for those samples, two residual payload export gap packet locators, and no sufficient semantic protocol evidence for any output plan |
+| Vendor protocol evidence review | `vendor-protocol-evidence-review.json`; artifact-index/bench-wizard `vendor_protocol_decode_priority` | Recorded no-output review, host-to-device candidate `0x7E`, 7,863 checksum-valid candidate frames, 159 bounded passive tuple sample frames, one read-only registry tuple match, 12 commandless tuple IDs, 17 unknown commanded tuple IDs, frequency-ranked unknown commanded tuples headed by `0x5A/0x1B/0x00` and `0x5D/0x1B/0x01`, 30 decode-candidate sample frames for the top unknown tuples, protocol-crate observed-frame, packet-order, payload-shape, packet-group, low-confidence semantic-hypothesis, and semantic-correlation-plan regression coverage for those samples, two residual payload export gap packet locators, and no sufficient semantic protocol evidence for any output plan |
 | Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence |
 | Remaining passive sniff plans | `pit-house-setting-change`, `simhub-open-idle`, `simhub-output-session`, `simulator-session-start-stop` sniff plans | Plan-only, non-claiming |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |
@@ -186,10 +196,13 @@ preserves pattern-only hypotheses that make the next decode questions explicit:
 `session_or_status_keepalive_candidate` for the `0x5A/0x1B/*` and
 `0x5D/0x1B/*` pair, and `base_status_or_mode_poll_candidate` for the
 `0x25/0x19/*` triad. It emits no hardware output command and no authorization
-command. The next implementation work should continue vendor-specific protocol
-investigation, such as correlating those hypotheses with named Pit House state
-transitions, mapping the frequency-ranked unknown `0x7E` USBCOM tuple stream to
-semantic commands, or completing the remaining passive sniff scenarios, before
+command. The correlation plan now makes the next named passive evidence target
+explicit: capture or summarize `pit-house-setting-change` first, then compare
+the same hypotheses against SimHub and simulator scenarios, before any tuple can
+move toward semantic decoder coverage or registry review. The next
+implementation work should continue vendor-specific protocol investigation,
+such as completing those passive correlation scenarios or mapping the
+frequency-ranked unknown `0x7E` USBCOM tuple stream to semantic commands, before
 any future motion ladder plan.
 
 Passive USB sniff captures may produce non-claiming `sniff-receipt.json`,

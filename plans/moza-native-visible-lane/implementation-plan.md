@@ -114,6 +114,14 @@ classified as a `base_status_or_mode_poll_candidate`. These are pattern-only
 decode questions, not semantic command definitions: each tuple remains
 `unknown_commanded`, non-sendable, and ineligible for registry promotion or
 hardware output.
+The review now also records a no-output semantic correlation plan for those
+hypotheses. It groups the five tuple hypotheses into two correlation targets,
+records that both are observed in the completed `pit-house-open-idle` and
+`pit-house-full-controls` summaries, and names `pit-house-setting-change` as the
+next passive capture priority before SimHub and simulator correlation gaps. The
+plan is capture navigation only: `semantic_decode_claim=false`,
+`registry_promotion_claim=false`, `output_sendability_claim=false`, and
+`protocol_evidence_sufficient_for_output_plan=false`.
 
 The latest pre-output, lane analysis, role-status, and artifact-index receipts
 report six proven input roles and one remaining generic auxiliary role.
@@ -3301,6 +3309,97 @@ summaries, sample-frame preservation, observed frame-shape decoding,
 packet-order regression coverage, payload-shape summary, packet-group summary,
 payload-gap locators, consumed hardware attempts, prior undertravel evidence,
 or tuple frequency and registry coverage fields.
+
+## Work item: passive-sniff-semantic-correlation-plan
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: future semantic vendor protocol decode before any future output family
+Blocked by: checked-in `vendor-protocol-evidence-review.json` semantic
+hypotheses and passive sniff scenario state
+
+### Goal
+
+Turn the low-confidence tuple hypotheses into a concrete passive correlation
+plan so the next protocol evidence work can test named state-transition
+questions without treating any tuple as decoded, sendable, or registry-ready.
+
+### Production Delta
+
+Extend `wheelctl moza vendor-protocol-evidence-review` with
+`decode_candidate_semantic_correlation_plan`, derived from the existing
+semantic-hypothesis summary plus completed/missing passive sniff scenarios.
+Surface the same plan through artifact-index and bench-wizard decode-priority
+navigation, refresh `vendor-protocol-evidence-review.json` and the checked-in
+lane index, and add protocol crate regression coverage that pins the
+correlation targets as non-sendable capture questions.
+
+The current plan groups the `0x5A/0x1B/*` and `0x5D/0x1B/*` pair under
+`session_or_status_keepalive_candidate`, groups the `0x25/0x19/*` triad under
+`base_status_or_mode_poll_candidate`, records that both groups are present in
+the two completed Pit House scenarios, and names `pit-house-setting-change` as
+the next capture priority before the remaining SimHub and simulator scenarios.
+
+### Non-goals
+
+No HID open, serial open, read-only query send, hardware output, authorization
+receipt, PIDFF rerun, force increase, direct HID report `0xaf`, high torque,
+serial config, firmware, DFU, native-control claim, native-visible claim,
+smoke-ready claim, Pit House coexistence claim, simulator claim, release-ready
+claim, raw `.pcapng` commit, semantic command decode, registry promotion, or
+tuple sendability claim.
+
+### Acceptance
+
+- `vendor-protocol-evidence-review.json` records
+  `decode_candidate_semantic_correlation_plan.claim_scope` as
+  `no_output_passive_tuple_semantic_correlation_plan`.
+- The correlation plan reports two targets and five source hypotheses.
+- The keepalive target lists `0x5A/0x1B/0x00` and `0x5D/0x1B/0x01`.
+- The status/mode-poll target lists `0x25/0x19/0x01`,
+  `0x25/0x19/0x02`, and `0x25/0x19/0x03`.
+- Both targets record completed observations in `pit-house-open-idle` and
+  `pit-house-full-controls`.
+- Both targets list the missing correlation scenarios and name
+  `pit-house-setting-change` as `next_capture_priority`.
+- The plan pins `semantic_decode_claim=false`,
+  `registry_promotion_claim=false`, `hardware_output_authorized=false`,
+  `native_control_evidence=false`, `output_sendability_claim=false`, and
+  `protocol_evidence_sufficient_for_output_plan=false`.
+- Artifact-index and bench-wizard Markdown render the semantic correlation
+  plan without emitting a hardware attempt command.
+- Native-visible verifier remains blocked on `native_actuator_visible_smoke`.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_authority_navigation_surfaces_decode_priority_without_claims -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_passive_tuple_samples -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- moza vendor-protocol-evidence-review --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json --json --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-passive-semantic-correlation.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-after-passive-semantic-correlation.json --md-out target/moza-current/bench-wizard-after-passive-semantic-correlation.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-passive-semantic-correlation.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo test --locked -p wheelctl --bin wheelctl checked_in_moza_lane_index_matches_artifact_index_renderer -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the semantic correlation plan generation, schema additions,
+protocol regression, refreshed protocol review receipt, refreshed artifact
+index, and source-of-truth updates. Do not remove checked-in passive sniff
+summaries, sample-frame preservation, observed frame-shape decoding,
+packet-order regression coverage, payload-shape summary, packet-group summary,
+semantic-hypothesis summary, payload-gap locators, consumed hardware attempts,
+prior undertravel evidence, or tuple frequency and registry coverage fields.
 
 ## Work item: native-visible-promotion
 

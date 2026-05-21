@@ -4,7 +4,7 @@
   "artifact_kind": "moza_vendor_protocol_evidence_review",
   "claim_scope": "no_output_protocol_evidence_review",
   "command": "wheelctl moza vendor-protocol-evidence-review",
-  "generated_at_utc": "2026-05-21T15:32:25Z",
+  "generated_at_utc": "2026-05-21T16:26:48Z",
   "lane": "ci/hardware/moza-r5/2026-05-13",
   "sniff_root": "ci/hardware\\sniff\\moza-r5\\2026-05-13",
   "command_registry_path": "fixtures/moza/r5/vendor-command-registry.json",
@@ -6220,6 +6220,98 @@
       "notes": [
         "Hypotheses are decode questions derived from passive fixture morphology; they are not semantic command definitions.",
         "Unknown commanded tuples remain unknown_do_not_send and non-sendable until external correlation and reviewed decoder coverage exist."
+      ]
+    },
+    "decode_candidate_semantic_correlation_plan": {
+      "claim_scope": "no_output_passive_tuple_semantic_correlation_plan",
+      "source_hypothesis_scope": "no_output_passive_tuple_semantic_hypothesis_review",
+      "hypothesis_count": 5,
+      "correlation_target_count": 2,
+      "all_targets_non_sendable": true,
+      "targets": [
+        {
+          "semantic_hypothesis": "base_status_or_mode_poll_candidate",
+          "tuple_ids": [
+            "0x25/0x19/0x01",
+            "0x25/0x19/0x02",
+            "0x25/0x19/0x03"
+          ],
+          "observed_completed_scenarios": [
+            "pit-house-open-idle",
+            "pit-house-full-controls"
+          ],
+          "missing_correlation_scenarios": [
+            "pit-house-setting-change",
+            "simhub-open-idle",
+            "simhub-output-session",
+            "simulator-session-start-stop"
+          ],
+          "required_correlation_questions": [
+            "does the triad change around a named Pit House setting or mode state?",
+            "does the triad appear during SimHub or simulator sessions without Pit House?",
+            "is the triad a read/status poll rather than a volatile mode enable?"
+          ],
+          "next_capture_priority": "pit-house-setting-change",
+          "semantic_decode_claim": false,
+          "registry_promotion_claim": false,
+          "hardware_output_authorized": false,
+          "output_sendability_claim": false
+        },
+        {
+          "semantic_hypothesis": "session_or_status_keepalive_candidate",
+          "tuple_ids": [
+            "0x5A/0x1B/0x00",
+            "0x5D/0x1B/0x01"
+          ],
+          "observed_completed_scenarios": [
+            "pit-house-open-idle",
+            "pit-house-full-controls"
+          ],
+          "missing_correlation_scenarios": [
+            "pit-house-setting-change",
+            "simhub-open-idle",
+            "simhub-output-session",
+            "simulator-session-start-stop"
+          ],
+          "required_correlation_questions": [
+            "does tuple cadence change when Pit House setting changes?",
+            "does tuple cadence persist without Pit House when SimHub or simulator observe the device?",
+            "is there a device-to-host response, ack, or status delta tied to the tuple pair?"
+          ],
+          "next_capture_priority": "pit-house-setting-change",
+          "semantic_decode_claim": false,
+          "registry_promotion_claim": false,
+          "hardware_output_authorized": false,
+          "output_sendability_claim": false
+        }
+      ],
+      "next_allowed_action": "capture or summarize named passive correlation scenarios; no output",
+      "blocked_actions": [
+        "send unknown vendor tuples",
+        "promote semantic command registry entries",
+        "create vendor authorization receipts",
+        "run hardware output",
+        "claim native-visible readiness"
+      ],
+      "required_artifacts": [
+        "ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-receipt.json",
+        "ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-summary.json",
+        "ci/hardware/sniff/moza-r5/2026-05-13/simhub-open-idle/sniff-receipt.json",
+        "ci/hardware/sniff/moza-r5/2026-05-13/simhub-open-idle/sniff-summary.json",
+        "ci/hardware/sniff/moza-r5/2026-05-13/simhub-output-session/sniff-receipt.json",
+        "ci/hardware/sniff/moza-r5/2026-05-13/simhub-output-session/sniff-summary.json",
+        "ci/hardware/sniff/moza-r5/2026-05-13/simulator-session-start-stop/sniff-receipt.json",
+        "ci/hardware/sniff/moza-r5/2026-05-13/simulator-session-start-stop/sniff-summary.json"
+      ],
+      "semantic_decode_claim": false,
+      "registry_promotion_claim": false,
+      "hardware_output_authorized": false,
+      "native_control_evidence": false,
+      "output_sendability_claim": false,
+      "protocol_evidence_sufficient_for_output_plan": false,
+      "notes": [
+        "Correlation targets are capture questions for passive evidence only; they are not semantic command definitions.",
+        "Missing correlation scenarios must produce non-claiming sniff receipts and summaries before any tuple can move toward registry review."
       ]
     },
     "unknown_tuple_risk_class": "unknown_do_not_send",

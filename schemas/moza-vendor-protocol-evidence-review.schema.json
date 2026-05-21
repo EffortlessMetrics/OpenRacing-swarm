@@ -412,6 +412,7 @@
         "decode_candidate_payload_shape_summary",
         "decode_candidate_packet_group_summary",
         "decode_candidate_semantic_hypothesis_summary",
+        "decode_candidate_semantic_correlation_plan",
         "unknown_tuple_risk_class",
         "protocol_evidence_sufficient_for_output_plan",
         "hardware_output_authorized",
@@ -908,6 +909,96 @@
                 },
                 "additionalProperties": true
               }
+            },
+            "semantic_decode_claim": { "const": false },
+            "registry_promotion_claim": { "const": false },
+            "hardware_output_authorized": { "const": false },
+            "native_control_evidence": { "const": false },
+            "output_sendability_claim": { "const": false },
+            "protocol_evidence_sufficient_for_output_plan": { "const": false }
+          },
+          "additionalProperties": true
+        },
+        "decode_candidate_semantic_correlation_plan": {
+          "type": "object",
+          "required": [
+            "claim_scope",
+            "source_hypothesis_scope",
+            "hypothesis_count",
+            "correlation_target_count",
+            "all_targets_non_sendable",
+            "targets",
+            "next_allowed_action",
+            "blocked_actions",
+            "required_artifacts",
+            "semantic_decode_claim",
+            "registry_promotion_claim",
+            "hardware_output_authorized",
+            "native_control_evidence",
+            "output_sendability_claim",
+            "protocol_evidence_sufficient_for_output_plan"
+          ],
+          "properties": {
+            "claim_scope": {
+              "const": "no_output_passive_tuple_semantic_correlation_plan"
+            },
+            "source_hypothesis_scope": {
+              "const": "no_output_passive_tuple_semantic_hypothesis_review"
+            },
+            "hypothesis_count": { "type": "integer", "minimum": 0 },
+            "correlation_target_count": { "type": "integer", "minimum": 0 },
+            "all_targets_non_sendable": { "type": "boolean" },
+            "targets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "semantic_hypothesis",
+                  "tuple_ids",
+                  "observed_completed_scenarios",
+                  "missing_correlation_scenarios",
+                  "required_correlation_questions",
+                  "next_capture_priority",
+                  "semantic_decode_claim",
+                  "registry_promotion_claim",
+                  "hardware_output_authorized",
+                  "output_sendability_claim"
+                ],
+                "properties": {
+                  "semantic_hypothesis": { "type": "string" },
+                  "tuple_ids": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "observed_completed_scenarios": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "missing_correlation_scenarios": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "required_correlation_questions": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "next_capture_priority": { "type": "string" },
+                  "semantic_decode_claim": { "const": false },
+                  "registry_promotion_claim": { "const": false },
+                  "hardware_output_authorized": { "const": false },
+                  "output_sendability_claim": { "const": false }
+                },
+                "additionalProperties": true
+              }
+            },
+            "next_allowed_action": { "type": "string" },
+            "blocked_actions": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "required_artifacts": {
+              "type": "array",
+              "items": { "type": "string" }
             },
             "semantic_decode_claim": { "const": false },
             "registry_promotion_claim": { "const": false },

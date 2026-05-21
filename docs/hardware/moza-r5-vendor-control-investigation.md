@@ -48,7 +48,11 @@ pattern-only semantic hypotheses for that same queue:
 questions, not semantic commands, registry entries, or sendable output
 candidates. The next step is to correlate those hypotheses with named Pit
 House state transitions or fill remaining no-output capture gaps before
-proposing any vendor-control output path.
+proposing any vendor-control output path. The current receipt now records that
+correlation plan explicitly: two non-sendable targets, completed observations in
+`pit-house-open-idle` and `pit-house-full-controls`, and
+`pit-house-setting-change` as the next passive capture priority before SimHub or
+simulator correlation.
 
 ## Current Artifacts
 
@@ -94,6 +98,11 @@ the two remaining payload export gaps as packet/frame locators, one in
 `payload_extracted=false` and no sendability or output claim. No tuple,
 hypothesis, or residual packet is sendable without a future semantic decode,
 reviewed plan, fresh bench clear, and exact authorization.
+The same review now records `decode_candidate_semantic_correlation_plan` as
+capture navigation only. It requires non-claiming `sniff-receipt.json` and
+`sniff-summary.json` artifacts for the missing correlation scenarios, keeps
+`planned_next_output.allowed=false`, and does not satisfy native-visible,
+smoke-ready, coexistence, simulator, or release-ready gates.
 
 ## Boundaries
 
