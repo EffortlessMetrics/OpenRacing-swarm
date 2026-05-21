@@ -1562,6 +1562,25 @@ commands = [
 ]
 
 [[work_item]]
+id = "bench-wizard-usbpcap-capture-command"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-bench-wizard-usbpcap-capture-command"
+current_pointer = "crates/cli/src/commands/moza.rs"
+claim_boundary = "No-output operator navigation only; bench-wizard surfaces an external USBPcap capture command template for the next passive sniff scenario without creating a pcap, sniff receipt, summary, bundle, HID open, serial open, query send, OpenRacing hardware output, authorization, native-control, native-visible, smoke-ready, coexistence, simulator, firmware, release-ready, semantic decode, registry promotion, or tuple sendability claim."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl bench_wizard_sniff_next_operator_commands_parse -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_review_routes_next_missing_passive_correlation_capture -- --nocapture",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-usbpcap-capture-command.json --md-out target/moza-current/bench-wizard-usbpcap-capture-command.md --json",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

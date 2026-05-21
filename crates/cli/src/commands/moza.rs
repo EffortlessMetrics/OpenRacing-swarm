@@ -2643,6 +2643,7 @@ fn moza_passive_sniff_next_operator_step(lane: &Path) -> Option<Value> {
                 &local_dir,
                 &local_pcapng
             ),
+            "external_capture_commands": moza_passive_sniff_external_capture_commands(&local_pcapng),
             "commands": [
                 {
                     "name": "record_sniff_receipt",
@@ -2764,6 +2765,28 @@ fn moza_passive_sniff_capture_checklist(
             "external app traffic is protocol research evidence only and is not OpenRacing native-visible or smoke-ready proof"
         ]
     })
+}
+
+fn moza_passive_sniff_external_capture_commands(local_pcapng: &Path) -> Vec<Value> {
+    vec![serde_json::json!({
+        "name": "run_external_usbpcap_capture",
+        "owner": "operator_external_capture_tool",
+        "openracing_command": false,
+        "output_enabled": false,
+        "openracing_hardware_output": false,
+        "requires_hardware_doctor_hint": true,
+        "hardware_doctor_path": "target/moza-current/passive-sniff-capture-hardware-doctor.json",
+        "raw_pcapng_commit_default": false,
+        "command_template": format!(
+            "& \"<USBPcapCMD.exe from hardware doctor>\" -d \"<USBPcap interface from hardware doctor>\" --devices <capture_devices_value> --inject-descriptors -o {}",
+            command_arg(&local_pcapng.display().to_string())
+        ),
+        "notes": [
+            "run this outside OpenRacing after refreshing hardware doctor and before launching or changing the external app",
+            "replace the placeholders with the USBPcap interface, device filter, and extcap path from the hardware doctor USBPcap Moza device hint",
+            "this command creates a local raw pcapng only; it is not OpenRacing hardware output and it is not a readiness claim"
+        ]
+    })]
 }
 
 fn moza_passive_sniff_capture_action(scenario: &str) -> String {
@@ -36640,6 +36663,7 @@ fn render_moza_bench_wizard_markdown(receipt: &Value) -> String {
         markdown_escape(step_summary)
     ));
     push_next_operator_step_capture_checklist_markdown(&mut out, step);
+    push_next_operator_step_external_capture_commands_markdown(&mut out, step);
     push_next_operator_step_commands_markdown(&mut out, step);
 
     push_input_role_semantics_markdown(&mut out, receipt);
@@ -37592,6 +37616,33 @@ fn push_next_operator_step_capture_checklist_markdown(out: &mut String, step: &V
             .join(", ");
         out.push_str(&format!("- Forbidden actions: `{actions}`\n\n"));
     }
+}
+
+fn push_next_operator_step_external_capture_commands_markdown(out: &mut String, step: &Value) {
+    let Some(commands) = step
+        .get("external_capture_commands")
+        .and_then(Value::as_array)
+    else {
+        return;
+    };
+    if commands.is_empty() {
+        return;
+    }
+
+    out.push_str("### External Capture Commands\n\n");
+    out.push_str("These commands are for the operator's USB capture tool, not for OpenRacing hardware output. Replace placeholders with values from the fresh hardware doctor receipt before running them.\n\n");
+    out.push_str("| Name | Command Template |\n");
+    out.push_str("| --- | --- |\n");
+    for command in commands {
+        let name = json_string(command, "name").unwrap_or("unknown");
+        let command_text = json_string(command, "command_template").unwrap_or("");
+        out.push_str(&format!(
+            "| `{}` | `{}` |\n",
+            markdown_escape(name),
+            markdown_escape(command_text)
+        ));
+    }
+    out.push('\n');
 }
 
 fn push_next_operator_step_commands_markdown(out: &mut String, step: &Value) {
@@ -43911,6 +43962,31 @@ mod tests {
             "external capture checklist should preserve firmware/update boundary: {checklist}"
         );
 
+        let external_capture_commands = step
+            .get("external_capture_commands")
+            .and_then(Value::as_array)
+            .ok_or("expected external capture command templates")?;
+        assert!(
+            external_capture_commands.iter().any(|command| {
+                json_string(command, "name") == Some("run_external_usbpcap_capture")
+                    && json_bool(command, "openracing_command") == Some(false)
+                    && json_bool(command, "output_enabled") == Some(false)
+                    && json_bool(command, "openracing_hardware_output") == Some(false)
+                    && json_bool(command, "requires_hardware_doctor_hint") == Some(true)
+                    && json_bool(command, "raw_pcapng_commit_default") == Some(false)
+                    && json_string(command, "command_template").is_some_and(|text| {
+                        text.contains("USBPcapCMD.exe")
+                            && text.contains("--devices <capture_devices_value>")
+                            && text.contains("--inject-descriptors")
+                            && text.contains("target")
+                            && text.contains("sniff")
+                            && text.contains("pit-house-open-idle")
+                            && text.contains("capture.pcapng")
+                    })
+            }),
+            "external capture command template should be surfaced without OpenRacing output claims: {external_capture_commands:?}"
+        );
+
         let commands = step
             .get("commands")
             .and_then(Value::as_array)
@@ -43945,6 +44021,9 @@ mod tests {
         let markdown = render_moza_bench_wizard_markdown(&receipt);
         assert!(markdown.contains("capture_passive_vendor_sniff"));
         assert!(markdown.contains("External Capture Checklist"));
+        assert!(markdown.contains("External Capture Commands"));
+        assert!(markdown.contains("run_external_usbpcap_capture"));
+        assert!(markdown.contains("--devices <capture_devices_value>"));
         assert!(markdown.contains("MOZA Pit House"));
         assert!(markdown.contains("capture.pcapng"));
         assert!(markdown.contains("wheelctl hardware sniff-receipt"));
@@ -44062,6 +44141,22 @@ mod tests {
             .get("commands")
             .and_then(Value::as_array)
             .ok_or("expected sniff next-step commands")?;
+        let external_capture_commands = step
+            .get("external_capture_commands")
+            .and_then(Value::as_array)
+            .ok_or("expected external capture command templates")?;
+        assert!(
+            external_capture_commands.iter().any(|command| {
+                json_string(command, "name") == Some("run_external_usbpcap_capture")
+                    && json_bool(command, "openracing_command") == Some(false)
+                    && json_bool(command, "output_enabled") == Some(false)
+                    && json_string(command, "command_template").is_some_and(|text| {
+                        text.contains("USBPcapCMD.exe")
+                            && text.contains("<USBPcap interface from hardware doctor>")
+                    })
+            }),
+            "bench-wizard should surface the external USBPcap capture command template: {external_capture_commands:?}"
+        );
         let mut names = Vec::new();
 
         for command in commands {
