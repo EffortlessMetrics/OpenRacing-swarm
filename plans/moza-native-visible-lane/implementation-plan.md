@@ -122,6 +122,11 @@ next passive capture priority before SimHub and simulator correlation gaps. The
 plan is capture navigation only: `semantic_decode_claim=false`,
 `registry_promotion_claim=false`, `output_sendability_claim=false`, and
 `protocol_evidence_sufficient_for_output_plan=false`.
+The `pit-house-setting-change` sniff plan now pins the scenario-specific
+operator evidence required for that next capture: exact Pit House setting,
+starting value, ending value, and whether the setting value was restored. That
+hardens the passive capture handoff only and does not create a semantic decode,
+registry promotion, output sendability, or readiness claim.
 
 The latest pre-output, lane analysis, role-status, and artifact-index receipts
 report six proven input roles and one remaining generic auxiliary role.
@@ -3400,6 +3405,73 @@ summaries, sample-frame preservation, observed frame-shape decoding,
 packet-order regression coverage, payload-shape summary, packet-group summary,
 semantic-hypothesis summary, payload-gap locators, consumed hardware attempts,
 prior undertravel evidence, or tuple frequency and registry coverage fields.
+
+## Work item: passive-sniff-setting-change-notes-requirements
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: next passive correlation capture for Pit House setting changes
+Blocked by: `pit-house-setting-change` sniff plan exists but lacked the scenario-specific setting/value/restore evidence fields required by `docs/hardware/sniffing-scenarios.md`
+
+### Goal
+
+Make the `pit-house-setting-change` passive capture handoff require the exact
+operator evidence needed to correlate tuple hypotheses against one intentional
+Pit House setting transition.
+
+### Production Delta
+
+Extend `wheelctl hardware sniff-plan` so `pit-house-setting-change` plans add
+operator notes for the exact Pit House setting changed, starting setting value,
+ending setting value, and whether the setting value was restored. Extend the
+sniff-plan schema with the same scenario-specific requirement, add regression
+coverage for the generated plan and `sniff-notes-template`, and refresh the
+checked-in `pit-house-setting-change/sniff-plan.json`.
+
+### Non-goals
+
+No HID open, serial open, read-only query send, hardware output, authorization
+receipt, PIDFF rerun, force increase, direct HID report `0xaf`, high torque,
+serial config, firmware, DFU, native-control claim, native-visible claim,
+smoke-ready claim, Pit House coexistence claim, simulator claim,
+release-ready claim, raw `.pcapng` commit, semantic command decode, registry
+promotion, or tuple sendability claim.
+
+### Acceptance
+
+- `pit-house-setting-change/sniff-plan.json` includes required notes for exact
+  Pit House setting, starting value, ending value, and restore status.
+- `hardware sniff-notes-template` renders those fields as operator checklist
+  lines for the setting-change plan.
+- `sniff-plan.schema.json` rejects setting-change plans that omit those fields.
+- The plan remains passive and non-claiming:
+  `native_control_evidence=false`, `openracing_hardware_output=false`,
+  `satisfies_native_visible_ready=false`, and `satisfies_smoke_ready=false`.
+- No receipt, summary, bundle manifest, raw capture, hardware output, semantic
+  decode, registry promotion, or readiness claim is created.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl hardware_sniff -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- --json hardware sniff-plan --family moza-r5 --scenario pit-house-setting-change --lane ci/hardware/moza-r5/2026-05-13 --operator Steven --device-note "Moza R5 PID 0x0004 with KS/ES wheels, SR-P pedals, and HBP handbrake attached through the R5 hub" --capture-tool usbpcap --capture-tool wireshark --capture-tool tshark --platform-hint windows --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-plan.json
+cargo run --locked -p wheelctl --bin wheelctl -- --json hardware sniff-notes-template --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-plan.json --out target/sniff/pit-house-setting-change/operator-notes.md --json
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the setting-change-specific operator note generation, schema
+condition, test coverage, refreshed `pit-house-setting-change/sniff-plan.json`,
+and source-of-truth updates. Do not remove existing passive sniff summaries,
+semantic correlation planning, consumed hardware attempts, or protocol evidence
+review receipts.
 
 ## Work item: native-visible-promotion
 

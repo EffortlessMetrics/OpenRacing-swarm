@@ -330,11 +330,7 @@ fn build_hardware_sniff_plan(
             .copied()
             .map(str::to_string)
             .collect(),
-        operator_notes_required: SNIFF_OPERATOR_NOTES_REQUIRED
-            .iter()
-            .copied()
-            .map(str::to_string)
-            .collect(),
+        operator_notes_required: sniff_operator_notes_required(request.scenario),
         raw_pcap_commit_default: false,
         evidence_status: SNIFF_EVIDENCE_STATUS,
         native_control_evidence: false,
@@ -4905,6 +4901,29 @@ const SNIFF_OPERATOR_NOTES_REQUIRED: &[&str] = &[
     "whether firmware/update/DFU pages stayed closed",
     "whether raw pcapng was kept local or reviewed for bundling",
 ];
+const PIT_HOUSE_SETTING_CHANGE_OPERATOR_NOTES_REQUIRED: &[&str] = &[
+    "exact Pit House setting changed",
+    "starting setting value",
+    "ending setting value",
+    "whether the setting value was restored",
+];
+
+fn sniff_operator_notes_required(scenario: HardwareSniffScenario) -> Vec<String> {
+    let mut required = SNIFF_OPERATOR_NOTES_REQUIRED
+        .iter()
+        .copied()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if scenario == HardwareSniffScenario::PitHouseSettingChange {
+        required.extend(
+            PIT_HOUSE_SETTING_CHANGE_OPERATOR_NOTES_REQUIRED
+                .iter()
+                .copied()
+                .map(str::to_string),
+        );
+    }
+    required
+}
 
 #[derive(Debug)]
 struct HardwareSniffPlanRequest<'a> {
@@ -6531,6 +6550,26 @@ mod tests {
             })
         }
 
+        fn sample_plan_for_scenario(
+            lane: &Path,
+            scenario: HardwareSniffScenario,
+        ) -> Result<HardwareSniffPlanArtifact> {
+            let capture_tools = vec![
+                HardwareSniffCaptureTool::Wireshark,
+                HardwareSniffCaptureTool::UsbPcap,
+                HardwareSniffCaptureTool::Tshark,
+            ];
+            build_hardware_sniff_plan(&HardwareSniffPlanRequest {
+                family: "moza-r5",
+                scenario,
+                lane,
+                operator: "Steven",
+                device_note: "R5 V2 with KS rim, SR-P pedals, and HBP handbrake",
+                capture_tools: &capture_tools,
+                platform_hint: Some(HardwareSniffPlatformHint::Windows),
+            })
+        }
+
         fn write_sample_plan(dir: &Path) -> Result<PathBuf> {
             let plan = sample_plan(dir)?;
             let plan_path = dir.join("sniff-plan.json");
@@ -6615,6 +6654,55 @@ mod tests {
             assert!(markdown.contains("sniff-notes-template"));
             assert!(markdown.contains("Raw pcapng commit default: `false`"));
             assert_schema_valid("sniff-plan.schema.json", &serde_json::to_value(&plan)?)?;
+            Ok(())
+        }
+
+        #[test]
+        fn setting_change_sniff_plan_requires_exact_setting_notes() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let plan =
+                sample_plan_for_scenario(dir.path(), HardwareSniffScenario::PitHouseSettingChange)?;
+            let plan_path = dir.path().join("sniff-plan.json");
+            write_json_file(&plan_path, &plan)?;
+            let stored = read_and_validate_sniff_plan(&plan_path)?;
+            let notes = render_sniff_operator_notes_template(&plan_path, &stored);
+
+            for field in PIT_HOUSE_SETTING_CHANGE_OPERATOR_NOTES_REQUIRED {
+                assert!(
+                    plan.operator_notes_required
+                        .iter()
+                        .any(|required| required == field),
+                    "plan missing setting-change operator note: {field}"
+                );
+                assert!(
+                    notes.contains(&format!("- [ ] {field}:")),
+                    "operator notes template missing setting-change field: {field}"
+                );
+            }
+            assert_schema_valid("sniff-plan.schema.json", &serde_json::to_value(&plan)?)?;
+            Ok(())
+        }
+
+        #[test]
+        fn setting_change_sniff_plan_schema_rejects_missing_setting_notes() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let plan =
+                sample_plan_for_scenario(dir.path(), HardwareSniffScenario::PitHouseSettingChange)?;
+            let mut value = serde_json::to_value(&plan)?;
+            let Some(notes) = value
+                .get_mut("operator_notes_required")
+                .and_then(serde_json::Value::as_array_mut)
+            else {
+                return Err("expected operator_notes_required array".into());
+            };
+            notes.retain(|item| item.as_str() != Some("starting setting value"));
+
+            let schema_text = fs::read_to_string(sniff_schema_path("sniff-plan.schema.json"))?;
+            let schema: serde_json::Value = serde_json::from_str(&schema_text)?;
+            let validator = jsonschema::Validator::new(&schema)?;
+            if validator.validate(&value).is_ok() {
+                return Err("setting-change plan without starting value should fail schema".into());
+            }
             Ok(())
         }
 
