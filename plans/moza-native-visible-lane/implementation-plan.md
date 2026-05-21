@@ -78,10 +78,14 @@ frame-shape decode gap. The review now compares the 30 distinct passive tuple
 IDs against `fixtures/moza/r5/vendor-command-registry.json`: one tuple matches
 the registry, `0x28/0x13/0x02` (`base_gain_get_overall_strength`), and it is
 read-only status evidence only. The other 29 passive tuples are 12 commandless
-tuple IDs and 17 unknown commanded tuple IDs. This is protocol-shape and
-registry-coverage navigation only: it does not decode an approved semantic
-enable command, make any tuple sendable, authorize output, or promote
-native-visible readiness.
+tuple IDs and 17 unknown commanded tuple IDs. The same review now preserves
+per-scenario tuple counts so the highest-frequency unknown commanded tuples are
+visible before any semantic decode work: `0x5A/0x1B/0x00` appears 1,896 times,
+`0x5D/0x1B/0x01` appears 1,894 times, and `0x25/0x19/0x01`,
+`0x25/0x19/0x02`, and `0x25/0x19/0x03` each appear 624 times. This is
+protocol-shape, registry-coverage, and frequency-prioritization navigation
+only: it does not decode an approved semantic enable command, make any tuple
+sendable, authorize output, or promote native-visible readiness.
 
 The latest pre-output, lane analysis, role-status, and artifact-index receipts
 report six proven input roles and one remaining generic auxiliary role.
@@ -2529,6 +2533,100 @@ Revert only the passive tuple-to-registry coverage code, schema additions,
 refreshed protocol review receipt, and source-of-truth updates. Do not remove
 passive sniff plans, raw local capture artifacts, consumed hardware attempts,
 or prior undertravel evidence.
+
+## Work item: passive-sniff-tuple-frequency-review
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked specs:
+- docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+- docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: reviewed semantic command evidence before any future output family
+Blocked by: checked-in Pit House passive sniff summaries with parsed `0x7E`
+tuple counts and passive tuple registry coverage
+
+### Goal
+
+Preserve per-scenario passive tuple counts and total frequency rankings from
+the checked-in Pit House summaries so vendor protocol decode work can focus on
+the most repeated unknown commanded tuples without treating frequency as
+sendability evidence.
+
+### Production Delta
+
+Extend `wheelctl moza vendor-protocol-evidence-review` so each reviewed passive
+sniff scenario records `host_to_device_serial_frame_tuple_counts` and
+`passive_tuple_registry_coverage` records `tuple_frequency_summary`,
+`highest_frequency_tuple_ids`, and
+`highest_frequency_unknown_commanded_tuple_ids`.
+
+Refresh `schemas/moza-vendor-protocol-evidence-review.schema.json`,
+`ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json`, the
+artifact index, and this source-of-truth stack.
+
+The checked-in review now ranks the highest-frequency unknown commanded tuples
+as:
+
+| Tuple | Total count | Payload bytes | Scenarios |
+| --- | ---: | ---: | ---: |
+| `0x5A/0x1B/0x00` | 1,896 | 0 | 2 |
+| `0x5D/0x1B/0x01` | 1,894 | 2 | 2 |
+| `0x25/0x19/0x01` | 624 | 2 | 2 |
+| `0x25/0x19/0x02` | 624 | 2 | 2 |
+| `0x25/0x19/0x03` | 624 | 2 | 2 |
+
+The review keeps those tuples classified as `unknown_commanded` with
+`unknown_tuple_risk_class=unknown_do_not_send`.
+
+### Non-goals
+
+No HID open, serial open, read-only query send, hardware output, authorization
+receipt, PIDFF rerun, force increase, direct HID report `0xaf`, high torque,
+serial config, firmware, DFU, native-control claim, native-visible claim,
+smoke-ready claim, Pit House coexistence claim, simulator claim, release-ready
+claim, raw `.pcapng` commit, semantic command decode, or tuple sendability
+claim.
+
+### Acceptance
+
+- `vendor-protocol-evidence-review.json` records
+  `host_to_device_serial_frame_tuple_counts` for each completed passive sniff
+  scenario with parsed `0x7E` serial frames.
+- `passive_tuple_registry_coverage.tuple_frequency_summary` ranks tuple IDs by
+  descending total count and includes per-scenario counts.
+- `highest_frequency_unknown_commanded_tuple_ids` starts with
+  `0x5A/0x1B/0x00`, `0x5D/0x1B/0x01`, `0x25/0x19/0x01`,
+  `0x25/0x19/0x02`, and `0x25/0x19/0x03`.
+- Frequency-ranked unknown commanded tuples remain
+  `unknown_tuple_risk_class=unknown_do_not_send`.
+- `protocol_evidence_sufficient_for_output_plan=false`,
+  `hardware_output_authorized=false`, `native_control_evidence=false`, and
+  `output_sendability_claim=false` remain pinned.
+- Native-visible verifier remains blocked on `native_actuator_visible_smoke`.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- moza vendor-protocol-evidence-review --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json --json --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-passive-tuple-frequency-review.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-passive-tuple-frequency-review.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo test --locked -p wheelctl --bin wheelctl checked_in_moza_lane_index_matches_artifact_index_renderer -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the passive tuple-frequency code, schema additions, refreshed
+protocol review receipt, artifact-index refresh, and source-of-truth updates.
+Do not remove passive sniff plans, raw local capture artifacts, consumed
+hardware attempts, prior undertravel evidence, or the tuple-to-registry
+coverage receipt fields.
 
 ## Work item: native-visible-promotion
 
