@@ -735,7 +735,7 @@ fn build_hardware_sniff_summary_from_tshark_json(
 fn build_hardware_sniff_bundle(
     request: &HardwareSniffBundleRequest<'_>,
 ) -> Result<HardwareSniffBundleManifest> {
-    let _plan = read_and_validate_sniff_plan(request.plan)?;
+    let plan = read_and_validate_sniff_plan(request.plan)?;
     let receipt = read_and_validate_sniff_receipt(request.receipt)?;
     let summary = read_and_validate_sniff_summary(request.summary)?;
     let plan_path_text = required_path_display(request.plan, "plan")?;
@@ -754,6 +754,57 @@ fn build_hardware_sniff_bundle(
             request.receipt.display()
         );
     }
+    let operator_notes_receipt_bytes = if let Some(operator_notes_receipt) =
+        request.operator_notes_receipt
+    {
+        let notes_receipt = read_and_validate_sniff_notes_template_receipt(operator_notes_receipt)?;
+        if notes_receipt.plan_path != plan_path_text {
+            anyhow::bail!(
+                "sniff notes template receipt '{}' was created for plan '{}' but bundle supplied plan '{}'",
+                operator_notes_receipt.display(),
+                notes_receipt.plan_path,
+                plan_path_text
+            );
+        }
+        let operator_notes_path_text =
+            required_path_display(request.operator_notes, "operator notes")?;
+        if notes_receipt.out_path != operator_notes_path_text {
+            anyhow::bail!(
+                "sniff notes template receipt '{}' was created for operator notes '{}' but bundle supplied operator notes '{}'",
+                operator_notes_receipt.display(),
+                notes_receipt.out_path,
+                operator_notes_path_text
+            );
+        }
+        if notes_receipt.scenario != plan.scenario {
+            anyhow::bail!(
+                "sniff notes template receipt '{}' scenario '{}' does not match sniff plan scenario '{}'",
+                operator_notes_receipt.display(),
+                notes_receipt.scenario,
+                plan.scenario
+            );
+        }
+        if notes_receipt.operator != plan.operator {
+            anyhow::bail!(
+                "sniff notes template receipt '{}' operator '{}' does not match sniff plan operator '{}'",
+                operator_notes_receipt.display(),
+                notes_receipt.operator,
+                plan.operator
+            );
+        }
+        if notes_receipt.device_note != plan.device_note {
+            anyhow::bail!(
+                "sniff notes template receipt '{}' device_note does not match sniff plan device_note",
+                operator_notes_receipt.display()
+            );
+        }
+        Some(read_required_artifact(
+            operator_notes_receipt,
+            "operator notes receipt",
+        )?)
+    } else {
+        None
+    };
 
     let mut entries = vec![
         SniffBundleZipEntry::bytes(
@@ -777,10 +828,10 @@ fn build_hardware_sniff_bundle(
             read_required_artifact(request.operator_notes, "operator notes")?,
         ),
     ];
-    if let Some(operator_notes_receipt) = request.operator_notes_receipt {
+    if let Some(bytes) = operator_notes_receipt_bytes {
         entries.push(SniffBundleZipEntry::bytes(
             sniff_bundle_path("sniff-notes-template-receipt.json"),
-            read_required_artifact(operator_notes_receipt, "operator notes receipt")?,
+            bytes,
         ));
     }
     entries.push(SniffBundleZipEntry::bytes(
@@ -1480,6 +1531,64 @@ fn read_and_validate_sniff_receipt(path: &Path) -> Result<StoredHardwareSniffRec
     {
         anyhow::bail!(
             "sniff receipt '{}' violates passive sniff invariants; sniff bundles require non-claiming receipt evidence",
+            path.display()
+        );
+    }
+    Ok(receipt)
+}
+
+fn read_and_validate_sniff_notes_template_receipt(
+    path: &Path,
+) -> Result<StoredHardwareSniffNotesTemplateReceipt> {
+    let receipt: StoredHardwareSniffNotesTemplateReceipt = read_json_file(path)?;
+    if receipt.schema_version != 1 {
+        anyhow::bail!(
+            "sniff notes template receipt '{}' has unsupported schema_version {}; expected 1",
+            path.display(),
+            receipt.schema_version
+        );
+    }
+    if receipt.command != "wheelctl hardware sniff-notes-template" {
+        anyhow::bail!(
+            "sniff notes template receipt '{}' was not produced by wheelctl hardware sniff-notes-template",
+            path.display()
+        );
+    }
+    if receipt.evidence_status != SNIFF_EVIDENCE_STATUS {
+        anyhow::bail!(
+            "sniff notes template receipt '{}' has evidence_status '{}'; expected '{}'",
+            path.display(),
+            receipt.evidence_status,
+            SNIFF_EVIDENCE_STATUS
+        );
+    }
+    if !receipt.success {
+        anyhow::bail!(
+            "sniff notes template receipt '{}' did not succeed; refresh the receipt before creating a bundle",
+            path.display()
+        );
+    }
+    required_text(&receipt.generated_at_utc, "notes-template generated-at-utc")?;
+    required_text(&receipt.plan_path, "notes-template plan-path")?;
+    required_text(&receipt.out_path, "notes-template out-path")?;
+    validate_sniff_scenario(&receipt.scenario).with_context(|| {
+        format!(
+            "sniff notes template receipt '{}' has invalid scenario",
+            path.display()
+        )
+    })?;
+    required_text(&receipt.operator, "notes-template operator")?;
+    required_text(&receipt.device_note, "notes-template device-note")?;
+    if receipt.native_control_evidence
+        || receipt.openracing_hardware_output
+        || receipt.satisfies_native_response_ready
+        || receipt.satisfies_native_visible_ready
+        || receipt.satisfies_smoke_ready
+        || receipt.satisfies_release_ready
+        || !receipt.readiness_claims.all_false()
+    {
+        anyhow::bail!(
+            "sniff notes template receipt '{}' violates passive sniff invariants; sniff bundles require non-claiming operator notes receipt evidence",
             path.display()
         );
     }
@@ -6343,6 +6452,27 @@ struct StoredHardwareSniffReceipt {
 }
 
 #[derive(Debug, Deserialize)]
+struct StoredHardwareSniffNotesTemplateReceipt {
+    schema_version: u32,
+    success: bool,
+    command: String,
+    generated_at_utc: String,
+    plan_path: String,
+    out_path: String,
+    scenario: String,
+    operator: String,
+    device_note: String,
+    evidence_status: String,
+    native_control_evidence: bool,
+    openracing_hardware_output: bool,
+    satisfies_native_response_ready: bool,
+    satisfies_native_visible_ready: bool,
+    satisfies_smoke_ready: bool,
+    satisfies_release_ready: bool,
+    readiness_claims: HardwareSniffReadinessClaims,
+}
+
+#[derive(Debug, Deserialize)]
 struct StoredHardwareSniffSummary {
     schema_version: u32,
     success: bool,
@@ -7560,6 +7690,37 @@ mod tests {
             })
         }
 
+        fn write_notes_template_receipt(paths: &BundleFixturePaths) -> Result<PathBuf> {
+            let plan = read_and_validate_sniff_plan(&paths.plan)?;
+            let Some(parent) = paths.operator_notes.parent() else {
+                anyhow::bail!("operator notes path should have parent");
+            };
+            let operator_notes_receipt = parent.join("sniff-notes-template-receipt.json");
+            let receipt = HardwareSniffNotesTemplateReceipt {
+                schema_version: 1,
+                success: true,
+                command: "wheelctl hardware sniff-notes-template",
+                generated_at_utc: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+                plan_path: required_path_display(&paths.plan, "plan")?,
+                hardware_doctor_path: None,
+                out_path: required_path_display(&paths.operator_notes, "operator notes")?,
+                scenario: plan.scenario,
+                operator: plan.operator,
+                device_note: plan.device_note,
+                capture_hints: None,
+                evidence_status: SNIFF_EVIDENCE_STATUS,
+                native_control_evidence: false,
+                openracing_hardware_output: false,
+                satisfies_native_response_ready: false,
+                satisfies_native_visible_ready: false,
+                satisfies_smoke_ready: false,
+                satisfies_release_ready: false,
+                readiness_claims: HardwareSniffReadinessClaims::none(),
+            };
+            write_json_file(&operator_notes_receipt, &receipt)?;
+            Ok(operator_notes_receipt)
+        }
+
         fn zip_entry_names(path: &Path) -> Result<Vec<String>> {
             let file = File::open(path)?;
             let mut archive = zip::ZipArchive::new(file)?;
@@ -7604,15 +7765,7 @@ mod tests {
         fn sniff_bundle_includes_operator_notes_receipt_when_requested() -> TestResult {
             let dir = tempfile::tempdir()?;
             let paths = write_bundle_fixture(dir.path(), b"synthetic pcapng bytes")?;
-            let operator_notes_receipt = dir.path().join("sniff-notes-template-receipt.json");
-            fs::write(
-                &operator_notes_receipt,
-                serde_json::to_vec_pretty(&serde_json::json!({
-                    "command": "wheelctl hardware sniff-notes-template",
-                    "openracing_hardware_output": false,
-                    "satisfies_native_visible_ready": false
-                }))?,
-            )?;
+            let operator_notes_receipt = write_notes_template_receipt(&paths)?;
             let receipt_archive_path = sniff_bundle_path("sniff-notes-template-receipt.json");
 
             let manifest = build_hardware_sniff_bundle(&HardwareSniffBundleRequest {
@@ -7635,6 +7788,97 @@ mod tests {
             }));
             assert!(!manifest.openracing_hardware_output);
             assert!(!manifest.satisfies_native_visible_ready);
+            Ok(())
+        }
+
+        #[test]
+        fn rejects_operator_notes_receipt_plan_path_mismatch() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = write_bundle_fixture(dir.path(), b"synthetic pcapng bytes")?;
+            let operator_notes_receipt = write_notes_template_receipt(&paths)?;
+            let mut receipt: serde_json::Value = read_json_file(&operator_notes_receipt)?;
+            receipt["plan_path"] = serde_json::json!("target/sniff/other/sniff-plan.json");
+            write_json_file(&operator_notes_receipt, &receipt)?;
+
+            let error = match build_hardware_sniff_bundle(&HardwareSniffBundleRequest {
+                plan: &paths.plan,
+                receipt: &paths.receipt,
+                summary: &paths.summary,
+                operator_notes: &paths.operator_notes,
+                operator_notes_receipt: Some(&operator_notes_receipt),
+                include_pcapng: None,
+                out: &paths.out,
+            }) {
+                Ok(_) => {
+                    return Err(
+                        "operator notes receipt plan_path mismatch should be rejected".into(),
+                    );
+                }
+                Err(error) => error.to_string(),
+            };
+
+            assert!(error.contains("was created for plan"), "{error}");
+            Ok(())
+        }
+
+        #[test]
+        fn rejects_operator_notes_receipt_out_path_mismatch() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = write_bundle_fixture(dir.path(), b"synthetic pcapng bytes")?;
+            let operator_notes_receipt = write_notes_template_receipt(&paths)?;
+            let mut receipt: serde_json::Value = read_json_file(&operator_notes_receipt)?;
+            receipt["out_path"] = serde_json::json!("target/sniff/other/operator-notes.md");
+            write_json_file(&operator_notes_receipt, &receipt)?;
+
+            let error = match build_hardware_sniff_bundle(&HardwareSniffBundleRequest {
+                plan: &paths.plan,
+                receipt: &paths.receipt,
+                summary: &paths.summary,
+                operator_notes: &paths.operator_notes,
+                operator_notes_receipt: Some(&operator_notes_receipt),
+                include_pcapng: None,
+                out: &paths.out,
+            }) {
+                Ok(_) => {
+                    return Err(
+                        "operator notes receipt out_path mismatch should be rejected".into(),
+                    );
+                }
+                Err(error) => error.to_string(),
+            };
+
+            assert!(error.contains("was created for operator notes"), "{error}");
+            Ok(())
+        }
+
+        #[test]
+        fn rejects_operator_notes_receipt_claiming_readiness() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = write_bundle_fixture(dir.path(), b"synthetic pcapng bytes")?;
+            let operator_notes_receipt = write_notes_template_receipt(&paths)?;
+            let mut receipt: serde_json::Value = read_json_file(&operator_notes_receipt)?;
+            receipt["satisfies_native_visible_ready"] = serde_json::json!(true);
+            write_json_file(&operator_notes_receipt, &receipt)?;
+
+            let error = match build_hardware_sniff_bundle(&HardwareSniffBundleRequest {
+                plan: &paths.plan,
+                receipt: &paths.receipt,
+                summary: &paths.summary,
+                operator_notes: &paths.operator_notes,
+                operator_notes_receipt: Some(&operator_notes_receipt),
+                include_pcapng: None,
+                out: &paths.out,
+            }) {
+                Ok(_) => {
+                    return Err("operator notes receipt readiness claim should be rejected".into());
+                }
+                Err(error) => error.to_string(),
+            };
+
+            assert!(
+                error.contains("violates passive sniff invariants"),
+                "{error}"
+            );
             Ok(())
         }
 
