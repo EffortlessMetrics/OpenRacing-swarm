@@ -1212,6 +1212,8 @@ fn first_payload_field(fields: &BTreeMap<String, Vec<String>>) -> Option<String>
         &[
             "usbhid.data",
             "hid.data",
+            "usbcom.data.out_payload",
+            "usbcom.data.in_payload",
             "usb.capdata",
             "usb.data_fragment",
             "data.data",
@@ -7333,6 +7335,89 @@ mod tests {
                     .any(|note| note.contains("declare data length but no payload bytes")),
                 "decode-gap note should explain why a raw protocol review is still needed"
             );
+            assert_schema_valid(
+                "sniff-summary.schema.json",
+                &serde_json::to_value(&summary)?,
+            )?;
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_summary_extracts_usbcom_host_to_device_payloads() -> TestResult {
+            let usbcom_host_output_fixture = r#"[
+              {
+                "_source": {
+                  "layers": {
+                    "usb": {
+                      "usb.bus_id": "1",
+                      "usb.device_address": "12",
+                      "usb.idVendor": "0x346e",
+                      "usb.idProduct": "0x0014",
+                      "usb.interface_number": "2",
+                      "usb.endpoint_address": "0x02",
+                      "usb.endpoint_direction": "OUT",
+                      "usb.transfer_type": "Interrupt",
+                      "usb.data_len": "4"
+                    },
+                    "usbcom": {
+                      "usbcom.data.out_payload": "7e:01:5a:1b"
+                    }
+                  }
+                }
+              }
+            ]"#;
+            let summary = build_hardware_sniff_summary_from_tshark_json(
+                HardwareSniffSummaryConfig {
+                    filters: HardwareSniffSummaryFilters {
+                        vendor_id: Some("0x346E".to_string()),
+                        product_id: Some("0x0014".to_string()),
+                        interface_number: Some(2),
+                    },
+                    include_payload_samples: true,
+                    max_samples_per_report: 2,
+                },
+                sha256_hex(b"usbcom host output fixture"),
+                true,
+                Some("TShark synthetic usbcom fixture".to_string()),
+                usbcom_host_output_fixture,
+            )?;
+
+            assert!(summary.success);
+            assert_eq!(summary.usb_transfer_summary.host_to_device, 1);
+            let report = summary
+                .observed_reports
+                .iter()
+                .find(|report| report.direction == "host_to_device" && report.report_id == "0x7E")
+                .ok_or("missing extracted usbcom host-to-device report")?;
+            assert_eq!(report.count, 1);
+            assert_eq!(
+                report.payload_hex_samples.as_ref(),
+                Some(&vec!["7E 01 5A 1B".to_string()])
+            );
+            assert_eq!(
+                report.classification.category,
+                "vendor_or_device_specific_output_candidate"
+            );
+            assert!(!report.classification.native_control_evidence);
+
+            let classification_summary = &summary.report_classification_summary;
+            assert_eq!(classification_summary.host_to_device_packet_count, 1);
+            assert_eq!(
+                classification_summary.host_to_device_payload_extracted_packet_count,
+                1
+            );
+            assert_eq!(
+                classification_summary.host_to_device_payload_extracted_bytes,
+                4
+            );
+            assert_eq!(
+                classification_summary.host_to_device_payload_missing_packet_count,
+                0
+            );
+            assert!(!classification_summary.host_to_device_payload_export_gap);
+            assert!(classification_summary.decode_recommended);
+            assert!(!classification_summary.native_control_evidence);
+            assert!(!classification_summary.readiness_claim);
             assert_schema_valid(
                 "sniff-summary.schema.json",
                 &serde_json::to_value(&summary)?,
