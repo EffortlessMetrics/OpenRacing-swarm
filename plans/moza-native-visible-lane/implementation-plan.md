@@ -3681,6 +3681,75 @@ source-of-truth updates. Do not remove passive sniff plans, checked-in sniff
 evidence, local raw capture attempts, consumed hardware attempts, or protocol
 evidence review receipts.
 
+## Work item: sniff-notes-usbpcap-capture-command
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: reproducible passive USBPcap capture setup for setting-change evidence
+Blocked by: the operator notes template preserved the USBPcap interface and
+device filter, but the operator still had to translate the hardware-doctor
+extcap path and hint into an external capture command by hand.
+
+### Goal
+
+Make the local non-claiming operator notes template render an exact external
+USBPcapCMD command from the observe-only hardware-doctor USBPcap hint, so the
+next `pit-house-setting-change` capture can start from a copied command instead
+of a prose translation.
+
+### Production Delta
+
+Extend `wheelctl hardware sniff-notes-template --hardware-doctor` to read
+`/tools/usbpcap_descriptor_capture/usbpcap_extcap_path` alongside the Moza
+device hints and render a PowerShell `USBPcapCMD.exe` command to capture the
+scenario into `target\sniff\<scenario>\capture.pcapng`. The command includes
+the exact extcap path, USBPcap interface, `--devices` value, and
+`--inject-descriptors`.
+
+### Non-goals
+
+No HID open, serial open, read-only query send, hardware output, authorization
+receipt, PIDFF rerun, force increase, direct HID report `0xaf`, high torque,
+serial config, firmware, DFU, native-control claim, native-visible claim,
+smoke-ready claim, Pit House coexistence claim, simulator claim,
+release-ready claim, raw `.pcapng` commit, sniff receipt, sniff summary, bundle
+manifest, semantic command decode, registry promotion, or tuple sendability
+claim.
+
+### Acceptance
+
+- `sniff-notes-template` remains no-output and optional-hint only.
+- When a hardware-doctor receipt includes a USBPcap extcap path and Moza
+  device hints, generated notes render an exact external `USBPcapCMD.exe`
+  command.
+- The command contains the extcap path, `-d <usbpcap interface>`,
+  `--devices <value>`, `--inject-descriptors`, and the local
+  `target\sniff\<scenario>\capture.pcapng` output path.
+- No pcap, sniff receipt, summary, bundle, semantic decode, hardware output, or
+  readiness claim is created.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_notes_template -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- --json hardware doctor --json-out target/moza-current/passive-sniff-capture-hardware-doctor.json
+cargo run --locked -p wheelctl --bin wheelctl -- --json hardware sniff-notes-template --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-plan.json --hardware-doctor target/moza-current/passive-sniff-capture-hardware-doctor.json --out target/sniff/pit-house-setting-change/operator-notes.md
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the optional USBPcap extcap-path parsing, capture-command rendering,
+focused tests, and source-of-truth updates. Do not remove passive sniff plans,
+checked-in sniff evidence, local raw capture attempts, consumed hardware
+attempts, or protocol evidence review receipts.
+
 ## Work item: sniff-summary-usb-setup-payload-gaps
 
 Status: completed
