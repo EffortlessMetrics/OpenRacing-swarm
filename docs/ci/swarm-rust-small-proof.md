@@ -13,8 +13,10 @@ Initial proof captured:
 - GitHub-hosted PR fallback route: `26149791075`;
 - manual dispatch fallback route: `26151027546`.
 
-The current safe fallback is GitHub Hosted because this repository still needs
-org-admin runner setup for `em-ci-small` and `EM_RUNNER_READ_TOKEN`.
+The current safe pull-request route is GitHub Hosted because this repository
+still needs a reliable self-hosted runner capacity signal for `em-ci-small` and
+`EM_RUNNER_READ_TOKEN`. Merge groups and explicit workflow dispatch can still
+exercise the self-hosted route.
 
 Release, publish, signing, secrets-heavy deployment, GPU, and full-platform
 workflows remain outside the protected Rust Small swarm lane until separate
