@@ -1,0 +1,19 @@
+{
+  "case": "pit_house_open_idle_standard",
+  "direct_mode_requested": false,
+  "evidence": "Pit House open and idle; standard mode completed without conflict.",
+  "ffb_mode": "standard",
+  "high_torque": false,
+  "no_firmware_or_dfu_commands": true,
+  "no_serial_config_commands": true,
+  "observed": true,
+  "pit_house_observation_artifact": "pit-house-observation-open-standard.json",
+  "pit_house_state": "open_idle",
+  "result": "standard_ok",
+  "source_gate": "init_standard_handshake",
+  "source_log": "feature_reports",
+  "source_receipt": "init-standard.json",
+  "source_record_kinds": [
+    "ffb_mode"
+  ]
+}

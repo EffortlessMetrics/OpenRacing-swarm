@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openracing.dev/schemas/moza-vendor-authority-attempt.schema.json",
+  "title": "Moza vendor authority bounded hardware attempt receipt",
+  "type": "object",
+  "required": [
+    "success",
+    "schema_version",
+    "artifact_kind",
+    "claim_scope",
+    "command",
+    "generated_at_utc",
+    "authorization_receipt",
+    "smoke_dry_run_receipt",
+    "authorization_receipt_validated",
+    "smoke_dry_run_receipt_validated",
+    "authorization_consumed",
+    "exact_authorization",
+    "single_use_authorization",
+    "native_control_evidence",
+    "hardware_output_authorized",
+    "native_visible_ready",
+    "smoke_ready",
+    "next_allowed_action",
+    "blocked_actions",
+    "required_artifacts",
+    "serial_identity_verified",
+    "no_hid_device_opened",
+    "opened_serial_device",
+    "sent_read_only_query_commands",
+    "sent_authorized_frame",
+    "sent_authorized_frame_count",
+    "sent_output_writes",
+    "sent_configuration_writes",
+    "sent_firmware_or_dfu_commands",
+    "sent_unknown_commands",
+    "direct_hid_report_0xaf_sent",
+    "high_torque_enabled",
+    "transport_kind",
+    "codec_status",
+    "hardware_write_eligible",
+    "authorized_command",
+    "authorized_frame",
+    "authorization_consumption",
+    "planned_next_output"
+  ],
+  "properties": {
+    "success": {"const": true},
+    "schema_version": {"const": 1},
+    "artifact_kind": {"const": "moza_vendor_authority_attempt"},
+    "claim_scope": {"const": "bounded_vendor_authority_attempt_recorded"},
+    "command": {"const": "wheelctl moza vendor-authority-attempt"},
+    "generated_at_utc": {"type": "string"},
+    "authorization_receipt": {"type": "string", "minLength": 1},
+    "smoke_dry_run_receipt": {"type": "string", "minLength": 1},
+    "authorization_receipt_validated": {"const": true},
+    "smoke_dry_run_receipt_validated": {"const": true},
+    "authorization_consumed": {"const": true},
+    "exact_authorization": {"const": true},
+    "single_use_authorization": {"const": true},
+    "native_control_evidence": {"const": false},
+    "hardware_output_authorized": {"const": false},
+    "native_visible_ready": {"const": false},
+    "smoke_ready": {"const": false},
+    "next_allowed_action": {"type": "string", "minLength": 1},
+    "blocked_actions": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "required_artifacts": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "serial_identity_verified": {"const": true},
+    "no_hid_device_opened": {"const": true},
+    "opened_serial_device": {"const": true},
+    "sent_read_only_query_commands": {"const": false},
+    "sent_authorized_frame": {"const": true},
+    "sent_authorized_frame_count": {"const": 1},
+    "sent_output_writes": {"type": "boolean"},
+    "sent_configuration_writes": {"type": "boolean"},
+    "sent_firmware_or_dfu_commands": {"const": false},
+    "sent_unknown_commands": {"const": false},
+    "direct_hid_report_0xaf_sent": {"const": false},
+    "high_torque_enabled": {"const": false},
+    "transport_kind": {"enum": ["serial_bounded_authority_attempt"]},
+    "codec_status": {"const": "fixture_decode_verified_exact_frame"},
+    "hardware_write_eligible": {"const": false},
+    "authorized_command": {
+      "type": "object",
+      "required": [
+        "command_id",
+        "command_name",
+        "family",
+        "group",
+        "device_id",
+        "command",
+        "risk_class",
+        "read_only_status_probe_allowed"
+      ],
+      "properties": {
+        "command_id": {"type": "string", "minLength": 1},
+        "command_name": {"type": "string", "minLength": 1},
+        "family": {"type": "string", "minLength": 1},
+        "group": {"type": "integer", "minimum": 0, "maximum": 255},
+        "device_id": {"type": "integer", "minimum": 0, "maximum": 255},
+        "command": {"type": "integer", "minimum": 0, "maximum": 255},
+        "risk_class": {
+          "enum": [
+            "vendor_control_candidate",
+            "vendor_output_candidate",
+            "configuration_candidate"
+          ]
+        },
+        "read_only_status_probe_allowed": {"const": false}
+      },
+      "additionalProperties": true
+    },
+    "authorized_frame": {
+      "type": "object",
+      "required": [
+        "frame_hex",
+        "frame_sha256",
+        "frame_len",
+        "payload_hex",
+        "payload_sha256",
+        "payload_len",
+        "checksum",
+        "written_frame_sha256",
+        "written_frame_len"
+      ],
+      "properties": {
+        "frame_hex": {"type": "string"},
+        "frame_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "frame_len": {"type": "integer", "minimum": 7},
+        "payload_hex": {"type": "string"},
+        "payload_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "payload_len": {"type": "integer", "minimum": 1},
+        "checksum": {"type": "string", "pattern": "^0x[0-9A-F]{2}$"},
+        "written_frame_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "written_frame_len": {"type": "integer", "minimum": 7}
+      },
+      "additionalProperties": true
+    },
+    "authorization_consumption": {
+      "type": "object",
+      "required": [
+        "consumption_recorded",
+        "authorization_reuse_allowed",
+        "requires_new_bench_clear_for_retry",
+        "requires_new_authorization_for_retry",
+        "requires_new_smoke_dry_run_for_retry",
+        "requires_new_attempt_receipt_for_retry"
+      ],
+      "properties": {
+        "consumption_recorded": {"const": true},
+        "authorization_reuse_allowed": {"const": false},
+        "requires_new_bench_clear_for_retry": {"const": true},
+        "requires_new_authorization_for_retry": {"const": true},
+        "requires_new_smoke_dry_run_for_retry": {"const": true},
+        "requires_new_attempt_receipt_for_retry": {"const": true}
+      },
+      "additionalProperties": true
+    },
+    "planned_next_output": {
+      "type": "object",
+      "required": ["allowed", "reason"],
+      "properties": {
+        "allowed": {"const": false},
+        "reason": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "authorized_command": {
+            "properties": {
+              "risk_class": {"const": "vendor_output_candidate"}
+            },
+            "required": ["risk_class"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "sent_output_writes": {"const": true},
+          "sent_configuration_writes": {"const": false}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "authorized_command": {
+            "properties": {
+              "risk_class": {"const": "configuration_candidate"}
+            },
+            "required": ["risk_class"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "sent_output_writes": {"const": false},
+          "sent_configuration_writes": {"const": true}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "authorized_command": {
+            "properties": {
+              "risk_class": {"const": "vendor_control_candidate"}
+            },
+            "required": ["risk_class"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "sent_output_writes": {"const": false},
+          "sent_configuration_writes": {"const": false}
+        }
+      }
+    }
+  ],
+  "additionalProperties": true
+}

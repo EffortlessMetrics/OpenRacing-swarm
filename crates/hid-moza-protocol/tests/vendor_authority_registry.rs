@@ -106,6 +106,7 @@ fn registry_fixture_is_complete_and_non_claiming() -> TestResult {
             .ok_or_else(|| invalid_data(format!("missing command `{}`", expected.id)))?;
         assert_eq!(str_field(fixture_command, "family")?, expected.family);
         assert_eq!(u8_field(fixture_command, "group")?, expected.group);
+        assert_eq!(u8_field(fixture_command, "device_id")?, expected.device_id);
         assert_eq!(u8_field(fixture_command, "command")?, expected.command);
         assert_eq!(str_field(fixture_command, "name")?, expected.name);
         assert_eq!(

@@ -1,0 +1,37 @@
+{
+  "case": "pit_house_open_idle_standard",
+  "command": "wheelctl moza pit-house-evidence",
+  "evidence": "Pit House open and idle while standard mode completed.",
+  "evidence_kind": "process_window_snapshot",
+  "expected_pit_house_process_visible": true,
+  "generated_at_utc": "2026-05-20T18:14:42Z",
+  "matched_process_count": 1,
+  "matched_processes": [
+    {
+      "pid": 53868,
+      "process_name": "MOZA Pit House",
+      "window_title": "MOZA Pit House 1.3.8.38 release"
+    }
+  ],
+  "no_ffb_writes": true,
+  "no_firmware_or_dfu_commands": true,
+  "no_hid_device_opened": true,
+  "no_serial_config_commands": true,
+  "notes": [
+    "pit-house-evidence captures process/window state only; it opens no HID device and sends no reports",
+    "use --require-match for verifier-directed evidence so mismatched snapshots fail before writing an artifact",
+    "run pit-house-observation against this JSON artifact before building the matching pit-house-case receipt",
+    "open-state snapshots prove Pit House visibility, not the exact UI page or mode by themselves; keep operator evidence text specific"
+  ],
+  "operator": "Steven",
+  "pit_house_process_visible": true,
+  "platform": "windows",
+  "process_name_pattern": "moza|pit house|pithouse",
+  "process_scan_attempted": true,
+  "query_scope": "matching processes only; no full process list captured",
+  "scan_error": null,
+  "snapshot_matches_case": true,
+  "success": true,
+  "window_title_pattern": "MOZA|Pit House|Pithouse",
+  "window_title_scan_attempted": true
+}

@@ -2118,6 +2118,267 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_vendor_fake_transport() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "vendor-fake-transport",
+            "--json-out",
+            "target/moza-current/vendor-no-output-cli.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::VendorFakeTransport { json_out }) => {
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/moza-current/vendor-no-output-cli.json")
+                );
+            }
+            _ => return Err("expected Moza VendorFakeTransport command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_moza_vendor_status_probe() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "vendor-status-probe",
+            "--serial-port",
+            "COM4",
+            "--baud-rate",
+            "115200",
+            "--timeout-ms",
+            "500",
+            "--command",
+            "estop_get_ffb",
+            "--confirm-read-only-query",
+            "--json-out",
+            "target/moza-current/vendor-status-probe.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::VendorStatusProbe {
+                serial_port,
+                baud_rate,
+                timeout_ms,
+                command_ids,
+                confirm_read_only_query,
+                json_out,
+            }) => {
+                assert_eq!(serial_port, "COM4");
+                assert_eq!(*baud_rate, 115200);
+                assert_eq!(*timeout_ms, 500);
+                assert_eq!(command_ids, &["estop_get_ffb".to_string()]);
+                assert!(*confirm_read_only_query);
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/moza-current/vendor-status-probe.json")
+                );
+            }
+            _ => return Err("expected Moza VendorStatusProbe command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_moza_authorize_vendor_authority() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "authorize-vendor-authority",
+            "--command-id",
+            "estop_set_ffb",
+            "--frame-hex",
+            "7E02461C0001F0",
+            "--precondition-hardware-doctor",
+            "target/moza-current/vendor-authority-precondition-hardware-doctor.json",
+            "--authorized-by",
+            "Steven",
+            "--bench-clear-evidence",
+            "bench clear for exact estop_set_ffb: R5 stable, hands clear, wheel clear",
+            "--expires-after-minutes",
+            "10",
+            "--confirm-exact-vendor-authority-authorization",
+            "--json-out",
+            "target/moza-current/vendor-authority-authorization.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::AuthorizeVendorAuthority {
+                command_id,
+                frame_hex,
+                precondition_hardware_doctor,
+                authorized_by,
+                bench_clear_evidence,
+                expires_after_minutes,
+                confirm_exact_vendor_authority_authorization,
+                json_out,
+                overwrite,
+            }) => {
+                assert_eq!(command_id, "estop_set_ffb");
+                assert_eq!(frame_hex, "7E02461C0001F0");
+                assert_eq!(
+                    precondition_hardware_doctor.to_str(),
+                    Some("target/moza-current/vendor-authority-precondition-hardware-doctor.json")
+                );
+                assert_eq!(authorized_by, "Steven");
+                assert!(bench_clear_evidence.contains("estop_set_ffb"));
+                assert_eq!(*expires_after_minutes, 10);
+                assert!(*confirm_exact_vendor_authority_authorization);
+                assert_eq!(
+                    json_out.to_str(),
+                    Some("target/moza-current/vendor-authority-authorization.json")
+                );
+                assert!(!overwrite);
+            }
+            _ => return Err("expected Moza AuthorizeVendorAuthority command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_moza_vendor_authority_smoke_dry_run() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "vendor-authority-smoke-dry-run",
+            "--authorization",
+            "target/moza-current/vendor-authority-authorization.json",
+            "--confirm-no-output-smoke-dry-run",
+            "--json-out",
+            "target/moza-current/vendor-authority-smoke-dry-run.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::VendorAuthoritySmokeDryRun {
+                authorization,
+                confirm_no_output_smoke_dry_run,
+                json_out,
+                overwrite,
+            }) => {
+                assert_eq!(
+                    authorization.to_str(),
+                    Some("target/moza-current/vendor-authority-authorization.json")
+                );
+                assert!(*confirm_no_output_smoke_dry_run);
+                assert_eq!(
+                    json_out.to_str(),
+                    Some("target/moza-current/vendor-authority-smoke-dry-run.json")
+                );
+                assert!(!overwrite);
+            }
+            _ => return Err("expected Moza VendorAuthoritySmokeDryRun command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_moza_vendor_authority_attempt() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "vendor-authority-attempt",
+            "--serial-port",
+            "COM4",
+            "--baud-rate",
+            "115200",
+            "--timeout-ms",
+            "250",
+            "--authorization",
+            "target/moza-current/vendor-authority-authorization.json",
+            "--smoke-dry-run",
+            "target/moza-current/vendor-authority-smoke-dry-run.json",
+            "--confirm-bounded-vendor-authority-attempt",
+            "--json-out",
+            "target/moza-current/vendor-authority-attempt.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::VendorAuthorityAttempt {
+                serial_port,
+                baud_rate,
+                timeout_ms,
+                authorization,
+                smoke_dry_run,
+                confirm_bounded_vendor_authority_attempt,
+                json_out,
+                overwrite,
+            }) => {
+                assert_eq!(serial_port, "COM4");
+                assert_eq!(*baud_rate, 115200);
+                assert_eq!(*timeout_ms, 250);
+                assert_eq!(
+                    authorization.to_str(),
+                    Some("target/moza-current/vendor-authority-authorization.json")
+                );
+                assert_eq!(
+                    smoke_dry_run.to_str(),
+                    Some("target/moza-current/vendor-authority-smoke-dry-run.json")
+                );
+                assert!(*confirm_bounded_vendor_authority_attempt);
+                assert_eq!(
+                    json_out.to_str(),
+                    Some("target/moza-current/vendor-authority-attempt.json")
+                );
+                assert!(!overwrite);
+            }
+            _ => return Err("expected Moza VendorAuthorityAttempt command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_moza_vendor_post_authority_pidff_response() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "vendor-post-authority-pidff-response",
+            "--lane",
+            "ci/hardware/moza-r5/2026-05-13",
+            "--attempt",
+            "ci/hardware/moza-r5/2026-05-13/vendor-authority-attempt.json",
+            "--baseline-response",
+            "ci/hardware/moza-r5/2026-05-13/native-actuator-visible-smoke-response-only.json",
+            "--post-response",
+            "ci/hardware/moza-r5/2026-05-13/vendor-post-authority-pidff-smoke.json",
+            "--json-out",
+            "ci/hardware/moza-r5/2026-05-13/vendor-post-authority-pidff-response.json",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::VendorPostAuthorityPidffResponse {
+                lane,
+                attempt,
+                baseline_response,
+                post_response,
+                json_out,
+                overwrite,
+            }) => {
+                assert_eq!(lane.to_str(), Some("ci/hardware/moza-r5/2026-05-13"));
+                assert_eq!(
+                    attempt.as_ref().and_then(|path| path.to_str()),
+                    Some("ci/hardware/moza-r5/2026-05-13/vendor-authority-attempt.json")
+                );
+                assert_eq!(
+                    baseline_response.as_ref().and_then(|path| path.to_str()),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/native-actuator-visible-smoke-response-only.json"
+                    )
+                );
+                assert_eq!(
+                    post_response.as_ref().and_then(|path| path.to_str()),
+                    Some("ci/hardware/moza-r5/2026-05-13/vendor-post-authority-pidff-smoke.json")
+                );
+                assert_eq!(
+                    json_out.to_str(),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/vendor-post-authority-pidff-response.json"
+                    )
+                );
+                assert!(!overwrite);
+            }
+            _ => return Err("expected Moza VendorPostAuthorityPidffResponse command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_promote_fixture() -> TestResult {
         let cli = parse_cli([
             "wheelctl",

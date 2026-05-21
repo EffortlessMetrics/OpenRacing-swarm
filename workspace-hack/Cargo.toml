@@ -77,6 +77,7 @@ regex = { version = "1.12.3" }
 regex-automata = { version = "0.4.14", default-features = false, features = ["dfa", "hybrid", "meta", "nfa", "perf", "std", "unicode"] }
 regex-syntax = { version = "0.8.10" }
 schemars = { version = "0.8.22", features = ["preserve_order", "url", "uuid1"] }
+scopeguard = { version = "1.2.0" }
 semver = { version = "1.0.27", features = ["serde"] }
 serde = { version = "1.0.228", features = ["alloc", "derive", "rc"] }
 serde_core = { version = "1.0.228", features = ["alloc", "rc"] }
@@ -144,6 +145,7 @@ regex = { version = "1.12.3" }
 regex-automata = { version = "0.4.14", default-features = false, features = ["dfa", "hybrid", "meta", "nfa", "perf", "std", "unicode"] }
 regex-syntax = { version = "0.8.10" }
 schemars = { version = "0.8.22", features = ["preserve_order", "url", "uuid1"] }
+scopeguard = { version = "1.2.0" }
 semver = { version = "1.0.27", features = ["serde"] }
 serde = { version = "1.0.228", features = ["alloc", "derive", "rc"] }
 serde_core = { version = "1.0.228", features = ["alloc", "rc"] }
