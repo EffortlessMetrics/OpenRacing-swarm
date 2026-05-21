@@ -129,6 +129,12 @@ enum MozaSerialCodecStatus {
 
 Initial required state is `SemanticOnly`. No hardware-write eligibility exists until fixture decode and round-trip verification gates pass.
 
+Passive sniff samples MAY be decoded as observed frame-shape fixtures before
+their tuples are semantically known. That observed decoder MUST validate start
+byte, declared length, checksum, tuple fields, and payload slicing, but it MUST
+preserve unknown tuples as non-sendable `UnknownDoNotSend` evidence rather than
+promoting them into semantic registry commands.
+
 ### Read-only status probe contract
 
 First hardware-capable step is read-only status probing. A read-only query may

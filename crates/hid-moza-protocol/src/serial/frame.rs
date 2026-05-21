@@ -72,6 +72,16 @@ impl fmt::Display for MozaSerialFrameError {
 impl std::error::Error for MozaSerialFrameError {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MozaSerialObservedFrame<'a> {
+    pub group: u8,
+    pub device_id: u8,
+    pub command_id: u8,
+    pub payload: &'a [u8],
+    pub checksum: u8,
+    pub command: Option<&'static MozaVendorCommand>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MozaSerialDecodedFrame<'a> {
     pub group: u8,
     pub device_id: u8,
@@ -87,9 +97,9 @@ pub fn serial_checksum(frame_without_checksum: &[u8]) -> u8 {
         .fold(CHECKSUM_MAGIC, |sum, byte| sum.wrapping_add(*byte))
 }
 
-pub fn decode_fixture_frame(
+pub fn decode_observed_frame_shape(
     frame: &[u8],
-) -> Result<MozaSerialDecodedFrame<'_>, MozaSerialFrameError> {
+) -> Result<MozaSerialObservedFrame<'_>, MozaSerialFrameError> {
     if frame.len() < MIN_FRAME_LEN {
         return Err(MozaSerialFrameError::TooShort {
             actual_len: frame.len(),
@@ -129,19 +139,35 @@ pub fn decode_fixture_frame(
     let command_id = frame[4];
     let payload_end = 4 + declared_len;
     let payload = &frame[5..payload_end];
-    let command = command_by_group_command(group, command_id).ok_or(
-        MozaSerialFrameError::UnknownCommand {
-            group,
-            command: command_id,
-        },
-    )?;
+    let command = command_by_group_command(group, command_id);
 
-    Ok(MozaSerialDecodedFrame {
+    Ok(MozaSerialObservedFrame {
         group,
         device_id,
         command_id,
         payload,
         checksum: actual_checksum,
+        command,
+    })
+}
+
+pub fn decode_fixture_frame(
+    frame: &[u8],
+) -> Result<MozaSerialDecodedFrame<'_>, MozaSerialFrameError> {
+    let observed = decode_observed_frame_shape(frame)?;
+    let command = observed
+        .command
+        .ok_or(MozaSerialFrameError::UnknownCommand {
+            group: observed.group,
+            command: observed.command_id,
+        })?;
+
+    Ok(MozaSerialDecodedFrame {
+        group: observed.group,
+        device_id: observed.device_id,
+        command_id: observed.command_id,
+        payload: observed.payload,
+        checksum: observed.checksum,
         command,
     })
 }
