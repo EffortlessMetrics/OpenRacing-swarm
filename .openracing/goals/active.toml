@@ -1389,6 +1389,25 @@ commands = [
 ]
 
 [[work_item]]
+id = "passive-sniff-setting-change-notes-requirements"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-passive-sniff-setting-change-notes-requirements"
+current_pointer = "ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-plan.json"
+claim_boundary = "No-output passive capture handoff hardening only; the Pit House setting-change plan and notes template require exact setting/value/restore evidence without opening HID, opening serial, sending read-only queries, sending hardware output, creating authorization, native-control, native-visible, smoke-ready, coexistence, simulator, firmware, release-ready, semantic decode, registry promotion, or tuple sendability claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl hardware_sniff -- --nocapture",
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json hardware sniff-plan --family moza-r5 --scenario pit-house-setting-change --lane ci/hardware/moza-r5/2026-05-13 --operator Steven --device-note \"Moza R5 PID 0x0004 with KS/ES wheels, SR-P pedals, and HBP handbrake attached through the R5 hub\" --capture-tool usbpcap --capture-tool wireshark --capture-tool tshark --platform-hint windows --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-plan.json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json hardware sniff-notes-template --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-plan.json --out target/sniff/pit-house-setting-change/operator-notes.md --json",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

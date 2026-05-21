@@ -270,6 +270,46 @@
       }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "scenario": {
+            "const": "pit-house-setting-change"
+          }
+        },
+        "required": ["scenario"]
+      },
+      "then": {
+        "properties": {
+          "operator_notes_required": {
+            "allOf": [
+              {
+                "contains": {
+                  "const": "exact Pit House setting changed"
+                }
+              },
+              {
+                "contains": {
+                  "const": "starting setting value"
+                }
+              },
+              {
+                "contains": {
+                  "const": "ending setting value"
+                }
+              },
+              {
+                "contains": {
+                  "const": "whether the setting value was restored"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "scenario": {
       "type": "string",

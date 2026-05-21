@@ -142,6 +142,9 @@ remaining SimHub and simulator scenarios. The plan pins
 `hardware_output_authorized=false`, `native_control_evidence=false`,
 `output_sendability_claim=false`, and
 `protocol_evidence_sufficient_for_output_plan=false`.
+The `pit-house-setting-change` plan now also requires the exact Pit House
+setting changed, starting value, ending value, and whether the value was
+restored before the capture can become accepted passive correlation evidence.
 
 ## Completion Audit Summary
 

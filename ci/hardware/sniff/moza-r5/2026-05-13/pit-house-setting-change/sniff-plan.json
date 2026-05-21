@@ -2,7 +2,7 @@
   "schema_version": 1,
   "success": true,
   "command": "wheelctl hardware sniff-plan",
-  "generated_at_utc": "2026-05-19T23:46:14Z",
+  "generated_at_utc": "2026-05-21T17:17:26Z",
   "family": "moza-r5",
   "scenario": "pit-house-setting-change",
   "lane": "ci/hardware/moza-r5/2026-05-13",
@@ -50,7 +50,11 @@
     "capture duration or start/stop times",
     "device stack attached",
     "whether firmware/update/DFU pages stayed closed",
-    "whether raw pcapng was kept local or reviewed for bundling"
+    "whether raw pcapng was kept local or reviewed for bundling",
+    "exact Pit House setting changed",
+    "starting setting value",
+    "ending setting value",
+    "whether the setting value was restored"
   ],
   "raw_pcap_commit_default": false,
   "evidence_status": "passive_external_usb_observation",
