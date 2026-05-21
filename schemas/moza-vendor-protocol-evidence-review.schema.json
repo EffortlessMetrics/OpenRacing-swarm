@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openracing.dev/schemas/moza-vendor-protocol-evidence-review.schema.json",
+  "title": "Moza Vendor Protocol Evidence Review",
+  "type": "object",
+  "required": [
+    "success",
+    "schema_version",
+    "artifact_kind",
+    "claim_scope",
+    "command",
+    "generated_at_utc",
+    "lane",
+    "sniff_root",
+    "command_registry_path",
+    "vendor_authority_attempt_receipt",
+    "post_authority_response_receipt",
+    "evidence_inputs_validated",
+    "native_control_evidence",
+    "hardware_output_authorized",
+    "native_visible_ready",
+    "smoke_ready",
+    "no_hid_device_opened",
+    "no_serial_device_opened",
+    "no_read_only_query_sent",
+    "no_output_reports_sent",
+    "no_feature_reports_sent",
+    "no_serial_writes_sent",
+    "sent_output_writes",
+    "sent_configuration_writes",
+    "sent_firmware_or_dfu_commands",
+    "high_torque_enabled",
+    "protocol_evidence_classification",
+    "protocol_evidence_sufficient_for_output_plan",
+    "sniff_evidence",
+    "command_registry_review",
+    "post_authority_pidff_result",
+    "next_allowed_action",
+    "blocked_actions",
+    "required_artifacts",
+    "planned_next_output",
+    "notes"
+  ],
+  "properties": {
+    "success": { "const": true },
+    "schema_version": { "const": 1 },
+    "artifact_kind": { "const": "moza_vendor_protocol_evidence_review" },
+    "claim_scope": { "const": "no_output_protocol_evidence_review" },
+    "command": { "const": "wheelctl moza vendor-protocol-evidence-review" },
+    "generated_at_utc": { "type": "string" },
+    "lane": { "type": "string" },
+    "sniff_root": { "type": "string" },
+    "command_registry_path": { "type": "string" },
+    "vendor_authority_attempt_receipt": { "type": "string" },
+    "post_authority_response_receipt": { "type": "string" },
+    "evidence_inputs_validated": { "const": true },
+    "native_control_evidence": { "const": false },
+    "hardware_output_authorized": { "const": false },
+    "native_visible_ready": { "const": false },
+    "smoke_ready": { "const": false },
+    "no_hid_device_opened": { "const": true },
+    "no_serial_device_opened": { "const": true },
+    "no_read_only_query_sent": { "const": true },
+    "no_output_reports_sent": { "const": true },
+    "no_feature_reports_sent": { "const": true },
+    "no_serial_writes_sent": { "const": true },
+    "sent_output_writes": { "const": false },
+    "sent_configuration_writes": { "const": false },
+    "sent_firmware_or_dfu_commands": { "const": false },
+    "high_torque_enabled": { "const": false },
+    "protocol_evidence_classification": { "type": "string" },
+    "protocol_evidence_sufficient_for_output_plan": { "const": false },
+    "sniff_evidence": {
+      "type": "object",
+      "required": [
+        "required_scenario_count",
+        "completed_scenario_count",
+        "missing_scenario_count",
+        "completed_scenarios",
+        "missing_scenarios",
+        "decode_recommended_by_summaries",
+        "passive_summaries_native_control_evidence",
+        "scenarios"
+      ],
+      "properties": {
+        "required_scenario_count": { "type": "integer", "minimum": 1 },
+        "completed_scenario_count": { "type": "integer", "minimum": 0 },
+        "missing_scenario_count": { "type": "integer", "minimum": 0 },
+        "completed_scenarios": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "missing_scenarios": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "decode_recommended_by_summaries": { "type": "boolean" },
+        "passive_summaries_native_control_evidence": { "const": false },
+        "scenarios": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "scenario",
+              "status",
+              "summary_validated",
+              "native_control_evidence",
+              "readiness_claim"
+            ],
+            "properties": {
+              "scenario": { "type": "string" },
+              "status": { "type": "string" },
+              "summary_validated": { "type": "boolean" },
+              "native_control_evidence": { "const": false },
+              "readiness_claim": { "const": false }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "command_registry_review": {
+      "type": "object",
+      "required": [
+        "registry",
+        "registry_completeness",
+        "codec_status",
+        "command_count",
+        "hardware_output_authorized_any"
+      ],
+      "properties": {
+        "registry": { "type": "string" },
+        "registry_completeness": { "const": "complete" },
+        "codec_status": { "const": "semantic_only" },
+        "command_count": { "type": "integer", "minimum": 15 },
+        "hardware_output_authorized_any": { "const": false }
+      },
+      "additionalProperties": true
+    },
+    "post_authority_pidff_result": {
+      "type": "object",
+      "required": [
+        "tested_command_id",
+        "classification",
+        "visible_motion_candidate",
+        "response_regressed",
+        "eliminated_hypothesis"
+      ],
+      "properties": {
+        "tested_command_id": { "type": "string" },
+        "classification": { "type": "string" },
+        "visible_motion_candidate": { "const": false },
+        "response_regressed": { "type": "boolean" },
+        "eliminated_hypothesis": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "next_allowed_action": { "type": "string" },
+    "blocked_actions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "required_artifacts": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "planned_next_output": {
+      "type": "object",
+      "required": ["allowed", "reason"],
+      "properties": {
+        "allowed": { "const": false },
+        "reason": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": true
+}

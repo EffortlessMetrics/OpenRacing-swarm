@@ -28,6 +28,7 @@ Commands:
   vendor-authority-smoke-dry-run        Validate an exact Moza vendor-authority authorization without sending traffic
   vendor-authority-attempt              Send one exact authorized Moza vendor-authority frame over the R5 serial interface
   vendor-post-authority-pidff-response  Compare baseline and post-authority PIDFF response receipts without sending traffic
+  vendor-protocol-evidence-review       Review checked-in Moza vendor protocol evidence without sending traffic
   promote-fixture                       Promote a validated Moza capture JSONL into a parser fixture file
   promote-fixtures                      Promote every required Moza lane capture into parser fixture files
   zero                                  Send bounded zero-torque output reports to a Moza wheelbase

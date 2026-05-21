@@ -32,8 +32,8 @@ This section is diagnostic navigation only. `generic_aux` roles are valid parser
 
 This section is native-control research navigation only. It does not open HID, send serial traffic, create authorization, emit the hardware attempt command, or claim native-visible readiness.
 
-- State: `post_authority_pidff_response_recorded`
-- Next allowed action: Review post-authority PIDFF response comparison and run strict verifier before any motion claim.
+- State: `protocol_evidence_review_recorded`
+- Next allowed action: Continue no-output vendor protocol investigation; finish remaining passive sniff scenarios or decode reviewed protocol candidates before any future output plan.
 - Hardware output authorized: `false`
 - Native visible ready: `false`
 - Hardware attempt command emitted: `false`
@@ -54,6 +54,7 @@ This section is native-control research navigation only. It does not open HID, s
 | `attempt` | `vendor-authority-attempt.json` |
 | `post_authority_pidff_smoke` | `vendor-post-authority-pidff-smoke.json` |
 | `post_authority_pidff_response` | `vendor-post-authority-pidff-response.json` |
+| `vendor_protocol_evidence_review` | `vendor-protocol-evidence-review.json` |
 
 ## Pit House Compatibility
 
@@ -230,6 +231,12 @@ This section is protocol research/support navigation only. Passive sniff artifac
 | `moza-status.json` | `json` | `diagnostic_support_evidence` |
 | `pre-output-readiness.json` | `json` | `diagnostic_support_evidence` |
 | `support-bundle.json` | `json` | `diagnostic_support_evidence` |
+
+## Passive USB Sniffing
+
+| Path | Kind | Evidence Role |
+| --- | --- | --- |
+| `vendor-protocol-evidence-review.json` | `json` | `passive_protocol_research_evidence` |
 
 ## Required Support-Bundle Artifact Index
 

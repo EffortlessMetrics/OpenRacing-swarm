@@ -134,6 +134,7 @@ const VENDOR_AUTHORITY_ATTEMPT_FILE: &str = "vendor-authority-attempt.json";
 const VENDOR_AUTHORITY_ATTEMPT_BLOCKED_FILE: &str = "vendor-authority-attempt-blocked.json";
 const VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE: &str = "vendor-post-authority-pidff-smoke.json";
 const VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE: &str = "vendor-post-authority-pidff-response.json";
+const VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE: &str = "vendor-protocol-evidence-review.json";
 const VENDOR_AUTHORITY_HANDOFF_COMMAND_ID: &str = "estop_set_ffb";
 const VENDOR_AUTHORITY_HANDOFF_FRAME_HEX: &str = "7E02461C0001F0";
 const VENDOR_AUTHORITY_HANDOFF_PAYLOAD_HEX: &str = "01";
@@ -614,6 +615,17 @@ struct VendorPostAuthorityPidffResponseRequest<'a> {
     overwrite: bool,
 }
 
+struct VendorProtocolEvidenceReviewRequest<'a> {
+    json: bool,
+    lane: &'a Path,
+    sniff_root: Option<&'a Path>,
+    command_registry: Option<&'a Path>,
+    attempt: Option<&'a Path>,
+    post_authority_response: Option<&'a Path>,
+    json_out: &'a Path,
+    overwrite: bool,
+}
+
 struct PitHouseCaseRequest<'a> {
     json: bool,
     lane: &'a Path,
@@ -850,6 +862,27 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 attempt: attempt.as_deref(),
                 baseline_response: baseline_response.as_deref(),
                 post_response: post_response.as_deref(),
+                json_out,
+                overwrite: *overwrite,
+            })
+            .await
+        }
+        MozaCommands::VendorProtocolEvidenceReview {
+            lane,
+            sniff_root,
+            command_registry,
+            attempt,
+            post_authority_response,
+            json_out,
+            overwrite,
+        } => {
+            vendor_protocol_evidence_review(VendorProtocolEvidenceReviewRequest {
+                json,
+                lane,
+                sniff_root: sniff_root.as_deref(),
+                command_registry: command_registry.as_deref(),
+                attempt: attempt.as_deref(),
+                post_authority_response: post_authority_response.as_deref(),
                 json_out,
                 overwrite: *overwrite,
             })
@@ -1987,16 +2020,43 @@ fn moza_post_authority_pidff_response_next_operator_step(lane: &Path) -> Value {
     let comparison_recorded = lane
         .join(VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE)
         .is_file();
-    if comparison_recorded {
+    let protocol_review_recorded = lane.join(VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE).is_file();
+    if protocol_review_recorded {
         return serde_json::json!({
-            "kind": "post_authority_pidff_response_comparison_recorded",
-            "summary": "post-authority PIDFF response comparison is recorded; keep native-visible unclaimed until strict verifier accepts real movement evidence",
+            "kind": "vendor_protocol_evidence_review_recorded",
+            "summary": "vendor protocol evidence review is recorded; continue no-output protocol investigation before any future output plan",
             "hardware_output_allowed_now": false,
             "authorization_created_by_wizard": false,
             "no_openracing_output": true,
             "hardware_attempt_command_emitted": false,
             "vendor_authority_attempt_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
             "post_authority_pidff_response_receipt": VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE,
+            "vendor_protocol_evidence_review_receipt": VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE,
+            "blocked_actions": vendor_authority_handoff_blocked_actions()
+        });
+    }
+    if comparison_recorded {
+        return serde_json::json!({
+            "kind": "post_authority_pidff_response_comparison_recorded",
+            "summary": "post-authority PIDFF response comparison is recorded; run the no-output vendor protocol evidence review before any future output plan",
+            "hardware_output_allowed_now": false,
+            "authorization_created_by_wizard": false,
+            "no_openracing_output": true,
+            "hardware_attempt_command_emitted": false,
+            "vendor_authority_attempt_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
+            "post_authority_pidff_response_receipt": VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE,
+            "planned_vendor_protocol_evidence_review_receipt": VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE,
+            "commands": [
+                {
+                    "name": "review_vendor_protocol_evidence",
+                    "output_enabled": false,
+                    "opens_hid": false,
+                    "opens_serial": false,
+                    "sends_read_only_query": false,
+                    "sends_output": false,
+                    "command": vendor_protocol_evidence_review_command(lane)
+                }
+            ],
             "blocked_actions": vendor_authority_handoff_blocked_actions()
         });
     }
@@ -2050,13 +2110,17 @@ fn moza_vendor_authority_navigation_summary(lane: &Path) -> Value {
     let post_pidff_comparison_recorded = lane
         .join(VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE)
         .is_file();
+    let protocol_evidence_review_recorded =
+        lane.join(VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE).is_file();
     let closed_loop_undertravel_recorded = lane
         .join(NATIVE_CONTROLLED_ANGLE_CLOSED_LOOP_SMOKE_FILE)
         .is_file();
     let standard_pidff_diagnosis_recorded = lane
         .join(NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE)
         .is_file();
-    let state = if post_pidff_comparison_recorded {
+    let state = if protocol_evidence_review_recorded {
+        "protocol_evidence_review_recorded"
+    } else if post_pidff_comparison_recorded {
         "post_authority_pidff_response_recorded"
     } else if attempt_recorded {
         "vendor_authority_attempt_recorded"
@@ -2096,8 +2160,11 @@ fn moza_vendor_authority_navigation_summary(lane: &Path) -> Value {
         "vendor_authority_attempt_blocked_recorded": blocked_attempt_recorded,
         "post_authority_pidff_smoke_recorded": post_pidff_smoke_recorded,
         "post_authority_pidff_response_recorded": post_pidff_comparison_recorded,
+        "vendor_protocol_evidence_review_recorded": protocol_evidence_review_recorded,
         "hardware_attempt_command_emitted": false,
-        "next_allowed_action": if post_pidff_comparison_recorded {
+        "next_allowed_action": if protocol_evidence_review_recorded {
+            "Continue no-output vendor protocol investigation; finish remaining passive sniff scenarios or decode reviewed protocol candidates before any future output plan."
+        } else if post_pidff_comparison_recorded {
             "Review post-authority PIDFF response comparison and run strict verifier before any motion claim."
         } else if attempt_recorded {
             "Record post-authority PIDFF response comparison before any motion claim."
@@ -2126,7 +2193,8 @@ fn moza_vendor_authority_navigation_summary(lane: &Path) -> Value {
             "attempt_receipt": VENDOR_AUTHORITY_ATTEMPT_FILE,
             "blocked_attempt_receipt": VENDOR_AUTHORITY_ATTEMPT_BLOCKED_FILE,
             "post_authority_pidff_smoke_receipt": VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE,
-            "post_authority_pidff_response_receipt": VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE
+            "post_authority_pidff_response_receipt": VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE,
+            "vendor_protocol_evidence_review_receipt": VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE
         },
         "required_bench_clear_evidence": VENDOR_AUTHORITY_HANDOFF_BENCH_CLEAR_EVIDENCE,
         "serial_precondition": moza_vendor_authority_serial_precondition(lane),
@@ -2135,7 +2203,8 @@ fn moza_vendor_authority_navigation_summary(lane: &Path) -> Value {
             "Vendor-authority navigation is native-control research support; it is not a Pit House, SimHub, or simulator dependency.",
             "Pit House may still own the R5 serial/CDC port; release exclusive serial owners before creating short-lived authorization or running the separate bounded attempt.",
             "The bench wizard may surface no-output authorization and smoke commands, but it must not emit the hardware attempt command.",
-            "A consumed attempt receipt remains non-claiming until later PIDFF response comparison and native-visible verification pass."
+            "A consumed attempt receipt remains non-claiming until later PIDFF response comparison and native-visible verification pass.",
+            "A vendor protocol evidence review receipt is no-output diagnosis and does not authorize a future output family."
         ]
     })
 }
@@ -2178,6 +2247,14 @@ fn vendor_post_authority_pidff_response_command(lane: &Path) -> String {
         lane.join(VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE).display(),
         lane.join(VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE)
             .display()
+    )
+}
+
+fn vendor_protocol_evidence_review_command(lane: &Path) -> String {
+    format!(
+        "wheelctl moza vendor-protocol-evidence-review --lane {} --json-out {} --json --overwrite",
+        lane.display(),
+        lane.join(VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE).display()
     )
 }
 
@@ -6474,6 +6551,62 @@ async fn vendor_post_authority_pidff_response(
     )?;
     write_json_file(request.json_out, &receipt)?;
     print_vendor_post_authority_pidff_response_receipt(request.json, request.json_out, &receipt)
+}
+
+async fn vendor_protocol_evidence_review(
+    request: VendorProtocolEvidenceReviewRequest<'_>,
+) -> Result<()> {
+    ensure_receipt_writable(request.json_out, request.overwrite)?;
+    let sniff_root = request
+        .sniff_root
+        .map(Path::to_path_buf)
+        .or_else(|| moza_passive_sniff_committed_root(request.lane))
+        .unwrap_or_else(|| request.lane.join("sniff"));
+    let command_registry_path = request
+        .command_registry
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("fixtures/moza/r5/vendor-command-registry.json"));
+    let attempt_path = request
+        .attempt
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| request.lane.join(VENDOR_AUTHORITY_ATTEMPT_FILE));
+    let post_authority_response_path = request
+        .post_authority_response
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| request.lane.join(VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE));
+
+    let command_registry = read_json_path(&command_registry_path).with_context(|| {
+        format!(
+            "failed to read vendor command registry '{}'",
+            command_registry_path.display()
+        )
+    })?;
+    let attempt = read_json_path(&attempt_path).with_context(|| {
+        format!(
+            "failed to read vendor-authority attempt receipt '{}'",
+            attempt_path.display()
+        )
+    })?;
+    let post_authority_response =
+        read_json_path(&post_authority_response_path).with_context(|| {
+            format!(
+                "failed to read post-authority PIDFF comparison receipt '{}'",
+                post_authority_response_path.display()
+            )
+        })?;
+
+    let receipt = vendor_protocol_evidence_review_receipt(
+        request.lane,
+        &sniff_root,
+        &command_registry_path,
+        &command_registry,
+        &attempt_path,
+        &attempt,
+        &post_authority_response_path,
+        &post_authority_response,
+    )?;
+    write_json_file(request.json_out, &receipt)?;
+    print_vendor_protocol_evidence_review_receipt(request.json, request.json_out, &receipt)
 }
 
 async fn audit_lane(
@@ -15165,6 +15298,9 @@ fn lane_artifact_category(relative_path: &str) -> &'static str {
         return "passive";
     }
     if relative_path.starts_with("sniff/") || relative_path.contains("sniff") {
+        return "sniff";
+    }
+    if relative_path.contains("vendor-protocol-evidence-review") {
         return "sniff";
     }
     if relative_path.contains("pit-house") {
@@ -27378,6 +27514,551 @@ fn vendor_post_authority_pidff_response_receipt(
     })
 }
 
+fn vendor_protocol_evidence_review_receipt(
+    lane: &Path,
+    sniff_root: &Path,
+    command_registry_path: &Path,
+    command_registry: &Value,
+    attempt_path: &Path,
+    attempt: &Value,
+    post_authority_response_path: &Path,
+    post_authority_response: &Value,
+) -> Result<VendorProtocolEvidenceReviewReceipt> {
+    validate_vendor_protocol_command_registry(command_registry_path, command_registry)?;
+    validate_vendor_authority_attempt_schema(attempt)?;
+    validate_vendor_authority_attempt_gates(attempt)?;
+    validate_vendor_post_authority_pidff_response_gates(
+        post_authority_response_path,
+        post_authority_response,
+    )?;
+
+    let sniff_evidence = vendor_protocol_sniff_evidence_review(sniff_root)?;
+    let command_registry_review =
+        vendor_protocol_command_registry_review(command_registry_path, command_registry)?;
+    let post_authority_pidff_result = vendor_protocol_post_authority_pidff_result(
+        attempt_path,
+        attempt,
+        post_authority_response_path,
+        post_authority_response,
+    )?;
+    let protocol_evidence_sufficient_for_output_plan = false;
+    let protocol_evidence_classification = if post_authority_pidff_result.response_regressed {
+        "estop_set_ffb_regressed_and_protocol_enable_path_still_undecoded"
+    } else {
+        "protocol_enable_path_still_undecoded"
+    };
+
+    Ok(VendorProtocolEvidenceReviewReceipt {
+        success: true,
+        schema_version: 1,
+        artifact_kind: "moza_vendor_protocol_evidence_review",
+        claim_scope: "no_output_protocol_evidence_review",
+        command: "wheelctl moza vendor-protocol-evidence-review",
+        generated_at_utc: now_utc(),
+        lane: lane.display().to_string(),
+        sniff_root: sniff_root.display().to_string(),
+        command_registry_path: command_registry_path.display().to_string(),
+        vendor_authority_attempt_receipt: attempt_path.display().to_string(),
+        post_authority_response_receipt: post_authority_response_path.display().to_string(),
+        evidence_inputs_validated: true,
+        native_control_evidence: false,
+        hardware_output_authorized: false,
+        native_visible_ready: false,
+        smoke_ready: false,
+        no_hid_device_opened: true,
+        no_serial_device_opened: true,
+        no_read_only_query_sent: true,
+        no_output_reports_sent: true,
+        no_feature_reports_sent: true,
+        no_serial_writes_sent: true,
+        sent_output_writes: false,
+        sent_configuration_writes: false,
+        sent_firmware_or_dfu_commands: false,
+        high_torque_enabled: false,
+        protocol_evidence_classification,
+        protocol_evidence_sufficient_for_output_plan,
+        sniff_evidence,
+        command_registry_review,
+        post_authority_pidff_result,
+        next_allowed_action: "Continue no-output vendor protocol evidence review: finish remaining passive sniff scenarios, decode protocol candidates, and require a new reviewed plan before any future output family.",
+        blocked_actions: vec![
+            "native-visible promotion",
+            "smoke-ready promotion",
+            "authorization receipt",
+            "hardware output",
+            "estop_set_ffb retry",
+            "standard PIDFF retry without new decoded protocol evidence",
+            "direct HID report 0xaf",
+            "high torque",
+            "serial configuration write",
+            "firmware or DFU command",
+            "unknown host-to-device command",
+        ],
+        required_artifacts: vec![
+            "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md",
+            "plans/moza-native-visible-lane/implementation-plan.md",
+            "plans/moza-native-visible-lane/handoff.md",
+            "fixtures/moza/r5/vendor-command-registry.json",
+            "schemas/moza-vendor-protocol-evidence-review.schema.json",
+        ],
+        planned_next_output: VendorProtocolEvidencePlannedNextOutput {
+            allowed: false,
+            reason: "Current evidence eliminates the tested estop_set_ffb hypothesis but does not decode a new volatile enable/mode command.",
+        },
+        notes: vec![
+            "This command reads checked-in receipts and summaries only; it does not open HID or serial devices.",
+            "Passive sniff evidence is protocol/coexistence context, not native OpenRacing motion proof.",
+            "The consumed vendor-authority attempt cannot be reused as authorization.",
+            "Any future hardware output requires decoded protocol evidence, a reviewed plan, fresh bench-clear, and a fresh exact authorization.",
+        ],
+    })
+}
+
+fn validate_vendor_protocol_command_registry(path: &Path, value: &Value) -> Result<()> {
+    for (field, expected) in [
+        ("artifact_kind", "moza_vendor_command_registry"),
+        ("claim_scope", "protocol_research_only"),
+        ("registry_completeness", "complete"),
+    ] {
+        if json_string(value, field) != Some(expected) {
+            return Err(anyhow!(
+                "vendor command registry '{}' field `{field}` expected `{expected}`",
+                path.display()
+            ));
+        }
+    }
+    for (field, expected) in [
+        ("native_control_evidence", false),
+        ("hardware_output_authorized", false),
+        ("native_visible_ready", false),
+    ] {
+        if json_bool(value, field) != Some(expected) {
+            return Err(anyhow!(
+                "vendor command registry '{}' field `{field}` expected {expected}",
+                path.display()
+            ));
+        }
+    }
+    if value
+        .get("commands")
+        .and_then(Value::as_array)
+        .map(|commands| commands.len() >= 15)
+        != Some(true)
+    {
+        return Err(anyhow!(
+            "vendor command registry '{}' must include the complete OR-SPEC-0002 command set",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn validate_vendor_post_authority_pidff_response_gates(path: &Path, value: &Value) -> Result<()> {
+    for (field, expected) in [
+        ("artifact_kind", "moza_vendor_post_authority_pidff_response"),
+        (
+            "claim_scope",
+            "post_authority_pidff_response_comparison_only",
+        ),
+    ] {
+        if json_string(value, field) != Some(expected) {
+            return Err(anyhow!(
+                "post-authority PIDFF response receipt '{}' field `{field}` expected `{expected}`",
+                path.display()
+            ));
+        }
+    }
+    for (field, expected) in [
+        ("vendor_authority_attempt_validated", true),
+        ("baseline_response_validated", true),
+        ("post_authority_response_validated", true),
+        ("native_control_evidence", false),
+        ("hardware_output_authorized", false),
+        ("native_visible_ready", false),
+        ("smoke_ready", false),
+        ("no_hid_device_opened", true),
+        ("no_serial_device_opened", true),
+        ("no_serial_writes_sent", true),
+        ("sent_output_writes", false),
+        ("sent_configuration_writes", false),
+        ("sent_firmware_or_dfu_commands", false),
+        ("high_torque_enabled", false),
+    ] {
+        if json_bool(value, field) != Some(expected) {
+            return Err(anyhow!(
+                "post-authority PIDFF response receipt '{}' field `{field}` expected {expected}",
+                path.display()
+            ));
+        }
+    }
+    if value
+        .pointer("/planned_next_output/allowed")
+        .and_then(Value::as_bool)
+        != Some(false)
+    {
+        return Err(anyhow!(
+            "post-authority PIDFF response receipt '{}' must keep planned_next_output.allowed=false",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProtocolSniffEvidence> {
+    let mut scenarios = Vec::new();
+    let mut completed_scenarios = Vec::new();
+    let mut missing_scenarios = Vec::new();
+    let mut host_to_device_report_ids = BTreeSet::new();
+    let mut vendor_or_device_specific_output_candidate_report_ids = BTreeSet::new();
+    let mut decode_recommended_by_summaries = false;
+    let mut passive_summaries_native_control_evidence = false;
+    let mut total_matched_packets = 0u64;
+    let mut total_host_to_device_packets = 0u64;
+    let mut total_device_to_host_packets = 0u64;
+
+    for (scenario, label, focus, _warning) in moza_passive_sniff_navigation_requirements() {
+        let review = vendor_protocol_sniff_scenario_review(sniff_root, scenario, label, focus)?;
+        if review.summary_validated {
+            completed_scenarios.push((*scenario).to_string());
+        } else {
+            missing_scenarios.push((*scenario).to_string());
+        }
+        decode_recommended_by_summaries |= review.decode_recommended;
+        passive_summaries_native_control_evidence |= review.native_control_evidence;
+        total_matched_packets = total_matched_packets.saturating_add(review.matched_packets);
+        total_host_to_device_packets =
+            total_host_to_device_packets.saturating_add(review.host_to_device_packets);
+        total_device_to_host_packets =
+            total_device_to_host_packets.saturating_add(review.device_to_host_packets);
+        host_to_device_report_ids.extend(review.host_to_device_report_ids.iter().cloned());
+        vendor_or_device_specific_output_candidate_report_ids.extend(
+            review
+                .vendor_or_device_specific_output_candidate_report_ids
+                .iter()
+                .cloned(),
+        );
+        scenarios.push(review);
+    }
+
+    Ok(VendorProtocolSniffEvidence {
+        required_scenario_count: scenarios.len(),
+        completed_scenario_count: completed_scenarios.len(),
+        missing_scenario_count: missing_scenarios.len(),
+        completed_scenarios,
+        missing_scenarios,
+        total_matched_packets,
+        total_host_to_device_packets,
+        total_device_to_host_packets,
+        host_to_device_report_ids: host_to_device_report_ids.into_iter().collect(),
+        vendor_or_device_specific_output_candidate_report_ids:
+            vendor_or_device_specific_output_candidate_report_ids
+                .into_iter()
+                .collect(),
+        decode_recommended_by_summaries,
+        passive_summaries_native_control_evidence,
+        scenarios,
+    })
+}
+
+fn vendor_protocol_sniff_scenario_review(
+    sniff_root: &Path,
+    scenario: &str,
+    label: &str,
+    focus: &str,
+) -> Result<VendorProtocolSniffScenarioReview> {
+    let scenario_dir = sniff_root.join(scenario);
+    let sniff_plan = scenario_dir.join("sniff-plan.json");
+    let sniff_receipt = scenario_dir.join("sniff-receipt.json");
+    let sniff_summary = scenario_dir.join("sniff-summary.json");
+    let sniff_bundle_manifest = scenario_dir.join("sniff-bundle-manifest.json");
+    let sniff_plan_present = sniff_plan.exists();
+    let sniff_receipt_present = sniff_receipt.exists();
+    let sniff_summary_present = sniff_summary.exists();
+    let sniff_bundle_manifest_present = sniff_bundle_manifest.exists();
+
+    if !sniff_summary_present {
+        return Ok(VendorProtocolSniffScenarioReview {
+            scenario: scenario.to_string(),
+            label: label.to_string(),
+            focus: focus.to_string(),
+            status: if sniff_plan_present {
+                "plan_only"
+            } else {
+                "missing"
+            },
+            sniff_plan: sniff_plan.display().to_string(),
+            sniff_receipt: sniff_receipt.display().to_string(),
+            sniff_summary: sniff_summary.display().to_string(),
+            sniff_bundle_manifest: sniff_bundle_manifest.display().to_string(),
+            sniff_plan_present,
+            sniff_receipt_present,
+            sniff_summary_present,
+            sniff_bundle_manifest_present,
+            summary_validated: false,
+            matched_packets: 0,
+            host_to_device_packets: 0,
+            device_to_host_packets: 0,
+            standard_pidff_output_report_count: 0,
+            vendor_or_device_specific_output_candidate_count: 0,
+            input_or_status_report_count: 0,
+            host_to_device_report_ids: Vec::new(),
+            vendor_or_device_specific_output_candidate_report_ids: Vec::new(),
+            decode_recommended: false,
+            native_control_evidence: false,
+            readiness_claim: false,
+            notes: vec![
+                "no checked-in sniff-summary.json is present for this scenario".to_string(),
+            ],
+        });
+    }
+
+    let summary = read_json_path(&sniff_summary)?;
+    validate_passive_sniff_summary(&sniff_summary, &summary)?;
+    let classification = summary
+        .get("report_classification_summary")
+        .ok_or_else(|| {
+            anyhow!(
+                "{} is missing report_classification_summary",
+                sniff_summary.display()
+            )
+        })?;
+    let host_to_device_report_ids =
+        json_string_array_value(classification.get("host_to_device_report_ids"));
+    let vendor_or_device_specific_output_candidate_report_ids = json_string_array_value(
+        classification.get("vendor_or_device_specific_output_candidate_report_ids"),
+    );
+
+    Ok(VendorProtocolSniffScenarioReview {
+        scenario: scenario.to_string(),
+        label: label.to_string(),
+        focus: focus.to_string(),
+        status: if sniff_receipt_present && sniff_bundle_manifest_present {
+            "summary_bundle_recorded"
+        } else {
+            "summary_recorded"
+        },
+        sniff_plan: sniff_plan.display().to_string(),
+        sniff_receipt: sniff_receipt.display().to_string(),
+        sniff_summary: sniff_summary.display().to_string(),
+        sniff_bundle_manifest: sniff_bundle_manifest.display().to_string(),
+        sniff_plan_present,
+        sniff_receipt_present,
+        sniff_summary_present,
+        sniff_bundle_manifest_present,
+        summary_validated: true,
+        matched_packets: json_u64(&summary, "matched_packets").unwrap_or(0),
+        host_to_device_packets: summary
+            .pointer("/usb_transfer_summary/host_to_device")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        device_to_host_packets: summary
+            .pointer("/usb_transfer_summary/device_to_host")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        standard_pidff_output_report_count: classification
+            .get("standard_pidff_output_report_count")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        vendor_or_device_specific_output_candidate_count: classification
+            .get("vendor_or_device_specific_output_candidate_count")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        input_or_status_report_count: classification
+            .get("input_or_status_report_count")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        host_to_device_report_ids,
+        vendor_or_device_specific_output_candidate_report_ids,
+        decode_recommended: classification
+            .get("decode_recommended")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        native_control_evidence: classification
+            .get("native_control_evidence")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        readiness_claim: classification
+            .get("readiness_claim")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        notes: vec!["checked-in passive summary is non-claiming protocol evidence".to_string()],
+    })
+}
+
+fn validate_passive_sniff_summary(path: &Path, value: &Value) -> Result<()> {
+    if json_string(value, "command") != Some("wheelctl hardware sniff-summary") {
+        return Err(anyhow!(
+            "passive sniff summary '{}' must be produced by `wheelctl hardware sniff-summary`",
+            path.display()
+        ));
+    }
+    for (field, expected) in [
+        ("success", true),
+        ("native_control_evidence", false),
+        ("openracing_hardware_output", false),
+        ("satisfies_native_response_ready", false),
+        ("satisfies_native_visible_ready", false),
+        ("satisfies_smoke_ready", false),
+        ("satisfies_release_ready", false),
+    ] {
+        if json_bool(value, field) != Some(expected) {
+            return Err(anyhow!(
+                "passive sniff summary '{}' field `{field}` expected {expected}",
+                path.display()
+            ));
+        }
+    }
+    let classification = value.get("report_classification_summary").ok_or_else(|| {
+        anyhow!(
+            "{} is missing report_classification_summary",
+            path.display()
+        )
+    })?;
+    for (field, expected) in [
+        ("native_control_evidence", false),
+        ("readiness_claim", false),
+    ] {
+        if classification.get(field).and_then(Value::as_bool) != Some(expected) {
+            return Err(anyhow!(
+                "passive sniff summary '{}' classification field `{field}` expected {expected}",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn vendor_protocol_command_registry_review(
+    path: &Path,
+    value: &Value,
+) -> Result<VendorProtocolCommandRegistryReview> {
+    let commands = value
+        .get("commands")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("{} is missing commands array", path.display()))?;
+    let forbidden = value
+        .get("forbidden")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    let mut risk_class_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut write_candidate_command_ids = Vec::new();
+    let mut read_only_status_command_ids = Vec::new();
+    let mut hardware_output_authorized_any = false;
+    for command in commands {
+        let risk_class = json_string(command, "risk_class").unwrap_or("unknown");
+        *risk_class_counts.entry(risk_class.to_string()).or_insert(0) += 1;
+        if json_bool(command, "hardware_output_authorized") == Some(true) {
+            hardware_output_authorized_any = true;
+        }
+        if matches!(
+            risk_class,
+            "vendor_output_candidate" | "configuration_candidate"
+        ) && let Some(id) = json_string(command, "id")
+        {
+            write_candidate_command_ids.push(id.to_string());
+        }
+        if json_bool(command, "allowed_for_read_only_status_probe") == Some(true)
+            && let Some(id) = json_string(command, "id")
+        {
+            read_only_status_command_ids.push(id.to_string());
+        }
+    }
+
+    Ok(VendorProtocolCommandRegistryReview {
+        registry: path.display().to_string(),
+        registry_completeness: json_string(value, "registry_completeness")
+            .unwrap_or("unknown")
+            .to_string(),
+        codec_status: json_string(value, "codec_status")
+            .unwrap_or("unknown")
+            .to_string(),
+        command_count: commands.len(),
+        forbidden_count: forbidden,
+        risk_class_counts,
+        read_only_status_command_ids,
+        write_candidate_command_ids,
+        hardware_output_authorized_any,
+    })
+}
+
+fn vendor_protocol_post_authority_pidff_result(
+    attempt_path: &Path,
+    attempt: &Value,
+    post_authority_response_path: &Path,
+    post_authority_response: &Value,
+) -> Result<VendorProtocolPostAuthorityPidffResult> {
+    let comparison = post_authority_response
+        .get("comparison")
+        .ok_or_else(|| anyhow!("post-authority PIDFF response receipt is missing comparison"))?;
+    Ok(VendorProtocolPostAuthorityPidffResult {
+        attempt_receipt: attempt_path.display().to_string(),
+        post_authority_response_receipt: post_authority_response_path.display().to_string(),
+        tested_command_id: attempt
+            .pointer("/authorized_command/command_id")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string(),
+        tested_command_family: attempt
+            .pointer("/authorized_command/family")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string(),
+        tested_command_risk_class: attempt
+            .pointer("/authorized_command/risk_class")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string(),
+        tested_frame_hex: attempt
+            .pointer("/authorized_frame/frame_hex")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string(),
+        classification: json_string(comparison, "classification")
+            .unwrap_or("unknown")
+            .to_string(),
+        baseline_angle_delta_degrees: comparison
+            .get("baseline_angle_delta_degrees")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0),
+        post_authority_angle_delta_degrees: comparison
+            .get("post_authority_angle_delta_degrees")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0),
+        delta_change_degrees: comparison
+            .get("delta_change_degrees")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0),
+        visible_motion_candidate: comparison
+            .get("visible_motion_candidate")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        response_increased: comparison
+            .get("response_increased")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        response_regressed: comparison
+            .get("response_regressed")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        eliminated_hypothesis: "estop_set_ffb_did_not_enable_standard_pidff_native_visible_motion"
+            .to_string(),
+    })
+}
+
+fn json_string_array_value(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn native_pidff_response_summary(
     path: &Path,
     receipt: &Value,
@@ -28917,6 +29598,129 @@ struct NativePidffResponseSummary {
 
 #[derive(Debug, Serialize)]
 struct VendorPostAuthorityPlannedNextOutput {
+    allowed: bool,
+    reason: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorProtocolEvidenceReviewReceipt {
+    success: bool,
+    schema_version: u8,
+    artifact_kind: &'static str,
+    claim_scope: &'static str,
+    command: &'static str,
+    generated_at_utc: String,
+    lane: String,
+    sniff_root: String,
+    command_registry_path: String,
+    vendor_authority_attempt_receipt: String,
+    post_authority_response_receipt: String,
+    evidence_inputs_validated: bool,
+    native_control_evidence: bool,
+    hardware_output_authorized: bool,
+    native_visible_ready: bool,
+    smoke_ready: bool,
+    no_hid_device_opened: bool,
+    no_serial_device_opened: bool,
+    no_read_only_query_sent: bool,
+    no_output_reports_sent: bool,
+    no_feature_reports_sent: bool,
+    no_serial_writes_sent: bool,
+    sent_output_writes: bool,
+    sent_configuration_writes: bool,
+    sent_firmware_or_dfu_commands: bool,
+    high_torque_enabled: bool,
+    protocol_evidence_classification: &'static str,
+    protocol_evidence_sufficient_for_output_plan: bool,
+    sniff_evidence: VendorProtocolSniffEvidence,
+    command_registry_review: VendorProtocolCommandRegistryReview,
+    post_authority_pidff_result: VendorProtocolPostAuthorityPidffResult,
+    next_allowed_action: &'static str,
+    blocked_actions: Vec<&'static str>,
+    required_artifacts: Vec<&'static str>,
+    planned_next_output: VendorProtocolEvidencePlannedNextOutput,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorProtocolSniffEvidence {
+    required_scenario_count: usize,
+    completed_scenario_count: usize,
+    missing_scenario_count: usize,
+    completed_scenarios: Vec<String>,
+    missing_scenarios: Vec<String>,
+    total_matched_packets: u64,
+    total_host_to_device_packets: u64,
+    total_device_to_host_packets: u64,
+    host_to_device_report_ids: Vec<String>,
+    vendor_or_device_specific_output_candidate_report_ids: Vec<String>,
+    decode_recommended_by_summaries: bool,
+    passive_summaries_native_control_evidence: bool,
+    scenarios: Vec<VendorProtocolSniffScenarioReview>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorProtocolSniffScenarioReview {
+    scenario: String,
+    label: String,
+    focus: String,
+    status: &'static str,
+    sniff_plan: String,
+    sniff_receipt: String,
+    sniff_summary: String,
+    sniff_bundle_manifest: String,
+    sniff_plan_present: bool,
+    sniff_receipt_present: bool,
+    sniff_summary_present: bool,
+    sniff_bundle_manifest_present: bool,
+    summary_validated: bool,
+    matched_packets: u64,
+    host_to_device_packets: u64,
+    device_to_host_packets: u64,
+    standard_pidff_output_report_count: u64,
+    vendor_or_device_specific_output_candidate_count: u64,
+    input_or_status_report_count: u64,
+    host_to_device_report_ids: Vec<String>,
+    vendor_or_device_specific_output_candidate_report_ids: Vec<String>,
+    decode_recommended: bool,
+    native_control_evidence: bool,
+    readiness_claim: bool,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorProtocolCommandRegistryReview {
+    registry: String,
+    registry_completeness: String,
+    codec_status: String,
+    command_count: usize,
+    forbidden_count: usize,
+    risk_class_counts: BTreeMap<String, usize>,
+    read_only_status_command_ids: Vec<String>,
+    write_candidate_command_ids: Vec<String>,
+    hardware_output_authorized_any: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorProtocolPostAuthorityPidffResult {
+    attempt_receipt: String,
+    post_authority_response_receipt: String,
+    tested_command_id: String,
+    tested_command_family: String,
+    tested_command_risk_class: String,
+    tested_frame_hex: String,
+    classification: String,
+    baseline_angle_delta_degrees: f64,
+    post_authority_angle_delta_degrees: f64,
+    delta_change_degrees: f64,
+    visible_motion_candidate: bool,
+    response_increased: bool,
+    response_regressed: bool,
+    eliminated_hypothesis: String,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorProtocolEvidencePlannedNextOutput {
     allowed: bool,
     reason: &'static str,
 }
@@ -34107,6 +34911,10 @@ fn push_vendor_authority_navigation_markdown(out: &mut String, receipt: &Value) 
                 "post_authority_pidff_response",
                 "post_authority_pidff_response_receipt",
             ),
+            (
+                "vendor_protocol_evidence_review",
+                "vendor_protocol_evidence_review_receipt",
+            ),
         ] {
             let path = json_string(artifacts, pointer).unwrap_or("unknown");
             out.push_str(&format!(
@@ -35076,6 +35884,25 @@ fn print_vendor_post_authority_pidff_response_receipt(
         println!(
             "Compared post-authority PIDFF response: classification={}, delta_change_degrees={:.3}; native_visible_ready remains false.",
             receipt.comparison.classification, receipt.comparison.delta_change_degrees
+        );
+        println!("Receipt: {}", json_out.display());
+    }
+    Ok(())
+}
+
+fn print_vendor_protocol_evidence_review_receipt(
+    json: bool,
+    json_out: &Path,
+    receipt: &VendorProtocolEvidenceReviewReceipt,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Reviewed Moza vendor protocol evidence: classification={}, completed_sniff_scenarios={}/{}, planned_next_output.allowed=false.",
+            receipt.protocol_evidence_classification,
+            receipt.sniff_evidence.completed_scenario_count,
+            receipt.sniff_evidence.required_scenario_count
         );
         println!("Receipt: {}", json_out.display());
     }
@@ -37688,6 +38515,375 @@ mod tests {
             Some(false)
         );
         assert_eq!(json_bool(&receipt, "native_visible_ready"), Some(false));
+        Ok(())
+    }
+
+    fn sample_passive_sniff_summary(matched_packets: u64) -> Value {
+        serde_json::json!({
+            "schema_version": 1,
+            "success": true,
+            "command": "wheelctl hardware sniff-summary",
+            "generated_at_utc": "2026-05-20T12:00:00Z",
+            "pcapng_sha256": "example",
+            "tool": {
+                "tshark_present": true,
+                "tshark_version": "TShark (Wireshark) 4.6.5"
+            },
+            "filters": {
+                "vendor_id": "0x346E",
+                "product_id": "0x0004",
+                "interface_number": null
+            },
+            "matched_packets": matched_packets,
+            "usb_transfer_summary": {
+                "host_to_device": 10,
+                "device_to_host": 90,
+                "control": 0,
+                "interrupt": 0
+            },
+            "observed_reports": [
+                {
+                    "direction": "device_to_host",
+                    "report_id": "0x01",
+                    "classification": {
+                        "category": "input_or_status_report",
+                        "native_control_evidence": false
+                    },
+                    "count": 10
+                }
+            ],
+            "report_classification_summary": {
+                "standard_pidff_output_report_count": 0,
+                "vendor_or_device_specific_output_candidate_count": 0,
+                "input_or_status_report_count": 1,
+                "host_to_device_report_ids": [],
+                "standard_pidff_output_report_ids": [],
+                "vendor_or_device_specific_output_candidate_report_ids": [],
+                "decode_recommended": false,
+                "native_control_evidence": false,
+                "readiness_claim": false,
+                "notes": []
+            },
+            "descriptor_candidates": [],
+            "evidence_status": "passive_external_usb_observation",
+            "native_control_evidence": false,
+            "openracing_hardware_output": false,
+            "external_app_may_have_sent_output": true,
+            "satisfies_native_response_ready": false,
+            "satisfies_native_visible_ready": false,
+            "satisfies_smoke_ready": false,
+            "satisfies_release_ready": false,
+            "readiness_claims": {
+                "satisfies_native_response_ready": false,
+                "satisfies_native_visible_ready": false,
+                "satisfies_smoke_ready": false,
+                "satisfies_release_ready": false
+            },
+            "notes": []
+        })
+    }
+
+    fn write_sample_sniff_scenario(
+        sniff_root: &Path,
+        scenario: &str,
+        summary: &Value,
+    ) -> TestResult {
+        let dir = sniff_root.join(scenario);
+        write_test_json_file(
+            &dir.join("sniff-plan.json"),
+            &serde_json::json!({ "scenario": scenario }),
+        )?;
+        write_test_json_file(
+            &dir.join("sniff-receipt.json"),
+            &serde_json::json!({ "scenario": scenario }),
+        )?;
+        write_test_json_file(&dir.join("sniff-summary.json"), summary)?;
+        write_test_json_file(
+            &dir.join("sniff-bundle-manifest.json"),
+            &serde_json::json!({ "scenario": scenario }),
+        )
+    }
+
+    fn sample_post_authority_pidff_response_value() -> TestResult<Value> {
+        let dir = tempfile::tempdir()?;
+        let attempt_path = dir.path().join("vendor-authority-attempt.json");
+        let baseline_path = dir
+            .path()
+            .join("native-actuator-visible-smoke-response-only.json");
+        let post_path = dir.path().join("vendor-post-authority-pidff-smoke.json");
+        let attempt = sample_vendor_authority_attempt_value("2026-05-20T12:00:00Z")?;
+        let baseline = sample_native_pidff_response("2026-05-20T11:55:00Z", 0.181, false);
+        let post = sample_native_pidff_response("2026-05-20T12:05:00Z", 0.032, false);
+        let receipt = vendor_post_authority_pidff_response_receipt(
+            &attempt_path,
+            &attempt,
+            &baseline_path,
+            &baseline,
+            &post_path,
+            &post,
+        )?;
+        Ok(serde_json::to_value(receipt)?)
+    }
+
+    #[test]
+    fn vendor_protocol_evidence_review_receipt_is_non_claiming() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("ci/hardware/moza-r5/2026-05-13");
+        let sniff_root = dir.path().join("ci/hardware/sniff/moza-r5/2026-05-13");
+        write_sample_sniff_scenario(
+            &sniff_root,
+            "pit-house-open-idle",
+            &sample_passive_sniff_summary(100),
+        )?;
+        write_sample_sniff_scenario(
+            &sniff_root,
+            "pit-house-full-controls",
+            &sample_passive_sniff_summary(200),
+        )?;
+        let command_registry_path = PathBuf::from("fixtures/moza/r5/vendor-command-registry.json");
+        let command_registry: Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/moza/r5/vendor-command-registry.json"
+        ))?;
+        let attempt_path = lane.join(VENDOR_AUTHORITY_ATTEMPT_FILE);
+        let attempt = sample_vendor_authority_attempt_value("2026-05-20T12:00:00Z")?;
+        let post_path = lane.join(VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE);
+        let post = sample_post_authority_pidff_response_value()?;
+
+        let receipt = vendor_protocol_evidence_review_receipt(
+            &lane,
+            &sniff_root,
+            &command_registry_path,
+            &command_registry,
+            &attempt_path,
+            &attempt,
+            &post_path,
+            &post,
+        )?;
+        let value = serde_json::to_value(&receipt)?;
+
+        assert_eq!(
+            json_string(&value, "artifact_kind"),
+            Some("moza_vendor_protocol_evidence_review")
+        );
+        assert_eq!(
+            json_string(&value, "claim_scope"),
+            Some("no_output_protocol_evidence_review")
+        );
+        assert_eq!(json_bool(&value, "native_control_evidence"), Some(false));
+        assert_eq!(json_bool(&value, "hardware_output_authorized"), Some(false));
+        assert_eq!(json_bool(&value, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(&value, "smoke_ready"), Some(false));
+        assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "no_serial_writes_sent"), Some(true));
+        assert_eq!(json_bool(&value, "sent_output_writes"), Some(false));
+        assert_eq!(
+            json_bool(&value, "protocol_evidence_sufficient_for_output_plan"),
+            Some(false)
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/completed_scenario_count")
+                .and_then(Value::as_u64),
+            Some(2)
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/missing_scenario_count")
+                .and_then(Value::as_u64),
+            Some(4)
+        );
+        assert_eq!(
+            value
+                .pointer("/post_authority_pidff_result/tested_command_id")
+                .and_then(Value::as_str),
+            Some("estop_set_ffb")
+        );
+        assert_eq!(
+            value
+                .pointer("/post_authority_pidff_result/response_regressed")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            value
+                .pointer("/planned_next_output/allowed")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-protocol-evidence-review.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&value).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn vendor_protocol_evidence_review_command_writes_json_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let lane = dir.path().join("ci/hardware/moza-r5/2026-05-13");
+        let sniff_root = dir.path().join("ci/hardware/sniff/moza-r5/2026-05-13");
+        write_sample_sniff_scenario(
+            &sniff_root,
+            "pit-house-open-idle",
+            &sample_passive_sniff_summary(100),
+        )?;
+        write_sample_sniff_scenario(
+            &sniff_root,
+            "pit-house-full-controls",
+            &sample_passive_sniff_summary(200),
+        )?;
+        let command_registry_path = dir.path().join("vendor-command-registry.json");
+        let command_registry: Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/moza/r5/vendor-command-registry.json"
+        ))?;
+        write_test_json_file(&command_registry_path, &command_registry)?;
+        let attempt_path = lane.join(VENDOR_AUTHORITY_ATTEMPT_FILE);
+        write_test_json_file(
+            &attempt_path,
+            &sample_vendor_authority_attempt_value("2026-05-20T12:00:00Z")?,
+        )?;
+        let post_path = lane.join(VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE);
+        write_test_json_file(&post_path, &sample_post_authority_pidff_response_value()?)?;
+        let json_out = lane.join("vendor-protocol-evidence-review.json");
+
+        vendor_protocol_evidence_review(VendorProtocolEvidenceReviewRequest {
+            json: false,
+            lane: &lane,
+            sniff_root: Some(&sniff_root),
+            command_registry: Some(&command_registry_path),
+            attempt: None,
+            post_authority_response: None,
+            json_out: &json_out,
+            overwrite: false,
+        })
+        .await?;
+
+        let receipt = read_json_path(&json_out)?;
+        assert_eq!(
+            json_string(&receipt, "command"),
+            Some("wheelctl moza vendor-protocol-evidence-review")
+        );
+        assert_eq!(
+            json_bool(&receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "native_visible_ready"), Some(false));
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_protocol_evidence_review_updates_post_authority_next_step() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        write_test_json_file(
+            &dir.path().join(VENDOR_AUTHORITY_ATTEMPT_FILE),
+            &serde_json::json!({ "artifact_kind": "moza_vendor_authority_attempt" }),
+        )?;
+        write_test_json_file(
+            &dir.path().join(VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE),
+            &serde_json::json!({ "artifact_kind": "moza_vendor_post_authority_pidff_response" }),
+        )?;
+
+        let pending_review = moza_post_authority_pidff_response_next_operator_step(dir.path());
+        assert_eq!(
+            json_string(&pending_review, "kind"),
+            Some("post_authority_pidff_response_comparison_recorded")
+        );
+        assert_eq!(
+            pending_review
+                .pointer("/commands/0/name")
+                .and_then(Value::as_str),
+            Some("review_vendor_protocol_evidence")
+        );
+        assert_eq!(
+            pending_review
+                .pointer("/commands/0/output_enabled")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+
+        write_test_json_file(
+            &dir.path().join(VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE),
+            &serde_json::json!({ "artifact_kind": "moza_vendor_protocol_evidence_review" }),
+        )?;
+        let reviewed = moza_post_authority_pidff_response_next_operator_step(dir.path());
+        assert_eq!(
+            json_string(&reviewed, "kind"),
+            Some("vendor_protocol_evidence_review_recorded")
+        );
+        assert_eq!(
+            json_bool(&reviewed, "hardware_output_allowed_now"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&reviewed, "hardware_attempt_command_emitted"),
+            Some(false)
+        );
+        assert_eq!(
+            json_string(&reviewed, "vendor_protocol_evidence_review_receipt"),
+            Some(VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_protocol_evidence_review_schema_pins_non_claiming_gates() -> TestResult {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-protocol-evidence-review.schema.json"
+        ))?;
+        let required = schema
+            .get("required")
+            .and_then(Value::as_array)
+            .ok_or("schema must have a required array")?;
+        for field in [
+            "claim_scope",
+            "evidence_inputs_validated",
+            "native_control_evidence",
+            "hardware_output_authorized",
+            "native_visible_ready",
+            "smoke_ready",
+            "no_hid_device_opened",
+            "no_serial_device_opened",
+            "no_serial_writes_sent",
+            "sent_output_writes",
+            "sent_configuration_writes",
+            "sent_firmware_or_dfu_commands",
+            "protocol_evidence_sufficient_for_output_plan",
+            "sniff_evidence",
+            "command_registry_review",
+            "post_authority_pidff_result",
+            "planned_next_output",
+        ] {
+            assert!(
+                required.iter().any(|entry| entry.as_str() == Some(field)),
+                "schema must require `{field}`"
+            );
+        }
+        assert_eq!(
+            schema["properties"]["claim_scope"]["const"],
+            "no_output_protocol_evidence_review"
+        );
+        assert_eq!(
+            schema["properties"]["native_control_evidence"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["hardware_output_authorized"]["const"],
+            false
+        );
+        assert_eq!(schema["properties"]["native_visible_ready"]["const"], false);
+        assert_eq!(schema["properties"]["smoke_ready"]["const"], false);
+        assert_eq!(
+            schema["properties"]["protocol_evidence_sufficient_for_output_plan"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["planned_next_output"]["properties"]["allowed"]["const"],
+            false
+        );
         Ok(())
     }
 
