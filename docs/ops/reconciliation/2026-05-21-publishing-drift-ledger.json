@@ -1,0 +1,45 @@
+{
+  "second_transcript_addendum": {
+    "reviewed_at": "2026-05-21",
+    "classification": "incident_reconciliation_evidence",
+    "commit_raw_transcript": false,
+    "clean_facts": {
+      "swarm_recovery_pr": {
+        "repo": "EffortlessMetrics/OpenRacing-swarm",
+        "pr": 8,
+        "title": "recovery: import OpenRacing main after routing freeze",
+        "merge_commit": "fbe7ef9b889deba9d87b95effa9acd0c867cd07c"
+      },
+      "post_recovery_swarm_pr": {
+        "repo": "EffortlessMetrics/OpenRacing-swarm",
+        "pr": 10,
+        "title": "moza: surface passive sniff decode gaps",
+        "merge_commit": "c3a7f43fb14be57f5249588e56b1d56714dee308",
+        "claim_boundary": "no-output, no-authorization, no-readiness-claim"
+      },
+      "publishing_misroute_examples": [
+        {
+          "repo": "EffortlessMetrics/OpenRacing",
+          "pr": 636
+        },
+        {
+          "repo": "EffortlessMetrics/OpenRacing",
+          "pr": 648
+        },
+        {
+          "repo": "EffortlessMetrics/OpenRacing",
+          "pr": 657
+        },
+        {
+          "repo": "EffortlessMetrics/OpenRacing",
+          "pr": 658
+        }
+      ]
+    },
+    "current_policy": {
+      "development_repo": "EffortlessMetrics/OpenRacing-swarm",
+      "publishing_repo": "EffortlessMetrics/OpenRacing",
+      "publishing_repo_feature_prs_allowed": false
+    }
+  }
+}
