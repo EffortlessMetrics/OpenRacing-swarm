@@ -672,6 +672,8 @@ mod tests {
             "target/sniff/pit-house-open-idle/sniff-summary.json",
             "--operator-notes",
             "target/sniff/pit-house-open-idle/operator-notes.md",
+            "--operator-notes-receipt",
+            "target/sniff/pit-house-open-idle/sniff-notes-template-receipt.json",
             "--include-pcapng",
             "target/sniff/pit-house-open-idle/capture.pcapng",
             "--out",
@@ -686,6 +688,7 @@ mod tests {
                 receipt,
                 summary,
                 operator_notes,
+                operator_notes_receipt,
                 include_pcapng,
                 out,
                 json_out,
@@ -705,6 +708,10 @@ mod tests {
                 assert_eq!(
                     operator_notes.to_str(),
                     Some("target/sniff/pit-house-open-idle/operator-notes.md")
+                );
+                assert_eq!(
+                    operator_notes_receipt.as_ref().and_then(|p| p.to_str()),
+                    Some("target/sniff/pit-house-open-idle/sniff-notes-template-receipt.json")
                 );
                 assert_eq!(
                     include_pcapng.as_ref().and_then(|p| p.to_str()),

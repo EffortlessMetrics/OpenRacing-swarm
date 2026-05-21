@@ -2684,11 +2684,12 @@ fn moza_passive_sniff_next_operator_step(lane: &Path) -> Option<Value> {
                     "output_enabled": false,
                     "requires_operator_notes": true,
                     "command": format!(
-                        "wheelctl hardware sniff-bundle --plan {} --receipt {} --summary {} --operator-notes {} --out {} --json-out {}",
+                        "wheelctl hardware sniff-bundle --plan {} --receipt {} --summary {} --operator-notes {} --operator-notes-receipt {} --out {} --json-out {}",
                         command_arg(&plan_artifact.display().to_string()),
                         command_arg(&receipt_artifact.display().to_string()),
                         command_arg(&summary_artifact.display().to_string()),
                         command_arg(&local_operator_notes.display().to_string()),
+                        command_arg(&local_operator_notes_receipt.display().to_string()),
                         command_arg(&local_bundle.display().to_string()),
                         command_arg(&bundle_manifest_artifact.display().to_string())
                     )
@@ -43934,6 +43935,8 @@ mod tests {
                 && json_bool(command, "requires_operator_notes") == Some(true)
                 && json_string(command, "command").is_some_and(|text| {
                     text.contains("wheelctl hardware sniff-bundle")
+                        && text.contains("--operator-notes-receipt")
+                        && text.contains("sniff-notes-template-receipt.json")
                         && text.contains("--json-out")
                         && text.contains("sniff-bundle-manifest.json")
                 })
