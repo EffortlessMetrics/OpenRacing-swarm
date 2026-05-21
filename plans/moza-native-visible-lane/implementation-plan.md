@@ -106,6 +106,14 @@ including the repeated `0x5A/0x1B/0x00` -> `0x5D/0x1B/0x01` pair and repeated
 `0x25/0x19/0x02` -> `0x25/0x19/0x03` -> `0x25/0x19/0x01` triad. That grouping
 summary is still fixture evidence only and creates no semantic command decode,
 registry promotion, output sendability, or hardware authorization.
+The review now preserves low-confidence semantic hypotheses for those same
+five highest-frequency unknown commanded tuples. The `0x5A/0x1B/*` and
+`0x5D/0x1B/*` pair is classified as a
+`session_or_status_keepalive_candidate`, and the `0x25/0x19/*` triad is
+classified as a `base_status_or_mode_poll_candidate`. These are pattern-only
+decode questions, not semantic command definitions: each tuple remains
+`unknown_commanded`, non-sendable, and ineligible for registry promotion or
+hardware output.
 
 The latest pre-output, lane analysis, role-status, and artifact-index receipts
 report six proven input roles and one remaining generic auxiliary role.
@@ -3205,6 +3213,94 @@ sniff summaries/manifests, protocol review receipt, artifact-index refresh, and
 source-of-truth updates. Do not remove passive sniff plans, raw local capture
 artifacts, consumed hardware attempts, prior undertravel evidence, or existing
 tuple frequency, sample fixture, payload-shape, and packet-group evidence.
+
+## Work item: passive-sniff-semantic-hypothesis-review
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: future semantic vendor protocol decode before any future output family
+Blocked by: checked-in `vendor-protocol-evidence-review.json` top unknown
+commanded tuple morphology
+
+### Goal
+
+Preserve low-confidence semantic hypotheses for the highest-frequency unknown
+commanded Pit House tuple samples so future protocol work has explicit decode
+questions without treating any tuple as decoded, sendable, or registry-ready.
+
+### Production Delta
+
+Extend `wheelctl moza vendor-protocol-evidence-review` with
+`decode_candidate_semantic_hypothesis_summary`, derived from the existing
+frequency, payload-shape, and packet-group review fields. Surface the same
+summary through artifact-index and bench-wizard decode-priority navigation,
+refresh `vendor-protocol-evidence-review.json` and the checked-in lane index,
+and add protocol crate regression coverage that pins the current hypotheses as
+non-sendable pattern-only evidence.
+
+The current review classifies the repeated `0x5A/0x1B/*` and `0x5D/0x1B/*`
+pair as `session_or_status_keepalive_candidate`, and the repeated
+`0x25/0x19/*` triad as `base_status_or_mode_poll_candidate`. Each hypothesis
+has `confidence=low_pattern_only` and requires external correlation plus
+fixture-backed semantic decoder coverage before any registry promotion.
+
+### Non-goals
+
+No HID open, serial open, read-only query send, hardware output, authorization
+receipt, PIDFF rerun, force increase, direct HID report `0xaf`, high torque,
+serial config, firmware, DFU, native-control claim, native-visible claim,
+smoke-ready claim, Pit House coexistence claim, simulator claim, release-ready
+claim, raw `.pcapng` commit, semantic command decode, registry promotion, or
+tuple sendability claim.
+
+### Acceptance
+
+- `vendor-protocol-evidence-review.json` records
+  `decode_candidate_semantic_hypothesis_summary.claim_scope` as
+  `no_output_passive_tuple_semantic_hypothesis_review`.
+- The semantic hypothesis summary reports five hypotheses for the
+  highest-frequency unknown commanded tuples.
+- `0x5A/0x1B/0x00` and `0x5D/0x1B/0x01` are recorded as
+  `session_or_status_keepalive_candidate`.
+- `0x25/0x19/0x01`, `0x25/0x19/0x02`, and `0x25/0x19/0x03` are recorded as
+  `base_status_or_mode_poll_candidate`.
+- Every hypothesis keeps `confidence=low_pattern_only`,
+  `semantic_decode_claim=false`, `registry_promotion_claim=false`,
+  `hardware_output_authorized=false`, and `output_sendability_claim=false`.
+- Artifact-index and bench-wizard Markdown render the semantic hypothesis
+  navigation without emitting a hardware attempt command.
+- Native-visible verifier remains blocked on `native_actuator_visible_smoke`.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_authority_navigation_surfaces_decode_priority_without_claims -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_passive_tuple_samples -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- moza vendor-protocol-evidence-review --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json --json --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-passive-semantic-hypotheses.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-after-passive-semantic-hypotheses.json --md-out target/moza-current/bench-wizard-after-passive-semantic-hypotheses.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-passive-semantic-hypotheses.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo test --locked -p wheelctl --bin wheelctl checked_in_moza_lane_index_matches_artifact_index_renderer -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the semantic hypothesis summary generation, schema additions,
+protocol regression, refreshed protocol review receipt, refreshed artifact
+index, and source-of-truth updates. Do not remove checked-in passive sniff
+summaries, sample-frame preservation, observed frame-shape decoding,
+packet-order regression coverage, payload-shape summary, packet-group summary,
+payload-gap locators, consumed hardware attempts, prior undertravel evidence,
+or tuple frequency and registry coverage fields.
 
 ## Work item: native-visible-promotion
 

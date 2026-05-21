@@ -123,6 +123,20 @@ fn payload_shape_for_tuple<'a>(
         .ok_or_else(|| invalid_data(format!("missing payload shape for tuple `{tuple_id}`")))
 }
 
+fn semantic_hypothesis_for_tuple<'a>(
+    hypotheses: &'a [Value],
+    tuple_id: &str,
+) -> Result<&'a Value, io::Error> {
+    hypotheses
+        .iter()
+        .find(|hypothesis| str_field(hypothesis, "tuple_id").is_ok_and(|id| id == tuple_id))
+        .ok_or_else(|| {
+            invalid_data(format!(
+                "missing semantic hypothesis for tuple `{tuple_id}`"
+            ))
+        })
+}
+
 fn string_array_at<'a>(value: &'a Value, pointer: &str) -> Result<Vec<&'a str>, io::Error> {
     array_at(value, pointer)?
         .iter()
@@ -218,6 +232,70 @@ fn assert_unknown_sample_remains_non_sendable(sample: &Value) -> TestResult {
         Err(MozaSerialFrameError::UnknownCommand { group, command })
             if group == observed.group && command == observed.command_id
     ));
+
+    Ok(())
+}
+
+#[test]
+fn passive_decode_candidate_samples_preserve_non_sendable_semantic_hypotheses() -> TestResult {
+    let review = protocol_evidence_review()?;
+    let summary = value_at(
+        &review,
+        "/passive_tuple_registry_coverage/decode_candidate_semantic_hypothesis_summary",
+    )?;
+
+    assert_eq!(
+        str_field(summary, "claim_scope")?,
+        "no_output_passive_tuple_semantic_hypothesis_review"
+    );
+    assert_eq!(
+        str_field(summary, "sample_scope")?,
+        "highest_frequency_unknown_commanded_tuples"
+    );
+    assert_eq!(usize_field(summary, "tuple_count")?, 5);
+    assert_eq!(usize_field(summary, "hypothesis_count")?, 5);
+    assert!(bool_field(summary, "all_hypotheses_unknown_commanded")?);
+    assert!(bool_field(summary, "all_hypotheses_non_sendable")?);
+    assert!(!bool_field(summary, "semantic_decode_claim")?);
+    assert!(!bool_field(summary, "registry_promotion_claim")?);
+    assert!(!bool_field(summary, "hardware_output_authorized")?);
+    assert!(!bool_field(summary, "native_control_evidence")?);
+    assert!(!bool_field(summary, "output_sendability_claim")?);
+    assert!(!bool_field(
+        summary,
+        "protocol_evidence_sufficient_for_output_plan"
+    )?);
+
+    let hypotheses = array_at(summary, "/tuple_hypotheses")?;
+    let keepalive = semantic_hypothesis_for_tuple(hypotheses, "0x5A/0x1B/0x00")?;
+    assert_eq!(
+        str_field(keepalive, "observed_pattern_hint")?,
+        "repeated_high_frequency_0x1b_pair"
+    );
+    assert_eq!(
+        str_field(keepalive, "semantic_hypothesis")?,
+        "session_or_status_keepalive_candidate"
+    );
+    assert_eq!(str_field(keepalive, "confidence")?, "low_pattern_only");
+    assert!(!bool_field(keepalive, "semantic_decode_claim")?);
+    assert!(!bool_field(keepalive, "registry_promotion_claim")?);
+    assert!(!bool_field(keepalive, "hardware_output_authorized")?);
+    assert!(!bool_field(keepalive, "output_sendability_claim")?);
+
+    let triad = semantic_hypothesis_for_tuple(hypotheses, "0x25/0x19/0x02")?;
+    assert_eq!(
+        str_field(triad, "observed_pattern_hint")?,
+        "repeated_zero_payload_0x19_triad"
+    );
+    assert_eq!(
+        str_field(triad, "semantic_hypothesis")?,
+        "base_status_or_mode_poll_candidate"
+    );
+    assert_eq!(str_field(triad, "confidence")?, "low_pattern_only");
+    assert!(!bool_field(triad, "semantic_decode_claim")?);
+    assert!(!bool_field(triad, "registry_promotion_claim")?);
+    assert!(!bool_field(triad, "hardware_output_authorized")?);
+    assert!(!bool_field(triad, "output_sendability_claim")?);
 
     Ok(())
 }
