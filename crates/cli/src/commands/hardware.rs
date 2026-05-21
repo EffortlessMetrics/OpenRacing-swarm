@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result};
@@ -16,7 +16,6 @@ use chrono::{SecondsFormat, Utc};
 use hidapi::{DeviceInfo, HidApi};
 use openracing_hardware_core::{DeviceCapabilityRegistry, DeviceFamily};
 use openracing_pidff_common::report_ids as pidff_report_ids;
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
@@ -25,6 +24,12 @@ use crate::commands::{
     HardwareCommands, HardwareLaneCommands, HardwareSniffCaptureTool, HardwareSniffPlatformHint,
     HardwareSniffScenario,
 };
+
+mod io;
+mod roles;
+
+use io::{read_json_file, write_json_file, write_json_receipt, write_text_file};
+use roles::{normalize_role_id, validate_connection_path, validate_relative_artifact_path};
 
 pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
     match cmd {
@@ -3433,22 +3438,6 @@ fn parse_role_kv_entries(values: &[String], flag: &str) -> Result<BTreeMap<Strin
     Ok(entries)
 }
 
-fn normalize_role_id(value: &str, flag: &str) -> Result<String> {
-    let role = value.trim();
-    if role.is_empty() {
-        anyhow::bail!("{flag} role id cannot be empty");
-    }
-    if !role
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
-    {
-        anyhow::bail!(
-            "{flag} role id '{role}' may contain only ASCII letters, numbers, '_' or '-'"
-        );
-    }
-    Ok(role.to_string())
-}
-
 fn validate_role_endpoint(value: &str, flag: &str) -> Result<String> {
     let endpoint = value.trim();
     if !has_declared_endpoint(endpoint) {
@@ -3474,20 +3463,6 @@ fn stored_lane_roles_to_logical(
             semantic_status: role.semantic_status.clone(),
         })
         .collect()
-}
-
-fn validate_relative_artifact_path(path: &str) -> Result<()> {
-    let path = Path::new(path);
-    if path.is_absolute() {
-        anyhow::bail!("role artifact paths must be relative to the lane directory");
-    }
-    if path
-        .components()
-        .any(|component| matches!(component, Component::ParentDir | Component::Prefix(_)))
-    {
-        anyhow::bail!("role artifact paths must stay within the lane directory");
-    }
-    Ok(())
 }
 
 fn validate_connection_path(connection: &str) -> Result<()> {
@@ -4967,46 +4942,7 @@ fn executable_candidates(name: &str) -> impl Iterator<Item = PathBuf> + '_ {
     candidates.into_iter()
 }
 
-fn write_json_receipt<T: Serialize>(path: Option<&Path>, value: &T) -> Result<()> {
-    let Some(path) = path else {
-        return Ok(());
-    };
-
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create '{}'", parent.display()))?;
-    }
-
-    let json = serde_json::to_string_pretty(value).context("failed to serialize JSON receipt")?;
-    fs::write(path, json).with_context(|| format!("failed to write '{}'", path.display()))
-}
-
-fn write_json_file<T: Serialize>(path: &Path, value: &T) -> Result<()> {
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create '{}'", parent.display()))?;
-    }
-
-    let json = serde_json::to_string_pretty(value).context("failed to serialize JSON file")?;
-    fs::write(path, json).with_context(|| format!("failed to write '{}'", path.display()))
-}
-
-fn read_json_file<T: DeserializeOwned>(path: &Path) -> Result<T> {
-    let text =
-        fs::read_to_string(path).with_context(|| format!("failed to read '{}'", path.display()))?;
-    serde_json::from_str(&text).with_context(|| format!("failed to parse '{}'", path.display()))
-}
-
-fn write_text_file(path: &Path, value: &str) -> Result<()> {
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create '{}'", parent.display()))?;
-    }
-
-    fs::write(path, value).with_context(|| format!("failed to write '{}'", path.display()))
-}
-
-fn print_sniff_plan(
+fn print_sniff_plann(
     json: bool,
     json_out: Option<&Path>,
     md_out: Option<&Path>,
