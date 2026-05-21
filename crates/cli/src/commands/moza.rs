@@ -2022,6 +2022,44 @@ fn moza_post_authority_pidff_response_next_operator_step(lane: &Path) -> Value {
         .is_file();
     let protocol_review_recorded = lane.join(VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE).is_file();
     if protocol_review_recorded {
+        if let Some(mut step) = moza_passive_sniff_next_operator_step(lane) {
+            let label = json_string(&step, "label")
+                .unwrap_or("next passive correlation")
+                .to_string();
+            if let Some(step) = step.as_object_mut() {
+                step.insert(
+                    "summary".to_string(),
+                    Value::String(format!(
+                        "vendor protocol evidence review is recorded; next no-output semantic correlation evidence is the {label} passive USB capture, followed by non-claiming sniff receipt, operator notes, summary, and bundle artifacts"
+                    )),
+                );
+                step.insert(
+                    "source_reason".to_string(),
+                    Value::String("vendor_protocol_evidence_review_recorded".to_string()),
+                );
+                step.insert(
+                    "vendor_protocol_evidence_review_receipt".to_string(),
+                    Value::String(VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE.to_string()),
+                );
+                step.insert(
+                    "vendor_authority_attempt_receipt".to_string(),
+                    Value::String(VENDOR_AUTHORITY_ATTEMPT_FILE.to_string()),
+                );
+                step.insert(
+                    "post_authority_pidff_response_receipt".to_string(),
+                    Value::String(VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE.to_string()),
+                );
+                step.insert(
+                    "hardware_attempt_command_emitted".to_string(),
+                    Value::Bool(false),
+                );
+                step.insert(
+                    "blocked_actions".to_string(),
+                    serde_json::json!(vendor_authority_handoff_blocked_actions()),
+                );
+            }
+            return step;
+        }
         return serde_json::json!({
             "kind": "vendor_protocol_evidence_review_recorded",
             "summary": "vendor protocol evidence review is recorded; continue no-output protocol investigation before any future output plan",
@@ -41798,6 +41836,81 @@ mod tests {
             json_string(&reviewed, "vendor_protocol_evidence_review_receipt"),
             Some(VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE)
         );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_protocol_review_routes_next_missing_passive_correlation_capture() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        write_test_json_file(
+            &dir.path().join(VENDOR_AUTHORITY_ATTEMPT_FILE),
+            &serde_json::json!({ "artifact_kind": "moza_vendor_authority_attempt" }),
+        )?;
+        write_test_json_file(
+            &dir.path().join(VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE),
+            &serde_json::json!({ "artifact_kind": "moza_vendor_post_authority_pidff_response" }),
+        )?;
+        write_test_json_file(
+            &dir.path().join(VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE),
+            &serde_json::json!({
+                "artifact_kind": "moza_vendor_protocol_evidence_review",
+                "passive_tuple_registry_coverage": {
+                    "decode_candidate_semantic_correlation_plan": {
+                        "next_allowed_action": "capture or summarize named passive correlation scenarios; no output"
+                    }
+                }
+            }),
+        )?;
+        write_passive_sniff_artifacts(dir.path(), "pit-house-open-idle")?;
+        write_passive_sniff_artifacts(dir.path(), "pit-house-full-controls")?;
+        write_passive_sniff_plan_artifact(dir.path(), "pit-house-setting-change")?;
+
+        let step = moza_post_authority_pidff_response_next_operator_step(dir.path());
+        assert_eq!(
+            json_string(&step, "kind"),
+            Some("capture_passive_vendor_sniff")
+        );
+        assert_eq!(
+            json_string(&step, "scenario"),
+            Some("pit-house-setting-change")
+        );
+        assert_eq!(
+            json_string(&step, "source_reason"),
+            Some("vendor_protocol_evidence_review_recorded")
+        );
+        assert_eq!(
+            json_string(&step, "vendor_protocol_evidence_review_receipt"),
+            Some(VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE)
+        );
+        assert_eq!(json_bool(&step, "hardware_output_allowed_now"), Some(false));
+        assert_eq!(
+            json_bool(&step, "hardware_attempt_command_emitted"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&step, "no_openracing_output"), Some(true));
+        assert!(
+            json_string(&step, "summary").is_some_and(|summary| {
+                summary.contains("semantic correlation")
+                    && summary.contains("Pit House setting change")
+                    && summary.contains("non-claiming")
+            }),
+            "expected semantic-correlation capture summary: {step}"
+        );
+        let commands = step
+            .get("commands")
+            .and_then(Value::as_array)
+            .ok_or("expected passive capture commands")?;
+        assert!(commands.iter().any(|command| {
+            json_string(command, "name") == Some("write_operator_notes_template")
+                && json_string(command, "command")
+                    .is_some_and(|text| text.contains("wheelctl hardware sniff-notes-template"))
+        }));
+        assert!(commands.iter().all(|command| {
+            json_bool(command, "output_enabled") == Some(false)
+                && json_string(command, "command")
+                    .is_some_and(|text| text.starts_with("wheelctl hardware "))
+        }));
         Ok(())
     }
 
