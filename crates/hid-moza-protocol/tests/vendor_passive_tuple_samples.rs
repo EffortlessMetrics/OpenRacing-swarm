@@ -86,6 +86,71 @@ fn bytes_to_hex(bytes: &[u8]) -> String {
         .join("")
 }
 
+fn decode_candidate_sample_fixtures(review: &Value) -> Result<&Vec<Value>, io::Error> {
+    array_at(
+        review,
+        "/passive_tuple_registry_coverage/decode_candidate_sample_fixtures",
+    )
+}
+
+fn sample_frames_for_tuple<'a>(
+    fixtures: &'a [Value],
+    tuple_id: &str,
+) -> Result<&'a Vec<Value>, io::Error> {
+    for fixture in fixtures {
+        if str_field(fixture, "tuple_id")? == tuple_id {
+            return fixture
+                .get("sample_frames")
+                .and_then(Value::as_array)
+                .ok_or_else(|| {
+                    invalid_data(format!("tuple `{tuple_id}` is missing sample_frames"))
+                });
+        }
+    }
+
+    Err(invalid_data(format!(
+        "missing decode candidate fixture for tuple `{tuple_id}`"
+    )))
+}
+
+fn find_sample_frame<'a>(
+    fixtures: &'a [Value],
+    tuple_id: &str,
+    scenario: &str,
+    packet_ordinal: usize,
+    frame_ordinal_in_packet: usize,
+) -> Result<&'a Value, io::Error> {
+    for sample in sample_frames_for_tuple(fixtures, tuple_id)? {
+        if str_field(sample, "scenario")? == scenario
+            && usize_field(sample, "packet_ordinal")? == packet_ordinal
+            && usize_field(sample, "frame_ordinal_in_packet")? == frame_ordinal_in_packet
+        {
+            return Ok(sample);
+        }
+    }
+
+    Err(invalid_data(format!(
+        "missing sample `{tuple_id}` in `{scenario}` packet {packet_ordinal} frame {frame_ordinal_in_packet}"
+    )))
+}
+
+fn assert_unknown_sample_remains_non_sendable(sample: &Value) -> TestResult {
+    assert!(bool_field(sample, "checksum_valid")?);
+    assert!(!bool_field(sample, "hardware_output_authorized")?);
+    assert!(!bool_field(sample, "output_sendability_claim")?);
+
+    let frame = hex_to_bytes(str_field(sample, "frame_hex")?)?;
+    let observed = decode_observed_frame_shape(&frame)?;
+    assert!(observed.command.is_none());
+    assert!(matches!(
+        decode_fixture_frame(&frame),
+        Err(MozaSerialFrameError::UnknownCommand { group, command })
+            if group == observed.group && command == observed.command_id
+    ));
+
+    Ok(())
+}
+
 #[test]
 fn passive_decode_candidate_samples_are_non_claiming() -> TestResult {
     let review = protocol_evidence_review()?;
@@ -134,10 +199,7 @@ fn passive_decode_candidate_samples_are_non_claiming() -> TestResult {
 #[test]
 fn observed_decoder_accepts_sample_shape_without_promoting_unknown_tuples() -> TestResult {
     let review = protocol_evidence_review()?;
-    let fixtures = array_at(
-        &review,
-        "/passive_tuple_registry_coverage/decode_candidate_sample_fixtures",
-    )?;
+    let fixtures = decode_candidate_sample_fixtures(&review)?;
 
     let mut decoded_sample_count = 0usize;
     for fixture in fixtures {
@@ -191,5 +253,73 @@ fn observed_decoder_accepts_sample_shape_without_promoting_unknown_tuples() -> T
     }
 
     assert_eq!(decoded_sample_count, 30);
+    Ok(())
+}
+
+#[test]
+fn passive_decode_candidate_samples_preserve_repeated_packet_order_hints() -> TestResult {
+    let review = protocol_evidence_review()?;
+    let fixtures = decode_candidate_sample_fixtures(&review)?;
+
+    let mut paired_1b_samples = 0usize;
+    for first in sample_frames_for_tuple(fixtures, "0x5A/0x1B/0x00")? {
+        let scenario = str_field(first, "scenario")?;
+        let packet_ordinal = usize_field(first, "packet_ordinal")?;
+        let first_frame_ordinal = usize_field(first, "frame_ordinal_in_packet")?;
+        let second = find_sample_frame(
+            fixtures,
+            "0x5D/0x1B/0x01",
+            scenario,
+            packet_ordinal,
+            first_frame_ordinal.saturating_add(1),
+        )?;
+
+        assert_unknown_sample_remains_non_sendable(first)?;
+        assert_unknown_sample_remains_non_sendable(second)?;
+        paired_1b_samples = paired_1b_samples.saturating_add(1);
+    }
+
+    assert_eq!(
+        paired_1b_samples,
+        sample_frames_for_tuple(fixtures, "0x5D/0x1B/0x01")?.len()
+    );
+    assert_eq!(paired_1b_samples, 6);
+
+    let mut ordered_19_triads = 0usize;
+    for first in sample_frames_for_tuple(fixtures, "0x25/0x19/0x02")? {
+        let scenario = str_field(first, "scenario")?;
+        let packet_ordinal = usize_field(first, "packet_ordinal")?;
+        let first_frame_ordinal = usize_field(first, "frame_ordinal_in_packet")?;
+        let second = find_sample_frame(
+            fixtures,
+            "0x25/0x19/0x03",
+            scenario,
+            packet_ordinal,
+            first_frame_ordinal.saturating_add(1),
+        )?;
+        let third = find_sample_frame(
+            fixtures,
+            "0x25/0x19/0x01",
+            scenario,
+            packet_ordinal,
+            first_frame_ordinal.saturating_add(2),
+        )?;
+
+        assert_unknown_sample_remains_non_sendable(first)?;
+        assert_unknown_sample_remains_non_sendable(second)?;
+        assert_unknown_sample_remains_non_sendable(third)?;
+        ordered_19_triads = ordered_19_triads.saturating_add(1);
+    }
+
+    assert_eq!(
+        ordered_19_triads,
+        sample_frames_for_tuple(fixtures, "0x25/0x19/0x03")?.len()
+    );
+    assert_eq!(
+        ordered_19_triads,
+        sample_frames_for_tuple(fixtures, "0x25/0x19/0x01")?.len()
+    );
+    assert_eq!(ordered_19_triads, 6);
+
     Ok(())
 }

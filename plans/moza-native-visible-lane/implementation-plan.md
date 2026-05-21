@@ -90,6 +90,11 @@ tuples. Artifact-index and bench-wizard now surface that frequency-ranked decode
 priority and representative sample frames from the checked-in review receipt,
 but this still does not decode an approved semantic enable command, make any
 tuple sendable, authorize output, or promote native-visible readiness.
+The protocol crate validates those samples as observed wire-shape fixtures and
+now regression-checks their repeated packet-order hints: `0x5A/0x1B/0x00`
+precedes `0x5D/0x1B/0x01`, and `0x25/0x19/0x02`,
+`0x25/0x19/0x03`, then `0x25/0x19/0x01` repeat as an ordered triad. That is
+sequence-shape evidence only, not a semantic decode or sendability claim.
 
 The latest pre-output, lane analysis, role-status, and artifact-index receipts
 report six proven input roles and one remaining generic auxiliary role.
@@ -2865,6 +2870,77 @@ test, and source-of-truth updates. Do not remove checked-in passive sniff
 summaries, `vendor-protocol-evidence-review.json`, sample-frame preservation,
 consumed hardware attempts, prior undertravel evidence, or tuple frequency and
 registry coverage fields.
+
+## Work item: passive-sniff-tuple-sequence-regression
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: future semantic decode of repeated passive vendor-control tuple groups
+Blocked by: checked-in `vendor-protocol-evidence-review.json` decode-candidate sample frames
+
+### Goal
+
+Preserve repeated packet-order hints in the checked-in passive tuple samples so
+future decode work can reason about observed tuple groups instead of only
+frequency counts.
+
+### Production Delta
+
+Add a protocol crate regression test that reads the checked-in
+`vendor-protocol-evidence-review.json` decode-candidate sample fixtures and
+checks two recurring order patterns:
+
+- `0x5A/0x1B/0x00` is followed in the same packet by `0x5D/0x1B/0x01`.
+- `0x25/0x19/0x02`, `0x25/0x19/0x03`, and `0x25/0x19/0x01` repeat as an
+  ordered same-packet triad.
+
+Each sampled frame is still decoded only as an observed wire-shape fixture and
+still rejected by the semantic fixture decoder as an unknown command.
+
+### Non-goals
+
+No HID open, serial open, read-only query send, hardware output, authorization
+receipt, PIDFF rerun, force increase, direct HID report `0xaf`, high torque,
+serial config, firmware, DFU, native-control claim, native-visible claim,
+smoke-ready claim, Pit House coexistence claim, simulator claim, release-ready
+claim, raw `.pcapng` commit, semantic command decode, registry promotion, or
+tuple sendability claim.
+
+### Acceptance
+
+- The checked-in `0x5A/0x1B/0x00` samples are paired with
+  `0x5D/0x1B/0x01` samples in the same scenario and packet with adjacent frame
+  ordinals.
+- The checked-in `0x25/0x19/0x02` samples are followed by
+  `0x25/0x19/0x03` and `0x25/0x19/0x01` in the same scenario and packet with
+  adjacent frame ordinals.
+- Every sample used by the sequence regression still keeps
+  `hardware_output_authorized=false` and `output_sendability_claim=false`.
+- The observed-frame decoder accepts the sample frame shape, while the semantic
+  fixture decoder still rejects the tuples as unknown.
+- No readiness or sendability claim changes.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_passive_tuple_samples -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_serial_codec_fixtures -- --nocapture
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the passive tuple sequence regression and source-of-truth updates.
+Do not remove checked-in passive sniff summaries,
+`vendor-protocol-evidence-review.json`, sample-frame preservation, observed
+frame-shape decoding, consumed hardware attempts, prior undertravel evidence, or
+tuple frequency and registry coverage fields.
 
 ## Work item: native-visible-promotion
 

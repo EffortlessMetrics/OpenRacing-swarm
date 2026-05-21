@@ -1247,6 +1247,24 @@ commands = [
 ]
 
 [[work_item]]
+id = "passive-sniff-tuple-sequence-regression"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-passive-sniff-tuple-sequence-regression"
+current_pointer = "crates/hid-moza-protocol/tests/vendor_passive_tuple_samples.rs"
+claim_boundary = "No-output passive tuple packet-order regression only; validates repeated ordering hints in checked-in Pit House sample frames while keeping unknown tuples out of the semantic registry and without opening HID, opening serial, sending read-only queries, sending hardware output, creating authorization, native-control, native-visible, smoke-ready, coexistence, simulator, firmware, release-ready, semantic command, registry promotion, or tuple sendability claims."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_passive_tuple_samples -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_serial_codec_fixtures -- --nocapture",
+  "cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

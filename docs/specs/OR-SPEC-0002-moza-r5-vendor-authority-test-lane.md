@@ -134,6 +134,9 @@ their tuples are semantically known. That observed decoder MUST validate start
 byte, declared length, checksum, tuple fields, and payload slicing, but it MUST
 preserve unknown tuples as non-sendable `UnknownDoNotSend` evidence rather than
 promoting them into semantic registry commands.
+Observed sample regressions MAY also preserve packet-order hints for repeated
+unknown tuple groups, but those hints MUST remain non-sendable protocol-shape
+evidence until a future semantic decode and reviewed authorization path exists.
 
 ### Read-only status probe contract
 
