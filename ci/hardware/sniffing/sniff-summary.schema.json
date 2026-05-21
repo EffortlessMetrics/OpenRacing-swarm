@@ -265,6 +265,7 @@
         "host_to_device_report_ids",
         "standard_pidff_output_report_ids",
         "vendor_or_device_specific_output_candidate_report_ids",
+        "usbcom_serial_frame_summary",
         "decode_recommended",
         "native_control_evidence",
         "readiness_claim",
@@ -341,6 +342,147 @@
             "$ref": "#/$defs/hex8"
           },
           "uniqueItems": true
+        },
+        "usbcom_serial_frame_summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "frame_start",
+            "checksum_model",
+            "packet_count",
+            "payload_bytes",
+            "parsed_frame_count",
+            "checksum_valid_frame_count",
+            "checksum_invalid_frame_count",
+            "commandless_frame_count",
+            "truncated_frame_count",
+            "non_frame_byte_count",
+            "max_frames_per_packet",
+            "frame_shape_decode_gap",
+            "tuple_counts",
+            "native_control_evidence",
+            "readiness_claim",
+            "notes"
+          ],
+          "properties": {
+            "frame_start": {
+              "type": "string",
+              "const": "0x7E"
+            },
+            "checksum_model": {
+              "type": "string",
+              "const": "magic_13_wrapping_sum_over_frame_without_checksum"
+            },
+            "packet_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "payload_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "parsed_frame_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "checksum_valid_frame_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "checksum_invalid_frame_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "commandless_frame_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "truncated_frame_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "non_frame_byte_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_frames_per_packet": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "frame_shape_decode_gap": {
+              "type": "boolean"
+            },
+            "tuple_counts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "group",
+                  "device_id",
+                  "command",
+                  "payload_len_min",
+                  "payload_len_max",
+                  "count",
+                  "checksum_valid_count",
+                  "checksum_invalid_count"
+                ],
+                "properties": {
+                  "group": {
+                    "$ref": "#/$defs/hex8"
+                  },
+                  "device_id": {
+                    "$ref": "#/$defs/hex8"
+                  },
+                  "command": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/hex8"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "payload_len_min": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "payload_len_max": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "checksum_valid_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "checksum_invalid_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            },
+            "native_control_evidence": {
+              "type": "boolean",
+              "const": false
+            },
+            "readiness_claim": {
+              "type": "boolean",
+              "const": false
+            },
+            "notes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
         },
         "decode_recommended": {
           "type": "boolean"

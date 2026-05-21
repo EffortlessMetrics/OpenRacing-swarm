@@ -21,9 +21,11 @@ post-authority response as `post_authority_pidff_response_regressed`: baseline
 no-output protocol rail.
 
 The next native-visible investigation path is no-output Moza vendor-specific
-enable/control research. The next step is to review the already captured
-passive summaries and fill remaining no-output capture gaps before decoding
-report IDs or proposing any vendor-control output path.
+enable/control research. The current checked-in summaries now expose the Pit
+House USB CDC stream as length-prefixed `0x7E` serial-frame candidates, but they
+do not decode an approved semantic enable/mode command. The next step is to map
+those tuple IDs or fill remaining no-output capture gaps before proposing any
+vendor-control output path.
 
 ## Current Artifacts
 
@@ -41,6 +43,13 @@ The following passive sniff artifacts are committed:
 `wheelctl moza artifact-index` reports recorded scenarios as non-claiming
 receipt/summary evidence and leaves missing scenarios `partial_or_unaccepted`
 until matching `sniff-receipt.json` and `sniff-summary.json` artifacts exist.
+
+The committed Pit House summaries preserve 3,246 extracted host-to-device USB
+CDC payload packets and parse them into 7,863 candidate `0x7E` serial frames.
+All parsed candidate frames have valid checksums, zero checksum-invalid frames,
+and no frame-shape decode gap. The tuple IDs remain protocol-shape evidence
+only; no tuple is sendable without a future semantic decode, reviewed plan,
+fresh bench clear, and exact authorization.
 
 ## Boundaries
 

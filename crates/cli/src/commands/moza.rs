@@ -27719,9 +27719,16 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
     let mut total_host_to_device_data_len_bytes = 0u64;
     let mut total_host_to_device_payload_extracted_packet_count = 0u64;
     let mut total_host_to_device_payload_extracted_bytes = 0u64;
+    let mut total_host_to_device_serial_frame_packet_count = 0u64;
+    let mut total_host_to_device_serial_frame_count = 0u64;
+    let mut total_host_to_device_serial_frame_checksum_valid_count = 0u64;
+    let mut total_host_to_device_serial_frame_checksum_invalid_count = 0u64;
+    let mut total_host_to_device_serial_frame_commandless_count = 0u64;
     let mut total_device_to_host_packets = 0u64;
     let mut decode_gap_scenarios = Vec::new();
     let mut payload_export_gap_scenarios = Vec::new();
+    let mut serial_frame_shape_decode_gap_scenarios = Vec::new();
+    let mut host_to_device_serial_frame_tuple_ids = BTreeSet::new();
 
     for (scenario, label, focus, _warning) in moza_passive_sniff_navigation_requirements() {
         let review = vendor_protocol_sniff_scenario_review(sniff_root, scenario, label, focus)?;
@@ -27746,6 +27753,20 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
                 .saturating_add(review.host_to_device_payload_extracted_packet_count);
         total_host_to_device_payload_extracted_bytes = total_host_to_device_payload_extracted_bytes
             .saturating_add(review.host_to_device_payload_extracted_bytes);
+        total_host_to_device_serial_frame_packet_count =
+            total_host_to_device_serial_frame_packet_count
+                .saturating_add(review.host_to_device_serial_frame_packet_count);
+        total_host_to_device_serial_frame_count = total_host_to_device_serial_frame_count
+            .saturating_add(review.host_to_device_serial_frame_count);
+        total_host_to_device_serial_frame_checksum_valid_count =
+            total_host_to_device_serial_frame_checksum_valid_count
+                .saturating_add(review.host_to_device_serial_frame_checksum_valid_count);
+        total_host_to_device_serial_frame_checksum_invalid_count =
+            total_host_to_device_serial_frame_checksum_invalid_count
+                .saturating_add(review.host_to_device_serial_frame_checksum_invalid_count);
+        total_host_to_device_serial_frame_commandless_count =
+            total_host_to_device_serial_frame_commandless_count
+                .saturating_add(review.host_to_device_serial_frame_commandless_count);
         total_device_to_host_packets =
             total_device_to_host_packets.saturating_add(review.device_to_host_packets);
         if review.host_to_device_decode_gap {
@@ -27754,6 +27775,9 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
         if review.host_to_device_payload_export_gap {
             payload_export_gap_scenarios.push(review.scenario.clone());
         }
+        if review.host_to_device_serial_frame_shape_decode_gap {
+            serial_frame_shape_decode_gap_scenarios.push(review.scenario.clone());
+        }
         host_to_device_report_ids.extend(review.host_to_device_report_ids.iter().cloned());
         vendor_or_device_specific_output_candidate_report_ids.extend(
             review
@@ -27761,6 +27785,8 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
                 .iter()
                 .cloned(),
         );
+        host_to_device_serial_frame_tuple_ids
+            .extend(review.host_to_device_serial_frame_tuple_ids.iter().cloned());
         scenarios.push(review);
     }
 
@@ -27777,17 +27803,28 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
         total_host_to_device_data_len_bytes,
         total_host_to_device_payload_extracted_packet_count,
         total_host_to_device_payload_extracted_bytes,
+        total_host_to_device_serial_frame_packet_count,
+        total_host_to_device_serial_frame_count,
+        total_host_to_device_serial_frame_checksum_valid_count,
+        total_host_to_device_serial_frame_checksum_invalid_count,
+        total_host_to_device_serial_frame_commandless_count,
         total_device_to_host_packets,
         host_to_device_decode_gap_detected: total_host_to_device_unclassified_packets > 0,
         host_to_device_payload_export_gap_detected: total_host_to_device_payload_missing_packets
             > 0,
+        host_to_device_serial_frame_shape_decode_gap_detected:
+            !serial_frame_shape_decode_gap_scenarios.is_empty(),
         decode_gap_scenarios,
         payload_export_gap_scenarios,
+        serial_frame_shape_decode_gap_scenarios,
         host_to_device_report_ids: host_to_device_report_ids.into_iter().collect(),
         vendor_or_device_specific_output_candidate_report_ids:
             vendor_or_device_specific_output_candidate_report_ids
                 .into_iter()
                 .collect(),
+        host_to_device_serial_frame_tuple_ids: host_to_device_serial_frame_tuple_ids
+            .into_iter()
+            .collect(),
         decode_recommended_by_summaries,
         passive_summaries_native_control_evidence,
         scenarios,
@@ -27840,6 +27877,13 @@ fn vendor_protocol_sniff_scenario_review(
             host_to_device_payload_extracted_bytes: 0,
             host_to_device_payload_missing_packet_count: 0,
             host_to_device_payload_export_gap: false,
+            host_to_device_serial_frame_packet_count: 0,
+            host_to_device_serial_frame_count: 0,
+            host_to_device_serial_frame_checksum_valid_count: 0,
+            host_to_device_serial_frame_checksum_invalid_count: 0,
+            host_to_device_serial_frame_commandless_count: 0,
+            host_to_device_serial_frame_shape_decode_gap: false,
+            host_to_device_serial_frame_tuple_ids: Vec::new(),
             device_to_host_packets: 0,
             standard_pidff_output_report_count: 0,
             vendor_or_device_specific_output_candidate_count: 0,
@@ -27912,6 +27956,33 @@ fn vendor_protocol_sniff_scenario_review(
         .get("host_to_device_payload_export_gap")
         .and_then(Value::as_bool)
         .unwrap_or(host_to_device_payload_missing_packet_count > 0);
+    let usbcom_serial_frame_summary = classification.get("usbcom_serial_frame_summary");
+    let host_to_device_serial_frame_packet_count = usbcom_serial_frame_summary
+        .and_then(|summary| summary.get("packet_count"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let host_to_device_serial_frame_count = usbcom_serial_frame_summary
+        .and_then(|summary| summary.get("parsed_frame_count"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let host_to_device_serial_frame_checksum_valid_count = usbcom_serial_frame_summary
+        .and_then(|summary| summary.get("checksum_valid_frame_count"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let host_to_device_serial_frame_checksum_invalid_count = usbcom_serial_frame_summary
+        .and_then(|summary| summary.get("checksum_invalid_frame_count"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let host_to_device_serial_frame_commandless_count = usbcom_serial_frame_summary
+        .and_then(|summary| summary.get("commandless_frame_count"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let host_to_device_serial_frame_shape_decode_gap = usbcom_serial_frame_summary
+        .and_then(|summary| summary.get("frame_shape_decode_gap"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let host_to_device_serial_frame_tuple_ids =
+        usbcom_serial_frame_tuple_ids(usbcom_serial_frame_summary);
     let mut notes =
         vec!["checked-in passive summary is non-claiming protocol evidence".to_string()];
     if host_to_device_decode_gap {
@@ -27944,6 +28015,11 @@ fn vendor_protocol_sniff_scenario_review(
             );
         }
     }
+    if host_to_device_serial_frame_count > 0 {
+        notes.push(format!(
+            "host-to-device USB CDC payloads parse into {host_to_device_serial_frame_count} candidate 0x7E serial frames with {host_to_device_serial_frame_checksum_valid_count} valid checksum(s); tuple IDs remain protocol-shape evidence only"
+        ));
+    }
 
     Ok(VendorProtocolSniffScenarioReview {
         scenario: scenario.to_string(),
@@ -27974,6 +28050,13 @@ fn vendor_protocol_sniff_scenario_review(
         host_to_device_payload_extracted_bytes,
         host_to_device_payload_missing_packet_count,
         host_to_device_payload_export_gap,
+        host_to_device_serial_frame_packet_count,
+        host_to_device_serial_frame_count,
+        host_to_device_serial_frame_checksum_valid_count,
+        host_to_device_serial_frame_checksum_invalid_count,
+        host_to_device_serial_frame_commandless_count,
+        host_to_device_serial_frame_shape_decode_gap,
+        host_to_device_serial_frame_tuple_ids,
         device_to_host_packets: summary
             .pointer("/usb_transfer_summary/device_to_host")
             .and_then(Value::as_u64)
@@ -28023,6 +28106,27 @@ fn passive_sniff_host_to_device_classified_packet_count(summary: &Value) -> u64 
                 .sum()
         })
         .unwrap_or(0)
+}
+
+fn usbcom_serial_frame_tuple_ids(summary: Option<&Value>) -> Vec<String> {
+    summary
+        .and_then(|summary| summary.get("tuple_counts"))
+        .and_then(Value::as_array)
+        .map(|tuples| {
+            tuples
+                .iter()
+                .filter_map(|tuple| {
+                    let group = tuple.get("group").and_then(Value::as_str)?;
+                    let device_id = tuple.get("device_id").and_then(Value::as_str)?;
+                    let command = tuple
+                        .get("command")
+                        .and_then(Value::as_str)
+                        .unwrap_or("none");
+                    Some(format!("{group}/{device_id}/{command}"))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn validate_passive_sniff_summary(path: &Path, value: &Value) -> Result<()> {
@@ -29796,13 +29900,21 @@ struct VendorProtocolSniffEvidence {
     total_host_to_device_data_len_bytes: u64,
     total_host_to_device_payload_extracted_packet_count: u64,
     total_host_to_device_payload_extracted_bytes: u64,
+    total_host_to_device_serial_frame_packet_count: u64,
+    total_host_to_device_serial_frame_count: u64,
+    total_host_to_device_serial_frame_checksum_valid_count: u64,
+    total_host_to_device_serial_frame_checksum_invalid_count: u64,
+    total_host_to_device_serial_frame_commandless_count: u64,
     total_device_to_host_packets: u64,
     host_to_device_decode_gap_detected: bool,
     host_to_device_payload_export_gap_detected: bool,
+    host_to_device_serial_frame_shape_decode_gap_detected: bool,
     decode_gap_scenarios: Vec<String>,
     payload_export_gap_scenarios: Vec<String>,
+    serial_frame_shape_decode_gap_scenarios: Vec<String>,
     host_to_device_report_ids: Vec<String>,
     vendor_or_device_specific_output_candidate_report_ids: Vec<String>,
+    host_to_device_serial_frame_tuple_ids: Vec<String>,
     decode_recommended_by_summaries: bool,
     passive_summaries_native_control_evidence: bool,
     scenarios: Vec<VendorProtocolSniffScenarioReview>,
@@ -29834,6 +29946,13 @@ struct VendorProtocolSniffScenarioReview {
     host_to_device_payload_extracted_bytes: u64,
     host_to_device_payload_missing_packet_count: u64,
     host_to_device_payload_export_gap: bool,
+    host_to_device_serial_frame_packet_count: u64,
+    host_to_device_serial_frame_count: u64,
+    host_to_device_serial_frame_checksum_valid_count: u64,
+    host_to_device_serial_frame_checksum_invalid_count: u64,
+    host_to_device_serial_frame_commandless_count: u64,
+    host_to_device_serial_frame_shape_decode_gap: bool,
+    host_to_device_serial_frame_tuple_ids: Vec<String>,
     device_to_host_packets: u64,
     standard_pidff_output_report_count: u64,
     vendor_or_device_specific_output_candidate_count: u64,
@@ -38677,6 +38796,48 @@ mod tests {
     }
 
     fn sample_passive_sniff_summary(matched_packets: u64) -> Value {
+        let usbcom_serial_frame_summary = serde_json::json!({
+            "frame_start": "0x7E",
+            "checksum_model": "magic_13_wrapping_sum_over_frame_without_checksum",
+            "packet_count": 0,
+            "payload_bytes": 0,
+            "parsed_frame_count": 0,
+            "checksum_valid_frame_count": 0,
+            "checksum_invalid_frame_count": 0,
+            "commandless_frame_count": 0,
+            "truncated_frame_count": 0,
+            "non_frame_byte_count": 0,
+            "max_frames_per_packet": 0,
+            "frame_shape_decode_gap": false,
+            "tuple_counts": [],
+            "native_control_evidence": false,
+            "readiness_claim": false,
+            "notes": []
+        });
+        let report_classification_summary = serde_json::json!({
+            "standard_pidff_output_report_count": 0,
+            "vendor_or_device_specific_output_candidate_count": 0,
+            "input_or_status_report_count": 1,
+            "host_to_device_packet_count": 10,
+            "host_to_device_classified_packet_count": 0,
+            "host_to_device_unclassified_packet_count": 10,
+            "host_to_device_decode_gap": true,
+            "host_to_device_data_len_packet_count": 10,
+            "host_to_device_data_len_bytes": 200,
+            "host_to_device_payload_extracted_packet_count": 0,
+            "host_to_device_payload_extracted_bytes": 0,
+            "host_to_device_payload_missing_packet_count": 10,
+            "host_to_device_payload_export_gap": true,
+            "host_to_device_report_ids": [],
+            "standard_pidff_output_report_ids": [],
+            "vendor_or_device_specific_output_candidate_report_ids": [],
+            "usbcom_serial_frame_summary": usbcom_serial_frame_summary,
+            "decode_recommended": true,
+            "native_control_evidence": false,
+            "readiness_claim": false,
+            "notes": []
+        });
+
         serde_json::json!({
             "schema_version": 1,
             "success": true,
@@ -38710,28 +38871,7 @@ mod tests {
                     "count": 10
                 }
             ],
-            "report_classification_summary": {
-                "standard_pidff_output_report_count": 0,
-                "vendor_or_device_specific_output_candidate_count": 0,
-                "input_or_status_report_count": 1,
-                "host_to_device_packet_count": 10,
-                "host_to_device_classified_packet_count": 0,
-                "host_to_device_unclassified_packet_count": 10,
-                "host_to_device_decode_gap": true,
-                "host_to_device_data_len_packet_count": 10,
-                "host_to_device_data_len_bytes": 200,
-                "host_to_device_payload_extracted_packet_count": 0,
-                "host_to_device_payload_extracted_bytes": 0,
-                "host_to_device_payload_missing_packet_count": 10,
-                "host_to_device_payload_export_gap": true,
-                "host_to_device_report_ids": [],
-                "standard_pidff_output_report_ids": [],
-                "vendor_or_device_specific_output_candidate_report_ids": [],
-                "decode_recommended": true,
-                "native_control_evidence": false,
-                "readiness_claim": false,
-                "notes": []
-            },
+            "report_classification_summary": report_classification_summary,
             "descriptor_candidates": [],
             "evidence_status": "passive_external_usb_observation",
             "native_control_evidence": false,
@@ -38749,6 +38889,47 @@ mod tests {
             },
             "notes": []
         })
+    }
+
+    fn sample_passive_sniff_summary_with_usbcom_frames(
+        matched_packets: u64,
+        frame_count: u64,
+    ) -> Value {
+        let mut summary = sample_passive_sniff_summary(matched_packets);
+        if let Some(frame_summary) =
+            summary.pointer_mut("/report_classification_summary/usbcom_serial_frame_summary")
+        {
+            *frame_summary = serde_json::json!({
+                "frame_start": "0x7E",
+                "checksum_model": "magic_13_wrapping_sum_over_frame_without_checksum",
+                "packet_count": frame_count,
+                "payload_bytes": frame_count * 6,
+                "parsed_frame_count": frame_count,
+                "checksum_valid_frame_count": frame_count,
+                "checksum_invalid_frame_count": 0,
+                "commandless_frame_count": 0,
+                "truncated_frame_count": 0,
+                "non_frame_byte_count": 0,
+                "max_frames_per_packet": 2,
+                "frame_shape_decode_gap": false,
+                "tuple_counts": [
+                    {
+                        "group": "0x5A",
+                        "device_id": "0x1B",
+                        "command": "0x00",
+                        "payload_len_min": 0,
+                        "payload_len_max": 0,
+                        "count": frame_count,
+                        "checksum_valid_count": frame_count,
+                        "checksum_invalid_count": 0
+                    }
+                ],
+                "native_control_evidence": false,
+                "readiness_claim": false,
+                "notes": []
+            });
+        }
+        summary
     }
 
     fn write_sample_sniff_scenario(
@@ -38801,12 +38982,12 @@ mod tests {
         write_sample_sniff_scenario(
             &sniff_root,
             "pit-house-open-idle",
-            &sample_passive_sniff_summary(100),
+            &sample_passive_sniff_summary_with_usbcom_frames(100, 2),
         )?;
         write_sample_sniff_scenario(
             &sniff_root,
             "pit-house-full-controls",
-            &sample_passive_sniff_summary(200),
+            &sample_passive_sniff_summary_with_usbcom_frames(200, 3),
         )?;
         let command_registry_path = PathBuf::from("fixtures/moza/r5/vendor-command-registry.json");
         let command_registry: Value = serde_json::from_str(include_str!(
@@ -38889,6 +39070,32 @@ mod tests {
                 .pointer("/sniff_evidence/total_host_to_device_payload_extracted_bytes")
                 .and_then(Value::as_u64),
             Some(0)
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/total_host_to_device_serial_frame_count")
+                .and_then(Value::as_u64),
+            Some(5)
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/total_host_to_device_serial_frame_checksum_valid_count")
+                .and_then(Value::as_u64),
+            Some(5)
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/host_to_device_serial_frame_shape_decode_gap_detected")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/host_to_device_serial_frame_tuple_ids")
+                .and_then(Value::as_array)
+                .and_then(|tuples| tuples.first())
+                .and_then(Value::as_str),
+            Some("0x5A/0x1B/0x00")
         );
         assert_eq!(
             value

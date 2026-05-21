@@ -83,10 +83,18 @@
         "total_host_to_device_data_len_bytes",
         "total_host_to_device_payload_extracted_packet_count",
         "total_host_to_device_payload_extracted_bytes",
+        "total_host_to_device_serial_frame_packet_count",
+        "total_host_to_device_serial_frame_count",
+        "total_host_to_device_serial_frame_checksum_valid_count",
+        "total_host_to_device_serial_frame_checksum_invalid_count",
+        "total_host_to_device_serial_frame_commandless_count",
         "host_to_device_decode_gap_detected",
         "host_to_device_payload_export_gap_detected",
+        "host_to_device_serial_frame_shape_decode_gap_detected",
         "decode_gap_scenarios",
         "payload_export_gap_scenarios",
+        "serial_frame_shape_decode_gap_scenarios",
+        "host_to_device_serial_frame_tuple_ids",
         "decode_recommended_by_summaries",
         "passive_summaries_native_control_evidence",
         "scenarios"
@@ -123,8 +131,31 @@
           "type": "integer",
           "minimum": 0
         },
+        "total_host_to_device_serial_frame_packet_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_host_to_device_serial_frame_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_host_to_device_serial_frame_checksum_valid_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_host_to_device_serial_frame_checksum_invalid_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_host_to_device_serial_frame_commandless_count": {
+          "type": "integer",
+          "minimum": 0
+        },
         "host_to_device_decode_gap_detected": { "type": "boolean" },
         "host_to_device_payload_export_gap_detected": { "type": "boolean" },
+        "host_to_device_serial_frame_shape_decode_gap_detected": {
+          "type": "boolean"
+        },
         "decode_gap_scenarios": {
           "type": "array",
           "items": { "type": "string" }
@@ -132,6 +163,15 @@
         "payload_export_gap_scenarios": {
           "type": "array",
           "items": { "type": "string" }
+        },
+        "serial_frame_shape_decode_gap_scenarios": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "host_to_device_serial_frame_tuple_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
         },
         "decode_recommended_by_summaries": { "type": "boolean" },
         "passive_summaries_native_control_evidence": { "const": false },
@@ -147,6 +187,13 @@
               "host_to_device_decode_gap",
               "host_to_device_payload_missing_packet_count",
               "host_to_device_payload_export_gap",
+              "host_to_device_serial_frame_packet_count",
+              "host_to_device_serial_frame_count",
+              "host_to_device_serial_frame_checksum_valid_count",
+              "host_to_device_serial_frame_checksum_invalid_count",
+              "host_to_device_serial_frame_commandless_count",
+              "host_to_device_serial_frame_shape_decode_gap",
+              "host_to_device_serial_frame_tuple_ids",
               "native_control_evidence",
               "readiness_claim"
             ],
@@ -164,6 +211,34 @@
                 "minimum": 0
               },
               "host_to_device_payload_export_gap": { "type": "boolean" },
+              "host_to_device_serial_frame_packet_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "host_to_device_serial_frame_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "host_to_device_serial_frame_checksum_valid_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "host_to_device_serial_frame_checksum_invalid_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "host_to_device_serial_frame_commandless_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "host_to_device_serial_frame_shape_decode_gap": {
+                "type": "boolean"
+              },
+              "host_to_device_serial_frame_tuple_ids": {
+                "type": "array",
+                "items": { "type": "string" },
+                "uniqueItems": true
+              },
               "native_control_evidence": { "const": false },
               "readiness_claim": { "const": false }
             },
