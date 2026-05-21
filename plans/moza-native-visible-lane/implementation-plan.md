@@ -3610,6 +3610,77 @@ checklist wording, focused tests, and source-of-truth updates. Do not remove
 passive sniff plans, checked-in sniff evidence, consumed hardware attempts, or
 protocol evidence review receipts.
 
+## Work item: sniff-notes-usbpcap-device-hints
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: reproducible passive USBPcap capture setup for setting-change evidence
+Blocked by: the passive capture handoff pointed at the hardware-doctor
+`usbpcap_moza_device_hints` JSON path, but the operator notes template did not
+carry the exact interface/device-filter hint used for the capture session.
+
+### Goal
+
+Make the local non-claiming operator notes template preserve the fresh
+hardware-doctor USBPcap Moza device hint, so later `pit-house-setting-change`
+evidence can tie its notes to the exact passive capture interface and device
+filter.
+
+### Production Delta
+
+Extend `wheelctl hardware sniff-notes-template` with optional
+`--hardware-doctor`. When provided, the command reads the observe-only hardware
+doctor receipt, extracts `/tools/usbpcap_descriptor_capture/usbpcap_moza_device_hints`,
+and renders those hints into the local Markdown notes template with the
+hardware-doctor no-output flags. Update the bench-wizard generated
+`write_operator_notes_template` command to pass
+`target/moza-current/passive-sniff-capture-hardware-doctor.json`.
+
+### Non-goals
+
+No HID open, serial open, read-only query send, hardware output, authorization
+receipt, PIDFF rerun, force increase, direct HID report `0xaf`, high torque,
+serial config, firmware, DFU, native-control claim, native-visible claim,
+smoke-ready claim, Pit House coexistence claim, simulator claim,
+release-ready claim, raw `.pcapng` commit, sniff receipt, sniff summary, bundle
+manifest, semantic command decode, registry promotion, or tuple sendability
+claim.
+
+### Acceptance
+
+- `sniff-notes-template` remains no-output and optional-hint only.
+- When a hardware-doctor receipt includes Moza USBPcap hints, generated notes
+  render the source receipt, no-output flag summary, interface, `--devices`
+  value, suggested capture filter, and matched device stack.
+- Bench-wizard generated `write_operator_notes_template` commands parse and
+  pass the hardware-doctor path after telling the operator to refresh hardware
+  doctor first.
+- No pcap, sniff receipt, summary, bundle, semantic decode, hardware output, or
+  readiness claim is created.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_notes_template -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_sniff_next_operator_commands_parse -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- --json hardware sniff-notes-template --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-plan.json --hardware-doctor target/moza-current/passive-sniff-capture-hardware-doctor.json --out target/sniff/pit-house-setting-change/operator-notes.md
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the optional hardware-doctor argument, operator-notes hint
+rendering, bench-wizard generated command update, focused tests, and
+source-of-truth updates. Do not remove passive sniff plans, checked-in sniff
+evidence, local raw capture attempts, consumed hardware attempts, or protocol
+evidence review receipts.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

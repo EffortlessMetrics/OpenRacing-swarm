@@ -2660,7 +2660,7 @@ fn moza_passive_sniff_next_operator_step(lane: &Path) -> Option<Value> {
                     "name": "write_operator_notes_template",
                     "output_enabled": false,
                     "command": format!(
-                        "wheelctl hardware sniff-notes-template --plan {} --out {}",
+                        "wheelctl hardware sniff-notes-template --plan {} --hardware-doctor target/moza-current/passive-sniff-capture-hardware-doctor.json --out {}",
                         command_arg(&plan_artifact.display().to_string()),
                         command_arg(&local_operator_notes.display().to_string())
                     )

@@ -75,9 +75,11 @@ pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
             };
             sniff_receipt(json, &request, json_out.as_deref()).await
         }
-        HardwareCommands::SniffNotesTemplate { plan, out } => {
-            sniff_notes_template(json, plan, out).await
-        }
+        HardwareCommands::SniffNotesTemplate {
+            plan,
+            hardware_doctor,
+            out,
+        } => sniff_notes_template(json, plan, hardware_doctor.as_deref(), out).await,
         HardwareCommands::SniffSummary {
             pcapng,
             vendor,
@@ -244,9 +246,15 @@ async fn sniff_receipt(
     print_sniff_receipt(json, json_out, &receipt)
 }
 
-async fn sniff_notes_template(json: bool, plan: &Path, out: &Path) -> Result<()> {
+async fn sniff_notes_template(
+    json: bool,
+    plan: &Path,
+    hardware_doctor: Option<&Path>,
+    out: &Path,
+) -> Result<()> {
     let stored_plan = read_and_validate_sniff_plan(plan)?;
-    let template = render_sniff_operator_notes_template(plan, &stored_plan);
+    let capture_hints = sniff_notes_capture_hints_from_hardware_doctor(hardware_doctor)?;
+    let template = render_sniff_operator_notes_template(plan, &stored_plan, capture_hints.as_ref());
     write_text_file(out, &template)?;
     let receipt = HardwareSniffNotesTemplateReceipt {
         schema_version: 1,
@@ -254,10 +262,14 @@ async fn sniff_notes_template(json: bool, plan: &Path, out: &Path) -> Result<()>
         command: "wheelctl hardware sniff-notes-template",
         generated_at_utc: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
         plan_path: required_path_display(plan, "plan")?,
+        hardware_doctor_path: hardware_doctor
+            .map(|path| required_path_display(path, "hardware-doctor"))
+            .transpose()?,
         out_path: required_path_display(out, "out")?,
         scenario: stored_plan.scenario,
         operator: stored_plan.operator,
         device_note: stored_plan.device_note,
+        capture_hints,
         evidence_status: SNIFF_EVIDENCE_STATUS,
         native_control_evidence: false,
         openracing_hardware_output: false,
@@ -1619,6 +1631,85 @@ fn validate_sniff_scenario(value: &str) -> Result<()> {
     }
 }
 
+fn sniff_notes_capture_hints_from_hardware_doctor(
+    path: Option<&Path>,
+) -> Result<Option<HardwareSniffNotesCaptureHints>> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+
+    let receipt: serde_json::Value = read_json_file(path)?;
+    let receipt_flags = HardwareSniffNotesDoctorFlags {
+        no_hid_device_opened: json_bool_field(&receipt, "no_hid_device_opened"),
+        no_ffb_writes: json_bool_field(&receipt, "no_ffb_writes"),
+        no_output_reports: json_bool_field(&receipt, "no_output_reports"),
+        no_feature_reports: json_bool_field(&receipt, "no_feature_reports"),
+        no_serial_config_commands: json_bool_field(&receipt, "no_serial_config_commands"),
+        no_firmware_or_dfu_commands: json_bool_field(&receipt, "no_firmware_or_dfu_commands"),
+    };
+
+    let hints = receipt
+        .pointer("/tools/usbpcap_descriptor_capture/usbpcap_moza_device_hints")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(sniff_notes_capture_hint_from_value)
+        .collect::<Vec<_>>();
+
+    Ok(Some(HardwareSniffNotesCaptureHints {
+        source: required_path_display(path, "hardware-doctor")?,
+        receipt_flags,
+        hint_count: hints.len(),
+        hints,
+        notes: vec![
+            "hardware doctor is observe-only; these hints only identify the passive capture interface and device filter".to_string(),
+            "operator notes do not prove a pcap capture exists and do not authorize OpenRacing output".to_string(),
+        ],
+    }))
+}
+
+fn sniff_notes_capture_hint_from_value(
+    value: &serde_json::Value,
+) -> Option<HardwareSniffNotesUsbPcapHint> {
+    let usbpcap_interface = value
+        .get("usbpcap_interface")
+        .and_then(serde_json::Value::as_str)?
+        .to_string();
+    let capture_devices_value = value
+        .get("capture_devices_value")
+        .and_then(serde_json::Value::as_str)?
+        .to_string();
+    let matched_device_displays = value
+        .get("matched_device_displays")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let suggested_capture_filter = value
+        .get("suggested_capture_filter")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            format!("select {usbpcap_interface} with USBPcap --devices {capture_devices_value}")
+        });
+
+    Some(HardwareSniffNotesUsbPcapHint {
+        usbpcap_interface,
+        capture_devices_value,
+        matched_device_displays,
+        suggested_capture_filter,
+    })
+}
+
+fn json_bool_field(value: &serde_json::Value, field: &str) -> bool {
+    value
+        .get(field)
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
 fn render_sniff_plan_markdown(plan: &HardwareSniffPlanArtifact) -> String {
     let mut out = String::new();
     out.push_str("# Passive USB Sniff Plan\n\n");
@@ -1671,6 +1762,7 @@ fn render_sniff_plan_markdown(plan: &HardwareSniffPlanArtifact) -> String {
 fn render_sniff_operator_notes_template(
     plan_path: &Path,
     plan: &StoredHardwareSniffPlan,
+    capture_hints: Option<&HardwareSniffNotesCaptureHints>,
 ) -> String {
     let mut out = String::new();
     out.push_str("# Passive USB Sniff Operator Notes\n\n");
@@ -1685,6 +1777,47 @@ fn render_sniff_operator_notes_template(
     out.push_str("## Required Notes\n\n");
     for field in &plan.operator_notes_required {
         out.push_str(&format!("- [ ] {field}:\n"));
+    }
+
+    if let Some(capture_hints) = capture_hints {
+        out.push_str("\n## Capture Tool Hints\n\n");
+        out.push_str(&format!(
+            "Hardware doctor receipt: `{}`\n\n",
+            capture_hints.source
+        ));
+        out.push_str(&format!(
+            "- [ ] Hardware doctor no-HID/no-output/no-feature/no-serial-config/no-firmware flags stayed true: `{}`\n",
+            capture_hints.receipt_flags.all_no_output_flags_true()
+        ));
+        if capture_hints.hints.is_empty() {
+            out.push_str(
+                "- [ ] No Moza USBPcap device hint was present in the hardware doctor receipt.\n",
+            );
+        } else {
+            for hint in &capture_hints.hints {
+                out.push_str(&format!(
+                    "- [ ] USBPcap interface used: `{}`\n",
+                    hint.usbpcap_interface
+                ));
+                out.push_str(&format!(
+                    "- [ ] USBPcap device filter used: `--devices {}`\n",
+                    hint.capture_devices_value
+                ));
+                out.push_str(&format!(
+                    "- [ ] Suggested capture filter: `{}`\n",
+                    hint.suggested_capture_filter
+                ));
+                if !hint.matched_device_displays.is_empty() {
+                    out.push_str(&format!(
+                        "- [ ] Matched device stack: `{}`\n",
+                        hint.matched_device_displays.join("`, `")
+                    ));
+                }
+            }
+        }
+        for note in &capture_hints.notes {
+            out.push_str(&format!("- [ ] Hint boundary: {note}\n"));
+        }
     }
 
     out.push_str("\n## Capture Safety Confirmations\n\n");
@@ -5209,10 +5342,14 @@ struct HardwareSniffNotesTemplateReceipt {
     command: &'static str,
     generated_at_utc: String,
     plan_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hardware_doctor_path: Option<String>,
     out_path: String,
     scenario: String,
     operator: String,
     device_note: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    capture_hints: Option<HardwareSniffNotesCaptureHints>,
     evidence_status: &'static str,
     native_control_evidence: bool,
     openracing_hardware_output: bool,
@@ -5221,6 +5358,44 @@ struct HardwareSniffNotesTemplateReceipt {
     satisfies_smoke_ready: bool,
     satisfies_release_ready: bool,
     readiness_claims: HardwareSniffReadinessClaims,
+}
+
+#[derive(Debug, Serialize)]
+struct HardwareSniffNotesCaptureHints {
+    source: String,
+    receipt_flags: HardwareSniffNotesDoctorFlags,
+    hint_count: usize,
+    hints: Vec<HardwareSniffNotesUsbPcapHint>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct HardwareSniffNotesDoctorFlags {
+    no_hid_device_opened: bool,
+    no_ffb_writes: bool,
+    no_output_reports: bool,
+    no_feature_reports: bool,
+    no_serial_config_commands: bool,
+    no_firmware_or_dfu_commands: bool,
+}
+
+impl HardwareSniffNotesDoctorFlags {
+    fn all_no_output_flags_true(&self) -> bool {
+        self.no_hid_device_opened
+            && self.no_ffb_writes
+            && self.no_output_reports
+            && self.no_feature_reports
+            && self.no_serial_config_commands
+            && self.no_firmware_or_dfu_commands
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct HardwareSniffNotesUsbPcapHint {
+    usbpcap_interface: String,
+    capture_devices_value: String,
+    matched_device_displays: Vec<String>,
+    suggested_capture_filter: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -6852,7 +7027,7 @@ mod tests {
             let plan_path = dir.path().join("sniff-plan.json");
             write_json_file(&plan_path, &plan)?;
             let stored = read_and_validate_sniff_plan(&plan_path)?;
-            let notes = render_sniff_operator_notes_template(&plan_path, &stored);
+            let notes = render_sniff_operator_notes_template(&plan_path, &stored, None);
 
             for field in PIT_HOUSE_SETTING_CHANGE_OPERATOR_NOTES_REQUIRED {
                 assert!(
@@ -6898,7 +7073,7 @@ mod tests {
             let dir = tempfile::tempdir()?;
             let plan_path = write_sample_plan(dir.path())?;
             let plan = read_and_validate_sniff_plan(&plan_path)?;
-            let notes = render_sniff_operator_notes_template(&plan_path, &plan);
+            let notes = render_sniff_operator_notes_template(&plan_path, &plan, None);
 
             assert!(notes.contains("# Passive USB Sniff Operator Notes"));
             assert!(notes.contains("- [ ] scenario performed:"));
@@ -6907,6 +7082,52 @@ mod tests {
             assert!(notes.contains("native visible"));
             assert!(notes.contains("sniff-notes-template"));
             assert!(notes.contains("Raw pcapng commit default remained `false`"));
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_notes_template_renders_hardware_doctor_usbpcap_hints() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let plan_path = write_sample_plan(dir.path())?;
+            let plan = read_and_validate_sniff_plan(&plan_path)?;
+            let doctor_path = dir.path().join("hardware-doctor.json");
+            let doctor = serde_json::json!({
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_output_reports": true,
+                "no_feature_reports": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "tools": {
+                    "usbpcap_descriptor_capture": {
+                        "usbpcap_moza_device_hints": [
+                            {
+                                "usbpcap_interface": "\\\\.\\USBPcap2",
+                                "capture_devices_value": "3",
+                                "matched_device_displays": [
+                                    "USB Serial Device (COM4)",
+                                    "MOZA Windows Driver"
+                                ],
+                                "suggested_capture_filter": "select \\\\.\\USBPcap2 with USBPcap --devices 3"
+                            }
+                        ]
+                    }
+                }
+            });
+            write_json_file(&doctor_path, &doctor)?;
+
+            let capture_hints = sniff_notes_capture_hints_from_hardware_doctor(Some(&doctor_path))?
+                .ok_or("expected capture hints")?;
+            let notes =
+                render_sniff_operator_notes_template(&plan_path, &plan, Some(&capture_hints));
+
+            assert!(capture_hints.receipt_flags.all_no_output_flags_true());
+            assert_eq!(capture_hints.hint_count, 1);
+            assert!(notes.contains("## Capture Tool Hints"));
+            assert!(notes.contains("USBPcap interface used: `\\\\.\\USBPcap2`"));
+            assert!(notes.contains("USBPcap device filter used: `--devices 3`"));
+            assert!(notes.contains("MOZA Windows Driver"));
+            assert!(notes.contains("OpenRacing output"));
             Ok(())
         }
 
