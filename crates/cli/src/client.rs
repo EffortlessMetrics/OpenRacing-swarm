@@ -14,12 +14,10 @@ use racing_wheel_schemas::generated::wheel::v1 as wire;
 use racing_wheel_schemas::telemetry::TelemetryData as SchemasTelemetryData;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio_stream::StreamExt;
 
-/// Default gRPC endpoint for the wheeld service
-const DEFAULT_ENDPOINT: &str = "http://127.0.0.1:50051";
+mod connection;
 
 // ---------------------------------------------------------------------------
 // Backend enum -- either a live gRPC channel or a self-contained mock
@@ -45,25 +43,8 @@ impl WheelClient {
     /// If `endpoint` is `None`, connects to the default endpoint.
     /// Returns `CliError::ServiceUnavailable` if the service cannot be reached.
     pub async fn connect(endpoint: Option<&str>) -> Result<Self> {
-        let endpoint_str = endpoint.unwrap_or(DEFAULT_ENDPOINT);
-
-        // Validate endpoint format
-        if !endpoint_str.starts_with("http://") && !endpoint_str.starts_with("https://") {
-            return Err(CliError::ServiceUnavailable("Invalid endpoint format".to_string()).into());
-        }
-
-        let channel = tonic::transport::Endpoint::from_shared(endpoint_str.to_string())
-            .map_err(|e| CliError::ServiceUnavailable(format!("Invalid endpoint: {}", e)))?
-            .connect_timeout(Duration::from_secs(3))
-            .timeout(Duration::from_secs(10))
-            .connect()
-            .await
-            .map_err(|e| {
-                CliError::ServiceUnavailable(format!(
-                    "Could not connect to wheeld service at {}: {}. Is wheeld running?",
-                    endpoint_str, e
-                ))
-            })?;
+        let endpoint_str = connection::resolve_endpoint(endpoint)?;
+        let channel = connection::connect_channel(endpoint_str).await?;
 
         let grpc_client = wire::wheel_service_client::WheelServiceClient::new(channel);
 
