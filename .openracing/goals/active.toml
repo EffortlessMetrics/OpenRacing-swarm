@@ -1505,6 +1505,26 @@ commands = [
 ]
 
 [[work_item]]
+id = "sniff-bundle-notes-template-receipt"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-sniff-bundle-notes-template-receipt"
+current_pointer = "crates/cli/src/commands/hardware.rs"
+claim_boundary = "No-output bundle handoff plumbing only; sniff-bundle can optionally include the non-claiming sniff-notes-template JSON receipt and bench-wizard can surface that local receipt path without creating a pcap, sniff receipt, summary, HID open, serial open, query send, hardware output, authorization, native-control, native-visible, smoke-ready, coexistence, simulator, firmware, release-ready, semantic decode, registry promotion, or tuple sendability claim."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl sniff_bundle -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl parse_hardware_sniff_bundle -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl bench_wizard_sniff_next_operator_commands_parse -- --nocapture",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-sniff-bundle-notes-receipt.json --md-out target/moza-current/bench-wizard-sniff-bundle-notes-receipt.md --json",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "sniff-summary-usb-setup-payload-gaps"
 status = "completed"
 spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"

@@ -115,6 +115,7 @@ pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
             receipt,
             summary,
             operator_notes,
+            operator_notes_receipt,
             include_pcapng,
             out,
             json_out,
@@ -124,6 +125,7 @@ pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
                 receipt,
                 summary,
                 operator_notes,
+                operator_notes_receipt: operator_notes_receipt.as_deref(),
                 include_pcapng: include_pcapng.as_deref(),
                 out,
             };
@@ -753,27 +755,34 @@ fn build_hardware_sniff_bundle(
         );
     }
 
-    let mut entries = Vec::new();
-    entries.push(SniffBundleZipEntry::bytes(
-        sniff_bundle_path("README.md"),
-        render_sniff_bundle_readme(request.include_pcapng.is_some()).into_bytes(),
-    ));
-    entries.push(SniffBundleZipEntry::bytes(
-        sniff_bundle_path("sniff-plan.json"),
-        read_required_artifact(request.plan, "sniff plan")?,
-    ));
-    entries.push(SniffBundleZipEntry::bytes(
-        sniff_bundle_path("sniff-receipt.json"),
-        read_required_artifact(request.receipt, "sniff receipt")?,
-    ));
-    entries.push(SniffBundleZipEntry::bytes(
-        sniff_bundle_path("sniff-summary.json"),
-        read_required_artifact(request.summary, "sniff summary")?,
-    ));
-    entries.push(SniffBundleZipEntry::bytes(
-        sniff_bundle_path("operator-notes.md"),
-        read_required_artifact(request.operator_notes, "operator notes")?,
-    ));
+    let mut entries = vec![
+        SniffBundleZipEntry::bytes(
+            sniff_bundle_path("README.md"),
+            render_sniff_bundle_readme(request.include_pcapng.is_some()).into_bytes(),
+        ),
+        SniffBundleZipEntry::bytes(
+            sniff_bundle_path("sniff-plan.json"),
+            read_required_artifact(request.plan, "sniff plan")?,
+        ),
+        SniffBundleZipEntry::bytes(
+            sniff_bundle_path("sniff-receipt.json"),
+            read_required_artifact(request.receipt, "sniff receipt")?,
+        ),
+        SniffBundleZipEntry::bytes(
+            sniff_bundle_path("sniff-summary.json"),
+            read_required_artifact(request.summary, "sniff summary")?,
+        ),
+        SniffBundleZipEntry::bytes(
+            sniff_bundle_path("operator-notes.md"),
+            read_required_artifact(request.operator_notes, "operator notes")?,
+        ),
+    ];
+    if let Some(operator_notes_receipt) = request.operator_notes_receipt {
+        entries.push(SniffBundleZipEntry::bytes(
+            sniff_bundle_path("sniff-notes-template-receipt.json"),
+            read_required_artifact(operator_notes_receipt, "operator notes receipt")?,
+        ));
+    }
     entries.push(SniffBundleZipEntry::bytes(
         sniff_bundle_path("pcapng-sha256.txt"),
         format!("{}\n", receipt.pcapng_sha256).into_bytes(),
@@ -5336,6 +5345,7 @@ struct HardwareSniffBundleRequest<'a> {
     receipt: &'a Path,
     summary: &'a Path,
     operator_notes: &'a Path,
+    operator_notes_receipt: Option<&'a Path>,
     include_pcapng: Option<&'a Path>,
     out: &'a Path,
 }
@@ -7544,6 +7554,7 @@ mod tests {
                 receipt: &paths.receipt,
                 summary: &paths.summary,
                 operator_notes: &paths.operator_notes,
+                operator_notes_receipt: None,
                 include_pcapng: include_raw.then_some(paths.pcapng.as_path()),
                 out: &paths.out,
             })
@@ -7586,6 +7597,44 @@ mod tests {
             assert!(names.contains(&sniff_bundle_path("operator-notes.md")));
             assert!(names.contains(&sniff_bundle_path("pcapng-sha256.txt")));
             assert!(names.contains(&sniff_bundle_path("sniff-bundle-manifest.json")));
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_bundle_includes_operator_notes_receipt_when_requested() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = write_bundle_fixture(dir.path(), b"synthetic pcapng bytes")?;
+            let operator_notes_receipt = dir.path().join("sniff-notes-template-receipt.json");
+            fs::write(
+                &operator_notes_receipt,
+                serde_json::to_vec_pretty(&serde_json::json!({
+                    "command": "wheelctl hardware sniff-notes-template",
+                    "openracing_hardware_output": false,
+                    "satisfies_native_visible_ready": false
+                }))?,
+            )?;
+            let receipt_archive_path = sniff_bundle_path("sniff-notes-template-receipt.json");
+
+            let manifest = build_hardware_sniff_bundle(&HardwareSniffBundleRequest {
+                plan: &paths.plan,
+                receipt: &paths.receipt,
+                summary: &paths.summary,
+                operator_notes: &paths.operator_notes,
+                operator_notes_receipt: Some(&operator_notes_receipt),
+                include_pcapng: None,
+                out: &paths.out,
+            })?;
+            let names = zip_entry_names(&paths.out)?;
+            let receipt_bytes = read_zip_entry(&paths.out, &receipt_archive_path)?;
+
+            assert!(names.contains(&receipt_archive_path));
+            assert_eq!(receipt_bytes, fs::read(&operator_notes_receipt)?);
+            assert!(manifest.artifacts.iter().any(|artifact| {
+                artifact.path == receipt_archive_path
+                    && artifact.sha256 == sha256_hex(&receipt_bytes)
+            }));
+            assert!(!manifest.openracing_hardware_output);
+            assert!(!manifest.satisfies_native_visible_ready);
             Ok(())
         }
 
@@ -7667,6 +7716,7 @@ mod tests {
                 receipt: &paths.receipt,
                 summary: &paths.summary,
                 operator_notes: &paths.operator_notes,
+                operator_notes_receipt: None,
                 include_pcapng: None,
                 out: &paths.out,
             };

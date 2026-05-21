@@ -470,6 +470,9 @@ pub enum HardwareCommands {
         /// Operator notes Markdown artifact to include
         #[arg(long)]
         operator_notes: std::path::PathBuf,
+        /// Optional sniff-notes-template JSON receipt to include
+        #[arg(long)]
+        operator_notes_receipt: Option<std::path::PathBuf>,
         /// Optional raw pcapng capture to include after hash validation
         #[arg(long)]
         include_pcapng: Option<std::path::PathBuf>,
