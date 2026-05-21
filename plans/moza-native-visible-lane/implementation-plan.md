@@ -3884,6 +3884,78 @@ bench-wizard command rendering, focused tests, and source-of-truth updates. Do
 not remove passive sniff plans, checked-in sniff evidence, local raw capture
 attempts, consumed hardware attempts, or protocol evidence review receipts.
 
+## Work item: sniff-bundle-notes-template-receipt-validation
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: receipt-backed passive USBPcap capture handoff bundling
+Blocked by: `sniff-bundle --operator-notes-receipt` could carry the
+notes-template receipt into the ZIP, but it only read the file as bytes and did
+not prove that the receipt was non-claiming or matched the same plan and
+operator notes path.
+
+### Goal
+
+Prevent stale or claiming operator-notes receipts from being bundled with
+passive sniff evidence. The bundle should only include a notes-template receipt
+when it was produced by `wheelctl hardware sniff-notes-template`, remains
+non-claiming, and points at the same sniff plan and operator notes file supplied
+to the bundle command.
+
+### Production Delta
+
+Add validation for optional `--operator-notes-receipt` inputs in
+`wheelctl hardware sniff-bundle`. The validator checks receipt version,
+command, success, evidence status, plan path, operator-notes output path,
+scenario/operator/device-note consistency, and false native-control,
+native-visible, smoke-ready, release-ready, and OpenRacing hardware-output
+claims before hashing the receipt into the bundle manifest.
+
+### Non-goals
+
+No pcap creation, raw `.pcapng` commit, sniff receipt creation, sniff summary
+creation, HID open, serial open, read-only query send, hardware output,
+authorization, PIDFF rerun, force increase, direct HID report `0xaf`, high
+torque, serial config, firmware, DFU, native-control claim, native-visible
+claim, smoke-ready claim, Pit House coexistence claim, simulator claim,
+release-ready claim, semantic command decode, registry promotion, tuple
+sendability claim, or change to bundle behavior when `--operator-notes-receipt`
+is omitted.
+
+### Acceptance
+
+- `sniff-bundle` default behavior remains unchanged when
+  `--operator-notes-receipt` is omitted.
+- A matching non-claiming notes-template receipt is included and hashed in the
+  bundle manifest.
+- A receipt with a mismatched plan path, mismatched operator-notes output path,
+  or readiness/output claim is rejected before the bundle is written.
+- Bench-wizard generated `bundle_sniff_evidence` commands continue to include
+  the local notes-template receipt path and remain no-output.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_bundle -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl parse_hardware_sniff_bundle -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_sniff_next_operator_commands_parse -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-sniff-bundle-notes-receipt-validation.json --md-out target/moza-current/bench-wizard-sniff-bundle-notes-receipt-validation.md --json
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the optional notes-template receipt validation, focused tests, and
+source-of-truth updates. Do not remove passive sniff plans, checked-in sniff
+evidence, local raw capture attempts, consumed hardware attempts, or protocol
+evidence review receipts.
+
 ## Work item: sniff-summary-usb-setup-payload-gaps
 
 Status: completed
