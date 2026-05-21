@@ -74,8 +74,13 @@ extracted host-to-device payload packets, 53,988 extracted host-to-device
 payload bytes, and two remaining data-length packets without extracted payload
 bytes. The extracted stream parses into 7,863 length-prefixed `0x7E` serial-frame
 candidates with 7,863 valid checksums, zero checksum-invalid frames, and no
-frame-shape decode gap. This is protocol-shape navigation only: it does not
-decode an approved semantic enable command, authorize output, or promote
+frame-shape decode gap. The review now compares the 30 distinct passive tuple
+IDs against `fixtures/moza/r5/vendor-command-registry.json`: one tuple matches
+the registry, `0x28/0x13/0x02` (`base_gain_get_overall_strength`), and it is
+read-only status evidence only. The other 29 passive tuples are 12 commandless
+tuple IDs and 17 unknown commanded tuple IDs. This is protocol-shape and
+registry-coverage navigation only: it does not decode an approved semantic
+enable command, make any tuple sendable, authorize output, or promote
 native-visible readiness.
 
 The latest pre-output, lane analysis, role-status, and artifact-index receipts
@@ -2443,6 +2448,87 @@ Revert only the USBCOM frame-shape parser, tests, schema additions, refreshed
 sniff summaries, bundle manifests, protocol review receipt, and source-of-truth
 updates. Do not remove passive sniff plans, raw local capture artifacts,
 consumed hardware attempts, or prior undertravel evidence.
+
+## Work item: passive-sniff-tuple-registry-coverage
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked specs:
+- docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+- docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: reviewed semantic command evidence before any future output family
+Blocked by: checked-in Pit House passive sniff summaries with parsed `0x7E`
+tuple IDs and the current semantic vendor command registry
+
+### Goal
+
+Compare the checked-in passive Pit House USBCOM tuple IDs against the semantic
+vendor command registry so the lane distinguishes known read-only status
+tuples, commandless tuples, and unknown commanded tuples before any future
+output-family plan.
+
+### Production Delta
+
+Extend `wheelctl moza vendor-protocol-evidence-review` with
+`passive_tuple_registry_coverage`. The receipt compares
+`host_to_device_serial_frame_tuple_ids` from the checked-in passive sniff
+summaries to `fixtures/moza/r5/vendor-command-registry.json`, preserving
+registry matches and fencing all unknown or commandless tuples as
+`unknown_do_not_send`.
+
+Refresh `ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json`
+and this source-of-truth stack.
+
+The checked-in review now records 30 distinct passive tuple IDs. Exactly one
+tuple matches the current registry: `0x28/0x13/0x02`
+(`base_gain_get_overall_strength`), a read-only `vendor_status` tuple. The
+remaining passive tuple evidence is 12 commandless tuple IDs and 17 unknown
+commanded tuple IDs. There are zero known write-like tuple matches and zero
+malformed tuple IDs.
+
+### Non-goals
+
+No HID open, serial open, read-only query send, hardware output, authorization
+receipt, PIDFF rerun, force increase, direct HID report `0xaf`, high torque,
+serial config, firmware, DFU, native-control claim, native-visible claim,
+smoke-ready claim, Pit House coexistence claim, simulator claim, release-ready
+claim, raw `.pcapng` commit, or tuple sendability claim.
+
+### Acceptance
+
+- `vendor-protocol-evidence-review.json` records
+  `passive_tuple_registry_coverage.total_tuple_id_count=30`.
+- `known_registry_tuple_count=1` and `known_read_only_status_tuple_ids`
+  contains `0x28/0x13/0x02`.
+- `commandless_tuple_count=12`, `unknown_commanded_tuple_count=17`,
+  `known_write_like_tuple_count=0`, and `malformed_tuple_count=0`.
+- `unknown_tuple_risk_class=unknown_do_not_send`.
+- `protocol_evidence_sufficient_for_output_plan=false`,
+  `hardware_output_authorized=false`, `native_control_evidence=false`, and
+  `output_sendability_claim=false` remain pinned.
+- Native-visible verifier remains blocked on `native_actuator_visible_smoke`.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- moza vendor-protocol-evidence-review --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json --json --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-passive-tuple-registry-review.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-passive-tuple-registry-review.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the passive tuple-to-registry coverage code, schema additions,
+refreshed protocol review receipt, and source-of-truth updates. Do not remove
+passive sniff plans, raw local capture artifacts, consumed hardware attempts,
+or prior undertravel evidence.
 
 ## Work item: native-visible-promotion
 

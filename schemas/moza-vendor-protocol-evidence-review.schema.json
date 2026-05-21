@@ -34,6 +34,7 @@
     "protocol_evidence_sufficient_for_output_plan",
     "sniff_evidence",
     "command_registry_review",
+    "passive_tuple_registry_coverage",
     "post_authority_pidff_result",
     "next_allowed_action",
     "blocked_actions",
@@ -263,6 +264,112 @@
         "codec_status": { "const": "semantic_only" },
         "command_count": { "type": "integer", "minimum": 15 },
         "hardware_output_authorized_any": { "const": false }
+      },
+      "additionalProperties": true
+    },
+    "passive_tuple_registry_coverage": {
+      "type": "object",
+      "required": [
+        "review_scope",
+        "total_tuple_id_count",
+        "known_registry_tuple_count",
+        "known_read_only_status_tuple_count",
+        "known_write_like_tuple_count",
+        "commandless_tuple_count",
+        "unknown_commanded_tuple_count",
+        "malformed_tuple_count",
+        "known_registry_matches",
+        "known_registry_tuple_ids",
+        "known_read_only_status_tuple_ids",
+        "known_write_like_tuple_ids",
+        "commandless_tuple_ids",
+        "unknown_commanded_tuple_ids",
+        "malformed_tuple_ids",
+        "unknown_tuple_risk_class",
+        "protocol_evidence_sufficient_for_output_plan",
+        "hardware_output_authorized",
+        "native_control_evidence",
+        "output_sendability_claim",
+        "notes"
+      ],
+      "properties": {
+        "review_scope": {
+          "const": "checked_in_passive_tuple_ids_vs_semantic_registry"
+        },
+        "total_tuple_id_count": { "type": "integer", "minimum": 0 },
+        "known_registry_tuple_count": { "type": "integer", "minimum": 0 },
+        "known_read_only_status_tuple_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "known_write_like_tuple_count": { "type": "integer", "minimum": 0 },
+        "commandless_tuple_count": { "type": "integer", "minimum": 0 },
+        "unknown_commanded_tuple_count": { "type": "integer", "minimum": 0 },
+        "malformed_tuple_count": { "type": "integer", "minimum": 0 },
+        "known_registry_matches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "tuple_id",
+              "command_id",
+              "family",
+              "risk_class",
+              "read_only_status_probe_allowed",
+              "hardware_output_authorized",
+              "output_sendability_claim"
+            ],
+            "properties": {
+              "tuple_id": { "type": "string" },
+              "command_id": { "type": "string" },
+              "family": { "type": "string" },
+              "risk_class": { "type": "string" },
+              "read_only_status_probe_allowed": { "type": "boolean" },
+              "hardware_output_authorized": { "const": false },
+              "output_sendability_claim": { "const": false }
+            },
+            "additionalProperties": true
+          }
+        },
+        "known_registry_tuple_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "known_read_only_status_tuple_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "known_write_like_tuple_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "commandless_tuple_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "unknown_commanded_tuple_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "malformed_tuple_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "unknown_tuple_risk_class": { "const": "unknown_do_not_send" },
+        "protocol_evidence_sufficient_for_output_plan": { "const": false },
+        "hardware_output_authorized": { "const": false },
+        "native_control_evidence": { "const": false },
+        "output_sendability_claim": { "const": false },
+        "notes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
       },
       "additionalProperties": true
     },
