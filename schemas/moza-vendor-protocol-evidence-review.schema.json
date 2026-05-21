@@ -89,6 +89,7 @@
         "total_host_to_device_serial_frame_checksum_valid_count",
         "total_host_to_device_serial_frame_checksum_invalid_count",
         "total_host_to_device_serial_frame_commandless_count",
+        "host_to_device_serial_frame_tuple_sample_count",
         "host_to_device_decode_gap_detected",
         "host_to_device_payload_export_gap_detected",
         "host_to_device_serial_frame_shape_decode_gap_detected",
@@ -152,6 +153,10 @@
           "type": "integer",
           "minimum": 0
         },
+        "host_to_device_serial_frame_tuple_sample_count": {
+          "type": "integer",
+          "minimum": 0
+        },
         "host_to_device_decode_gap_detected": { "type": "boolean" },
         "host_to_device_payload_export_gap_detected": { "type": "boolean" },
         "host_to_device_serial_frame_shape_decode_gap_detected": {
@@ -196,6 +201,7 @@
               "host_to_device_serial_frame_shape_decode_gap",
               "host_to_device_serial_frame_tuple_ids",
               "host_to_device_serial_frame_tuple_counts",
+              "host_to_device_serial_frame_tuple_samples",
               "native_control_evidence",
               "readiness_claim"
             ],
@@ -274,6 +280,10 @@
                   "additionalProperties": true
                 }
               },
+              "host_to_device_serial_frame_tuple_samples": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/passive_tuple_sample_frame" }
+              },
               "native_control_evidence": { "const": false },
               "readiness_claim": { "const": false }
             },
@@ -322,6 +332,10 @@
         "tuple_frequency_summary",
         "highest_frequency_tuple_ids",
         "highest_frequency_unknown_commanded_tuple_ids",
+        "decode_candidate_sample_scope",
+        "decode_candidate_sample_count",
+        "decode_candidate_sample_tuple_ids",
+        "decode_candidate_sample_fixtures",
         "unknown_tuple_risk_class",
         "protocol_evidence_sufficient_for_output_plan",
         "hardware_output_authorized",
@@ -466,6 +480,43 @@
           "items": { "type": "string" },
           "uniqueItems": true
         },
+        "decode_candidate_sample_scope": {
+          "const": "highest_frequency_unknown_commanded_tuples"
+        },
+        "decode_candidate_sample_count": { "type": "integer", "minimum": 0 },
+        "decode_candidate_sample_tuple_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "decode_candidate_sample_fixtures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "tuple_id",
+              "registry_status",
+              "total_count",
+              "sample_count",
+              "sample_frames",
+              "hardware_output_authorized",
+              "output_sendability_claim"
+            ],
+            "properties": {
+              "tuple_id": { "type": "string" },
+              "registry_status": { "const": "unknown_commanded" },
+              "total_count": { "type": "integer", "minimum": 0 },
+              "sample_count": { "type": "integer", "minimum": 0 },
+              "sample_frames": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/passive_tuple_sample_frame" }
+              },
+              "hardware_output_authorized": { "const": false },
+              "output_sendability_claim": { "const": false }
+            },
+            "additionalProperties": true
+          }
+        },
         "unknown_tuple_risk_class": { "const": "unknown_do_not_send" },
         "protocol_evidence_sufficient_for_output_plan": { "const": false },
         "hardware_output_authorized": { "const": false },
@@ -519,5 +570,58 @@
       "items": { "type": "string" }
     }
   },
-  "additionalProperties": true
+  "additionalProperties": true,
+  "$defs": {
+    "passive_tuple_sample_frame": {
+      "type": "object",
+      "required": [
+        "scenario",
+        "tuple_id",
+        "group",
+        "device_id",
+        "command",
+        "sample_index",
+        "packet_ordinal",
+        "frame_ordinal_in_packet",
+        "frame_hex",
+        "declared_len",
+        "payload_len",
+        "payload_hex",
+        "checksum_hex",
+        "checksum_valid",
+        "hardware_output_authorized",
+        "output_sendability_claim"
+      ],
+      "properties": {
+        "scenario": { "type": "string" },
+        "tuple_id": { "type": "string" },
+        "group": { "type": "string" },
+        "device_id": { "type": "string" },
+        "command": { "type": ["string", "null"] },
+        "sample_index": { "type": "integer", "minimum": 1 },
+        "packet_ordinal": { "type": "integer", "minimum": 1 },
+        "frame_ordinal_in_packet": { "type": "integer", "minimum": 1 },
+        "frame_hex": { "$ref": "#/$defs/hex_bytes_compact" },
+        "declared_len": { "type": "integer", "minimum": 0 },
+        "payload_len": { "type": "integer", "minimum": 0 },
+        "payload_hex": { "$ref": "#/$defs/hex_bytes_compact_or_empty" },
+        "checksum_hex": {
+          "type": "string",
+          "pattern": "^0x[0-9A-Fa-f]{2}$"
+        },
+        "checksum_valid": { "const": true },
+        "hardware_output_authorized": { "const": false },
+        "output_sendability_claim": { "const": false }
+      },
+      "additionalProperties": true
+    },
+    "hex_bytes_compact": {
+      "type": "string",
+      "pattern": "^([0-9A-Fa-f]{2})+$"
+    },
+    "hex_bytes_compact_or_empty": {
+      "type": "string",
+      "pattern": "^([0-9A-Fa-f]{2})*$"
+    }
+  }
 }

@@ -30,8 +30,9 @@ commanded tuples as `0x5A/0x1B/0x00` (1,896 frames),
 `0x5D/0x1B/0x01` (1,894 frames), and `0x25/0x19/0x01`,
 `0x25/0x19/0x02`, and `0x25/0x19/0x03` (624 frames each). Artifact-index and
 bench-wizard surface the same queue as no-output `vendor_protocol_decode_priority`
-navigation. The next step is to map those unknown tuple IDs or fill remaining
-no-output capture gaps before proposing any vendor-control output path.
+navigation with bounded sample frame examples for the top unknown tuples. The
+next step is to map those unknown tuple IDs or fill remaining no-output capture
+gaps before proposing any vendor-control output path.
 
 ## Current Artifacts
 
@@ -62,10 +63,11 @@ and it is read-only status evidence. The review records 12 commandless tuple IDs
 tuple frequency and ranks the top unknown commanded tuples as
 `0x5A/0x1B/0x00`, `0x5D/0x1B/0x01`, `0x25/0x19/0x01`,
 `0x25/0x19/0x02`, and `0x25/0x19/0x03`; artifact-index and bench-wizard render
-those top tuples in the Vendor Authority Handoff section. The tuple IDs remain
-protocol-shape, registry-coverage, and frequency-prioritization evidence only;
-no tuple is sendable without a future semantic decode, reviewed plan, fresh
-bench clear, and exact authorization.
+those top tuples and representative sample frames in the Vendor Authority
+Handoff section. The tuple IDs and sample frames remain protocol-shape,
+registry-coverage, frequency-prioritization, and fixture evidence only; no tuple
+is sendable without a future semantic decode, reviewed plan, fresh bench clear,
+and exact authorization.
 
 ## Boundaries
 

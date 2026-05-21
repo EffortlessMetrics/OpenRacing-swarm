@@ -2,7 +2,7 @@
   "schema_version": 1,
   "success": true,
   "command": "wheelctl hardware sniff-summary",
-  "generated_at_utc": "2026-05-21T06:58:01Z",
+  "generated_at_utc": "2026-05-21T10:16:33Z",
   "pcapng_sha256": "600111023b27cccb95138f59b1e64a73b35af34a48b6fc7d0f2f89f03dd82927",
   "tool": {
     "tshark_present": true,
@@ -144,7 +144,48 @@
           "payload_len_max": 0,
           "count": 16,
           "checksum_valid_count": 16,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 10,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E0000129D",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0x9D",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 36,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E0000129D",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0x9D",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 60,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E0000129D",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0x9D",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x00",
@@ -154,7 +195,48 @@
           "payload_len_max": 0,
           "count": 16,
           "checksum_valid_count": 16,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 13,
+              "frame_ordinal_in_packet": 2,
+              "frame_hex": "7E0000139E",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0x9E",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 38,
+              "frame_ordinal_in_packet": 2,
+              "frame_hex": "7E0000139E",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0x9E",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 64,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E0000139E",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0x9E",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x00",
@@ -164,7 +246,48 @@
           "payload_len_max": 0,
           "count": 13,
           "checksum_valid_count": 13,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 20,
+              "frame_ordinal_in_packet": 7,
+              "frame_hex": "7E0000149F",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0x9F",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 51,
+              "frame_ordinal_in_packet": 7,
+              "frame_hex": "7E0000149F",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0x9F",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 81,
+              "frame_ordinal_in_packet": 4,
+              "frame_hex": "7E0000149F",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0x9F",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x00",
@@ -174,7 +297,48 @@
           "payload_len_max": 0,
           "count": 13,
           "checksum_valid_count": 13,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 20,
+              "frame_ordinal_in_packet": 3,
+              "frame_hex": "7E000015A0",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA0",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 51,
+              "frame_ordinal_in_packet": 3,
+              "frame_hex": "7E000015A0",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA0",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 81,
+              "frame_ordinal_in_packet": 5,
+              "frame_hex": "7E000015A0",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA0",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x00",
@@ -184,7 +348,48 @@
           "payload_len_max": 0,
           "count": 16,
           "checksum_valid_count": 16,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 21,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E000017A2",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA2",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 44,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E000017A2",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA2",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 71,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E000017A2",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA2",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x00",
@@ -194,7 +399,48 @@
           "payload_len_max": 0,
           "count": 13,
           "checksum_valid_count": 13,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 20,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E000018A3",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA3",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 51,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E000018A3",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA3",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 81,
+              "frame_ordinal_in_packet": 2,
+              "frame_hex": "7E000018A3",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA3",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x00",
@@ -204,7 +450,48 @@
           "payload_len_max": 0,
           "count": 16,
           "checksum_valid_count": 16,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 13,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E000019A4",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA4",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 38,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E000019A4",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA4",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 64,
+              "frame_ordinal_in_packet": 2,
+              "frame_hex": "7E000019A4",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA4",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x00",
@@ -214,7 +501,48 @@
           "payload_len_max": 0,
           "count": 13,
           "checksum_valid_count": 13,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 20,
+              "frame_ordinal_in_packet": 4,
+              "frame_hex": "7E00001AA5",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA5",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 51,
+              "frame_ordinal_in_packet": 4,
+              "frame_hex": "7E00001AA5",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA5",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 81,
+              "frame_ordinal_in_packet": 7,
+              "frame_hex": "7E00001AA5",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA5",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x00",
@@ -224,7 +552,48 @@
           "payload_len_max": 0,
           "count": 16,
           "checksum_valid_count": 16,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 15,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E00001BA6",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA6",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 40,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E00001BA6",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA6",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 66,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E00001BA6",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA6",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x00",
@@ -234,7 +603,48 @@
           "payload_len_max": 0,
           "count": 13,
           "checksum_valid_count": 13,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 20,
+              "frame_ordinal_in_packet": 2,
+              "frame_hex": "7E00001CA7",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA7",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 51,
+              "frame_ordinal_in_packet": 2,
+              "frame_hex": "7E00001CA7",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA7",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 81,
+              "frame_ordinal_in_packet": 6,
+              "frame_hex": "7E00001CA7",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA7",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x00",
@@ -244,7 +654,48 @@
           "payload_len_max": 0,
           "count": 13,
           "checksum_valid_count": 13,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 20,
+              "frame_ordinal_in_packet": 6,
+              "frame_hex": "7E00001DA8",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA8",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 51,
+              "frame_ordinal_in_packet": 6,
+              "frame_hex": "7E00001DA8",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA8",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 81,
+              "frame_ordinal_in_packet": 3,
+              "frame_hex": "7E00001DA8",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA8",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x00",
@@ -254,7 +705,48 @@
           "payload_len_max": 0,
           "count": 13,
           "checksum_valid_count": 13,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 20,
+              "frame_ordinal_in_packet": 5,
+              "frame_hex": "7E00001EA9",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA9",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 51,
+              "frame_ordinal_in_packet": 5,
+              "frame_hex": "7E00001EA9",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA9",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 81,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E00001EA9",
+              "declared_len": 0,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xA9",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x25",
@@ -264,7 +756,48 @@
           "payload_len_max": 2,
           "count": 74,
           "checksum_valid_count": 74,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 2,
+              "frame_ordinal_in_packet": 3,
+              "frame_hex": "7E032519010000CD",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xCD",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 6,
+              "frame_ordinal_in_packet": 5,
+              "frame_hex": "7E032519010000CD",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xCD",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 11,
+              "frame_ordinal_in_packet": 5,
+              "frame_hex": "7E032519010000CD",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xCD",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x25",
@@ -274,7 +807,48 @@
           "payload_len_max": 2,
           "count": 74,
           "checksum_valid_count": 74,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 2,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E032519020000CE",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xCE",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 6,
+              "frame_ordinal_in_packet": 3,
+              "frame_hex": "7E032519020000CE",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xCE",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 11,
+              "frame_ordinal_in_packet": 3,
+              "frame_hex": "7E032519020000CE",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xCE",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x25",
@@ -284,7 +858,48 @@
           "payload_len_max": 2,
           "count": 74,
           "checksum_valid_count": 74,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 2,
+              "frame_ordinal_in_packet": 2,
+              "frame_hex": "7E032519030000CF",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xCF",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 6,
+              "frame_ordinal_in_packet": 4,
+              "frame_hex": "7E032519030000CF",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xCF",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 11,
+              "frame_ordinal_in_packet": 4,
+              "frame_hex": "7E032519030000CF",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xCF",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x28",
@@ -294,7 +909,48 @@
           "payload_len_max": 2,
           "count": 3,
           "checksum_valid_count": 3,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 185,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E032813010000CA",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xCA",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 284,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E032813010000CA",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xCA",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 381,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E032813010000CA",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xCA",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x28",
@@ -304,7 +960,48 @@
           "payload_len_max": 2,
           "count": 3,
           "checksum_valid_count": 3,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 189,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E032813020000CB",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xCB",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 287,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E032813020000CB",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xCB",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 385,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E032813020000CB",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xCB",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x28",
@@ -314,7 +1011,48 @@
           "payload_len_max": 2,
           "count": 3,
           "checksum_valid_count": 3,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 188,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E032813170000E0",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xE0",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 286,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E032813170000E0",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xE0",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 383,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E032813170000E0",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xE0",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x2B",
@@ -324,7 +1062,48 @@
           "payload_len_max": 2,
           "count": 4,
           "checksum_valid_count": 4,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 46,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E032B13020000CE",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xCE",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 143,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E032B13020000CE",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xCE",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 241,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E032B13020000CE",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0xCE",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x40",
@@ -334,7 +1113,48 @@
           "payload_len_max": 1,
           "count": 26,
           "checksum_valid_count": 26,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 3,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E0240170700EB",
+              "declared_len": 2,
+              "payload_len": 1,
+              "payload_hex": "00",
+              "checksum_hex": "0xEB",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 17,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E0240170700EB",
+              "declared_len": 2,
+              "payload_len": 1,
+              "payload_hex": "00",
+              "checksum_hex": "0xEB",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 31,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E0240170700EB",
+              "declared_len": 2,
+              "payload_len": 1,
+              "payload_hex": "00",
+              "checksum_hex": "0xEB",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x40",
@@ -344,7 +1164,48 @@
           "payload_len_max": 0,
           "count": 8,
           "checksum_valid_count": 8,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 12,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E01401708EB",
+              "declared_len": 1,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xEB",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 63,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E01401708EB",
+              "declared_len": 1,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xEB",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 111,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E01401708EB",
+              "declared_len": 1,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xEB",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x43",
@@ -354,7 +1215,48 @@
           "payload_len_max": 0,
           "count": 7,
           "checksum_valid_count": 7,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 25,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E01431400E3",
+              "declared_len": 1,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xE3",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 79,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E01431400E3",
+              "declared_len": 1,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xE3",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 130,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E01431400E3",
+              "declared_len": 1,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xE3",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x43",
@@ -364,7 +1266,48 @@
           "payload_len_max": 0,
           "count": 7,
           "checksum_valid_count": 7,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 25,
+              "frame_ordinal_in_packet": 2,
+              "frame_hex": "7E01431500E4",
+              "declared_len": 1,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xE4",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 79,
+              "frame_ordinal_in_packet": 2,
+              "frame_hex": "7E01431500E4",
+              "declared_len": 1,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xE4",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 130,
+              "frame_ordinal_in_packet": 2,
+              "frame_hex": "7E01431500E4",
+              "declared_len": 1,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xE4",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x43",
@@ -374,7 +1317,48 @@
           "payload_len_max": 0,
           "count": 7,
           "checksum_valid_count": 7,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 25,
+              "frame_ordinal_in_packet": 3,
+              "frame_hex": "7E01431700E6",
+              "declared_len": 1,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xE6",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 79,
+              "frame_ordinal_in_packet": 3,
+              "frame_hex": "7E01431700E6",
+              "declared_len": 1,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xE6",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 130,
+              "frame_ordinal_in_packet": 3,
+              "frame_hex": "7E01431700E6",
+              "declared_len": 1,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0xE6",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x5A",
@@ -384,7 +1368,48 @@
           "payload_len_max": 0,
           "count": 222,
           "checksum_valid_count": 222,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 1,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E015A1B0001",
+              "declared_len": 1,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0x01",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 4,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E015A1B0001",
+              "declared_len": 1,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0x01",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 5,
+              "frame_ordinal_in_packet": 1,
+              "frame_hex": "7E015A1B0001",
+              "declared_len": 1,
+              "payload_len": 0,
+              "payload_hex": "",
+              "checksum_hex": "0x01",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         },
         {
           "group": "0x5D",
@@ -394,9 +1419,51 @@
           "payload_len_max": 2,
           "count": 222,
           "checksum_valid_count": 222,
-          "checksum_invalid_count": 0
+          "checksum_invalid_count": 0,
+          "sample_frames": [
+            {
+              "sample_index": 1,
+              "packet_ordinal": 1,
+              "frame_ordinal_in_packet": 2,
+              "frame_hex": "7E035D1B01000007",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0x07",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 2,
+              "packet_ordinal": 4,
+              "frame_ordinal_in_packet": 2,
+              "frame_hex": "7E035D1B01000007",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0x07",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            },
+            {
+              "sample_index": 3,
+              "packet_ordinal": 5,
+              "frame_ordinal_in_packet": 2,
+              "frame_hex": "7E035D1B01000007",
+              "declared_len": 3,
+              "payload_len": 2,
+              "payload_hex": "0000",
+              "checksum_hex": "0x07",
+              "checksum_valid": true,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ]
         }
       ],
+      "tuple_sample_limit": 3,
       "native_control_evidence": false,
       "readiness_claim": false,
       "notes": [

@@ -2279,6 +2279,64 @@ fn moza_vendor_protocol_decode_priority(lane: &Path) -> Value {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let decode_candidate_sample_scope =
+        json_string(coverage, "decode_candidate_sample_scope").unwrap_or("not_recorded");
+    let decode_candidate_sample_count =
+        json_u64(coverage, "decode_candidate_sample_count").unwrap_or(0);
+    let decode_candidate_sample_tuple_ids = coverage
+        .get("decode_candidate_sample_tuple_ids")
+        .and_then(Value::as_array)
+        .map(|tuples| {
+            tuples
+                .iter()
+                .filter_map(Value::as_str)
+                .take(5)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let decode_candidate_sample_fixtures = coverage
+        .get("decode_candidate_sample_fixtures")
+        .and_then(Value::as_array)
+        .map(|fixtures| {
+            fixtures
+                .iter()
+                .take(5)
+                .map(|fixture| {
+                    let sample_frame_examples = fixture
+                        .get("sample_frames")
+                        .and_then(Value::as_array)
+                        .map(|samples| {
+                            samples
+                                .iter()
+                                .take(3)
+                                .map(|sample| {
+                                    serde_json::json!({
+                                        "scenario": json_string(sample, "scenario").unwrap_or("unknown"),
+                                        "frame_hex": json_string(sample, "frame_hex").unwrap_or(""),
+                                        "payload_len": json_u64(sample, "payload_len").unwrap_or(0),
+                                        "payload_hex": json_string(sample, "payload_hex").unwrap_or(""),
+                                        "checksum_valid": sample.get("checksum_valid").and_then(Value::as_bool).unwrap_or(false),
+                                        "hardware_output_authorized": false,
+                                        "output_sendability_claim": false
+                                    })
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    serde_json::json!({
+                        "tuple_id": json_string(fixture, "tuple_id").unwrap_or("unknown"),
+                        "registry_status": json_string(fixture, "registry_status").unwrap_or("unknown"),
+                        "total_count": json_u64(fixture, "total_count").unwrap_or(0),
+                        "sample_count": json_u64(fixture, "sample_count").unwrap_or(0),
+                        "sample_frame_examples": sample_frame_examples,
+                        "hardware_output_authorized": false,
+                        "output_sendability_claim": false
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     serde_json::json!({
         "claim_scope": "no_output_vendor_protocol_decode_priority_navigation",
         "source_receipt": VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE,
@@ -2290,6 +2348,10 @@ fn moza_vendor_protocol_decode_priority(lane: &Path) -> Value {
         "priority_basis": "descending_checked_in_passive_tuple_frequency",
         "highest_frequency_unknown_commanded_tuple_ids": highest_frequency_unknown_commanded_tuple_ids,
         "top_unknown_commanded_tuples": tuple_summaries,
+        "decode_candidate_sample_scope": decode_candidate_sample_scope,
+        "decode_candidate_sample_count": decode_candidate_sample_count,
+        "decode_candidate_sample_tuple_ids": decode_candidate_sample_tuple_ids,
+        "decode_candidate_sample_fixtures": decode_candidate_sample_fixtures,
         "unknown_tuple_risk_class": json_string(coverage, "unknown_tuple_risk_class").unwrap_or("unknown_do_not_send"),
         "hardware_output_authorized": false,
         "native_control_evidence": false,
@@ -27832,6 +27894,7 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
     let mut payload_export_gap_scenarios = Vec::new();
     let mut serial_frame_shape_decode_gap_scenarios = Vec::new();
     let mut host_to_device_serial_frame_tuple_ids = BTreeSet::new();
+    let mut host_to_device_serial_frame_tuple_sample_count = 0usize;
 
     for (scenario, label, focus, _warning) in moza_passive_sniff_navigation_requirements() {
         let review = vendor_protocol_sniff_scenario_review(sniff_root, scenario, label, focus)?;
@@ -27890,6 +27953,9 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
         );
         host_to_device_serial_frame_tuple_ids
             .extend(review.host_to_device_serial_frame_tuple_ids.iter().cloned());
+        host_to_device_serial_frame_tuple_sample_count =
+            host_to_device_serial_frame_tuple_sample_count
+                .saturating_add(review.host_to_device_serial_frame_tuple_samples.len());
         scenarios.push(review);
     }
 
@@ -27928,6 +27994,7 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
         host_to_device_serial_frame_tuple_ids: host_to_device_serial_frame_tuple_ids
             .into_iter()
             .collect(),
+        host_to_device_serial_frame_tuple_sample_count,
         decode_recommended_by_summaries,
         passive_summaries_native_control_evidence,
         scenarios,
@@ -27988,6 +28055,7 @@ fn vendor_protocol_sniff_scenario_review(
             host_to_device_serial_frame_shape_decode_gap: false,
             host_to_device_serial_frame_tuple_ids: Vec::new(),
             host_to_device_serial_frame_tuple_counts: Vec::new(),
+            host_to_device_serial_frame_tuple_samples: Vec::new(),
             device_to_host_packets: 0,
             standard_pidff_output_report_count: 0,
             vendor_or_device_specific_output_candidate_count: 0,
@@ -28089,6 +28157,8 @@ fn vendor_protocol_sniff_scenario_review(
         usbcom_serial_frame_tuple_ids(usbcom_serial_frame_summary);
     let host_to_device_serial_frame_tuple_counts =
         usbcom_serial_frame_tuple_counts(usbcom_serial_frame_summary);
+    let host_to_device_serial_frame_tuple_samples =
+        usbcom_serial_frame_tuple_samples(usbcom_serial_frame_summary, scenario);
     let mut notes =
         vec!["checked-in passive summary is non-claiming protocol evidence".to_string()];
     if host_to_device_decode_gap {
@@ -28164,6 +28234,7 @@ fn vendor_protocol_sniff_scenario_review(
         host_to_device_serial_frame_shape_decode_gap,
         host_to_device_serial_frame_tuple_ids,
         host_to_device_serial_frame_tuple_counts,
+        host_to_device_serial_frame_tuple_samples,
         device_to_host_packets: summary
             .pointer("/usb_transfer_summary/device_to_host")
             .and_then(Value::as_u64)
@@ -28274,6 +28345,85 @@ fn usbcom_serial_frame_tuple_counts(summary: Option<&Value>) -> Vec<VendorProtoc
                             .and_then(Value::as_u64)
                             .unwrap_or(0),
                     })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn usbcom_serial_frame_tuple_samples(
+    summary: Option<&Value>,
+    scenario: &str,
+) -> Vec<VendorProtocolTupleSampleFrame> {
+    summary
+        .and_then(|summary| summary.get("tuple_counts"))
+        .and_then(Value::as_array)
+        .map(|tuples| {
+            tuples
+                .iter()
+                .flat_map(|tuple| {
+                    let group = tuple.get("group").and_then(Value::as_str);
+                    let device_id = tuple.get("device_id").and_then(Value::as_str);
+                    let command = tuple
+                        .get("command")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                    let command_for_tuple = command.as_deref().unwrap_or("none");
+                    let tuple_id = group.zip(device_id).map(|(group, device_id)| {
+                        format!("{group}/{device_id}/{command_for_tuple}")
+                    });
+                    tuple
+                        .get("sample_frames")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(move |sample| {
+                            let tuple_id = tuple_id.clone()?;
+                            let group = group?.to_string();
+                            let device_id = device_id?.to_string();
+                            Some(VendorProtocolTupleSampleFrame {
+                                scenario: scenario.to_string(),
+                                tuple_id,
+                                group,
+                                device_id,
+                                command: command.clone(),
+                                sample_index: sample
+                                    .get("sample_index")
+                                    .and_then(Value::as_u64)
+                                    .unwrap_or(0),
+                                packet_ordinal: sample
+                                    .get("packet_ordinal")
+                                    .and_then(Value::as_u64)
+                                    .unwrap_or(0),
+                                frame_ordinal_in_packet: sample
+                                    .get("frame_ordinal_in_packet")
+                                    .and_then(Value::as_u64)
+                                    .unwrap_or(0),
+                                frame_hex: json_string(sample, "frame_hex")
+                                    .unwrap_or_default()
+                                    .to_string(),
+                                declared_len: sample
+                                    .get("declared_len")
+                                    .and_then(Value::as_u64)
+                                    .unwrap_or(0),
+                                payload_len: sample
+                                    .get("payload_len")
+                                    .and_then(Value::as_u64)
+                                    .unwrap_or(0),
+                                payload_hex: json_string(sample, "payload_hex")
+                                    .unwrap_or_default()
+                                    .to_string(),
+                                checksum_hex: json_string(sample, "checksum_hex")
+                                    .unwrap_or("0x00")
+                                    .to_string(),
+                                checksum_valid: sample
+                                    .get("checksum_valid")
+                                    .and_then(Value::as_bool)
+                                    .unwrap_or(false),
+                                hardware_output_authorized: false,
+                                output_sendability_claim: false,
+                            })
+                        })
                 })
                 .collect()
         })
@@ -28483,13 +28633,27 @@ fn vendor_protocol_passive_tuple_registry_coverage(
         .iter()
         .take(10)
         .map(|tuple| tuple.tuple_id.clone())
-        .collect();
+        .collect::<Vec<_>>();
     let highest_frequency_unknown_commanded_tuple_ids = tuple_frequency_summary
         .iter()
         .filter(|tuple| tuple.registry_status == "unknown_commanded")
         .take(10)
         .map(|tuple| tuple.tuple_id.clone())
-        .collect();
+        .collect::<Vec<_>>();
+    let decode_candidate_sample_fixtures = vendor_protocol_decode_candidate_sample_fixtures(
+        sniff_evidence,
+        &registry_status_by_tuple_id,
+        &tuple_frequency_summary,
+        &highest_frequency_unknown_commanded_tuple_ids,
+    );
+    let decode_candidate_sample_count = decode_candidate_sample_fixtures
+        .iter()
+        .map(|fixture| fixture.sample_frames.len())
+        .sum();
+    let decode_candidate_sample_tuple_ids = decode_candidate_sample_fixtures
+        .iter()
+        .map(|fixture| fixture.tuple_id.clone())
+        .collect::<Vec<_>>();
 
     Ok(VendorProtocolPassiveTupleRegistryCoverage {
         review_scope: "checked_in_passive_tuple_ids_vs_semantic_registry",
@@ -28510,6 +28674,10 @@ fn vendor_protocol_passive_tuple_registry_coverage(
         tuple_frequency_summary,
         highest_frequency_tuple_ids,
         highest_frequency_unknown_commanded_tuple_ids,
+        decode_candidate_sample_scope: "highest_frequency_unknown_commanded_tuples",
+        decode_candidate_sample_count,
+        decode_candidate_sample_tuple_ids,
+        decode_candidate_sample_fixtures,
         unknown_tuple_risk_class: "unknown_do_not_send",
         protocol_evidence_sufficient_for_output_plan: false,
         hardware_output_authorized: false,
@@ -28521,6 +28689,46 @@ fn vendor_protocol_passive_tuple_registry_coverage(
             "Known read-only status tuples are protocol evidence only and do not create output, configuration, native-control, or native-visible claims.",
         ],
     })
+}
+
+fn vendor_protocol_decode_candidate_sample_fixtures(
+    sniff_evidence: &VendorProtocolSniffEvidence,
+    registry_status_by_tuple_id: &BTreeMap<String, &'static str>,
+    tuple_frequency_summary: &[VendorProtocolTupleFrequencySummary],
+    highest_frequency_unknown_commanded_tuple_ids: &[String],
+) -> Vec<VendorProtocolDecodeCandidateSampleFixture> {
+    highest_frequency_unknown_commanded_tuple_ids
+        .iter()
+        .take(5)
+        .filter_map(|tuple_id| {
+            let sample_frames = sniff_evidence
+                .scenarios
+                .iter()
+                .flat_map(|scenario| scenario.host_to_device_serial_frame_tuple_samples.iter())
+                .filter(|sample| &sample.tuple_id == tuple_id)
+                .cloned()
+                .collect::<Vec<_>>();
+            if sample_frames.is_empty() {
+                return None;
+            }
+            let total_count = tuple_frequency_summary
+                .iter()
+                .find(|summary| &summary.tuple_id == tuple_id)
+                .map_or(0, |summary| summary.total_count);
+            Some(VendorProtocolDecodeCandidateSampleFixture {
+                tuple_id: tuple_id.clone(),
+                registry_status: registry_status_by_tuple_id
+                    .get(tuple_id)
+                    .copied()
+                    .unwrap_or("unknown_do_not_send"),
+                total_count,
+                sample_count: sample_frames.len(),
+                sample_frames,
+                hardware_output_authorized: false,
+                output_sendability_claim: false,
+            })
+        })
+        .collect()
 }
 
 fn vendor_protocol_tuple_frequency_summary(
@@ -30339,6 +30547,7 @@ struct VendorProtocolSniffEvidence {
     host_to_device_report_ids: Vec<String>,
     vendor_or_device_specific_output_candidate_report_ids: Vec<String>,
     host_to_device_serial_frame_tuple_ids: Vec<String>,
+    host_to_device_serial_frame_tuple_sample_count: usize,
     decode_recommended_by_summaries: bool,
     passive_summaries_native_control_evidence: bool,
     scenarios: Vec<VendorProtocolSniffScenarioReview>,
@@ -30378,6 +30587,7 @@ struct VendorProtocolSniffScenarioReview {
     host_to_device_serial_frame_shape_decode_gap: bool,
     host_to_device_serial_frame_tuple_ids: Vec<String>,
     host_to_device_serial_frame_tuple_counts: Vec<VendorProtocolTupleCount>,
+    host_to_device_serial_frame_tuple_samples: Vec<VendorProtocolTupleSampleFrame>,
     device_to_host_packets: u64,
     standard_pidff_output_report_count: u64,
     vendor_or_device_specific_output_candidate_count: u64,
@@ -30401,6 +30611,26 @@ struct VendorProtocolTupleCount {
     count: u64,
     checksum_valid_count: u64,
     checksum_invalid_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct VendorProtocolTupleSampleFrame {
+    scenario: String,
+    tuple_id: String,
+    group: String,
+    device_id: String,
+    command: Option<String>,
+    sample_index: u64,
+    packet_ordinal: u64,
+    frame_ordinal_in_packet: u64,
+    frame_hex: String,
+    declared_len: u64,
+    payload_len: u64,
+    payload_hex: String,
+    checksum_hex: String,
+    checksum_valid: bool,
+    hardware_output_authorized: bool,
+    output_sendability_claim: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -30436,12 +30666,27 @@ struct VendorProtocolPassiveTupleRegistryCoverage {
     tuple_frequency_summary: Vec<VendorProtocolTupleFrequencySummary>,
     highest_frequency_tuple_ids: Vec<String>,
     highest_frequency_unknown_commanded_tuple_ids: Vec<String>,
+    decode_candidate_sample_scope: &'static str,
+    decode_candidate_sample_count: usize,
+    decode_candidate_sample_tuple_ids: Vec<String>,
+    decode_candidate_sample_fixtures: Vec<VendorProtocolDecodeCandidateSampleFixture>,
     unknown_tuple_risk_class: &'static str,
     protocol_evidence_sufficient_for_output_plan: bool,
     hardware_output_authorized: bool,
     native_control_evidence: bool,
     output_sendability_claim: bool,
     notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorProtocolDecodeCandidateSampleFixture {
+    tuple_id: String,
+    registry_status: &'static str,
+    total_count: u64,
+    sample_count: usize,
+    sample_frames: Vec<VendorProtocolTupleSampleFrame>,
+    hardware_output_authorized: bool,
+    output_sendability_claim: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -35727,6 +35972,16 @@ fn push_vendor_authority_navigation_markdown(out: &mut String, receipt: &Value) 
         out.push_str(&format!(
             "- Output sendability claim: `{output_sendability_claim}`\n"
         ));
+        let sample_scope =
+            json_string(priority, "decode_candidate_sample_scope").unwrap_or("not_recorded");
+        let sample_count = json_u64(priority, "decode_candidate_sample_count").unwrap_or(0);
+        out.push_str(&format!(
+            "- Decode candidate sample scope: `{}`\n",
+            markdown_escape(sample_scope)
+        ));
+        out.push_str(&format!(
+            "- Decode candidate sample frames: `{sample_count}`\n"
+        ));
         if let Some(tuples) = priority
             .get("top_unknown_commanded_tuples")
             .and_then(Value::as_array)
@@ -35747,6 +36002,38 @@ fn push_vendor_authority_navigation_markdown(out: &mut String, receipt: &Value) 
                     payload_len_min,
                     payload_len_max,
                     scenario_count
+                ));
+            }
+        }
+        if let Some(fixtures) = priority
+            .get("decode_candidate_sample_fixtures")
+            .and_then(Value::as_array)
+            .filter(|fixtures| !fixtures.is_empty())
+        {
+            out.push_str("\n| Sample fixture tuple | Samples | First frame | First payload bytes | Sendable |\n");
+            out.push_str("| --- | ---: | --- | ---: | --- |\n");
+            for fixture in fixtures {
+                let tuple_id = json_string(fixture, "tuple_id").unwrap_or("unknown");
+                let sample_count = json_u64(fixture, "sample_count").unwrap_or(0);
+                let first_sample = fixture
+                    .get("sample_frame_examples")
+                    .and_then(Value::as_array)
+                    .and_then(|samples| samples.first());
+                let first_frame = first_sample
+                    .and_then(|sample| json_string(sample, "frame_hex"))
+                    .unwrap_or("none");
+                let first_payload_len = first_sample
+                    .and_then(|sample| json_u64(sample, "payload_len"))
+                    .unwrap_or(0);
+                let output_sendability_claim =
+                    json_bool(fixture, "output_sendability_claim").unwrap_or(false);
+                out.push_str(&format!(
+                    "| `{}` | {} | `{}` | {} | `{}` |\n",
+                    markdown_escape(tuple_id),
+                    sample_count,
+                    markdown_escape(first_frame),
+                    first_payload_len,
+                    output_sendability_claim
                 ));
             }
         }
@@ -39359,6 +39646,7 @@ mod tests {
             "non_frame_byte_count": 0,
             "max_frames_per_packet": 0,
             "frame_shape_decode_gap": false,
+            "tuple_sample_limit": 3,
             "tuple_counts": [],
             "native_control_evidence": false,
             "readiness_claim": false,
@@ -39462,6 +39750,7 @@ mod tests {
                 "non_frame_byte_count": 0,
                 "max_frames_per_packet": 2,
                 "frame_shape_decode_gap": false,
+                "tuple_sample_limit": 3,
                 "tuple_counts": [
                     {
                         "group": "0x28",
@@ -39471,7 +39760,22 @@ mod tests {
                         "payload_len_max": 0,
                         "count": 1,
                         "checksum_valid_count": 1,
-                        "checksum_invalid_count": 0
+                        "checksum_invalid_count": 0,
+                        "sample_frames": [
+                            {
+                                "sample_index": 1,
+                                "packet_ordinal": 1,
+                                "frame_ordinal_in_packet": 1,
+                                "frame_hex": "7E01281302C9",
+                                "declared_len": 1,
+                                "payload_len": 0,
+                                "payload_hex": "",
+                                "checksum_hex": "0xC9",
+                                "checksum_valid": true,
+                                "hardware_output_authorized": false,
+                                "output_sendability_claim": false
+                            }
+                        ]
                     },
                     {
                         "group": "0x5A",
@@ -39481,7 +39785,22 @@ mod tests {
                         "payload_len_max": 0,
                         "count": frame_count,
                         "checksum_valid_count": frame_count,
-                        "checksum_invalid_count": 0
+                        "checksum_invalid_count": 0,
+                        "sample_frames": [
+                            {
+                                "sample_index": 1,
+                                "packet_ordinal": 1,
+                                "frame_ordinal_in_packet": 2,
+                                "frame_hex": "7E015A1B0001",
+                                "declared_len": 1,
+                                "payload_len": 0,
+                                "payload_hex": "",
+                                "checksum_hex": "0x01",
+                                "checksum_valid": true,
+                                "hardware_output_authorized": false,
+                                "output_sendability_claim": false
+                            }
+                        ]
                     }
                 ],
                 "native_control_evidence": false,
@@ -39659,6 +39978,30 @@ mod tests {
         );
         assert_eq!(
             value
+                .pointer("/sniff_evidence/host_to_device_serial_frame_tuple_sample_count")
+                .and_then(Value::as_u64),
+            Some(4)
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/scenarios/0/host_to_device_serial_frame_tuple_samples/0/frame_hex")
+                .and_then(Value::as_str),
+            Some("7E01281302C9")
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/scenarios/0/host_to_device_serial_frame_tuple_samples/0/hardware_output_authorized")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/scenarios/0/host_to_device_serial_frame_tuple_samples/0/output_sendability_claim")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            value
                 .pointer("/passive_tuple_registry_coverage/total_tuple_id_count")
                 .and_then(Value::as_u64),
             Some(2)
@@ -39698,6 +40041,50 @@ mod tests {
                 .pointer("/passive_tuple_registry_coverage/highest_frequency_unknown_commanded_tuple_ids/0")
                 .and_then(Value::as_str),
             Some("0x5A/0x1B/0x00")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_sample_scope")
+                .and_then(Value::as_str),
+            Some("highest_frequency_unknown_commanded_tuples")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_sample_count")
+                .and_then(Value::as_u64),
+            Some(2)
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_sample_tuple_ids/0")
+                .and_then(Value::as_str),
+            Some("0x5A/0x1B/0x00")
+        );
+        assert_eq!(
+            value
+                .pointer(
+                    "/passive_tuple_registry_coverage/decode_candidate_sample_fixtures/0/tuple_id"
+                )
+                .and_then(Value::as_str),
+            Some("0x5A/0x1B/0x00")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_sample_fixtures/0/sample_frames/0/frame_hex")
+                .and_then(Value::as_str),
+            Some("7E015A1B0001")
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_sample_fixtures/0/hardware_output_authorized")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            value
+                .pointer("/passive_tuple_registry_coverage/decode_candidate_sample_fixtures/0/output_sendability_claim")
+                .and_then(Value::as_bool),
+            Some(false)
         );
         assert_eq!(
             value
@@ -39962,6 +40349,7 @@ mod tests {
             .ok_or("sniff_evidence must have a required array")?;
         for field in [
             "total_host_to_device_unclassified_packets",
+            "host_to_device_serial_frame_tuple_sample_count",
             "host_to_device_decode_gap_detected",
             "decode_gap_scenarios",
         ] {
@@ -39972,6 +40360,38 @@ mod tests {
                 "sniff_evidence schema must require `{field}`"
             );
         }
+        let scenario_required =
+            schema["properties"]["sniff_evidence"]["properties"]["scenarios"]["items"]["required"]
+                .as_array()
+                .ok_or("scenario schema must have a required array")?;
+        assert!(
+            scenario_required
+                .iter()
+                .any(|entry| entry.as_str() == Some("host_to_device_serial_frame_tuple_samples")),
+            "scenario schema must require tuple samples"
+        );
+        let passive_tuple_required =
+            schema["properties"]["passive_tuple_registry_coverage"]["required"]
+                .as_array()
+                .ok_or("passive tuple coverage schema must have a required array")?;
+        for field in [
+            "decode_candidate_sample_scope",
+            "decode_candidate_sample_count",
+            "decode_candidate_sample_tuple_ids",
+            "decode_candidate_sample_fixtures",
+        ] {
+            assert!(
+                passive_tuple_required
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(field)),
+                "passive tuple coverage schema must require `{field}`"
+            );
+        }
+        assert_eq!(
+            schema["properties"]["passive_tuple_registry_coverage"]["properties"]["decode_candidate_sample_scope"]
+                ["const"],
+            "highest_frequency_unknown_commanded_tuples"
+        );
         Ok(())
     }
 
@@ -42327,6 +42747,32 @@ mod tests {
                         "0x5A/0x1B/0x00",
                         "0x5D/0x1B/0x01"
                     ],
+                    "decode_candidate_sample_scope": "highest_frequency_unknown_commanded_tuples",
+                    "decode_candidate_sample_count": 3,
+                    "decode_candidate_sample_tuple_ids": [
+                        "0x5A/0x1B/0x00"
+                    ],
+                    "decode_candidate_sample_fixtures": [
+                        {
+                            "tuple_id": "0x5A/0x1B/0x00",
+                            "registry_status": "unknown_commanded",
+                            "total_count": 1896,
+                            "sample_count": 3,
+                            "sample_frames": [
+                                {
+                                    "scenario": "pit-house-open-idle",
+                                    "frame_hex": "7E015A1B0001",
+                                    "payload_len": 0,
+                                    "payload_hex": "",
+                                    "checksum_valid": true,
+                                    "hardware_output_authorized": false,
+                                    "output_sendability_claim": false
+                                }
+                            ],
+                            "hardware_output_authorized": false,
+                            "output_sendability_claim": false
+                        }
+                    ],
                     "tuple_frequency_summary": [
                         {
                             "tuple_id": "0x5D/0x1B/0x01",
@@ -42388,6 +42834,24 @@ mod tests {
             Some(1896)
         );
         assert_eq!(
+            priority
+                .pointer("/decode_candidate_sample_count")
+                .and_then(Value::as_u64),
+            Some(3)
+        );
+        assert_eq!(
+            priority
+                .pointer("/decode_candidate_sample_tuple_ids/0")
+                .and_then(Value::as_str),
+            Some("0x5A/0x1B/0x00")
+        );
+        assert_eq!(
+            priority
+                .pointer("/decode_candidate_sample_fixtures/0/sample_frame_examples/0/frame_hex")
+                .and_then(Value::as_str),
+            Some("7E015A1B0001")
+        );
+        assert_eq!(
             json_bool(priority, "hardware_output_authorized"),
             Some(false)
         );
@@ -42403,6 +42867,8 @@ mod tests {
         assert!(artifact_markdown.contains("Protocol Decode Priority"));
         assert!(artifact_markdown.contains("0x5A/0x1B/0x00"));
         assert!(artifact_markdown.contains("1896"));
+        assert!(artifact_markdown.contains("Decode candidate sample frames: `3`"));
+        assert!(artifact_markdown.contains("7E015A1B0001"));
         assert!(artifact_markdown.contains("Output sendability claim: `false`"));
 
         let wizard_receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
