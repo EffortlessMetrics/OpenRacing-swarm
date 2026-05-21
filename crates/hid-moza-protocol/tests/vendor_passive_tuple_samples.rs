@@ -123,6 +123,67 @@ fn payload_shape_for_tuple<'a>(
         .ok_or_else(|| invalid_data(format!("missing payload shape for tuple `{tuple_id}`")))
 }
 
+fn string_array_at<'a>(value: &'a Value, pointer: &str) -> Result<Vec<&'a str>, io::Error> {
+    array_at(value, pointer)?
+        .iter()
+        .map(|entry| {
+            entry
+                .as_str()
+                .ok_or_else(|| invalid_data(format!("non-string entry at `{pointer}`")))
+        })
+        .collect()
+}
+
+fn packet_pattern_for_sequence<'a>(
+    patterns: &'a [Value],
+    expected_sequence: &[&str],
+) -> Result<&'a Value, io::Error> {
+    for pattern in patterns {
+        if string_array_at(pattern, "/tuple_sequence")? == expected_sequence {
+            return Ok(pattern);
+        }
+    }
+
+    Err(invalid_data(format!(
+        "missing packet pattern `{}`",
+        expected_sequence.join(" -> ")
+    )))
+}
+
+fn repeated_motif_for_sequence<'a>(
+    motifs: &'a [Value],
+    expected_sequence: &[&str],
+) -> Result<&'a Value, io::Error> {
+    for motif in motifs {
+        if string_array_at(motif, "/tuple_sequence")? == expected_sequence {
+            return Ok(motif);
+        }
+    }
+
+    Err(invalid_data(format!(
+        "missing repeated motif `{}`",
+        expected_sequence.join(" -> ")
+    )))
+}
+
+fn packet_group_for<'a>(
+    groups: &'a [Value],
+    scenario: &str,
+    packet_ordinal: usize,
+) -> Result<&'a Value, io::Error> {
+    groups
+        .iter()
+        .find(|group| {
+            str_field(group, "scenario").is_ok_and(|value| value == scenario)
+                && usize_field(group, "packet_ordinal").is_ok_and(|value| value == packet_ordinal)
+        })
+        .ok_or_else(|| {
+            invalid_data(format!(
+                "missing packet group `{scenario}`/{packet_ordinal}"
+            ))
+        })
+}
+
 fn find_sample_frame<'a>(
     fixtures: &'a [Value],
     tuple_id: &str,
@@ -157,6 +218,112 @@ fn assert_unknown_sample_remains_non_sendable(sample: &Value) -> TestResult {
         Err(MozaSerialFrameError::UnknownCommand { group, command })
             if group == observed.group && command == observed.command_id
     ));
+
+    Ok(())
+}
+
+#[test]
+fn passive_decode_candidate_samples_preserve_packet_group_hints() -> TestResult {
+    let review = protocol_evidence_review()?;
+    let summary = value_at(
+        &review,
+        "/passive_tuple_registry_coverage/decode_candidate_packet_group_summary",
+    )?;
+
+    assert_eq!(
+        str_field(summary, "claim_scope")?,
+        "no_output_passive_tuple_packet_group_review"
+    );
+    assert_eq!(
+        str_field(summary, "sample_scope")?,
+        "highest_frequency_unknown_commanded_tuples"
+    );
+    assert_eq!(usize_field(summary, "packet_group_count")?, 11);
+    assert_eq!(usize_field(summary, "sample_count")?, 30);
+    assert_eq!(usize_field(summary, "unique_packet_pattern_count")?, 3);
+    assert_eq!(usize_field(summary, "repeated_contiguous_motif_count")?, 4);
+    assert!(bool_field(summary, "all_packet_groups_checksum_valid")?);
+    assert!(bool_field(summary, "all_packet_groups_unknown_commanded")?);
+    assert!(bool_field(summary, "all_packet_groups_non_sendable")?);
+    assert!(!bool_field(summary, "hardware_output_authorized")?);
+    assert!(!bool_field(summary, "native_control_evidence")?);
+    assert!(!bool_field(summary, "output_sendability_claim")?);
+    assert!(!bool_field(
+        summary,
+        "protocol_evidence_sufficient_for_output_plan"
+    )?);
+
+    let groups = array_at(summary, "/packet_groups")?;
+    let combined = packet_group_for(groups, "pit-house-full-controls", 3)?;
+    assert_eq!(usize_field(combined, "frame_ordinal_min")?, 1);
+    assert_eq!(usize_field(combined, "frame_ordinal_max")?, 5);
+    assert_eq!(
+        string_array_at(combined, "/tuple_sequence")?,
+        Vec::from([
+            "0x5A/0x1B/0x00",
+            "0x5D/0x1B/0x01",
+            "0x25/0x19/0x02",
+            "0x25/0x19/0x03",
+            "0x25/0x19/0x01",
+        ])
+    );
+    assert_eq!(usize_field(combined, "sample_count")?, 5);
+    assert!(bool_field(combined, "all_samples_checksum_valid")?);
+    assert!(bool_field(combined, "all_samples_unknown_commanded")?);
+    assert!(!bool_field(combined, "hardware_output_authorized")?);
+    assert!(!bool_field(combined, "output_sendability_claim")?);
+
+    let patterns = array_at(summary, "/packet_patterns")?;
+    let pair = packet_pattern_for_sequence(patterns, &["0x5A/0x1B/0x00", "0x5D/0x1B/0x01"])?;
+    assert_eq!(usize_field(pair, "observed_packet_count")?, 5);
+    assert_eq!(usize_field(pair, "sample_count")?, 10);
+    assert_eq!(usize_field(pair, "scenario_count")?, 2);
+    assert!(!bool_field(pair, "hardware_output_authorized")?);
+    assert!(!bool_field(pair, "output_sendability_claim")?);
+
+    let triad = packet_pattern_for_sequence(
+        patterns,
+        &["0x25/0x19/0x02", "0x25/0x19/0x03", "0x25/0x19/0x01"],
+    )?;
+    assert_eq!(usize_field(triad, "observed_packet_count")?, 5);
+    assert_eq!(usize_field(triad, "sample_count")?, 15);
+    assert_eq!(usize_field(triad, "scenario_count")?, 2);
+    assert!(!bool_field(triad, "hardware_output_authorized")?);
+    assert!(!bool_field(triad, "output_sendability_claim")?);
+
+    let combined_pattern = packet_pattern_for_sequence(
+        patterns,
+        &[
+            "0x5A/0x1B/0x00",
+            "0x5D/0x1B/0x01",
+            "0x25/0x19/0x02",
+            "0x25/0x19/0x03",
+            "0x25/0x19/0x01",
+        ],
+    )?;
+    assert_eq!(usize_field(combined_pattern, "observed_packet_count")?, 1);
+    assert_eq!(usize_field(combined_pattern, "sample_count")?, 5);
+    assert_eq!(usize_field(combined_pattern, "scenario_count")?, 1);
+    assert!(!bool_field(combined_pattern, "hardware_output_authorized")?);
+    assert!(!bool_field(combined_pattern, "output_sendability_claim")?);
+
+    let motifs = array_at(summary, "/repeated_contiguous_motifs")?;
+    let repeated_pair = repeated_motif_for_sequence(motifs, &["0x5A/0x1B/0x00", "0x5D/0x1B/0x01"])?;
+    assert_eq!(usize_field(repeated_pair, "motif_len")?, 2);
+    assert_eq!(usize_field(repeated_pair, "observed_count")?, 6);
+    assert_eq!(usize_field(repeated_pair, "scenario_count")?, 2);
+    assert!(!bool_field(repeated_pair, "hardware_output_authorized")?);
+    assert!(!bool_field(repeated_pair, "output_sendability_claim")?);
+
+    let repeated_triad = repeated_motif_for_sequence(
+        motifs,
+        &["0x25/0x19/0x02", "0x25/0x19/0x03", "0x25/0x19/0x01"],
+    )?;
+    assert_eq!(usize_field(repeated_triad, "motif_len")?, 3);
+    assert_eq!(usize_field(repeated_triad, "observed_count")?, 6);
+    assert_eq!(usize_field(repeated_triad, "scenario_count")?, 2);
+    assert!(!bool_field(repeated_triad, "hardware_output_authorized")?);
+    assert!(!bool_field(repeated_triad, "output_sendability_claim")?);
 
     Ok(())
 }

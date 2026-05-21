@@ -337,6 +337,7 @@
         "decode_candidate_sample_tuple_ids",
         "decode_candidate_sample_fixtures",
         "decode_candidate_payload_shape_summary",
+        "decode_candidate_packet_group_summary",
         "unknown_tuple_risk_class",
         "protocol_evidence_sufficient_for_output_plan",
         "hardware_output_authorized",
@@ -589,6 +590,156 @@
                   "all_samples_checksum_valid": { "type": "boolean" },
                   "all_sample_payloads_empty_or_zero_filled": {
                     "type": "boolean"
+                  },
+                  "hardware_output_authorized": { "const": false },
+                  "output_sendability_claim": { "const": false }
+                },
+                "additionalProperties": true
+              }
+            },
+            "hardware_output_authorized": { "const": false },
+            "native_control_evidence": { "const": false },
+            "output_sendability_claim": { "const": false },
+            "protocol_evidence_sufficient_for_output_plan": { "const": false }
+          },
+          "additionalProperties": true
+        },
+        "decode_candidate_packet_group_summary": {
+          "type": "object",
+          "required": [
+            "claim_scope",
+            "sample_scope",
+            "packet_group_count",
+            "sample_count",
+            "unique_packet_pattern_count",
+            "repeated_contiguous_motif_count",
+            "all_packet_groups_checksum_valid",
+            "all_packet_groups_unknown_commanded",
+            "all_packet_groups_non_sendable",
+            "packet_groups",
+            "packet_patterns",
+            "repeated_contiguous_motifs",
+            "hardware_output_authorized",
+            "native_control_evidence",
+            "output_sendability_claim",
+            "protocol_evidence_sufficient_for_output_plan"
+          ],
+          "properties": {
+            "claim_scope": {
+              "const": "no_output_passive_tuple_packet_group_review"
+            },
+            "sample_scope": {
+              "const": "highest_frequency_unknown_commanded_tuples"
+            },
+            "packet_group_count": { "type": "integer", "minimum": 0 },
+            "sample_count": { "type": "integer", "minimum": 0 },
+            "unique_packet_pattern_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "repeated_contiguous_motif_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "all_packet_groups_checksum_valid": { "type": "boolean" },
+            "all_packet_groups_unknown_commanded": { "type": "boolean" },
+            "all_packet_groups_non_sendable": { "type": "boolean" },
+            "packet_groups": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "scenario",
+                  "packet_ordinal",
+                  "frame_ordinal_min",
+                  "frame_ordinal_max",
+                  "tuple_sequence",
+                  "frame_hex_sequence",
+                  "sample_count",
+                  "all_samples_checksum_valid",
+                  "all_samples_unknown_commanded",
+                  "hardware_output_authorized",
+                  "output_sendability_claim"
+                ],
+                "properties": {
+                  "scenario": { "type": "string" },
+                  "packet_ordinal": { "type": "integer", "minimum": 0 },
+                  "frame_ordinal_min": { "type": "integer", "minimum": 0 },
+                  "frame_ordinal_max": { "type": "integer", "minimum": 0 },
+                  "tuple_sequence": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "frame_hex_sequence": {
+                    "type": "array",
+                    "items": { "$ref": "#/$defs/hex_bytes_compact" }
+                  },
+                  "sample_count": { "type": "integer", "minimum": 0 },
+                  "all_samples_checksum_valid": { "type": "boolean" },
+                  "all_samples_unknown_commanded": { "type": "boolean" },
+                  "hardware_output_authorized": { "const": false },
+                  "output_sendability_claim": { "const": false }
+                },
+                "additionalProperties": true
+              }
+            },
+            "packet_patterns": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "tuple_sequence",
+                  "observed_packet_count",
+                  "sample_count",
+                  "scenario_count",
+                  "scenarios",
+                  "hardware_output_authorized",
+                  "output_sendability_claim"
+                ],
+                "properties": {
+                  "tuple_sequence": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "observed_packet_count": { "type": "integer", "minimum": 0 },
+                  "sample_count": { "type": "integer", "minimum": 0 },
+                  "scenario_count": { "type": "integer", "minimum": 0 },
+                  "scenarios": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "uniqueItems": true
+                  },
+                  "hardware_output_authorized": { "const": false },
+                  "output_sendability_claim": { "const": false }
+                },
+                "additionalProperties": true
+              }
+            },
+            "repeated_contiguous_motifs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "tuple_sequence",
+                  "motif_len",
+                  "observed_count",
+                  "scenario_count",
+                  "scenarios",
+                  "hardware_output_authorized",
+                  "output_sendability_claim"
+                ],
+                "properties": {
+                  "tuple_sequence": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "motif_len": { "type": "integer", "minimum": 2 },
+                  "observed_count": { "type": "integer", "minimum": 0 },
+                  "scenario_count": { "type": "integer", "minimum": 0 },
+                  "scenarios": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "uniqueItems": true
                   },
                   "hardware_output_authorized": { "const": false },
                   "output_sendability_claim": { "const": false }

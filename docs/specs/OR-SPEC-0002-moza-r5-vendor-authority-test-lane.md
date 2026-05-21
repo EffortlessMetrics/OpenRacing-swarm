@@ -141,6 +141,10 @@ Observed sample regressions MAY preserve payload-shape morphology for repeated
 unknown tuple groups, including empty, zero-filled, and non-zero observed
 payload classes, but those shapes MUST remain non-sendable fixture evidence and
 MUST NOT be treated as semantic command decode or output eligibility.
+Observed sample regressions MAY preserve packet-local grouping and repeated
+contiguous motif morphology for unknown tuple groups, but those packet groups
+MUST remain non-sendable fixture evidence and MUST NOT be treated as semantic
+command decode, registry promotion, output eligibility, or authorization input.
 
 ### Read-only status probe contract
 
