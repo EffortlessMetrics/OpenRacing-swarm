@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use crate::client::{
     DeviceCapabilities as ClientDeviceCapabilities, DeviceInfo as ClientDeviceInfo,
     DeviceState as ClientDeviceState, DeviceStatus, DiagnosticInfo, GameStatus, HealthEvent,
-    HealthEventType,
+    HealthEventType, MozaReadinessStatus, TelemetryData,
 };
 use racing_wheel_schemas::config::ProfileSchema;
 
@@ -122,66 +122,86 @@ fn format_capabilities(caps: &ClientDeviceCapabilities) -> String {
 /// Print device status
 pub fn print_device_status(status: &DeviceStatus, json: bool) {
     if json {
-        let output = json!({
-            "success": true,
-            "status": status
-        });
-        match serde_json::to_string_pretty(&output) {
-            Ok(s) => println!("{}", s),
-            Err(e) => eprintln!("Failed to format device status as JSON: {}", e),
+        print_device_status_json(status);
+    } else {
+        print_device_status_human(status);
+    }
+}
+
+fn print_device_status_json(status: &DeviceStatus) {
+    let output = json!({
+        "success": true,
+        "status": status
+    });
+    match serde_json::to_string_pretty(&output) {
+        Ok(s) => println!("{}", s),
+        Err(e) => eprintln!("Failed to format device status as JSON: {}", e),
+    }
+}
+
+fn print_device_status_human(status: &DeviceStatus) {
+    print_device_identity(status);
+    print_active_faults(&status.active_faults);
+    print_moza_readiness(status.moza.as_ref());
+    print_telemetry(&status.telemetry);
+}
+
+fn print_device_identity(status: &DeviceStatus) {
+    println!("{} {}", "Device:".bold(), status.device.name);
+    println!("  ID: {}", status.device.id);
+    println!("  State: {:?}", status.device.state);
+    println!(
+        "  Last Seen: {}",
+        status.last_seen.format("%Y-%m-%d %H:%M:%S UTC")
+    );
+}
+
+fn print_active_faults(active_faults: &[String]) {
+    if !active_faults.is_empty() {
+        println!(
+            "  {} {}",
+            "Active Faults:".red().bold(),
+            active_faults.len()
+        );
+        for fault in active_faults {
+            println!("    • {}", fault.red());
         }
     } else {
-        println!("{} {}", "Device:".bold(), status.device.name);
-        println!("  ID: {}", status.device.id);
-        println!("  State: {:?}", status.device.state);
-        println!(
-            "  Last Seen: {}",
-            status.last_seen.format("%Y-%m-%d %H:%M:%S UTC")
-        );
-
-        if !status.active_faults.is_empty() {
-            println!(
-                "  {} {}",
-                "Active Faults:".red().bold(),
-                status.active_faults.len()
-            );
-            for fault in &status.active_faults {
-                println!("    • {}", fault.red());
-            }
-        } else {
-            println!("  {}", "No Active Faults".green());
-        }
-
-        if let Some(moza) = &status.moza {
-            println!("  {}:", "Moza Readiness".bold());
-            println!("    Model: {}", moza.model);
-            println!("    Product ID: {}", moza.product_id);
-            println!("    Category: {}", moza.category);
-            println!("    Output Capable: {}", moza.output_capable);
-            println!("    FFB Ready: {}", moza.ffb_ready);
-            println!("    Init State: {}", moza.init_state);
-            println!("    Descriptor Trusted: {}", moza.descriptor_trusted);
-            if let Some(crc) = &moza.descriptor_crc32 {
-                println!("    Descriptor CRC32: {}", crc);
-            }
-            println!("    Safety State: {}", moza.safety_state);
-            println!("    Safety Reason: {}", moza.safety_reason);
-        }
-
-        println!("  {}:", "Telemetry".bold());
-        let tel = &status.telemetry;
-        println!("    Wheel Angle: {:.1}°", tel.wheel_angle_deg);
-        println!("    Wheel Speed: {:.1} rad/s", tel.wheel_speed_rad_s);
-        println!("    Temperature: {}°C", tel.temperature_c);
-        println!(
-            "    Hands On: {}",
-            if tel.hands_on {
-                "Yes".green()
-            } else {
-                "No".red()
-            }
-        );
+        println!("  {}", "No Active Faults".green());
     }
+}
+
+fn print_moza_readiness(moza: Option<&MozaReadinessStatus>) {
+    if let Some(moza) = moza {
+        println!("  {}:", "Moza Readiness".bold());
+        println!("    Model: {}", moza.model);
+        println!("    Product ID: {}", moza.product_id);
+        println!("    Category: {}", moza.category);
+        println!("    Output Capable: {}", moza.output_capable);
+        println!("    FFB Ready: {}", moza.ffb_ready);
+        println!("    Init State: {}", moza.init_state);
+        println!("    Descriptor Trusted: {}", moza.descriptor_trusted);
+        if let Some(crc) = &moza.descriptor_crc32 {
+            println!("    Descriptor CRC32: {}", crc);
+        }
+        println!("    Safety State: {}", moza.safety_state);
+        println!("    Safety Reason: {}", moza.safety_reason);
+    }
+}
+
+fn print_telemetry(tel: &TelemetryData) {
+    println!("  {}:", "Telemetry".bold());
+    println!("    Wheel Angle: {:.1}°", tel.wheel_angle_deg);
+    println!("    Wheel Speed: {:.1} rad/s", tel.wheel_speed_rad_s);
+    println!("    Temperature: {}°C", tel.temperature_c);
+    println!(
+        "    Hands On: {}",
+        if tel.hands_on {
+            "Yes".green()
+        } else {
+            "No".red()
+        }
+    );
 }
 
 /// Print profile information
