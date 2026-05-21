@@ -564,6 +564,7 @@ fn build_hardware_sniff_summary_from_tshark_json(
         .collect();
 
     let mut transfer_summary = HardwareSniffUsbTransferSummary::default();
+    let mut host_to_device_payload_coverage = HardwareSniffHostToDevicePayloadCoverage::default();
     let mut devices: BTreeMap<(String, String), HardwareSniffObservedDeviceBuilder> =
         BTreeMap::new();
     let mut reports: BTreeMap<(SniffUsbDirection, u8), HardwareSniffObservedReportBuilder> =
@@ -576,6 +577,7 @@ fn build_hardware_sniff_summary_from_tshark_json(
     for packet in &matched_packets {
         if matches!(packet.direction, Some(SniffUsbDirection::HostToDevice)) {
             transfer_summary.host_to_device += 1;
+            host_to_device_payload_coverage.observe(packet);
         }
         if matches!(packet.direction, Some(SniffUsbDirection::DeviceToHost)) {
             transfer_summary.device_to_host += 1;
@@ -663,8 +665,11 @@ fn build_hardware_sniff_summary_from_tshark_json(
         .into_values()
         .map(|report| report.build(config.include_payload_samples))
         .collect();
-    let report_classification_summary =
-        summarize_sniff_report_classifications(&observed_reports, transfer_summary.host_to_device);
+    let report_classification_summary = summarize_sniff_report_classifications(
+        &observed_reports,
+        transfer_summary.host_to_device,
+        host_to_device_payload_coverage,
+    );
 
     Ok(HardwareSniffSummaryArtifact {
         schema_version: 1,
@@ -920,6 +925,7 @@ fn parse_tshark_usb_packet(packet: &serde_json::Value) -> Result<TsharkUsbPacket
     let payload = first_payload_field(&fields).and_then(|value| parse_payload_hex(&value));
     let report_id = first_u8_field(&fields, &["usbhid.report_id", "hid.report_id"])
         .or_else(|| payload.as_ref().and_then(|bytes| bytes.first().copied()));
+    let data_len = first_usize_field(&fields, &["usb.data_len"]);
 
     Ok(TsharkUsbPacket {
         device_key: packet_device_key(&fields),
@@ -950,6 +956,7 @@ fn parse_tshark_usb_packet(packet: &serde_json::Value) -> Result<TsharkUsbPacket
         endpoint_address,
         direction,
         transfer_type: parse_packet_transfer_type(&fields, endpoint_address),
+        data_len,
         report_id,
         payload,
         descriptor_kind: parse_packet_descriptor_kind(&fields),
@@ -1071,6 +1078,12 @@ fn first_u8_field(fields: &BTreeMap<String, Vec<String>>, keys: &[&str]) -> Opti
     first_field_value(fields, keys)
         .and_then(|value| parse_u64_field(&value))
         .and_then(|value| u8::try_from(value).ok())
+}
+
+fn first_usize_field(fields: &BTreeMap<String, Vec<String>>, keys: &[&str]) -> Option<usize> {
+    first_field_value(fields, keys)
+        .and_then(|value| parse_u64_field(&value))
+        .and_then(|value| usize::try_from(value).ok())
 }
 
 fn first_hex16_field(fields: &BTreeMap<String, Vec<String>>, keys: &[&str]) -> Option<String> {
@@ -1723,6 +1736,38 @@ fn render_sniff_summary_markdown(summary: &HardwareSniffSummaryArtifact) -> Stri
     out.push_str(&format!(
         "- interrupt: `{}`\n\n",
         summary.usb_transfer_summary.interrupt
+    ));
+
+    out.push_str("## Host-to-Device Payload Coverage\n\n");
+    out.push_str(&format!(
+        "- data-length packets: `{}`\n",
+        summary
+            .report_classification_summary
+            .host_to_device_data_len_packet_count
+    ));
+    out.push_str(&format!(
+        "- declared data bytes: `{}`\n",
+        summary
+            .report_classification_summary
+            .host_to_device_data_len_bytes
+    ));
+    out.push_str(&format!(
+        "- payload-extracted packets: `{}`\n",
+        summary
+            .report_classification_summary
+            .host_to_device_payload_extracted_packet_count
+    ));
+    out.push_str(&format!(
+        "- payload-missing packets: `{}`\n",
+        summary
+            .report_classification_summary
+            .host_to_device_payload_missing_packet_count
+    ));
+    out.push_str(&format!(
+        "- payload export gap: `{}`\n\n",
+        summary
+            .report_classification_summary
+            .host_to_device_payload_export_gap
     ));
 
     out.push_str("## Observed Devices\n\n");
@@ -5140,6 +5185,12 @@ struct HardwareSniffReportClassificationSummary {
     host_to_device_classified_packet_count: usize,
     host_to_device_unclassified_packet_count: usize,
     host_to_device_decode_gap: bool,
+    host_to_device_data_len_packet_count: usize,
+    host_to_device_data_len_bytes: usize,
+    host_to_device_payload_extracted_packet_count: usize,
+    host_to_device_payload_extracted_bytes: usize,
+    host_to_device_payload_missing_packet_count: usize,
+    host_to_device_payload_export_gap: bool,
     host_to_device_report_ids: Vec<String>,
     standard_pidff_output_report_ids: Vec<String>,
     vendor_or_device_specific_output_candidate_report_ids: Vec<String>,
@@ -5152,6 +5203,7 @@ struct HardwareSniffReportClassificationSummary {
 fn summarize_sniff_report_classifications(
     reports: &[HardwareSniffObservedReport],
     host_to_device_packet_count: usize,
+    host_to_device_payload_coverage: HardwareSniffHostToDevicePayloadCoverage,
 ) -> HardwareSniffReportClassificationSummary {
     let mut standard_pidff_output_report_count = 0;
     let mut vendor_or_device_specific_output_candidate_count = 0;
@@ -5188,12 +5240,20 @@ fn summarize_sniff_report_classifications(
         host_to_device_packet_count.saturating_sub(host_to_device_classified_packet_count);
     let host_to_device_decode_gap =
         host_to_device_packet_count > 0 && host_to_device_unclassified_packet_count > 0;
-    let decode_recommended =
-        vendor_or_device_specific_output_candidate_count > 0 || host_to_device_decode_gap;
+    let host_to_device_payload_export_gap =
+        host_to_device_payload_coverage.payload_missing_packet_count > 0;
+    let decode_recommended = vendor_or_device_specific_output_candidate_count > 0
+        || host_to_device_decode_gap
+        || host_to_device_payload_export_gap;
     let notes = if vendor_or_device_specific_output_candidate_count > 0 {
         vec![
             "vendor/device-specific host-to-device report candidates are present; decode them before designing any future OpenRacing output plan".to_string(),
             "classification summary is protocol navigation only and does not prove native control or readiness".to_string(),
+        ]
+    } else if host_to_device_payload_export_gap {
+        vec![
+            "host-to-device USB transfers declare data length but no payload bytes were extracted; inspect tshark payload export or raw pcap filtering before designing any future OpenRacing output plan".to_string(),
+            "host-to-device payload export gaps are protocol navigation only and do not prove native control or readiness".to_string(),
         ]
     } else if host_to_device_decode_gap {
         vec![
@@ -5215,6 +5275,15 @@ fn summarize_sniff_report_classifications(
         host_to_device_classified_packet_count,
         host_to_device_unclassified_packet_count,
         host_to_device_decode_gap,
+        host_to_device_data_len_packet_count: host_to_device_payload_coverage.data_len_packet_count,
+        host_to_device_data_len_bytes: host_to_device_payload_coverage.data_len_bytes,
+        host_to_device_payload_extracted_packet_count: host_to_device_payload_coverage
+            .payload_extracted_packet_count,
+        host_to_device_payload_extracted_bytes: host_to_device_payload_coverage
+            .payload_extracted_bytes,
+        host_to_device_payload_missing_packet_count: host_to_device_payload_coverage
+            .payload_missing_packet_count,
+        host_to_device_payload_export_gap,
         host_to_device_report_ids: host_to_device_report_ids.into_iter().collect(),
         standard_pidff_output_report_ids: standard_pidff_output_report_ids.into_iter().collect(),
         vendor_or_device_specific_output_candidate_report_ids:
@@ -5225,6 +5294,35 @@ fn summarize_sniff_report_classifications(
         native_control_evidence: false,
         readiness_claim: false,
         notes,
+    }
+}
+
+#[derive(Default, Debug, Clone, Copy)]
+struct HardwareSniffHostToDevicePayloadCoverage {
+    data_len_packet_count: usize,
+    data_len_bytes: usize,
+    payload_extracted_packet_count: usize,
+    payload_extracted_bytes: usize,
+    payload_missing_packet_count: usize,
+}
+
+impl HardwareSniffHostToDevicePayloadCoverage {
+    fn observe(&mut self, packet: &TsharkUsbPacket) {
+        if let Some(data_len) = packet.data_len.filter(|data_len| *data_len > 0) {
+            self.data_len_packet_count = self.data_len_packet_count.saturating_add(1);
+            self.data_len_bytes = self.data_len_bytes.saturating_add(data_len);
+            if packet.payload.is_none() {
+                self.payload_missing_packet_count =
+                    self.payload_missing_packet_count.saturating_add(1);
+            }
+        }
+
+        if let Some(payload) = &packet.payload {
+            self.payload_extracted_packet_count =
+                self.payload_extracted_packet_count.saturating_add(1);
+            self.payload_extracted_bytes =
+                self.payload_extracted_bytes.saturating_add(payload.len());
+        }
     }
 }
 
@@ -5311,6 +5409,7 @@ struct TsharkUsbPacket {
     endpoint_address: Option<u8>,
     direction: Option<SniffUsbDirection>,
     transfer_type: Option<SniffUsbTransferType>,
+    data_len: Option<usize>,
     report_id: Option<u8>,
     payload: Option<Vec<u8>>,
     descriptor_kind: Option<SniffDescriptorKind>,
@@ -6361,8 +6460,11 @@ mod tests {
                 payload_sha256_examples: vec![sha256_hex(b"synthetic report payload")],
                 payload_hex_samples: None,
             }];
-            let report_classification_summary =
-                summarize_sniff_report_classifications(&observed_reports, 0);
+            let report_classification_summary = summarize_sniff_report_classifications(
+                &observed_reports,
+                0,
+                HardwareSniffHostToDevicePayloadCoverage::default(),
+            );
 
             HardwareSniffSummaryArtifact {
                 schema_version: 1,
@@ -7166,7 +7268,8 @@ mod tests {
                       "usb.interface_number": "2",
                       "usb.endpoint_address": "0x02",
                       "usb.endpoint_direction": "OUT",
-                      "usb.transfer_type": "Interrupt"
+                      "usb.transfer_type": "Interrupt",
+                      "usb.data_len": "20"
                     }
                   }
                 }
@@ -7202,6 +7305,24 @@ mod tests {
                 1
             );
             assert!(classification_summary.host_to_device_decode_gap);
+            assert_eq!(
+                classification_summary.host_to_device_data_len_packet_count,
+                1
+            );
+            assert_eq!(classification_summary.host_to_device_data_len_bytes, 20);
+            assert_eq!(
+                classification_summary.host_to_device_payload_extracted_packet_count,
+                0
+            );
+            assert_eq!(
+                classification_summary.host_to_device_payload_extracted_bytes,
+                0
+            );
+            assert_eq!(
+                classification_summary.host_to_device_payload_missing_packet_count,
+                1
+            );
+            assert!(classification_summary.host_to_device_payload_export_gap);
             assert!(classification_summary.decode_recommended);
             assert!(!classification_summary.native_control_evidence);
             assert!(!classification_summary.readiness_claim);
@@ -7209,7 +7330,7 @@ mod tests {
                 classification_summary
                     .notes
                     .iter()
-                    .any(|note| note.contains("without extractable HID report IDs")),
+                    .any(|note| note.contains("declare data length but no payload bytes")),
                 "decode-gap note should explain why a raw protocol review is still needed"
             );
             assert_schema_valid(

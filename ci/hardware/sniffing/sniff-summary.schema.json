@@ -252,6 +252,16 @@
         "standard_pidff_output_report_count",
         "vendor_or_device_specific_output_candidate_count",
         "input_or_status_report_count",
+        "host_to_device_packet_count",
+        "host_to_device_classified_packet_count",
+        "host_to_device_unclassified_packet_count",
+        "host_to_device_decode_gap",
+        "host_to_device_data_len_packet_count",
+        "host_to_device_data_len_bytes",
+        "host_to_device_payload_extracted_packet_count",
+        "host_to_device_payload_extracted_bytes",
+        "host_to_device_payload_missing_packet_count",
+        "host_to_device_payload_export_gap",
         "host_to_device_report_ids",
         "standard_pidff_output_report_ids",
         "vendor_or_device_specific_output_candidate_report_ids",
@@ -286,6 +296,29 @@
           "minimum": 0
         },
         "host_to_device_decode_gap": {
+          "type": "boolean"
+        },
+        "host_to_device_data_len_packet_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "host_to_device_data_len_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "host_to_device_payload_extracted_packet_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "host_to_device_payload_extracted_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "host_to_device_payload_missing_packet_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "host_to_device_payload_export_gap": {
           "type": "boolean"
         },
         "host_to_device_report_ids": {

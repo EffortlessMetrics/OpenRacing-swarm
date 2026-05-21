@@ -27715,8 +27715,12 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
     let mut total_matched_packets = 0u64;
     let mut total_host_to_device_packets = 0u64;
     let mut total_host_to_device_unclassified_packets = 0u64;
+    let mut total_host_to_device_payload_missing_packets = 0u64;
+    let mut total_host_to_device_data_len_bytes = 0u64;
+    let mut total_host_to_device_payload_extracted_bytes = 0u64;
     let mut total_device_to_host_packets = 0u64;
     let mut decode_gap_scenarios = Vec::new();
+    let mut payload_export_gap_scenarios = Vec::new();
 
     for (scenario, label, focus, _warning) in moza_passive_sniff_navigation_requirements() {
         let review = vendor_protocol_sniff_scenario_review(sniff_root, scenario, label, focus)?;
@@ -27732,10 +27736,19 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
             total_host_to_device_packets.saturating_add(review.host_to_device_packets);
         total_host_to_device_unclassified_packets = total_host_to_device_unclassified_packets
             .saturating_add(review.host_to_device_unclassified_packet_count);
+        total_host_to_device_payload_missing_packets = total_host_to_device_payload_missing_packets
+            .saturating_add(review.host_to_device_payload_missing_packet_count);
+        total_host_to_device_data_len_bytes = total_host_to_device_data_len_bytes
+            .saturating_add(review.host_to_device_data_len_bytes);
+        total_host_to_device_payload_extracted_bytes = total_host_to_device_payload_extracted_bytes
+            .saturating_add(review.host_to_device_payload_extracted_bytes);
         total_device_to_host_packets =
             total_device_to_host_packets.saturating_add(review.device_to_host_packets);
         if review.host_to_device_decode_gap {
             decode_gap_scenarios.push(review.scenario.clone());
+        }
+        if review.host_to_device_payload_export_gap {
+            payload_export_gap_scenarios.push(review.scenario.clone());
         }
         host_to_device_report_ids.extend(review.host_to_device_report_ids.iter().cloned());
         vendor_or_device_specific_output_candidate_report_ids.extend(
@@ -27756,9 +27769,15 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
         total_matched_packets,
         total_host_to_device_packets,
         total_host_to_device_unclassified_packets,
+        total_host_to_device_payload_missing_packets,
+        total_host_to_device_data_len_bytes,
+        total_host_to_device_payload_extracted_bytes,
         total_device_to_host_packets,
         host_to_device_decode_gap_detected: total_host_to_device_unclassified_packets > 0,
+        host_to_device_payload_export_gap_detected: total_host_to_device_payload_missing_packets
+            > 0,
         decode_gap_scenarios,
+        payload_export_gap_scenarios,
         host_to_device_report_ids: host_to_device_report_ids.into_iter().collect(),
         vendor_or_device_specific_output_candidate_report_ids:
             vendor_or_device_specific_output_candidate_report_ids
@@ -27810,6 +27829,12 @@ fn vendor_protocol_sniff_scenario_review(
             host_to_device_classified_packet_count: 0,
             host_to_device_unclassified_packet_count: 0,
             host_to_device_decode_gap: false,
+            host_to_device_data_len_packet_count: 0,
+            host_to_device_data_len_bytes: 0,
+            host_to_device_payload_extracted_packet_count: 0,
+            host_to_device_payload_extracted_bytes: 0,
+            host_to_device_payload_missing_packet_count: 0,
+            host_to_device_payload_export_gap: false,
             device_to_host_packets: 0,
             standard_pidff_output_report_count: 0,
             vendor_or_device_specific_output_candidate_count: 0,
@@ -27858,11 +27883,41 @@ fn vendor_protocol_sniff_scenario_review(
         .get("host_to_device_decode_gap")
         .and_then(Value::as_bool)
         .unwrap_or(host_to_device_unclassified_packet_count > 0);
+    let host_to_device_data_len_packet_count = classification
+        .get("host_to_device_data_len_packet_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let host_to_device_data_len_bytes = classification
+        .get("host_to_device_data_len_bytes")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let host_to_device_payload_extracted_packet_count = classification
+        .get("host_to_device_payload_extracted_packet_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let host_to_device_payload_extracted_bytes = classification
+        .get("host_to_device_payload_extracted_bytes")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let host_to_device_payload_missing_packet_count = classification
+        .get("host_to_device_payload_missing_packet_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let host_to_device_payload_export_gap = classification
+        .get("host_to_device_payload_export_gap")
+        .and_then(Value::as_bool)
+        .unwrap_or(host_to_device_payload_missing_packet_count > 0);
     let mut notes =
         vec!["checked-in passive summary is non-claiming protocol evidence".to_string()];
     if host_to_device_decode_gap {
         notes.push(
             "host-to-device packets are present but not fully mapped to report IDs; inspect raw pcap/tshark payload export before any future output plan"
+                .to_string(),
+        );
+    }
+    if host_to_device_payload_export_gap {
+        notes.push(
+            "host-to-device packets declare USB data length but stored summaries have missing payload bytes; inspect tshark payload fields or filtered/raw pcap export before any future output plan"
                 .to_string(),
         );
     }
@@ -27890,6 +27945,12 @@ fn vendor_protocol_sniff_scenario_review(
         host_to_device_classified_packet_count,
         host_to_device_unclassified_packet_count,
         host_to_device_decode_gap,
+        host_to_device_data_len_packet_count,
+        host_to_device_data_len_bytes,
+        host_to_device_payload_extracted_packet_count,
+        host_to_device_payload_extracted_bytes,
+        host_to_device_payload_missing_packet_count,
+        host_to_device_payload_export_gap,
         device_to_host_packets: summary
             .pointer("/usb_transfer_summary/device_to_host")
             .and_then(Value::as_u64)
@@ -29708,9 +29769,14 @@ struct VendorProtocolSniffEvidence {
     total_matched_packets: u64,
     total_host_to_device_packets: u64,
     total_host_to_device_unclassified_packets: u64,
+    total_host_to_device_payload_missing_packets: u64,
+    total_host_to_device_data_len_bytes: u64,
+    total_host_to_device_payload_extracted_bytes: u64,
     total_device_to_host_packets: u64,
     host_to_device_decode_gap_detected: bool,
+    host_to_device_payload_export_gap_detected: bool,
     decode_gap_scenarios: Vec<String>,
+    payload_export_gap_scenarios: Vec<String>,
     host_to_device_report_ids: Vec<String>,
     vendor_or_device_specific_output_candidate_report_ids: Vec<String>,
     decode_recommended_by_summaries: bool,
@@ -29738,6 +29804,12 @@ struct VendorProtocolSniffScenarioReview {
     host_to_device_classified_packet_count: u64,
     host_to_device_unclassified_packet_count: u64,
     host_to_device_decode_gap: bool,
+    host_to_device_data_len_packet_count: u64,
+    host_to_device_data_len_bytes: u64,
+    host_to_device_payload_extracted_packet_count: u64,
+    host_to_device_payload_extracted_bytes: u64,
+    host_to_device_payload_missing_packet_count: u64,
+    host_to_device_payload_export_gap: bool,
     device_to_host_packets: u64,
     standard_pidff_output_report_count: u64,
     vendor_or_device_specific_output_candidate_count: u64,
@@ -38618,10 +38690,20 @@ mod tests {
                 "standard_pidff_output_report_count": 0,
                 "vendor_or_device_specific_output_candidate_count": 0,
                 "input_or_status_report_count": 1,
+                "host_to_device_packet_count": 10,
+                "host_to_device_classified_packet_count": 0,
+                "host_to_device_unclassified_packet_count": 10,
+                "host_to_device_decode_gap": true,
+                "host_to_device_data_len_packet_count": 10,
+                "host_to_device_data_len_bytes": 200,
+                "host_to_device_payload_extracted_packet_count": 0,
+                "host_to_device_payload_extracted_bytes": 0,
+                "host_to_device_payload_missing_packet_count": 10,
+                "host_to_device_payload_export_gap": true,
                 "host_to_device_report_ids": [],
                 "standard_pidff_output_report_ids": [],
                 "vendor_or_device_specific_output_candidate_report_ids": [],
-                "decode_recommended": false,
+                "decode_recommended": true,
                 "native_control_evidence": false,
                 "readiness_claim": false,
                 "notes": []
@@ -38762,7 +38844,31 @@ mod tests {
         );
         assert_eq!(
             value
+                .pointer("/sniff_evidence/total_host_to_device_payload_missing_packets")
+                .and_then(Value::as_u64),
+            Some(20)
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/total_host_to_device_data_len_bytes")
+                .and_then(Value::as_u64),
+            Some(400)
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/total_host_to_device_payload_extracted_bytes")
+                .and_then(Value::as_u64),
+            Some(0)
+        );
+        assert_eq!(
+            value
                 .pointer("/sniff_evidence/host_to_device_decode_gap_detected")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/host_to_device_payload_export_gap_detected")
                 .and_then(Value::as_bool),
             Some(true)
         );
@@ -38775,6 +38881,13 @@ mod tests {
         assert_eq!(
             value
                 .pointer("/sniff_evidence/decode_gap_scenarios")
+                .and_then(Value::as_array)
+                .map(Vec::len),
+            Some(2)
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/payload_export_gap_scenarios")
                 .and_then(Value::as_array)
                 .map(Vec::len),
             Some(2)

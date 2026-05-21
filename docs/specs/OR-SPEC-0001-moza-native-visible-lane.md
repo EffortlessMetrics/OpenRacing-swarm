@@ -130,6 +130,12 @@ gap. That gap is a no-output protocol research finding only; it MUST route to
 raw payload export or decoded-report review and MUST NOT authorize output or
 readiness promotion.
 
+If a passive summary records host-to-device packets with a nonzero USB data
+length but no extractable payload bytes, the lane MAY record a payload export
+gap. That gap means the capture/export layer needs review before decoded-report
+work can identify a command, and it MUST NOT authorize output or readiness
+promotion.
+
 Given a stored verifier receipt that is syntactically valid but failed its requested stage, the artifact index MAY mark the file itself as `pass`, but it MUST expose the claim status as `stage_failed`. Artifact validity MUST NOT be treated as native-visible readiness.
 
 ## Proof requirements

@@ -2195,6 +2195,82 @@ Revert only the decode-gap fields, tests, schema additions, refreshed protocol
 review receipt, and source-of-truth updates. Do not remove passive sniff
 artifacts, consumed hardware attempts, or prior undertravel evidence.
 
+## Work item: passive-sniff-payload-export-coverage
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: raw payload export review before decoded report work
+Blocked by: checked-in Pit House passive sniff summaries with host-to-device decode gaps
+
+### Goal
+
+Distinguish a generic host-to-device decode gap from a sharper payload export
+gap where tshark reports nonzero `usb.data_len` on host-to-device packets but
+the stored summary extracts no payload bytes.
+
+### Production delta
+
+Extend `wheelctl hardware sniff-summary` to parse `usb.data_len` and record
+host-to-device data-length packet counts, declared data bytes, extracted
+payload counts, extracted payload bytes, missing payload packet counts, and a
+payload export gap flag. Refresh the Pit House `open-idle` and `full-controls`
+summaries, their bundle manifests, and `vendor-protocol-evidence-review.json`.
+
+The checked-in review now records 3,248 host-to-device packets with declared
+USB data length and no extracted payload bytes across the two completed Pit
+House scenarios. This is non-claiming protocol evidence and routes next work to
+tshark/raw pcap export review before another output family.
+
+### Non-goals
+
+No HID open, serial open, read-only query send, hardware output, authorization
+receipt, PIDFF rerun, force increase, direct HID report `0xaf`, high torque,
+serial config, firmware, DFU, native-control claim, native-visible claim,
+smoke-ready claim, Pit House coexistence claim, simulator claim, release-ready
+claim, or raw `.pcapng` commit.
+
+### Acceptance
+
+- Future `sniff-summary` receipts expose host-to-device payload export coverage
+  without serializing raw payload samples by default.
+- The checked-in Pit House summaries record `host_to_device_payload_export_gap=true`.
+- `vendor-protocol-evidence-review.json` records
+  `host_to_device_payload_export_gap_detected=true`,
+  `total_host_to_device_payload_missing_packets=3248`, and
+  `total_host_to_device_payload_extracted_bytes=0`.
+- `planned_next_output.allowed=false`, `native_control_evidence=false`,
+  `hardware_output_authorized=false`, `native_visible_ready=false`, and
+  `smoke_ready=false` remain pinned.
+- Native-visible verifier remains blocked on `native_actuator_visible_smoke`.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_summary_surfaces_host_to_device_decode_gaps -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-summary --pcapng target/sniff/pit-house-open-idle/capture.pcapng --vendor 0x346E --product 0x0004 --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-summary.json --md-out target/sniff/pit-house-open-idle/sniff-summary.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-summary --pcapng target/sniff/pit-house-full-controls/capture.pcapng --vendor 0x346E --product 0x0004 --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-summary.json --md-out target/sniff/pit-house-full-controls/sniff-summary.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-bundle --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-plan.json --receipt ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-receipt.json --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-summary.json --operator-notes target/sniff/pit-house-open-idle/operator-notes.md --out target/sniff/pit-house-open-idle/openracing-sniff-bundle.zip --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-bundle-manifest.json --json
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-bundle --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-plan.json --receipt ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-receipt.json --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-summary.json --operator-notes target/sniff/pit-house-full-controls/operator-notes.md --out target/sniff/pit-house-full-controls/openracing-sniff-bundle.zip --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-bundle-manifest.json --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza vendor-protocol-evidence-review --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json --json --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-passive-sniff-payload-coverage.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-passive-sniff-payload-coverage.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the payload-export coverage fields, tests, schema additions,
+refreshed sniff summaries, bundle manifests, protocol review receipt, and
+source-of-truth updates. Do not remove passive sniff plans, raw local capture
+artifacts, consumed hardware attempts, or prior undertravel evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
