@@ -56,6 +56,23 @@ This section is native-control research navigation only. It does not open HID, s
 | `post_authority_pidff_response` | `vendor-post-authority-pidff-response.json` |
 | `vendor_protocol_evidence_review` | `vendor-protocol-evidence-review.json` |
 
+### Protocol Decode Priority
+
+Frequency-ranked tuples are decode-priority navigation only. They do not make an unknown tuple sendable.
+
+- Status: `frequency_ranked_unknown_commanded_tuples`
+- Source receipt: `vendor-protocol-evidence-review.json`
+- Unknown tuple risk class: `unknown_do_not_send`
+- Output sendability claim: `false`
+
+| Tuple | Count | Payload bytes | Scenarios |
+| --- | ---: | ---: | ---: |
+| `0x5A/0x1B/0x00` | 1896 | 0..0 | 2 |
+| `0x5D/0x1B/0x01` | 1894 | 2..2 | 2 |
+| `0x25/0x19/0x01` | 624 | 2..2 | 2 |
+| `0x25/0x19/0x02` | 624 | 2..2 | 2 |
+| `0x25/0x19/0x03` | 624 | 2..2 | 2 |
+
 ## Pit House Compatibility
 
 This section is external-smoke navigation only. Pit House is not required for native OpenRacing control, and these artifacts do not authorize hardware output.

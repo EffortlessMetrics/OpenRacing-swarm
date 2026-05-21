@@ -84,8 +84,10 @@ visible before any semantic decode work: `0x5A/0x1B/0x00` appears 1,896 times,
 `0x5D/0x1B/0x01` appears 1,894 times, and `0x25/0x19/0x01`,
 `0x25/0x19/0x02`, and `0x25/0x19/0x03` each appear 624 times. This is
 protocol-shape, registry-coverage, and frequency-prioritization navigation
-only: it does not decode an approved semantic enable command, make any tuple
-sendable, authorize output, or promote native-visible readiness.
+only. Artifact-index and bench-wizard now surface that frequency-ranked decode
+priority from the checked-in review receipt, but this still does not decode an
+approved semantic enable command, make any tuple sendable, authorize output, or
+promote native-visible readiness.
 
 The latest pre-output, lane analysis, role-status, and artifact-index receipts
 report six proven input roles and one remaining generic auxiliary role.
@@ -2627,6 +2629,83 @@ protocol review receipt, artifact-index refresh, and source-of-truth updates.
 Do not remove passive sniff plans, raw local capture artifacts, consumed
 hardware attempts, prior undertravel evidence, or the tuple-to-registry
 coverage receipt fields.
+
+## Work item: passive-sniff-decode-priority-navigation
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked specs:
+- docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+- docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: reviewed semantic command evidence before any future output family
+Blocked by: checked-in `vendor-protocol-evidence-review.json` with tuple
+frequency ranking
+
+### Goal
+
+Surface the frequency-ranked unknown commanded tuple decode priority through
+normal artifact-index and bench-wizard navigation so operators and future PRs do
+not need to inspect the large protocol review receipt by hand.
+
+### Production Delta
+
+Extend the shared vendor-authority navigation summary with
+`vendor_protocol_decode_priority`, derived from
+`passive_tuple_registry_coverage.tuple_frequency_summary` in the checked-in
+`vendor-protocol-evidence-review.json` receipt. Render the top unknown
+commanded tuples in artifact-index and bench-wizard Markdown.
+
+Refresh `ci/hardware/moza-r5/2026-05-13/index.md` and this source-of-truth
+stack.
+
+### Non-goals
+
+No HID open, serial open, read-only query send, hardware output, authorization
+receipt, PIDFF rerun, force increase, direct HID report `0xaf`, high torque,
+serial config, firmware, DFU, native-control claim, native-visible claim,
+smoke-ready claim, Pit House coexistence claim, simulator claim, release-ready
+claim, raw `.pcapng` commit, semantic command decode, registry promotion, or
+tuple sendability claim.
+
+### Acceptance
+
+- Artifact-index and bench-wizard receipts include
+  `vendor_authority_navigation.vendor_protocol_decode_priority`.
+- The decode-priority object records `claim_scope` as
+  `no_output_vendor_protocol_decode_priority_navigation`.
+- The top unknown commanded tuples begin with `0x5A/0x1B/0x00` and
+  `0x5D/0x1B/0x01`.
+- `hardware_output_authorized=false`, `native_control_evidence=false`,
+  `native_visible_ready=false`, `protocol_evidence_sufficient_for_output_plan=false`,
+  and `output_sendability_claim=false` remain pinned.
+- Artifact-index and bench-wizard Markdown render the decode-priority table
+  without emitting a hardware attempt command.
+- Native-visible verifier remains blocked on `native_actuator_visible_smoke`.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_authority_navigation_surfaces_decode_priority_without_claims -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl artifact_index -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-decode-priority-navigation.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-after-decode-priority-navigation.json --md-out target/moza-current/bench-wizard-after-decode-priority-navigation.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-decode-priority-navigation.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo test --locked -p wheelctl --bin wheelctl checked_in_moza_lane_index_matches_artifact_index_renderer -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the decode-priority navigation code, tests, refreshed artifact
+index, and source-of-truth updates. Do not remove the protocol evidence review
+receipt, passive tuple frequency fields, passive sniff plans, raw local capture
+artifacts, consumed hardware attempts, or prior undertravel evidence.
 
 ## Work item: native-visible-promotion
 
