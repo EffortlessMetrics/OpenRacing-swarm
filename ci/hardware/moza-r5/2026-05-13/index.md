@@ -71,6 +71,14 @@ Frequency-ranked tuples are decode-priority navigation only. They do not make an
 - Decode candidate packet groups: `11`
 - Unique packet patterns: `3`
 - Repeated contiguous motifs: `4`
+- Residual payload export gap packets: `2`
+- Payload export gap scenarios: `2`
+- Payload gap sendability claim: `false`
+
+| Payload gap scenario | Missing packets | Example packet | Data len | Sendable |
+| --- | ---: | ---: | ---: | --- |
+| `pit-house-open-idle` | 1 | 5 | 8 | `false` |
+| `pit-house-full-controls` | 1 | 5 | 8 | `false` |
 
 | Tuple | Count | Payload bytes | Scenarios |
 | --- | ---: | ---: | ---: |

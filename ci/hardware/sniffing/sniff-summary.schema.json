@@ -262,6 +262,7 @@
         "host_to_device_payload_extracted_bytes",
         "host_to_device_payload_missing_packet_count",
         "host_to_device_payload_export_gap",
+        "host_to_device_payload_missing_packet_examples",
         "host_to_device_report_ids",
         "standard_pidff_output_report_ids",
         "vendor_or_device_specific_output_candidate_report_ids",
@@ -321,6 +322,79 @@
         },
         "host_to_device_payload_export_gap": {
           "type": "boolean"
+        },
+        "host_to_device_payload_missing_packet_examples": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "packet_ordinal",
+              "frame_number",
+              "device_key",
+              "vendor_id",
+              "product_id",
+              "interface_number",
+              "endpoint_address",
+              "transfer_type",
+              "data_len",
+              "payload_extracted",
+              "native_control_evidence",
+              "hardware_output_authorized"
+            ],
+            "properties": {
+              "packet_ordinal": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "frame_number": {
+                "type": ["integer", "null"],
+                "minimum": 1
+              },
+              "device_key": {
+                "type": ["string", "null"]
+              },
+              "vendor_id": {
+                "anyOf": [
+                  { "$ref": "#/$defs/hex16" },
+                  { "type": "null" }
+                ]
+              },
+              "product_id": {
+                "anyOf": [
+                  { "$ref": "#/$defs/hex16" },
+                  { "type": "null" }
+                ]
+              },
+              "interface_number": {
+                "type": ["integer", "null"],
+                "minimum": 0
+              },
+              "endpoint_address": {
+                "anyOf": [
+                  { "$ref": "#/$defs/hex8" },
+                  { "type": "null" }
+                ]
+              },
+              "transfer_type": {
+                "type": ["string", "null"],
+                "enum": ["control", "interrupt", "other", null]
+              },
+              "data_len": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "payload_extracted": {
+                "const": false
+              },
+              "native_control_evidence": {
+                "const": false
+              },
+              "hardware_output_authorized": {
+                "const": false
+              }
+            }
+          }
         },
         "host_to_device_report_ids": {
           "type": "array",

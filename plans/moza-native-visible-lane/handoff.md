@@ -82,7 +82,11 @@ narrowed: TShark's `usbcom.data.*_payload` fields now expose candidate
 host-to-device frame/report ID `0x7E`, 3,246 extracted host-to-device payload
 packets, and 53,988 extracted host-to-device payload bytes across the two
 completed Pit House scenarios. Two data-length packets still lack extracted
-payload bytes.
+payload bytes. The review now keeps those residual gaps as bounded locators in
+`sniff_evidence.payload_export_gap_summary`: packet ordinal/frame number `5`
+for `pit-house-open-idle` and packet ordinal/frame number `5` for
+`pit-house-full-controls`, both with `payload_extracted=false`,
+`hardware_output_authorized=false`, and `output_sendability_claim=false`.
 
 Those extracted host-to-device payloads now parse into 7,863 length-prefixed
 `0x7E` serial-frame candidates with 7,863 valid checksums, zero invalid
@@ -140,7 +144,7 @@ The broader Moza objective remains incomplete:
 | Closed-loop failure analysis | `native-controlled-angle-closed-loop-failure-analysis.json` | Recorded no-output classification |
 | Consumed vendor-authority attempt | `vendor-authority-attempt.json` | Recorded exact one-frame non-claiming attempt |
 | Post-authority PIDFF response | `vendor-post-authority-pidff-smoke.json`; `vendor-post-authority-pidff-response.json`; [post-authority PIDFF response diagnosis](../../docs/hardware/moza-r5-post-authority-pidff-response.md) | Recorded regression versus baseline; no native-visible claim |
-| Vendor protocol evidence review | `vendor-protocol-evidence-review.json`; artifact-index/bench-wizard `vendor_protocol_decode_priority` | Recorded no-output review, host-to-device candidate `0x7E`, 7,863 checksum-valid candidate frames, 159 bounded passive tuple sample frames, one read-only registry tuple match, 12 commandless tuple IDs, 17 unknown commanded tuple IDs, frequency-ranked unknown commanded tuples headed by `0x5A/0x1B/0x00` and `0x5D/0x1B/0x01`, 30 decode-candidate sample frames for the top unknown tuples, protocol-crate observed-frame, packet-order, payload-shape, and packet-group regression coverage for those samples, partial residual payload export gap, and no sufficient semantic protocol evidence for any output plan |
+| Vendor protocol evidence review | `vendor-protocol-evidence-review.json`; artifact-index/bench-wizard `vendor_protocol_decode_priority` | Recorded no-output review, host-to-device candidate `0x7E`, 7,863 checksum-valid candidate frames, 159 bounded passive tuple sample frames, one read-only registry tuple match, 12 commandless tuple IDs, 17 unknown commanded tuple IDs, frequency-ranked unknown commanded tuples headed by `0x5A/0x1B/0x00` and `0x5D/0x1B/0x01`, 30 decode-candidate sample frames for the top unknown tuples, protocol-crate observed-frame, packet-order, payload-shape, and packet-group regression coverage for those samples, two residual payload export gap packet locators, and no sufficient semantic protocol evidence for any output plan |
 | Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence |
 | Remaining passive sniff plans | `pit-house-setting-change`, `simhub-open-idle`, `simhub-output-session`, `simulator-session-start-stop` sniff plans | Plan-only, non-claiming |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |

@@ -3115,6 +3115,97 @@ sample-frame preservation, observed frame-shape decoding, packet-order
 regression coverage, payload-shape summary, consumed hardware attempts, prior
 undertravel evidence, or tuple frequency and registry coverage fields.
 
+## Work item: passive-sniff-payload-gap-examples
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: semantic vendor protocol decode before any future output family
+Blocked by: checked-in Pit House summaries with two residual host-to-device
+payload export gaps
+
+### Goal
+
+Turn the remaining passive payload export gap from aggregate counts into
+bounded packet/frame locators so the next protocol review can inspect the two
+missing-payload USB transfers without committing raw `.pcapng` files or
+pretending the gap is sendable protocol evidence.
+
+### Production Delta
+
+Extend `wheelctl hardware sniff-summary` so host-to-device packets with
+nonzero `usb.data_len` but no extracted payload bytes keep capped
+`host_to_device_payload_missing_packet_examples`. Each example records the
+packet ordinal, optional tshark frame number, device/interface/endpoint
+locator, declared data length, and pinned false native-control/output flags.
+
+Extend `wheelctl moza vendor-protocol-evidence-review` with
+`sniff_evidence.payload_export_gap_summary`, copy the examples into the
+per-scenario review, and surface the same summary through artifact-index and
+bench-wizard decode-priority navigation.
+
+Refresh the two checked-in Pit House summaries, their bundle manifests,
+`vendor-protocol-evidence-review.json`, `ci/hardware/moza-r5/2026-05-13/index.md`,
+and this source-of-truth stack. The current review now records two residual
+missing-payload packets, one in `pit-house-open-idle` and one in
+`pit-house-full-controls`, each as locator evidence only.
+
+### Non-goals
+
+No HID open, serial open, read-only query send, hardware output, authorization
+receipt, PIDFF rerun, force increase, direct HID report `0xaf`, high torque,
+serial config, firmware, DFU, native-control claim, native-visible claim,
+smoke-ready claim, Pit House coexistence claim, simulator claim, release-ready
+claim, raw `.pcapng` commit, semantic command decode, registry promotion, or
+tuple sendability claim.
+
+### Acceptance
+
+- `sniff-summary.json` records
+  `host_to_device_payload_missing_packet_examples` under
+  `report_classification_summary`.
+- `vendor-protocol-evidence-review.json` records
+  `sniff_evidence.payload_export_gap_summary.claim_scope` as
+  `no_output_passive_payload_export_gap_review`.
+- The payload gap summary records `total_missing_packet_count=2` and
+  `scenario_count=2`.
+- Each missing-payload example pins `payload_extracted=false`,
+  `native_control_evidence=false`, `hardware_output_authorized=false`, and
+  `output_sendability_claim=false`.
+- Artifact-index and bench-wizard Markdown render residual payload export gap
+  navigation without emitting a hardware attempt command.
+- Native-visible verifier remains blocked on `native_actuator_visible_smoke`.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl hardware_sniff_summary -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_authority_navigation_surfaces_decode_priority_without_claims -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-summary --pcapng target/sniff/pit-house-open-idle/capture.pcapng --vendor 0x346E --product 0x0004 --include-payload-samples --max-samples-per-report 2 --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-summary.json --md-out target/sniff/pit-house-open-idle/sniff-summary.md
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-summary --pcapng target/sniff/pit-house-full-controls/capture.pcapng --vendor 0x346E --product 0x0004 --include-payload-samples --max-samples-per-report 2 --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-summary.json --md-out target/sniff/pit-house-full-controls/sniff-summary.md
+cargo run --locked -p wheelctl --bin wheelctl -- --json hardware sniff-bundle --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-plan.json --receipt ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-receipt.json --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-summary.json --operator-notes target/sniff/pit-house-open-idle/operator-notes.md --include-pcapng target/sniff/pit-house-open-idle/capture.pcapng --out target/sniff/pit-house-open-idle/openracing-sniff-bundle.zip --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-bundle-manifest.json
+cargo run --locked -p wheelctl --bin wheelctl -- --json hardware sniff-bundle --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-plan.json --receipt ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-receipt.json --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-summary.json --operator-notes target/sniff/pit-house-full-controls/operator-notes.md --include-pcapng target/sniff/pit-house-full-controls/capture.pcapng --out target/sniff/pit-house-full-controls/openracing-sniff-bundle.zip --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-bundle-manifest.json
+cargo run --locked -p wheelctl --bin wheelctl -- moza vendor-protocol-evidence-review --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json --json --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-passive-payload-gap.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-after-passive-payload-gap.json --md-out target/moza-current/bench-wizard-after-passive-payload-gap.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-passive-payload-gap.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the payload-gap example fields, schema additions, refreshed passive
+sniff summaries/manifests, protocol review receipt, artifact-index refresh, and
+source-of-truth updates. Do not remove passive sniff plans, raw local capture
+artifacts, consumed hardware attempts, prior undertravel evidence, or existing
+tuple frequency, sample fixture, payload-shape, and packet-group evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
