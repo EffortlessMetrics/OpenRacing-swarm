@@ -628,12 +628,16 @@ pub struct DeviceInfo {
 
 impl DeviceInfo {
     fn from_wire(w: wire::DeviceInfo) -> Self {
+        let identity = device_info_mapping::map_identity(&w);
+        let status = device_info_mapping::map_status(&w);
+        let capabilities = device_info_mapping::map_capabilities(&w);
+
         Self {
-            id: w.id,
-            name: w.name,
+            id: identity.id,
+            name: identity.name,
             source: Some("wheeld".to_string()),
-            vendor_id: wire_u32_to_hex_u16(w.vendor_id),
-            product_id: wire_u32_to_hex_u16(w.product_id),
+            vendor_id: identity.vendor_id,
+            product_id: identity.product_id,
             manufacturer: None,
             product_string: None,
             serial_number_present: None,
@@ -641,12 +645,9 @@ impl DeviceInfo {
             usage_page: None,
             usage: None,
             hid_path_present: None,
-            device_type: DeviceType::from_wire(w.r#type),
-            state: DeviceState::from_wire(w.state),
-            capabilities: w
-                .capabilities
-                .map(DeviceCapabilities::from_wire)
-                .unwrap_or_default(),
+            device_type: status.device_type,
+            state: status.state,
+            capabilities,
         }
     }
 }
@@ -656,6 +657,52 @@ fn wire_u32_to_hex_u16(value: u32) -> Option<String> {
         .ok()
         .filter(|value| *value != 0)
         .map(|value| format!("0x{value:04X}"))
+}
+
+mod device_info_mapping {
+    use super::{DeviceCapabilities, DeviceInfo, DeviceState, DeviceType, wire};
+
+    pub(super) struct DeviceIdentity {
+        pub(super) id: String,
+        pub(super) name: String,
+        pub(super) vendor_id: Option<String>,
+        pub(super) product_id: Option<String>,
+    }
+
+    pub(super) struct DeviceStatusMapping {
+        pub(super) device_type: DeviceType,
+        pub(super) state: DeviceState,
+    }
+
+    pub(super) fn map_identity(device: &wire::DeviceInfo) -> DeviceIdentity {
+        DeviceIdentity {
+            id: device.id.clone(),
+            name: device.name.clone(),
+            vendor_id: DeviceInfo::wire_id_to_hex(device.vendor_id),
+            product_id: DeviceInfo::wire_id_to_hex(device.product_id),
+        }
+    }
+
+    pub(super) fn map_status(device: &wire::DeviceInfo) -> DeviceStatusMapping {
+        DeviceStatusMapping {
+            device_type: DeviceType::from_wire(device.r#type),
+            state: DeviceState::from_wire(device.state),
+        }
+    }
+
+    pub(super) fn map_capabilities(device: &wire::DeviceInfo) -> DeviceCapabilities {
+        device
+            .capabilities
+            .clone()
+            .map(DeviceCapabilities::from_wire)
+            .unwrap_or_default()
+    }
+}
+
+impl DeviceInfo {
+    fn wire_id_to_hex(value: u32) -> Option<String> {
+        wire_u32_to_hex_u16(value)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
