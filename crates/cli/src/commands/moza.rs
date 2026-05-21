@@ -21341,75 +21341,34 @@ fn low_torque_command_log_is_safe(
     max_percent: f64,
     expected_writes: u64,
 ) -> bool {
-    let Some(records) = receipt.get("command_log").and_then(Value::as_array) else {
+    let Some(records) = low_torque_command_records(receipt) else {
         return false;
     };
-
-    let Ok(expected_len) = usize::try_from(expected_writes.saturating_add(1)) else {
-        return false;
-    };
-    if records.len() != expected_len {
+    if !low_torque_command_log_length_matches(records.len(), expected_writes) {
         return false;
     }
 
     let mut low_torque_ok = 0u64;
     for (index, record) in records.iter().enumerate() {
-        if json_string(record, "result") != Some("ok")
-            || json_string(record, "report_id") != Some(DIRECT_TORQUE_REPORT_ID)
-            || json_u64(record, "bytes_written") != Some(REPORT_LEN as u64)
-            || !record_sequence_matches_index(record, index)
-        {
+        if !low_torque_record_has_required_metadata(record, index) {
             return false;
         }
 
         match json_string(record, "kind") {
             Some("low_torque") => {
-                if index + 1 == records.len() {
+                if !low_torque_record_position_is_valid(index, records.len()) {
                     return false;
                 }
-                let percent = match json_f64(record, "percent") {
-                    Some(value) => value,
-                    None => return false,
-                };
-                let torque_raw = match json_i64(record, "torque_raw") {
-                    Some(value) => value,
-                    None => return false,
-                };
-                let flags = match json_u64(record, "flags") {
-                    Some(value) => value,
-                    None => return false,
-                };
-                let payload_hex = match json_string(record, "payload_hex") {
-                    Some(value) => value,
-                    None => return false,
-                };
-                let Some(expected) = low_torque_expected_payload(pid, percent) else {
-                    return false;
-                };
-                let record_safe = percent.is_finite()
-                    && percent > 0.0
-                    && percent <= max_percent
-                    && payload_hex.len() == REPORT_LEN * 2
-                    && payload_matches_hex(expected.payload, payload_hex)
-                    && torque_raw == i64::from(expected.torque_raw)
-                    && flags == u64::from(expected.flags)
-                    && json_bool(record, "motor_enabled") == Some(expected.motor_enabled);
-                if !record_safe {
+                if !low_torque_record_payload_is_safe(record, pid, max_percent) {
                     return false;
                 }
                 low_torque_ok += 1;
             }
             Some("final_zero") => {
-                if index + 1 != records.len() {
+                if !final_zero_record_position_is_valid(index, records.len()) {
                     return false;
                 }
-                let final_zero_safe = json_string(record, "payload_hex")
-                    == Some("2000000000000000")
-                    && json_f64(record, "percent") == Some(0.0)
-                    && json_i64(record, "torque_raw") == Some(0)
-                    && json_u64(record, "flags") == Some(0)
-                    && json_bool(record, "motor_enabled") == Some(false);
-                if !final_zero_safe {
+                if !final_zero_record_payload_is_safe(record) {
                     return false;
                 }
             }
@@ -21418,6 +21377,67 @@ fn low_torque_command_log_is_safe(
     }
 
     low_torque_ok == expected_writes
+}
+
+fn low_torque_command_records(receipt: &Value) -> Option<&Vec<Value>> {
+    receipt.get("command_log").and_then(Value::as_array)
+}
+
+fn low_torque_command_log_length_matches(actual_len: usize, expected_writes: u64) -> bool {
+    let Ok(expected_len) = usize::try_from(expected_writes.saturating_add(1)) else {
+        return false;
+    };
+    actual_len == expected_len
+}
+
+fn low_torque_record_has_required_metadata(record: &Value, index: usize) -> bool {
+    json_string(record, "result") == Some("ok")
+        && json_string(record, "report_id") == Some(DIRECT_TORQUE_REPORT_ID)
+        && json_u64(record, "bytes_written") == Some(REPORT_LEN as u64)
+        && record_sequence_matches_index(record, index)
+}
+
+fn low_torque_record_position_is_valid(index: usize, records_len: usize) -> bool {
+    index + 1 != records_len
+}
+
+fn final_zero_record_position_is_valid(index: usize, records_len: usize) -> bool {
+    index + 1 == records_len
+}
+
+fn low_torque_record_payload_is_safe(record: &Value, pid: u16, max_percent: f64) -> bool {
+    let Some(percent) = json_f64(record, "percent") else {
+        return false;
+    };
+    let Some(torque_raw) = json_i64(record, "torque_raw") else {
+        return false;
+    };
+    let Some(flags) = json_u64(record, "flags") else {
+        return false;
+    };
+    let Some(payload_hex) = json_string(record, "payload_hex") else {
+        return false;
+    };
+    let Some(expected) = low_torque_expected_payload(pid, percent) else {
+        return false;
+    };
+
+    percent.is_finite()
+        && percent > 0.0
+        && percent <= max_percent
+        && payload_hex.len() == REPORT_LEN * 2
+        && payload_matches_hex(expected.payload, payload_hex)
+        && torque_raw == i64::from(expected.torque_raw)
+        && flags == u64::from(expected.flags)
+        && json_bool(record, "motor_enabled") == Some(expected.motor_enabled)
+}
+
+fn final_zero_record_payload_is_safe(record: &Value) -> bool {
+    json_string(record, "payload_hex") == Some("2000000000000000")
+        && json_f64(record, "percent") == Some(0.0)
+        && json_i64(record, "torque_raw") == Some(0)
+        && json_u64(record, "flags") == Some(0)
+        && json_bool(record, "motor_enabled") == Some(false)
 }
 
 fn pidff_low_torque_command_log_is_safe(
