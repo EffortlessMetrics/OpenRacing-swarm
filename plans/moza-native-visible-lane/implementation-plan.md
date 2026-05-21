@@ -3473,6 +3473,74 @@ and source-of-truth updates. Do not remove existing passive sniff summaries,
 semantic correlation planning, consumed hardware attempts, or protocol evidence
 review receipts.
 
+## Work item: bench-wizard-passive-correlation-capture-handoff
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: next passive correlation capture after vendor protocol review
+Blocked by: `vendor-protocol-evidence-review.json` is recorded, but the bench
+wizard next operator step did not directly surface the next missing passive
+semantic-correlation capture handoff.
+
+### Goal
+
+When the vendor protocol evidence review is recorded and the semantic
+correlation plan still needs a passive sniff scenario, route the bench wizard's
+next operator step to the existing non-claiming passive capture handoff.
+
+### Production Delta
+
+Update `wheelctl moza bench-wizard` next-step selection so a recorded vendor
+protocol evidence review prefers the next missing non-claiming passive sniff
+plan before falling back to generic protocol-investigation text. The emitted
+step preserves the command-bound `sniff-receipt`, `sniff-notes-template`,
+`sniff-summary`, and `sniff-bundle` handoff commands and annotates the source as
+`vendor_protocol_evidence_review_recorded`.
+
+### Non-goals
+
+No HID open, serial open, read-only query send, hardware output, authorization
+receipt, PIDFF rerun, force increase, direct HID report `0xaf`, high torque,
+serial config, firmware, DFU, native-control claim, native-visible claim,
+smoke-ready claim, Pit House coexistence claim, simulator claim,
+release-ready claim, raw `.pcapng` commit, semantic command decode, registry
+promotion, or tuple sendability claim.
+
+### Acceptance
+
+- With a recorded vendor protocol evidence review and completed
+  `pit-house-open-idle` / `pit-house-full-controls` sniff artifacts, a missing
+  `pit-house-setting-change` receipt/summary becomes the bench-wizard
+  `capture_passive_vendor_sniff` next operator step.
+- The handoff includes the `sniff-notes-template` command so the exact
+  setting/value/restore evidence remains required.
+- The handoff keeps `hardware_output_allowed_now=false`,
+  `hardware_attempt_command_emitted=false`, and `no_openracing_output=true`.
+- Existing generated sniff commands remain parseable through the CLI parser.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_review_routes_next_missing_passive_correlation_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_sniff_next_operator_commands_parse -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-passive-correlation-handoff.json --md-out target/moza-current/bench-wizard-passive-correlation-handoff.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-passive-correlation-handoff.json --json; if ($LASTEXITCODE -ne 4) { throw "expected native-visible verifier to remain blocked" }; $global:LASTEXITCODE = 0
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the bench-wizard next-step selection update, focused regression
+test, and source-of-truth updates. Do not remove passive sniff plans,
+checked-in sniff evidence, consumed hardware attempts, or protocol evidence
+review receipts.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
