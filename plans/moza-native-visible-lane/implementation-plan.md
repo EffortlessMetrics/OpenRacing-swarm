@@ -2795,6 +2795,77 @@ source-of-truth updates. Do not remove passive sniff plans, raw local capture
 artifacts, consumed hardware attempts, prior undertravel evidence, or tuple
 frequency/registry coverage fields.
 
+## Work item: passive-sniff-observed-tuple-decoder-regression
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked specs:
+- docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+- docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: future semantic decode of passive vendor-control tuples
+Blocked by: checked-in `vendor-protocol-evidence-review.json` decode-candidate sample frames
+
+### Goal
+
+Make the serial fixture decoder consume the checked-in passive tuple sample
+frames as observed wire-shape fixtures without pretending unknown tuples are
+semantic commands.
+
+### Production Delta
+
+Add an observed-frame decode helper in the Moza serial frame module. The helper
+validates start byte, declared length, payload slice, checksum, tuple fields,
+and optional registry lookup. Unlike `decode_fixture_frame`, it returns
+`command=None` for unknown tuples instead of treating a valid passive frame
+shape as a codec failure.
+
+Add a protocol crate regression test that reads the checked-in
+`vendor-protocol-evidence-review.json` decode-candidate sample fixtures,
+decodes all 30 sample frames for the five highest-frequency unknown commanded
+tuples, and proves they remain unknown to the semantic registry and non-sendable.
+
+### Non-goals
+
+No HID open, serial open, read-only query send, hardware output, authorization
+receipt, PIDFF rerun, force increase, direct HID report `0xaf`, high torque,
+serial config, firmware, DFU, native-control claim, native-visible claim,
+smoke-ready claim, Pit House coexistence claim, simulator claim, release-ready
+claim, raw `.pcapng` commit, semantic command decode, registry promotion, or
+tuple sendability claim.
+
+### Acceptance
+
+- `decode_observed_frame_shape` validates checksum-valid passive sample frame
+  shape while preserving optional registry lookup.
+- The existing synthetic semantic fixture decoder still rejects unknown tuples.
+- The checked-in decode-candidate sample fixtures decode to observed frames.
+- The five fixture tuple IDs remain the frequency-ranked unknown commanded
+  queue headed by `0x5A/0x1B/0x00` and `0x5D/0x1B/0x01`.
+- All 30 passive sample frames keep `hardware_output_authorized=false` and
+  `output_sendability_claim=false`.
+- No readiness or sendability claim changes.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_passive_tuple_samples -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_serial_codec_fixtures -- --nocapture
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the observed-frame decode helper, passive tuple sample regression
+test, and source-of-truth updates. Do not remove checked-in passive sniff
+summaries, `vendor-protocol-evidence-review.json`, sample-frame preservation,
+consumed hardware attempts, prior undertravel evidence, or tuple frequency and
+registry coverage fields.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
