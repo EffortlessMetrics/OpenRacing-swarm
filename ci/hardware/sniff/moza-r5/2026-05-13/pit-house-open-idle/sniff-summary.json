@@ -2,7 +2,7 @@
   "schema_version": 1,
   "success": true,
   "command": "wheelctl hardware sniff-summary",
-  "generated_at_utc": "2026-05-21T10:16:33Z",
+  "generated_at_utc": "2026-05-21T14:34:16Z",
   "pcapng_sha256": "600111023b27cccb95138f59b1e64a73b35af34a48b6fc7d0f2f89f03dd82927",
   "tool": {
     "tshark_present": true,
@@ -51,11 +51,14 @@
         ]
       },
       "count": 393,
-      "payload_sample_count": 3,
+      "payload_sample_count": 2,
       "payload_sha256_examples": [
         "9aac519f2e16867d1d9b23c285a10b08cfb11d431489b999f09e4107f00fd78a",
-        "a6a2126e4cfd273fde4dacb19eb5bb321671e2497471959cdb949c2b7ce02e82",
-        "c74d71b28fed1657907827db53e0934adf8fb57785ddf154a553135d3c29dcad"
+        "a6a2126e4cfd273fde4dacb19eb5bb321671e2497471959cdb949c2b7ce02e82"
+      ],
+      "payload_hex_samples": [
+        "7E 01 5A 1B 00 01 7E 03 5D 1B 01 00 00 07",
+        "7E 03 25 19 02 00 00 CE 7E 03 25 19 03 00 00 CF 7E 03 25 19 01 00 00 CD"
       ]
     },
     {
@@ -72,11 +75,14 @@
         ]
       },
       "count": 3078,
-      "payload_sample_count": 3,
+      "payload_sample_count": 2,
       "payload_sha256_examples": [
         "54d4aa01c9568f0f3b787ebd65384e0af49a7ce7e590c77db22e1bf1d7506c38",
-        "2f50e4007a858c00a5dcf145a4c3d1ca6ced9d031b24ac810272bd0870994c14",
-        "c34ce1053c12ce855849674afc6d667c3e740c71fad48ec2460b3a26c11fa4f7"
+        "2f50e4007a858c00a5dcf145a4c3d1ca6ced9d031b24ac810272bd0870994c14"
+      ],
+      "payload_hex_samples": [
+        "01 00 80 01 80 00 80 01 80 01 80 00 80 01 80 00 80 08 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 26 02 C7 40",
+        "01 00 80 01 80 00 80 01 80 01 80 00 80 01 80 00 80 08 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 E3 4D D8 40"
       ]
     },
     {
@@ -93,11 +99,14 @@
         ]
       },
       "count": 410,
-      "payload_sample_count": 3,
+      "payload_sample_count": 2,
       "payload_sha256_examples": [
         "056b6be6c207e0fc19a8a435869b5318b6d617b17c39590b213c28883ebfe904",
-        "056b6be6c207e0fc19a8a435869b5318b6d617b17c39590b213c28883ebfe904",
-        "2bc9bb11a021beba9c3c815f3f4c94172afaa89ce9e2c6683077717c1a02c50b"
+        "056b6be6c207e0fc19a8a435869b5318b6d617b17c39590b213c28883ebfe904"
+      ],
+      "payload_hex_samples": [
+        "7E 14 DA B1 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 2A 7E 03 DD B1 01 00 00 1D",
+        "7E 14 DA B1 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 2A 7E 03 DD B1 01 00 00 1D"
       ]
     }
   ],
@@ -115,6 +124,22 @@
     "host_to_device_payload_extracted_bytes": 6199,
     "host_to_device_payload_missing_packet_count": 1,
     "host_to_device_payload_export_gap": true,
+    "host_to_device_payload_missing_packet_examples": [
+      {
+        "packet_ordinal": 5,
+        "frame_number": 5,
+        "device_key": "2:3",
+        "vendor_id": "0x346E",
+        "product_id": "0x0004",
+        "interface_number": 0,
+        "endpoint_address": "0x00",
+        "transfer_type": "other",
+        "data_len": 8,
+        "payload_extracted": false,
+        "native_control_evidence": false,
+        "hardware_output_authorized": false
+      }
+    ],
     "host_to_device_report_ids": [
       "0x7E"
     ],
@@ -1497,7 +1522,6 @@
   "notes": [
     "passive sniff summary is protocol research/support evidence only",
     "OpenRacing opened no HID device and sent no output, feature, serial, firmware, or DFU commands",
-    "sniff artifacts cannot satisfy native response, native visible, smoke, or release gates",
-    "payload examples are represented as sha256 hashes only"
+    "sniff artifacts cannot satisfy native response, native visible, smoke, or release gates"
   ]
 }

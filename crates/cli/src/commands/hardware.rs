@@ -906,11 +906,15 @@ fn parse_tshark_usb_packets(tshark_json: &str) -> Result<Vec<TsharkUsbPacket>> {
 
     packets
         .iter()
-        .map(parse_tshark_usb_packet)
+        .enumerate()
+        .map(|(index, packet)| parse_tshark_usb_packet(packet, index.saturating_add(1)))
         .collect::<Result<Vec<_>>>()
 }
 
-fn parse_tshark_usb_packet(packet: &serde_json::Value) -> Result<TsharkUsbPacket> {
+fn parse_tshark_usb_packet(
+    packet: &serde_json::Value,
+    packet_ordinal: usize,
+) -> Result<TsharkUsbPacket> {
     let layers = packet
         .pointer("/_source/layers")
         .or_else(|| packet.get("layers"))
@@ -933,6 +937,8 @@ fn parse_tshark_usb_packet(packet: &serde_json::Value) -> Result<TsharkUsbPacket
     let data_len = first_usize_field(&fields, &["usb.data_len"]);
 
     Ok(TsharkUsbPacket {
+        packet_ordinal,
+        frame_number: first_u64_field(&fields, &["frame.number"]),
         device_key: packet_device_key(&fields),
         vendor_id: first_hex16_field(
             &fields,
@@ -1089,6 +1095,10 @@ fn first_usize_field(fields: &BTreeMap<String, Vec<String>>, keys: &[&str]) -> O
     first_field_value(fields, keys)
         .and_then(|value| parse_u64_field(&value))
         .and_then(|value| usize::try_from(value).ok())
+}
+
+fn first_u64_field(fields: &BTreeMap<String, Vec<String>>, keys: &[&str]) -> Option<u64> {
+    first_field_value(fields, keys).and_then(|value| parse_u64_field(&value))
 }
 
 fn first_hex16_field(fields: &BTreeMap<String, Vec<String>>, keys: &[&str]) -> Option<String> {
@@ -1776,6 +1786,34 @@ fn render_sniff_summary_markdown(summary: &HardwareSniffSummaryArtifact) -> Stri
             .report_classification_summary
             .host_to_device_payload_export_gap
     ));
+    let missing_examples = &summary
+        .report_classification_summary
+        .host_to_device_payload_missing_packet_examples;
+    if !missing_examples.is_empty() {
+        out.push_str("| Packet | Frame | Interface | Endpoint | Data len | Payload extracted |\n");
+        out.push_str("| ---: | ---: | ---: | --- | ---: | --- |\n");
+        for example in missing_examples {
+            let frame = example
+                .frame_number
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            let interface = example
+                .interface_number
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            let endpoint = example.endpoint_address.as_deref().unwrap_or("unknown");
+            out.push_str(&format!(
+                "| {} | {} | {} | `{}` | {} | `{}` |\n",
+                example.packet_ordinal,
+                frame,
+                interface,
+                endpoint,
+                example.data_len,
+                example.payload_extracted
+            ));
+        }
+        out.push('\n');
+    }
 
     out.push_str("## Observed Devices\n\n");
     if summary.observed_devices.is_empty() {
@@ -5199,6 +5237,8 @@ struct HardwareSniffReportClassificationSummary {
     host_to_device_payload_extracted_bytes: usize,
     host_to_device_payload_missing_packet_count: usize,
     host_to_device_payload_export_gap: bool,
+    host_to_device_payload_missing_packet_examples:
+        Vec<HardwareSniffHostToDeviceMissingPayloadExample>,
     host_to_device_report_ids: Vec<String>,
     standard_pidff_output_report_ids: Vec<String>,
     vendor_or_device_specific_output_candidate_report_ids: Vec<String>,
@@ -5294,6 +5334,8 @@ fn summarize_sniff_report_classifications(
         host_to_device_payload_missing_packet_count: host_to_device_payload_coverage
             .payload_missing_packet_count,
         host_to_device_payload_export_gap,
+        host_to_device_payload_missing_packet_examples: host_to_device_payload_coverage
+            .payload_missing_packet_examples,
         host_to_device_report_ids: host_to_device_report_ids.into_iter().collect(),
         standard_pidff_output_report_ids: standard_pidff_output_report_ids.into_iter().collect(),
         vendor_or_device_specific_output_candidate_report_ids:
@@ -5557,13 +5599,32 @@ fn bytes_hex_compact_upper(bytes: &[u8]) -> String {
     out
 }
 
-#[derive(Default, Debug, Clone, Copy)]
+const HOST_TO_DEVICE_PAYLOAD_MISSING_PACKET_EXAMPLE_LIMIT: usize = 8;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HardwareSniffHostToDeviceMissingPayloadExample {
+    packet_ordinal: usize,
+    frame_number: Option<u64>,
+    device_key: Option<String>,
+    vendor_id: Option<String>,
+    product_id: Option<String>,
+    interface_number: Option<u16>,
+    endpoint_address: Option<String>,
+    transfer_type: Option<String>,
+    data_len: usize,
+    payload_extracted: bool,
+    native_control_evidence: bool,
+    hardware_output_authorized: bool,
+}
+
+#[derive(Default, Debug, Clone)]
 struct HardwareSniffHostToDevicePayloadCoverage {
     data_len_packet_count: usize,
     data_len_bytes: usize,
     payload_extracted_packet_count: usize,
     payload_extracted_bytes: usize,
     payload_missing_packet_count: usize,
+    payload_missing_packet_examples: Vec<HardwareSniffHostToDeviceMissingPayloadExample>,
 }
 
 impl HardwareSniffHostToDevicePayloadCoverage {
@@ -5574,6 +5635,28 @@ impl HardwareSniffHostToDevicePayloadCoverage {
             if packet.payload.is_none() {
                 self.payload_missing_packet_count =
                     self.payload_missing_packet_count.saturating_add(1);
+                if self.payload_missing_packet_examples.len()
+                    < HOST_TO_DEVICE_PAYLOAD_MISSING_PACKET_EXAMPLE_LIMIT
+                {
+                    self.payload_missing_packet_examples.push(
+                        HardwareSniffHostToDeviceMissingPayloadExample {
+                            packet_ordinal: packet.packet_ordinal,
+                            frame_number: packet.frame_number,
+                            device_key: packet.device_key.clone(),
+                            vendor_id: packet.vendor_id.clone(),
+                            product_id: packet.product_id.clone(),
+                            interface_number: packet.interface_number,
+                            endpoint_address: packet.endpoint_address.map(hex_u8),
+                            transfer_type: packet
+                                .transfer_type
+                                .map(|transfer_type| transfer_type.as_str().to_string()),
+                            data_len,
+                            payload_extracted: false,
+                            native_control_evidence: false,
+                            hardware_output_authorized: false,
+                        },
+                    );
+                }
             }
         }
 
@@ -5662,6 +5745,8 @@ struct HardwareSniffDescriptorCandidate {
 
 #[derive(Debug, Clone)]
 struct TsharkUsbPacket {
+    packet_ordinal: usize,
+    frame_number: Option<u64>,
     device_key: Option<String>,
     vendor_id: Option<String>,
     product_id: Option<String>,
@@ -5695,6 +5780,16 @@ enum SniffUsbTransferType {
     Control,
     Interrupt,
     Other,
+}
+
+impl SniffUsbTransferType {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Control => "control",
+            Self::Interrupt => "interrupt",
+            Self::Other => "other",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -7521,6 +7616,7 @@ mod tests {
               {
                 "_source": {
                   "layers": {
+                    "frame": { "frame.number": "42" },
                     "usb": {
                       "usb.bus_id": "1",
                       "usb.device_address": "12",
@@ -7584,6 +7680,22 @@ mod tests {
                 1
             );
             assert!(classification_summary.host_to_device_payload_export_gap);
+            let missing_example = classification_summary
+                .host_to_device_payload_missing_packet_examples
+                .first()
+                .ok_or("expected missing host-to-device payload example")?;
+            assert_eq!(missing_example.packet_ordinal, 1);
+            assert_eq!(missing_example.frame_number, Some(42));
+            assert_eq!(missing_example.device_key.as_deref(), Some("1:12"));
+            assert_eq!(missing_example.vendor_id.as_deref(), Some("0x346E"));
+            assert_eq!(missing_example.product_id.as_deref(), Some("0x0014"));
+            assert_eq!(missing_example.interface_number, Some(2));
+            assert_eq!(missing_example.endpoint_address.as_deref(), Some("0x02"));
+            assert_eq!(missing_example.transfer_type.as_deref(), Some("interrupt"));
+            assert_eq!(missing_example.data_len, 20);
+            assert!(!missing_example.payload_extracted);
+            assert!(!missing_example.native_control_evidence);
+            assert!(!missing_example.hardware_output_authorized);
             assert!(classification_summary.decode_recommended);
             assert!(!classification_summary.native_control_evidence);
             assert!(!classification_summary.readiness_claim);
@@ -7674,6 +7786,11 @@ mod tests {
             assert_eq!(
                 classification_summary.host_to_device_payload_missing_packet_count,
                 0
+            );
+            assert!(
+                classification_summary
+                    .host_to_device_payload_missing_packet_examples
+                    .is_empty()
             );
             assert!(!classification_summary.host_to_device_payload_export_gap);
             assert!(classification_summary.decode_recommended);

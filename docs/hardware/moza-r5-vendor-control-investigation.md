@@ -80,7 +80,10 @@ protocol crate observed-frame decoder accepts the checksum-valid shape of those
 samples, while the semantic fixture decoder still rejects them as unknown
 commands. The same sample regression preserves packet-local pair, triad, and
 combined five-frame group morphology plus empty/zero-filled payload-shape hints
-as observed evidence only. No tuple is sendable without a future semantic
+as observed evidence only. The review also preserves the two remaining payload
+export gaps as packet/frame locators, one in `pit-house-open-idle` and one in
+`pit-house-full-controls`, with `payload_extracted=false` and no sendability or
+output claim. No tuple or residual packet is sendable without a future semantic
 decode, reviewed plan, fresh bench clear, and exact authorization.
 
 ## Boundaries

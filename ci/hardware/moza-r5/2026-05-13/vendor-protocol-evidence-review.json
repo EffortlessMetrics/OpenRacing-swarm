@@ -4,7 +4,7 @@
   "artifact_kind": "moza_vendor_protocol_evidence_review",
   "claim_scope": "no_output_protocol_evidence_review",
   "command": "wheelctl moza vendor-protocol-evidence-review",
-  "generated_at_utc": "2026-05-21T13:43:11Z",
+  "generated_at_utc": "2026-05-21T14:35:21Z",
   "lane": "ci/hardware/moza-r5/2026-05-13",
   "sniff_root": "ci/hardware\\sniff\\moza-r5\\2026-05-13",
   "command_registry_path": "fixtures/moza/r5/vendor-command-registry.json",
@@ -107,6 +107,75 @@
     "host_to_device_serial_frame_tuple_sample_count": 159,
     "decode_recommended_by_summaries": true,
     "passive_summaries_native_control_evidence": false,
+    "payload_export_gap_summary": {
+      "claim_scope": "no_output_passive_payload_export_gap_review",
+      "total_missing_packet_count": 2,
+      "scenario_count": 2,
+      "scenarios": [
+        {
+          "scenario": "pit-house-open-idle",
+          "missing_packet_count": 1,
+          "data_len_packet_count": 394,
+          "payload_extracted_packet_count": 393,
+          "missing_packet_examples": [
+            {
+              "scenario": "pit-house-open-idle",
+              "packet_ordinal": 5,
+              "frame_number": 5,
+              "device_key": "2:3",
+              "vendor_id": "0x346E",
+              "product_id": "0x0004",
+              "interface_number": 0,
+              "endpoint_address": "0x00",
+              "transfer_type": "other",
+              "data_len": 8,
+              "payload_extracted": false,
+              "native_control_evidence": false,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ],
+          "hardware_output_authorized": false,
+          "native_control_evidence": false,
+          "output_sendability_claim": false
+        },
+        {
+          "scenario": "pit-house-full-controls",
+          "missing_packet_count": 1,
+          "data_len_packet_count": 2854,
+          "payload_extracted_packet_count": 2853,
+          "missing_packet_examples": [
+            {
+              "scenario": "pit-house-full-controls",
+              "packet_ordinal": 5,
+              "frame_number": 5,
+              "device_key": "2:3",
+              "vendor_id": "0x346E",
+              "product_id": "0x0004",
+              "interface_number": 0,
+              "endpoint_address": "0x00",
+              "transfer_type": "other",
+              "data_len": 8,
+              "payload_extracted": false,
+              "native_control_evidence": false,
+              "hardware_output_authorized": false,
+              "output_sendability_claim": false
+            }
+          ],
+          "hardware_output_authorized": false,
+          "native_control_evidence": false,
+          "output_sendability_claim": false
+        }
+      ],
+      "hardware_output_authorized": false,
+      "native_control_evidence": false,
+      "output_sendability_claim": false,
+      "protocol_evidence_sufficient_for_output_plan": false,
+      "notes": [
+        "Residual payload export gaps identify passive capture packets that still need raw-payload inspection.",
+        "Missing-payload packet examples are locator evidence only; they do not authorize output or prove native control."
+      ]
+    },
     "scenarios": [
       {
         "scenario": "pit-house-open-idle",
@@ -133,6 +202,24 @@
         "host_to_device_payload_extracted_bytes": 6199,
         "host_to_device_payload_missing_packet_count": 1,
         "host_to_device_payload_export_gap": true,
+        "host_to_device_payload_missing_packet_examples": [
+          {
+            "scenario": "pit-house-open-idle",
+            "packet_ordinal": 5,
+            "frame_number": 5,
+            "device_key": "2:3",
+            "vendor_id": "0x346E",
+            "product_id": "0x0004",
+            "interface_number": 0,
+            "endpoint_address": "0x00",
+            "transfer_type": "other",
+            "data_len": 8,
+            "payload_extracted": false,
+            "native_control_evidence": false,
+            "hardware_output_authorized": false,
+            "output_sendability_claim": false
+          }
+        ],
         "host_to_device_serial_frame_packet_count": 393,
         "host_to_device_serial_frame_count": 905,
         "host_to_device_serial_frame_checksum_valid_count": 905,
@@ -1906,6 +1993,24 @@
         "host_to_device_payload_extracted_bytes": 47789,
         "host_to_device_payload_missing_packet_count": 1,
         "host_to_device_payload_export_gap": true,
+        "host_to_device_payload_missing_packet_examples": [
+          {
+            "scenario": "pit-house-full-controls",
+            "packet_ordinal": 5,
+            "frame_number": 5,
+            "device_key": "2:3",
+            "vendor_id": "0x346E",
+            "product_id": "0x0004",
+            "interface_number": 0,
+            "endpoint_address": "0x00",
+            "transfer_type": "other",
+            "data_len": 8,
+            "payload_extracted": false,
+            "native_control_evidence": false,
+            "hardware_output_authorized": false,
+            "output_sendability_claim": false
+          }
+        ],
         "host_to_device_serial_frame_packet_count": 2853,
         "host_to_device_serial_frame_count": 6958,
         "host_to_device_serial_frame_checksum_valid_count": 6958,
@@ -3745,6 +3850,7 @@
         "host_to_device_payload_extracted_bytes": 0,
         "host_to_device_payload_missing_packet_count": 0,
         "host_to_device_payload_export_gap": false,
+        "host_to_device_payload_missing_packet_examples": [],
         "host_to_device_serial_frame_packet_count": 0,
         "host_to_device_serial_frame_count": 0,
         "host_to_device_serial_frame_checksum_valid_count": 0,
@@ -3792,6 +3898,7 @@
         "host_to_device_payload_extracted_bytes": 0,
         "host_to_device_payload_missing_packet_count": 0,
         "host_to_device_payload_export_gap": false,
+        "host_to_device_payload_missing_packet_examples": [],
         "host_to_device_serial_frame_packet_count": 0,
         "host_to_device_serial_frame_count": 0,
         "host_to_device_serial_frame_checksum_valid_count": 0,
@@ -3839,6 +3946,7 @@
         "host_to_device_payload_extracted_bytes": 0,
         "host_to_device_payload_missing_packet_count": 0,
         "host_to_device_payload_export_gap": false,
+        "host_to_device_payload_missing_packet_examples": [],
         "host_to_device_serial_frame_packet_count": 0,
         "host_to_device_serial_frame_count": 0,
         "host_to_device_serial_frame_checksum_valid_count": 0,
@@ -3886,6 +3994,7 @@
         "host_to_device_payload_extracted_bytes": 0,
         "host_to_device_payload_missing_packet_count": 0,
         "host_to_device_payload_export_gap": false,
+        "host_to_device_payload_missing_packet_examples": [],
         "host_to_device_serial_frame_packet_count": 0,
         "host_to_device_serial_frame_count": 0,
         "host_to_device_serial_frame_checksum_valid_count": 0,

@@ -2380,6 +2380,21 @@ fn moza_vendor_protocol_decode_priority(lane: &Path) -> Value {
                 "protocol_evidence_sufficient_for_output_plan": false
             })
         });
+    let payload_export_gap_summary = review
+        .pointer("/sniff_evidence/payload_export_gap_summary")
+        .cloned()
+        .unwrap_or_else(|| {
+            serde_json::json!({
+                "claim_scope": "no_output_passive_payload_export_gap_review",
+                "total_missing_packet_count": 0,
+                "scenario_count": 0,
+                "scenarios": [],
+                "hardware_output_authorized": false,
+                "native_control_evidence": false,
+                "output_sendability_claim": false,
+                "protocol_evidence_sufficient_for_output_plan": false
+            })
+        });
     serde_json::json!({
         "claim_scope": "no_output_vendor_protocol_decode_priority_navigation",
         "source_receipt": VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE,
@@ -2397,6 +2412,7 @@ fn moza_vendor_protocol_decode_priority(lane: &Path) -> Value {
         "decode_candidate_sample_fixtures": decode_candidate_sample_fixtures,
         "decode_candidate_payload_shape_summary": decode_candidate_payload_shape_summary,
         "decode_candidate_packet_group_summary": decode_candidate_packet_group_summary,
+        "payload_export_gap_summary": payload_export_gap_summary,
         "unknown_tuple_risk_class": json_string(coverage, "unknown_tuple_risk_class").unwrap_or("unknown_do_not_send"),
         "hardware_output_authorized": false,
         "native_control_evidence": false,
@@ -28003,6 +28019,7 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
                 .saturating_add(review.host_to_device_serial_frame_tuple_samples.len());
         scenarios.push(review);
     }
+    let payload_export_gap_summary = vendor_protocol_payload_export_gap_summary(&scenarios);
 
     Ok(VendorProtocolSniffEvidence {
         required_scenario_count: scenarios.len(),
@@ -28042,6 +28059,7 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
         host_to_device_serial_frame_tuple_sample_count,
         decode_recommended_by_summaries,
         passive_summaries_native_control_evidence,
+        payload_export_gap_summary,
         scenarios,
     })
 }
@@ -28092,6 +28110,7 @@ fn vendor_protocol_sniff_scenario_review(
             host_to_device_payload_extracted_bytes: 0,
             host_to_device_payload_missing_packet_count: 0,
             host_to_device_payload_export_gap: false,
+            host_to_device_payload_missing_packet_examples: Vec::new(),
             host_to_device_serial_frame_packet_count: 0,
             host_to_device_serial_frame_count: 0,
             host_to_device_serial_frame_checksum_valid_count: 0,
@@ -28173,6 +28192,8 @@ fn vendor_protocol_sniff_scenario_review(
         .get("host_to_device_payload_export_gap")
         .and_then(Value::as_bool)
         .unwrap_or(host_to_device_payload_missing_packet_count > 0);
+    let host_to_device_payload_missing_packet_examples =
+        vendor_protocol_payload_missing_packet_examples(classification, scenario);
     let usbcom_serial_frame_summary = classification.get("usbcom_serial_frame_summary");
     let host_to_device_serial_frame_packet_count = usbcom_serial_frame_summary
         .and_then(|summary| summary.get("packet_count"))
@@ -28271,6 +28292,7 @@ fn vendor_protocol_sniff_scenario_review(
         host_to_device_payload_extracted_bytes,
         host_to_device_payload_missing_packet_count,
         host_to_device_payload_export_gap,
+        host_to_device_payload_missing_packet_examples,
         host_to_device_serial_frame_packet_count,
         host_to_device_serial_frame_count,
         host_to_device_serial_frame_checksum_valid_count,
@@ -28313,6 +28335,77 @@ fn vendor_protocol_sniff_scenario_review(
             .unwrap_or(false),
         notes,
     })
+}
+
+fn vendor_protocol_payload_missing_packet_examples(
+    classification: &Value,
+    scenario: &str,
+) -> Vec<VendorProtocolPayloadMissingPacketExample> {
+    classification
+        .get("host_to_device_payload_missing_packet_examples")
+        .and_then(Value::as_array)
+        .map(|examples| {
+            examples
+                .iter()
+                .map(|example| VendorProtocolPayloadMissingPacketExample {
+                    scenario: scenario.to_string(),
+                    packet_ordinal: json_u64(example, "packet_ordinal").unwrap_or(0),
+                    frame_number: json_u64(example, "frame_number"),
+                    device_key: json_string(example, "device_key").map(str::to_string),
+                    vendor_id: json_string(example, "vendor_id").map(str::to_string),
+                    product_id: json_string(example, "product_id").map(str::to_string),
+                    interface_number: json_u64(example, "interface_number"),
+                    endpoint_address: json_string(example, "endpoint_address").map(str::to_string),
+                    transfer_type: json_string(example, "transfer_type").map(str::to_string),
+                    data_len: json_u64(example, "data_len").unwrap_or(0),
+                    payload_extracted: false,
+                    native_control_evidence: false,
+                    hardware_output_authorized: false,
+                    output_sendability_claim: false,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn vendor_protocol_payload_export_gap_summary(
+    scenarios: &[VendorProtocolSniffScenarioReview],
+) -> VendorProtocolPayloadExportGapSummary {
+    let scenarios = scenarios
+        .iter()
+        .filter(|scenario| scenario.host_to_device_payload_export_gap)
+        .map(|scenario| VendorProtocolPayloadExportGapScenario {
+            scenario: scenario.scenario.clone(),
+            missing_packet_count: scenario.host_to_device_payload_missing_packet_count,
+            data_len_packet_count: scenario.host_to_device_data_len_packet_count,
+            payload_extracted_packet_count: scenario.host_to_device_payload_extracted_packet_count,
+            missing_packet_examples: scenario
+                .host_to_device_payload_missing_packet_examples
+                .clone(),
+            hardware_output_authorized: false,
+            native_control_evidence: false,
+            output_sendability_claim: false,
+        })
+        .collect::<Vec<_>>();
+    let total_missing_packet_count = scenarios
+        .iter()
+        .map(|scenario| scenario.missing_packet_count)
+        .sum();
+
+    VendorProtocolPayloadExportGapSummary {
+        claim_scope: "no_output_passive_payload_export_gap_review",
+        total_missing_packet_count,
+        scenario_count: scenarios.len(),
+        scenarios,
+        hardware_output_authorized: false,
+        native_control_evidence: false,
+        output_sendability_claim: false,
+        protocol_evidence_sufficient_for_output_plan: false,
+        notes: vec![
+            "Residual payload export gaps identify passive capture packets that still need raw-payload inspection.",
+            "Missing-payload packet examples are locator evidence only; they do not authorize output or prove native control.",
+        ],
+    }
 }
 
 fn passive_sniff_host_to_device_classified_packet_count(summary: &Value) -> u64 {
@@ -30864,7 +30957,51 @@ struct VendorProtocolSniffEvidence {
     host_to_device_serial_frame_tuple_sample_count: usize,
     decode_recommended_by_summaries: bool,
     passive_summaries_native_control_evidence: bool,
+    payload_export_gap_summary: VendorProtocolPayloadExportGapSummary,
     scenarios: Vec<VendorProtocolSniffScenarioReview>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct VendorProtocolPayloadExportGapSummary {
+    claim_scope: &'static str,
+    total_missing_packet_count: u64,
+    scenario_count: usize,
+    scenarios: Vec<VendorProtocolPayloadExportGapScenario>,
+    hardware_output_authorized: bool,
+    native_control_evidence: bool,
+    output_sendability_claim: bool,
+    protocol_evidence_sufficient_for_output_plan: bool,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct VendorProtocolPayloadExportGapScenario {
+    scenario: String,
+    missing_packet_count: u64,
+    data_len_packet_count: u64,
+    payload_extracted_packet_count: u64,
+    missing_packet_examples: Vec<VendorProtocolPayloadMissingPacketExample>,
+    hardware_output_authorized: bool,
+    native_control_evidence: bool,
+    output_sendability_claim: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct VendorProtocolPayloadMissingPacketExample {
+    scenario: String,
+    packet_ordinal: u64,
+    frame_number: Option<u64>,
+    device_key: Option<String>,
+    vendor_id: Option<String>,
+    product_id: Option<String>,
+    interface_number: Option<u64>,
+    endpoint_address: Option<String>,
+    transfer_type: Option<String>,
+    data_len: u64,
+    payload_extracted: bool,
+    native_control_evidence: bool,
+    hardware_output_authorized: bool,
+    output_sendability_claim: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -30893,6 +31030,7 @@ struct VendorProtocolSniffScenarioReview {
     host_to_device_payload_extracted_bytes: u64,
     host_to_device_payload_missing_packet_count: u64,
     host_to_device_payload_export_gap: bool,
+    host_to_device_payload_missing_packet_examples: Vec<VendorProtocolPayloadMissingPacketExample>,
     host_to_device_serial_frame_packet_count: u64,
     host_to_device_serial_frame_count: u64,
     host_to_device_serial_frame_checksum_valid_count: u64,
@@ -36434,6 +36572,57 @@ fn push_vendor_authority_navigation_markdown(out: &mut String, receipt: &Value) 
             out.push_str(&format!("- Unique packet patterns: `{pattern_count}`\n"));
             out.push_str(&format!("- Repeated contiguous motifs: `{motif_count}`\n"));
         }
+        if let Some(payload_gap_summary) = priority
+            .get("payload_export_gap_summary")
+            .filter(|summary| !summary.is_null())
+        {
+            let total_missing =
+                json_u64(payload_gap_summary, "total_missing_packet_count").unwrap_or(0);
+            let scenario_count = json_u64(payload_gap_summary, "scenario_count").unwrap_or(0);
+            let output_sendability_claim =
+                json_bool(payload_gap_summary, "output_sendability_claim").unwrap_or(false);
+            out.push_str(&format!(
+                "- Residual payload export gap packets: `{total_missing}`\n"
+            ));
+            out.push_str(&format!(
+                "- Payload export gap scenarios: `{scenario_count}`\n"
+            ));
+            out.push_str(&format!(
+                "- Payload gap sendability claim: `{output_sendability_claim}`\n"
+            ));
+            if let Some(scenarios) = payload_gap_summary
+                .get("scenarios")
+                .and_then(Value::as_array)
+                .filter(|scenarios| !scenarios.is_empty())
+            {
+                out.push_str("\n| Payload gap scenario | Missing packets | Example packet | Data len | Sendable |\n");
+                out.push_str("| --- | ---: | ---: | ---: | --- |\n");
+                for scenario in scenarios {
+                    let scenario_name = json_string(scenario, "scenario").unwrap_or("unknown");
+                    let missing_count = json_u64(scenario, "missing_packet_count").unwrap_or(0);
+                    let example = scenario
+                        .get("missing_packet_examples")
+                        .and_then(Value::as_array)
+                        .and_then(|examples| examples.first());
+                    let packet_ordinal = example
+                        .and_then(|example| json_u64(example, "packet_ordinal"))
+                        .unwrap_or(0);
+                    let data_len = example
+                        .and_then(|example| json_u64(example, "data_len"))
+                        .unwrap_or(0);
+                    let output_sendability_claim =
+                        json_bool(scenario, "output_sendability_claim").unwrap_or(false);
+                    out.push_str(&format!(
+                        "| `{}` | {} | {} | {} | `{}` |\n",
+                        markdown_escape(scenario_name),
+                        missing_count,
+                        packet_ordinal,
+                        data_len,
+                        output_sendability_claim
+                    ));
+                }
+            }
+        }
         if let Some(tuples) = priority
             .get("top_unknown_commanded_tuples")
             .and_then(Value::as_array)
@@ -40220,6 +40409,22 @@ mod tests {
             "host_to_device_payload_extracted_bytes": 0,
             "host_to_device_payload_missing_packet_count": 10,
             "host_to_device_payload_export_gap": true,
+            "host_to_device_payload_missing_packet_examples": [
+                {
+                    "packet_ordinal": 1,
+                    "frame_number": 42,
+                    "device_key": "1:12",
+                    "vendor_id": "0x346E",
+                    "product_id": "0x0004",
+                    "interface_number": 2,
+                    "endpoint_address": "0x02",
+                    "transfer_type": "interrupt",
+                    "data_len": 20,
+                    "payload_extracted": false,
+                    "native_control_evidence": false,
+                    "hardware_output_authorized": false
+                }
+            ],
             "host_to_device_report_ids": [],
             "standard_pidff_output_report_ids": [],
             "vendor_or_device_specific_output_candidate_report_ids": [],
@@ -40804,6 +41009,48 @@ mod tests {
         );
         assert_eq!(
             value
+                .pointer("/sniff_evidence/payload_export_gap_summary/claim_scope")
+                .and_then(Value::as_str),
+            Some("no_output_passive_payload_export_gap_review")
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/payload_export_gap_summary/total_missing_packet_count")
+                .and_then(Value::as_u64),
+            Some(20)
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/payload_export_gap_summary/scenario_count")
+                .and_then(Value::as_u64),
+            Some(2)
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/payload_export_gap_summary/scenarios/0/missing_packet_examples/0/scenario")
+                .and_then(Value::as_str),
+            Some("pit-house-open-idle")
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/payload_export_gap_summary/scenarios/0/missing_packet_examples/0/payload_extracted")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/payload_export_gap_summary/hardware_output_authorized")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/payload_export_gap_summary/protocol_evidence_sufficient_for_output_plan")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            value
                 .pointer("/post_authority_pidff_result/tested_command_id")
                 .and_then(Value::as_str),
             Some("estop_set_ffb")
@@ -41001,6 +41248,7 @@ mod tests {
             "total_host_to_device_unclassified_packets",
             "host_to_device_serial_frame_tuple_sample_count",
             "host_to_device_decode_gap_detected",
+            "payload_export_gap_summary",
             "decode_gap_scenarios",
         ] {
             assert!(
@@ -41019,6 +41267,38 @@ mod tests {
                 .iter()
                 .any(|entry| entry.as_str() == Some("host_to_device_serial_frame_tuple_samples")),
             "scenario schema must require tuple samples"
+        );
+        assert!(
+            scenario_required
+                .iter()
+                .any(|entry| entry.as_str()
+                    == Some("host_to_device_payload_missing_packet_examples")),
+            "scenario schema must require payload missing packet examples"
+        );
+        assert_eq!(
+            schema["properties"]["sniff_evidence"]["properties"]["payload_export_gap_summary"]["properties"]
+                ["claim_scope"]["const"],
+            "no_output_passive_payload_export_gap_review"
+        );
+        assert_eq!(
+            schema["properties"]["sniff_evidence"]["properties"]["payload_export_gap_summary"]["properties"]
+                ["hardware_output_authorized"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["sniff_evidence"]["properties"]["payload_export_gap_summary"]["properties"]
+                ["native_control_evidence"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["sniff_evidence"]["properties"]["payload_export_gap_summary"]["properties"]
+                ["output_sendability_claim"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["$defs"]["passive_payload_missing_packet_example"]["properties"]["hardware_output_authorized"]
+                ["const"],
+            false
         );
         let passive_tuple_required =
             schema["properties"]["passive_tuple_registry_coverage"]["required"]
@@ -43433,6 +43713,46 @@ mod tests {
             &dir.path().join(VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE),
             &serde_json::json!({
                 "artifact_kind": "moza_vendor_protocol_evidence_review",
+                "sniff_evidence": {
+                    "payload_export_gap_summary": {
+                        "claim_scope": "no_output_passive_payload_export_gap_review",
+                        "total_missing_packet_count": 2,
+                        "scenario_count": 2,
+                        "scenarios": [
+                            {
+                                "scenario": "pit-house-open-idle",
+                                "missing_packet_count": 1,
+                                "data_len_packet_count": 394,
+                                "payload_extracted_packet_count": 393,
+                                "missing_packet_examples": [
+                                    {
+                                        "scenario": "pit-house-open-idle",
+                                        "packet_ordinal": 12,
+                                        "frame_number": 44,
+                                        "device_key": "1:12",
+                                        "vendor_id": "0x346E",
+                                        "product_id": "0x0004",
+                                        "interface_number": 2,
+                                        "endpoint_address": "0x02",
+                                        "transfer_type": "interrupt",
+                                        "data_len": 8,
+                                        "payload_extracted": false,
+                                        "native_control_evidence": false,
+                                        "hardware_output_authorized": false,
+                                        "output_sendability_claim": false
+                                    }
+                                ],
+                                "hardware_output_authorized": false,
+                                "native_control_evidence": false,
+                                "output_sendability_claim": false
+                            }
+                        ],
+                        "hardware_output_authorized": false,
+                        "native_control_evidence": false,
+                        "output_sendability_claim": false,
+                        "protocol_evidence_sufficient_for_output_plan": false
+                    }
+                },
                 "passive_tuple_registry_coverage": {
                     "unknown_tuple_risk_class": "unknown_do_not_send",
                     "highest_frequency_unknown_commanded_tuple_ids": [
@@ -43667,6 +43987,30 @@ mod tests {
             Some(false)
         );
         assert_eq!(
+            priority
+                .pointer("/payload_export_gap_summary/claim_scope")
+                .and_then(Value::as_str),
+            Some("no_output_passive_payload_export_gap_review")
+        );
+        assert_eq!(
+            priority
+                .pointer("/payload_export_gap_summary/total_missing_packet_count")
+                .and_then(Value::as_u64),
+            Some(2)
+        );
+        assert_eq!(
+            priority
+                .pointer("/payload_export_gap_summary/scenarios/0/missing_packet_examples/0/payload_extracted")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            priority
+                .pointer("/payload_export_gap_summary/output_sendability_claim")
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
             json_bool(priority, "hardware_output_authorized"),
             Some(false)
         );
@@ -43686,6 +44030,8 @@ mod tests {
         assert!(artifact_markdown.contains("Decode candidate payload shapes: `1`"));
         assert!(artifact_markdown.contains("Payloads empty or zero-filled in samples: `true`"));
         assert!(artifact_markdown.contains("Decode candidate packet groups: `1`"));
+        assert!(artifact_markdown.contains("Residual payload export gap packets: `2`"));
+        assert!(artifact_markdown.contains("Payload gap scenario"));
         assert!(artifact_markdown.contains("Packet group pattern"));
         assert!(artifact_markdown.contains("Payload shape tuple"));
         assert!(artifact_markdown.contains("7E015A1B0001"));

@@ -99,6 +99,7 @@
         "host_to_device_serial_frame_tuple_ids",
         "decode_recommended_by_summaries",
         "passive_summaries_native_control_evidence",
+        "payload_export_gap_summary",
         "scenarios"
       ],
       "properties": {
@@ -181,6 +182,73 @@
         },
         "decode_recommended_by_summaries": { "type": "boolean" },
         "passive_summaries_native_control_evidence": { "const": false },
+        "payload_export_gap_summary": {
+          "type": "object",
+          "required": [
+            "claim_scope",
+            "total_missing_packet_count",
+            "scenario_count",
+            "scenarios",
+            "hardware_output_authorized",
+            "native_control_evidence",
+            "output_sendability_claim",
+            "protocol_evidence_sufficient_for_output_plan"
+          ],
+          "properties": {
+            "claim_scope": {
+              "const": "no_output_passive_payload_export_gap_review"
+            },
+            "total_missing_packet_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "scenario_count": { "type": "integer", "minimum": 0 },
+            "scenarios": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "scenario",
+                  "missing_packet_count",
+                  "data_len_packet_count",
+                  "payload_extracted_packet_count",
+                  "missing_packet_examples",
+                  "hardware_output_authorized",
+                  "native_control_evidence",
+                  "output_sendability_claim"
+                ],
+                "properties": {
+                  "scenario": { "type": "string" },
+                  "missing_packet_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "data_len_packet_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "payload_extracted_packet_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "missing_packet_examples": {
+                    "type": "array",
+                    "items": { "$ref": "#/$defs/passive_payload_missing_packet_example" }
+                  },
+                  "hardware_output_authorized": { "const": false },
+                  "native_control_evidence": { "const": false },
+                  "output_sendability_claim": { "const": false }
+                },
+                "additionalProperties": true
+              }
+            },
+            "hardware_output_authorized": { "const": false },
+            "native_control_evidence": { "const": false },
+            "output_sendability_claim": { "const": false },
+            "protocol_evidence_sufficient_for_output_plan": { "const": false }
+          },
+          "additionalProperties": true
+        },
         "scenarios": {
           "type": "array",
           "items": {
@@ -193,6 +261,7 @@
               "host_to_device_decode_gap",
               "host_to_device_payload_missing_packet_count",
               "host_to_device_payload_export_gap",
+              "host_to_device_payload_missing_packet_examples",
               "host_to_device_serial_frame_packet_count",
               "host_to_device_serial_frame_count",
               "host_to_device_serial_frame_checksum_valid_count",
@@ -219,6 +288,10 @@
                 "minimum": 0
               },
               "host_to_device_payload_export_gap": { "type": "boolean" },
+              "host_to_device_payload_missing_packet_examples": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/passive_payload_missing_packet_example" }
+              },
               "host_to_device_serial_frame_packet_count": {
                 "type": "integer",
                 "minimum": 0
@@ -847,6 +920,57 @@
           "pattern": "^0x[0-9A-Fa-f]{2}$"
         },
         "checksum_valid": { "const": true },
+        "hardware_output_authorized": { "const": false },
+        "output_sendability_claim": { "const": false }
+      },
+      "additionalProperties": true
+    },
+    "passive_payload_missing_packet_example": {
+      "type": "object",
+      "required": [
+        "scenario",
+        "packet_ordinal",
+        "frame_number",
+        "device_key",
+        "vendor_id",
+        "product_id",
+        "interface_number",
+        "endpoint_address",
+        "transfer_type",
+        "data_len",
+        "payload_extracted",
+        "native_control_evidence",
+        "hardware_output_authorized",
+        "output_sendability_claim"
+      ],
+      "properties": {
+        "scenario": { "type": "string" },
+        "packet_ordinal": { "type": "integer", "minimum": 1 },
+        "frame_number": { "type": ["integer", "null"], "minimum": 1 },
+        "device_key": { "type": ["string", "null"] },
+        "vendor_id": {
+          "type": ["string", "null"],
+          "pattern": "^0x[0-9A-Fa-f]{4}$"
+        },
+        "product_id": {
+          "type": ["string", "null"],
+          "pattern": "^0x[0-9A-Fa-f]{4}$"
+        },
+        "interface_number": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "endpoint_address": {
+          "type": ["string", "null"],
+          "pattern": "^0x[0-9A-Fa-f]{2}$"
+        },
+        "transfer_type": {
+          "type": ["string", "null"],
+          "enum": ["control", "interrupt", "other", null]
+        },
+        "data_len": { "type": "integer", "minimum": 1 },
+        "payload_extracted": { "const": false },
+        "native_control_evidence": { "const": false },
         "hardware_output_authorized": { "const": false },
         "output_sendability_claim": { "const": false }
       },

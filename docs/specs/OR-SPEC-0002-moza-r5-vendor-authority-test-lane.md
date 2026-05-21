@@ -145,6 +145,12 @@ Observed sample regressions MAY preserve packet-local grouping and repeated
 contiguous motif morphology for unknown tuple groups, but those packet groups
 MUST remain non-sendable fixture evidence and MUST NOT be treated as semantic
 command decode, registry promotion, output eligibility, or authorization input.
+Passive sniff summaries MAY also preserve bounded packet/frame locator examples
+for host-to-device USB transfers that declare data length but do not expose
+payload bytes through the current tshark export. Those residual payload export
+gap examples MUST keep `payload_extracted=false`,
+`native_control_evidence=false`, `hardware_output_authorized=false`, and
+`output_sendability_claim=false`.
 
 ### Read-only status probe contract
 
