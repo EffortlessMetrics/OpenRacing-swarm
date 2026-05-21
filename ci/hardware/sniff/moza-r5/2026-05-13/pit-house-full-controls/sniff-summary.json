@@ -2,7 +2,7 @@
   "schema_version": 1,
   "success": true,
   "command": "wheelctl hardware sniff-summary",
-  "generated_at_utc": "2026-05-21T04:04:49Z",
+  "generated_at_utc": "2026-05-21T06:58:12Z",
   "pcapng_sha256": "dbde49919cf67a41a086c08e5f629ba0b12c91cb772c735c4350368629d37c08",
   "tool": {
     "tshark_present": true,
@@ -122,6 +122,298 @@
     "vendor_or_device_specific_output_candidate_report_ids": [
       "0x7E"
     ],
+    "usbcom_serial_frame_summary": {
+      "frame_start": "0x7E",
+      "checksum_model": "magic_13_wrapping_sum_over_frame_without_checksum",
+      "packet_count": 2853,
+      "payload_bytes": 47789,
+      "parsed_frame_count": 6958,
+      "checksum_valid_frame_count": 6958,
+      "checksum_invalid_frame_count": 0,
+      "commandless_frame_count": 1296,
+      "truncated_frame_count": 0,
+      "non_frame_byte_count": 0,
+      "max_frames_per_packet": 11,
+      "frame_shape_decode_gap": false,
+      "tuple_counts": [
+        {
+          "group": "0x00",
+          "device_id": "0x12",
+          "command": null,
+          "payload_len_min": 0,
+          "payload_len_max": 0,
+          "count": 121,
+          "checksum_valid_count": 121,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x00",
+          "device_id": "0x13",
+          "command": null,
+          "payload_len_min": 0,
+          "payload_len_max": 0,
+          "count": 121,
+          "checksum_valid_count": 121,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x00",
+          "device_id": "0x14",
+          "command": null,
+          "payload_len_min": 0,
+          "payload_len_max": 0,
+          "count": 99,
+          "checksum_valid_count": 99,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x00",
+          "device_id": "0x15",
+          "command": null,
+          "payload_len_min": 0,
+          "payload_len_max": 0,
+          "count": 99,
+          "checksum_valid_count": 99,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x00",
+          "device_id": "0x17",
+          "command": null,
+          "payload_len_min": 0,
+          "payload_len_max": 0,
+          "count": 120,
+          "checksum_valid_count": 120,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x00",
+          "device_id": "0x18",
+          "command": null,
+          "payload_len_min": 0,
+          "payload_len_max": 0,
+          "count": 99,
+          "checksum_valid_count": 99,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x00",
+          "device_id": "0x19",
+          "command": null,
+          "payload_len_min": 0,
+          "payload_len_max": 0,
+          "count": 121,
+          "checksum_valid_count": 121,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x00",
+          "device_id": "0x1A",
+          "command": null,
+          "payload_len_min": 0,
+          "payload_len_max": 0,
+          "count": 99,
+          "checksum_valid_count": 99,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x00",
+          "device_id": "0x1B",
+          "command": null,
+          "payload_len_min": 0,
+          "payload_len_max": 0,
+          "count": 120,
+          "checksum_valid_count": 120,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x00",
+          "device_id": "0x1C",
+          "command": null,
+          "payload_len_min": 0,
+          "payload_len_max": 0,
+          "count": 99,
+          "checksum_valid_count": 99,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x00",
+          "device_id": "0x1D",
+          "command": null,
+          "payload_len_min": 0,
+          "payload_len_max": 0,
+          "count": 99,
+          "checksum_valid_count": 99,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x00",
+          "device_id": "0x1E",
+          "command": null,
+          "payload_len_min": 0,
+          "payload_len_max": 0,
+          "count": 99,
+          "checksum_valid_count": 99,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x0E",
+          "device_id": "0x12",
+          "command": "0x00",
+          "payload_len_min": 2,
+          "payload_len_max": 2,
+          "count": 54,
+          "checksum_valid_count": 54,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x0E",
+          "device_id": "0x13",
+          "command": "0x00",
+          "payload_len_min": 2,
+          "payload_len_max": 2,
+          "count": 50,
+          "checksum_valid_count": 50,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x0E",
+          "device_id": "0x17",
+          "command": "0x00",
+          "payload_len_min": 2,
+          "payload_len_max": 2,
+          "count": 70,
+          "checksum_valid_count": 70,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x0E",
+          "device_id": "0x19",
+          "command": "0x00",
+          "payload_len_min": 2,
+          "payload_len_max": 2,
+          "count": 46,
+          "checksum_valid_count": 46,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x25",
+          "device_id": "0x19",
+          "command": "0x01",
+          "payload_len_min": 2,
+          "payload_len_max": 2,
+          "count": 550,
+          "checksum_valid_count": 550,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x25",
+          "device_id": "0x19",
+          "command": "0x02",
+          "payload_len_min": 2,
+          "payload_len_max": 2,
+          "count": 550,
+          "checksum_valid_count": 550,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x25",
+          "device_id": "0x19",
+          "command": "0x03",
+          "payload_len_min": 2,
+          "payload_len_max": 2,
+          "count": 550,
+          "checksum_valid_count": 550,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x2B",
+          "device_id": "0x13",
+          "command": "0x02",
+          "payload_len_min": 2,
+          "payload_len_max": 2,
+          "count": 30,
+          "checksum_valid_count": 30,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x40",
+          "device_id": "0x17",
+          "command": "0x07",
+          "payload_len_min": 1,
+          "payload_len_max": 1,
+          "count": 193,
+          "checksum_valid_count": 193,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x40",
+          "device_id": "0x17",
+          "command": "0x08",
+          "payload_len_min": 0,
+          "payload_len_max": 0,
+          "count": 61,
+          "checksum_valid_count": 61,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x43",
+          "device_id": "0x14",
+          "command": "0x00",
+          "payload_len_min": 0,
+          "payload_len_max": 0,
+          "count": 54,
+          "checksum_valid_count": 54,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x43",
+          "device_id": "0x15",
+          "command": "0x00",
+          "payload_len_min": 0,
+          "payload_len_max": 0,
+          "count": 54,
+          "checksum_valid_count": 54,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x43",
+          "device_id": "0x17",
+          "command": "0x00",
+          "payload_len_min": 0,
+          "payload_len_max": 0,
+          "count": 54,
+          "checksum_valid_count": 54,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x5A",
+          "device_id": "0x1B",
+          "command": "0x00",
+          "payload_len_min": 0,
+          "payload_len_max": 0,
+          "count": 1674,
+          "checksum_valid_count": 1674,
+          "checksum_invalid_count": 0
+        },
+        {
+          "group": "0x5D",
+          "device_id": "0x1B",
+          "command": "0x01",
+          "payload_len_min": 2,
+          "payload_len_max": 2,
+          "count": 1672,
+          "checksum_valid_count": 1672,
+          "checksum_invalid_count": 0
+        }
+      ],
+      "native_control_evidence": false,
+      "readiness_claim": false,
+      "notes": [
+        "USB CDC payloads contain length-prefixed 0x7E serial-frame candidates; this is protocol-shape evidence only",
+        "Tuple counts are not send authorization and do not prove native OpenRacing control"
+      ]
+    },
     "decode_recommended": true,
     "native_control_evidence": false,
     "readiness_claim": false,

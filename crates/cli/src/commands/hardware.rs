@@ -565,6 +565,7 @@ fn build_hardware_sniff_summary_from_tshark_json(
 
     let mut transfer_summary = HardwareSniffUsbTransferSummary::default();
     let mut host_to_device_payload_coverage = HardwareSniffHostToDevicePayloadCoverage::default();
+    let mut usbcom_serial_frame_summary = HardwareSniffUsbComSerialFrameSummaryBuilder::default();
     let mut devices: BTreeMap<(String, String), HardwareSniffObservedDeviceBuilder> =
         BTreeMap::new();
     let mut reports: BTreeMap<(SniffUsbDirection, u8), HardwareSniffObservedReportBuilder> =
@@ -578,6 +579,9 @@ fn build_hardware_sniff_summary_from_tshark_json(
         if matches!(packet.direction, Some(SniffUsbDirection::HostToDevice)) {
             transfer_summary.host_to_device += 1;
             host_to_device_payload_coverage.observe(packet);
+            if let Some(payload) = &packet.payload {
+                usbcom_serial_frame_summary.observe_payload(payload);
+            }
         }
         if matches!(packet.direction, Some(SniffUsbDirection::DeviceToHost)) {
             transfer_summary.device_to_host += 1;
@@ -669,6 +673,7 @@ fn build_hardware_sniff_summary_from_tshark_json(
         &observed_reports,
         transfer_summary.host_to_device,
         host_to_device_payload_coverage,
+        usbcom_serial_frame_summary.build(),
     );
 
     Ok(HardwareSniffSummaryArtifact {
@@ -5196,6 +5201,7 @@ struct HardwareSniffReportClassificationSummary {
     host_to_device_report_ids: Vec<String>,
     standard_pidff_output_report_ids: Vec<String>,
     vendor_or_device_specific_output_candidate_report_ids: Vec<String>,
+    usbcom_serial_frame_summary: HardwareSniffUsbComSerialFrameSummary,
     decode_recommended: bool,
     native_control_evidence: bool,
     readiness_claim: bool,
@@ -5206,6 +5212,7 @@ fn summarize_sniff_report_classifications(
     reports: &[HardwareSniffObservedReport],
     host_to_device_packet_count: usize,
     host_to_device_payload_coverage: HardwareSniffHostToDevicePayloadCoverage,
+    usbcom_serial_frame_summary: HardwareSniffUsbComSerialFrameSummary,
 ) -> HardwareSniffReportClassificationSummary {
     let mut standard_pidff_output_report_count = 0;
     let mut vendor_or_device_specific_output_candidate_count = 0;
@@ -5292,11 +5299,206 @@ fn summarize_sniff_report_classifications(
             vendor_or_device_specific_output_candidate_report_ids
                 .into_iter()
                 .collect(),
+        usbcom_serial_frame_summary,
         decode_recommended,
         native_control_evidence: false,
         readiness_claim: false,
         notes,
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HardwareSniffUsbComSerialFrameSummary {
+    frame_start: String,
+    checksum_model: String,
+    packet_count: usize,
+    payload_bytes: usize,
+    parsed_frame_count: usize,
+    checksum_valid_frame_count: usize,
+    checksum_invalid_frame_count: usize,
+    commandless_frame_count: usize,
+    truncated_frame_count: usize,
+    non_frame_byte_count: usize,
+    max_frames_per_packet: usize,
+    frame_shape_decode_gap: bool,
+    tuple_counts: Vec<HardwareSniffUsbComSerialTupleCount>,
+    native_control_evidence: bool,
+    readiness_claim: bool,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HardwareSniffUsbComSerialTupleCount {
+    group: String,
+    device_id: String,
+    command: Option<String>,
+    payload_len_min: usize,
+    payload_len_max: usize,
+    count: usize,
+    checksum_valid_count: usize,
+    checksum_invalid_count: usize,
+}
+
+#[derive(Default)]
+struct HardwareSniffUsbComSerialFrameSummaryBuilder {
+    packet_count: usize,
+    payload_bytes: usize,
+    parsed_frame_count: usize,
+    checksum_valid_frame_count: usize,
+    checksum_invalid_frame_count: usize,
+    commandless_frame_count: usize,
+    truncated_frame_count: usize,
+    non_frame_byte_count: usize,
+    max_frames_per_packet: usize,
+    tuple_counts: BTreeMap<(u8, u8, Option<u8>), HardwareSniffUsbComSerialTupleBuilder>,
+}
+
+#[derive(Default)]
+struct HardwareSniffUsbComSerialTupleBuilder {
+    payload_len_min: Option<usize>,
+    payload_len_max: usize,
+    count: usize,
+    checksum_valid_count: usize,
+    checksum_invalid_count: usize,
+}
+
+impl HardwareSniffUsbComSerialFrameSummaryBuilder {
+    fn observe_payload(&mut self, payload: &[u8]) {
+        if !payload.contains(&USB_COM_SERIAL_FRAME_START) {
+            return;
+        }
+
+        self.packet_count = self.packet_count.saturating_add(1);
+        self.payload_bytes = self.payload_bytes.saturating_add(payload.len());
+        let mut offset = 0usize;
+        let mut frames_in_packet = 0usize;
+
+        while offset < payload.len() {
+            if payload[offset] != USB_COM_SERIAL_FRAME_START {
+                self.non_frame_byte_count = self.non_frame_byte_count.saturating_add(1);
+                offset = offset.saturating_add(1);
+                continue;
+            }
+
+            if payload.len().saturating_sub(offset) < USB_COM_SERIAL_MIN_FRAME_LEN {
+                self.truncated_frame_count = self.truncated_frame_count.saturating_add(1);
+                break;
+            }
+
+            let declared_len = usize::from(payload[offset + 1]);
+            let expected_len = USB_COM_SERIAL_BASE_FRAME_LEN.saturating_add(declared_len);
+            if payload.len().saturating_sub(offset) < expected_len {
+                self.truncated_frame_count = self.truncated_frame_count.saturating_add(1);
+                break;
+            }
+
+            let frame = &payload[offset..offset + expected_len];
+            let actual_checksum = frame[expected_len - 1];
+            let expected_checksum = usbcom_serial_checksum(&frame[..expected_len - 1]);
+            let checksum_valid = actual_checksum == expected_checksum;
+            let group = frame[2];
+            let device_id = frame[3];
+            let command = (declared_len > 0).then_some(frame[4]);
+            let payload_len = declared_len.saturating_sub(1);
+
+            self.parsed_frame_count = self.parsed_frame_count.saturating_add(1);
+            frames_in_packet = frames_in_packet.saturating_add(1);
+            if checksum_valid {
+                self.checksum_valid_frame_count = self.checksum_valid_frame_count.saturating_add(1);
+            } else {
+                self.checksum_invalid_frame_count =
+                    self.checksum_invalid_frame_count.saturating_add(1);
+            }
+            if command.is_none() {
+                self.commandless_frame_count = self.commandless_frame_count.saturating_add(1);
+            }
+
+            let tuple = self
+                .tuple_counts
+                .entry((group, device_id, command))
+                .or_default();
+            tuple.count = tuple.count.saturating_add(1);
+            tuple.payload_len_min = Some(
+                tuple
+                    .payload_len_min
+                    .map_or(payload_len, |current| current.min(payload_len)),
+            );
+            tuple.payload_len_max = tuple.payload_len_max.max(payload_len);
+            if checksum_valid {
+                tuple.checksum_valid_count = tuple.checksum_valid_count.saturating_add(1);
+            } else {
+                tuple.checksum_invalid_count = tuple.checksum_invalid_count.saturating_add(1);
+            }
+
+            offset = offset.saturating_add(expected_len);
+        }
+
+        self.max_frames_per_packet = self.max_frames_per_packet.max(frames_in_packet);
+    }
+
+    fn build(self) -> HardwareSniffUsbComSerialFrameSummary {
+        let frame_shape_decode_gap = self.truncated_frame_count > 0
+            || self.non_frame_byte_count > 0
+            || self.checksum_invalid_frame_count > 0;
+        let notes = if self.parsed_frame_count > 0 {
+            vec![
+                "USB CDC payloads contain length-prefixed 0x7E serial-frame candidates; this is protocol-shape evidence only".to_string(),
+                "Tuple counts are not send authorization and do not prove native OpenRacing control".to_string(),
+            ]
+        } else {
+            vec![
+                "No USB CDC 0x7E serial-frame candidates were parsed from host-to-device payloads".to_string(),
+                "Absence of parsed frames in one passive summary does not prove standard PIDFF is sufficient".to_string(),
+            ]
+        };
+
+        HardwareSniffUsbComSerialFrameSummary {
+            frame_start: hex_u8(USB_COM_SERIAL_FRAME_START),
+            checksum_model: "magic_13_wrapping_sum_over_frame_without_checksum".to_string(),
+            packet_count: self.packet_count,
+            payload_bytes: self.payload_bytes,
+            parsed_frame_count: self.parsed_frame_count,
+            checksum_valid_frame_count: self.checksum_valid_frame_count,
+            checksum_invalid_frame_count: self.checksum_invalid_frame_count,
+            commandless_frame_count: self.commandless_frame_count,
+            truncated_frame_count: self.truncated_frame_count,
+            non_frame_byte_count: self.non_frame_byte_count,
+            max_frames_per_packet: self.max_frames_per_packet,
+            frame_shape_decode_gap,
+            tuple_counts: self
+                .tuple_counts
+                .into_iter()
+                .map(
+                    |((group, device_id, command), tuple)| HardwareSniffUsbComSerialTupleCount {
+                        group: hex_u8(group),
+                        device_id: hex_u8(device_id),
+                        command: command.map(hex_u8),
+                        payload_len_min: tuple.payload_len_min.unwrap_or(0),
+                        payload_len_max: tuple.payload_len_max,
+                        count: tuple.count,
+                        checksum_valid_count: tuple.checksum_valid_count,
+                        checksum_invalid_count: tuple.checksum_invalid_count,
+                    },
+                )
+                .collect(),
+            native_control_evidence: false,
+            readiness_claim: false,
+            notes,
+        }
+    }
+}
+
+const USB_COM_SERIAL_FRAME_START: u8 = 0x7e;
+const USB_COM_SERIAL_CHECKSUM_MAGIC: u8 = 13;
+const USB_COM_SERIAL_MIN_FRAME_LEN: usize = 5;
+const USB_COM_SERIAL_BASE_FRAME_LEN: usize = 5;
+
+fn usbcom_serial_checksum(frame_without_checksum: &[u8]) -> u8 {
+    frame_without_checksum
+        .iter()
+        .fold(USB_COM_SERIAL_CHECKSUM_MAGIC, |sum, byte| {
+            sum.wrapping_add(*byte)
+        })
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -6466,6 +6668,7 @@ mod tests {
                 &observed_reports,
                 0,
                 HardwareSniffHostToDevicePayloadCoverage::default(),
+                HardwareSniffUsbComSerialFrameSummaryBuilder::default().build(),
             );
 
             HardwareSniffSummaryArtifact {
@@ -7357,10 +7560,10 @@ mod tests {
                       "usb.endpoint_address": "0x02",
                       "usb.endpoint_direction": "OUT",
                       "usb.transfer_type": "Interrupt",
-                      "usb.data_len": "4"
+                      "usb.data_len": "14"
                     },
                     "usbcom": {
-                      "usbcom.data.out_payload": "7e:01:5a:1b"
+                      "usbcom.data.out_payload": "7e:01:5a:1b:00:01:7e:03:5d:1b:01:00:00:07"
                     }
                   }
                 }
@@ -7392,7 +7595,9 @@ mod tests {
             assert_eq!(report.count, 1);
             assert_eq!(
                 report.payload_hex_samples.as_ref(),
-                Some(&vec!["7E 01 5A 1B".to_string()])
+                Some(&vec![
+                    "7E 01 5A 1B 00 01 7E 03 5D 1B 01 00 00 07".to_string()
+                ])
             );
             assert_eq!(
                 report.classification.category,
@@ -7408,7 +7613,7 @@ mod tests {
             );
             assert_eq!(
                 classification_summary.host_to_device_payload_extracted_bytes,
-                4
+                14
             );
             assert_eq!(
                 classification_summary.host_to_device_payload_missing_packet_count,
@@ -7416,6 +7621,33 @@ mod tests {
             );
             assert!(!classification_summary.host_to_device_payload_export_gap);
             assert!(classification_summary.decode_recommended);
+            let frame_summary = &classification_summary.usbcom_serial_frame_summary;
+            assert_eq!(frame_summary.packet_count, 1);
+            assert_eq!(frame_summary.payload_bytes, 14);
+            assert_eq!(frame_summary.parsed_frame_count, 2);
+            assert_eq!(frame_summary.checksum_valid_frame_count, 2);
+            assert_eq!(frame_summary.checksum_invalid_frame_count, 0);
+            assert_eq!(frame_summary.truncated_frame_count, 0);
+            assert!(!frame_summary.frame_shape_decode_gap);
+            assert_eq!(frame_summary.tuple_counts.len(), 2);
+            assert!(
+                frame_summary.tuple_counts.iter().any(|tuple| {
+                    tuple.group == "0x5A"
+                        && tuple.device_id == "0x1B"
+                        && tuple.command.as_deref() == Some("0x00")
+                        && tuple.count == 1
+                }),
+                "expected decoded 0x5A/0x1B/0x00 tuple"
+            );
+            assert!(
+                frame_summary
+                    .tuple_counts
+                    .iter()
+                    .all(|tuple| tuple.checksum_invalid_count == 0),
+                "decoded fixture tuples should have valid checksums"
+            );
+            assert!(!frame_summary.native_control_evidence);
+            assert!(!frame_summary.readiness_claim);
             assert!(!classification_summary.native_control_evidence);
             assert!(!classification_summary.readiness_claim);
             assert_schema_valid(

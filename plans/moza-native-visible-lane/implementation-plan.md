@@ -67,13 +67,16 @@ receipts, classified summaries, and bundle manifests; raw pcapng and bundle ZIP
 files remain local scratch artifacts. Remaining scenarios stay navigation-only
 until matching pcap receipts and summaries exist.
 
-The Pit House `open-idle` and `full-controls` summaries now extract USB CDC
-payloads from TShark `usbcom.data.*_payload` fields. The checked-in protocol
-review records candidate host-to-device frame/report ID `0x7E`, 3,246 extracted
-host-to-device payload packets, 53,988 extracted host-to-device payload bytes,
-and two remaining data-length packets without extracted payload bytes. This is
-protocol navigation only: it does not decode a command, authorize output, or
-promote native-visible readiness.
+The Pit House `open-idle` and `full-controls` summaries now extract and review
+USB CDC payload frames from TShark `usbcom.data.*_payload` fields. The checked-in
+protocol review records candidate host-to-device frame/report ID `0x7E`, 3,246
+extracted host-to-device payload packets, 53,988 extracted host-to-device
+payload bytes, and two remaining data-length packets without extracted payload
+bytes. The extracted stream parses into 7,863 length-prefixed `0x7E` serial-frame
+candidates with 7,863 valid checksums, zero checksum-invalid frames, and no
+frame-shape decode gap. This is protocol-shape navigation only: it does not
+decode an approved semantic enable command, authorize output, or promote
+native-visible readiness.
 
 The latest pre-output, lane analysis, role-status, and artifact-index receipts
 report six proven input roles and one remaining generic auxiliary role.
@@ -2357,6 +2360,89 @@ Revert only the USBCOM payload field extraction, tests, schema addition,
 refreshed sniff summaries, bundle manifests, protocol review receipt, and
 source-of-truth updates. Do not remove passive sniff plans, raw local capture
 artifacts, consumed hardware attempts, or prior undertravel evidence.
+
+## Work item: passive-sniff-usbcom-frame-shape-review
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: semantic vendor protocol decode before any future output family
+Blocked by: checked-in Pit House passive sniff summaries with extracted
+host-to-device USB CDC payloads
+
+### Goal
+
+Decode the extracted Pit House USB CDC payload stream far enough to preserve
+length-prefixed `0x7E` serial-frame shape, checksum validity, commandless-frame
+counts, and tuple IDs as non-claiming protocol evidence.
+
+### Production Delta
+
+Extend `wheelctl hardware sniff-summary` with `usbcom_serial_frame_summary`
+inside `report_classification_summary`. The summary parses host-to-device USB
+CDC payloads as length-prefixed `0x7E` serial-frame candidates using the same
+magic-13 wrapping checksum model as the fixture decoder, records tuple counts,
+and pins `native_control_evidence=false` and `readiness_claim=false`.
+
+Refresh the Pit House `open-idle` and `full-controls` summaries, bundle
+manifests, and `vendor-protocol-evidence-review.json`.
+
+The checked-in review now records 7,863 parsed host-to-device `0x7E` candidate
+frames across 3,246 payload packets. All 7,863 have valid checksums, zero
+checksum-invalid frames, zero truncated frames, and no frame-shape decode gap.
+There are 1,467 commandless frames and 30 distinct tuple IDs. This is still not
+a semantic command decode and does not make any tuple sendable.
+
+### Non-goals
+
+No HID open, serial open, read-only query send, hardware output, authorization
+receipt, PIDFF rerun, force increase, direct HID report `0xaf`, high torque,
+serial config, firmware, DFU, native-control claim, native-visible claim,
+smoke-ready claim, Pit House coexistence claim, simulator claim, release-ready
+claim, raw `.pcapng` commit, or semantic command/sendability claim.
+
+### Acceptance
+
+- `sniff-summary` records `usbcom_serial_frame_summary` for passive summaries.
+- The checked-in Pit House summaries record parsed candidate frame counts,
+  checksum-valid counts, tuple counts, and `frame_shape_decode_gap=false`.
+- `vendor-protocol-evidence-review.json` records
+  `total_host_to_device_serial_frame_count=7863`,
+  `total_host_to_device_serial_frame_checksum_valid_count=7863`,
+  `total_host_to_device_serial_frame_checksum_invalid_count=0`, and
+  `host_to_device_serial_frame_shape_decode_gap_detected=false`.
+- `planned_next_output.allowed=false`, `native_control_evidence=false`,
+  `hardware_output_authorized=false`, `native_visible_ready=false`, and
+  `smoke_ready=false` remain pinned.
+- Native-visible verifier remains blocked on `native_actuator_visible_smoke`.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_summary_extracts_usbcom_host_to_device_payloads -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl sniff_summary -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-summary --pcapng target/sniff/pit-house-open-idle/capture.pcapng --vendor 0x346E --product 0x0004 --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-summary.json --md-out target/sniff/pit-house-open-idle/sniff-summary.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-summary --pcapng target/sniff/pit-house-full-controls/capture.pcapng --vendor 0x346E --product 0x0004 --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-summary.json --md-out target/sniff/pit-house-full-controls/sniff-summary.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-bundle --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-plan.json --receipt ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-receipt.json --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-summary.json --operator-notes target/sniff/pit-house-open-idle/operator-notes.md --out target/sniff/pit-house-open-idle/openracing-sniff-bundle.zip --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-bundle-manifest.json --json
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-bundle --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-plan.json --receipt ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-receipt.json --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-summary.json --operator-notes target/sniff/pit-house-full-controls/operator-notes.md --out target/sniff/pit-house-full-controls/openracing-sniff-bundle.zip --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-bundle-manifest.json --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza vendor-protocol-evidence-review --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json --json --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-passive-sniff-usbcom-frame-shape-review.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-passive-sniff-usbcom-frame-shape-review.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the USBCOM frame-shape parser, tests, schema additions, refreshed
+sniff summaries, bundle manifests, protocol review receipt, and source-of-truth
+updates. Do not remove passive sniff plans, raw local capture artifacts,
+consumed hardware attempts, or prior undertravel evidence.
 
 ## Work item: native-visible-promotion
 
