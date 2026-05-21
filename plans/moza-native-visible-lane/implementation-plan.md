@@ -84,10 +84,12 @@ visible before any semantic decode work: `0x5A/0x1B/0x00` appears 1,896 times,
 `0x5D/0x1B/0x01` appears 1,894 times, and `0x25/0x19/0x01`,
 `0x25/0x19/0x02`, and `0x25/0x19/0x03` each appear 624 times. This is
 protocol-shape, registry-coverage, and frequency-prioritization navigation
-only. Artifact-index and bench-wizard now surface that frequency-ranked decode
-priority from the checked-in review receipt, but this still does not decode an
-approved semantic enable command, make any tuple sendable, authorize output, or
-promote native-visible readiness.
+only. The review also preserves 159 bounded passive tuple sample frames and 30
+decode-candidate sample frames for the five highest-frequency unknown commanded
+tuples. Artifact-index and bench-wizard now surface that frequency-ranked decode
+priority and representative sample frames from the checked-in review receipt,
+but this still does not decode an approved semantic enable command, make any
+tuple sendable, authorize output, or promote native-visible readiness.
 
 The latest pre-output, lane analysis, role-status, and artifact-index receipts
 report six proven input roles and one remaining generic auxiliary role.
@@ -2706,6 +2708,92 @@ Revert only the decode-priority navigation code, tests, refreshed artifact
 index, and source-of-truth updates. Do not remove the protocol evidence review
 receipt, passive tuple frequency fields, passive sniff plans, raw local capture
 artifacts, consumed hardware attempts, or prior undertravel evidence.
+
+## Work item: passive-sniff-tuple-sample-fixtures
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked specs:
+- docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+- docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: reviewed semantic command evidence before any future output family
+Blocked by: checked-in Pit House summaries with parsed `0x7E` tuple IDs
+
+### Goal
+
+Preserve bounded passive sample frames for checked-in Pit House tuple IDs so the
+next semantic decoder work can start from concrete fixture examples instead of
+frequency counts alone.
+
+### Production Delta
+
+Extend `hardware sniff-summary` to store up to three checksum-valid
+`sample_frames` per USB CDC serial tuple, including frame hex, payload hex,
+packet/frame ordinals, checksum status, and pinned false output/sendability
+gates. Extend `vendor-protocol-evidence-review.json` with
+`host_to_device_serial_frame_tuple_sample_count` and decode-candidate sample
+fixtures for the highest-frequency unknown commanded tuples.
+
+Artifact-index and bench-wizard navigation now surface the sample fixture count
+and representative first frames in `vendor_protocol_decode_priority`.
+
+Refresh the two checked-in Pit House summaries, bundle manifests,
+`vendor-protocol-evidence-review.json`, `ci/hardware/moza-r5/2026-05-13/index.md`,
+and this source-of-truth stack.
+
+### Non-goals
+
+No HID open, serial open, read-only query send, hardware output, authorization
+receipt, PIDFF rerun, force increase, direct HID report `0xaf`, high torque,
+serial config, firmware, DFU, native-control claim, native-visible claim,
+smoke-ready claim, Pit House coexistence claim, simulator claim, release-ready
+claim, raw `.pcapng` commit, semantic command decode, registry promotion, or
+tuple sendability claim.
+
+### Acceptance
+
+- `sniff-summary.json` records bounded `sample_frames` under each parsed
+  `usbcom_serial_frame_summary.tuple_counts` item.
+- `vendor-protocol-evidence-review.json` records
+  `host_to_device_serial_frame_tuple_sample_count=159`.
+- `passive_tuple_registry_coverage.decode_candidate_sample_count=30` and the
+  sample fixture tuple IDs begin with `0x5A/0x1B/0x00` and
+  `0x5D/0x1B/0x01`.
+- Sample fixtures pin `checksum_valid=true`, `hardware_output_authorized=false`,
+  and `output_sendability_claim=false`.
+- Artifact-index and bench-wizard Markdown render sample fixture counts and
+  representative frames without emitting a hardware attempt command.
+- Native-visible verifier remains blocked on `native_actuator_visible_smoke`.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_summary_extracts_usbcom_host_to_device_payloads -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl sniff_summary -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-summary --pcapng target/sniff/pit-house-open-idle/capture.pcapng --vendor 0x346E --product 0x0004 --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-summary.json --md-out target/sniff/pit-house-open-idle/sniff-summary.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-summary --pcapng target/sniff/pit-house-full-controls/capture.pcapng --vendor 0x346E --product 0x0004 --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-summary.json --md-out target/sniff/pit-house-full-controls/sniff-summary.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-bundle --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-plan.json --receipt ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-receipt.json --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-summary.json --operator-notes target/sniff/pit-house-open-idle/operator-notes.md --out target/sniff/pit-house-open-idle/openracing-sniff-bundle.zip --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-bundle-manifest.json --json
+cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-bundle --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-plan.json --receipt ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-receipt.json --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-summary.json --operator-notes target/sniff/pit-house-full-controls/operator-notes.md --out target/sniff/pit-house-full-controls/openracing-sniff-bundle.zip --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-full-controls/sniff-bundle-manifest.json --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza vendor-protocol-evidence-review --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json --json --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-passive-tuple-samples.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json
+cargo run --locked -p wheelctl --bin wheelctl -- moza verify-bundle --lane ci/hardware/moza-r5/2026-05-13 --stage native-visible-ready --json-out target/moza-current/native-visible-after-passive-tuple-samples.json --json; if ($LASTEXITCODE -eq 4) { exit 0 } else { throw "expected native-visible verifier to remain blocked" }
+cargo test --locked -p wheelctl --bin wheelctl checked_in_moza_lane_index_matches_artifact_index_renderer -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the tuple sample fixture code, schema additions, refreshed passive
+sniff summaries/manifests, protocol review receipt, artifact-index refresh, and
+source-of-truth updates. Do not remove passive sniff plans, raw local capture
+artifacts, consumed hardware attempts, prior undertravel evidence, or tuple
+frequency/registry coverage fields.
 
 ## Work item: native-visible-promotion
 

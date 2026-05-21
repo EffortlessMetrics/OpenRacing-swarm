@@ -4828,6 +4828,7 @@ const SNIFF_BUNDLE_ROOT: &str = "openracing-sniff-bundle";
 const SNIFF_BUNDLE_KIND: &str = "openracing_passive_usb_sniff_bundle";
 const DEFAULT_SNIFF_MAX_SAMPLES_PER_REPORT: usize = 3;
 const MAX_SNIFF_MAX_SAMPLES_PER_REPORT: usize = 32;
+const USB_COM_SERIAL_TUPLE_SAMPLE_LIMIT: usize = 3;
 const SNIFF_ALLOWED_ACTIONS: &[&str] = &[
     "capture host-side USB URBs with Wireshark, USBPcap, tshark, or usbmon",
     "observe operating-system, vendor-app, simulator, or bridge traffic",
@@ -5322,6 +5323,7 @@ struct HardwareSniffUsbComSerialFrameSummary {
     max_frames_per_packet: usize,
     frame_shape_decode_gap: bool,
     tuple_counts: Vec<HardwareSniffUsbComSerialTupleCount>,
+    tuple_sample_limit: usize,
     native_control_evidence: bool,
     readiness_claim: bool,
     notes: Vec<String>,
@@ -5337,6 +5339,22 @@ struct HardwareSniffUsbComSerialTupleCount {
     count: usize,
     checksum_valid_count: usize,
     checksum_invalid_count: usize,
+    sample_frames: Vec<HardwareSniffUsbComSerialTupleSampleFrame>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HardwareSniffUsbComSerialTupleSampleFrame {
+    sample_index: usize,
+    packet_ordinal: usize,
+    frame_ordinal_in_packet: usize,
+    frame_hex: String,
+    declared_len: usize,
+    payload_len: usize,
+    payload_hex: String,
+    checksum_hex: String,
+    checksum_valid: bool,
+    hardware_output_authorized: bool,
+    output_sendability_claim: bool,
 }
 
 #[derive(Default)]
@@ -5360,6 +5378,7 @@ struct HardwareSniffUsbComSerialTupleBuilder {
     count: usize,
     checksum_valid_count: usize,
     checksum_invalid_count: usize,
+    sample_frames: Vec<HardwareSniffUsbComSerialTupleSampleFrame>,
 }
 
 impl HardwareSniffUsbComSerialFrameSummaryBuilder {
@@ -5369,6 +5388,7 @@ impl HardwareSniffUsbComSerialFrameSummaryBuilder {
         }
 
         self.packet_count = self.packet_count.saturating_add(1);
+        let packet_ordinal = self.packet_count;
         self.payload_bytes = self.payload_bytes.saturating_add(payload.len());
         let mut offset = 0usize;
         let mut frames_in_packet = 0usize;
@@ -5400,9 +5420,10 @@ impl HardwareSniffUsbComSerialFrameSummaryBuilder {
             let device_id = frame[3];
             let command = (declared_len > 0).then_some(frame[4]);
             let payload_len = declared_len.saturating_sub(1);
+            let frame_ordinal_in_packet = frames_in_packet.saturating_add(1);
 
             self.parsed_frame_count = self.parsed_frame_count.saturating_add(1);
-            frames_in_packet = frames_in_packet.saturating_add(1);
+            frames_in_packet = frame_ordinal_in_packet;
             if checksum_valid {
                 self.checksum_valid_frame_count = self.checksum_valid_frame_count.saturating_add(1);
             } else {
@@ -5428,6 +5449,30 @@ impl HardwareSniffUsbComSerialFrameSummaryBuilder {
                 tuple.checksum_valid_count = tuple.checksum_valid_count.saturating_add(1);
             } else {
                 tuple.checksum_invalid_count = tuple.checksum_invalid_count.saturating_add(1);
+            }
+            if checksum_valid && tuple.sample_frames.len() < USB_COM_SERIAL_TUPLE_SAMPLE_LIMIT {
+                let payload_start = if command.is_some() { 5 } else { 4 };
+                let payload_end = expected_len.saturating_sub(1);
+                let semantic_payload = if payload_start <= payload_end {
+                    &frame[payload_start..payload_end]
+                } else {
+                    &[]
+                };
+                tuple
+                    .sample_frames
+                    .push(HardwareSniffUsbComSerialTupleSampleFrame {
+                        sample_index: tuple.sample_frames.len().saturating_add(1),
+                        packet_ordinal,
+                        frame_ordinal_in_packet,
+                        frame_hex: bytes_hex_compact_upper(frame),
+                        declared_len,
+                        payload_len,
+                        payload_hex: bytes_hex_compact_upper(semantic_payload),
+                        checksum_hex: hex_u8(actual_checksum),
+                        checksum_valid,
+                        hardware_output_authorized: false,
+                        output_sendability_claim: false,
+                    });
             }
 
             offset = offset.saturating_add(expected_len);
@@ -5478,9 +5523,11 @@ impl HardwareSniffUsbComSerialFrameSummaryBuilder {
                         count: tuple.count,
                         checksum_valid_count: tuple.checksum_valid_count,
                         checksum_invalid_count: tuple.checksum_invalid_count,
+                        sample_frames: tuple.sample_frames,
                     },
                 )
                 .collect(),
+            tuple_sample_limit: USB_COM_SERIAL_TUPLE_SAMPLE_LIMIT,
             native_control_evidence: false,
             readiness_claim: false,
             notes,
@@ -5499,6 +5546,15 @@ fn usbcom_serial_checksum(frame_without_checksum: &[u8]) -> u8 {
         .fold(USB_COM_SERIAL_CHECKSUM_MAGIC, |sum, byte| {
             sum.wrapping_add(*byte)
         })
+}
+
+fn bytes_hex_compact_upper(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len().saturating_mul(2));
+    for byte in bytes {
+        use std::fmt::Write as _;
+        let _ = write!(&mut out, "{byte:02X}");
+    }
+    out
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -7629,16 +7685,45 @@ mod tests {
             assert_eq!(frame_summary.checksum_invalid_frame_count, 0);
             assert_eq!(frame_summary.truncated_frame_count, 0);
             assert!(!frame_summary.frame_shape_decode_gap);
+            assert_eq!(frame_summary.tuple_sample_limit, 3);
             assert_eq!(frame_summary.tuple_counts.len(), 2);
-            assert!(
-                frame_summary.tuple_counts.iter().any(|tuple| {
+            let tuple_5a = frame_summary
+                .tuple_counts
+                .iter()
+                .find(|tuple| {
                     tuple.group == "0x5A"
                         && tuple.device_id == "0x1B"
                         && tuple.command.as_deref() == Some("0x00")
-                        && tuple.count == 1
-                }),
-                "expected decoded 0x5A/0x1B/0x00 tuple"
-            );
+                })
+                .ok_or("expected decoded 0x5A/0x1B/0x00 tuple")?;
+            assert_eq!(tuple_5a.count, 1);
+            let sample_5a = tuple_5a
+                .sample_frames
+                .first()
+                .ok_or("expected 0x5A sample frame")?;
+            assert_eq!(sample_5a.frame_hex, "7E015A1B0001");
+            assert_eq!(sample_5a.payload_hex, "");
+            assert_eq!(sample_5a.payload_len, 0);
+            assert!(!sample_5a.hardware_output_authorized);
+            assert!(!sample_5a.output_sendability_claim);
+            let tuple_5d = frame_summary
+                .tuple_counts
+                .iter()
+                .find(|tuple| {
+                    tuple.group == "0x5D"
+                        && tuple.device_id == "0x1B"
+                        && tuple.command.as_deref() == Some("0x01")
+                })
+                .ok_or("expected decoded 0x5D/0x1B/0x01 tuple")?;
+            let sample_5d = tuple_5d
+                .sample_frames
+                .first()
+                .ok_or("expected 0x5D sample frame")?;
+            assert_eq!(sample_5d.frame_hex, "7E035D1B01000007");
+            assert_eq!(sample_5d.payload_hex, "0000");
+            assert_eq!(sample_5d.payload_len, 2);
+            assert!(!sample_5d.hardware_output_authorized);
+            assert!(!sample_5d.output_sendability_claim);
             assert!(
                 frame_summary
                     .tuple_counts

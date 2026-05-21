@@ -64,6 +64,8 @@ Frequency-ranked tuples are decode-priority navigation only. They do not make an
 - Source receipt: `vendor-protocol-evidence-review.json`
 - Unknown tuple risk class: `unknown_do_not_send`
 - Output sendability claim: `false`
+- Decode candidate sample scope: `highest_frequency_unknown_commanded_tuples`
+- Decode candidate sample frames: `30`
 
 | Tuple | Count | Payload bytes | Scenarios |
 | --- | ---: | ---: | ---: |
@@ -72,6 +74,14 @@ Frequency-ranked tuples are decode-priority navigation only. They do not make an
 | `0x25/0x19/0x01` | 624 | 2..2 | 2 |
 | `0x25/0x19/0x02` | 624 | 2..2 | 2 |
 | `0x25/0x19/0x03` | 624 | 2..2 | 2 |
+
+| Sample fixture tuple | Samples | First frame | First payload bytes | Sendable |
+| --- | ---: | --- | ---: | --- |
+| `0x5A/0x1B/0x00` | 6 | `7E015A1B0001` | 0 | `false` |
+| `0x5D/0x1B/0x01` | 6 | `7E035D1B01000007` | 2 | `false` |
+| `0x25/0x19/0x01` | 6 | `7E032519010000CD` | 2 | `false` |
+| `0x25/0x19/0x02` | 6 | `7E032519020000CE` | 2 | `false` |
+| `0x25/0x19/0x03` | 6 | `7E032519030000CF` | 2 | `false` |
 
 ## Pit House Compatibility
 

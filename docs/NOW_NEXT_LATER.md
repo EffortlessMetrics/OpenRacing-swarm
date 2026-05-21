@@ -17,7 +17,7 @@ One-screen execution plan for OpenRacing. Updated each sprint.
 
 ## NEXT (Queued — next 2–4 sprints)
 
-- **Moza vendor-specific control investigation** - six no-output sniff plans are recorded for Pit House, SimHub, and simulator sessions; Pit House open-idle and full-controls have non-claiming receipts/summaries, and artifact-index/bench-wizard now surface the highest-frequency unknown commanded `0x7E` tuples for semantic decode before any reviewed vendor-control plan
+- **Moza vendor-specific control investigation** - six no-output sniff plans are recorded for Pit House, SimHub, and simulator sessions; Pit House open-idle and full-controls have non-claiming receipts/summaries, and artifact-index/bench-wizard now surface the highest-frequency unknown commanded `0x7E` tuples plus bounded sample frames for semantic decode before any reviewed vendor-control plan
 - **Moza Pit House coexistence** - external compatibility only; test closed/open/mode-change/update-page cases separately and do not make Pit House a native-control prerequisite
 - **Moza passive USB sniff support evidence** - optional protocol research for Pit House, SimHub, and simulator traffic; two Pit House summaries are recorded, remaining captures are summary-only by default, no raw pcapng unless reviewed, and never a native or smoke-ready gate
 - **One simulator telemetry path** - telemetry-only first, no FFB writes, before bounded sim-to-Moza FFB smoke
