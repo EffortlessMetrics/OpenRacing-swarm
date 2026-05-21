@@ -2,7 +2,7 @@
   "schema_version": 1,
   "success": true,
   "command": "wheelctl hardware sniff-summary",
-  "generated_at_utc": "2026-05-21T03:19:13Z",
+  "generated_at_utc": "2026-05-21T04:04:49Z",
   "pcapng_sha256": "dbde49919cf67a41a086c08e5f629ba0b12c91cb772c735c4350368629d37c08",
   "tool": {
     "tshark_present": true,
@@ -38,6 +38,27 @@
   ],
   "observed_reports": [
     {
+      "direction": "host_to_device",
+      "report_id": "0x7E",
+      "classification": {
+        "category": "vendor_or_device_specific_output_candidate",
+        "label": "unknown_host_to_device_report_0x7E",
+        "vendor_specific_candidate": true,
+        "native_control_evidence": false,
+        "notes": [
+          "host-to-device report ID is not in the standard PIDFF output/control report set",
+          "decode this external-app traffic before designing any future OpenRacing output plan"
+        ]
+      },
+      "count": 2853,
+      "payload_sample_count": 3,
+      "payload_sha256_examples": [
+        "6135b282ec0cdfd98639b7598de914458fd25326c718bd494f6b45052b7ee16b",
+        "42b49865f7494febe9568a1b5477815bee5199a365128c02e32cd7045896d3e6",
+        "e60b14899805ea9eb7b73acfedd576775a87538315f5a1595de8526232e2cdb3"
+      ]
+    },
+    {
       "direction": "device_to_host",
       "report_id": "0x01",
       "classification": {
@@ -57,31 +78,56 @@
         "4346beeaf49954811a3aebb99e12689b67993cb982c6ebce6d8e74b2ca38f25f",
         "4346beeaf49954811a3aebb99e12689b67993cb982c6ebce6d8e74b2ca38f25f"
       ]
+    },
+    {
+      "direction": "device_to_host",
+      "report_id": "0x7E",
+      "classification": {
+        "category": "input_or_status_report",
+        "label": "device_to_host_report_0x7E",
+        "vendor_specific_candidate": false,
+        "native_control_evidence": false,
+        "notes": [
+          "device-to-host report observed in passive traffic",
+          "passive input/status traffic does not prove native control or visible motion"
+        ]
+      },
+      "count": 3092,
+      "payload_sample_count": 3,
+      "payload_sha256_examples": [
+        "056b6be6c207e0fc19a8a435869b5318b6d617b17c39590b213c28883ebfe904",
+        "cbe5b36c8764ed3394204ca7f6bc2124b53c31354b62aa589fd14f5d68789e36",
+        "4b3a8fff5f624a8416228706f05e6f061a9ccc767f7b92440e8b24e24fe793ce"
+      ]
     }
   ],
   "report_classification_summary": {
     "standard_pidff_output_report_count": 0,
-    "vendor_or_device_specific_output_candidate_count": 0,
-    "input_or_status_report_count": 1,
+    "vendor_or_device_specific_output_candidate_count": 1,
+    "input_or_status_report_count": 2,
     "host_to_device_packet_count": 5708,
-    "host_to_device_classified_packet_count": 0,
-    "host_to_device_unclassified_packet_count": 5708,
+    "host_to_device_classified_packet_count": 2853,
+    "host_to_device_unclassified_packet_count": 2855,
     "host_to_device_decode_gap": true,
     "host_to_device_data_len_packet_count": 2854,
     "host_to_device_data_len_bytes": 47797,
-    "host_to_device_payload_extracted_packet_count": 0,
-    "host_to_device_payload_extracted_bytes": 0,
-    "host_to_device_payload_missing_packet_count": 2854,
+    "host_to_device_payload_extracted_packet_count": 2853,
+    "host_to_device_payload_extracted_bytes": 47789,
+    "host_to_device_payload_missing_packet_count": 1,
     "host_to_device_payload_export_gap": true,
-    "host_to_device_report_ids": [],
+    "host_to_device_report_ids": [
+      "0x7E"
+    ],
     "standard_pidff_output_report_ids": [],
-    "vendor_or_device_specific_output_candidate_report_ids": [],
+    "vendor_or_device_specific_output_candidate_report_ids": [
+      "0x7E"
+    ],
     "decode_recommended": true,
     "native_control_evidence": false,
     "readiness_claim": false,
     "notes": [
-      "host-to-device USB transfers declare data length but no payload bytes were extracted; inspect tshark payload export or raw pcap filtering before designing any future OpenRacing output plan",
-      "host-to-device payload export gaps are protocol navigation only and do not prove native control or readiness"
+      "vendor/device-specific host-to-device report candidates are present; decode them before designing any future OpenRacing output plan",
+      "classification summary is protocol navigation only and does not prove native control or readiness"
     ]
   },
   "descriptor_candidates": [],

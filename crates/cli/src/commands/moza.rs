@@ -27717,6 +27717,7 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
     let mut total_host_to_device_unclassified_packets = 0u64;
     let mut total_host_to_device_payload_missing_packets = 0u64;
     let mut total_host_to_device_data_len_bytes = 0u64;
+    let mut total_host_to_device_payload_extracted_packet_count = 0u64;
     let mut total_host_to_device_payload_extracted_bytes = 0u64;
     let mut total_device_to_host_packets = 0u64;
     let mut decode_gap_scenarios = Vec::new();
@@ -27740,6 +27741,9 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
             .saturating_add(review.host_to_device_payload_missing_packet_count);
         total_host_to_device_data_len_bytes = total_host_to_device_data_len_bytes
             .saturating_add(review.host_to_device_data_len_bytes);
+        total_host_to_device_payload_extracted_packet_count =
+            total_host_to_device_payload_extracted_packet_count
+                .saturating_add(review.host_to_device_payload_extracted_packet_count);
         total_host_to_device_payload_extracted_bytes = total_host_to_device_payload_extracted_bytes
             .saturating_add(review.host_to_device_payload_extracted_bytes);
         total_device_to_host_packets =
@@ -27771,6 +27775,7 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
         total_host_to_device_unclassified_packets,
         total_host_to_device_payload_missing_packets,
         total_host_to_device_data_len_bytes,
+        total_host_to_device_payload_extracted_packet_count,
         total_host_to_device_payload_extracted_bytes,
         total_device_to_host_packets,
         host_to_device_decode_gap_detected: total_host_to_device_unclassified_packets > 0,
@@ -27910,16 +27915,34 @@ fn vendor_protocol_sniff_scenario_review(
     let mut notes =
         vec!["checked-in passive summary is non-claiming protocol evidence".to_string()];
     if host_to_device_decode_gap {
-        notes.push(
-            "host-to-device packets are present but not fully mapped to report IDs; inspect raw pcap/tshark payload export before any future output plan"
-                .to_string(),
-        );
+        if host_to_device_report_ids.is_empty() {
+            notes.push(
+                "host-to-device packets are present but not fully mapped to report IDs; inspect raw pcap/tshark payload export before any future output plan"
+                    .to_string(),
+            );
+        } else {
+            notes.push(format!(
+                "host-to-device payloads expose candidate report/frame IDs {}; remaining unclassified packets still require decoded-report review before any future output plan",
+                host_to_device_report_ids.join(", ")
+            ));
+        }
     }
     if host_to_device_payload_export_gap {
-        notes.push(
-            "host-to-device packets declare USB data length but stored summaries have missing payload bytes; inspect tshark payload fields or filtered/raw pcap export before any future output plan"
-                .to_string(),
-        );
+        if host_to_device_payload_extracted_packet_count > 0 {
+            let missing_packet_noun = if host_to_device_payload_missing_packet_count == 1 {
+                "packet"
+            } else {
+                "packets"
+            };
+            notes.push(format!(
+                "host-to-device payload extraction is partial: {host_to_device_payload_extracted_packet_count} packets extracted, {host_to_device_payload_missing_packet_count} data-length {missing_packet_noun} still missing payload bytes"
+            ));
+        } else {
+            notes.push(
+                "host-to-device packets declare USB data length but stored summaries have missing payload bytes; inspect tshark payload fields or filtered/raw pcap export before any future output plan"
+                    .to_string(),
+            );
+        }
     }
 
     Ok(VendorProtocolSniffScenarioReview {
@@ -29771,6 +29794,7 @@ struct VendorProtocolSniffEvidence {
     total_host_to_device_unclassified_packets: u64,
     total_host_to_device_payload_missing_packets: u64,
     total_host_to_device_data_len_bytes: u64,
+    total_host_to_device_payload_extracted_packet_count: u64,
     total_host_to_device_payload_extracted_bytes: u64,
     total_device_to_host_packets: u64,
     host_to_device_decode_gap_detected: bool,
@@ -38853,6 +38877,12 @@ mod tests {
                 .pointer("/sniff_evidence/total_host_to_device_data_len_bytes")
                 .and_then(Value::as_u64),
             Some(400)
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/total_host_to_device_payload_extracted_packet_count")
+                .and_then(Value::as_u64),
+            Some(0)
         );
         assert_eq!(
             value

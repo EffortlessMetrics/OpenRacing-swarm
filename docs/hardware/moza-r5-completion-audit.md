@@ -75,11 +75,13 @@ summaries, command registry, consumed vendor-authority attempt, and
 post-authority PIDFF comparison without opening HID or serial devices. It
 classifies the current state as
 `estop_set_ffb_regressed_and_protocol_enable_path_still_undecoded`, records no
-decoded output candidate from the current summaries, and keeps
-`planned_next_output.allowed=false`. The review also records a host-to-device
-payload export gap: 3,248 data-length-bearing Pit House packets totaling 54,004
-declared bytes have zero extracted host-to-device payload bytes in the stored
-summaries.
+decoded output command from the current summaries, and keeps
+`planned_next_output.allowed=false`. The review now extracts the Pit House USB
+CDC payload stream far enough to surface candidate host-to-device frame/report
+ID `0x7E`, 3,246 extracted host-to-device payload packets, and 53,988 extracted
+host-to-device payload bytes. Two data-length packets still lack extracted
+payload bytes. This is protocol navigation only, not native-control or
+native-visible proof.
 
 ## Prompt-To-Artifact Checklist
 
@@ -108,7 +110,7 @@ summaries.
 | Closed-loop controlled-angle path exists | `native-controlled-angle-closed-loop-preflight.json`; `native-controlled-angle-closed-loop-authorization.json`; `native-controlled-angle-closed-loop-smoke.json`; `native-controlled-angle-closed-loop-failure-analysis.json` | Pass as safe failed evidence | The closed-loop attempt used `closed-loop-pidff-angle-v1`, wrote 672 bounded PIDFF reports with zero write errors, sent final Stop All/final zero, stayed post-stop stable, and timed out before target at `angle_delta_degrees=0.13183794918745662`. It is not visible-motion proof and authorizes no further output. |
 | Vendor-authority attempt exists | `vendor-authority-authorization.json`; `vendor-authority-smoke-dry-run.json`; `vendor-authority-attempt.json` | Pass as exact one-frame non-claiming evidence | The attempt consumed a fresh precondition-bound authorization, sent only the hash-bound `estop_set_ffb` frame once, closed `hardware_output_authorized=false`, and kept native-control/native-visible/smoke-ready/release-ready claims false. |
 | Post-authority PIDFF comparison exists | `vendor-post-authority-pidff-smoke.json`; `vendor-post-authority-pidff-response.json`; [Moza R5 Post-Authority PIDFF Response](moza-r5-post-authority-pidff-response.md) | Pass as no-output comparison diagnosis | The comparison classifies `post_authority_pidff_response_regressed`: baseline `0.18127718013275285` degrees versus post-authority `0.032959487296864154` degrees. It authorizes no retry and does not claim native-visible readiness. |
-| Vendor protocol evidence review exists | `vendor-protocol-evidence-review.json`; `schemas/moza-vendor-protocol-evidence-review.schema.json` | Pass as no-output protocol review | The review confirms two of six passive sniff scenarios are complete, current summaries do not expose a decoded output candidate, and the completed Pit House summaries have a host-to-device payload export gap. No future output is allowed without decoded protocol evidence plus a reviewed plan and fresh exact authorization. |
+| Vendor protocol evidence review exists | `vendor-protocol-evidence-review.json`; `schemas/moza-vendor-protocol-evidence-review.schema.json` | Pass as no-output protocol review | The review confirms two of six passive sniff scenarios are complete, current summaries expose non-claiming `0x7E` USB CDC frame candidates but no decoded output command, and the completed Pit House summaries retain only a two-packet residual payload export gap. No future output is allowed without decoded protocol evidence plus a reviewed plan and fresh exact authorization. |
 | Pit House compatibility navigation is current | `pit-house-availability.json`, `artifact-index`, and `bench-wizard` `pit_house_compatibility`; `ci/hardware/moza-r5/2026-05-13/index.md` Pit House Compatibility section | Pass as non-claiming navigation | The lane records `pit_house_available=true`, `availability_status=running_install_location_unknown`, `recorded_case_count=2/5`, `pit_house_coexistence_claimed=false`, `readiness_claim=false`, `blocks_native_control=false`, and `blocks_native_visible=false`. Missing direct/mode-change/firmware-page cases remain external smoke blockers. |
 | Pit House coexistence proven | `pit-house-coexistence.json`; smoke-ready verifier | Missing | `pit-house-availability.json` is non-claiming availability evidence only. Coexistence matrix is not proven. |
 | Simulator compatibility navigation is current | `pre-output-readiness.json`, `artifact-index`, and `bench-wizard` `simulator_compatibility`; `ci/hardware/moza-r5/2026-05-13/index.md` Simulator Compatibility section | Pass as non-claiming navigation | The lane records `recorded_artifact_count=0/2`, `simulator_telemetry_claimed=false`, `bounded_simulator_ffb_claimed=false`, `readiness_claim=false`, `blocks_native_control=false`, and `blocks_native_visible=false`. Missing telemetry and bounded FFB artifacts remain external smoke blockers. |

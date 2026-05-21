@@ -2,7 +2,7 @@
   "schema_version": 1,
   "success": true,
   "command": "wheelctl hardware sniff-bundle",
-  "generated_at_utc": "2026-05-21T03:19:24Z",
+  "generated_at_utc": "2026-05-21T04:05:38Z",
   "bundle_kind": "openracing_passive_usb_sniff_bundle",
   "includes_raw_pcapng": false,
   "artifacts": [
@@ -20,7 +20,7 @@
     },
     {
       "path": "openracing-sniff-bundle/sniff-summary.json",
-      "sha256": "76bdc014ea811c546f13f4901c834825cc60a8c6dee32a42e584651e7742c5da"
+      "sha256": "a1437af16be66b0778de1e0f186fd20c30b4c7ae732ef7587c3a32f96c829646"
     },
     {
       "path": "openracing-sniff-bundle/operator-notes.md",

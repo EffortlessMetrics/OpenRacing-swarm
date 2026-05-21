@@ -76,13 +76,14 @@ the current summaries do not expose a decoded output candidate, and keeps
 
 The same review now distinguishes absence of decoded candidates from a decode
 gap: the checked-in Pit House summaries include host-to-device USB transfers
-that are not mapped to report IDs or payload candidates in the stored summary.
-It now also records a payload export gap: across the two completed Pit House
-scenarios, 3,248 host-to-device packets declare USB data length, totaling
-54,004 bytes, while zero host-to-device payload bytes are extracted into the
-summary. That gap is non-claiming protocol evidence and points the next
-no-output work at raw pcap/tshark payload export review, not another output
-attempt.
+that are not fully mapped to report IDs or payload candidates in the stored
+summary. The broad payload export gap has been narrowed: TShark's
+`usbcom.data.*_payload` fields now expose candidate host-to-device frame/report
+ID `0x7E`, 3,246 extracted host-to-device payload packets, and 53,988 extracted
+host-to-device payload bytes across the two completed Pit House scenarios. Two
+data-length packets still lack extracted payload bytes. This is non-claiming
+protocol evidence and points the next no-output work at decoding the `0x7E`
+USBCOM frame stream, not another output attempt.
 
 ## Completion Audit Summary
 
@@ -101,7 +102,7 @@ The broader Moza objective remains incomplete:
 | Closed-loop failure analysis | `native-controlled-angle-closed-loop-failure-analysis.json` | Recorded no-output classification |
 | Consumed vendor-authority attempt | `vendor-authority-attempt.json` | Recorded exact one-frame non-claiming attempt |
 | Post-authority PIDFF response | `vendor-post-authority-pidff-smoke.json`; `vendor-post-authority-pidff-response.json`; [post-authority PIDFF response diagnosis](../../docs/hardware/moza-r5-post-authority-pidff-response.md) | Recorded regression versus baseline; no native-visible claim |
-| Vendor protocol evidence review | `vendor-protocol-evidence-review.json` | Recorded no-output review, host-to-device decode gap, and payload export gap; protocol evidence still insufficient for any output plan |
+| Vendor protocol evidence review | `vendor-protocol-evidence-review.json` | Recorded no-output review, host-to-device candidate `0x7E`, partial residual payload export gap, and no sufficient protocol evidence for any output plan |
 | Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence |
 | Remaining passive sniff plans | `pit-house-setting-change`, `simhub-open-idle`, `simhub-output-session`, `simulator-session-start-stop` sniff plans | Plan-only, non-claiming |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |
@@ -118,14 +119,14 @@ role-specific clutch mapping remains diagnostic with `readiness_claim=false`.
 
 The next operator step remains review-only: current evidence has recorded the
 post-authority PIDFF regression and reviewed the checked-in protocol evidence
-without finding a decoded enable path. It also records that existing Pit House
-host-to-device traffic is not yet mapped to report IDs in the checked-in
-summaries, and that data-length-bearing host-to-device packets are missing
-extracted payload bytes in those summaries. It emits no hardware output command
-and no authorization command. The next implementation work should continue
-vendor-specific protocol investigation, such as raw pcap/tshark payload export
-review, remaining passive sniff scenarios, or decoded report review, before any
-future motion ladder plan.
+without finding a decoded enable path. It now extracts the Pit House USB CDC
+payload stream far enough to surface candidate frame/report ID `0x7E`, but that
+candidate is not decoded into a semantic command and still cannot authorize
+output. It emits no hardware output command and no authorization command. The
+next implementation work should continue vendor-specific protocol
+investigation, such as decoding the `0x7E` USBCOM frame stream, completing the
+remaining passive sniff scenarios, or adding decoded report fixtures, before
+any future motion ladder plan.
 
 Passive USB sniff captures may produce non-claiming `sniff-receipt.json`,
 `sniff-summary.json`, and bundle manifest artifacts, but those are

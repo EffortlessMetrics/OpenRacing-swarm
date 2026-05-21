@@ -4,7 +4,7 @@
   "artifact_kind": "moza_vendor_protocol_evidence_review",
   "claim_scope": "no_output_protocol_evidence_review",
   "command": "wheelctl moza vendor-protocol-evidence-review",
-  "generated_at_utc": "2026-05-21T03:19:38Z",
+  "generated_at_utc": "2026-05-21T04:13:53Z",
   "lane": "ci/hardware/moza-r5/2026-05-13",
   "sniff_root": "ci/hardware\\sniff\\moza-r5\\2026-05-13",
   "command_registry_path": "fixtures/moza/r5/vendor-command-registry.json",
@@ -43,10 +43,11 @@
     ],
     "total_matched_packets": 64136,
     "total_host_to_device_packets": 6496,
-    "total_host_to_device_unclassified_packets": 6496,
-    "total_host_to_device_payload_missing_packets": 3248,
+    "total_host_to_device_unclassified_packets": 3250,
+    "total_host_to_device_payload_missing_packets": 2,
     "total_host_to_device_data_len_bytes": 54004,
-    "total_host_to_device_payload_extracted_bytes": 0,
+    "total_host_to_device_payload_extracted_packet_count": 3246,
+    "total_host_to_device_payload_extracted_bytes": 53988,
     "total_device_to_host_packets": 57640,
     "host_to_device_decode_gap_detected": true,
     "host_to_device_payload_export_gap_detected": true,
@@ -58,8 +59,12 @@
       "pit-house-open-idle",
       "pit-house-full-controls"
     ],
-    "host_to_device_report_ids": [],
-    "vendor_or_device_specific_output_candidate_report_ids": [],
+    "host_to_device_report_ids": [
+      "0x7E"
+    ],
+    "vendor_or_device_specific_output_candidate_report_ids": [
+      "0x7E"
+    ],
     "decode_recommended_by_summaries": true,
     "passive_summaries_native_control_evidence": false,
     "scenarios": [
@@ -79,28 +84,32 @@
         "summary_validated": true,
         "matched_packets": 7768,
         "host_to_device_packets": 788,
-        "host_to_device_classified_packet_count": 0,
-        "host_to_device_unclassified_packet_count": 788,
+        "host_to_device_classified_packet_count": 393,
+        "host_to_device_unclassified_packet_count": 395,
         "host_to_device_decode_gap": true,
         "host_to_device_data_len_packet_count": 394,
         "host_to_device_data_len_bytes": 6207,
-        "host_to_device_payload_extracted_packet_count": 0,
-        "host_to_device_payload_extracted_bytes": 0,
-        "host_to_device_payload_missing_packet_count": 394,
+        "host_to_device_payload_extracted_packet_count": 393,
+        "host_to_device_payload_extracted_bytes": 6199,
+        "host_to_device_payload_missing_packet_count": 1,
         "host_to_device_payload_export_gap": true,
         "device_to_host_packets": 6980,
         "standard_pidff_output_report_count": 0,
-        "vendor_or_device_specific_output_candidate_count": 0,
-        "input_or_status_report_count": 1,
-        "host_to_device_report_ids": [],
-        "vendor_or_device_specific_output_candidate_report_ids": [],
+        "vendor_or_device_specific_output_candidate_count": 1,
+        "input_or_status_report_count": 2,
+        "host_to_device_report_ids": [
+          "0x7E"
+        ],
+        "vendor_or_device_specific_output_candidate_report_ids": [
+          "0x7E"
+        ],
         "decode_recommended": true,
         "native_control_evidence": false,
         "readiness_claim": false,
         "notes": [
           "checked-in passive summary is non-claiming protocol evidence",
-          "host-to-device packets are present but not fully mapped to report IDs; inspect raw pcap/tshark payload export before any future output plan",
-          "host-to-device packets declare USB data length but stored summaries have missing payload bytes; inspect tshark payload fields or filtered/raw pcap export before any future output plan"
+          "host-to-device payloads expose candidate report/frame IDs 0x7E; remaining unclassified packets still require decoded-report review before any future output plan",
+          "host-to-device payload extraction is partial: 393 packets extracted, 1 data-length packet still missing payload bytes"
         ]
       },
       {
@@ -119,28 +128,32 @@
         "summary_validated": true,
         "matched_packets": 56368,
         "host_to_device_packets": 5708,
-        "host_to_device_classified_packet_count": 0,
-        "host_to_device_unclassified_packet_count": 5708,
+        "host_to_device_classified_packet_count": 2853,
+        "host_to_device_unclassified_packet_count": 2855,
         "host_to_device_decode_gap": true,
         "host_to_device_data_len_packet_count": 2854,
         "host_to_device_data_len_bytes": 47797,
-        "host_to_device_payload_extracted_packet_count": 0,
-        "host_to_device_payload_extracted_bytes": 0,
-        "host_to_device_payload_missing_packet_count": 2854,
+        "host_to_device_payload_extracted_packet_count": 2853,
+        "host_to_device_payload_extracted_bytes": 47789,
+        "host_to_device_payload_missing_packet_count": 1,
         "host_to_device_payload_export_gap": true,
         "device_to_host_packets": 50660,
         "standard_pidff_output_report_count": 0,
-        "vendor_or_device_specific_output_candidate_count": 0,
-        "input_or_status_report_count": 1,
-        "host_to_device_report_ids": [],
-        "vendor_or_device_specific_output_candidate_report_ids": [],
+        "vendor_or_device_specific_output_candidate_count": 1,
+        "input_or_status_report_count": 2,
+        "host_to_device_report_ids": [
+          "0x7E"
+        ],
+        "vendor_or_device_specific_output_candidate_report_ids": [
+          "0x7E"
+        ],
         "decode_recommended": true,
         "native_control_evidence": false,
         "readiness_claim": false,
         "notes": [
           "checked-in passive summary is non-claiming protocol evidence",
-          "host-to-device packets are present but not fully mapped to report IDs; inspect raw pcap/tshark payload export before any future output plan",
-          "host-to-device packets declare USB data length but stored summaries have missing payload bytes; inspect tshark payload fields or filtered/raw pcap export before any future output plan"
+          "host-to-device payloads expose candidate report/frame IDs 0x7E; remaining unclassified packets still require decoded-report review before any future output plan",
+          "host-to-device payload extraction is partial: 2853 packets extracted, 1 data-length packet still missing payload bytes"
         ]
       },
       {
