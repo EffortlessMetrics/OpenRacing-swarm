@@ -29,6 +29,9 @@ jobs:
       - name: File policy (non-Rust surface)
         run: python scripts/policy_file.py
 
+      - name: EM CI routed rust workflow guardrails
+        run: python scripts/policy_em_ci_routed_rust.py
+
       - name: "No-panic family checker (Stage A: report-only)"
         run: python scripts/policy_no_panic.py
 

@@ -10,8 +10,8 @@ on:
         type: choice
         options:
           - auto
+          - cpx42
           - cx43
-          - cx33
           - cx53
           - github
   pull_request:
@@ -92,7 +92,7 @@ jobs:
               emit "github" "forced_github" "false" "$trusted"
               exit 0
               ;;
-            cx43|cx33|cx53)
+            cpx42|cx43|cx53)
               if [ "$trusted" != "true" ]; then
                 emit "github" "forced_self_hosted_untrusted_event" "true" "$trusted"
                 exit 0
@@ -107,12 +107,7 @@ jobs:
           esac
 
           if [ "$trusted" != "true" ]; then
-            emit "github" "untrusted_or_fork_pr" "false" "$trusted"
-            exit 0
-          fi
-
-          if [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ]; then
-            emit "github" "pull_request_uses_github_hosted" "false" "$trusted"
+            emit "github" "fork_pr" "false" "$trusted"
             exit 0
           fi
 
@@ -142,9 +137,9 @@ jobs:
 
           data = json.loads(os.environ["RUNNERS_JSON"])
 
-          def idle_count(host_label):
+          def idle_count(host_label, size_label):
               count = 0
-              required = {"em-ci", host_label, "rust-small", "trusted-pr"}
+              required = {"em-ci", host_label, size_label, "trusted-pr"}
               for runner in data.get("runners", []):
                   labels = {label.get("name") for label in runner.get("labels", [])}
                   if (
@@ -155,8 +150,9 @@ jobs:
                       count += 1
               return count
 
-          for label in ("cx43", "cx33", "cx53"):
-              print(f"idle_{label}={idle_count(label)}")
+          print(f"idle_cpx42={idle_count('cpx42', 'rust-medium')}")
+          print(f"idle_cx43={idle_count('cx43', 'rust-small')}")
+          print(f"idle_cx53={idle_count('cx53', 'rust-small')}")
           PY
           then
             emit "github" "runner_parse_failed" "true" "$trusted"
@@ -165,19 +161,80 @@ jobs:
 
           . ./runner-counts.env
 
+          echo "idle_cpx42=${idle_cpx42:-0}"
           echo "idle_cx43=${idle_cx43:-0}"
-          echo "idle_cx33=${idle_cx33:-0}"
           echo "idle_cx53=${idle_cx53:-0}"
 
-          if [ "${idle_cx43:-0}" -gt 0 ]; then
+          if [ "${idle_cpx42:-0}" -gt 0 ]; then
+            emit "cpx42" "cpx42_idle" "false" "$trusted"
+          elif [ "${idle_cx43:-0}" -gt 0 ]; then
             emit "cx43" "cx43_idle" "false" "$trusted"
-          elif [ "${idle_cx33:-0}" -gt 0 ]; then
-            emit "cx33" "cx33_idle" "false" "$trusted"
           elif [ "${idle_cx53:-0}" -gt 0 ]; then
             emit "cx53" "cx53_idle" "false" "$trusted"
           else
             emit "github" "no_idle_runner" "false" "$trusted"
           fi
+
+  rust-small-cpx42:
+    name: OpenRacing Rust Small on CPX42
+    needs: route-rust-small
+    if: >-
+      needs.route-rust-small.outputs.target == 'cpx42' &&
+      needs.route-rust-small.outputs.trusted_self_hosted == 'true'
+    runs-on:
+      group: em-ci-small
+      labels: [self-hosted, linux, x64, em-ci, cpx42, rust-16gb, rust-medium, trusted-pr]
+    timeout-minutes: 120
+    env:
+      CARGO_BUILD_JOBS: "7"
+      TMPDIR: /mnt/ci-scratch/tmp/${{ github.run_id }}-${{ github.run_attempt }}
+      CARGO_TARGET_DIR: /mnt/ci-scratch/openracing/${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Prepare CPX42 scratch
+        shell: bash
+        run: |
+          set -euo pipefail
+          ci-disk-guard /mnt/ci-scratch 45
+          ci-disk-guard /mnt/ci-cache 10
+          mkdir -p "$TMPDIR" "$CARGO_TARGET_DIR"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: 1.95.0
+          components: rustfmt, clippy
+
+      - name: Preflight disk and toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h /mnt/ci-scratch /mnt/ci-cache || true
+          rustc --version
+          cargo --version
+          if command -v python3 >/dev/null 2>&1; then python3 --version; fi
+          if command -v sccache >/dev/null 2>&1; then sccache --show-stats || true; fi
+
+      - name: Run Rust small gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --workspace --exclude racing-wheel-ui --locked
+          cargo test --workspace --exclude racing-wheel-ui --locked --lib
+
+      - name: Cleanup and final stats
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if command -v sccache >/dev/null 2>&1; then sccache --show-stats || true; fi
+          rm -rf "$TMPDIR" "$CARGO_TARGET_DIR"
+          df -h /mnt/ci-scratch /mnt/ci-cache || true
 
   rust-small-cx43:
     name: OpenRacing Rust Small on CX43
@@ -227,98 +284,6 @@ jobs:
           docker run --rm \
             --cpus="6" \
             --memory="12g" \
-            -e CARGO_HOME=/cargo-home \
-            -e SCCACHE_DIR=/sccache \
-            -e SCCACHE_CACHE_SIZE="$SCCACHE_CACHE_SIZE" \
-            -e RUSTC_WRAPPER="$RUSTC_WRAPPER" \
-            -e CARGO_INCREMENTAL="$CARGO_INCREMENTAL" \
-            -e CARGO_BUILD_JOBS="$CARGO_BUILD_JOBS" \
-            -e CARGO_TARGET_DIR=/target \
-            -e RUST_BACKTRACE="$RUST_BACKTRACE" \
-            -e CARGO_TERM_COLOR=always \
-            -e TMPDIR=/tmp/jobtmp \
-            -v "$GITHUB_WORKSPACE:/workspace" \
-            -v "$CARGO_HOME:/cargo-home" \
-            -v "$SCCACHE_DIR:/sccache" \
-            -v "$CARGO_TARGET_DIR:/target" \
-            -v "$TMPDIR:/tmp/jobtmp" \
-            -w /workspace \
-            "$IMAGE" \
-            bash -eu -o pipefail -c '
-              git config --global --add safe.directory /workspace
-              apt-get update
-              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libudev-dev pkg-config
-              rustc --version
-              cargo --version
-              sccache --version || true
-              cargo fetch --locked
-              cargo check --workspace --exclude racing-wheel-ui --locked
-              cargo test --workspace --exclude racing-wheel-ui --locked --lib
-              sccache --show-stats || true
-            '
-
-      - name: Cleanup scratch dirs
-        if: always()
-        shell: bash
-        env:
-          IMAGE: em-ci-rust:1.95
-        run: |
-          set +e
-          docker run --rm \
-            -v "$TMPDIR:/tmpdir" \
-            -v "$CARGO_TARGET_DIR:/target" \
-            "$IMAGE" \
-            bash -c 'rm -rf /tmpdir/* /tmpdir/.[!.]* /tmpdir/..?* /target/* /target/.[!.]* /target/..?* 2>/dev/null || true' || true
-          rmdir "$TMPDIR" "$CARGO_TARGET_DIR" 2>/dev/null || true
-
-  rust-small-cx33:
-    name: OpenRacing Rust Small on CX33
-    needs: route-rust-small
-    if: >-
-      needs.route-rust-small.outputs.target == 'cx33' &&
-      needs.route-rust-small.outputs.trusted_self_hosted == 'true'
-    runs-on:
-      group: em-ci-small
-      labels: [self-hosted, linux, x64, em-ci, cx33, rust-small, trusted-pr]
-    timeout-minutes: 150
-    env:
-      CARGO_HOME: /mnt/ci-cache/cargo-home
-      SCCACHE_DIR: /mnt/ci-cache/sccache
-      SCCACHE_CACHE_SIZE: 20G
-      RUSTC_WRAPPER: /usr/local/cargo/bin/sccache
-      CARGO_BUILD_JOBS: "3"
-      CARGO_TARGET_DIR: /mnt/ci-scratch/target/${{ github.run_id }}-${{ github.run_attempt }}
-      TMPDIR: /mnt/ci-scratch/tmp/${{ github.run_id }}-${{ github.run_attempt }}
-    steps:
-      - name: Disk guards
-        shell: bash
-        run: |
-          set -euo pipefail
-          ci-disk-guard /mnt/ci-scratch 80
-          ci-disk-guard /mnt/docker 15
-          ci-disk-guard /mnt/ci-cache 15
-
-      - name: Prepare scratch dirs
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$TMPDIR" "$CARGO_TARGET_DIR" "$CARGO_HOME" "$SCCACHE_DIR"
-
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-          fetch-depth: 1
-
-      - name: Run OpenRacing Rust small on CX33
-        shell: bash
-        env:
-          IMAGE: em-ci-rust:1.95
-        run: |
-          set -euo pipefail
-          docker run --rm \
-            --cpus="4" \
-            --memory="8g" \
             -e CARGO_HOME=/cargo-home \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE="$SCCACHE_CACHE_SIZE" \
@@ -497,8 +462,8 @@ jobs:
     name: OpenRacing Rust Small Result
     needs:
       - route-rust-small
+      - rust-small-cpx42
       - rust-small-cx43
-      - rust-small-cx33
       - rust-small-cx53
       - rust-small-github
     if: always()
@@ -513,8 +478,8 @@ jobs:
           ROUTER_REASON: ${{ needs.route-rust-small.outputs.reason }}
           ROUTER_ERROR: ${{ needs.route-rust-small.outputs.error }}
           TRUSTED_SELF_HOSTED: ${{ needs.route-rust-small.outputs.trusted_self_hosted }}
+          CPX42_RESULT: ${{ needs.rust-small-cpx42.result }}
           CX43_RESULT: ${{ needs.rust-small-cx43.result }}
-          CX33_RESULT: ${{ needs.rust-small-cx33.result }}
           CX53_RESULT: ${{ needs.rust-small-cx53.result }}
           GITHUB_RESULT: ${{ needs.rust-small-github.result }}
         run: |
@@ -525,8 +490,8 @@ jobs:
           echo "router_reason=${ROUTER_REASON:-<empty>}"
           echo "router_error=${ROUTER_ERROR:-<empty>}"
           echo "trusted_self_hosted=${TRUSTED_SELF_HOSTED:-<empty>}"
+          echo "cpx42_result=${CPX42_RESULT:-<empty>}"
           echo "cx43_result=${CX43_RESULT:-<empty>}"
-          echo "cx33_result=${CX33_RESULT:-<empty>}"
           echo "cx53_result=${CX53_RESULT:-<empty>}"
           echo "github_result=${GITHUB_RESULT:-<empty>}"
 
@@ -538,8 +503,8 @@ jobs:
             echo "- router_reason: \`${ROUTER_REASON:-<empty>}\`"
             echo "- router_error: \`${ROUTER_ERROR:-<empty>}\`"
             echo "- trusted_self_hosted: \`${TRUSTED_SELF_HOSTED:-<empty>}\`"
+            echo "- cpx42_result: \`${CPX42_RESULT:-<empty>}\`"
             echo "- cx43_result: \`${CX43_RESULT:-<empty>}\`"
-            echo "- cx33_result: \`${CX33_RESULT:-<empty>}\`"
             echo "- cx53_result: \`${CX53_RESULT:-<empty>}\`"
             echo "- github_result: \`${GITHUB_RESULT:-<empty>}\`"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -550,28 +515,28 @@ jobs:
           fi
 
           case "${TARGET:-}" in
-            cx43)
-              test "$CX43_RESULT" = "success"
-              test "$CX33_RESULT" = "skipped"
+            cpx42)
+              test "$CPX42_RESULT" = "success"
+              test "$CX43_RESULT" = "skipped"
               test "$CX53_RESULT" = "skipped"
               test "$GITHUB_RESULT" = "skipped"
               ;;
-            cx33)
-              test "$CX33_RESULT" = "success"
-              test "$CX43_RESULT" = "skipped"
+            cx43)
+              test "$CX43_RESULT" = "success"
+              test "$CPX42_RESULT" = "skipped"
               test "$CX53_RESULT" = "skipped"
               test "$GITHUB_RESULT" = "skipped"
               ;;
             cx53)
               test "$CX53_RESULT" = "success"
               test "$CX43_RESULT" = "skipped"
-              test "$CX33_RESULT" = "skipped"
+              test "$CPX42_RESULT" = "skipped"
               test "$GITHUB_RESULT" = "skipped"
               ;;
             github)
               test "$GITHUB_RESULT" = "success"
               test "$CX43_RESULT" = "skipped"
-              test "$CX33_RESULT" = "skipped"
+              test "$CPX42_RESULT" = "skipped"
               test "$CX53_RESULT" = "skipped"
               ;;
             *)
