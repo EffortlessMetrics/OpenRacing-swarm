@@ -4295,6 +4295,77 @@ sniff plans, checked-in sniff evidence, local raw capture attempts, consumed
 hardware attempts, protocol evidence review receipts, or existing no-output
 capture handoff commands.
 
+## Work item: moza-bench-wizard-bounded-sniff-capture-template
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: operator execution of the next Pit House setting-change passive
+correlation capture
+Blocked by: bench-wizard surfaced only the raw USBPcapCMD placeholder, so the
+bounded `wheelctl hardware sniff-capture` helper was discoverable only after
+opening the operator notes file.
+
+### Goal
+
+Surface the bounded passive USBPcap capture helper directly in Moza
+bench-wizard/artifact-index operator navigation.
+
+### Production Delta
+
+Updated the passive sniff next-operator navigation to include a preferred
+`run_bounded_wheelctl_usbpcap_capture` command template before the raw
+USBPcapCMD fallback. The template is still placeholder-based and requires a
+fresh hardware doctor USBPcap hint, but it now shows the exact bounded
+`wheelctl hardware sniff-capture` shape, duration, local `.pcapng` path, local
+sniff-capture receipt path, and required passive-capture confirmation.
+
+### Non-goals
+
+No checked-in pcap, sniff receipt, sniff summary, sniff bundle, HID open, serial
+open, read-only query send, hardware output, authorization, PIDFF rerun, direct
+HID report `0xaf`, high torque, serial config, firmware, DFU, native-control
+claim, native-visible claim, smoke-ready claim, Pit House coexistence claim,
+simulator claim, release-ready claim, semantic command decode, registry
+promotion, tuple sendability claim, or promotion of a local capture receipt into
+accepted lane evidence.
+
+### Acceptance
+
+- bench-wizard `external_capture_commands` includes
+  `run_bounded_wheelctl_usbpcap_capture`.
+- The bounded template parses as a `wheelctl hardware sniff-capture` command.
+- The bounded template requires a hardware doctor hint and
+  `--confirm-external-passive-capture`.
+- The bounded template keeps `output_enabled=false`,
+  `openracing_hardware_output=false`, and OpenRacing HID/feature/serial-config
+  and firmware/DFU flags false.
+- The raw USBPcapCMD fallback remains available.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_sniff_next_operator_commands_parse -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_points_diagnosed_attempt_03_to_passive_sniff_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl passive_sniff -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-current.json --md-out target/moza-current/bench-wizard-current.md
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-current.json --md-out target/moza-current/artifact-index-current.md
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the bounded helper entry in Moza passive sniff navigation, the
+markdown wording update, focused tests, and source-of-truth updates. Do not
+remove `wheelctl hardware sniff-capture`, passive sniff plans, checked-in sniff
+evidence, local raw capture attempts, consumed hardware attempts, protocol
+evidence review receipts, or existing no-output capture handoff commands.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
