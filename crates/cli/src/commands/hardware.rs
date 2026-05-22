@@ -9,7 +9,8 @@ use std::env;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use chrono::{SecondsFormat, Utc};
@@ -89,6 +90,27 @@ pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
                 json_out.as_deref(),
             )
             .await
+        }
+        HardwareCommands::SniffCapture {
+            usbpcapcmd,
+            usbpcap_interface,
+            devices,
+            duration_ms,
+            out,
+            overwrite,
+            confirm_external_passive_capture,
+            json_out,
+        } => {
+            let request = HardwareSniffCaptureRequest {
+                usbpcapcmd,
+                usbpcap_interface,
+                devices,
+                duration_ms: *duration_ms,
+                out,
+                overwrite: *overwrite,
+                confirm_external_passive_capture: *confirm_external_passive_capture,
+            };
+            sniff_capture(json, &request, json_out.as_deref()).await
         }
         HardwareCommands::SniffSummary {
             pcapng,
@@ -296,6 +318,16 @@ async fn sniff_notes_template(
     print_sniff_notes_template(json, out, json_out, &receipt)
 }
 
+async fn sniff_capture(
+    json: bool,
+    request: &HardwareSniffCaptureRequest<'_>,
+    json_out: Option<&Path>,
+) -> Result<()> {
+    let receipt = run_hardware_sniff_capture(request)?;
+    write_json_receipt(json_out, &receipt)?;
+    print_sniff_capture(json, json_out, &receipt)
+}
+
 async fn sniff_summary(
     json: bool,
     request: &HardwareSniffSummaryRequest<'_>,
@@ -434,6 +466,214 @@ fn build_hardware_sniff_receipt(
         satisfies_smoke_ready: false,
         satisfies_release_ready: false,
         readiness_claims: HardwareSniffReadinessClaims::none(),
+    })
+}
+
+fn run_hardware_sniff_capture(
+    request: &HardwareSniffCaptureRequest<'_>,
+) -> Result<HardwareSniffCaptureReceipt> {
+    validate_hardware_sniff_capture_request(request)?;
+    if request.out.exists() && request.overwrite {
+        fs::remove_file(request.out)
+            .with_context(|| format!("failed to remove existing '{}'", request.out.display()))?;
+    }
+    if let Some(parent) = request.out.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create '{}'", parent.display()))?;
+    }
+
+    let mut child = Command::new(request.usbpcapcmd)
+        .args(sniff_capture_usbpcapcmd_args(request))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .with_context(|| {
+            format!(
+                "failed to start USBPcapCMD capture tool '{}'",
+                request.usbpcapcmd.display()
+            )
+        })?;
+    let process_id = child.id();
+    let started_at_utc = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
+    let deadline = Instant::now() + Duration::from_millis(request.duration_ms);
+
+    let (exit_status, terminated_after_duration) = loop {
+        if let Some(status) = child
+            .try_wait()
+            .context("failed to poll USBPcapCMD capture process")?
+        {
+            break (Some(status.to_string()), false);
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            child
+                .kill()
+                .context("failed to stop USBPcapCMD capture process after duration elapsed")?;
+            let status = child
+                .wait()
+                .context("failed to wait for stopped USBPcapCMD capture process")?;
+            break (Some(status.to_string()), true);
+        }
+        let remaining = deadline.saturating_duration_since(now);
+        std::thread::sleep(remaining.min(Duration::from_millis(50)));
+    };
+
+    let completed_at_utc = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
+    let pcapng = sniff_capture_output_metadata(request.out)?;
+    build_hardware_sniff_capture_receipt(
+        request,
+        HardwareSniffCaptureOutcome {
+            process_started: true,
+            process_id: Some(process_id),
+            started_at_utc,
+            completed_at_utc,
+            exit_status,
+            terminated_after_duration,
+            pcapng_exists: pcapng.exists,
+            pcapng_size_bytes: pcapng.size_bytes,
+            pcapng_sha256: pcapng.sha256,
+        },
+    )
+}
+
+fn validate_hardware_sniff_capture_request(
+    request: &HardwareSniffCaptureRequest<'_>,
+) -> Result<()> {
+    if !request.confirm_external_passive_capture {
+        anyhow::bail!("refusing to run passive capture without --confirm-external-passive-capture");
+    }
+    if request.duration_ms == 0 || request.duration_ms > 600_000 {
+        anyhow::bail!("--duration-ms must be in 1..=600000");
+    }
+    if request.usbpcap_interface.trim().is_empty() {
+        anyhow::bail!("--usbpcap-interface must not be blank");
+    }
+    if request.devices.trim().is_empty() {
+        anyhow::bail!("--devices must not be blank");
+    }
+    if !request.usbpcapcmd.is_file() {
+        anyhow::bail!(
+            "--usbpcapcmd '{}' does not exist or is not a file",
+            request.usbpcapcmd.display()
+        );
+    }
+    if request.out.extension().and_then(|ext| ext.to_str()) != Some("pcapng") {
+        anyhow::bail!("--out must end in .pcapng");
+    }
+    if path_contains_ci_hardware(request.out) {
+        anyhow::bail!("--out must stay in local scratch storage, not ci/hardware/**");
+    }
+    if request.out.exists() && !request.overwrite {
+        anyhow::bail!(
+            "--out '{}' already exists; pass --overwrite to replace a local scratch capture",
+            request.out.display()
+        );
+    }
+    Ok(())
+}
+
+fn sniff_capture_usbpcapcmd_args(request: &HardwareSniffCaptureRequest<'_>) -> Vec<String> {
+    vec![
+        "-d".to_string(),
+        request.usbpcap_interface.to_string(),
+        "--devices".to_string(),
+        request.devices.to_string(),
+        "--inject-descriptors".to_string(),
+        "-o".to_string(),
+        request.out.display().to_string(),
+    ]
+}
+
+fn path_contains_ci_hardware(path: &Path) -> bool {
+    let parts = path
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(value) => value.to_str().map(|text| text.to_ascii_lowercase()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    parts
+        .windows(2)
+        .any(|window| window[0] == "ci" && window[1] == "hardware")
+}
+
+fn sniff_capture_output_metadata(path: &Path) -> Result<HardwareSniffCaptureOutputMetadata> {
+    if !path.exists() {
+        return Ok(HardwareSniffCaptureOutputMetadata {
+            exists: false,
+            size_bytes: 0,
+            sha256: None,
+        });
+    }
+    let metadata = fs::metadata(path)
+        .with_context(|| format!("failed to inspect pcapng capture '{}'", path.display()))?;
+    let size_bytes = metadata.len();
+    let sha256 = if size_bytes > 0 {
+        Some(hash_existing_file(path)?)
+    } else {
+        None
+    };
+    Ok(HardwareSniffCaptureOutputMetadata {
+        exists: true,
+        size_bytes,
+        sha256,
+    })
+}
+
+fn build_hardware_sniff_capture_receipt(
+    request: &HardwareSniffCaptureRequest<'_>,
+    outcome: HardwareSniffCaptureOutcome,
+) -> Result<HardwareSniffCaptureReceipt> {
+    Ok(HardwareSniffCaptureReceipt {
+        schema_version: 1,
+        success: outcome.process_started && outcome.pcapng_exists && outcome.pcapng_size_bytes > 0,
+        command: "wheelctl hardware sniff-capture",
+        generated_at_utc: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        capture_tool: "USBPcapCMD",
+        usbpcapcmd_path: required_path_display(request.usbpcapcmd, "usbpcapcmd")?,
+        usbpcap_interface: request.usbpcap_interface.to_string(),
+        devices: request.devices.to_string(),
+        duration_ms: request.duration_ms,
+        out_path: required_path_display(request.out, "out")?,
+        overwrite: request.overwrite,
+        process_started: outcome.process_started,
+        process_id: outcome.process_id,
+        started_at_utc: outcome.started_at_utc,
+        completed_at_utc: outcome.completed_at_utc,
+        exit_status: outcome.exit_status,
+        terminated_after_duration: outcome.terminated_after_duration,
+        pcapng_exists: outcome.pcapng_exists,
+        pcapng_size_bytes: outcome.pcapng_size_bytes,
+        pcapng_sha256: outcome.pcapng_sha256,
+        evidence_status: SNIFF_EVIDENCE_STATUS,
+        native_control_evidence: false,
+        openracing_hardware_output: false,
+        openracing_hid_device_opened: false,
+        openracing_ffb_writes: false,
+        openracing_output_reports: false,
+        openracing_feature_reports: false,
+        openracing_serial_config_commands: false,
+        openracing_firmware_or_dfu_commands: false,
+        external_capture_tool_invoked: true,
+        external_app_may_have_sent_output: true,
+        satisfies_native_response_ready: false,
+        satisfies_native_visible_ready: false,
+        satisfies_smoke_ready: false,
+        satisfies_release_ready: false,
+        readiness_claims: HardwareSniffReadinessClaims::none(),
+        next_allowed_actions: vec![
+            "fill operator notes for the observed scenario".to_string(),
+            "run wheelctl hardware sniff-receipt with the saved pcapng".to_string(),
+            "run wheelctl hardware sniff-summary with the saved pcapng".to_string(),
+            "run wheelctl hardware sniff-bundle only after notes, receipt, and summary exist"
+                .to_string(),
+        ],
+        notes: vec![
+            "sniff-capture launches only the external passive USBPcapCMD capture tool".to_string(),
+            "OpenRacing does not open HID, serial, feature, output, firmware, or DFU paths for this command".to_string(),
+            "a capture receipt is not a sniff receipt, sniff summary, native-control proof, or readiness claim".to_string(),
+            "raw pcapng remains local scratch evidence unless separately reviewed for bundling or commit".to_string(),
+        ],
     })
 }
 
@@ -1751,20 +1991,24 @@ fn hash_existing_pcapng(path: &Path) -> Result<(String, u64)> {
         );
     }
 
-    let mut file = File::open(path)
-        .with_context(|| format!("failed to open pcapng capture '{}'", path.display()))?;
+    Ok((hash_existing_file(path)?, size))
+}
+
+fn hash_existing_file(path: &Path) -> Result<String> {
+    let mut file =
+        File::open(path).with_context(|| format!("failed to open '{}'", path.display()))?;
     let mut hasher = Sha256::new();
     let mut buffer = [0u8; 64 * 1024];
     loop {
         let read = file
             .read(&mut buffer)
-            .with_context(|| format!("failed to read pcapng capture '{}'", path.display()))?;
+            .with_context(|| format!("failed to read '{}'", path.display()))?;
         if read == 0 {
             break;
         }
         hasher.update(&buffer[..read]);
     }
-    Ok((format!("{:x}", hasher.finalize()), size))
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 fn current_sniff_platform_hint() -> HardwareSniffPlatformHint {
@@ -1959,6 +2203,32 @@ fn usbpcapcmd_capture_command(
     )
 }
 
+fn wheelctl_sniff_capture_command(
+    extcap_path: &str,
+    hint: &HardwareSniffNotesUsbPcapHint,
+    capture_path: &str,
+    duration_ms: u64,
+) -> String {
+    format!(
+        "wheelctl hardware sniff-capture --usbpcapcmd {} --usbpcap-interface {} --devices {} --duration-ms {} --out {} --confirm-external-passive-capture --json-out {}",
+        powershell_double_quoted_arg(extcap_path),
+        powershell_double_quoted_arg(&hint.usbpcap_interface),
+        hint.capture_devices_value,
+        duration_ms,
+        powershell_double_quoted_arg(capture_path),
+        powershell_double_quoted_arg(&sniff_capture_receipt_path(capture_path))
+    )
+}
+
+fn sniff_capture_receipt_path(capture_path: &str) -> String {
+    let path = Path::new(capture_path);
+    let parent = path.parent().unwrap_or_else(|| Path::new(""));
+    parent
+        .join("sniff-capture-receipt.json")
+        .display()
+        .to_string()
+}
+
 fn powershell_double_quoted_arg(value: &str) -> String {
     format!("\"{}\"", value.replace('`', "``").replace('"', "`\""))
 }
@@ -2065,6 +2335,17 @@ fn render_sniff_operator_notes_template(
                     hint.capture_devices_value
                 ));
                 if let Some(extcap_path) = &capture_hints.usbpcap_extcap_path {
+                    out.push_str(
+                        "- [ ] Bounded wheelctl USBPcapCMD capture helper; run this while performing the scenario:\n\n",
+                    );
+                    out.push_str("```powershell\n");
+                    out.push_str(&wheelctl_sniff_capture_command(
+                        extcap_path,
+                        hint,
+                        &local_capture_path,
+                        60_000,
+                    ));
+                    out.push_str("\n```\n");
                     out.push_str(
                         "- [ ] External USBPcapCMD capture command; run outside OpenRacing and stop it after the scenario:\n\n",
                     );
@@ -5291,6 +5572,38 @@ fn print_sniff_notes_template(
     Ok(())
 }
 
+fn print_sniff_capture(
+    json: bool,
+    json_out: Option<&Path>,
+    receipt: &HardwareSniffCaptureReceipt,
+) -> Result<()> {
+    if json {
+        write_stdout_line(&serde_json::to_string_pretty(receipt)?)?;
+        return Ok(());
+    }
+
+    write_stdout_line(&format!(
+        "Passive USB sniff capture {}: {}",
+        if receipt.success {
+            "recorded"
+        } else {
+            "attempted"
+        },
+        receipt.out_path
+    ))?;
+    write_stdout_line(&format!(
+        "Duration: {} ms; stopped after duration: {}; pcapng bytes: {}",
+        receipt.duration_ms, receipt.terminated_after_duration, receipt.pcapng_size_bytes
+    ))?;
+    write_stdout_line(
+        "Non-claiming: this launched only the external passive USBPcapCMD capture tool; OpenRacing sent no hardware output and made no readiness claim.",
+    )?;
+    if let Some(path) = json_out {
+        write_stdout_line(&format!("Receipt: {}", path.display()))?;
+    }
+    Ok(())
+}
+
 fn print_sniff_summary(
     json: bool,
     json_out: Option<&Path>,
@@ -5652,6 +5965,17 @@ struct HardwareSniffSummaryRequest<'a> {
 }
 
 #[derive(Debug)]
+struct HardwareSniffCaptureRequest<'a> {
+    usbpcapcmd: &'a Path,
+    usbpcap_interface: &'a str,
+    devices: &'a str,
+    duration_ms: u64,
+    out: &'a Path,
+    overwrite: bool,
+    confirm_external_passive_capture: bool,
+}
+
+#[derive(Debug)]
 struct HardwareSniffBundleRequest<'a> {
     plan: &'a Path,
     receipt: &'a Path,
@@ -5806,6 +6130,71 @@ struct HardwareSniffNotesActiveUsbPcapProcess {
     process_id: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     command_line: Option<String>,
+}
+
+#[derive(Debug)]
+struct HardwareSniffCaptureOutcome {
+    process_started: bool,
+    process_id: Option<u32>,
+    started_at_utc: String,
+    completed_at_utc: String,
+    exit_status: Option<String>,
+    terminated_after_duration: bool,
+    pcapng_exists: bool,
+    pcapng_size_bytes: u64,
+    pcapng_sha256: Option<String>,
+}
+
+#[derive(Debug)]
+struct HardwareSniffCaptureOutputMetadata {
+    exists: bool,
+    size_bytes: u64,
+    sha256: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct HardwareSniffCaptureReceipt {
+    schema_version: u32,
+    success: bool,
+    command: &'static str,
+    generated_at_utc: String,
+    capture_tool: &'static str,
+    usbpcapcmd_path: String,
+    usbpcap_interface: String,
+    devices: String,
+    duration_ms: u64,
+    out_path: String,
+    overwrite: bool,
+    process_started: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    process_id: Option<u32>,
+    started_at_utc: String,
+    completed_at_utc: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exit_status: Option<String>,
+    terminated_after_duration: bool,
+    pcapng_exists: bool,
+    pcapng_size_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pcapng_sha256: Option<String>,
+    evidence_status: &'static str,
+    native_control_evidence: bool,
+    openracing_hardware_output: bool,
+    openracing_hid_device_opened: bool,
+    openracing_ffb_writes: bool,
+    openracing_output_reports: bool,
+    openracing_feature_reports: bool,
+    openracing_serial_config_commands: bool,
+    openracing_firmware_or_dfu_commands: bool,
+    external_capture_tool_invoked: bool,
+    external_app_may_have_sent_output: bool,
+    satisfies_native_response_ready: bool,
+    satisfies_native_visible_ready: bool,
+    satisfies_smoke_ready: bool,
+    satisfies_release_ready: bool,
+    readiness_claims: HardwareSniffReadinessClaims,
+    next_allowed_actions: Vec<String>,
+    notes: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -7409,6 +7798,95 @@ mod tests {
             })
         }
 
+        fn sample_sniff_capture_request<'a>(
+            usbpcapcmd: &'a Path,
+            out: &'a Path,
+            confirm: bool,
+        ) -> HardwareSniffCaptureRequest<'a> {
+            HardwareSniffCaptureRequest {
+                usbpcapcmd,
+                usbpcap_interface: r"\\.\USBPcap2",
+                devices: "3",
+                duration_ms: 60_000,
+                out,
+                overwrite: false,
+                confirm_external_passive_capture: confirm,
+            }
+        }
+
+        #[test]
+        fn sniff_capture_rejects_missing_confirmation() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let usbpcapcmd = dir.path().join("USBPcapCMD.exe");
+            fs::write(&usbpcapcmd, b"fake")?;
+            let out = dir.path().join("capture.pcapng");
+            let request = sample_sniff_capture_request(&usbpcapcmd, &out, false);
+
+            let message = validate_hardware_sniff_capture_request(&request)
+                .expect_err("missing confirmation should be rejected")
+                .to_string();
+
+            assert!(message.contains("--confirm-external-passive-capture"));
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_capture_rejects_ci_hardware_output_path() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let usbpcapcmd = dir.path().join("USBPcapCMD.exe");
+            fs::write(&usbpcapcmd, b"fake")?;
+            let out = Path::new("ci/hardware/sniff/moza-r5/capture.pcapng");
+            let request = sample_sniff_capture_request(&usbpcapcmd, out, true);
+
+            let message = validate_hardware_sniff_capture_request(&request)
+                .expect_err("ci/hardware raw capture output should be rejected")
+                .to_string();
+
+            assert!(message.contains("ci/hardware"));
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_capture_receipt_is_non_claiming() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let usbpcapcmd = dir.path().join("USBPcapCMD.exe");
+            fs::write(&usbpcapcmd, b"fake")?;
+            let out = dir.path().join("capture.pcapng");
+            let request = sample_sniff_capture_request(&usbpcapcmd, &out, true);
+
+            let receipt = build_hardware_sniff_capture_receipt(
+                &request,
+                HardwareSniffCaptureOutcome {
+                    process_started: true,
+                    process_id: Some(123),
+                    started_at_utc: "2026-05-22T00:00:00Z".to_string(),
+                    completed_at_utc: "2026-05-22T00:01:00Z".to_string(),
+                    exit_status: Some("exit code: 1".to_string()),
+                    terminated_after_duration: true,
+                    pcapng_exists: true,
+                    pcapng_size_bytes: 42,
+                    pcapng_sha256: Some("abc123".to_string()),
+                },
+            )?;
+
+            assert!(receipt.success);
+            assert_eq!(receipt.command, "wheelctl hardware sniff-capture");
+            assert!(!receipt.native_control_evidence);
+            assert!(!receipt.openracing_hardware_output);
+            assert!(!receipt.openracing_hid_device_opened);
+            assert!(!receipt.openracing_ffb_writes);
+            assert!(!receipt.openracing_output_reports);
+            assert!(!receipt.openracing_feature_reports);
+            assert!(!receipt.openracing_serial_config_commands);
+            assert!(!receipt.openracing_firmware_or_dfu_commands);
+            assert!(!receipt.satisfies_native_response_ready);
+            assert!(!receipt.satisfies_native_visible_ready);
+            assert!(!receipt.satisfies_smoke_ready);
+            assert!(!receipt.satisfies_release_ready);
+            assert!(!receipt.readiness_claims.satisfies_native_visible_ready);
+            Ok(())
+        }
+
         #[test]
         fn sniff_plan_is_non_claiming() -> TestResult {
             let dir = tempfile::tempdir()?;
@@ -7607,6 +8085,10 @@ mod tests {
                 notes.contains(expected_command),
                 "operator notes missing capture command:\n{notes}"
             );
+            assert!(notes.contains("wheelctl hardware sniff-capture"));
+            assert!(notes.contains("--duration-ms 60000"));
+            assert!(notes.contains("--confirm-external-passive-capture"));
+            assert!(notes.contains("sniff-capture-receipt.json"));
             assert!(notes.contains("MOZA Windows Driver"));
             assert!(notes.contains("Active USBPcapCMD processes detected before capture: `1`"));
             assert!(notes.contains("old-probe"));

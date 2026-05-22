@@ -602,6 +602,60 @@ mod tests {
     }
 
     #[test]
+    fn parse_hardware_sniff_capture() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "hardware",
+            "sniff-capture",
+            "--usbpcapcmd",
+            "C:/Program Files/Wireshark/extcap/USBPcapCMD.exe",
+            "--usbpcap-interface",
+            "\\\\.\\USBPcap2",
+            "--devices",
+            "3",
+            "--duration-ms",
+            "60000",
+            "--out",
+            "target/sniff/pit-house-setting-change/capture.pcapng",
+            "--confirm-external-passive-capture",
+            "--json-out",
+            "target/sniff/pit-house-setting-change/sniff-capture-receipt.json",
+        ])?;
+        match &cli.command {
+            Commands::Hardware(HardwareCommands::SniffCapture {
+                usbpcapcmd,
+                usbpcap_interface,
+                devices,
+                duration_ms,
+                out,
+                overwrite,
+                confirm_external_passive_capture,
+                json_out,
+            }) => {
+                assert_eq!(
+                    usbpcapcmd.to_str(),
+                    Some("C:/Program Files/Wireshark/extcap/USBPcapCMD.exe")
+                );
+                assert_eq!(usbpcap_interface, "\\\\.\\USBPcap2");
+                assert_eq!(devices, "3");
+                assert_eq!(*duration_ms, 60_000);
+                assert_eq!(
+                    out.to_str(),
+                    Some("target/sniff/pit-house-setting-change/capture.pcapng")
+                );
+                assert!(!overwrite);
+                assert!(*confirm_external_passive_capture);
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some("target/sniff/pit-house-setting-change/sniff-capture-receipt.json")
+                );
+            }
+            _ => return Err("expected Hardware SniffCapture command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_hardware_sniff_summary() -> TestResult {
         let cli = parse_cli([
             "wheelctl",

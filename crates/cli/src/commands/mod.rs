@@ -428,6 +428,34 @@ pub enum HardwareCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
+    /// Run a bounded passive USBPcapCMD capture and write a non-claiming receipt
+    SniffCapture {
+        /// USBPcapCMD.exe path from hardware doctor
+        #[arg(long)]
+        usbpcapcmd: std::path::PathBuf,
+        /// USBPcap control interface, for example \\.\USBPcap2
+        #[arg(long)]
+        usbpcap_interface: String,
+        /// USBPcap --devices filter value from hardware doctor
+        #[arg(long)]
+        devices: String,
+        /// Capture duration in milliseconds
+        #[arg(long)]
+        duration_ms: u64,
+        /// Local raw pcapng output path; ci/hardware/** is refused
+        #[arg(long)]
+        out: std::path::PathBuf,
+        /// Allow replacing an existing local pcapng at --out
+        #[arg(long)]
+        overwrite: bool,
+        /// Required acknowledgement that this is passive external USB capture only
+        #[arg(long)]
+        confirm_external_passive_capture: bool,
+        /// Write the sniff capture JSON receipt to this file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
     /// Summarize a passive USB pcapng capture without sending hardware output
     SniffSummary {
         /// Passive USB capture saved as .pcapng

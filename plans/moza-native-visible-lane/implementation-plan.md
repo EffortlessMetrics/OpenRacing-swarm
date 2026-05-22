@@ -4223,6 +4223,78 @@ checked-in sniff evidence, local raw capture attempts, consumed hardware
 attempts, protocol evidence review receipts, or existing no-output capture
 handoff commands.
 
+## Work item: hardware-sniff-bounded-usbpcap-capture
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: operator execution of the next Pit House setting-change passive
+correlation capture
+Blocked by: `USBPcapCMD.exe` exposes no native duration flag, so the current
+handoff requires a manual start/stop around the setting-change scenario.
+
+### Goal
+
+Provide a bounded passive USBPcap capture runner that starts the external
+USBPcapCMD capture tool, stops it after a configured duration, and records a
+local non-claiming capture receipt.
+
+### Production Delta
+
+Added `wheelctl hardware sniff-capture` with explicit USBPcapCMD path,
+USBPcap interface, `--devices` filter, duration, local `.pcapng` output path,
+and required `--confirm-external-passive-capture` acknowledgement. The command
+launches only the external passive capture process, refuses `ci/hardware/**`
+raw capture output, records output existence/size/hash in a local receipt, and
+keeps all OpenRacing hardware-output and readiness claims false.
+`sniff-notes-template` now renders the bounded `wheelctl hardware
+sniff-capture` command beside the raw USBPcapCMD command when hardware doctor
+provides USBPcap hints.
+
+### Non-goals
+
+No checked-in pcap, sniff receipt, sniff summary, sniff bundle, HID open, serial
+open, read-only query send, hardware output, authorization, PIDFF rerun, direct
+HID report `0xaf`, high torque, serial config, firmware, DFU, native-control
+claim, native-visible claim, smoke-ready claim, Pit House coexistence claim,
+simulator claim, release-ready claim, semantic command decode, registry
+promotion, tuple sendability claim, or promotion of a local capture receipt into
+accepted lane evidence.
+
+### Acceptance
+
+- `sniff-capture` requires `--confirm-external-passive-capture`.
+- `sniff-capture` refuses raw capture output under `ci/hardware/**`.
+- The receipt keeps `native_control_evidence=false`,
+  `openracing_hardware_output=false`, all OpenRacing write/open flags false,
+  and all readiness claims false.
+- `sniff-notes-template` renders a bounded 60s helper command using the
+  hardware-doctor USBPcapCMD path, interface, and device filter.
+- Existing passive sniff plan, notes, receipt, summary, and bundle behavior
+  remains non-claiming.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl sniff_notes_template -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl parse_hardware_sniff_capture -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the bounded `sniff-capture` command, notes-template helper command
+rendering, focused tests, and source-of-truth updates. Do not remove passive
+sniff plans, checked-in sniff evidence, local raw capture attempts, consumed
+hardware attempts, protocol evidence review receipts, or existing no-output
+capture handoff commands.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
