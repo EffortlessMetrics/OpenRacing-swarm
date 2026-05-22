@@ -4155,6 +4155,74 @@ and source-of-truth updates. Do not remove passive sniff plans, checked-in sniff
 evidence, local raw capture attempts, consumed hardware attempts, protocol
 evidence review receipts, or existing no-output capture handoff commands.
 
+## Work item: hardware-doctor-usbpcap-active-processes
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: reliable passive capture setup for the Pit House setting-change
+correlation scenario
+Blocked by: stale `USBPcapCMD.exe` captures can continue running outside
+OpenRacing and make a fresh passive capture ambiguous while the handoff still
+looks ready.
+
+### Goal
+
+Make stale or active USBPcap captures visible in the no-output hardware doctor
+and operator-notes handoff before the next passive scenario begins.
+
+### Production Delta
+
+`wheelctl hardware doctor` now scans for running `USBPcapCMD.exe` processes on
+Windows and records their process IDs, command lines, and count under the
+USBPcap descriptor/capture tooling section. `sniff-notes-template` now carries
+that information into the operator notes so stale captures must be confirmed
+stopped or intentionally current before starting `pit-house-setting-change`.
+
+### Non-goals
+
+No process termination, pcap creation, raw `.pcapng` commit, sniff receipt
+creation, sniff summary creation, HID open, serial open, read-only query send,
+hardware output, authorization, PIDFF rerun, direct HID report `0xaf`, high
+torque, serial config, firmware, DFU, native-control claim, native-visible
+claim, smoke-ready claim, Pit House coexistence claim, simulator claim,
+release-ready claim, semantic command decode, registry promotion, tuple
+sendability claim, or promotion of an active USBPcap process into evidence.
+
+### Acceptance
+
+- `hardware doctor` remains observe-only and records active USBPcap process
+  state without opening HID, serial, feature, output, firmware, or DFU paths.
+- The doctor warning list calls out active `USBPcapCMD.exe` processes when
+  present.
+- `sniff-notes-template` renders active USBPcap process count and command-line
+  context from the doctor receipt.
+- Missing or absent active-process data remains non-claiming and does not block
+  passive capture handoff generation.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl usbpcap -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl sniff_notes_template -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- --json hardware doctor --json-out target/moza-current/hardware-doctor-usbpcap-active-processes.json
+cargo run --locked -p wheelctl --bin wheelctl -- --json hardware sniff-notes-template --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-plan.json --hardware-doctor target/moza-current/hardware-doctor-usbpcap-active-processes.json --out target/sniff/pit-house-setting-change/operator-notes.md --json-out target/sniff/pit-house-setting-change/sniff-notes-template-receipt.json
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the active USBPcap process diagnostics, sniff-notes rendering,
+focused tests, and source-of-truth updates. Do not remove passive sniff plans,
+checked-in sniff evidence, local raw capture attempts, consumed hardware
+attempts, protocol evidence review receipts, or existing no-output capture
+handoff commands.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

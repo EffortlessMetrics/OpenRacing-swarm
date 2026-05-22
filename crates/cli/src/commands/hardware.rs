@@ -1866,6 +1866,8 @@ fn sniff_notes_capture_hints_from_hardware_doctor(
         .and_then(serde_json::Value::as_str)
         .filter(|path| !path.trim().is_empty())
         .map(str::to_string);
+    let active_usbpcap_processes =
+        sniff_notes_active_usbpcap_processes_from_hardware_doctor(&receipt);
 
     Ok(Some(HardwareSniffNotesCaptureHints {
         source: required_path_display(path, "hardware-doctor")?,
@@ -1873,6 +1875,8 @@ fn sniff_notes_capture_hints_from_hardware_doctor(
         usbpcap_extcap_path,
         hint_count: hints.len(),
         hints,
+        active_usbpcap_process_count: active_usbpcap_processes.len(),
+        active_usbpcap_processes,
         notes: vec![
             "hardware doctor is observe-only; these hints only identify the passive capture interface and device filter".to_string(),
             "operator notes do not prove a pcap capture exists and do not authorize OpenRacing output".to_string(),
@@ -1913,6 +1917,28 @@ fn sniff_notes_capture_hint_from_value(
         matched_device_displays,
         suggested_capture_filter,
     })
+}
+
+fn sniff_notes_active_usbpcap_processes_from_hardware_doctor(
+    receipt: &serde_json::Value,
+) -> Vec<HardwareSniffNotesActiveUsbPcapProcess> {
+    receipt
+        .pointer("/tools/usbpcap_descriptor_capture/active_usbpcap_processes/processes")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|value| {
+            let process_id = u32::try_from(value.get("process_id")?.as_u64()?).ok()?;
+            Some(HardwareSniffNotesActiveUsbPcapProcess {
+                process_id,
+                command_line: value
+                    .get("command_line")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|value| !value.trim().is_empty())
+                    .map(str::to_string),
+            })
+        })
+        .collect()
 }
 
 fn sniff_notes_local_capture_path(plan: &StoredHardwareSniffPlan) -> String {
@@ -2060,6 +2086,19 @@ fn render_sniff_operator_notes_template(
                         hint.matched_device_displays.join("`, `")
                     ));
                 }
+            }
+        }
+        if capture_hints.active_usbpcap_process_count > 0 {
+            out.push_str(&format!(
+                "- [ ] Active USBPcapCMD processes detected before capture: `{}`; confirm they are stopped or are the intended current capture before starting this scenario.\n",
+                capture_hints.active_usbpcap_process_count
+            ));
+            for process in &capture_hints.active_usbpcap_processes {
+                let command_line = process.command_line.as_deref().unwrap_or("unknown");
+                out.push_str(&format!(
+                    "- [ ] Active USBPcapCMD process `{}`: `{}`\n",
+                    process.process_id, command_line
+                ));
             }
         }
         for note in &capture_hints.notes {
@@ -4308,6 +4347,17 @@ fn doctor_warnings(tools: &ToolChecks, hid: &HidChecks) -> Vec<String> {
     {
         warnings.push(tools.usbpcap_descriptor_capture.access_guidance.clone());
     }
+    if tools
+        .usbpcap_descriptor_capture
+        .active_usbpcap_processes
+        .active_process_count
+        > 0
+    {
+        warnings.push(
+            "active USBPcapCMD process(es) detected; stop stale captures before starting a new passive capture unless one is the intended current capture"
+                .to_string(),
+        );
+    }
     if !hid.api_available {
         warnings.push("HID API initialization failed".to_string());
     }
@@ -4323,6 +4373,7 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
     let usbpcap_extcap_present = usbpcap_extcap_path.is_some();
     let usbpcap_driver_installed = usbpcap_driver_installed();
     let usbpcap_driver_service_state = usbpcap_driver_service_state();
+    let active_usbpcap_processes = inspect_active_usbpcap_processes();
     let Some(tshark_path) = find_tshark_path() else {
         return UsbPcapDescriptorCaptureChecks {
             tshark_present: false,
@@ -4339,6 +4390,7 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
             usbpcap_moza_device_hint_count: 0,
             usbpcap_moza_device_hints: Vec::new(),
             usbpcap_device_scan_errors: Vec::new(),
+            active_usbpcap_processes,
             ready_for_usbpcap_descriptor_capture: false,
             access_guidance: usbpcap_descriptor_capture_guidance(
                 false,
@@ -4370,6 +4422,7 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
             usbpcap_moza_device_hint_count: 0,
             usbpcap_moza_device_hints: Vec::new(),
             usbpcap_device_scan_errors: Vec::new(),
+            active_usbpcap_processes,
             ready_for_usbpcap_descriptor_capture: false,
             access_guidance: usbpcap_descriptor_capture_guidance(
                 true,
@@ -4398,6 +4451,7 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
             usbpcap_moza_device_hint_count: 0,
             usbpcap_moza_device_hints: Vec::new(),
             usbpcap_device_scan_errors: Vec::new(),
+            active_usbpcap_processes,
             ready_for_usbpcap_descriptor_capture: false,
             access_guidance: usbpcap_descriptor_capture_guidance(
                 true,
@@ -4433,6 +4487,7 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
         usbpcap_moza_device_hint_count: usbpcap_moza_device_hints.len(),
         usbpcap_moza_device_hints,
         usbpcap_device_scan_errors,
+        active_usbpcap_processes,
         ready_for_usbpcap_descriptor_capture,
         access_guidance: usbpcap_descriptor_capture_guidance(
             true,
@@ -4648,6 +4703,98 @@ fn usbpcap_service_state_from_sc_query(output: &str) -> Option<String> {
             .find(|token| token.chars().any(|ch| ch.is_ascii_alphabetic()))
             .map(|state| state.to_ascii_lowercase())
     })
+}
+
+fn inspect_active_usbpcap_processes() -> UsbPcapActiveProcessChecks {
+    if !cfg!(windows) {
+        return UsbPcapActiveProcessChecks {
+            process_scan_attempted: false,
+            active_process_count: 0,
+            processes: Vec::new(),
+            error: Some(
+                "active USBPcap process scan is currently implemented only on Windows".to_string(),
+            ),
+        };
+    }
+
+    let script = "Get-CimInstance Win32_Process -Filter \"name='USBPcapCMD.exe'\" | Select-Object ProcessId,CreationDate,CommandLine | ConvertTo-Json -Compress";
+    match Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            match usbpcap_active_processes_from_json(&stdout) {
+                Ok(processes) => UsbPcapActiveProcessChecks {
+                    process_scan_attempted: true,
+                    active_process_count: processes.len(),
+                    processes,
+                    error: None,
+                },
+                Err(error) => UsbPcapActiveProcessChecks {
+                    process_scan_attempted: true,
+                    active_process_count: 0,
+                    processes: Vec::new(),
+                    error: Some(error.to_string()),
+                },
+            }
+        }
+        Ok(output) => UsbPcapActiveProcessChecks {
+            process_scan_attempted: true,
+            active_process_count: 0,
+            processes: Vec::new(),
+            error: Some(format!(
+                "USBPcapCMD process scan failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )),
+        },
+        Err(error) => UsbPcapActiveProcessChecks {
+            process_scan_attempted: true,
+            active_process_count: 0,
+            processes: Vec::new(),
+            error: Some(format!("failed to scan USBPcapCMD processes: {error}")),
+        },
+    }
+}
+
+fn usbpcap_active_processes_from_json(output: &str) -> Result<Vec<UsbPcapActiveProcess>> {
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let value: serde_json::Value =
+        serde_json::from_str(trimmed).context("failed to parse USBPcapCMD process JSON")?;
+    let values = match &value {
+        serde_json::Value::Array(values) => values.iter().collect::<Vec<_>>(),
+        serde_json::Value::Object(_) => vec![&value],
+        _ => Vec::new(),
+    };
+
+    let mut processes = Vec::new();
+    for value in values {
+        let Some(process_id) = value.get("ProcessId").and_then(serde_json::Value::as_u64) else {
+            continue;
+        };
+        let Ok(process_id) = u32::try_from(process_id) else {
+            continue;
+        };
+        processes.push(UsbPcapActiveProcess {
+            process_id,
+            creation_date: value
+                .get("CreationDate")
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .map(str::to_string),
+            command_line: value
+                .get("CommandLine")
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .map(str::to_string),
+        });
+    }
+
+    Ok(processes)
 }
 
 fn usbpcap_descriptor_capture_guidance(
@@ -5620,6 +5767,8 @@ struct HardwareSniffNotesCaptureHints {
     usbpcap_extcap_path: Option<String>,
     hint_count: usize,
     hints: Vec<HardwareSniffNotesUsbPcapHint>,
+    active_usbpcap_process_count: usize,
+    active_usbpcap_processes: Vec<HardwareSniffNotesActiveUsbPcapProcess>,
     notes: Vec<String>,
 }
 
@@ -5650,6 +5799,13 @@ struct HardwareSniffNotesUsbPcapHint {
     capture_devices_value: String,
     matched_device_displays: Vec<String>,
     suggested_capture_filter: String,
+}
+
+#[derive(Debug, Serialize)]
+struct HardwareSniffNotesActiveUsbPcapProcess {
+    process_id: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    command_line: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -6625,6 +6781,7 @@ struct UsbPcapDescriptorCaptureChecks {
     usbpcap_moza_device_hints: Vec<UsbPcapMozaDeviceHint>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     usbpcap_device_scan_errors: Vec<String>,
+    active_usbpcap_processes: UsbPcapActiveProcessChecks,
     ready_for_usbpcap_descriptor_capture: bool,
     access_guidance: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -6644,6 +6801,24 @@ struct UsbPcapMozaDeviceHint {
 struct UsbPcapExtcapDevice {
     value: String,
     display: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UsbPcapActiveProcessChecks {
+    process_scan_attempted: bool,
+    active_process_count: usize,
+    processes: Vec<UsbPcapActiveProcess>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UsbPcapActiveProcess {
+    process_id: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    creation_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    command_line: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -7018,6 +7193,12 @@ mod tests {
                     usbpcap_moza_device_hint_count: 0,
                     usbpcap_moza_device_hints: Vec::new(),
                     usbpcap_device_scan_errors: Vec::new(),
+                    active_usbpcap_processes: UsbPcapActiveProcessChecks {
+                        process_scan_attempted: true,
+                        active_process_count: 0,
+                        processes: Vec::new(),
+                        error: None,
+                    },
                     ready_for_usbpcap_descriptor_capture: false,
                     access_guidance: usbpcap_descriptor_capture_guidance(
                         true, false, false, false, None,
@@ -7380,6 +7561,16 @@ mod tests {
                 "tools": {
                     "usbpcap_descriptor_capture": {
                         "usbpcap_extcap_path": "C:\\Program Files\\Wireshark\\extcap\\USBPcapCMD.exe",
+                        "active_usbpcap_processes": {
+                            "process_scan_attempted": true,
+                            "active_process_count": 1,
+                            "processes": [
+                                {
+                                    "process_id": 508388,
+                                    "command_line": "\"C:\\Program Files\\Wireshark\\extcap\\USBPcapCMD.exe\" -d \\\\.\\USBPcap2 --devices 3 -o target\\sniff\\old-probe\\capture.pcap"
+                                }
+                            ]
+                        },
                         "usbpcap_moza_device_hints": [
                             {
                                 "usbpcap_interface": "\\\\.\\USBPcap2",
@@ -7407,6 +7598,7 @@ mod tests {
                 Some(r"C:\Program Files\Wireshark\extcap\USBPcapCMD.exe")
             );
             assert_eq!(capture_hints.hint_count, 1);
+            assert_eq!(capture_hints.active_usbpcap_process_count, 1);
             assert!(notes.contains("## Capture Tool Hints"));
             assert!(notes.contains("USBPcap interface used: `\\\\.\\USBPcap2`"));
             assert!(notes.contains("USBPcap device filter used: `--devices 3`"));
@@ -7416,6 +7608,8 @@ mod tests {
                 "operator notes missing capture command:\n{notes}"
             );
             assert!(notes.contains("MOZA Windows Driver"));
+            assert!(notes.contains("Active USBPcapCMD processes detected before capture: `1`"));
+            assert!(notes.contains("old-probe"));
             assert!(notes.contains("OpenRacing output"));
             Ok(())
         }
@@ -9094,6 +9288,42 @@ mod tests {
     }
 
     #[test]
+    fn usbpcap_active_process_parser_accepts_array_and_single_object() -> TestResult {
+        let array = r#"[
+            {
+                "ProcessId": 508388,
+                "CreationDate": "20260521144237.123456-240",
+                "CommandLine": "\"C:\\Program Files\\Wireshark\\extcap\\USBPcapCMD.exe\" -d \\\\.\\USBPcap2 --devices 3 -o target\\sniff\\old-probe\\capture.pcap"
+            },
+            {
+                "ProcessId": 511740,
+                "CreationDate": "20260521144256.123456-240",
+                "CommandLine": "\"C:\\Program Files\\Wireshark\\extcap\\USBPcapCMD.exe\" -d \\\\.\\USBPcap2 -A -o target\\sniff\\old-probe\\all.pcap"
+            }
+        ]"#;
+        let processes = usbpcap_active_processes_from_json(array)?;
+        assert_eq!(processes.len(), 2);
+        assert_eq!(processes[0].process_id, 508388);
+        assert!(
+            processes[0]
+                .command_line
+                .as_deref()
+                .is_some_and(|line| line.contains("old-probe")),
+            "expected first process command line to preserve the capture path"
+        );
+
+        let single = r#"{
+            "ProcessId": 514764,
+            "CreationDate": "20260521144323.123456-240",
+            "CommandLine": "\"C:\\Program Files\\Wireshark\\extcap\\USBPcapCMD.exe\" -d \\\\.\\USBPcap2 -A -o target\\sniff\\old-probe\\ps-all.pcap"
+        }"#;
+        let processes = usbpcap_active_processes_from_json(single)?;
+        assert_eq!(processes.len(), 1);
+        assert_eq!(processes[0].process_id, 514764);
+        Ok(())
+    }
+
+    #[test]
     fn usbpcap_extcap_config_parser_surfaces_moza_device_filter_hint() {
         let output = r#"arg {number=99}{call=--devices}{display=Attached USB Devices}{type=multicheck}
 value {arg=99}{value=3}{display=[3] USB Composite Device}{enabled=true}
@@ -9141,6 +9371,36 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub}{enabled=true}"#;
                 .tools
                 .usbpcap_descriptor_capture
                 .ready_for_usbpcap_descriptor_capture
+        );
+    }
+
+    #[test]
+    fn doctor_warns_when_active_usbpcap_processes_are_detected() {
+        let mut receipt = sample_receipt();
+        receipt
+            .tools
+            .usbpcap_descriptor_capture
+            .active_usbpcap_processes = UsbPcapActiveProcessChecks {
+            process_scan_attempted: true,
+            active_process_count: 1,
+            processes: vec![UsbPcapActiveProcess {
+                process_id: 508388,
+                creation_date: Some("20260521144237.123456-240".to_string()),
+                command_line: Some(
+                    r#""C:\Program Files\Wireshark\extcap\USBPcapCMD.exe" -d \\.\USBPcap2 --devices 3 -o target\sniff\old-probe\capture.pcap"#
+                        .to_string(),
+                ),
+            }],
+            error: None,
+        };
+
+        let warnings = doctor_warnings(&receipt.tools, &receipt.hid);
+
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning.contains("active USBPcapCMD process")),
+            "expected active USBPcap warning in {warnings:?}"
         );
     }
 
