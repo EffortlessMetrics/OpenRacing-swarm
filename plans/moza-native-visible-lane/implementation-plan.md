@@ -4366,6 +4366,68 @@ remove `wheelctl hardware sniff-capture`, passive sniff plans, checked-in sniff
 evidence, local raw capture attempts, consumed hardware attempts, protocol
 evidence review receipts, or existing no-output capture handoff commands.
 
+## Work item: hardware-sniff-capture-tool-logs
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: diagnosis of failed or zero-byte passive USBPcap capture attempts
+Blocked by: bounded `sniff-capture` receipts record only process status and
+pcap metadata, so a failed external capture can discard the capture tool's
+stdout/stderr diagnostics.
+
+### Goal
+
+Preserve USBPcapCMD stdout/stderr diagnostics for bounded passive capture
+attempts without promoting the local capture receipt into accepted lane
+evidence.
+
+### Production Delta
+
+`wheelctl hardware sniff-capture` now writes USBPcapCMD stdout and stderr to
+local scratch log files next to the requested `.pcapng` and records their
+paths and byte sizes in the non-claiming sniff-capture receipt. Failed or
+zero-byte captures still fail closed, but the operator has local logs to
+diagnose device filters, tool errors, permissions, or no-traffic windows before
+retrying the passive scenario.
+
+### Non-goals
+
+No checked-in pcap, sniff receipt, sniff summary, sniff bundle, HID open, serial
+open, read-only query send, hardware output, authorization, PIDFF rerun, direct
+HID report `0xaf`, high torque, serial config, firmware, DFU, native-control
+claim, native-visible claim, smoke-ready claim, Pit House coexistence claim,
+simulator claim, release-ready claim, semantic command decode, registry
+promotion, tuple sendability claim, or promotion of a local capture receipt into
+accepted lane evidence.
+
+### Acceptance
+
+- `sniff-capture` records USBPcapCMD stdout/stderr paths in its local receipt.
+- `sniff-capture` records stdout/stderr byte counts in its local receipt.
+- A failed or zero-byte capture remains `success=false`.
+- Existing no-output and no-readiness claim flags remain false.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_capture -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the USBPcapCMD stdout/stderr log preservation, receipt fields,
+focused tests, and source-of-truth updates. Do not remove bounded
+`sniff-capture`, passive sniff plans, checked-in sniff evidence, local raw
+capture attempts, consumed hardware attempts, protocol evidence review receipts,
+or existing no-output capture handoff commands.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

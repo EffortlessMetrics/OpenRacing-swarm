@@ -482,10 +482,16 @@ fn run_hardware_sniff_capture(
             .with_context(|| format!("failed to create '{}'", parent.display()))?;
     }
 
+    let (stdout_path, stderr_path) = sniff_capture_tool_log_paths(request.out);
+    let stdout = File::create(&stdout_path)
+        .with_context(|| format!("failed to create '{}'", stdout_path.display()))?;
+    let stderr = File::create(&stderr_path)
+        .with_context(|| format!("failed to create '{}'", stderr_path.display()))?;
+
     let mut child = Command::new(request.usbpcapcmd)
         .args(sniff_capture_usbpcapcmd_args(request))
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr))
         .spawn()
         .with_context(|| {
             format!(
@@ -520,6 +526,8 @@ fn run_hardware_sniff_capture(
 
     let completed_at_utc = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
     let pcapng = sniff_capture_output_metadata(request.out)?;
+    let stdout_size_bytes = sniff_capture_tool_log_size(&stdout_path)?;
+    let stderr_size_bytes = sniff_capture_tool_log_size(&stderr_path)?;
     build_hardware_sniff_capture_receipt(
         request,
         HardwareSniffCaptureOutcome {
@@ -532,6 +540,10 @@ fn run_hardware_sniff_capture(
             pcapng_exists: pcapng.exists,
             pcapng_size_bytes: pcapng.size_bytes,
             pcapng_sha256: pcapng.sha256,
+            stdout_path,
+            stdout_size_bytes,
+            stderr_path,
+            stderr_size_bytes,
         },
     )
 }
@@ -582,6 +594,28 @@ fn sniff_capture_usbpcapcmd_args(request: &HardwareSniffCaptureRequest<'_>) -> V
         "-o".to_string(),
         request.out.display().to_string(),
     ]
+}
+
+fn sniff_capture_tool_log_paths(out: &Path) -> (PathBuf, PathBuf) {
+    let parent = out
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new(""));
+    let stem = out
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("capture");
+    (
+        parent.join(format!("{stem}.usbpcapcmd.stdout.txt")),
+        parent.join(format!("{stem}.usbpcapcmd.stderr.txt")),
+    )
+}
+
+fn sniff_capture_tool_log_size(path: &Path) -> Result<u64> {
+    let metadata = fs::metadata(path)
+        .with_context(|| format!("failed to inspect USBPcapCMD log '{}'", path.display()))?;
+    Ok(metadata.len())
 }
 
 fn path_contains_ci_hardware(path: &Path) -> bool {
@@ -645,6 +679,10 @@ fn build_hardware_sniff_capture_receipt(
         pcapng_exists: outcome.pcapng_exists,
         pcapng_size_bytes: outcome.pcapng_size_bytes,
         pcapng_sha256: outcome.pcapng_sha256,
+        usbpcapcmd_stdout_path: required_path_display(&outcome.stdout_path, "stdout")?,
+        usbpcapcmd_stdout_size_bytes: outcome.stdout_size_bytes,
+        usbpcapcmd_stderr_path: required_path_display(&outcome.stderr_path, "stderr")?,
+        usbpcapcmd_stderr_size_bytes: outcome.stderr_size_bytes,
         evidence_status: SNIFF_EVIDENCE_STATUS,
         native_control_evidence: false,
         openracing_hardware_output: false,
@@ -5595,6 +5633,12 @@ fn print_sniff_capture(
         "Duration: {} ms; stopped after duration: {}; pcapng bytes: {}",
         receipt.duration_ms, receipt.terminated_after_duration, receipt.pcapng_size_bytes
     ))?;
+    if !receipt.success {
+        write_stdout_line(&format!(
+            "Capture did not produce a non-empty pcapng; inspect USBPcapCMD logs: stdout={}, stderr={}",
+            receipt.usbpcapcmd_stdout_path, receipt.usbpcapcmd_stderr_path
+        ))?;
+    }
     write_stdout_line(
         "Non-claiming: this launched only the external passive USBPcapCMD capture tool; OpenRacing sent no hardware output and made no readiness claim.",
     )?;
@@ -6143,6 +6187,10 @@ struct HardwareSniffCaptureOutcome {
     pcapng_exists: bool,
     pcapng_size_bytes: u64,
     pcapng_sha256: Option<String>,
+    stdout_path: PathBuf,
+    stdout_size_bytes: u64,
+    stderr_path: PathBuf,
+    stderr_size_bytes: u64,
 }
 
 #[derive(Debug)]
@@ -6177,6 +6225,10 @@ struct HardwareSniffCaptureReceipt {
     pcapng_size_bytes: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pcapng_sha256: Option<String>,
+    usbpcapcmd_stdout_path: String,
+    usbpcapcmd_stdout_size_bytes: u64,
+    usbpcapcmd_stderr_path: String,
+    usbpcapcmd_stderr_size_bytes: u64,
     evidence_status: &'static str,
     native_control_evidence: bool,
     openracing_hardware_output: bool,
@@ -7853,6 +7905,8 @@ mod tests {
             fs::write(&usbpcapcmd, b"fake")?;
             let out = dir.path().join("capture.pcapng");
             let request = sample_sniff_capture_request(&usbpcapcmd, &out, true);
+            let stdout_path = dir.path().join("capture.usbpcapcmd.stdout.txt");
+            let stderr_path = dir.path().join("capture.usbpcapcmd.stderr.txt");
 
             let receipt = build_hardware_sniff_capture_receipt(
                 &request,
@@ -7866,11 +7920,25 @@ mod tests {
                     pcapng_exists: true,
                     pcapng_size_bytes: 42,
                     pcapng_sha256: Some("abc123".to_string()),
+                    stdout_path: stdout_path.clone(),
+                    stdout_size_bytes: 7,
+                    stderr_path: stderr_path.clone(),
+                    stderr_size_bytes: 11,
                 },
             )?;
 
             assert!(receipt.success);
             assert_eq!(receipt.command, "wheelctl hardware sniff-capture");
+            assert_eq!(
+                receipt.usbpcapcmd_stdout_path,
+                required_path_display(&stdout_path, "stdout")?
+            );
+            assert_eq!(receipt.usbpcapcmd_stdout_size_bytes, 7);
+            assert_eq!(
+                receipt.usbpcapcmd_stderr_path,
+                required_path_display(&stderr_path, "stderr")?
+            );
+            assert_eq!(receipt.usbpcapcmd_stderr_size_bytes, 11);
             assert!(!receipt.native_control_evidence);
             assert!(!receipt.openracing_hardware_output);
             assert!(!receipt.openracing_hid_device_opened);
