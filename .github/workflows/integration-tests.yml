@@ -19,7 +19,7 @@ env:
 jobs:
   pr-change-filter:
     name: Integration Change Filter
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 5
     outputs:
       integration_paths: ${{ steps.filter.outputs.integration_paths }}
@@ -64,7 +64,7 @@ jobs:
       needs.pr-change-filter.outputs.integration_paths == 'true' ||
       contains(github.event.pull_request.labels.*.name, 'full-ci') ||
       contains(github.event.pull_request.labels.*.name, 'integration')
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 45
     
     steps:
@@ -128,7 +128,7 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'full-ci') ||
       contains(github.event.pull_request.labels.*.name, 'perf') ||
       contains(github.event.pull_request.labels.*.name, 'integration')
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 15
     
     steps:
@@ -177,7 +177,7 @@ jobs:
       needs.pr-change-filter.outputs.integration_paths == 'true' ||
       contains(github.event.pull_request.labels.*.name, 'full-ci') ||
       contains(github.event.pull_request.labels.*.name, 'integration')
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 20
     
     steps:
@@ -221,7 +221,7 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'full-ci') ||
       contains(github.event.pull_request.labels.*.name, 'stress') ||
       contains(github.event.pull_request.labels.*.name, 'integration')
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 30
     
     steps:
@@ -270,7 +270,7 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'full-ci') ||
       contains(github.event.pull_request.labels.*.name, 'soak') ||
       contains(github.event.pull_request.labels.*.name, 'integration')
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 30
     
     steps:
@@ -317,7 +317,7 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'full-ci') ||
       contains(github.event.pull_request.labels.*.name, 'acceptance') ||
       contains(github.event.pull_request.labels.*.name, 'integration')
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 25
     
     steps:
@@ -369,7 +369,7 @@ jobs:
          contains(github.event.pull_request.labels.*.name, 'platform')))
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [self-hosted, self-hosted, self-hosted]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     

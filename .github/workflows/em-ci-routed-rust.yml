@@ -34,7 +34,7 @@ env:
 jobs:
   route-rust-small:
     name: Route OpenRacing Rust Small
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 5
     outputs:
       target: ${{ steps.route.outputs.target }}
@@ -459,7 +459,7 @@ jobs:
     name: OpenRacing Rust Small on GitHub Hosted
     needs: route-rust-small
     if: needs.route-rust-small.outputs.target == 'github'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 120
     steps:
       - name: Checkout
@@ -502,7 +502,7 @@ jobs:
       - rust-small-cx53
       - rust-small-github
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 5
     steps:
       - name: Evaluate routed result

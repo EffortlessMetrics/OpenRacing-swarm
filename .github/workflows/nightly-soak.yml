@@ -12,7 +12,7 @@ env:
 jobs:
   full-soak-test:
     name: 48-Hour Soak Test
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 2920  # 48 hours + 40 minutes buffer
 
     steps:

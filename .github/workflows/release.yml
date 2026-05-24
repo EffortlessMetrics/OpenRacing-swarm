@@ -29,7 +29,7 @@ jobs:
   # ============================================
   prepare:
     name: Prepare Release
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -105,7 +105,7 @@ jobs:
   # ============================================
   build-linux:
     name: Build Linux (${{ matrix.target }})
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 30
     needs: prepare
     strategy:
@@ -156,7 +156,7 @@ jobs:
   # ============================================
   build-windows:
     name: Build Windows (${{ matrix.target }})
-    runs-on: windows-latest
+    runs-on: self-hosted
     timeout-minutes: 30
     needs: prepare
     strategy:
@@ -217,7 +217,7 @@ jobs:
   # ============================================
   sign-artifacts:
     name: Sign Artifacts
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 15
     needs: [prepare, build-linux, build-windows]
 
@@ -280,7 +280,7 @@ jobs:
   # ============================================
   release:
     name: Create GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
     needs: [prepare, sign-artifacts]
 
@@ -347,7 +347,7 @@ jobs:
   # ============================================
   notify:
     name: Post-Release
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 5
     needs: [prepare, release]
     if: success()

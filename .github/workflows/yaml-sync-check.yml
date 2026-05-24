@@ -12,7 +12,7 @@ concurrency:
 jobs:
   pr-change-filter:
     name: YAML Sync Change Filter
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 5
     outputs:
       yaml_sync_paths: ${{ steps.filter.outputs.yaml_sync_paths }}
@@ -55,7 +55,7 @@ jobs:
       github.event_name != 'pull_request' ||
       needs.pr-change-filter.outputs.yaml_sync_paths == 'true' ||
       contains(github.event.pull_request.labels.*.name, 'full-ci')
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 5
 
     steps:
