@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "moza_passive_sniff_low_yield_capture_classification",
+  "scenario": "pit-house-setting-change",
+  "classification": "low_yield_incomplete_capture",
+  "claim_scope": "protocol_research_low_yield_incomplete_capture_only",
+  "generated_at_utc": "2026-05-27T14:49:30Z",
+  "reviewed_at_utc": "2026-05-27T14:49:30Z",
+  "capture_receipt_path": "target/sniff/pit-house-setting-change/sniff-capture-receipt.json",
+  "pcapng_path": "target/sniff/pit-house-setting-change/capture.pcapng",
+  "pcapng_sha256": "3081c86093845258fae18703bc72ab0a4270d5764ba8fc06070d32b1ad478583",
+  "pcapng_size_bytes": 355,
+  "capinfos_packet_count": 6,
+  "capinfos_capture_duration_seconds": 0.0,
+  "all_packets_same_timestamp": true,
+  "filtered_summary": {
+    "vendor_id": "0x346E",
+    "product_id": "0x0004",
+    "matched_packets": 0,
+    "success": false,
+    "reason": "no USB packets matched the supplied pcapng and vendor/product/interface filters"
+  },
+  "unfiltered_observation": {
+    "matched_packets": 6,
+    "host_to_device_packets": 2,
+    "device_to_host_packets": 4,
+    "observed_devices": [
+      {
+        "vendor_id": "0x1A40",
+        "product_id": "0x0101",
+        "note": "hub traffic, not Moza R5 0x346E:0x0004 setting-change traffic"
+      }
+    ]
+  },
+  "operator_notes_status": {
+    "exact_pit_house_setting_changed": "green flag led 1",
+    "starting_setting_value": "green",
+    "ending_setting_value": "red",
+    "restore_status": "not reported",
+    "restore_status_recorded": false,
+    "restored": null,
+    "operator_notes_complete": false
+  },
+  "accepted_protocol_evidence": false,
+  "setting_change_protocol_evidence": false,
+  "pit_house_setting_change_complete": false,
+  "native_control_evidence": false,
+  "hardware_output_authorized": false,
+  "openracing_hardware_output": false,
+  "native_visible_ready": false,
+  "smoke_ready": false,
+  "release_ready": false,
+  "satisfies_native_response_ready": false,
+  "satisfies_native_visible_ready": false,
+  "satisfies_smoke_ready": false,
+  "satisfies_release_ready": false,
+  "next_allowed_action": "repeat passive pit-house-setting-change capture with Pit House already open and settled, one explicit reversible setting, start/end/restored values recorded, and no firmware/update/DFU interaction",
+  "next_allowed_actions": [
+    "repeat passive pit-house-setting-change capture with Pit House already open and settled",
+    "record one explicit reversible setting name, starting value, ending value, and affirmative restore status",
+    "run a successful wheelctl hardware sniff-summary for 0x346E:0x0004 before bundling as accepted passive correlation evidence"
+  ],
+  "blocked_actions": [
+    "treat this pcap as decoded Pit House setting-change protocol evidence",
+    "mark pit-house-setting-change complete",
+    "use this capture as registry promotion evidence",
+    "use this capture as tuple sendability evidence",
+    "claim native-control, native-visible, smoke-ready, or release-ready status",
+    "authorize hardware output from this capture"
+  ],
+  "required_artifacts": [
+    "fresh local sniff-capture receipt with useful Moza packet traffic",
+    "operator notes with setting name, start value, end value, and affirmative restore status",
+    "successful wheelctl hardware sniff-receipt for the repeat capture",
+    "successful wheelctl hardware sniff-summary for 0x346E:0x0004",
+    "non-claiming sniff-bundle manifest only after the repeat capture passes the note and summary gates"
+  ],
+  "notes": [
+    "This was a useful capture-path smoke only.",
+    "The pcap is too small and contains no Moza 0x346E:0x0004 matches, so it is low-yield protocol evidence.",
+    "The setting restore status was not reported, so the operator notes are incomplete for accepted setting-change evidence.",
+    "Raw pcapng remains local scratch and is not committed by this classification artifact."
+  ]
+}

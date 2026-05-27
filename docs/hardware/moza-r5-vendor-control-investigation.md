@@ -52,7 +52,9 @@ proposing any vendor-control output path. The current receipt now records that
 correlation plan explicitly: two non-sendable targets, completed observations in
 `pit-house-open-idle` and `pit-house-full-controls`, and
 `pit-house-setting-change` as the next passive capture priority before SimHub or
-simulator correlation.
+simulator correlation. The first bounded setting-change capture attempt is
+classified as low-yield/incomplete: 355 bytes, six packets, zero Moza
+`0x346E:0x0004` matches, and restore status `not reported`.
 
 ## Current Artifacts
 
@@ -61,7 +63,7 @@ The following passive sniff artifacts are committed:
 | Scenario | Plan artifact | Current status |
 | --- | --- | --- |
 | Pit House open idle | `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-plan.json` | Summary recorded, non-claiming |
-| Pit House setting change | `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-plan.json` | Plan only |
+| Pit House setting change | `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-plan.json`; `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/low-yield-capture-classification.json` | Low-yield incomplete; repeat required |
 | SimHub open idle | `ci/hardware/sniff/moza-r5/2026-05-13/simhub-open-idle/sniff-plan.json` | Plan only |
 | SimHub output session | `ci/hardware/sniff/moza-r5/2026-05-13/simhub-output-session/sniff-plan.json` | Plan only |
 | Simulator session start/stop | `ci/hardware/sniff/moza-r5/2026-05-13/simulator-session-start-stop/sniff-plan.json` | Plan only |
@@ -69,7 +71,8 @@ The following passive sniff artifacts are committed:
 
 `wheelctl moza artifact-index` reports recorded scenarios as non-claiming
 receipt/summary evidence and leaves missing scenarios `partial_or_unaccepted`
-until matching `sniff-receipt.json` and `sniff-summary.json` artifacts exist.
+or `low_yield_incomplete` until matching successful `sniff-receipt.json` and
+`sniff-summary.json` artifacts exist.
 
 The committed Pit House summaries preserve 3,246 extracted host-to-device USB
 CDC payload packets and parse them into 7,863 candidate `0x7E` serial frames.

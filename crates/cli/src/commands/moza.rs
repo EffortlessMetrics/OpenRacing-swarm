@@ -64,6 +64,7 @@ const MOZA_VENDOR_HEX: &str = "0x346E";
 const MOZA_PIT_HOUSE_DOWNLOADS_URL: &str = "https://support.mozaracing.com/en/support/solutions/articles/70000627795-moza-pit-house-downloads";
 const MOZA_PIT_HOUSE_INSTALL_GUIDANCE: &str = "Install or update Pit House from the official MOZA Pit House Downloads support page; do not treat package-manager availability as authoritative evidence.";
 const PASSIVE_SNIFF_POST_CAPTURE_EVIDENCE_COMMANDS_CHECKLIST_ITEM: &str = "run sniff-receipt, sniff-notes-template, and sniff-summary before treating the capture as lane evidence";
+const PASSIVE_SNIFF_LOW_YIELD_CLASSIFICATION_FILE: &str = "low-yield-capture-classification.json";
 const HIGH_TORQUE_FEATURE_REPORT_ID: &str = "0x02";
 const START_REPORTING_FEATURE_REPORT_ID: &str = "0x03";
 const FFB_MODE_FEATURE_REPORT_ID: &str = "0x11";
@@ -2593,6 +2594,8 @@ fn moza_passive_sniff_next_operator_step(lane: &Path) -> Option<Value> {
         let receipt_artifact = committed_dir.join("sniff-receipt.json");
         let summary_artifact = committed_dir.join("sniff-summary.json");
         let bundle_manifest_artifact = committed_dir.join("sniff-bundle-manifest.json");
+        let low_yield_classification_artifact =
+            committed_dir.join(PASSIVE_SNIFF_LOW_YIELD_CLASSIFICATION_FILE);
         let plan_status =
             passive_sniff_artifact_status(&plan_artifact, "wheelctl hardware sniff-plan");
         if !matches!(plan_status, "present_non_claiming") {
@@ -2607,6 +2610,10 @@ fn moza_passive_sniff_next_operator_step(lane: &Path) -> Option<Value> {
         {
             continue;
         }
+        let low_yield_classification_status = passive_sniff_low_yield_classification_status(
+            &low_yield_classification_artifact,
+            scenario,
+        );
 
         let local_dir = PathBuf::from("target").join("sniff").join(scenario);
         let local_pcapng = local_dir.join("capture.pcapng");
@@ -2635,6 +2642,8 @@ fn moza_passive_sniff_next_operator_step(lane: &Path) -> Option<Value> {
             "receipt_artifact": receipt_artifact.display().to_string(),
             "summary_artifact": summary_artifact.display().to_string(),
             "bundle_manifest_artifact": bundle_manifest_artifact.display().to_string(),
+            "low_yield_classification_artifact": low_yield_classification_artifact.display().to_string(),
+            "low_yield_classification_status": low_yield_classification_status,
             "local_pcapng": local_pcapng.display().to_string(),
             "external_capture_checklist": moza_passive_sniff_capture_checklist(
                 scenario,
@@ -2698,6 +2707,7 @@ fn moza_passive_sniff_next_operator_step(lane: &Path) -> Option<Value> {
             ],
             "notes": [
                 "commands are no-output OpenRacing artifact commands; the pcapng capture itself is created by USBPcap/Wireshark/tshark outside OpenRacing",
+                "if a low-yield classification exists, repeat the passive setting-change capture instead of treating it as decoded protocol evidence",
                 "do not commit raw pcapng unless separate review approves raw capture, size, sensitivity, and operator consent",
                 "sniff receipt, operator notes, summary, and bundle artifacts remain protocol research/support evidence only"
             ]
@@ -2838,7 +2848,7 @@ fn moza_passive_sniff_capture_action(scenario: &str) -> String {
             "With MOZA Pit House open and settled, move the wheel, pedals, HBP handbrake, paddles, wheel buttons, thumb controls, and encoders in the recorded operator order; do not open firmware or update pages.".to_string()
         }
         "pit-house-setting-change" => {
-            "In MOZA Pit House, record one explicit setting name, starting value, ending value, and whether it was restored; do not open firmware or update pages.".to_string()
+            "Open MOZA Pit House before capture, let it settle, change one explicit reversible setting, record the setting name plus start/end/restored values, restore it before accepting evidence, and do not open firmware or update pages.".to_string()
         }
         "simhub-open-idle" => {
             "Open SimHub, allow device discovery or idle polling to settle, and do not start an output session.".to_string()
@@ -3144,6 +3154,8 @@ fn moza_passive_sniff_navigation_summary(lane: &Path) -> Value {
         let receipt_artifact = committed_dir.join("sniff-receipt.json");
         let summary_artifact = committed_dir.join("sniff-summary.json");
         let bundle_manifest_artifact = committed_dir.join("sniff-bundle-manifest.json");
+        let low_yield_classification_artifact =
+            committed_dir.join(PASSIVE_SNIFF_LOW_YIELD_CLASSIFICATION_FILE);
         let plan_status =
             passive_sniff_artifact_status(&plan_artifact, "wheelctl hardware sniff-plan");
         let receipt_status =
@@ -3154,15 +3166,30 @@ fn moza_passive_sniff_navigation_summary(lane: &Path) -> Value {
             &bundle_manifest_artifact,
             "wheelctl hardware sniff-bundle",
         );
+        let low_yield_classification_status = passive_sniff_low_yield_classification_status(
+            &low_yield_classification_artifact,
+            scenario,
+        );
+        let low_yield_capture_recorded = matches!(
+            low_yield_classification_status,
+            "present_low_yield_incomplete"
+        );
         let scenario_recorded = matches!(plan_status, "present_non_claiming")
             && matches!(receipt_status, "present_non_claiming")
             && matches!(summary_status, "present_non_claiming");
         let scenario_status = if scenario_recorded {
             recorded_scenarios.push(Value::String((*scenario).to_string()));
             "summary_recorded"
+        } else if low_yield_capture_recorded {
+            missing_scenarios.push(Value::String((*scenario).to_string()));
+            "low_yield_incomplete"
         } else {
             missing_scenarios.push(Value::String((*scenario).to_string()));
-            if plan_artifact.is_file() || receipt_artifact.is_file() || summary_artifact.is_file() {
+            if plan_artifact.is_file()
+                || receipt_artifact.is_file()
+                || summary_artifact.is_file()
+                || low_yield_classification_artifact.is_file()
+            {
                 "partial_or_unaccepted"
             } else {
                 "missing"
@@ -3184,6 +3211,9 @@ fn moza_passive_sniff_navigation_summary(lane: &Path) -> Value {
             "summary_status": summary_status,
             "bundle_manifest_artifact": bundle_manifest_artifact.display().to_string(),
             "bundle_manifest_status": bundle_manifest_status,
+            "low_yield_classification_artifact": low_yield_classification_artifact.display().to_string(),
+            "low_yield_classification_status": low_yield_classification_status,
+            "low_yield_capture_recorded": low_yield_capture_recorded,
             "readiness_claim": false,
             "blocks_native_control": false,
             "blocks_native_visible": false,
@@ -3237,12 +3267,19 @@ fn passive_sniff_artifact_status(path: &Path, expected_command: &str) -> &'stati
         return "missing";
     }
     match read_json_path(path) {
-        Ok(value) if passive_sniff_artifact_is_non_claiming(&value, expected_command) => {
+        Ok(value)
+            if passive_sniff_artifact_is_non_claiming(&value, expected_command)
+                && passive_sniff_artifact_success_is_accepted(&value) =>
+        {
             "present_non_claiming"
         }
         Ok(_) => "present_not_accepted",
         Err(_) => "invalid_json",
     }
+}
+
+fn passive_sniff_artifact_success_is_accepted(value: &Value) -> bool {
+    json_bool(value, "success") == Some(true)
 }
 
 fn passive_sniff_artifact_is_non_claiming(value: &Value, expected_command: &str) -> bool {
@@ -3289,6 +3326,46 @@ fn passive_sniff_artifact_is_non_claiming(value: &Value, expected_command: &str)
         && json_bool(value, "satisfies_native_visible_ready") == Some(false)
         && json_bool(value, "satisfies_smoke_ready") == Some(false)
         && json_bool(value, "satisfies_release_ready") == Some(false)
+}
+
+fn passive_sniff_low_yield_classification_status(path: &Path, scenario: &str) -> &'static str {
+    if !path.is_file() {
+        return "missing";
+    }
+    match read_json_path(path) {
+        Ok(value) if passive_sniff_low_yield_classification_is_valid(&value, scenario) => {
+            "present_low_yield_incomplete"
+        }
+        Ok(_) => "present_not_accepted",
+        Err(_) => "invalid_json",
+    }
+}
+
+fn passive_sniff_low_yield_classification_is_valid(value: &Value, scenario: &str) -> bool {
+    json_string(value, "artifact_kind")
+        == Some("moza_passive_sniff_low_yield_capture_classification")
+        && json_string(value, "scenario") == Some(scenario)
+        && json_string(value, "classification") == Some("low_yield_incomplete_capture")
+        && json_bool(value, "accepted_protocol_evidence") == Some(false)
+        && json_bool(value, "setting_change_protocol_evidence") == Some(false)
+        && json_bool(value, "pit_house_setting_change_complete") == Some(false)
+        && json_bool(value, "native_control_evidence") == Some(false)
+        && json_bool(value, "hardware_output_authorized") == Some(false)
+        && json_bool(value, "native_visible_ready") == Some(false)
+        && json_bool(value, "smoke_ready") == Some(false)
+        && json_bool(value, "release_ready") == Some(false)
+        && value
+            .get("next_allowed_actions")
+            .and_then(Value::as_array)
+            .is_some_and(|actions| !actions.is_empty())
+        && value
+            .get("blocked_actions")
+            .and_then(Value::as_array)
+            .is_some_and(|actions| !actions.is_empty())
+        && value
+            .get("required_artifacts")
+            .and_then(Value::as_array)
+            .is_some_and(|artifacts| !artifacts.is_empty())
 }
 
 fn json_array_contains_string(value: &Value, field: &str, expected: &str) -> bool {
@@ -43924,6 +44001,110 @@ mod tests {
     }
 
     #[test]
+    fn passive_sniff_navigation_does_not_record_failed_setting_change_summary() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        write_passive_sniff_artifacts(dir.path(), "pit-house-setting-change")?;
+        let sniff_dir = moza_passive_sniff_committed_dir(dir.path(), "pit-house-setting-change");
+        let summary_path = sniff_dir.join("sniff-summary.json");
+        let mut summary = read_json_path(&summary_path)?;
+        summary["success"] = serde_json::json!(false);
+        summary["matched_packets"] = serde_json::json!(0);
+        write_test_json_file(&summary_path, &summary)?;
+
+        let receipt = moza_artifact_index_receipt(dir.path(), None, None)?;
+        let sniff = receipt
+            .get("passive_sniff_navigation")
+            .ok_or("expected passive sniff navigation")?;
+        assert_eq!(json_u64(sniff, "recorded_scenario_count"), Some(0));
+        let missing = sniff
+            .get("missing_scenarios")
+            .and_then(Value::as_array)
+            .ok_or("expected missing passive sniff scenarios")?;
+        assert!(
+            missing
+                .iter()
+                .any(|scenario| scenario.as_str() == Some("pit-house-setting-change")),
+            "failed setting-change summary must leave scenario missing: {missing:?}"
+        );
+
+        let scenario = sniff
+            .get("scenarios")
+            .and_then(Value::as_array)
+            .and_then(|scenarios| {
+                scenarios.iter().find(|scenario| {
+                    json_string(scenario, "scenario") == Some("pit-house-setting-change")
+                })
+            })
+            .ok_or("expected setting-change scenario")?;
+        assert_eq!(
+            json_string(scenario, "status"),
+            Some("partial_or_unaccepted")
+        );
+        assert_eq!(
+            json_string(scenario, "summary_status"),
+            Some("present_not_accepted")
+        );
+        assert_eq!(json_bool(scenario, "recorded"), Some(false));
+        assert_eq!(json_bool(scenario, "readiness_claim"), Some(false));
+        Ok(())
+    }
+
+    #[test]
+    fn passive_sniff_navigation_surfaces_low_yield_setting_change_capture() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        write_passive_sniff_artifacts(dir.path(), "pit-house-open-idle")?;
+        write_passive_sniff_artifacts(dir.path(), "pit-house-full-controls")?;
+        write_passive_sniff_plan_artifact(dir.path(), "pit-house-setting-change")?;
+        write_low_yield_setting_change_classification(dir.path())?;
+
+        let receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
+        let sniff = receipt
+            .get("passive_sniff_navigation")
+            .ok_or("expected passive sniff navigation")?;
+        assert_eq!(json_u64(sniff, "recorded_scenario_count"), Some(2));
+        let scenario = sniff
+            .get("scenarios")
+            .and_then(Value::as_array)
+            .and_then(|scenarios| {
+                scenarios.iter().find(|scenario| {
+                    json_string(scenario, "scenario") == Some("pit-house-setting-change")
+                })
+            })
+            .ok_or("expected setting-change scenario")?;
+        assert_eq!(
+            json_string(scenario, "status"),
+            Some("low_yield_incomplete")
+        );
+        assert_eq!(
+            json_string(scenario, "low_yield_classification_status"),
+            Some("present_low_yield_incomplete")
+        );
+        assert_eq!(
+            json_bool(scenario, "low_yield_capture_recorded"),
+            Some(true)
+        );
+        assert_eq!(json_bool(scenario, "recorded"), Some(false));
+        assert_eq!(json_bool(scenario, "readiness_claim"), Some(false));
+
+        let step = moza_passive_sniff_next_operator_step(dir.path())
+            .ok_or("expected next operator step")?;
+        assert_eq!(
+            json_string(&step, "scenario"),
+            Some("pit-house-setting-change")
+        );
+        assert_eq!(
+            json_string(&step, "low_yield_classification_status"),
+            Some("present_low_yield_incomplete")
+        );
+        assert_eq!(json_bool(&step, "no_openracing_output"), Some(true));
+        let markdown = render_moza_bench_wizard_markdown(&receipt);
+        assert!(markdown.contains("low_yield_incomplete"));
+        Ok(())
+    }
+
+    #[test]
     fn bench_wizard_points_diagnosed_attempt_03_to_passive_sniff_capture() -> TestResult {
         let dir = tempfile::tempdir()?;
         fs::create_dir_all(dir.path())?;
@@ -49600,6 +49781,55 @@ mod tests {
             }),
         )?;
         Ok(())
+    }
+
+    fn write_low_yield_setting_change_classification(root: &Path) -> TestResult {
+        let sniff_dir = moza_passive_sniff_committed_dir(root, "pit-house-setting-change");
+        fs::create_dir_all(&sniff_dir)?;
+        write_test_json_file(
+            &sniff_dir.join(PASSIVE_SNIFF_LOW_YIELD_CLASSIFICATION_FILE),
+            &serde_json::json!({
+                "schema_version": 1,
+                "artifact_kind": "moza_passive_sniff_low_yield_capture_classification",
+                "scenario": "pit-house-setting-change",
+                "classification": "low_yield_incomplete_capture",
+                "claim_scope": "protocol_research_low_yield_incomplete_capture_only",
+                "accepted_protocol_evidence": false,
+                "setting_change_protocol_evidence": false,
+                "pit_house_setting_change_complete": false,
+                "native_control_evidence": false,
+                "hardware_output_authorized": false,
+                "native_visible_ready": false,
+                "smoke_ready": false,
+                "release_ready": false,
+                "capture": {
+                    "pcapng_size_bytes": 355,
+                    "packet_count": 6,
+                    "moza_matched_packets": 0
+                },
+                "operator_notes": {
+                    "exact_pit_house_setting_changed": "green flag led 1",
+                    "starting_setting_value": "green",
+                    "ending_setting_value": "red",
+                    "restore_status": "not reported",
+                    "restore_status_recorded": false,
+                    "operator_notes_complete": false
+                },
+                "next_allowed_actions": [
+                    "repeat passive pit-house-setting-change capture with Pit House already open and settled"
+                ],
+                "blocked_actions": [
+                    "treat this pcap as decoded setting-change protocol evidence",
+                    "mark pit-house-setting-change complete",
+                    "claim native-visible or smoke readiness"
+                ],
+                "required_artifacts": [
+                    "fresh sniff-capture receipt with useful Moza packet traffic",
+                    "operator notes with setting name, start value, end value, and affirmative restore status",
+                    "successful wheelctl hardware sniff-summary for 0x346E:0x0004"
+                ]
+            }),
+        )
     }
 
     fn write_simulator_pidff_artifacts(root: &Path) -> TestResult {

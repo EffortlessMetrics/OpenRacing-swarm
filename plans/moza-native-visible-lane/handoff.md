@@ -143,8 +143,12 @@ remaining SimHub and simulator scenarios. The plan pins
 `output_sendability_claim=false`, and
 `protocol_evidence_sufficient_for_output_plan=false`.
 The `pit-house-setting-change` plan now also requires the exact Pit House
-setting changed, starting value, ending value, and whether the value was
-restored before the capture can become accepted passive correlation evidence.
+setting changed, starting value, ending value, and an affirmative restore
+status before the capture can become accepted passive correlation evidence.
+The 2026-05-27 bounded passive setting-change run is recorded only as
+`low-yield-capture-classification.json`: the local pcap was 355 bytes with six
+packets, zero `0x346E:0x0004` matches, and restore status `not reported`. It is
+not decoded setting-change evidence and does not complete the scenario.
 
 ## Completion Audit Summary
 
@@ -165,7 +169,7 @@ The broader Moza objective remains incomplete:
 | Post-authority PIDFF response | `vendor-post-authority-pidff-smoke.json`; `vendor-post-authority-pidff-response.json`; [post-authority PIDFF response diagnosis](../../docs/hardware/moza-r5-post-authority-pidff-response.md) | Recorded regression versus baseline; no native-visible claim |
 | Vendor protocol evidence review | `vendor-protocol-evidence-review.json`; artifact-index/bench-wizard `vendor_protocol_decode_priority` | Recorded no-output review, host-to-device candidate `0x7E`, 7,863 checksum-valid candidate frames, 159 bounded passive tuple sample frames, one read-only registry tuple match, 12 commandless tuple IDs, 17 unknown commanded tuple IDs, frequency-ranked unknown commanded tuples headed by `0x5A/0x1B/0x00` and `0x5D/0x1B/0x01`, 30 decode-candidate sample frames for the top unknown tuples, protocol-crate observed-frame, packet-order, payload-shape, packet-group, low-confidence semantic-hypothesis, and semantic-correlation-plan regression coverage for those samples, two residual payload export gap packet locators, and no sufficient semantic protocol evidence for any output plan |
 | Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence |
-| Remaining passive sniff plans | `pit-house-setting-change`, `simhub-open-idle`, `simhub-output-session`, `simulator-session-start-stop` sniff plans | Plan-only, non-claiming |
+| Remaining passive sniff plans | `pit-house-setting-change`, `simhub-open-idle`, `simhub-output-session`, `simulator-session-start-stop` sniff plans | Setting-change has a low-yield incomplete classification only; others remain plan-only |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |
 | Simulator telemetry | `simulator-telemetry-proof.json` | Missing |
 | Bounded simulator FFB | `simulator-ffb-smoke.json` | Missing |
@@ -203,10 +207,12 @@ command. The correlation plan now makes the next named passive evidence target
 explicit: capture or summarize `pit-house-setting-change` first, then compare
 the same hypotheses against SimHub and simulator scenarios, before any tuple can
 move toward semantic decoder coverage or registry review. The next
-implementation work should continue vendor-specific protocol investigation,
-such as completing those passive correlation scenarios or mapping the
-frequency-ranked unknown `0x7E` USBCOM tuple stream to semantic commands, before
-any future motion ladder plan.
+implementation work should repeat `pit-house-setting-change` with Pit House
+already open and settled, one reversible setting, start/end/restored values
+recorded, and no firmware/update/DFU interaction. It should continue
+vendor-specific protocol investigation, such as completing those passive
+correlation scenarios or mapping the frequency-ranked unknown `0x7E` USBCOM
+tuple stream to semantic commands, before any future motion ladder plan.
 
 Passive USB sniff captures may produce non-claiming `sniff-receipt.json`,
 `sniff-summary.json`, and bundle manifest artifacts, but those are

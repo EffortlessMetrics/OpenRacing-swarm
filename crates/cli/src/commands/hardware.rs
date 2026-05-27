@@ -1286,6 +1286,9 @@ fn validate_sniff_bundle_operator_notes(
             );
         }
     }
+    if plan.scenario == "pit-house-setting-change" {
+        validate_setting_change_restore_status(path, notes)?;
+    }
     Ok(())
 }
 
@@ -1309,6 +1312,58 @@ fn operator_note_field_value<'a>(notes: &'a str, field: &str) -> Option<&'a str>
         let value = rest.strip_prefix(':')?.trim();
         (!value.is_empty()).then_some(value)
     })
+}
+
+fn validate_setting_change_restore_status(path: &Path, notes: &str) -> Result<()> {
+    let field = "whether the setting value was restored";
+    let Some(value) = operator_note_field_value(notes, field) else {
+        return Ok(());
+    };
+    if setting_change_restore_status_is_affirmative(value) {
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "operator notes '{}' field '{}' must record an affirmative restore status for pit-house-setting-change evidence; got '{}'",
+        path.display(),
+        field,
+        value
+    )
+}
+
+fn setting_change_restore_status_is_affirmative(value: &str) -> bool {
+    let normalized = value.trim().to_ascii_lowercase().replace(['_', '-'], " ");
+    let normalized = normalized.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        return false;
+    }
+    let negative_or_unknown = [
+        "not reported",
+        "not recorded",
+        "unknown",
+        "tbd",
+        "todo",
+        "n/a",
+        "na",
+        "none",
+        "not restored",
+        "no",
+        "false",
+    ];
+    if negative_or_unknown
+        .iter()
+        .any(|phrase| normalized == *phrase || normalized.starts_with(&format!("{phrase},")))
+    {
+        return false;
+    }
+
+    normalized == "true"
+        || normalized.starts_with("true ")
+        || normalized.starts_with("yes")
+        || normalized == "restored"
+        || normalized.starts_with("restored ")
+        || normalized.contains(" restored to ")
+        || normalized.starts_with("value restored")
 }
 
 fn parse_tshark_usb_packets(tshark_json: &str) -> Result<Vec<TsharkUsbPacket>> {
@@ -8627,6 +8682,60 @@ mod tests {
             assert!(
                 error
                     .contains("missing completed required field 'exact Pit House setting changed'"),
+                "{error}"
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn rejects_setting_change_bundle_with_unreported_restore_status() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = write_bundle_fixture_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseSettingChange,
+                b"synthetic pcapng bytes",
+                "# Operator Notes\n\n- [x] exact Pit House setting changed: green flag led 1\n- [x] starting setting value: green\n- [x] ending setting value: red\n- [x] whether the setting value was restored: not reported\n",
+            )?;
+
+            let error = match build_bundle(&paths, false) {
+                Ok(_) => {
+                    return Err(
+                        "setting-change bundle with unreported restore status should be rejected"
+                            .into(),
+                    );
+                }
+                Err(error) => error.to_string(),
+            };
+
+            assert!(
+                error.contains("must record an affirmative restore status"),
+                "{error}"
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn rejects_setting_change_bundle_when_setting_was_not_restored() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = write_bundle_fixture_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseSettingChange,
+                b"synthetic pcapng bytes",
+                "# Operator Notes\n\n- [x] exact Pit House setting changed: green flag led 1\n- [x] starting setting value: green\n- [x] ending setting value: red\n- [x] whether the setting value was restored: no, left at red\n",
+            )?;
+
+            let error = match build_bundle(&paths, false) {
+                Ok(_) => {
+                    return Err(
+                        "setting-change bundle without setting restoration should be rejected"
+                            .into(),
+                    );
+                }
+                Err(error) => error.to_string(),
+            };
+
+            assert!(
+                error.contains("must record an affirmative restore status"),
                 "{error}"
             );
             Ok(())
