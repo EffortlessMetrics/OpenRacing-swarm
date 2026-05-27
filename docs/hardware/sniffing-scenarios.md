@@ -51,6 +51,14 @@ status. A tiny or zero-match capture, or notes with restore status such as
 `not reported`, is low-yield/incomplete evidence and must not complete the
 scenario.
 
+The accepted 2026-05-27 repeat setting-change capture used
+`\\.\USBPcap2 --devices 4`, not the stale `--devices 3` selector from the
+low-yield attempt. Its derived artifacts record the KS wheel top-left front LED
+change from default teal to red and back to default teal, with no
+firmware/update/DFU page or prompt observed. This is accepted passive
+correlation evidence only; it is not semantic decode, sendability,
+hardware-output, native-visible, smoke-ready, or release-ready evidence.
+
 For `pit-house-firmware-page-observed`, the operator may observe that the page
 exists or that the app attempted enumeration. The operator must not start an
 update, accept a firmware prompt, enter DFU, or change firmware state.

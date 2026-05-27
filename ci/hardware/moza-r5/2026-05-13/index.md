@@ -65,12 +65,12 @@ Frequency-ranked tuples are decode-priority navigation only. They do not make an
 - Unknown tuple risk class: `unknown_do_not_send`
 - Output sendability claim: `false`
 - Decode candidate sample scope: `highest_frequency_unknown_commanded_tuples`
-- Decode candidate sample frames: `30`
+- Decode candidate sample frames: `45`
 - Decode candidate payload shapes: `5`
 - Payloads empty or zero-filled in samples: `true`
-- Decode candidate packet groups: `11`
+- Decode candidate packet groups: `15`
 - Unique packet patterns: `3`
-- Repeated contiguous motifs: `4`
+- Repeated contiguous motifs: `7`
 - Semantic hypothesis count: `5`
 - Semantic decode claim: `false`
 - Registry promotion claim: `false`
@@ -80,24 +80,25 @@ Frequency-ranked tuples are decode-priority navigation only. They do not make an
 
 | Correlation target | Tuples | Observed completed scenarios | Missing scenarios | Next capture | Sendable |
 | --- | --- | --- | --- | --- | --- |
-| `base_status_or_mode_poll_candidate` | `0x25/0x19/0x01`, `0x25/0x19/0x02`, `0x25/0x19/0x03` | `pit-house-open-idle, pit-house-full-controls` | `pit-house-setting-change, simhub-open-idle, simhub-output-session, simulator-session-start-stop` | `pit-house-setting-change` | `false` |
-| `session_or_status_keepalive_candidate` | `0x5A/0x1B/0x00`, `0x5D/0x1B/0x01` | `pit-house-open-idle, pit-house-full-controls` | `pit-house-setting-change, simhub-open-idle, simhub-output-session, simulator-session-start-stop` | `pit-house-setting-change` | `false` |
-- Residual payload export gap packets: `2`
-- Payload export gap scenarios: `2`
+| `base_status_or_mode_poll_candidate` | `0x25/0x19/0x01`, `0x25/0x19/0x02`, `0x25/0x19/0x03` | `pit-house-open-idle, pit-house-full-controls, pit-house-setting-change` | `simhub-open-idle, simhub-output-session, simulator-session-start-stop` | `simhub-open-idle` | `false` |
+| `session_or_status_keepalive_candidate` | `0x5A/0x1B/0x00`, `0x5D/0x1B/0x01` | `pit-house-open-idle, pit-house-full-controls, pit-house-setting-change` | `simhub-open-idle, simhub-output-session, simulator-session-start-stop` | `simhub-open-idle` | `false` |
+- Residual payload export gap packets: `4`
+- Payload export gap scenarios: `3`
 - Payload gap sendability claim: `false`
 
 | Payload gap scenario | Missing packets | Example packet | Data len | Sendable |
 | --- | ---: | ---: | ---: | --- |
 | `pit-house-open-idle` | 1 | 5 | 8 | `false` |
 | `pit-house-full-controls` | 1 | 5 | 8 | `false` |
+| `pit-house-setting-change` | 2 | 7449 | 8 | `false` |
 
 | Tuple | Count | Payload bytes | Scenarios |
 | --- | ---: | ---: | ---: |
-| `0x5A/0x1B/0x00` | 1896 | 0..0 | 2 |
-| `0x5D/0x1B/0x01` | 1894 | 2..2 | 2 |
-| `0x25/0x19/0x01` | 624 | 2..2 | 2 |
-| `0x25/0x19/0x02` | 624 | 2..2 | 2 |
-| `0x25/0x19/0x03` | 624 | 2..2 | 2 |
+| `0x5A/0x1B/0x00` | 3295 | 0..0 | 3 |
+| `0x5D/0x1B/0x01` | 3292 | 2..2 | 3 |
+| `0x25/0x19/0x01` | 1243 | 2..2 | 3 |
+| `0x25/0x19/0x02` | 1243 | 2..2 | 3 |
+| `0x25/0x19/0x03` | 1243 | 2..2 | 3 |
 
 | Semantic hypothesis tuple | Pattern hint | Hypothesis | Confidence | Sendable |
 | --- | --- | --- | --- | --- |
@@ -109,32 +110,35 @@ Frequency-ranked tuples are decode-priority navigation only. They do not make an
 
 | Payload shape tuple | Samples | Payload bytes | Payload kinds | Sendable |
 | --- | ---: | ---: | --- | --- |
-| `0x5A/0x1B/0x00` | 6 | 0..0 | `empty` | `false` |
-| `0x5D/0x1B/0x01` | 6 | 2..2 | `zero_filled` | `false` |
-| `0x25/0x19/0x01` | 6 | 2..2 | `zero_filled` | `false` |
-| `0x25/0x19/0x02` | 6 | 2..2 | `zero_filled` | `false` |
-| `0x25/0x19/0x03` | 6 | 2..2 | `zero_filled` | `false` |
+| `0x5A/0x1B/0x00` | 9 | 0..0 | `empty` | `false` |
+| `0x5D/0x1B/0x01` | 9 | 2..2 | `zero_filled` | `false` |
+| `0x25/0x19/0x01` | 9 | 2..2 | `zero_filled` | `false` |
+| `0x25/0x19/0x02` | 9 | 2..2 | `zero_filled` | `false` |
+| `0x25/0x19/0x03` | 9 | 2..2 | `zero_filled` | `false` |
 
 | Packet group pattern | Packets | Samples | Scenarios | Sendable |
 | --- | ---: | ---: | ---: | --- |
-| `0x25/0x19/0x02 -> 0x25/0x19/0x03 -> 0x25/0x19/0x01` | 5 | 15 | 2 | `false` |
-| `0x5A/0x1B/0x00 -> 0x5D/0x1B/0x01` | 5 | 10 | 2 | `false` |
-| `0x5A/0x1B/0x00 -> 0x5D/0x1B/0x01 -> 0x25/0x19/0x02 -> 0x25/0x19/0x03 -> 0x25/0x19/0x01` | 1 | 5 | 1 | `false` |
+| `0x25/0x19/0x02 -> 0x25/0x19/0x03 -> 0x25/0x19/0x01` | 6 | 18 | 3 | `false` |
+| `0x5A/0x1B/0x00 -> 0x5D/0x1B/0x01` | 6 | 12 | 3 | `false` |
+| `0x5A/0x1B/0x00 -> 0x5D/0x1B/0x01 -> 0x25/0x19/0x02 -> 0x25/0x19/0x03 -> 0x25/0x19/0x01` | 3 | 15 | 2 | `false` |
 
 | Repeated motif | Length | Observed | Scenarios | Sendable |
 | --- | ---: | ---: | ---: | --- |
-| `0x25/0x19/0x02 -> 0x25/0x19/0x03` | 2 | 6 | 2 | `false` |
-| `0x25/0x19/0x02 -> 0x25/0x19/0x03 -> 0x25/0x19/0x01` | 3 | 6 | 2 | `false` |
-| `0x25/0x19/0x03 -> 0x25/0x19/0x01` | 2 | 6 | 2 | `false` |
-| `0x5A/0x1B/0x00 -> 0x5D/0x1B/0x01` | 2 | 6 | 2 | `false` |
+| `0x25/0x19/0x02 -> 0x25/0x19/0x03` | 2 | 9 | 3 | `false` |
+| `0x25/0x19/0x02 -> 0x25/0x19/0x03 -> 0x25/0x19/0x01` | 3 | 9 | 3 | `false` |
+| `0x25/0x19/0x03 -> 0x25/0x19/0x01` | 2 | 9 | 3 | `false` |
+| `0x5A/0x1B/0x00 -> 0x5D/0x1B/0x01` | 2 | 9 | 3 | `false` |
+| `0x5A/0x1B/0x00 -> 0x5D/0x1B/0x01 -> 0x25/0x19/0x02` | 3 | 3 | 2 | `false` |
+| `0x5D/0x1B/0x01 -> 0x25/0x19/0x02` | 2 | 3 | 2 | `false` |
+| `0x5D/0x1B/0x01 -> 0x25/0x19/0x02 -> 0x25/0x19/0x03` | 3 | 3 | 2 | `false` |
 
 | Sample fixture tuple | Samples | First frame | First payload bytes | Sendable |
 | --- | ---: | --- | ---: | --- |
-| `0x5A/0x1B/0x00` | 6 | `7E015A1B0001` | 0 | `false` |
-| `0x5D/0x1B/0x01` | 6 | `7E035D1B01000007` | 2 | `false` |
-| `0x25/0x19/0x01` | 6 | `7E032519010000CD` | 2 | `false` |
-| `0x25/0x19/0x02` | 6 | `7E032519020000CE` | 2 | `false` |
-| `0x25/0x19/0x03` | 6 | `7E032519030000CF` | 2 | `false` |
+| `0x5A/0x1B/0x00` | 9 | `7E015A1B0001` | 0 | `false` |
+| `0x5D/0x1B/0x01` | 9 | `7E035D1B01000007` | 2 | `false` |
+| `0x25/0x19/0x01` | 9 | `7E032519010000CD` | 2 | `false` |
+| `0x25/0x19/0x02` | 9 | `7E032519020000CE` | 2 | `false` |
+| `0x25/0x19/0x03` | 9 | `7E032519030000CF` | 2 | `false` |
 
 ## Pit House Compatibility
 
@@ -174,7 +178,7 @@ This section is external-smoke navigation only. Simulator telemetry and bounded 
 
 This section is protocol research/support navigation only. Passive sniff artifacts do not authorize output, do not satisfy native-visible or smoke-ready gates, and are not required for native OpenRacing control.
 
-- Recorded scenarios: `2` / `6`
+- Recorded scenarios: `3` / `6`
 - Readiness claim: `false`
 - Blocks native control: `false`
 - Blocks native visible: `false`
@@ -184,7 +188,7 @@ This section is protocol research/support navigation only. Passive sniff artifac
 | --- | --- | --- | --- | --- |
 | `pit-house-open-idle` | `summary_recorded` | `present_non_claiming` | `present_non_claiming` | `present_non_claiming` |
 | `pit-house-full-controls` | `summary_recorded` | `present_non_claiming` | `present_non_claiming` | `present_non_claiming` |
-| `pit-house-setting-change` | `low_yield_incomplete` | `present_non_claiming` | `missing` | `missing` |
+| `pit-house-setting-change` | `summary_recorded` | `present_non_claiming` | `present_non_claiming` | `present_non_claiming` |
 | `simhub-open-idle` | `partial_or_unaccepted` | `present_non_claiming` | `missing` | `missing` |
 | `simhub-output-session` | `partial_or_unaccepted` | `present_non_claiming` | `missing` | `missing` |
 | `simulator-session-start-stop` | `partial_or_unaccepted` | `present_non_claiming` | `missing` | `missing` |

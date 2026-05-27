@@ -52,9 +52,15 @@ proposing any vendor-control output path. The current receipt now records that
 correlation plan explicitly: two non-sendable targets, completed observations in
 `pit-house-open-idle` and `pit-house-full-controls`, and
 `pit-house-setting-change` as the next passive capture priority before SimHub or
-simulator correlation. The first bounded setting-change capture attempt is
+simulator correlation. The first bounded setting-change capture attempt remains
 classified as low-yield/incomplete: 355 bytes, six packets, zero Moza
-`0x346E:0x0004` matches, and restore status `not reported`.
+`0x346E:0x0004` matches, and restore status `not reported`. The repeat capture
+used the corrected selector `\\.\USBPcap2 --devices 4` and is now recorded as
+accepted passive correlation evidence only: 100,492 Moza-matched packets over
+113.446197 seconds, host-to-device vendor candidates `0x7E` and `0x80`, and
+operator notes for the KS wheel top-left front LED changing default teal -> red
+-> default teal. The raw pcap remains local, and the bounded helper's final
+receipt-write file-lock failure is tracked as tooling follow-up only.
 
 ## Current Artifacts
 
@@ -63,7 +69,7 @@ The following passive sniff artifacts are committed:
 | Scenario | Plan artifact | Current status |
 | --- | --- | --- |
 | Pit House open idle | `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-open-idle/sniff-plan.json` | Summary recorded, non-claiming |
-| Pit House setting change | `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-plan.json`; `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/low-yield-capture-classification.json` | Low-yield incomplete; repeat required |
+| Pit House setting change | `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-plan.json`; `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/low-yield-capture-classification.json`; `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-receipt.json`; `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-summary.json`; `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-bundle-manifest.json`; `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/operator-notes.md` | Summary recorded, non-claiming; prior low-yield attempt retained |
 | SimHub open idle | `ci/hardware/sniff/moza-r5/2026-05-13/simhub-open-idle/sniff-plan.json` | Plan only |
 | SimHub output session | `ci/hardware/sniff/moza-r5/2026-05-13/simhub-output-session/sniff-plan.json` | Plan only |
 | Simulator session start/stop | `ci/hardware/sniff/moza-r5/2026-05-13/simulator-session-start-stop/sniff-plan.json` | Plan only |
@@ -102,10 +108,12 @@ the two remaining payload export gaps as packet/frame locators, one in
 hypothesis, or residual packet is sendable without a future semantic decode,
 reviewed plan, fresh bench clear, and exact authorization.
 The same review now records `decode_candidate_semantic_correlation_plan` as
-capture navigation only. It requires non-claiming `sniff-receipt.json` and
-`sniff-summary.json` artifacts for the missing correlation scenarios, keeps
-`planned_next_output.allowed=false`, and does not satisfy native-visible,
-smoke-ready, coexistence, simulator, or release-ready gates.
+capture navigation only. It now treats `pit-house-setting-change` as a completed
+passive correlation scenario and requires non-claiming `sniff-receipt.json` and
+`sniff-summary.json` artifacts for the remaining SimHub and simulator
+correlation scenarios. It keeps `planned_next_output.allowed=false` and does not
+satisfy native-visible, smoke-ready, coexistence, simulator, or release-ready
+gates.
 
 ## Boundaries
 
