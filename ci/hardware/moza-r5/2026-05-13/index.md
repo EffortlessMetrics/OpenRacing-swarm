@@ -184,7 +184,7 @@ This section is protocol research/support navigation only. Passive sniff artifac
 | --- | --- | --- | --- | --- |
 | `pit-house-open-idle` | `summary_recorded` | `present_non_claiming` | `present_non_claiming` | `present_non_claiming` |
 | `pit-house-full-controls` | `summary_recorded` | `present_non_claiming` | `present_non_claiming` | `present_non_claiming` |
-| `pit-house-setting-change` | `partial_or_unaccepted` | `present_non_claiming` | `missing` | `missing` |
+| `pit-house-setting-change` | `low_yield_incomplete` | `present_non_claiming` | `missing` | `missing` |
 | `simhub-open-idle` | `partial_or_unaccepted` | `present_non_claiming` | `missing` | `missing` |
 | `simhub-output-session` | `partial_or_unaccepted` | `present_non_claiming` | `missing` | `missing` |
 | `simulator-session-start-stop` | `partial_or_unaccepted` | `present_non_claiming` | `missing` | `missing` |

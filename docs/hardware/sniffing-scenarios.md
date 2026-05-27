@@ -26,7 +26,7 @@ custom
 | `enumeration` | Descriptor, interface, and endpoint layout from host-side USB traffic | Not native output evidence |
 | `vendor-app-closed-idle` | Baseline traffic when the vendor app is not active | Does not prove coexistence |
 | `pit-house-open-idle` | Pit House discovery, polling, and idle traffic | Do not open firmware or update pages |
-| `pit-house-setting-change` | Feature or output behavior around one explicit setting change | Record the exact setting changed |
+| `pit-house-setting-change` | Feature or output behavior around one explicit setting change | Record the exact setting changed and restore it |
 | `pit-house-firmware-page-observed` | Unsafe page-state detection for support triage | Observation only; do not update firmware |
 | `simhub-open-idle` | SimHub discovery and idle polling | No OpenRacing dependency |
 | `simhub-device-detect` | SimHub detection and device classification traffic | Not native OpenRacing evidence |
@@ -46,7 +46,10 @@ All scenarios share the same safety boundary:
 - raw `.pcapng` is not committed by default
 
 For `pit-house-setting-change`, the operator evidence must name the exact
-setting, the starting value, the ending value, and whether the value was restored.
+setting, the starting value, the ending value, and an affirmative restore
+status. A tiny or zero-match capture, or notes with restore status such as
+`not reported`, is low-yield/incomplete evidence and must not complete the
+scenario.
 
 For `pit-house-firmware-page-observed`, the operator may observe that the page
 exists or that the app attempted enumeration. The operator must not start an

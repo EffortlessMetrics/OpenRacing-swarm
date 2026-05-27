@@ -124,9 +124,12 @@ plan is capture navigation only: `semantic_decode_claim=false`,
 `protocol_evidence_sufficient_for_output_plan=false`.
 The `pit-house-setting-change` sniff plan now pins the scenario-specific
 operator evidence required for that next capture: exact Pit House setting,
-starting value, ending value, and whether the setting value was restored. That
-hardens the passive capture handoff only and does not create a semantic decode,
-registry promotion, output sendability, or readiness claim.
+starting value, ending value, and an affirmative restore status. The first
+bounded setting-change capture attempt on 2026-05-27 is classified as low-yield
+and incomplete: 355 bytes, six packets, zero `0x346E:0x0004` matches, and
+restore status `not reported`. That hardens the passive capture handoff only
+and does not create a semantic decode, registry promotion, output sendability,
+or readiness claim.
 
 The latest pre-output, lane analysis, role-status, and artifact-index receipts
 report six proven input roles and one remaining generic auxiliary role.
@@ -4427,6 +4430,82 @@ focused tests, and source-of-truth updates. Do not remove bounded
 `sniff-capture`, passive sniff plans, checked-in sniff evidence, local raw
 capture attempts, consumed hardware attempts, protocol evidence review receipts,
 or existing no-output capture handoff commands.
+
+## Work item: classify-low-yield-setting-change-capture
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: accepting the Pit House setting-change passive correlation scenario
+Blocked by: the first bounded setting-change capture produced a 355-byte,
+six-packet pcap with zero `0x346E:0x0004` matches, and operator notes recorded
+`green flag led 1` from green to red but left restore status as `not reported`.
+
+### Goal
+
+Record that capture as low-yield/incomplete evidence and harden the passive
+navigation so future agents do not treat a failed or tiny setting-change capture
+as accepted decoded protocol evidence.
+
+### Production Delta
+
+Add `low-yield-capture-classification.json` beside the setting-change sniff
+plan. The classification records the local pcap hash, 355-byte size, six-packet
+count, zero Moza vendor/product matches, and incomplete restore status while
+keeping all control/readiness/output claims false. Passive sniff navigation now
+surfaces that classification as `low_yield_incomplete`, keeps the scenario in
+the missing queue, and recommends repeating the capture. The passive artifact
+status helper no longer counts a `success=false` sniff summary as
+`present_non_claiming`. `sniff-bundle` now rejects `pit-house-setting-change`
+operator notes whose restore status is missing, unknown, or not affirmative.
+
+### Non-goals
+
+No raw `.pcapng` commit, sniff receipt promotion, successful sniff summary
+promotion, accepted bundle, HID open, serial open, read-only query send,
+hardware output, authorization, PIDFF rerun, direct HID report `0xaf`, high
+torque, serial config, firmware, DFU, native-control claim, native-visible
+claim, smoke-ready claim, Pit House coexistence claim, simulator claim,
+release-ready claim, semantic command decode, registry promotion, tuple
+sendability claim, or completion of the `pit-house-setting-change` scenario.
+
+### Acceptance
+
+- The low-yield classification records the 355-byte / six-packet capture as
+  incomplete and non-claiming.
+- `pit-house-setting-change` remains unrecorded/unfinished in passive sniff
+  navigation.
+- A `success=false` sniff summary is `present_not_accepted`, not recorded
+  evidence.
+- `sniff-bundle` rejects setting-change notes with restore status
+  `not reported` or not restored.
+- The next recommended action remains a repeat passive setting-change capture
+  with Pit House already open, one reversible setting, start/end/restored
+  values recorded, and no firmware/update/DFU interaction.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_bundle -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl passive_sniff -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_sniff_next_operator_commands_parse -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-low-yield-setting-change.json --md-out ci/hardware/moza-r5/2026-05-13/index.md
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-low-yield-setting-change.json --md-out target/moza-current/bench-wizard-low-yield-setting-change.md
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the low-yield classification artifact, passive navigation
+classification, setting-change restore-status hardening, focused tests, and
+source-of-truth updates. Do not remove the local raw capture attempt, existing
+passive sniff plans, checked-in accepted sniff evidence, consumed hardware
+attempts, protocol evidence review receipts, or bounded capture helper.
 
 ## Work item: native-visible-promotion
 
