@@ -2741,6 +2741,7 @@ fn moza_passive_sniff_capture_checklist(
                 local_dir.display()
             ),
             "Run wheelctl hardware doctor --json-out target/moza-current/passive-sniff-capture-hardware-doctor.json --json and prefer any /tools/usbpcap_descriptor_capture/usbpcap_moza_device_hints entry when selecting the USBPcap interface and device filter.".to_string(),
+            "Do not reuse stale --devices values from earlier captures; the bounded sniff-capture helper should receive --hardware-doctor so the requested selector can be checked against the fresh Moza hint.".to_string(),
             "Start the bounded wheelctl hardware sniff-capture helper, USBPcap, Wireshark, or tshark capture on the USB controller that contains the Moza R5 before starting the external app.".to_string(),
             moza_passive_sniff_capture_action(scenario),
             format!(
@@ -2796,7 +2797,7 @@ fn moza_passive_sniff_external_capture_commands(local_pcapng: &Path) -> Vec<Valu
             "duration_ms": 60_000,
             "raw_pcapng_commit_default": false,
             "command_template": format!(
-                "wheelctl hardware sniff-capture --usbpcapcmd {} --usbpcap-interface {} --devices <capture_devices_value> --duration-ms 60000 --out {} --confirm-external-passive-capture --json-out {}",
+                "wheelctl hardware sniff-capture --usbpcapcmd {} --usbpcap-interface {} --devices <capture_devices_value> --hardware-doctor target/moza-current/passive-sniff-capture-hardware-doctor.json --duration-ms 60000 --out {} --confirm-external-passive-capture --json-out {}",
                 command_arg("<USBPcapCMD.exe from hardware doctor>"),
                 command_arg("<USBPcap interface from hardware doctor>"),
                 command_arg(&local_pcapng.display().to_string()),
@@ -2805,6 +2806,7 @@ fn moza_passive_sniff_external_capture_commands(local_pcapng: &Path) -> Vec<Valu
             "notes": [
                 "preferred bounded helper after refreshing hardware doctor and before launching or changing the external app",
                 "replace placeholders with the USBPcap interface, device filter, and extcap path from the hardware doctor USBPcap Moza device hint",
+                "the helper records whether the requested selector matches the current Moza hint; stale or non-Moza selectors fail closed for the local capture receipt",
                 "wheelctl starts and stops only the external passive USBPcapCMD capture process; it does not open HID or serial and it sends no hardware output",
                 "the local sniff-capture receipt is not a sniff receipt, sniff summary, readiness claim, or accepted lane evidence"
             ]
@@ -2825,6 +2827,7 @@ fn moza_passive_sniff_external_capture_commands(local_pcapng: &Path) -> Vec<Valu
             "notes": [
                 "fallback raw USBPcapCMD form after refreshing hardware doctor and before launching or changing the external app",
                 "replace the placeholders with the USBPcap interface, device filter, and extcap path from the hardware doctor USBPcap Moza device hint",
+                "do not reuse stale --devices values from earlier captures; verify the raw selector against the fresh hardware doctor hint before capture",
                 "this command creates a local raw pcapng only; it is not OpenRacing hardware output and it is not a readiness claim"
             ]
         }),

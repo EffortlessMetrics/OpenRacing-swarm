@@ -613,6 +613,8 @@ mod tests {
             "\\\\.\\USBPcap2",
             "--devices",
             "3",
+            "--hardware-doctor",
+            "target/moza-current/passive-sniff-capture-hardware-doctor.json",
             "--duration-ms",
             "60000",
             "--out",
@@ -626,6 +628,7 @@ mod tests {
                 usbpcapcmd,
                 usbpcap_interface,
                 devices,
+                hardware_doctor,
                 duration_ms,
                 out,
                 overwrite,
@@ -638,6 +641,10 @@ mod tests {
                 );
                 assert_eq!(usbpcap_interface, "\\\\.\\USBPcap2");
                 assert_eq!(devices, "3");
+                assert_eq!(
+                    hardware_doctor.as_ref().and_then(|p| p.to_str()),
+                    Some("target/moza-current/passive-sniff-capture-hardware-doctor.json")
+                );
                 assert_eq!(*duration_ms, 60_000);
                 assert_eq!(
                     out.to_str(),
