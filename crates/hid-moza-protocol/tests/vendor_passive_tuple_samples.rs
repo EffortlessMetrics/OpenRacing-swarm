@@ -356,12 +356,15 @@ fn passive_decode_candidate_samples_preserve_non_sendable_correlation_plan() -> 
     );
     assert_eq!(
         string_array_at(keepalive, "/observed_completed_scenarios")?,
-        ["pit-house-open-idle", "pit-house-full-controls"]
+        [
+            "pit-house-open-idle",
+            "pit-house-full-controls",
+            "pit-house-setting-change",
+        ]
     );
     assert_eq!(
         string_array_at(keepalive, "/missing_correlation_scenarios")?,
         [
-            "pit-house-setting-change",
             "simhub-open-idle",
             "simhub-output-session",
             "simulator-session-start-stop"
@@ -369,7 +372,7 @@ fn passive_decode_candidate_samples_preserve_non_sendable_correlation_plan() -> 
     );
     assert_eq!(
         str_field(keepalive, "next_capture_priority")?,
-        "pit-house-setting-change"
+        "simhub-open-idle"
     );
     assert!(!bool_field(keepalive, "output_sendability_claim")?);
 
@@ -381,7 +384,7 @@ fn passive_decode_candidate_samples_preserve_non_sendable_correlation_plan() -> 
     );
     assert_eq!(
         str_field(triad, "next_capture_priority")?,
-        "pit-house-setting-change"
+        "simhub-open-idle"
     );
     assert!(!bool_field(triad, "semantic_decode_claim")?);
     assert!(!bool_field(triad, "registry_promotion_claim")?);
@@ -391,7 +394,12 @@ fn passive_decode_candidate_samples_preserve_non_sendable_correlation_plan() -> 
     assert!(
         string_array_at(plan, "/required_artifacts")?
             .iter()
-            .any(|artifact| artifact.ends_with("pit-house-setting-change/sniff-summary.json"))
+            .any(|artifact| artifact.ends_with("simhub-open-idle/sniff-summary.json"))
+    );
+    assert!(
+        string_array_at(plan, "/required_artifacts")?
+            .iter()
+            .all(|artifact| !artifact.contains("pit-house-setting-change"))
     );
 
     Ok(())
@@ -413,10 +421,10 @@ fn passive_decode_candidate_samples_preserve_packet_group_hints() -> TestResult 
         str_field(summary, "sample_scope")?,
         "highest_frequency_unknown_commanded_tuples"
     );
-    assert_eq!(usize_field(summary, "packet_group_count")?, 11);
-    assert_eq!(usize_field(summary, "sample_count")?, 30);
+    assert_eq!(usize_field(summary, "packet_group_count")?, 15);
+    assert_eq!(usize_field(summary, "sample_count")?, 45);
     assert_eq!(usize_field(summary, "unique_packet_pattern_count")?, 3);
-    assert_eq!(usize_field(summary, "repeated_contiguous_motif_count")?, 4);
+    assert_eq!(usize_field(summary, "repeated_contiguous_motif_count")?, 7);
     assert!(bool_field(summary, "all_packet_groups_checksum_valid")?);
     assert!(bool_field(summary, "all_packet_groups_unknown_commanded")?);
     assert!(bool_field(summary, "all_packet_groups_non_sendable")?);
@@ -448,11 +456,48 @@ fn passive_decode_candidate_samples_preserve_packet_group_hints() -> TestResult 
     assert!(!bool_field(combined, "hardware_output_authorized")?);
     assert!(!bool_field(combined, "output_sendability_claim")?);
 
+    let setting_change_combined = packet_group_for(groups, "pit-house-setting-change", 3)?;
+    assert_eq!(
+        usize_field(setting_change_combined, "frame_ordinal_min")?,
+        1
+    );
+    assert_eq!(
+        usize_field(setting_change_combined, "frame_ordinal_max")?,
+        5
+    );
+    assert_eq!(
+        string_array_at(setting_change_combined, "/tuple_sequence")?,
+        Vec::from([
+            "0x5A/0x1B/0x00",
+            "0x5D/0x1B/0x01",
+            "0x25/0x19/0x02",
+            "0x25/0x19/0x03",
+            "0x25/0x19/0x01",
+        ])
+    );
+    assert_eq!(usize_field(setting_change_combined, "sample_count")?, 5);
+    assert!(bool_field(
+        setting_change_combined,
+        "all_samples_checksum_valid"
+    )?);
+    assert!(bool_field(
+        setting_change_combined,
+        "all_samples_unknown_commanded"
+    )?);
+    assert!(!bool_field(
+        setting_change_combined,
+        "hardware_output_authorized"
+    )?);
+    assert!(!bool_field(
+        setting_change_combined,
+        "output_sendability_claim"
+    )?);
+
     let patterns = array_at(summary, "/packet_patterns")?;
     let pair = packet_pattern_for_sequence(patterns, &["0x5A/0x1B/0x00", "0x5D/0x1B/0x01"])?;
-    assert_eq!(usize_field(pair, "observed_packet_count")?, 5);
-    assert_eq!(usize_field(pair, "sample_count")?, 10);
-    assert_eq!(usize_field(pair, "scenario_count")?, 2);
+    assert_eq!(usize_field(pair, "observed_packet_count")?, 6);
+    assert_eq!(usize_field(pair, "sample_count")?, 12);
+    assert_eq!(usize_field(pair, "scenario_count")?, 3);
     assert!(!bool_field(pair, "hardware_output_authorized")?);
     assert!(!bool_field(pair, "output_sendability_claim")?);
 
@@ -460,9 +505,9 @@ fn passive_decode_candidate_samples_preserve_packet_group_hints() -> TestResult 
         patterns,
         &["0x25/0x19/0x02", "0x25/0x19/0x03", "0x25/0x19/0x01"],
     )?;
-    assert_eq!(usize_field(triad, "observed_packet_count")?, 5);
-    assert_eq!(usize_field(triad, "sample_count")?, 15);
-    assert_eq!(usize_field(triad, "scenario_count")?, 2);
+    assert_eq!(usize_field(triad, "observed_packet_count")?, 6);
+    assert_eq!(usize_field(triad, "sample_count")?, 18);
+    assert_eq!(usize_field(triad, "scenario_count")?, 3);
     assert!(!bool_field(triad, "hardware_output_authorized")?);
     assert!(!bool_field(triad, "output_sendability_claim")?);
 
@@ -476,17 +521,17 @@ fn passive_decode_candidate_samples_preserve_packet_group_hints() -> TestResult 
             "0x25/0x19/0x01",
         ],
     )?;
-    assert_eq!(usize_field(combined_pattern, "observed_packet_count")?, 1);
-    assert_eq!(usize_field(combined_pattern, "sample_count")?, 5);
-    assert_eq!(usize_field(combined_pattern, "scenario_count")?, 1);
+    assert_eq!(usize_field(combined_pattern, "observed_packet_count")?, 3);
+    assert_eq!(usize_field(combined_pattern, "sample_count")?, 15);
+    assert_eq!(usize_field(combined_pattern, "scenario_count")?, 2);
     assert!(!bool_field(combined_pattern, "hardware_output_authorized")?);
     assert!(!bool_field(combined_pattern, "output_sendability_claim")?);
 
     let motifs = array_at(summary, "/repeated_contiguous_motifs")?;
     let repeated_pair = repeated_motif_for_sequence(motifs, &["0x5A/0x1B/0x00", "0x5D/0x1B/0x01"])?;
     assert_eq!(usize_field(repeated_pair, "motif_len")?, 2);
-    assert_eq!(usize_field(repeated_pair, "observed_count")?, 6);
-    assert_eq!(usize_field(repeated_pair, "scenario_count")?, 2);
+    assert_eq!(usize_field(repeated_pair, "observed_count")?, 9);
+    assert_eq!(usize_field(repeated_pair, "scenario_count")?, 3);
     assert!(!bool_field(repeated_pair, "hardware_output_authorized")?);
     assert!(!bool_field(repeated_pair, "output_sendability_claim")?);
 
@@ -495,8 +540,8 @@ fn passive_decode_candidate_samples_preserve_packet_group_hints() -> TestResult 
         &["0x25/0x19/0x02", "0x25/0x19/0x03", "0x25/0x19/0x01"],
     )?;
     assert_eq!(usize_field(repeated_triad, "motif_len")?, 3);
-    assert_eq!(usize_field(repeated_triad, "observed_count")?, 6);
-    assert_eq!(usize_field(repeated_triad, "scenario_count")?, 2);
+    assert_eq!(usize_field(repeated_triad, "observed_count")?, 9);
+    assert_eq!(usize_field(repeated_triad, "scenario_count")?, 3);
     assert!(!bool_field(repeated_triad, "hardware_output_authorized")?);
     assert!(!bool_field(repeated_triad, "output_sendability_claim")?);
 
@@ -520,7 +565,7 @@ fn passive_decode_candidate_samples_preserve_payload_shape_hints() -> TestResult
         "highest_frequency_unknown_commanded_tuples"
     );
     assert_eq!(usize_field(summary, "tuple_count")?, 5);
-    assert_eq!(usize_field(summary, "sample_count")?, 30);
+    assert_eq!(usize_field(summary, "sample_count")?, 45);
     assert_eq!(usize_field(summary, "unique_payload_shape_count")?, 5);
     assert!(bool_field(summary, "all_samples_checksum_valid")?);
     assert!(bool_field(summary, "all_samples_unknown_commanded")?);
@@ -538,7 +583,7 @@ fn passive_decode_candidate_samples_preserve_payload_shape_hints() -> TestResult
 
     let shapes = array_at(summary, "/tuple_payload_shapes")?;
     let empty_status = payload_shape_for_tuple(shapes, "0x5A/0x1B/0x00")?;
-    assert_eq!(usize_field(empty_status, "sample_count")?, 6);
+    assert_eq!(usize_field(empty_status, "sample_count")?, 9);
     assert_eq!(usize_field(empty_status, "payload_len_min")?, 0);
     assert_eq!(usize_field(empty_status, "payload_len_max")?, 0);
     assert_eq!(
@@ -563,7 +608,7 @@ fn passive_decode_candidate_samples_preserve_payload_shape_hints() -> TestResult
         "0x25/0x19/0x03",
     ] {
         let zero_status = payload_shape_for_tuple(shapes, tuple_id)?;
-        assert_eq!(usize_field(zero_status, "sample_count")?, 6);
+        assert_eq!(usize_field(zero_status, "sample_count")?, 9);
         assert_eq!(usize_field(zero_status, "payload_len_min")?, 2);
         assert_eq!(usize_field(zero_status, "payload_len_max")?, 2);
         assert_eq!(
@@ -598,7 +643,7 @@ fn passive_decode_candidate_samples_are_non_claiming() -> TestResult {
         str_field(coverage, "decode_candidate_sample_scope")?,
         "highest_frequency_unknown_commanded_tuples"
     );
-    assert_eq!(usize_field(coverage, "decode_candidate_sample_count")?, 30);
+    assert_eq!(usize_field(coverage, "decode_candidate_sample_count")?, 45);
     assert_eq!(
         str_field(coverage, "unknown_tuple_risk_class")?,
         "unknown_do_not_send"
@@ -690,7 +735,7 @@ fn observed_decoder_accepts_sample_shape_without_promoting_unknown_tuples() -> T
         }
     }
 
-    assert_eq!(decoded_sample_count, 30);
+    assert_eq!(decoded_sample_count, 45);
     Ok(())
 }
 
@@ -721,7 +766,7 @@ fn passive_decode_candidate_samples_preserve_repeated_packet_order_hints() -> Te
         paired_1b_samples,
         sample_frames_for_tuple(fixtures, "0x5D/0x1B/0x01")?.len()
     );
-    assert_eq!(paired_1b_samples, 6);
+    assert_eq!(paired_1b_samples, 9);
 
     let mut ordered_19_triads = 0usize;
     for first in sample_frames_for_tuple(fixtures, "0x25/0x19/0x02")? {
@@ -757,7 +802,7 @@ fn passive_decode_candidate_samples_preserve_repeated_packet_order_hints() -> Te
         ordered_19_triads,
         sample_frames_for_tuple(fixtures, "0x25/0x19/0x01")?.len()
     );
-    assert_eq!(ordered_19_triads, 6);
+    assert_eq!(ordered_19_triads, 9);
 
     Ok(())
 }

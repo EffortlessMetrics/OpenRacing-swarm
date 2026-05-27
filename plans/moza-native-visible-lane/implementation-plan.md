@@ -129,7 +129,21 @@ bounded setting-change capture attempt on 2026-05-27 is classified as low-yield
 and incomplete: 355 bytes, six packets, zero `0x346E:0x0004` matches, and
 restore status `not reported`. That hardens the passive capture handoff only
 and does not create a semantic decode, registry promotion, output sendability,
-or readiness claim.
+or readiness claim. The repeat setting-change capture used the corrected
+USBPcap selector `\\.\USBPcap2 --devices 4` and is now recorded as accepted
+passive correlation evidence only. The local raw pcap remains uncommitted, while
+checked-in derived artifacts record 100,492 Moza `0x346E:0x0004` packets across
+113.446197 seconds, host-to-device vendor candidates `0x7E` and `0x80`, and
+operator notes for a KS wheel top-left front LED change from default teal to red
+and back to default teal with no firmware/update/DFU page or prompt observed.
+The bounded `sniff-capture` helper's file-lock failure is a tooling note only:
+the pcap finalized, `capinfos` and `sniff-summary` validated it, and the
+accepted bundle manifest remains non-claiming with `includes_raw_pcapng=false`.
+Refreshing `vendor-protocol-evidence-review.json` moves
+`pit-house-setting-change` into completed passive correlation scenarios and
+routes the next no-output correlation gap to SimHub/simulator captures; it still
+keeps semantic decode, registry promotion, output sendability, hardware output,
+native-visible, smoke-ready, and release-ready claims false.
 
 The latest pre-output, lane analysis, role-status, and artifact-index receipts
 report six proven input roles and one remaining generic auxiliary role.
@@ -4506,6 +4520,92 @@ classification, setting-change restore-status hardening, focused tests, and
 source-of-truth updates. Do not remove the local raw capture attempt, existing
 passive sniff plans, checked-in accepted sniff evidence, consumed hardware
 attempts, protocol evidence review receipts, or bounded capture helper.
+
+## Work item: record-pit-house-setting-change-capture
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: no-output protocol correlation after the low-yield setting-change
+attempt
+Blocked by: n/a
+
+### Goal
+
+Preserve the successful repeat Pit House setting-change capture as accepted
+passive correlation evidence while leaving the raw pcap local and keeping all
+native-control, native-visible, smoke-ready, release-ready, authorization, and
+sendability claims false.
+
+### Production Delta
+
+Add derived setting-change artifacts beside the existing plan and low-yield
+classification: `sniff-receipt.json`, `sniff-summary.json`,
+`sniff-bundle-manifest.json`, and `operator-notes.md`. The repeat capture used
+`\\.\USBPcap2 --devices 4`, recorded 100,492 Moza `0x346E:0x0004` packets over
+113.446197 seconds, and exposed host-to-device vendor candidates `0x7E` and
+`0x80`. Operator notes record Pit House closed, Pit House opened, the KS wheel
+top-left front LED changed from default teal to red, and the setting restored to
+default teal. The notes also record that no firmware/update/DFU page or prompt
+was observed and no firmware/update/DFU interaction was performed.
+
+Refresh `vendor-protocol-evidence-review.json` so the setting-change scenario is
+completed passive correlation evidence and the next no-output correlation gaps
+are SimHub and simulator scenarios. The refreshed review remains a protocol
+navigation artifact only.
+
+The bounded `sniff-capture` helper's post-capture file-lock failure is recorded
+as tooling follow-up only: the helper did not write its local capture receipt,
+but the pcap finalized and was validated by `capinfos`, `sniff-summary`, and
+`sniff-bundle`.
+
+### Non-goals
+
+No raw `.pcapng` commit, ZIP bundle commit, HID open, serial open, read-only
+query send, OpenRacing hardware output, authorization, PIDFF rerun, direct HID
+report `0xaf`, high torque, serial config, firmware, DFU, native-control claim,
+native-visible claim, smoke-ready claim, Pit House coexistence claim, simulator
+claim, release-ready claim, semantic command decode, registry promotion, tuple
+sendability claim, or evidence that the low-yield capture became accepted.
+
+### Acceptance
+
+- `pit-house-setting-change` has non-claiming receipt, summary, bundle manifest,
+  and operator-note metadata checked in.
+- The raw pcap and ZIP bundle remain local scratch artifacts.
+- The low-yield classification remains checked in as historical failed evidence.
+- Artifact-index and bench-wizard treat the setting-change scenario as recorded
+  passive evidence only.
+- `vendor-protocol-evidence-review.json` includes `pit-house-setting-change` in
+  completed scenarios and leaves SimHub/simulator scenarios as the remaining
+  passive correlation gaps.
+- All native-control, native-visible, smoke-ready, release-ready, hardware
+  output, semantic decode, registry promotion, authorization, and tuple
+  sendability claims remain false.
+
+### Proof Commands
+
+```powershell
+cargo test --locked -p wheelctl --bin wheelctl sniff_bundle -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl passive_sniff -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_sniff_next_operator_commands_parse -- --nocapture
+cargo test -p racing-wheel-hid-moza-protocol --test vendor_passive_tuple_samples --locked -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-setting-change-recorded.json --md-out ci/hardware/moza-r5/2026-05-13/index.md
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-setting-change-recorded.json --md-out target/moza-current/bench-wizard-setting-change-recorded.md
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the accepted setting-change derived artifacts, refreshed vendor
+protocol evidence review, generated artifact index, source-of-truth updates, and
+operator-note metadata. Do not remove the low-yield classification, passive
+sniff plans, other checked-in sniff evidence, local raw capture attempts,
+consumed hardware attempts, or bounded capture helper.
 
 ## Work item: native-visible-promotion
 

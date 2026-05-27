@@ -1697,6 +1697,27 @@ commands = [
 ]
 
 [[work_item]]
+id = "record-pit-house-setting-change-capture"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-record-pit-house-setting-change-capture"
+current_pointer = "ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-summary.json"
+claim_boundary = "No-output passive correlation evidence only; the repeat Pit House setting-change capture records derived receipt, summary, bundle manifest, and operator notes without raw pcap, hardware output, native-control, native-visible, smoke-ready, release-ready, coexistence, simulator, semantic decode, registry promotion, authorization, or tuple sendability claims."
+commands = [
+  "cargo test --locked -p wheelctl --bin wheelctl sniff_bundle -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl passive_sniff -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl bench_wizard_sniff_next_operator_commands_parse -- --nocapture",
+  "cargo test -p racing-wheel-hid-moza-protocol --test vendor_passive_tuple_samples --locked -- --nocapture",
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-setting-change-recorded.json --md-out ci/hardware/moza-r5/2026-05-13/index.md",
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-setting-change-recorded.json --md-out target/moza-current/bench-wizard-setting-change-recorded.md",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

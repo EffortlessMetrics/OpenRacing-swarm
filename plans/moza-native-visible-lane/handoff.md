@@ -1,7 +1,7 @@
 # Moza Native Visible Lane Handoff
 
 Status: blocked
-Last verified: 2026-05-21
+Last verified: 2026-05-27
 Lane: `ci/hardware/moza-r5/2026-05-13`
 Active goal: `.openracing/goals/active.toml`
 
@@ -60,12 +60,15 @@ standard PIDFF response under the same 5 percent / 2000 ms envelope.
 Six passive sniff scenario plans now exist under
 `ci/hardware/sniff/moza-r5/2026-05-13`. The `pit-house-open-idle` and
 `pit-house-full-controls` scenarios have checked-in non-claiming sniff
-receipts, classified summaries, and bundle manifests. The remaining
-`pit-house-setting-change`, `simhub-open-idle`, `simhub-output-session`, and
+receipts, classified summaries, and bundle manifests. The repeat
+`pit-house-setting-change` capture is also recorded as accepted passive
+correlation evidence with derived receipt, summary, bundle manifest, and
+operator notes only; raw pcapng and ZIP artifacts remain local scratch. The
+remaining `simhub-open-idle`, `simhub-output-session`, and
 `simulator-session-start-stop` scenarios remain navigation-only until matching
-pcap receipts and summaries exist. No passive sniff artifact authorizes
-hardware output or satisfies native-visible, smoke-ready, or coexistence gates.
-No further hardware output is authorized.
+pcap receipts and summaries exist. No passive sniff artifact authorizes hardware
+output or satisfies native-visible, smoke-ready, or coexistence gates. No further
+hardware output is authorized.
 
 `vendor-protocol-evidence-review.json` now records a no-output review across the
 checked-in passive sniff summaries, command registry, consumed vendor-authority
@@ -148,7 +151,14 @@ status before the capture can become accepted passive correlation evidence.
 The 2026-05-27 bounded passive setting-change run is recorded only as
 `low-yield-capture-classification.json`: the local pcap was 355 bytes with six
 packets, zero `0x346E:0x0004` matches, and restore status `not reported`. It is
-not decoded setting-change evidence and does not complete the scenario.
+not decoded setting-change evidence and does not complete the scenario. A repeat
+capture used the corrected USBPcap selector `\\.\USBPcap2 --devices 4` and is
+now the accepted setting-change passive evidence: 100,492 Moza `0x346E:0x0004`
+packets over 113.446197 seconds, host-to-device vendor candidates `0x7E` and
+`0x80`, and operator notes for `KS wheel top-left front LED` default teal -> red
+-> default teal. The bounded helper's final receipt-write file-lock error is a
+tooling note only because the pcap finalized and the derived summary/bundle
+validated.
 
 ## Completion Audit Summary
 
@@ -168,8 +178,8 @@ The broader Moza objective remains incomplete:
 | Consumed vendor-authority attempt | `vendor-authority-attempt.json` | Recorded exact one-frame non-claiming attempt |
 | Post-authority PIDFF response | `vendor-post-authority-pidff-smoke.json`; `vendor-post-authority-pidff-response.json`; [post-authority PIDFF response diagnosis](../../docs/hardware/moza-r5-post-authority-pidff-response.md) | Recorded regression versus baseline; no native-visible claim |
 | Vendor protocol evidence review | `vendor-protocol-evidence-review.json`; artifact-index/bench-wizard `vendor_protocol_decode_priority` | Recorded no-output review, host-to-device candidate `0x7E`, 7,863 checksum-valid candidate frames, 159 bounded passive tuple sample frames, one read-only registry tuple match, 12 commandless tuple IDs, 17 unknown commanded tuple IDs, frequency-ranked unknown commanded tuples headed by `0x5A/0x1B/0x00` and `0x5D/0x1B/0x01`, 30 decode-candidate sample frames for the top unknown tuples, protocol-crate observed-frame, packet-order, payload-shape, packet-group, low-confidence semantic-hypothesis, and semantic-correlation-plan regression coverage for those samples, two residual payload export gap packet locators, and no sufficient semantic protocol evidence for any output plan |
-| Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence |
-| Remaining passive sniff plans | `pit-house-setting-change`, `simhub-open-idle`, `simhub-output-session`, `simulator-session-start-stop` sniff plans | Setting-change has a low-yield incomplete classification only; others remain plan-only |
+| Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls`, and `pit-house-setting-change` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence; setting-change keeps the earlier low-yield classification as historical failed evidence |
+| Remaining passive sniff plans | `simhub-open-idle`, `simhub-output-session`, `simulator-session-start-stop` sniff plans | Plan-only |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |
 | Simulator telemetry | `simulator-telemetry-proof.json` | Missing |
 | Bounded simulator FFB | `simulator-ffb-smoke.json` | Missing |
@@ -198,21 +208,21 @@ highest-count unknown commanded decode targets `0x5A/0x1B/0x00`,
 the top unknown tuples. The protocol crate accepts those examples as observed
 wire-shape fixtures, preserves repeated pair/triad ordering hints, records that
 the current sampled payloads are empty or zero-filled, and still rejects them
-from the semantic fixture decoder as unknown commands. The review now also
+from the semantic fixture decoder as unknown commands. The accepted
+`pit-house-setting-change` capture adds a named Pit House LED setting transition
+to those passive correlation inputs without decoding a sendable command. The
+review now also
 preserves pattern-only hypotheses that make the next decode questions explicit:
 `session_or_status_keepalive_candidate` for the `0x5A/0x1B/*` and
 `0x5D/0x1B/*` pair, and `base_status_or_mode_poll_candidate` for the
 `0x25/0x19/*` triad. It emits no hardware output command and no authorization
-command. The correlation plan now makes the next named passive evidence target
-explicit: capture or summarize `pit-house-setting-change` first, then compare
-the same hypotheses against SimHub and simulator scenarios, before any tuple can
-move toward semantic decoder coverage or registry review. The next
-implementation work should repeat `pit-house-setting-change` with Pit House
-already open and settled, one reversible setting, start/end/restored values
-recorded, and no firmware/update/DFU interaction. It should continue
-vendor-specific protocol investigation, such as completing those passive
-correlation scenarios or mapping the frequency-ranked unknown `0x7E` USBCOM
-tuple stream to semantic commands, before any future motion ladder plan.
+command. The correlation plan now moves the next passive evidence target to
+SimHub and simulator scenarios, before any tuple can move toward semantic
+decoder coverage or registry review. The next implementation work should
+continue vendor-specific protocol investigation by correlating the accepted
+setting-change evidence with the frequency-ranked unknown `0x7E`/`0x80` traffic
+and by completing the remaining passive SimHub/simulator captures before any
+future motion ladder plan.
 
 Passive USB sniff captures may produce non-claiming `sniff-receipt.json`,
 `sniff-summary.json`, and bundle manifest artifacts, but those are
