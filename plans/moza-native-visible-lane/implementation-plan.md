@@ -4683,6 +4683,100 @@ preservation, passive sniff plans, checked-in sniff evidence, local raw capture
 attempt records, consumed hardware attempts, or protocol evidence review
 receipts.
 
+## Work item: hardware-sniff-usbpcap-selector-guard
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: reliable passive SimHub and simulator capture setup after the accepted
+Pit House setting-change capture
+Blocked by: the first Pit House setting-change capture reused stale
+`\\.\USBPcap2 --devices 3` and captured wrong/hub traffic, while the accepted
+repeat capture used the fresh hardware-doctor selector
+`\\.\USBPcap2 --devices 4`.
+
+### Goal
+
+Prevent stale USBPcap `--devices` values from silently becoming local capture
+receipts that look usable for Moza passive correlation.
+
+### Production Delta
+
+`wheelctl hardware sniff-capture` now accepts an optional
+`--hardware-doctor <receipt>` argument. When supplied, the command reads the
+observe-only hardware doctor USBPcap Moza device hints and records selector
+verification in the local capture receipt:
+
+- `matched_moza_hint` when the requested USBPcap interface and `--devices`
+  value match the current Moza hint.
+- `stale_selector` when current Moza hints exist but the requested selector
+  does not match them.
+- `non_moza_selector` when hardware-doctor selector guard data identifies the
+  requested selector as hub/non-Moza traffic.
+- `selector_unverified` when no current Moza selector can be proven.
+
+Stale or non-Moza selectors make the local capture receipt `success=false` even
+if a pcap file exists. The receipt remains non-claiming and records that local
+capture receipt success is not accepted sniff evidence. `hardware doctor`
+also records selector guard hints derived from USBPcap extcap config so known
+hub/non-Moza selectors can be distinguished from the current Moza stack.
+
+Bench-wizard and operator-note handoffs now tell the operator not to reuse
+stale `--devices` values and include the fresh hardware-doctor receipt path in
+the bounded `sniff-capture` command template. This surfaces the current
+selector source before the next SimHub/simulator passive capture without
+opening SimHub or running a capture.
+
+### Non-goals
+
+No live capture, raw `.pcapng` commit, ZIP bundle commit, sniff receipt, sniff
+summary, accepted sniff bundle, HID open, serial open, read-only query send,
+OpenRacing hardware output, authorization, PIDFF rerun, direct HID report
+`0xaf`, high torque, serial config, firmware, DFU, native-control claim,
+native-visible claim, smoke-ready claim, Pit House coexistence claim, simulator
+claim, release-ready claim, semantic command decode, registry promotion, tuple
+sendability claim, or promotion of a local capture receipt into accepted lane
+evidence.
+
+### Acceptance
+
+- A requested selector matching the current Moza hardware-doctor hint is
+  recorded as `matched_moza_hint`.
+- A requested selector that differs from the current Moza hint is recorded as
+  `stale_selector` and the local capture receipt fails closed.
+- A selector identified by hardware-doctor guard data as hub/non-Moza traffic
+  is recorded as `non_moza_selector` and cannot be treated as accepted Moza
+  protocol evidence.
+- Bench-wizard/operator handoff warns against reusing stale `--devices` values
+  and passes the fresh hardware-doctor receipt into the bounded
+  `sniff-capture` template.
+- Existing pcap finalization retry behavior remains intact.
+- Existing no-output and no-readiness claim flags remain false.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl passive_sniff -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_sniff_next_operator_commands_parse -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the USBPcap selector verification receipt fields, optional
+`sniff-capture --hardware-doctor` argument, selector guard hints, handoff
+wording/template updates, focused tests, and source-of-truth updates. Do not
+remove bounded `sniff-capture`, finalization retry, USBPcapCMD stdout/stderr
+log preservation, passive sniff plans, checked-in sniff evidence, local raw
+capture attempt records, consumed hardware attempts, or protocol evidence
+review receipts.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

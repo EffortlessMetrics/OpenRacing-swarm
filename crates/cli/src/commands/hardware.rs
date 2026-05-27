@@ -33,6 +33,12 @@ const SNIFF_CAPTURE_PCAPNG_FINALIZATION_READABLE: &str = "readable";
 const SNIFF_CAPTURE_PCAPNG_FINALIZATION_ZERO_BYTE: &str = "zero_byte";
 const SNIFF_CAPTURE_PCAPNG_FINALIZATION_MISSING: &str = "missing";
 const SNIFF_CAPTURE_PCAPNG_FINALIZATION_READ_FAILED: &str = "read_failed";
+const USBPCAP_SELECTOR_MATCHED_MOZA_HINT: &str = "matched_moza_hint";
+const USBPCAP_SELECTOR_UNVERIFIED: &str = "selector_unverified";
+const USBPCAP_SELECTOR_STALE: &str = "stale_selector";
+const USBPCAP_SELECTOR_NON_MOZA: &str = "non_moza_selector";
+const USBPCAP_SELECTOR_CLASS_MOZA: &str = "moza_device_stack";
+const USBPCAP_SELECTOR_CLASS_HUB_OR_NON_MOZA: &str = "hub_or_non_moza";
 
 pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
     match cmd {
@@ -102,6 +108,7 @@ pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
             usbpcapcmd,
             usbpcap_interface,
             devices,
+            hardware_doctor,
             duration_ms,
             out,
             overwrite,
@@ -112,6 +119,7 @@ pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
                 usbpcapcmd,
                 usbpcap_interface,
                 devices,
+                hardware_doctor: hardware_doctor.as_deref(),
                 duration_ms: *duration_ms,
                 out,
                 overwrite: *overwrite,
@@ -480,6 +488,7 @@ fn run_hardware_sniff_capture(
     request: &HardwareSniffCaptureRequest<'_>,
 ) -> Result<HardwareSniffCaptureReceipt> {
     validate_hardware_sniff_capture_request(request)?;
+    let selector_verification = sniff_capture_selector_verification(request)?;
     if request.out.exists() && request.overwrite {
         fs::remove_file(request.out)
             .with_context(|| format!("failed to remove existing '{}'", request.out.display()))?;
@@ -554,6 +563,7 @@ fn run_hardware_sniff_capture(
             pcapng_finalization_elapsed_ms: pcapng.finalization.elapsed_ms,
             pcapng_finalization_succeeded: pcapng.finalization.succeeded,
             pcapng_finalization_succeeded_after_retry: pcapng.finalization.succeeded_after_retry,
+            selector_verification,
             stdout_path,
             stdout_size_bytes,
             stderr_path,
@@ -596,6 +606,205 @@ fn validate_hardware_sniff_capture_request(
         );
     }
     Ok(())
+}
+
+fn sniff_capture_selector_verification(
+    request: &HardwareSniffCaptureRequest<'_>,
+) -> Result<HardwareSniffCaptureSelectorVerification> {
+    let Some(hardware_doctor) = request.hardware_doctor else {
+        return Ok(HardwareSniffCaptureSelectorVerification::unverified(
+            request,
+            None,
+            "no hardware doctor receipt was supplied; refresh hardware doctor and verify the selector before treating the capture as Moza protocol evidence",
+            Vec::new(),
+        ));
+    };
+
+    let receipt: serde_json::Value = read_json_file(hardware_doctor)?;
+    Ok(selector_verification_from_hardware_doctor_value(
+        request,
+        Some(required_path_display(hardware_doctor, "hardware-doctor")?),
+        &receipt,
+    ))
+}
+
+fn selector_verification_from_hardware_doctor_value(
+    request: &HardwareSniffCaptureRequest<'_>,
+    hardware_doctor_path: Option<String>,
+    receipt: &serde_json::Value,
+) -> HardwareSniffCaptureSelectorVerification {
+    let expected = sniff_capture_expected_selectors_from_hardware_doctor(receipt);
+    if let Some(matched) = expected
+        .iter()
+        .find(|candidate| {
+            usbpcap_selector_matches(
+                &candidate.usbpcap_interface,
+                &candidate.capture_devices_value,
+                request.usbpcap_interface,
+                request.devices,
+            )
+        })
+        .cloned()
+    {
+        return HardwareSniffCaptureSelectorVerification {
+            status: USBPCAP_SELECTOR_MATCHED_MOZA_HINT.to_string(),
+            verified_moza_selector: true,
+            accepted_moza_protocol_evidence: true,
+            hardware_doctor_path,
+            requested_usbpcap_interface: request.usbpcap_interface.to_string(),
+            requested_devices: request.devices.to_string(),
+            expected_moza_selectors: expected,
+            matched_device_displays: matched.matched_device_displays,
+            warning: None,
+        };
+    }
+
+    let selector_guard_hints = sniff_capture_selector_guard_hints_from_hardware_doctor(receipt);
+    if let Some(non_moza) = selector_guard_hints.iter().find(|candidate| {
+        !candidate.classification.eq(USBPCAP_SELECTOR_CLASS_MOZA)
+            && usbpcap_selector_matches(
+                &candidate.usbpcap_interface,
+                &candidate.capture_devices_value,
+                request.usbpcap_interface,
+                request.devices,
+            )
+    }) {
+        return HardwareSniffCaptureSelectorVerification {
+            status: USBPCAP_SELECTOR_NON_MOZA.to_string(),
+            verified_moza_selector: false,
+            accepted_moza_protocol_evidence: false,
+            hardware_doctor_path,
+            requested_usbpcap_interface: request.usbpcap_interface.to_string(),
+            requested_devices: request.devices.to_string(),
+            expected_moza_selectors: expected,
+            matched_device_displays: non_moza.matched_device_displays.clone(),
+            warning: Some(format!(
+                "requested USBPcap selector matched {} instead of the current Moza device hint; refresh hardware doctor and use the Moza selector",
+                non_moza.classification
+            )),
+        };
+    }
+
+    if !expected.is_empty() {
+        return HardwareSniffCaptureSelectorVerification {
+            status: USBPCAP_SELECTOR_STALE.to_string(),
+            verified_moza_selector: false,
+            accepted_moza_protocol_evidence: false,
+            hardware_doctor_path,
+            requested_usbpcap_interface: request.usbpcap_interface.to_string(),
+            requested_devices: request.devices.to_string(),
+            expected_moza_selectors: expected,
+            matched_device_displays: Vec::new(),
+            warning: Some(
+                "requested USBPcap selector does not match any current Moza hardware-doctor hint; do not reuse stale --devices values".to_string(),
+            ),
+        };
+    }
+
+    HardwareSniffCaptureSelectorVerification::unverified(
+        request,
+        hardware_doctor_path,
+        "hardware doctor did not contain a current Moza USBPcap device hint; classify this selector as unverified until a fresh hint exists",
+        expected,
+    )
+}
+
+fn sniff_capture_expected_selectors_from_hardware_doctor(
+    receipt: &serde_json::Value,
+) -> Vec<HardwareSniffCaptureExpectedSelector> {
+    receipt
+        .pointer("/tools/usbpcap_descriptor_capture/usbpcap_moza_device_hints")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(sniff_capture_expected_selector_from_value)
+        .collect()
+}
+
+fn sniff_capture_expected_selector_from_value(
+    value: &serde_json::Value,
+) -> Option<HardwareSniffCaptureExpectedSelector> {
+    Some(HardwareSniffCaptureExpectedSelector {
+        usbpcap_interface: value
+            .get("usbpcap_interface")
+            .and_then(serde_json::Value::as_str)?
+            .to_string(),
+        capture_devices_value: value
+            .get("capture_devices_value")
+            .and_then(serde_json::Value::as_str)?
+            .to_string(),
+        matched_device_displays: value
+            .get("matched_device_displays")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(serde_json::Value::as_str)
+            .map(str::to_string)
+            .collect(),
+    })
+}
+
+fn sniff_capture_selector_guard_hints_from_hardware_doctor(
+    receipt: &serde_json::Value,
+) -> Vec<UsbPcapSelectorGuardHint> {
+    receipt
+        .pointer("/tools/usbpcap_descriptor_capture/usbpcap_selector_guard_hints")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(usbpcap_selector_guard_hint_from_value)
+        .collect()
+}
+
+fn usbpcap_selector_guard_hint_from_value(
+    value: &serde_json::Value,
+) -> Option<UsbPcapSelectorGuardHint> {
+    Some(UsbPcapSelectorGuardHint {
+        usbpcap_interface: value
+            .get("usbpcap_interface")
+            .and_then(serde_json::Value::as_str)?
+            .to_string(),
+        capture_devices_value: value
+            .get("capture_devices_value")
+            .and_then(serde_json::Value::as_str)?
+            .to_string(),
+        classification: value
+            .get("classification")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(USBPCAP_SELECTOR_UNVERIFIED)
+            .to_string(),
+        matched_device_values: value
+            .get("matched_device_values")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(serde_json::Value::as_str)
+            .map(str::to_string)
+            .collect(),
+        matched_device_displays: value
+            .get("matched_device_displays")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(serde_json::Value::as_str)
+            .map(str::to_string)
+            .collect(),
+        suggested_capture_filter: value
+            .get("suggested_capture_filter")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+    })
+}
+
+fn usbpcap_selector_matches(
+    expected_interface: &str,
+    expected_devices: &str,
+    requested_interface: &str,
+    requested_devices: &str,
+) -> bool {
+    expected_interface.eq_ignore_ascii_case(requested_interface)
+        && expected_devices.trim() == requested_devices.trim()
 }
 
 fn sniff_capture_usbpcapcmd_args(request: &HardwareSniffCaptureRequest<'_>) -> Vec<String> {
@@ -762,13 +971,19 @@ fn build_hardware_sniff_capture_receipt(
         success: outcome.process_started
             && outcome.pcapng_exists
             && outcome.pcapng_size_bytes > 0
-            && outcome.pcapng_finalization_succeeded,
+            && outcome.pcapng_finalization_succeeded
+            && outcome.selector_verification.capture_receipt_success_eligible(),
         command: "wheelctl hardware sniff-capture",
         generated_at_utc: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
         capture_tool: "USBPcapCMD",
         usbpcapcmd_path: required_path_display(request.usbpcapcmd, "usbpcapcmd")?,
         usbpcap_interface: request.usbpcap_interface.to_string(),
         devices: request.devices.to_string(),
+        hardware_doctor_path: request
+            .hardware_doctor
+            .map(|path| required_path_display(path, "hardware-doctor"))
+            .transpose()?,
+        selector_verification: outcome.selector_verification,
         duration_ms: request.duration_ms,
         out_path: required_path_display(request.out, "out")?,
         overwrite: request.overwrite,
@@ -819,6 +1034,7 @@ fn build_hardware_sniff_capture_receipt(
         notes: vec![
             "sniff-capture launches only the external passive USBPcapCMD capture tool".to_string(),
             "OpenRacing does not open HID, serial, feature, output, firmware, or DFU paths for this command".to_string(),
+            "the requested USBPcap selector must match a fresh hardware-doctor Moza hint before it can support accepted Moza passive evidence".to_string(),
             "pcapng finalization retries read back only local file metadata and hash after USBPcapCMD exits; it is not capture evidence promotion".to_string(),
             "a capture receipt is not a sniff receipt, sniff summary, native-control proof, or readiness claim".to_string(),
             "raw pcapng remains local scratch evidence unless separately reviewed for bundling or commit".to_string(),
@@ -2410,14 +2626,16 @@ fn usbpcapcmd_capture_command(
 fn wheelctl_sniff_capture_command(
     extcap_path: &str,
     hint: &HardwareSniffNotesUsbPcapHint,
+    hardware_doctor_path: &str,
     capture_path: &str,
     duration_ms: u64,
 ) -> String {
     format!(
-        "wheelctl hardware sniff-capture --usbpcapcmd {} --usbpcap-interface {} --devices {} --duration-ms {} --out {} --confirm-external-passive-capture --json-out {}",
+        "wheelctl hardware sniff-capture --usbpcapcmd {} --usbpcap-interface {} --devices {} --hardware-doctor {} --duration-ms {} --out {} --confirm-external-passive-capture --json-out {}",
         powershell_double_quoted_arg(extcap_path),
         powershell_double_quoted_arg(&hint.usbpcap_interface),
         hint.capture_devices_value,
+        powershell_double_quoted_arg(hardware_doctor_path),
         duration_ms,
         powershell_double_quoted_arg(capture_path),
         powershell_double_quoted_arg(&sniff_capture_receipt_path(capture_path))
@@ -2546,6 +2764,7 @@ fn render_sniff_operator_notes_template(
                     out.push_str(&wheelctl_sniff_capture_command(
                         extcap_path,
                         hint,
+                        &capture_hints.source,
                         &local_capture_path,
                         60_000,
                     ));
@@ -4874,6 +5093,8 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
             usbpcap_device_scan_attempted: false,
             usbpcap_moza_device_hint_count: 0,
             usbpcap_moza_device_hints: Vec::new(),
+            usbpcap_selector_guard_hint_count: 0,
+            usbpcap_selector_guard_hints: Vec::new(),
             usbpcap_device_scan_errors: Vec::new(),
             active_usbpcap_processes,
             ready_for_usbpcap_descriptor_capture: false,
@@ -4906,6 +5127,8 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
             usbpcap_device_scan_attempted: false,
             usbpcap_moza_device_hint_count: 0,
             usbpcap_moza_device_hints: Vec::new(),
+            usbpcap_selector_guard_hint_count: 0,
+            usbpcap_selector_guard_hints: Vec::new(),
             usbpcap_device_scan_errors: Vec::new(),
             active_usbpcap_processes,
             ready_for_usbpcap_descriptor_capture: false,
@@ -4935,6 +5158,8 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
             usbpcap_device_scan_attempted: false,
             usbpcap_moza_device_hint_count: 0,
             usbpcap_moza_device_hints: Vec::new(),
+            usbpcap_selector_guard_hint_count: 0,
+            usbpcap_selector_guard_hints: Vec::new(),
             usbpcap_device_scan_errors: Vec::new(),
             active_usbpcap_processes,
             ready_for_usbpcap_descriptor_capture: false,
@@ -4955,8 +5180,12 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let interfaces = usbpcap_interfaces_from_tshark_list(&stdout);
     let ready_for_usbpcap_descriptor_capture = !interfaces.is_empty();
-    let (usbpcap_device_scan_attempted, usbpcap_moza_device_hints, usbpcap_device_scan_errors) =
-        usbpcap_moza_device_hints_from_extcap(usbpcap_extcap_path.as_deref(), &interfaces);
+    let (
+        usbpcap_device_scan_attempted,
+        usbpcap_moza_device_hints,
+        usbpcap_selector_guard_hints,
+        usbpcap_device_scan_errors,
+    ) = usbpcap_moza_device_hints_from_extcap(usbpcap_extcap_path.as_deref(), &interfaces);
     UsbPcapDescriptorCaptureChecks {
         tshark_present: true,
         tshark_path: Some(tshark_path.display().to_string()),
@@ -4971,6 +5200,8 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
         usbpcap_device_scan_attempted,
         usbpcap_moza_device_hint_count: usbpcap_moza_device_hints.len(),
         usbpcap_moza_device_hints,
+        usbpcap_selector_guard_hint_count: usbpcap_selector_guard_hints.len(),
+        usbpcap_selector_guard_hints,
         usbpcap_device_scan_errors,
         active_usbpcap_processes,
         ready_for_usbpcap_descriptor_capture,
@@ -4988,12 +5219,18 @@ fn inspect_usbpcap_descriptor_capture_tools() -> UsbPcapDescriptorCaptureChecks 
 fn usbpcap_moza_device_hints_from_extcap(
     usbpcap_extcap_path: Option<&str>,
     interfaces: &[String],
-) -> (bool, Vec<UsbPcapMozaDeviceHint>, Vec<String>) {
+) -> (
+    bool,
+    Vec<UsbPcapMozaDeviceHint>,
+    Vec<UsbPcapSelectorGuardHint>,
+    Vec<String>,
+) {
     let Some(usbpcap_extcap_path) = usbpcap_extcap_path else {
-        return (false, Vec::new(), Vec::new());
+        return (false, Vec::new(), Vec::new(), Vec::new());
     };
 
     let mut hints = Vec::new();
+    let mut selector_guard_hints = Vec::new();
     let mut errors = Vec::new();
     for interface in interfaces {
         let Some(interface_value) = usbpcap_interface_value_from_tshark_line(interface) else {
@@ -5012,6 +5249,10 @@ fn usbpcap_moza_device_hints_from_extcap(
         match output {
             Ok(output) if output.status.success() => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
+                selector_guard_hints.extend(usbpcap_selector_guard_hints_from_extcap_config(
+                    &interface_value,
+                    &stdout,
+                ));
                 hints.extend(usbpcap_moza_device_hints_from_extcap_config(
                     &interface_value,
                     &stdout,
@@ -5027,7 +5268,7 @@ fn usbpcap_moza_device_hints_from_extcap(
         }
     }
 
-    (true, hints, errors)
+    (true, hints, selector_guard_hints, errors)
 }
 
 fn usbpcap_interface_value_from_tshark_line(line: &str) -> Option<String> {
@@ -5058,19 +5299,30 @@ fn usbpcap_moza_device_hints_from_extcap_config(
     interface_value: &str,
     output: &str,
 ) -> Vec<UsbPcapMozaDeviceHint> {
+    usbpcap_selector_guard_hints_from_extcap_config(interface_value, output)
+        .into_iter()
+        .filter(|hint| hint.classification == USBPCAP_SELECTOR_CLASS_MOZA)
+        .map(|hint| UsbPcapMozaDeviceHint {
+            usbpcap_interface: hint.usbpcap_interface,
+            capture_devices_value: hint.capture_devices_value,
+            matched_device_values: hint.matched_device_values,
+            matched_device_displays: hint.matched_device_displays,
+            suggested_capture_filter: hint.suggested_capture_filter,
+        })
+        .collect()
+}
+
+fn usbpcap_selector_guard_hints_from_extcap_config(
+    interface_value: &str,
+    output: &str,
+) -> Vec<UsbPcapSelectorGuardHint> {
     let devices = output
         .lines()
         .filter_map(usbpcap_extcap_device_from_config_line)
         .collect::<Vec<_>>();
-    let mut grouped: BTreeMap<String, (Vec<String>, Vec<String>)> = BTreeMap::new();
+    let mut grouped: BTreeMap<String, (Vec<String>, Vec<String>, bool)> = BTreeMap::new();
 
     for device in devices {
-        let display_lower = device.display.to_ascii_lowercase();
-        let moza_relevant =
-            display_lower.contains("moza") || display_lower.contains("usb serial device (com");
-        if !moza_relevant {
-            continue;
-        }
         let capture_value = device
             .value
             .split_once('_')
@@ -5079,7 +5331,10 @@ fn usbpcap_moza_device_hints_from_extcap_config(
             .to_string();
         let entry = grouped
             .entry(capture_value)
-            .or_insert_with(|| (Vec::new(), Vec::new()));
+            .or_insert_with(|| (Vec::new(), Vec::new(), false));
+        let display_lower = device.display.to_ascii_lowercase();
+        entry.2 |=
+            display_lower.contains("moza") || display_lower.contains("usb serial device (com");
         entry.0.push(device.value);
         entry.1.push(device.display);
     }
@@ -5087,10 +5342,19 @@ fn usbpcap_moza_device_hints_from_extcap_config(
     grouped
         .into_iter()
         .map(
-            |(capture_devices_value, (matched_device_values, matched_device_displays))| {
-                UsbPcapMozaDeviceHint {
+            |(
+                capture_devices_value,
+                (matched_device_values, matched_device_displays, moza_relevant),
+            )| {
+                let classification = if moza_relevant {
+                    USBPCAP_SELECTOR_CLASS_MOZA
+                } else {
+                    USBPCAP_SELECTOR_CLASS_HUB_OR_NON_MOZA
+                };
+                UsbPcapSelectorGuardHint {
                     usbpcap_interface: interface_value.to_string(),
                     capture_devices_value: capture_devices_value.clone(),
+                    classification: classification.to_string(),
                     matched_device_values,
                     matched_device_displays,
                     suggested_capture_filter: format!(
@@ -5806,6 +6070,13 @@ fn print_sniff_capture(
         receipt.pcapng_finalization_elapsed_ms,
         receipt.pcapng_finalization_succeeded_after_retry
     ))?;
+    write_stdout_line(&format!(
+        "USBPcap selector verification: status={}; verified_moza_selector={}",
+        receipt.selector_verification.status, receipt.selector_verification.verified_moza_selector
+    ))?;
+    if let Some(warning) = &receipt.selector_verification.warning {
+        write_stdout_line(&format!("USBPcap selector warning: {warning}"))?;
+    }
     if !receipt.success {
         write_stdout_line(&format!(
             "Capture did not produce a finalized non-empty pcapng receipt; inspect USBPcapCMD logs: stdout={}, stderr={}",
@@ -6189,6 +6460,7 @@ struct HardwareSniffCaptureRequest<'a> {
     usbpcapcmd: &'a Path,
     usbpcap_interface: &'a str,
     devices: &'a str,
+    hardware_doctor: Option<&'a Path>,
     duration_ms: u64,
     out: &'a Path,
     overwrite: bool,
@@ -6370,6 +6642,7 @@ struct HardwareSniffCaptureOutcome {
     pcapng_finalization_elapsed_ms: u64,
     pcapng_finalization_succeeded: bool,
     pcapng_finalization_succeeded_after_retry: bool,
+    selector_verification: HardwareSniffCaptureSelectorVerification,
     stdout_path: PathBuf,
     stdout_size_bytes: u64,
     stderr_path: PathBuf,
@@ -6401,6 +6674,53 @@ struct HardwareSniffCapturePcapngFinalization {
     succeeded_after_retry: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct HardwareSniffCaptureSelectorVerification {
+    status: String,
+    verified_moza_selector: bool,
+    accepted_moza_protocol_evidence: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hardware_doctor_path: Option<String>,
+    requested_usbpcap_interface: String,
+    requested_devices: String,
+    expected_moza_selectors: Vec<HardwareSniffCaptureExpectedSelector>,
+    matched_device_displays: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    warning: Option<String>,
+}
+
+impl HardwareSniffCaptureSelectorVerification {
+    fn unverified(
+        request: &HardwareSniffCaptureRequest<'_>,
+        hardware_doctor_path: Option<String>,
+        warning: &str,
+        expected_moza_selectors: Vec<HardwareSniffCaptureExpectedSelector>,
+    ) -> Self {
+        Self {
+            status: USBPCAP_SELECTOR_UNVERIFIED.to_string(),
+            verified_moza_selector: false,
+            accepted_moza_protocol_evidence: false,
+            hardware_doctor_path,
+            requested_usbpcap_interface: request.usbpcap_interface.to_string(),
+            requested_devices: request.devices.to_string(),
+            expected_moza_selectors,
+            matched_device_displays: Vec::new(),
+            warning: Some(warning.to_string()),
+        }
+    }
+
+    fn capture_receipt_success_eligible(&self) -> bool {
+        self.status != USBPCAP_SELECTOR_STALE && self.status != USBPCAP_SELECTOR_NON_MOZA
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct HardwareSniffCaptureExpectedSelector {
+    usbpcap_interface: String,
+    capture_devices_value: String,
+    matched_device_displays: Vec<String>,
+}
+
 #[derive(Debug, Serialize)]
 struct HardwareSniffCaptureReceipt {
     schema_version: u32,
@@ -6411,6 +6731,9 @@ struct HardwareSniffCaptureReceipt {
     usbpcapcmd_path: String,
     usbpcap_interface: String,
     devices: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hardware_doctor_path: Option<String>,
+    selector_verification: HardwareSniffCaptureSelectorVerification,
     duration_ms: u64,
     out_path: String,
     overwrite: bool,
@@ -7430,6 +7753,8 @@ struct UsbPcapDescriptorCaptureChecks {
     usbpcap_device_scan_attempted: bool,
     usbpcap_moza_device_hint_count: usize,
     usbpcap_moza_device_hints: Vec<UsbPcapMozaDeviceHint>,
+    usbpcap_selector_guard_hint_count: usize,
+    usbpcap_selector_guard_hints: Vec<UsbPcapSelectorGuardHint>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     usbpcap_device_scan_errors: Vec<String>,
     active_usbpcap_processes: UsbPcapActiveProcessChecks,
@@ -7443,6 +7768,16 @@ struct UsbPcapDescriptorCaptureChecks {
 struct UsbPcapMozaDeviceHint {
     usbpcap_interface: String,
     capture_devices_value: String,
+    matched_device_values: Vec<String>,
+    matched_device_displays: Vec<String>,
+    suggested_capture_filter: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UsbPcapSelectorGuardHint {
+    usbpcap_interface: String,
+    capture_devices_value: String,
+    classification: String,
     matched_device_values: Vec<String>,
     matched_device_displays: Vec<String>,
     suggested_capture_filter: String,
@@ -7843,6 +8178,8 @@ mod tests {
                     usbpcap_device_scan_attempted: false,
                     usbpcap_moza_device_hint_count: 0,
                     usbpcap_moza_device_hints: Vec::new(),
+                    usbpcap_selector_guard_hint_count: 0,
+                    usbpcap_selector_guard_hints: Vec::new(),
                     usbpcap_device_scan_errors: Vec::new(),
                     active_usbpcap_processes: UsbPcapActiveProcessChecks {
                         process_scan_attempted: true,
@@ -8070,11 +8407,86 @@ mod tests {
                 usbpcapcmd,
                 usbpcap_interface: r"\\.\USBPcap2",
                 devices: "3",
+                hardware_doctor: None,
                 duration_ms: 60_000,
                 out,
                 overwrite: false,
                 confirm_external_passive_capture: confirm,
             }
+        }
+
+        fn sample_sniff_capture_request_with_selector_doctor<'a>(
+            usbpcapcmd: &'a Path,
+            out: &'a Path,
+            devices: &'a str,
+            hardware_doctor: &'a Path,
+        ) -> HardwareSniffCaptureRequest<'a> {
+            HardwareSniffCaptureRequest {
+                usbpcapcmd,
+                usbpcap_interface: r"\\.\USBPcap2",
+                devices,
+                hardware_doctor: Some(hardware_doctor),
+                duration_ms: 60_000,
+                out,
+                overwrite: false,
+                confirm_external_passive_capture: true,
+            }
+        }
+
+        fn write_selector_hardware_doctor(dir: &Path) -> Result<PathBuf> {
+            let path = dir.join("hardware-doctor.json");
+            fs::write(
+                &path,
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "no_hid_device_opened": true,
+                    "no_ffb_writes": true,
+                    "no_output_reports": true,
+                    "no_feature_reports": true,
+                    "no_serial_config_commands": true,
+                    "no_firmware_or_dfu_commands": true,
+                    "tools": {
+                        "usbpcap_descriptor_capture": {
+                            "usbpcap_moza_device_hints": [
+                                {
+                                    "usbpcap_interface": r"\\.\USBPcap2",
+                                    "capture_devices_value": "4",
+                                    "matched_device_values": ["4_1", "4_3"],
+                                    "matched_device_displays": [
+                                        "USB Serial Device (COM4)",
+                                        "MOZA Windows Driver"
+                                    ],
+                                    "suggested_capture_filter": r"select \\.\USBPcap2 with USBPcap --devices 4"
+                                }
+                            ],
+                            "usbpcap_selector_guard_hints": [
+                                {
+                                    "usbpcap_interface": r"\\.\USBPcap2",
+                                    "capture_devices_value": "4",
+                                    "classification": USBPCAP_SELECTOR_CLASS_MOZA,
+                                    "matched_device_values": ["4", "4_1", "4_3"],
+                                    "matched_device_displays": [
+                                        "[4] USB Composite Device",
+                                        "USB Serial Device (COM4)",
+                                        "MOZA Windows Driver"
+                                    ],
+                                    "suggested_capture_filter": r"select \\.\USBPcap2 with USBPcap --devices 4"
+                                },
+                                {
+                                    "usbpcap_interface": r"\\.\USBPcap2",
+                                    "capture_devices_value": "3",
+                                    "classification": USBPCAP_SELECTOR_CLASS_HUB_OR_NON_MOZA,
+                                    "matched_device_values": ["3"],
+                                    "matched_device_displays": [
+                                        "[3] Generic USB Hub VID_1A40&PID_0101"
+                                    ],
+                                    "suggested_capture_filter": r"select \\.\USBPcap2 with USBPcap --devices 3"
+                                }
+                            ]
+                        }
+                    }
+                }))?,
+            )?;
+            Ok(path)
         }
 
         fn sniff_capture_receipt_from_metadata(
@@ -8103,6 +8515,7 @@ mod tests {
                     pcapng_finalization_succeeded_after_retry: pcapng
                         .finalization
                         .succeeded_after_retry,
+                    selector_verification: sniff_capture_selector_verification(request)?,
                     stdout_path: dir.join("capture.usbpcapcmd.stdout.txt"),
                     stdout_size_bytes: 7,
                     stderr_path: dir.join("capture.usbpcapcmd.stderr.txt"),
@@ -8173,6 +8586,7 @@ mod tests {
                     pcapng_finalization_elapsed_ms: 0,
                     pcapng_finalization_succeeded: true,
                     pcapng_finalization_succeeded_after_retry: false,
+                    selector_verification: sniff_capture_selector_verification(&request)?,
                     stdout_path: stdout_path.clone(),
                     stdout_size_bytes: 7,
                     stderr_path: stderr_path.clone(),
@@ -8212,6 +8626,186 @@ mod tests {
             assert!(!receipt.satisfies_smoke_ready);
             assert!(!receipt.satisfies_release_ready);
             assert!(!receipt.readiness_claims.satisfies_native_visible_ready);
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_capture_selector_matching_current_moza_hint_is_verified() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let usbpcapcmd = dir.path().join("USBPcapCMD.exe");
+            fs::write(&usbpcapcmd, b"fake")?;
+            let out = dir.path().join("capture.pcapng");
+            let doctor = write_selector_hardware_doctor(dir.path())?;
+            let request =
+                sample_sniff_capture_request_with_selector_doctor(&usbpcapcmd, &out, "4", &doctor);
+
+            let verification = sniff_capture_selector_verification(&request)?;
+
+            assert_eq!(verification.status, USBPCAP_SELECTOR_MATCHED_MOZA_HINT);
+            assert!(verification.verified_moza_selector);
+            assert!(verification.accepted_moza_protocol_evidence);
+            assert_eq!(verification.expected_moza_selectors.len(), 1);
+            assert!(
+                verification
+                    .matched_device_displays
+                    .iter()
+                    .any(|display| display.contains("MOZA Windows Driver"))
+            );
+
+            let metadata = HardwareSniffCaptureOutputMetadata {
+                exists: true,
+                size_bytes: 42,
+                sha256: Some("abc123".to_string()),
+                finalization: HardwareSniffCapturePcapngFinalization {
+                    retry_count: 0,
+                    first_error: None,
+                    final_result: SNIFF_CAPTURE_PCAPNG_FINALIZATION_READABLE.to_string(),
+                    final_error: None,
+                    elapsed_ms: 0,
+                    succeeded: true,
+                    succeeded_after_retry: false,
+                },
+            };
+            let receipt = sniff_capture_receipt_from_metadata(&request, dir.path(), metadata)?;
+            assert!(receipt.success);
+            assert_eq!(
+                receipt.selector_verification.status,
+                USBPCAP_SELECTOR_MATCHED_MOZA_HINT
+            );
+            assert!(receipt.selector_verification.verified_moza_selector);
+            assert!(
+                receipt
+                    .selector_verification
+                    .accepted_moza_protocol_evidence
+            );
+            assert!(!receipt.openracing_hardware_output);
+            assert!(!receipt.satisfies_native_visible_ready);
+            assert!(!receipt.satisfies_smoke_ready);
+            assert!(!receipt.satisfies_release_ready);
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_capture_stale_selector_is_reported_and_fails_closed() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let usbpcapcmd = dir.path().join("USBPcapCMD.exe");
+            fs::write(&usbpcapcmd, b"fake")?;
+            let out = dir.path().join("capture.pcapng");
+            let doctor = dir.path().join("hardware-doctor.json");
+            fs::write(
+                &doctor,
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "tools": {
+                        "usbpcap_descriptor_capture": {
+                            "usbpcap_moza_device_hints": [
+                                {
+                                    "usbpcap_interface": r"\\.\USBPcap2",
+                                    "capture_devices_value": "4",
+                                    "matched_device_displays": ["MOZA Windows Driver"]
+                                }
+                            ]
+                        }
+                    }
+                }))?,
+            )?;
+            let request =
+                sample_sniff_capture_request_with_selector_doctor(&usbpcapcmd, &out, "3", &doctor);
+
+            let verification = sniff_capture_selector_verification(&request)?;
+
+            assert_eq!(verification.status, USBPCAP_SELECTOR_STALE);
+            assert!(!verification.verified_moza_selector);
+            assert!(!verification.accepted_moza_protocol_evidence);
+            assert_eq!(verification.expected_moza_selectors.len(), 1);
+            assert!(
+                verification
+                    .warning
+                    .as_deref()
+                    .is_some_and(|warning| warning.contains("stale --devices"))
+            );
+
+            let metadata = HardwareSniffCaptureOutputMetadata {
+                exists: true,
+                size_bytes: 42,
+                sha256: Some("abc123".to_string()),
+                finalization: HardwareSniffCapturePcapngFinalization {
+                    retry_count: 0,
+                    first_error: None,
+                    final_result: SNIFF_CAPTURE_PCAPNG_FINALIZATION_READABLE.to_string(),
+                    final_error: None,
+                    elapsed_ms: 0,
+                    succeeded: true,
+                    succeeded_after_retry: false,
+                },
+            };
+            let receipt = sniff_capture_receipt_from_metadata(&request, dir.path(), metadata)?;
+            assert!(!receipt.success);
+            assert_eq!(receipt.selector_verification.status, USBPCAP_SELECTOR_STALE);
+            assert!(!receipt.selector_verification.verified_moza_selector);
+            assert!(
+                !receipt
+                    .selector_verification
+                    .accepted_moza_protocol_evidence
+            );
+            assert!(!receipt.openracing_hardware_output);
+            assert!(!receipt.satisfies_native_visible_ready);
+            assert!(!receipt.satisfies_smoke_ready);
+            assert!(!receipt.satisfies_release_ready);
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_capture_known_hub_selector_cannot_be_accepted_as_moza_evidence() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let usbpcapcmd = dir.path().join("USBPcapCMD.exe");
+            fs::write(&usbpcapcmd, b"fake")?;
+            let out = dir.path().join("capture.pcapng");
+            let doctor = write_selector_hardware_doctor(dir.path())?;
+            let request =
+                sample_sniff_capture_request_with_selector_doctor(&usbpcapcmd, &out, "3", &doctor);
+
+            let verification = sniff_capture_selector_verification(&request)?;
+
+            assert_eq!(verification.status, USBPCAP_SELECTOR_NON_MOZA);
+            assert!(!verification.verified_moza_selector);
+            assert!(!verification.accepted_moza_protocol_evidence);
+            assert!(
+                verification
+                    .matched_device_displays
+                    .iter()
+                    .any(|display| display.contains("VID_1A40&PID_0101"))
+            );
+
+            let metadata = HardwareSniffCaptureOutputMetadata {
+                exists: true,
+                size_bytes: 42,
+                sha256: Some("abc123".to_string()),
+                finalization: HardwareSniffCapturePcapngFinalization {
+                    retry_count: 0,
+                    first_error: None,
+                    final_result: SNIFF_CAPTURE_PCAPNG_FINALIZATION_READABLE.to_string(),
+                    final_error: None,
+                    elapsed_ms: 0,
+                    succeeded: true,
+                    succeeded_after_retry: false,
+                },
+            };
+            let receipt = sniff_capture_receipt_from_metadata(&request, dir.path(), metadata)?;
+            assert!(!receipt.success);
+            assert_eq!(
+                receipt.selector_verification.status,
+                USBPCAP_SELECTOR_NON_MOZA
+            );
+            assert!(
+                !receipt
+                    .selector_verification
+                    .accepted_moza_protocol_evidence
+            );
+            assert!(!receipt.native_control_evidence);
+            assert!(!receipt.openracing_hardware_output);
+            assert!(!receipt.satisfies_native_visible_ready);
+            assert!(!receipt.satisfies_smoke_ready);
+            assert!(!receipt.satisfies_release_ready);
             Ok(())
         }
 
@@ -10370,9 +10964,11 @@ value {arg=99}{value=3}{display=[3] USB Composite Device}{enabled=true}
 value {arg=99}{value=3_1}{display=USB Serial Device (COM4)}{enabled=false}{parent=3}
 value {arg=99}{value=3_2}{display=USB Input Device}{enabled=false}{parent=3}
 value {arg=99}{value=3_3}{display=MOZA Windows Driver}{enabled=false}{parent=3_2}
-value {arg=99}{value=2}{display=[2] Generic USB Hub}{enabled=true}"#;
+value {arg=99}{value=2}{display=[2] Generic USB Hub VID_1A40&PID_0101}{enabled=true}"#;
 
         let hints = usbpcap_moza_device_hints_from_extcap_config(r"\\.\USBPcap2", output);
+        let selector_hints =
+            usbpcap_selector_guard_hints_from_extcap_config(r"\\.\USBPcap2", output);
 
         assert_eq!(hints.len(), 1);
         let hint = &hints[0];
@@ -10394,6 +10990,19 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub}{enabled=true}"#;
                 .any(|display| display.contains("MOZA Windows Driver"))
         );
         assert!(hint.suggested_capture_filter.contains("--devices 3"));
+        assert_eq!(selector_hints.len(), 2);
+        assert!(selector_hints.iter().any(|candidate| {
+            candidate.capture_devices_value == "3"
+                && candidate.classification == USBPCAP_SELECTOR_CLASS_MOZA
+        }));
+        assert!(selector_hints.iter().any(|candidate| {
+            candidate.capture_devices_value == "2"
+                && candidate.classification == USBPCAP_SELECTOR_CLASS_HUB_OR_NON_MOZA
+                && candidate
+                    .matched_device_displays
+                    .iter()
+                    .any(|display| display.contains("VID_1A40&PID_0101"))
+        }));
     }
 
     #[test]

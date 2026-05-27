@@ -439,6 +439,9 @@ pub enum HardwareCommands {
         /// USBPcap --devices filter value from hardware doctor
         #[arg(long)]
         devices: String,
+        /// Observe-only hardware doctor receipt used to verify the USBPcap selector
+        #[arg(long)]
+        hardware_doctor: Option<std::path::PathBuf>,
         /// Capture duration in milliseconds
         #[arg(long)]
         duration_ms: u64,
