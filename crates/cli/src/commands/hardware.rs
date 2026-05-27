@@ -27,6 +27,13 @@ use crate::commands::{
     HardwareSniffScenario,
 };
 
+const SNIFF_CAPTURE_PCAPNG_FINALIZATION_MAX_ATTEMPTS: usize = 11;
+const SNIFF_CAPTURE_PCAPNG_FINALIZATION_RETRY_DELAY_MS: u64 = 100;
+const SNIFF_CAPTURE_PCAPNG_FINALIZATION_READABLE: &str = "readable";
+const SNIFF_CAPTURE_PCAPNG_FINALIZATION_ZERO_BYTE: &str = "zero_byte";
+const SNIFF_CAPTURE_PCAPNG_FINALIZATION_MISSING: &str = "missing";
+const SNIFF_CAPTURE_PCAPNG_FINALIZATION_READ_FAILED: &str = "read_failed";
+
 pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
     match cmd {
         HardwareCommands::Doctor { json_out } => doctor(json, json_out.as_deref()).await,
@@ -525,7 +532,7 @@ fn run_hardware_sniff_capture(
     };
 
     let completed_at_utc = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
-    let pcapng = sniff_capture_output_metadata(request.out)?;
+    let pcapng = sniff_capture_output_metadata(request.out);
     let stdout_size_bytes = sniff_capture_tool_log_size(&stdout_path)?;
     let stderr_size_bytes = sniff_capture_tool_log_size(&stderr_path)?;
     build_hardware_sniff_capture_receipt(
@@ -540,6 +547,13 @@ fn run_hardware_sniff_capture(
             pcapng_exists: pcapng.exists,
             pcapng_size_bytes: pcapng.size_bytes,
             pcapng_sha256: pcapng.sha256,
+            pcapng_finalization_retry_count: pcapng.finalization.retry_count,
+            pcapng_finalization_first_error: pcapng.finalization.first_error,
+            pcapng_finalization_result: pcapng.finalization.final_result,
+            pcapng_finalization_error: pcapng.finalization.final_error,
+            pcapng_finalization_elapsed_ms: pcapng.finalization.elapsed_ms,
+            pcapng_finalization_succeeded: pcapng.finalization.succeeded,
+            pcapng_finalization_succeeded_after_retry: pcapng.finalization.succeeded_after_retry,
             stdout_path,
             stdout_size_bytes,
             stderr_path,
@@ -631,14 +645,92 @@ fn path_contains_ci_hardware(path: &Path) -> bool {
         .any(|window| window[0] == "ci" && window[1] == "hardware")
 }
 
-fn sniff_capture_output_metadata(path: &Path) -> Result<HardwareSniffCaptureOutputMetadata> {
-    if !path.exists() {
-        return Ok(HardwareSniffCaptureOutputMetadata {
-            exists: false,
-            size_bytes: 0,
-            sha256: None,
-        });
+fn sniff_capture_output_metadata(path: &Path) -> HardwareSniffCaptureOutputMetadata {
+    sniff_capture_output_metadata_with_retry(
+        path,
+        SNIFF_CAPTURE_PCAPNG_FINALIZATION_MAX_ATTEMPTS,
+        Duration::from_millis(SNIFF_CAPTURE_PCAPNG_FINALIZATION_RETRY_DELAY_MS),
+        sniff_capture_output_metadata_once,
+        std::thread::sleep,
+    )
+}
+
+fn sniff_capture_output_metadata_with_retry<R, S>(
+    path: &Path,
+    max_attempts: usize,
+    retry_delay: Duration,
+    mut read_once: R,
+    mut sleep: S,
+) -> HardwareSniffCaptureOutputMetadata
+where
+    R: FnMut(&Path) -> Result<HardwareSniffCaptureOutputReadback>,
+    S: FnMut(Duration),
+{
+    let finalization_started = Instant::now();
+    let max_attempts = max_attempts.max(1);
+    let mut first_error = None;
+    let mut final_error = None;
+
+    for attempt_index in 0..max_attempts {
+        match read_once(path) {
+            Ok(readback) => {
+                let final_result = if readback.size_bytes == 0 {
+                    SNIFF_CAPTURE_PCAPNG_FINALIZATION_ZERO_BYTE
+                } else {
+                    SNIFF_CAPTURE_PCAPNG_FINALIZATION_READABLE
+                };
+                let succeeded = readback.size_bytes > 0 && readback.sha256.is_some();
+                return HardwareSniffCaptureOutputMetadata {
+                    exists: true,
+                    size_bytes: readback.size_bytes,
+                    sha256: readback.sha256,
+                    finalization: HardwareSniffCapturePcapngFinalization {
+                        retry_count: attempt_index as u32,
+                        first_error,
+                        final_result: final_result.to_string(),
+                        final_error: None,
+                        elapsed_ms: duration_ms_saturating(finalization_started.elapsed()),
+                        succeeded,
+                        succeeded_after_retry: succeeded && attempt_index > 0,
+                    },
+                };
+            }
+            Err(error) => {
+                let error_text = error.to_string();
+                if first_error.is_none() {
+                    first_error = Some(error_text.clone());
+                }
+                final_error = Some(error_text);
+                if attempt_index + 1 < max_attempts {
+                    sleep(retry_delay);
+                }
+            }
+        }
     }
+
+    let (exists, size_bytes) = sniff_capture_best_effort_output_size(path);
+    HardwareSniffCaptureOutputMetadata {
+        exists,
+        size_bytes,
+        sha256: None,
+        finalization: HardwareSniffCapturePcapngFinalization {
+            retry_count: max_attempts.saturating_sub(1) as u32,
+            first_error,
+            final_result: if exists {
+                SNIFF_CAPTURE_PCAPNG_FINALIZATION_READ_FAILED
+            } else {
+                SNIFF_CAPTURE_PCAPNG_FINALIZATION_MISSING
+            }
+            .to_string(),
+            final_error,
+            elapsed_ms: duration_ms_saturating(finalization_started.elapsed()),
+            succeeded: false,
+            succeeded_after_retry: false,
+        },
+    }
+}
+
+fn sniff_capture_output_metadata_once(path: &Path) -> Result<HardwareSniffCaptureOutputReadback> {
     let metadata = fs::metadata(path)
         .with_context(|| format!("failed to inspect pcapng capture '{}'", path.display()))?;
     let size_bytes = metadata.len();
@@ -647,11 +739,18 @@ fn sniff_capture_output_metadata(path: &Path) -> Result<HardwareSniffCaptureOutp
     } else {
         None
     };
-    Ok(HardwareSniffCaptureOutputMetadata {
-        exists: true,
-        size_bytes,
-        sha256,
-    })
+    Ok(HardwareSniffCaptureOutputReadback { size_bytes, sha256 })
+}
+
+fn sniff_capture_best_effort_output_size(path: &Path) -> (bool, u64) {
+    match fs::metadata(path) {
+        Ok(metadata) => (true, metadata.len()),
+        Err(_) => (path.exists(), 0),
+    }
+}
+
+fn duration_ms_saturating(duration: Duration) -> u64 {
+    duration.as_millis().min(u128::from(u64::MAX)) as u64
 }
 
 fn build_hardware_sniff_capture_receipt(
@@ -660,7 +759,10 @@ fn build_hardware_sniff_capture_receipt(
 ) -> Result<HardwareSniffCaptureReceipt> {
     Ok(HardwareSniffCaptureReceipt {
         schema_version: 1,
-        success: outcome.process_started && outcome.pcapng_exists && outcome.pcapng_size_bytes > 0,
+        success: outcome.process_started
+            && outcome.pcapng_exists
+            && outcome.pcapng_size_bytes > 0
+            && outcome.pcapng_finalization_succeeded,
         command: "wheelctl hardware sniff-capture",
         generated_at_utc: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
         capture_tool: "USBPcapCMD",
@@ -679,6 +781,14 @@ fn build_hardware_sniff_capture_receipt(
         pcapng_exists: outcome.pcapng_exists,
         pcapng_size_bytes: outcome.pcapng_size_bytes,
         pcapng_sha256: outcome.pcapng_sha256,
+        pcapng_finalization_retry_count: outcome.pcapng_finalization_retry_count,
+        pcapng_finalization_first_error: outcome.pcapng_finalization_first_error,
+        pcapng_finalization_result: outcome.pcapng_finalization_result,
+        pcapng_finalization_error: outcome.pcapng_finalization_error,
+        pcapng_finalization_elapsed_ms: outcome.pcapng_finalization_elapsed_ms,
+        pcapng_finalization_succeeded: outcome.pcapng_finalization_succeeded,
+        pcapng_finalization_succeeded_after_retry: outcome
+            .pcapng_finalization_succeeded_after_retry,
         usbpcapcmd_stdout_path: required_path_display(&outcome.stdout_path, "stdout")?,
         usbpcapcmd_stdout_size_bytes: outcome.stdout_size_bytes,
         usbpcapcmd_stderr_path: required_path_display(&outcome.stderr_path, "stderr")?,
@@ -709,6 +819,7 @@ fn build_hardware_sniff_capture_receipt(
         notes: vec![
             "sniff-capture launches only the external passive USBPcapCMD capture tool".to_string(),
             "OpenRacing does not open HID, serial, feature, output, firmware, or DFU paths for this command".to_string(),
+            "pcapng finalization retries read back only local file metadata and hash after USBPcapCMD exits; it is not capture evidence promotion".to_string(),
             "a capture receipt is not a sniff receipt, sniff summary, native-control proof, or readiness claim".to_string(),
             "raw pcapng remains local scratch evidence unless separately reviewed for bundling or commit".to_string(),
         ],
@@ -5688,11 +5799,21 @@ fn print_sniff_capture(
         "Duration: {} ms; stopped after duration: {}; pcapng bytes: {}",
         receipt.duration_ms, receipt.terminated_after_duration, receipt.pcapng_size_bytes
     ))?;
+    write_stdout_line(&format!(
+        "Pcapng finalization: result={}; retries={}; elapsed_ms={}; succeeded_after_retry={}",
+        receipt.pcapng_finalization_result,
+        receipt.pcapng_finalization_retry_count,
+        receipt.pcapng_finalization_elapsed_ms,
+        receipt.pcapng_finalization_succeeded_after_retry
+    ))?;
     if !receipt.success {
         write_stdout_line(&format!(
-            "Capture did not produce a non-empty pcapng; inspect USBPcapCMD logs: stdout={}, stderr={}",
+            "Capture did not produce a finalized non-empty pcapng receipt; inspect USBPcapCMD logs: stdout={}, stderr={}",
             receipt.usbpcapcmd_stdout_path, receipt.usbpcapcmd_stderr_path
         ))?;
+        if let Some(error) = &receipt.pcapng_finalization_first_error {
+            write_stdout_line(&format!("First pcapng finalization error: {error}"))?;
+        }
     }
     write_stdout_line(
         "Non-claiming: this launched only the external passive USBPcapCMD capture tool; OpenRacing sent no hardware output and made no readiness claim.",
@@ -6242,6 +6363,13 @@ struct HardwareSniffCaptureOutcome {
     pcapng_exists: bool,
     pcapng_size_bytes: u64,
     pcapng_sha256: Option<String>,
+    pcapng_finalization_retry_count: u32,
+    pcapng_finalization_first_error: Option<String>,
+    pcapng_finalization_result: String,
+    pcapng_finalization_error: Option<String>,
+    pcapng_finalization_elapsed_ms: u64,
+    pcapng_finalization_succeeded: bool,
+    pcapng_finalization_succeeded_after_retry: bool,
     stdout_path: PathBuf,
     stdout_size_bytes: u64,
     stderr_path: PathBuf,
@@ -6249,10 +6377,28 @@ struct HardwareSniffCaptureOutcome {
 }
 
 #[derive(Debug)]
+struct HardwareSniffCaptureOutputReadback {
+    size_bytes: u64,
+    sha256: Option<String>,
+}
+
+#[derive(Debug)]
 struct HardwareSniffCaptureOutputMetadata {
     exists: bool,
     size_bytes: u64,
     sha256: Option<String>,
+    finalization: HardwareSniffCapturePcapngFinalization,
+}
+
+#[derive(Debug)]
+struct HardwareSniffCapturePcapngFinalization {
+    retry_count: u32,
+    first_error: Option<String>,
+    final_result: String,
+    final_error: Option<String>,
+    elapsed_ms: u64,
+    succeeded: bool,
+    succeeded_after_retry: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -6280,6 +6426,15 @@ struct HardwareSniffCaptureReceipt {
     pcapng_size_bytes: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pcapng_sha256: Option<String>,
+    pcapng_finalization_retry_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pcapng_finalization_first_error: Option<String>,
+    pcapng_finalization_result: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pcapng_finalization_error: Option<String>,
+    pcapng_finalization_elapsed_ms: u64,
+    pcapng_finalization_succeeded: bool,
+    pcapng_finalization_succeeded_after_retry: bool,
     usbpcapcmd_stdout_path: String,
     usbpcapcmd_stdout_size_bytes: u64,
     usbpcapcmd_stderr_path: String,
@@ -7830,6 +7985,7 @@ mod tests {
 
     mod hardware_sniff {
         use super::*;
+        use std::cell::Cell;
         use std::path::PathBuf;
 
         fn sniff_schema_path(file_name: &str) -> PathBuf {
@@ -7921,6 +8077,40 @@ mod tests {
             }
         }
 
+        fn sniff_capture_receipt_from_metadata(
+            request: &HardwareSniffCaptureRequest<'_>,
+            dir: &Path,
+            pcapng: HardwareSniffCaptureOutputMetadata,
+        ) -> Result<HardwareSniffCaptureReceipt> {
+            build_hardware_sniff_capture_receipt(
+                request,
+                HardwareSniffCaptureOutcome {
+                    process_started: true,
+                    process_id: Some(123),
+                    started_at_utc: "2026-05-22T00:00:00Z".to_string(),
+                    completed_at_utc: "2026-05-22T00:01:00Z".to_string(),
+                    exit_status: Some("exit code: 1".to_string()),
+                    terminated_after_duration: true,
+                    pcapng_exists: pcapng.exists,
+                    pcapng_size_bytes: pcapng.size_bytes,
+                    pcapng_sha256: pcapng.sha256,
+                    pcapng_finalization_retry_count: pcapng.finalization.retry_count,
+                    pcapng_finalization_first_error: pcapng.finalization.first_error,
+                    pcapng_finalization_result: pcapng.finalization.final_result,
+                    pcapng_finalization_error: pcapng.finalization.final_error,
+                    pcapng_finalization_elapsed_ms: pcapng.finalization.elapsed_ms,
+                    pcapng_finalization_succeeded: pcapng.finalization.succeeded,
+                    pcapng_finalization_succeeded_after_retry: pcapng
+                        .finalization
+                        .succeeded_after_retry,
+                    stdout_path: dir.join("capture.usbpcapcmd.stdout.txt"),
+                    stdout_size_bytes: 7,
+                    stderr_path: dir.join("capture.usbpcapcmd.stderr.txt"),
+                    stderr_size_bytes: 11,
+                },
+            )
+        }
+
         #[test]
         fn sniff_capture_rejects_missing_confirmation() -> TestResult {
             let dir = tempfile::tempdir()?;
@@ -7975,6 +8165,14 @@ mod tests {
                     pcapng_exists: true,
                     pcapng_size_bytes: 42,
                     pcapng_sha256: Some("abc123".to_string()),
+                    pcapng_finalization_retry_count: 0,
+                    pcapng_finalization_first_error: None,
+                    pcapng_finalization_result: SNIFF_CAPTURE_PCAPNG_FINALIZATION_READABLE
+                        .to_string(),
+                    pcapng_finalization_error: None,
+                    pcapng_finalization_elapsed_ms: 0,
+                    pcapng_finalization_succeeded: true,
+                    pcapng_finalization_succeeded_after_retry: false,
                     stdout_path: stdout_path.clone(),
                     stdout_size_bytes: 7,
                     stderr_path: stderr_path.clone(),
@@ -7994,6 +8192,13 @@ mod tests {
                 required_path_display(&stderr_path, "stderr")?
             );
             assert_eq!(receipt.usbpcapcmd_stderr_size_bytes, 11);
+            assert_eq!(receipt.pcapng_finalization_retry_count, 0);
+            assert_eq!(
+                receipt.pcapng_finalization_result,
+                SNIFF_CAPTURE_PCAPNG_FINALIZATION_READABLE
+            );
+            assert!(receipt.pcapng_finalization_succeeded);
+            assert!(!receipt.pcapng_finalization_succeeded_after_retry);
             assert!(!receipt.native_control_evidence);
             assert!(!receipt.openracing_hardware_output);
             assert!(!receipt.openracing_hid_device_opened);
@@ -8007,6 +8212,182 @@ mod tests {
             assert!(!receipt.satisfies_smoke_ready);
             assert!(!receipt.satisfies_release_ready);
             assert!(!receipt.readiness_claims.satisfies_native_visible_ready);
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_capture_finalization_retries_file_lock_then_records_success() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let usbpcapcmd = dir.path().join("USBPcapCMD.exe");
+            fs::write(&usbpcapcmd, b"fake")?;
+            let out = dir.path().join("capture.pcapng");
+            let request = sample_sniff_capture_request(&usbpcapcmd, &out, true);
+            let attempts = Cell::new(0usize);
+            let sleeps = Cell::new(0usize);
+
+            let metadata = sniff_capture_output_metadata_with_retry(
+                &out,
+                3,
+                Duration::from_millis(1),
+                |_| {
+                    let attempt = attempts.get();
+                    attempts.set(attempt + 1);
+                    if attempt == 0 {
+                        anyhow::bail!("synthetic sharing violation opening capture (os error 32)");
+                    }
+                    Ok(HardwareSniffCaptureOutputReadback {
+                        size_bytes: 4,
+                        sha256: Some("abc123".to_string()),
+                    })
+                },
+                |_| sleeps.set(sleeps.get() + 1),
+            );
+
+            assert_eq!(attempts.get(), 2);
+            assert_eq!(sleeps.get(), 1);
+            assert!(metadata.exists);
+            assert_eq!(metadata.size_bytes, 4);
+            assert_eq!(metadata.finalization.retry_count, 1);
+            assert_eq!(
+                metadata.finalization.final_result,
+                SNIFF_CAPTURE_PCAPNG_FINALIZATION_READABLE
+            );
+            assert!(metadata.finalization.succeeded);
+            assert!(metadata.finalization.succeeded_after_retry);
+            let first_error = metadata
+                .finalization
+                .first_error
+                .as_deref()
+                .ok_or("missing first finalization error")?;
+            assert!(first_error.contains("sharing violation"));
+
+            let receipt = sniff_capture_receipt_from_metadata(&request, dir.path(), metadata)?;
+            assert!(receipt.success);
+            assert_eq!(receipt.pcapng_finalization_retry_count, 1);
+            assert_eq!(
+                receipt.pcapng_finalization_result,
+                SNIFF_CAPTURE_PCAPNG_FINALIZATION_READABLE
+            );
+            assert!(receipt.pcapng_finalization_succeeded);
+            assert!(receipt.pcapng_finalization_succeeded_after_retry);
+            assert!(!receipt.native_control_evidence);
+            assert!(!receipt.openracing_hardware_output);
+            assert!(!receipt.openracing_hid_device_opened);
+            assert!(!receipt.openracing_ffb_writes);
+            assert!(!receipt.openracing_output_reports);
+            assert!(!receipt.openracing_feature_reports);
+            assert!(!receipt.openracing_serial_config_commands);
+            assert!(!receipt.openracing_firmware_or_dfu_commands);
+            assert!(!receipt.satisfies_native_response_ready);
+            assert!(!receipt.satisfies_native_visible_ready);
+            assert!(!receipt.satisfies_smoke_ready);
+            assert!(!receipt.satisfies_release_ready);
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_capture_finalization_retry_exhaustion_fails_closed() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let usbpcapcmd = dir.path().join("USBPcapCMD.exe");
+            fs::write(&usbpcapcmd, b"fake")?;
+            let out = dir.path().join("capture.pcapng");
+            fs::write(&out, b"locked pcap bytes")?;
+            let request = sample_sniff_capture_request(&usbpcapcmd, &out, true);
+            let attempts = Cell::new(0usize);
+            let sleeps = Cell::new(0usize);
+
+            let metadata = sniff_capture_output_metadata_with_retry(
+                &out,
+                3,
+                Duration::from_millis(1),
+                |_| -> Result<HardwareSniffCaptureOutputReadback> {
+                    attempts.set(attempts.get() + 1);
+                    anyhow::bail!("synthetic sharing violation opening capture (os error 32)");
+                },
+                |_| sleeps.set(sleeps.get() + 1),
+            );
+
+            assert_eq!(attempts.get(), 3);
+            assert_eq!(sleeps.get(), 2);
+            assert!(metadata.exists);
+            assert!(metadata.size_bytes > 0);
+            assert!(metadata.sha256.is_none());
+            assert_eq!(metadata.finalization.retry_count, 2);
+            assert_eq!(
+                metadata.finalization.final_result,
+                SNIFF_CAPTURE_PCAPNG_FINALIZATION_READ_FAILED
+            );
+            assert!(!metadata.finalization.succeeded);
+            assert!(!metadata.finalization.succeeded_after_retry);
+            let first_error = metadata
+                .finalization
+                .first_error
+                .as_deref()
+                .ok_or("missing first finalization error")?;
+            assert!(first_error.contains("sharing violation"));
+            let final_error = metadata
+                .finalization
+                .final_error
+                .as_deref()
+                .ok_or("missing final finalization error")?;
+            assert!(final_error.contains("sharing violation"));
+
+            let receipt = sniff_capture_receipt_from_metadata(&request, dir.path(), metadata)?;
+            assert!(!receipt.success);
+            assert_eq!(receipt.pcapng_finalization_retry_count, 2);
+            assert_eq!(
+                receipt.pcapng_finalization_result,
+                SNIFF_CAPTURE_PCAPNG_FINALIZATION_READ_FAILED
+            );
+            assert!(!receipt.pcapng_finalization_succeeded);
+            assert!(!receipt.native_control_evidence);
+            assert!(!receipt.openracing_hardware_output);
+            assert!(!receipt.satisfies_native_visible_ready);
+            assert!(!receipt.satisfies_smoke_ready);
+            assert!(!receipt.satisfies_release_ready);
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_capture_zero_byte_pcapng_still_fails_closed() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let usbpcapcmd = dir.path().join("USBPcapCMD.exe");
+            fs::write(&usbpcapcmd, b"fake")?;
+            let out = dir.path().join("capture.pcapng");
+            fs::write(&out, [])?;
+            let request = sample_sniff_capture_request(&usbpcapcmd, &out, true);
+
+            let metadata = sniff_capture_output_metadata(&out);
+            assert!(metadata.exists);
+            assert_eq!(metadata.size_bytes, 0);
+            assert!(metadata.sha256.is_none());
+            assert_eq!(metadata.finalization.retry_count, 0);
+            assert_eq!(
+                metadata.finalization.final_result,
+                SNIFF_CAPTURE_PCAPNG_FINALIZATION_ZERO_BYTE
+            );
+            assert!(!metadata.finalization.succeeded);
+            assert!(!metadata.finalization.succeeded_after_retry);
+
+            let receipt = sniff_capture_receipt_from_metadata(&request, dir.path(), metadata)?;
+            assert!(!receipt.success);
+            assert_eq!(receipt.pcapng_size_bytes, 0);
+            assert_eq!(
+                receipt.pcapng_finalization_result,
+                SNIFF_CAPTURE_PCAPNG_FINALIZATION_ZERO_BYTE
+            );
+            assert!(!receipt.pcapng_finalization_succeeded);
+            assert!(!receipt.native_control_evidence);
+            assert!(!receipt.openracing_hardware_output);
+            assert!(!receipt.openracing_hid_device_opened);
+            assert!(!receipt.openracing_ffb_writes);
+            assert!(!receipt.openracing_output_reports);
+            assert!(!receipt.openracing_feature_reports);
+            assert!(!receipt.openracing_serial_config_commands);
+            assert!(!receipt.openracing_firmware_or_dfu_commands);
+            assert!(!receipt.satisfies_native_visible_ready);
+            assert!(!receipt.satisfies_smoke_ready);
+            assert!(!receipt.satisfies_release_ready);
             Ok(())
         }
 

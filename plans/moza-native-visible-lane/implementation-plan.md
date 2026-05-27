@@ -4607,6 +4607,82 @@ operator-note metadata. Do not remove the low-yield classification, passive
 sniff plans, other checked-in sniff evidence, local raw capture attempts,
 consumed hardware attempts, or bounded capture helper.
 
+## Work item: hardware-sniff-capture-finalization-receipt
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: reliable local capture receipts for future passive SimHub and simulator
+captures
+Blocked by: the successful Pit House setting-change repeat capture finalized a
+valid pcap, but the bounded `sniff-capture` helper hit `os error 32` while
+opening the pcap for its local capture receipt.
+
+### Goal
+
+Harden `wheelctl hardware sniff-capture` finalization so a pcap that remains
+briefly file-locked after USBPcapCMD exits can still produce a local,
+non-claiming capture receipt once the file becomes readable.
+
+### Production Delta
+
+`sniff-capture` now performs a bounded retry around post-process pcap metadata
+and hash readback. The local capture receipt records the retry count, first
+read/open error, final readback result, final error when present, elapsed
+finalization window, and whether finalization succeeded after retry. If the
+pcap never appears, remains unreadable, cannot be hashed, or is zero bytes, the
+receipt remains `success=false` and keeps USBPcapCMD stdout/stderr log paths for
+diagnosis.
+
+This is bench plumbing for future passive captures. Retrying final pcap
+readback reads only local file metadata and bytes after the external capture
+tool exits; it is not accepted sniff evidence, protocol decode, native-control
+proof, or readiness promotion.
+
+### Non-goals
+
+No live capture, raw `.pcapng` commit, ZIP bundle commit, sniff receipt, sniff
+summary, accepted sniff bundle, HID open, serial open, read-only query send,
+OpenRacing hardware output, authorization, PIDFF rerun, direct HID report
+`0xaf`, high torque, serial config, firmware, DFU, native-control claim,
+native-visible claim, smoke-ready claim, Pit House coexistence claim, simulator
+claim, release-ready claim, semantic command decode, registry promotion, tuple
+sendability claim, or promotion of a local capture receipt into accepted lane
+evidence.
+
+### Acceptance
+
+- A synthetic file-lock/sharing-violation readback failure followed by a
+  readable pcap produces a successful non-claiming local capture receipt.
+- Retry exhaustion remains `success=false` and preserves first/final diagnostic
+  errors.
+- A zero-byte pcap remains `success=false`.
+- Existing no-output and no-readiness claim flags remain false.
+- Operator-facing wording states that pcap readback retry is receipt
+  finalization only, not capture evidence promotion.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl passive_sniff -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the pcap readback retry helper, capture receipt finalization fields,
+operator-facing finalization wording, focused tests, and source-of-truth
+updates. Do not remove bounded `sniff-capture`, USBPcapCMD stdout/stderr log
+preservation, passive sniff plans, checked-in sniff evidence, local raw capture
+attempt records, consumed hardware attempts, or protocol evidence review
+receipts.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
