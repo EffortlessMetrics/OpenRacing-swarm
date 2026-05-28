@@ -16,7 +16,9 @@ use racing_wheel_hid_moza_protocol::report::looks_like_live_r5_v1_extended_repor
 use racing_wheel_hid_moza_protocol::serial::fake_transport::{
     FAKE_TRANSPORT_CODEC_STATUS, MozaFakeSerialTransport, MozaFakeSerialTransportError,
 };
-use racing_wheel_hid_moza_protocol::serial::frame::{MESSAGE_START, decode_fixture_frame};
+use racing_wheel_hid_moza_protocol::serial::frame::{
+    MESSAGE_START, MozaSerialFrameError, decode_fixture_frame,
+};
 use racing_wheel_hid_moza_protocol::serial::status_probe::{
     READ_ONLY_STATUS_CODEC_STATUS, decode_read_only_status_response, encode_read_only_status_query,
     read_only_status_commands,
@@ -197,6 +199,8 @@ const MOZA_VENDOR_SERIAL_CODEC_FIXTURES_JSON: &str =
     include_str!("../../../../fixtures/moza/r5/vendor-serial-codec-fixtures.json");
 const MOZA_VENDOR_FAKE_SERIAL_TRANSPORT_JSON: &str =
     include_str!("../../../../fixtures/moza/r5/vendor-fake-serial-transport.json");
+const MOZA_VENDOR_PROTOCOL_EVIDENCE_REVIEW_JSON: &str =
+    include_str!("../../../../ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json");
 const SIMULATOR_FFB_PREREQUISITE_ARTIFACTS: [(&str, &str); 6] = [
     ("zero_torque_real_hardware", "zero-torque-proof.json"),
     ("watchdog_zero_output", "watchdog-proof.json"),
@@ -30781,6 +30785,9 @@ fn vendor_fake_transport_cli_receipt() -> Result<VendorFakeTransportCliReceipt> 
         .context("failed to parse checked-in Moza serial codec fixture")?;
     let transport_fixture: Value = serde_json::from_str(MOZA_VENDOR_FAKE_SERIAL_TRANSPORT_JSON)
         .context("failed to parse checked-in Moza fake transport fixture")?;
+    let protocol_evidence_review: Value =
+        serde_json::from_str(MOZA_VENDOR_PROTOCOL_EVIDENCE_REVIEW_JSON)
+            .context("failed to parse checked-in Moza vendor protocol evidence review")?;
     let fixtures = vendor_serial_fixtures_by_id(&codec_fixture)?;
     let accepted_fixture_ids = json_string_array_field(&transport_fixture, "accepted_fixture_ids")?;
     let blocked_fixture_ids = json_string_array_field(&transport_fixture, "blocked_fixture_ids")?;
@@ -30854,6 +30861,19 @@ fn vendor_fake_transport_cli_receipt() -> Result<VendorFakeTransportCliReceipt> 
         Err(MozaFakeSerialTransportError::Frame(_))
     );
 
+    let mode_enable_candidate_observations =
+        vendor_fake_transport_mode_enable_observations(&mut transport, &protocol_evidence_review)
+            .context("failed to observe mode/enable candidates in fake transport")?;
+    let mode_enable_candidate_group_count = mode_enable_candidate_observations.len();
+    let mode_enable_candidate_frame_count = mode_enable_candidate_observations
+        .iter()
+        .map(|observation| observation.observed_frame_count)
+        .sum();
+    let mode_enable_candidate_send_path_rejected_count = mode_enable_candidate_observations
+        .iter()
+        .map(|observation| observation.send_path_rejected_count)
+        .sum();
+
     Ok(VendorFakeTransportCliReceipt {
         success: true,
         schema_version: 1,
@@ -30864,7 +30884,11 @@ fn vendor_fake_transport_cli_receipt() -> Result<VendorFakeTransportCliReceipt> 
         native_control_evidence: false,
         hardware_output_authorized: false,
         native_visible_ready: false,
-        next_allowed_action: "Review this no-output CLI receipt before implementing the later read-only hardware status probe.",
+        smoke_ready: false,
+        release_ready: false,
+        registry_promotion_claim: false,
+        output_sendability_claim: false,
+        next_allowed_action: "Use this fake-only candidate containment proof to design the later read-only hardware status/mode matrix; no output, authorization, registry promotion, or hardware write is allowed from this receipt.",
         blocked_actions: vec![
             "serial device open",
             "read-only hardware probe",
@@ -30873,6 +30897,7 @@ fn vendor_fake_transport_cli_receipt() -> Result<VendorFakeTransportCliReceipt> 
             "configuration write",
             "authorization receipt",
             "hardware writes",
+            "high torque",
             "native-visible claim",
             "smoke-ready claim",
             "release-ready claim",
@@ -30885,6 +30910,7 @@ fn vendor_fake_transport_cli_receipt() -> Result<VendorFakeTransportCliReceipt> 
             "fixtures/moza/r5/vendor-command-registry.json",
             "fixtures/moza/r5/vendor-serial-codec-fixtures.json",
             "fixtures/moza/r5/vendor-fake-serial-transport.json",
+            "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
             "crates/hid-moza-protocol/src/serial/fake_transport.rs",
             "crates/cli/src/commands/moza.rs",
         ],
@@ -30899,6 +30925,7 @@ fn vendor_fake_transport_cli_receipt() -> Result<VendorFakeTransportCliReceipt> 
         sent_output_writes: false,
         sent_configuration_writes: false,
         sent_firmware_or_dfu_commands: false,
+        high_torque_enabled: false,
         real_hardware_validated: false,
         transport_kind: "fake_only",
         fake_transport_verified: true,
@@ -30912,10 +30939,17 @@ fn vendor_fake_transport_cli_receipt() -> Result<VendorFakeTransportCliReceipt> 
         blocked_exchanges,
         malformed_frame_rejected,
         unknown_command_rejected,
+        mode_enable_candidate_fixture_source: "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
+        mode_enable_candidate_group_count,
+        mode_enable_candidate_frame_count,
+        mode_enable_candidate_send_path_rejected_count,
+        mode_enable_candidates_unknown_do_not_send: true,
+        mode_enable_candidate_observations,
         notes: vec![
             "This command replays checked-in synthetic fixture bytes only.",
             "It does not open HID or serial devices and sends no host-to-device traffic.",
             "Write-like vendor output/configuration candidates remain blocked until a later exact authorization stage.",
+            "Mode/enable candidate frames from passive evidence are observed in fake transport as unknown_do_not_send and are rejected by the command send path.",
         ],
     })
 }
@@ -30956,6 +30990,136 @@ fn fixture_frame_bytes(fixture: &Value) -> Result<Vec<u8>> {
     let raw_frame_hex = json_string(fixture, "raw_frame_hex")
         .ok_or_else(|| anyhow!("fixture is missing string `raw_frame_hex`"))?;
     parse_hex_bytes(raw_frame_hex).map_err(anyhow::Error::msg)
+}
+
+fn vendor_fake_transport_mode_enable_observations(
+    transport: &mut MozaFakeSerialTransport,
+    review: &Value,
+) -> Result<Vec<VendorFakeTransportModeEnableCandidateObservation>> {
+    let candidates = review
+        .pointer("/passive_tuple_registry_coverage/decode_candidate_mode_enable_review/candidates")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            anyhow!("vendor protocol evidence review is missing mode/enable candidates")
+        })?;
+    let mut observations = Vec::new();
+
+    for candidate in candidates {
+        let candidate_id = json_string(candidate, "candidate_id")
+            .ok_or_else(|| anyhow!("mode/enable candidate is missing `candidate_id`"))?;
+        let semantic_hypothesis =
+            json_string(candidate, "semantic_hypothesis").ok_or_else(|| {
+                anyhow!("mode/enable candidate `{candidate_id}` is missing `semantic_hypothesis`")
+            })?;
+        let risk_class = json_string(candidate, "risk_class").ok_or_else(|| {
+            anyhow!("mode/enable candidate `{candidate_id}` is missing `risk_class`")
+        })?;
+        if risk_class != "unknown_do_not_send" {
+            return Err(anyhow!(
+                "mode/enable candidate `{candidate_id}` has unexpected risk class `{risk_class}`"
+            ));
+        }
+        for claim_field in [
+            "semantic_decode_claim",
+            "registry_promotion_claim",
+            "hardware_output_authorized",
+            "native_control_evidence",
+            "output_sendability_claim",
+        ] {
+            if json_bool(candidate, claim_field) != Some(false) {
+                return Err(anyhow!(
+                    "mode/enable candidate `{candidate_id}` must keep `{claim_field}` false"
+                ));
+            }
+        }
+
+        let candidate_semantics = json_string_array_field(candidate, "candidate_semantics")?;
+        let tuple_ids = json_string_array_field(candidate, "tuple_ids")?;
+        let representative_frame_hexes =
+            json_string_array_field(candidate, "representative_frame_hexes")?;
+        let mut observed_frame_count = 0usize;
+        let mut send_path_rejected_count = 0usize;
+
+        for frame_hex in &representative_frame_hexes {
+            let frame = parse_hex_bytes(frame_hex).map_err(anyhow::Error::msg)?;
+            {
+                let observation = transport
+                    .observe_mode_enable_candidate_fixture_frame(&frame)
+                    .with_context(|| {
+                        format!(
+                            "mode/enable candidate `{candidate_id}` frame `{frame_hex}` was not observable"
+                        )
+                    })?;
+                if observation.candidate_id != candidate_id {
+                    return Err(anyhow!(
+                        "mode/enable candidate frame `{frame_hex}` routed to `{}`, expected `{candidate_id}`",
+                        observation.candidate_id
+                    ));
+                }
+                if observation.semantic_hypothesis != semantic_hypothesis {
+                    return Err(anyhow!(
+                        "mode/enable candidate frame `{frame_hex}` semantic hypothesis `{}` did not match `{semantic_hypothesis}`",
+                        observation.semantic_hypothesis
+                    ));
+                }
+                if observation.risk_class != MozaRiskClass::UnknownDoNotSend {
+                    return Err(anyhow!(
+                        "mode/enable candidate frame `{frame_hex}` was not fenced unknown_do_not_send"
+                    ));
+                }
+                if observation.semantic_decode_claim
+                    || observation.registry_promotion_claim
+                    || observation.hardware_output_authorized
+                    || observation.native_control_evidence
+                    || observation.output_sendability_claim
+                {
+                    return Err(anyhow!(
+                        "mode/enable candidate frame `{frame_hex}` created a forbidden claim"
+                    ));
+                }
+            }
+            observed_frame_count = observed_frame_count.saturating_add(1);
+
+            match transport.submit_read_only_fixture_frame(&frame) {
+                Err(MozaFakeSerialTransportError::Frame(
+                    MozaSerialFrameError::UnknownCommand { .. },
+                )) => {
+                    send_path_rejected_count = send_path_rejected_count.saturating_add(1);
+                }
+                Err(error) => {
+                    return Err(error).with_context(|| {
+                        format!(
+                            "mode/enable candidate `{candidate_id}` frame `{frame_hex}` send-path rejection used an unexpected error"
+                        )
+                    });
+                }
+                Ok(exchange) => {
+                    return Err(anyhow!(
+                        "mode/enable candidate frame `{frame_hex}` unexpectedly entered fake command path as `{}`",
+                        exchange.command_id
+                    ));
+                }
+            }
+        }
+
+        observations.push(VendorFakeTransportModeEnableCandidateObservation {
+            candidate_id: candidate_id.to_string(),
+            semantic_hypothesis: semantic_hypothesis.to_string(),
+            candidate_semantics,
+            tuple_ids,
+            representative_frame_hexes,
+            observed_frame_count,
+            send_path_rejected_count,
+            risk_class: risk_class.to_string(),
+            semantic_decode_claim: false,
+            registry_promotion_claim: false,
+            hardware_output_authorized: false,
+            native_control_evidence: false,
+            output_sendability_claim: false,
+        });
+    }
+
+    Ok(observations)
 }
 
 #[derive(Default)]
@@ -31133,6 +31297,10 @@ struct VendorFakeTransportCliReceipt {
     native_control_evidence: bool,
     hardware_output_authorized: bool,
     native_visible_ready: bool,
+    smoke_ready: bool,
+    release_ready: bool,
+    registry_promotion_claim: bool,
+    output_sendability_claim: bool,
     next_allowed_action: &'static str,
     blocked_actions: Vec<&'static str>,
     required_artifacts: Vec<&'static str>,
@@ -31147,6 +31315,7 @@ struct VendorFakeTransportCliReceipt {
     sent_output_writes: bool,
     sent_configuration_writes: bool,
     sent_firmware_or_dfu_commands: bool,
+    high_torque_enabled: bool,
     real_hardware_validated: bool,
     transport_kind: &'static str,
     fake_transport_verified: bool,
@@ -31160,6 +31329,12 @@ struct VendorFakeTransportCliReceipt {
     blocked_exchanges: Vec<VendorFakeTransportBlockedExchange>,
     malformed_frame_rejected: bool,
     unknown_command_rejected: bool,
+    mode_enable_candidate_fixture_source: &'static str,
+    mode_enable_candidate_group_count: usize,
+    mode_enable_candidate_frame_count: usize,
+    mode_enable_candidate_send_path_rejected_count: usize,
+    mode_enable_candidates_unknown_do_not_send: bool,
+    mode_enable_candidate_observations: Vec<VendorFakeTransportModeEnableCandidateObservation>,
     notes: Vec<&'static str>,
 }
 
@@ -31179,6 +31354,23 @@ struct VendorFakeTransportBlockedExchange {
     fixture_id: String,
     reason: String,
     risk_class: String,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorFakeTransportModeEnableCandidateObservation {
+    candidate_id: String,
+    semantic_hypothesis: String,
+    candidate_semantics: Vec<String>,
+    tuple_ids: Vec<String>,
+    representative_frame_hexes: Vec<String>,
+    observed_frame_count: usize,
+    send_path_rejected_count: usize,
+    risk_class: String,
+    semantic_decode_claim: bool,
+    registry_promotion_claim: bool,
+    hardware_output_authorized: bool,
+    native_control_evidence: bool,
+    output_sendability_claim: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -39484,6 +39676,10 @@ mod tests {
         assert_eq!(json_bool(&value, "native_control_evidence"), Some(false));
         assert_eq!(json_bool(&value, "hardware_output_authorized"), Some(false));
         assert_eq!(json_bool(&value, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(&value, "smoke_ready"), Some(false));
+        assert_eq!(json_bool(&value, "release_ready"), Some(false));
+        assert_eq!(json_bool(&value, "registry_promotion_claim"), Some(false));
+        assert_eq!(json_bool(&value, "output_sendability_claim"), Some(false));
         assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
         assert_eq!(json_bool(&value, "opened_serial_device"), Some(false));
         assert_eq!(json_bool(&value, "no_output_reports"), Some(true));
@@ -39498,6 +39694,7 @@ mod tests {
             json_bool(&value, "sent_firmware_or_dfu_commands"),
             Some(false)
         );
+        assert_eq!(json_bool(&value, "high_torque_enabled"), Some(false));
         assert_eq!(json_bool(&value, "real_hardware_validated"), Some(false));
         assert_eq!(json_string(&value, "transport_kind"), Some("fake_only"));
         assert_eq!(json_bool(&value, "fake_transport_verified"), Some(true));
@@ -39508,6 +39705,22 @@ mod tests {
         assert_eq!(json_bool(&value, "hardware_write_eligible"), Some(false));
         assert_eq!(json_bool(&value, "malformed_frame_rejected"), Some(true));
         assert_eq!(json_bool(&value, "unknown_command_rejected"), Some(true));
+        assert_eq!(
+            json_u64(&value, "mode_enable_candidate_group_count"),
+            Some(2)
+        );
+        assert_eq!(
+            json_u64(&value, "mode_enable_candidate_frame_count"),
+            Some(5)
+        );
+        assert_eq!(
+            json_u64(&value, "mode_enable_candidate_send_path_rejected_count"),
+            Some(5)
+        );
+        assert_eq!(
+            json_bool(&value, "mode_enable_candidates_unknown_do_not_send"),
+            Some(true)
+        );
 
         Ok(())
     }
@@ -39526,6 +39739,10 @@ mod tests {
             "native_control_evidence",
             "hardware_output_authorized",
             "native_visible_ready",
+            "smoke_ready",
+            "release_ready",
+            "registry_promotion_claim",
+            "output_sendability_claim",
             "no_hid_device_opened",
             "opened_serial_device",
             "no_ffb_writes",
@@ -39535,7 +39752,13 @@ mod tests {
             "sent_output_writes",
             "sent_configuration_writes",
             "sent_firmware_or_dfu_commands",
+            "high_torque_enabled",
             "real_hardware_validated",
+            "mode_enable_candidate_group_count",
+            "mode_enable_candidate_frame_count",
+            "mode_enable_candidate_send_path_rejected_count",
+            "mode_enable_candidates_unknown_do_not_send",
+            "mode_enable_candidate_observations",
         ] {
             assert!(
                 required.iter().any(|entry| entry.as_str() == Some(field)),
@@ -39555,6 +39778,16 @@ mod tests {
             false
         );
         assert_eq!(schema["properties"]["native_visible_ready"]["const"], false);
+        assert_eq!(schema["properties"]["smoke_ready"]["const"], false);
+        assert_eq!(schema["properties"]["release_ready"]["const"], false);
+        assert_eq!(
+            schema["properties"]["registry_promotion_claim"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["output_sendability_claim"]["const"],
+            false
+        );
         assert_eq!(schema["properties"]["opened_serial_device"]["const"], false);
         assert_eq!(schema["properties"]["no_ffb_writes"]["const"], true);
         assert_eq!(
@@ -39570,6 +39803,19 @@ mod tests {
             false
         );
         assert_eq!(schema["properties"]["sent_output_writes"]["const"], false);
+        assert_eq!(schema["properties"]["high_torque_enabled"]["const"], false);
+        assert_eq!(
+            schema["properties"]["mode_enable_candidate_group_count"]["const"],
+            2
+        );
+        assert_eq!(
+            schema["properties"]["mode_enable_candidate_frame_count"]["const"],
+            5
+        );
+        assert_eq!(
+            schema["properties"]["mode_enable_candidate_send_path_rejected_count"]["const"],
+            5
+        );
 
         Ok(())
     }
@@ -39603,6 +39849,41 @@ mod tests {
             exchange.fixture_id == "main_misc_set_ffb_status"
                 && exchange.risk_class == "vendor_output_candidate"
         }));
+        assert_eq!(receipt.mode_enable_candidate_group_count, 2);
+        assert_eq!(receipt.mode_enable_candidate_frame_count, 5);
+        assert_eq!(
+            receipt.mode_enable_candidate_send_path_rejected_count,
+            receipt.mode_enable_candidate_frame_count
+        );
+        assert!(receipt.mode_enable_candidates_unknown_do_not_send);
+        assert!(
+            receipt
+                .mode_enable_candidate_observations
+                .iter()
+                .any(|candidate| {
+                    candidate.candidate_id == "base_status_or_mode_poll_candidate"
+                        && candidate.risk_class == "unknown_do_not_send"
+                        && !candidate.semantic_decode_claim
+                        && !candidate.registry_promotion_claim
+                        && !candidate.hardware_output_authorized
+                        && !candidate.native_control_evidence
+                        && !candidate.output_sendability_claim
+                })
+        );
+        assert!(
+            receipt
+                .mode_enable_candidate_observations
+                .iter()
+                .any(|candidate| {
+                    candidate.candidate_id == "session_or_status_keepalive_candidate"
+                        && candidate.risk_class == "unknown_do_not_send"
+                        && !candidate.semantic_decode_claim
+                        && !candidate.registry_promotion_claim
+                        && !candidate.hardware_output_authorized
+                        && !candidate.native_control_evidence
+                        && !candidate.output_sendability_claim
+                })
+        );
 
         Ok(())
     }
@@ -39628,6 +39909,23 @@ mod tests {
         assert_eq!(json_bool(&value, "sent_output_writes"), Some(false));
         assert_eq!(json_u64(&value, "accepted_fixture_count"), Some(9));
         assert_eq!(json_u64(&value, "blocked_fixture_count"), Some(6));
+        assert_eq!(
+            json_u64(&value, "mode_enable_candidate_group_count"),
+            Some(2)
+        );
+        assert_eq!(
+            json_u64(&value, "mode_enable_candidate_frame_count"),
+            Some(5)
+        );
+        assert_eq!(
+            json_u64(&value, "mode_enable_candidate_send_path_rejected_count"),
+            Some(5)
+        );
+        assert_eq!(
+            json_bool(&value, "mode_enable_candidates_unknown_do_not_send"),
+            Some(true)
+        );
+        assert_eq!(json_bool(&value, "output_sendability_claim"), Some(false));
 
         Ok(())
     }

@@ -232,9 +232,12 @@ the current USBPcap Moza selector hint passed through
 `sniff-capture --hardware-doctor`, SimHub opened by the operator after capture
 starts, idle/stable confirmation, no SimHub output session, no simulator, no
 firmware/update/DFU page or prompt, raw pcap local-only, and OpenRacing
-no-output confirmation. The next native-control implementation work should use
-the mode/enable candidate questions to build semantic decoder/fake-transport
-coverage before any future authority write or motion ladder plan; the next
+no-output confirmation. The native-control implementation path has recorded
+fake-transport containment for the mode/enable candidate questions:
+representative frames are observable in software fake transport while the
+command/send path still rejects them as unknown commands. The next native step
+is read-only hardware status/mode matrix planning or semantic decoder
+refinement, not a future authority write or motion ladder plan; the next
 witness-lane operator work remains the remaining passive SimHub/simulator
 captures.
 

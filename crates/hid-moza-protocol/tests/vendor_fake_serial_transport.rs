@@ -7,7 +7,7 @@ use racing_wheel_hid_moza_protocol::serial::fake_transport::{
 };
 use racing_wheel_hid_moza_protocol::serial::frame::MozaSerialFrameError;
 use racing_wheel_hid_moza_protocol::serial::vendor_authority::{
-    MozaRiskClass, MozaSerialCodecStatus,
+    FORBIDDEN_VENDOR_CLASSES, MozaRiskClass, MozaSerialCodecStatus,
 };
 use serde_json::Value;
 
@@ -35,6 +35,24 @@ fn transport_schema() -> Result<Value, serde_json::Error> {
     ))
 }
 
+fn protocol_evidence_review() -> Result<Value, serde_json::Error> {
+    serde_json::from_str(include_str!(
+        "../../../ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json"
+    ))
+}
+
+fn value_at<'a>(value: &'a Value, pointer: &str) -> Result<&'a Value, io::Error> {
+    value
+        .pointer(pointer)
+        .ok_or_else(|| invalid_data(format!("missing JSON pointer `{pointer}`")))
+}
+
+fn array_at<'a>(value: &'a Value, pointer: &str) -> Result<&'a Vec<Value>, io::Error> {
+    value_at(value, pointer)?
+        .as_array()
+        .ok_or_else(|| invalid_data(format!("JSON pointer `{pointer}` is not an array")))
+}
+
 fn array_field<'a>(value: &'a Value, field: &str) -> Result<&'a Vec<Value>, io::Error> {
     value
         .get(field)
@@ -54,6 +72,15 @@ fn bool_field(value: &Value, field: &str) -> Result<bool, io::Error> {
         .get(field)
         .and_then(Value::as_bool)
         .ok_or_else(|| invalid_data(format!("missing bool field `{field}`")))
+}
+
+fn usize_field(value: &Value, field: &str) -> Result<usize, io::Error> {
+    let number = value
+        .get(field)
+        .and_then(Value::as_u64)
+        .ok_or_else(|| invalid_data(format!("missing integer field `{field}`")))?;
+    usize::try_from(number)
+        .map_err(|_| invalid_data(format!("field `{field}` is outside usize range")))
 }
 
 fn fixtures_by_id(codec_fixture: &Value) -> Result<BTreeMap<&str, &Value>, io::Error> {
@@ -92,6 +119,13 @@ fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, io::Error> {
     Ok(bytes)
 }
 
+fn mode_enable_candidates(review: &Value) -> Result<&Vec<Value>, io::Error> {
+    array_at(
+        review,
+        "/passive_tuple_registry_coverage/decode_candidate_mode_enable_review/candidates",
+    )
+}
+
 #[test]
 fn fake_transport_fixture_is_non_claiming() -> TestResult {
     let fixture = transport_fixture()?;
@@ -106,12 +140,33 @@ fn fake_transport_fixture_is_non_claiming() -> TestResult {
     assert!(!bool_field(&fixture, "native_control_evidence")?);
     assert!(!bool_field(&fixture, "hardware_output_authorized")?);
     assert!(!bool_field(&fixture, "native_visible_ready")?);
+    assert!(!bool_field(&fixture, "smoke_ready")?);
+    assert!(!bool_field(&fixture, "release_ready")?);
+    assert!(!bool_field(&fixture, "registry_promotion_claim")?);
+    assert!(!bool_field(&fixture, "output_sendability_claim")?);
     assert!(!bool_field(&fixture, "opened_serial_device")?);
     assert!(!bool_field(&fixture, "sent_read_only_query_commands")?);
     assert!(!bool_field(&fixture, "sent_output_writes")?);
     assert!(!bool_field(&fixture, "sent_configuration_writes")?);
     assert!(!bool_field(&fixture, "sent_firmware_or_dfu_commands")?);
+    assert!(!bool_field(&fixture, "high_torque_enabled")?);
     assert!(!bool_field(&fixture, "real_hardware_validated")?);
+    assert_eq!(
+        usize_field(&fixture, "mode_enable_candidate_group_count")?,
+        2
+    );
+    assert_eq!(
+        usize_field(&fixture, "mode_enable_candidate_frame_count")?,
+        5
+    );
+    assert_eq!(
+        usize_field(&fixture, "mode_enable_candidate_send_path_rejected_count")?,
+        5
+    );
+    assert!(bool_field(
+        &fixture,
+        "mode_enable_candidates_unknown_do_not_send"
+    )?);
     assert_eq!(
         FAKE_TRANSPORT_CODEC_STATUS,
         MozaSerialCodecStatus::RoundTripVerified
@@ -131,6 +186,10 @@ fn schema_requires_fake_transport_safety_gates() -> TestResult {
         "native_control_evidence",
         "hardware_output_authorized",
         "native_visible_ready",
+        "smoke_ready",
+        "release_ready",
+        "registry_promotion_claim",
+        "output_sendability_claim",
         "transport_kind",
         "fake_transport_verified",
         "opened_serial_device",
@@ -138,9 +197,14 @@ fn schema_requires_fake_transport_safety_gates() -> TestResult {
         "sent_output_writes",
         "sent_configuration_writes",
         "sent_firmware_or_dfu_commands",
+        "high_torque_enabled",
         "real_hardware_validated",
         "accepted_fixture_ids",
         "blocked_fixture_ids",
+        "mode_enable_candidate_group_count",
+        "mode_enable_candidate_frame_count",
+        "mode_enable_candidate_send_path_rejected_count",
+        "mode_enable_candidates_unknown_do_not_send",
     ] {
         assert!(
             required.iter().any(|entry| entry.as_str() == Some(field)),
@@ -215,6 +279,142 @@ fn fake_transport_rejects_malformed_and_unknown_frames() -> TestResult {
     ));
 
     assert!(transport.exchanges().is_empty());
+
+    Ok(())
+}
+
+#[test]
+fn fake_transport_observes_mode_enable_candidates_without_sendability() -> TestResult {
+    let review = protocol_evidence_review()?;
+    let candidates = mode_enable_candidates(&review)?;
+    let mut transport = MozaFakeSerialTransport::new();
+    let mut observed_frame_count = 0usize;
+
+    assert_eq!(candidates.len(), 2);
+    for candidate in candidates {
+        assert_eq!(str_field(candidate, "risk_class")?, "unknown_do_not_send");
+        assert!(!bool_field(candidate, "semantic_decode_claim")?);
+        assert!(!bool_field(candidate, "registry_promotion_claim")?);
+        assert!(!bool_field(candidate, "hardware_output_authorized")?);
+        assert!(!bool_field(candidate, "native_control_evidence")?);
+        assert!(!bool_field(candidate, "output_sendability_claim")?);
+
+        let candidate_id = str_field(candidate, "candidate_id")?;
+        let semantics = array_field(candidate, "candidate_semantics")?
+            .iter()
+            .map(|entry| {
+                entry
+                    .as_str()
+                    .ok_or_else(|| invalid_data("candidate semantic must be a string"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let frame_hexes = array_field(candidate, "representative_frame_hexes")?;
+
+        for frame_hex in frame_hexes {
+            let frame_hex = frame_hex
+                .as_str()
+                .ok_or_else(|| invalid_data("representative frame must be a string"))?;
+            let frame = hex_to_bytes(frame_hex)?;
+            let observation = transport.observe_mode_enable_candidate_fixture_frame(&frame)?;
+
+            assert_eq!(observation.candidate_id, candidate_id);
+            assert_eq!(observation.semantic_hypothesis, candidate_id);
+            assert_eq!(observation.risk_class, MozaRiskClass::UnknownDoNotSend);
+            assert!(!observation.semantic_decode_claim);
+            assert!(!observation.registry_promotion_claim);
+            assert!(!observation.hardware_output_authorized);
+            assert!(!observation.native_control_evidence);
+            assert!(!observation.output_sendability_claim);
+
+            for semantic in &semantics {
+                assert!(
+                    observation.candidate_semantics.contains(semantic),
+                    "candidate `{candidate_id}` missing semantic question `{semantic}`"
+                );
+            }
+            observed_frame_count = observed_frame_count.saturating_add(1);
+        }
+    }
+
+    assert_eq!(observed_frame_count, 5);
+    assert_eq!(
+        transport.mode_enable_candidate_observations().len(),
+        observed_frame_count
+    );
+    assert!(
+        transport.exchanges().is_empty(),
+        "observed mode/enable candidates must not create command exchanges"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn mode_enable_candidates_cannot_use_command_send_path() -> TestResult {
+    let review = protocol_evidence_review()?;
+    let candidates = mode_enable_candidates(&review)?;
+    let mut transport = MozaFakeSerialTransport::new();
+    let mut rejected_frame_count = 0usize;
+
+    for candidate in candidates {
+        for frame_hex in array_field(candidate, "representative_frame_hexes")? {
+            let frame_hex = frame_hex
+                .as_str()
+                .ok_or_else(|| invalid_data("representative frame must be a string"))?;
+            let frame = hex_to_bytes(frame_hex)?;
+            assert!(
+                matches!(
+                    transport.submit_read_only_fixture_frame(&frame),
+                    Err(MozaFakeSerialTransportError::Frame(
+                        MozaSerialFrameError::UnknownCommand { .. }
+                    ))
+                ),
+                "mode/enable candidate frame `{frame_hex}` must not enter the command send path"
+            );
+            rejected_frame_count = rejected_frame_count.saturating_add(1);
+        }
+    }
+
+    assert_eq!(rejected_frame_count, 5);
+    assert!(transport.exchanges().is_empty());
+
+    Ok(())
+}
+
+#[test]
+fn fake_transport_keeps_forbidden_classes_out_of_send_paths() -> TestResult {
+    assert!(!MozaRiskClass::UnknownDoNotSend.is_encodable());
+    assert!(!MozaRiskClass::UnknownDoNotSend.can_send_without_exact_authorization());
+    assert!(!MozaRiskClass::UnknownDoNotSend.requires_exact_authorization());
+    assert!(!MozaRiskClass::FirmwareOrDfuForbidden.is_encodable());
+    assert!(!MozaRiskClass::FirmwareOrDfuForbidden.can_send_without_exact_authorization());
+    assert!(!MozaRiskClass::FirmwareOrDfuForbidden.requires_exact_authorization());
+
+    for (class_id, risk_class) in FORBIDDEN_VENDOR_CLASSES {
+        assert!(
+            !risk_class.can_send_without_exact_authorization(),
+            "forbidden class `{class_id}` must not be sendable without review"
+        );
+    }
+
+    let fixture = transport_fixture()?;
+    assert!(!bool_field(&fixture, "high_torque_enabled")?);
+    assert!(!bool_field(&fixture, "sent_firmware_or_dfu_commands")?);
+    assert!(
+        array_field(&fixture, "blocked_actions")?
+            .iter()
+            .any(|action| action.as_str() == Some("high torque"))
+    );
+    assert!(
+        array_field(&fixture, "blocked_actions")?
+            .iter()
+            .any(|action| action.as_str() == Some("firmware or DFU command"))
+    );
+    assert!(
+        array_field(&fixture, "blocked_actions")?
+            .iter()
+            .any(|action| action.as_str() == Some("unknown host-to-device command"))
+    );
 
     Ok(())
 }

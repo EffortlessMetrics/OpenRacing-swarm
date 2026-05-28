@@ -5,7 +5,11 @@
   "native_control_evidence": false,
   "hardware_output_authorized": false,
   "native_visible_ready": false,
-  "next_allowed_action": "Build no-output CLI tooling around this fake transport before any read-only hardware probe, authorization, or hardware-write work.",
+  "smoke_ready": false,
+  "release_ready": false,
+  "registry_promotion_claim": false,
+  "output_sendability_claim": false,
+  "next_allowed_action": "Use the fake-only candidate containment proof to design the later read-only hardware status/mode matrix; no output, authorization, registry promotion, or hardware write is allowed from this artifact.",
   "blocked_actions": [
     "serial device open",
     "read-only hardware probe",
@@ -14,6 +18,7 @@
     "configuration write",
     "authorization receipt",
     "hardware writes",
+    "high torque",
     "native-visible claim",
     "smoke-ready claim",
     "release-ready claim",
@@ -26,6 +31,7 @@
     "fixtures/moza/r5/vendor-command-registry.json",
     "fixtures/moza/r5/vendor-serial-codec-fixtures.json",
     "fixtures/moza/r5/vendor-fake-serial-transport.json",
+    "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
     "crates/hid-moza-protocol/src/serial/fake_transport.rs"
   ],
   "transport_kind": "fake_only",
@@ -36,8 +42,10 @@
   "sent_output_writes": false,
   "sent_configuration_writes": false,
   "sent_firmware_or_dfu_commands": false,
+  "high_torque_enabled": false,
   "real_hardware_validated": false,
   "fixture_source": "fixtures/moza/r5/vendor-serial-codec-fixtures.json",
+  "mode_enable_candidate_fixture_source": "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
   "accepted_fixture_ids": [
     "estop_get_ffb",
     "main_misc_get_ffb_status",
@@ -57,6 +65,63 @@
     "base_gain_set_hands_off_protection",
     "compatibility_set_mode"
   ],
+  "mode_enable_candidate_group_count": 2,
+  "mode_enable_candidate_frame_count": 5,
+  "mode_enable_candidate_send_path_rejected_count": 5,
+  "mode_enable_candidates_unknown_do_not_send": true,
+  "mode_enable_candidate_observations": [
+    {
+      "candidate_id": "base_status_or_mode_poll_candidate",
+      "semantic_hypothesis": "base_status_or_mode_poll_candidate",
+      "candidate_semantics": [
+        "status_query",
+        "standard_pidff_mode_enable",
+        "game_control_mode_select"
+      ],
+      "tuple_ids": [
+        "0x25/0x19/0x01",
+        "0x25/0x19/0x02",
+        "0x25/0x19/0x03"
+      ],
+      "representative_frame_hexes": [
+        "7E032519010000CD",
+        "7E032519020000CE",
+        "7E032519030000CF"
+      ],
+      "observed_frame_count": 3,
+      "send_path_rejected_count": 3,
+      "risk_class": "unknown_do_not_send",
+      "semantic_decode_claim": false,
+      "registry_promotion_claim": false,
+      "hardware_output_authorized": false,
+      "native_control_evidence": false,
+      "output_sendability_claim": false
+    },
+    {
+      "candidate_id": "session_or_status_keepalive_candidate",
+      "semantic_hypothesis": "session_or_status_keepalive_candidate",
+      "candidate_semantics": [
+        "authority_keepalive",
+        "volatile_ffb_session_enable"
+      ],
+      "tuple_ids": [
+        "0x5A/0x1B/0x00",
+        "0x5D/0x1B/0x01"
+      ],
+      "representative_frame_hexes": [
+        "7E015A1B0001",
+        "7E035D1B01000007"
+      ],
+      "observed_frame_count": 2,
+      "send_path_rejected_count": 2,
+      "risk_class": "unknown_do_not_send",
+      "semantic_decode_claim": false,
+      "registry_promotion_claim": false,
+      "hardware_output_authorized": false,
+      "native_control_evidence": false,
+      "output_sendability_claim": false
+    }
+  ],
   "fake_response": {
     "payload_hex": "00",
     "meaning": "synthetic placeholder status byte only; not a hardware response and not evidence of native control"
@@ -64,6 +129,7 @@
   "notes": [
     "The fake transport replays checked-in fixture bytes through the decoder and records synthetic exchanges.",
     "Write-like vendor output/configuration candidates remain rejected by the fake transport until a later exact authorization stage.",
+    "Mode/enable candidate frames from passive evidence are observed in fake transport as unknown_do_not_send and are rejected by the command send path.",
     "No serial device is opened and no host-to-device traffic is sent by this artifact."
   ]
 }
