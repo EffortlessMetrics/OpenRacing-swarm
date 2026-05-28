@@ -413,6 +413,7 @@
         "decode_candidate_packet_group_summary",
         "decode_candidate_semantic_hypothesis_summary",
         "decode_candidate_semantic_correlation_plan",
+        "decode_candidate_mode_enable_review",
         "unknown_tuple_risk_class",
         "protocol_evidence_sufficient_for_output_plan",
         "hardware_output_authorized",
@@ -1006,6 +1007,122 @@
             "native_control_evidence": { "const": false },
             "output_sendability_claim": { "const": false },
             "protocol_evidence_sufficient_for_output_plan": { "const": false }
+          },
+          "additionalProperties": true
+        },
+        "decode_candidate_mode_enable_review": {
+          "type": "object",
+          "required": [
+            "claim_scope",
+            "source_hypothesis_scope",
+            "candidate_count",
+            "candidates",
+            "all_candidates_unknown_do_not_send",
+            "semantic_decode_claim",
+            "registry_promotion_claim",
+            "hardware_output_authorized",
+            "native_control_evidence",
+            "output_sendability_claim",
+            "protocol_evidence_sufficient_for_output_plan",
+            "next_allowed_action",
+            "blocked_actions",
+            "required_next_evidence"
+          ],
+          "properties": {
+            "claim_scope": {
+              "const": "no_output_passive_tuple_mode_enable_candidate_review"
+            },
+            "source_hypothesis_scope": {
+              "const": "no_output_passive_tuple_semantic_hypothesis_review"
+            },
+            "candidate_count": { "type": "integer", "minimum": 0 },
+            "candidates": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "candidate_id",
+                  "semantic_hypothesis",
+                  "candidate_semantics",
+                  "tuple_ids",
+                  "direction",
+                  "frame_start_byte",
+                  "representative_frame_hexes",
+                  "payload_len_min",
+                  "payload_len_max",
+                  "checksum_validated_from_samples",
+                  "observed_state_transition",
+                  "risk_class",
+                  "confidence",
+                  "semantic_decode_claim",
+                  "registry_promotion_claim",
+                  "hardware_output_authorized",
+                  "native_control_evidence",
+                  "output_sendability_claim",
+                  "required_next_evidence"
+                ],
+                "properties": {
+                  "candidate_id": { "type": "string" },
+                  "semantic_hypothesis": { "type": "string" },
+                  "candidate_semantics": {
+                    "type": "array",
+                    "items": {
+                      "enum": [
+                        "authority_keepalive",
+                        "volatile_ffb_session_enable",
+                        "status_query",
+                        "standard_pidff_mode_enable",
+                        "game_control_mode_select",
+                        "unknown_mode_or_enable_question"
+                      ]
+                    },
+                    "uniqueItems": true
+                  },
+                  "tuple_ids": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "direction": { "const": "host_to_device" },
+                  "frame_start_byte": { "const": "0x7E" },
+                  "representative_frame_hexes": {
+                    "type": "array",
+                    "items": { "$ref": "#/$defs/hex_bytes_compact" }
+                  },
+                  "payload_len_min": { "type": "integer", "minimum": 0 },
+                  "payload_len_max": { "type": "integer", "minimum": 0 },
+                  "checksum_validated_from_samples": { "type": "boolean" },
+                  "observed_state_transition": { "type": "string" },
+                  "risk_class": { "const": "unknown_do_not_send" },
+                  "confidence": { "const": "low_pattern_only" },
+                  "semantic_decode_claim": { "const": false },
+                  "registry_promotion_claim": { "const": false },
+                  "hardware_output_authorized": { "const": false },
+                  "native_control_evidence": { "const": false },
+                  "output_sendability_claim": { "const": false },
+                  "required_next_evidence": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "all_candidates_unknown_do_not_send": { "type": "boolean" },
+            "semantic_decode_claim": { "const": false },
+            "registry_promotion_claim": { "const": false },
+            "hardware_output_authorized": { "const": false },
+            "native_control_evidence": { "const": false },
+            "output_sendability_claim": { "const": false },
+            "protocol_evidence_sufficient_for_output_plan": { "const": false },
+            "next_allowed_action": { "type": "string" },
+            "blocked_actions": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "required_next_evidence": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
           },
           "additionalProperties": true
         },

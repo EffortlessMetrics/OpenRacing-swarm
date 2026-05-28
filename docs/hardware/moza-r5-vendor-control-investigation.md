@@ -46,13 +46,18 @@ pattern-only semantic hypotheses for that same queue:
 `session_or_status_keepalive_candidate`, while `0x25/0x19/*` is
 `base_status_or_mode_poll_candidate`. Those labels are low-confidence decode
 questions, not semantic commands, registry entries, or sendable output
-candidates. The next step is to correlate those hypotheses with named Pit
-House state transitions or fill remaining no-output capture gaps before
-proposing any vendor-control output path. The current receipt now records that
+candidates. The current review now turns those two hypothesis groups into
+explicit mode/enable candidate questions while keeping them non-sendable:
+`0x25/0x19/*` asks about `status_query`, `standard_pidff_mode_enable`, and
+`game_control_mode_select`, while `0x5A/0x1B/*` plus `0x5D/0x1B/*` asks about
+`authority_keepalive` and `volatile_ffb_session_enable`. Every candidate remains
+`unknown_do_not_send`, with no semantic decode, registry promotion, output
+sendability, authorization, hardware output, native-control, native-visible, or
+smoke-ready claim. The next native-path step is semantic decoder and
+fake-transport work, not an output attempt. The current receipt also records the
 correlation plan explicitly: two non-sendable targets, completed observations in
-`pit-house-open-idle` and `pit-house-full-controls`, and
-`pit-house-setting-change` as the next passive capture priority before SimHub or
-simulator correlation. The first bounded setting-change capture attempt remains
+the three Pit House scenarios, and remaining no-output correlation gaps in
+SimHub and simulator scenarios. The first bounded setting-change capture attempt remains
 classified as low-yield/incomplete: 355 bytes, six packets, zero Moza
 `0x346E:0x0004` matches, and restore status `not reported`. The repeat capture
 used the corrected selector `\\.\USBPcap2 --devices 4` and is now recorded as

@@ -177,7 +177,7 @@ The broader Moza objective remains incomplete:
 | Closed-loop failure analysis | `native-controlled-angle-closed-loop-failure-analysis.json` | Recorded no-output classification |
 | Consumed vendor-authority attempt | `vendor-authority-attempt.json` | Recorded exact one-frame non-claiming attempt |
 | Post-authority PIDFF response | `vendor-post-authority-pidff-smoke.json`; `vendor-post-authority-pidff-response.json`; [post-authority PIDFF response diagnosis](../../docs/hardware/moza-r5-post-authority-pidff-response.md) | Recorded regression versus baseline; no native-visible claim |
-| Vendor protocol evidence review | `vendor-protocol-evidence-review.json`; artifact-index/bench-wizard `vendor_protocol_decode_priority` | Recorded no-output review, host-to-device candidate `0x7E`, 7,863 checksum-valid candidate frames, 159 bounded passive tuple sample frames, one read-only registry tuple match, 12 commandless tuple IDs, 17 unknown commanded tuple IDs, frequency-ranked unknown commanded tuples headed by `0x5A/0x1B/0x00` and `0x5D/0x1B/0x01`, 30 decode-candidate sample frames for the top unknown tuples, protocol-crate observed-frame, packet-order, payload-shape, packet-group, low-confidence semantic-hypothesis, and semantic-correlation-plan regression coverage for those samples, two residual payload export gap packet locators, and no sufficient semantic protocol evidence for any output plan |
+| Vendor protocol evidence review | `vendor-protocol-evidence-review.json`; artifact-index/bench-wizard `vendor_protocol_decode_priority` | Recorded no-output review, host-to-device candidate `0x7E`, 7,863 checksum-valid candidate frames, 159 bounded passive tuple sample frames, one read-only registry tuple match, 12 commandless tuple IDs, 17 unknown commanded tuple IDs, frequency-ranked unknown commanded tuples headed by `0x5A/0x1B/0x00` and `0x5D/0x1B/0x01`, 30 decode-candidate sample frames for the top unknown tuples, protocol-crate observed-frame, packet-order, payload-shape, packet-group, low-confidence semantic-hypothesis, semantic-correlation-plan, and mode/enable candidate-question regression coverage for those samples, two residual payload export gap packet locators, and no sufficient semantic protocol evidence for any output plan |
 | Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls`, and `pit-house-setting-change` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence; setting-change keeps the earlier low-yield classification as historical failed evidence |
 | Remaining passive sniff plans | `simhub-open-idle`, `simhub-output-session`, `simulator-session-start-stop` sniff plans | Plan-only |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |
@@ -216,17 +216,27 @@ preserves pattern-only hypotheses that make the next decode questions explicit:
 `session_or_status_keepalive_candidate` for the `0x5A/0x1B/*` and
 `0x5D/0x1B/*` pair, and `base_status_or_mode_poll_candidate` for the
 `0x25/0x19/*` triad. It emits no hardware output command and no authorization
-command. The correlation plan now moves the next passive evidence target to
-SimHub and simulator scenarios, before any tuple can move toward semantic
-decoder coverage or registry review. The `simhub-open-idle` handoff is staged
+command. The review now also records those two groups as no-output
+mode/enable candidate questions: the `0x25/0x19/*` triad asks whether the
+traffic is a `status_query`, `standard_pidff_mode_enable`, or
+`game_control_mode_select`, and the `0x5A/0x1B/*` plus `0x5D/0x1B/*` pair asks
+whether the traffic is an `authority_keepalive` or
+`volatile_ffb_session_enable`. Those questions are still
+`unknown_do_not_send`; they are not semantic decoder proof, registry entries,
+sendable tuples, authorization inputs, or output evidence. The correlation plan
+now moves the next passive evidence target to SimHub and simulator scenarios,
+before any tuple can move toward semantic decoder coverage or registry review.
+The `simhub-open-idle` handoff is staged
 only: it requires a fresh `wheelctl hardware doctor` immediately before capture,
 the current USBPcap Moza selector hint passed through
 `sniff-capture --hardware-doctor`, SimHub opened by the operator after capture
 starts, idle/stable confirmation, no SimHub output session, no simulator, no
 firmware/update/DFU page or prompt, raw pcap local-only, and OpenRacing
-no-output confirmation. The next implementation work should continue
-vendor-specific protocol investigation by completing the remaining passive
-SimHub/simulator captures before any future motion ladder plan.
+no-output confirmation. The next native-control implementation work should use
+the mode/enable candidate questions to build semantic decoder/fake-transport
+coverage before any future authority write or motion ladder plan; the next
+witness-lane operator work remains the remaining passive SimHub/simulator
+captures.
 
 Passive USB sniff captures may produce non-claiming `sniff-receipt.json`,
 `sniff-summary.json`, and bundle manifest artifacts, but those are
