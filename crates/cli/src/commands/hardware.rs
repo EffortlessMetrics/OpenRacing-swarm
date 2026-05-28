@@ -393,11 +393,7 @@ fn build_hardware_sniff_plan(
         platform_hint: platform_hint.as_str().to_string(),
         allowed_actions: SNIFF_ALLOWED_ACTIONS.to_vec(),
         forbidden_actions: SNIFF_FORBIDDEN_ACTIONS.to_vec(),
-        pre_capture_checklist: SNIFF_PRE_CAPTURE_CHECKLIST
-            .iter()
-            .copied()
-            .map(str::to_string)
-            .collect(),
+        pre_capture_checklist: sniff_pre_capture_checklist(request.scenario),
         post_capture_checklist: SNIFF_POST_CAPTURE_CHECKLIST
             .iter()
             .copied()
@@ -2543,6 +2539,7 @@ fn sniff_notes_capture_hints_from_hardware_doctor(
         active_usbpcap_processes,
         notes: vec![
             "hardware doctor is observe-only; these hints only identify the passive capture interface and device filter".to_string(),
+            "refresh hardware doctor immediately before capture and do not reuse stale USBPcap --devices values from earlier captures".to_string(),
             "operator notes do not prove a pcap capture exists and do not authorize OpenRacing output".to_string(),
         ],
     }))
@@ -6405,6 +6402,33 @@ const PIT_HOUSE_SETTING_CHANGE_OPERATOR_NOTES_REQUIRED: &[&str] = &[
     "ending setting value",
     "whether the setting value was restored",
 ];
+const SIMHUB_OPEN_IDLE_OPERATOR_NOTES_REQUIRED: &[&str] = &[
+    "SimHub version/source if known",
+    "SimHub launch/open time",
+    "SimHub idle/stable confirmation",
+    "no SimHub output session started",
+    "no simulator started",
+    "firmware/update/DFU pages stayed closed or no prompt/page observed",
+    "raw pcap kept local only",
+    "OpenRacing sent no HID/output/feature/serial/firmware commands",
+];
+
+fn sniff_pre_capture_checklist(scenario: HardwareSniffScenario) -> Vec<String> {
+    let mut checklist = SNIFF_PRE_CAPTURE_CHECKLIST
+        .iter()
+        .copied()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if scenario == HardwareSniffScenario::SimhubOpenIdle {
+        checklist.extend([
+            "refresh hardware doctor immediately before capture and use its current USBPcap Moza selector hint",
+            "do not reuse stale USBPcap --devices values from earlier captures",
+            "open SimHub only after capture starts, then wait for idle/stable discovery before stopping the capture",
+            "do not start a SimHub output session or simulator during this open-idle capture",
+        ].into_iter().map(str::to_string));
+    }
+    checklist
+}
 
 fn sniff_operator_notes_required(scenario: HardwareSniffScenario) -> Vec<String> {
     let mut required = SNIFF_OPERATOR_NOTES_REQUIRED
@@ -6415,6 +6439,14 @@ fn sniff_operator_notes_required(scenario: HardwareSniffScenario) -> Vec<String>
     if scenario == HardwareSniffScenario::PitHouseSettingChange {
         required.extend(
             PIT_HOUSE_SETTING_CHANGE_OPERATOR_NOTES_REQUIRED
+                .iter()
+                .copied()
+                .map(str::to_string),
+        );
+    }
+    if scenario == HardwareSniffScenario::SimhubOpenIdle {
+        required.extend(
+            SIMHUB_OPEN_IDLE_OPERATOR_NOTES_REQUIRED
                 .iter()
                 .copied()
                 .map(str::to_string),
@@ -9079,6 +9111,67 @@ mod tests {
         }
 
         #[test]
+        fn simhub_open_idle_sniff_plan_requires_idle_handoff_notes() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let plan = sample_plan_for_scenario(dir.path(), HardwareSniffScenario::SimhubOpenIdle)?;
+            let plan_path = dir.path().join("sniff-plan.json");
+            write_json_file(&plan_path, &plan)?;
+            let stored = read_and_validate_sniff_plan(&plan_path)?;
+            let notes = render_sniff_operator_notes_template(&plan_path, &stored, None);
+
+            assert!(
+                plan.pre_capture_checklist.iter().any(|item| {
+                    item == "refresh hardware doctor immediately before capture and use its current USBPcap Moza selector hint"
+                }),
+                "SimHub open-idle plan should require a fresh hardware-doctor selector"
+            );
+            assert!(plan.pre_capture_checklist.iter().any(|item| {
+                item == "do not reuse stale USBPcap --devices values from earlier captures"
+            }));
+            assert!(plan.pre_capture_checklist.iter().any(|item| {
+                item == "do not start a SimHub output session or simulator during this open-idle capture"
+            }));
+            for field in SIMHUB_OPEN_IDLE_OPERATOR_NOTES_REQUIRED {
+                assert!(
+                    plan.operator_notes_required
+                        .iter()
+                        .any(|required| required == field),
+                    "plan missing SimHub open-idle operator note: {field}"
+                );
+                assert!(
+                    notes.contains(&format!("- [ ] {field}:")),
+                    "operator notes template missing SimHub open-idle field: {field}"
+                );
+            }
+            assert_schema_valid("sniff-plan.schema.json", &serde_json::to_value(&plan)?)?;
+            Ok(())
+        }
+
+        #[test]
+        fn simhub_open_idle_sniff_plan_schema_rejects_missing_idle_notes() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let plan = sample_plan_for_scenario(dir.path(), HardwareSniffScenario::SimhubOpenIdle)?;
+            let mut value = serde_json::to_value(&plan)?;
+            let Some(notes) = value
+                .get_mut("operator_notes_required")
+                .and_then(serde_json::Value::as_array_mut)
+            else {
+                return Err("expected operator_notes_required array".into());
+            };
+            notes.retain(|item| item.as_str() != Some("no SimHub output session started"));
+
+            let schema_text = fs::read_to_string(sniff_schema_path("sniff-plan.schema.json"))?;
+            let schema: serde_json::Value = serde_json::from_str(&schema_text)?;
+            let validator = jsonschema::Validator::new(&schema)?;
+            if validator.validate(&value).is_ok() {
+                return Err(
+                    "SimHub open-idle plan without output-session note should fail schema".into(),
+                );
+            }
+            Ok(())
+        }
+
+        #[test]
         fn setting_change_sniff_plan_schema_rejects_missing_setting_notes() -> TestResult {
             let dir = tempfile::tempdir()?;
             let plan =
@@ -9184,9 +9277,11 @@ mod tests {
                 "operator notes missing capture command:\n{notes}"
             );
             assert!(notes.contains("wheelctl hardware sniff-capture"));
+            assert!(notes.contains("--hardware-doctor"));
             assert!(notes.contains("--duration-ms 60000"));
             assert!(notes.contains("--confirm-external-passive-capture"));
             assert!(notes.contains("sniff-capture-receipt.json"));
+            assert!(notes.contains("do not reuse stale USBPcap --devices values"));
             assert!(notes.contains("MOZA Windows Driver"));
             assert!(notes.contains("Active USBPcapCMD processes detected before capture: `1`"));
             assert!(notes.contains("old-probe"));

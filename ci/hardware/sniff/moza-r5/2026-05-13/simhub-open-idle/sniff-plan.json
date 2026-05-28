@@ -2,7 +2,7 @@
   "schema_version": 1,
   "success": true,
   "command": "wheelctl hardware sniff-plan",
-  "generated_at_utc": "2026-05-19T23:46:15Z",
+  "generated_at_utc": "2026-05-28T19:31:28Z",
   "family": "moza-r5",
   "scenario": "simhub-open-idle",
   "lane": "ci/hardware/moza-r5/2026-05-13",
@@ -36,7 +36,11 @@
     "confirm the target device stack is attached before starting capture",
     "start USBPcap, Wireshark, tshark, or usbmon before launching or changing the external app",
     "keep OpenRacing hardware output commands stopped for this passive capture",
-    "keep firmware, update, DFU, driver replacement, Zadig, and WinUSB conversion flows closed"
+    "keep firmware, update, DFU, driver replacement, Zadig, and WinUSB conversion flows closed",
+    "refresh hardware doctor immediately before capture and use its current USBPcap Moza selector hint",
+    "do not reuse stale USBPcap --devices values from earlier captures",
+    "open SimHub only after capture starts, then wait for idle/stable discovery before stopping the capture",
+    "do not start a SimHub output session or simulator during this open-idle capture"
   ],
   "post_capture_checklist": [
     "stop capture and save the pcapng in local scratch storage",
@@ -50,7 +54,15 @@
     "capture duration or start/stop times",
     "device stack attached",
     "whether firmware/update/DFU pages stayed closed",
-    "whether raw pcapng was kept local or reviewed for bundling"
+    "whether raw pcapng was kept local or reviewed for bundling",
+    "SimHub version/source if known",
+    "SimHub launch/open time",
+    "SimHub idle/stable confirmation",
+    "no SimHub output session started",
+    "no simulator started",
+    "firmware/update/DFU pages stayed closed or no prompt/page observed",
+    "raw pcap kept local only",
+    "OpenRacing sent no HID/output/feature/serial/firmware commands"
   ],
   "raw_pcap_commit_default": false,
   "evidence_status": "passive_external_usb_observation",

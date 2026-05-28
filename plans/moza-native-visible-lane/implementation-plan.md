@@ -4777,6 +4777,100 @@ log preservation, passive sniff plans, checked-in sniff evidence, local raw
 capture attempt records, consumed hardware attempts, or protocol evidence
 review receipts.
 
+## Work item: stage-simhub-open-idle-capture-handoff
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: reliable passive SimHub and simulator correlation capture after the
+accepted Pit House setting-change evidence
+Blocked by: SimHub is not open and no operator action is available, so this PR
+can only stage the handoff and must not run a capture.
+
+### Goal
+
+Make `simhub-open-idle` the explicit next passive correlation capture without
+installing or launching SimHub, running USBPcap, creating capture evidence, or
+changing any output/readiness claim.
+
+### Production Delta
+
+The checked-in `simhub-open-idle` sniff plan now records SimHub-specific
+operator evidence requirements:
+
+- SimHub version/source if known.
+- SimHub launch/open time.
+- SimHub idle/stable confirmation.
+- No SimHub output session started.
+- No simulator started.
+- Firmware/update/DFU pages stayed closed or no prompt/page was observed.
+- Raw pcap kept local only.
+- OpenRacing sent no HID/output/feature/serial/firmware commands.
+
+The plan also requires a fresh `wheelctl hardware doctor` immediately before
+capture, use of the current USBPcap Moza selector hint, and no reuse of stale
+`--devices` values. The operator-notes template schema now requires the
+SimHub open-idle fields, while the generated bounded capture command continues
+to pass `--hardware-doctor` into `wheelctl hardware sniff-capture` so PR #68's
+selector verification remains in the capture path.
+
+Artifact-index and bench-wizard passive sniff navigation now expose the next
+passive gap as `simhub-open-idle` after the three Pit House scenarios are
+recorded. The next operator step remains an external passive capture handoff
+only; it does not mark `simhub-open-idle` recorded and does not create receipt,
+summary, or bundle artifacts.
+
+### Non-goals
+
+No SimHub install, SimHub launch, live capture, raw `.pcapng` commit, ZIP bundle
+commit, SimHub binary/installer commit, sniff receipt, sniff summary, accepted
+sniff bundle, HID open, serial open, read-only query send, OpenRacing hardware
+output, authorization, PIDFF rerun, direct HID report `0xaf`, high torque,
+serial config, firmware, DFU, native-control claim, native-visible claim,
+smoke-ready claim, simulator readiness claim, coexistence readiness claim,
+release-ready claim, semantic command decode, registry coverage promotion, or
+tuple sendability claim.
+
+### Acceptance
+
+- `simhub-open-idle/sniff-plan.json` contains the SimHub idle/open fields and
+  remains non-claiming.
+- Operator notes for `simhub-open-idle` require version/source, launch/open
+  time, idle/stable state, no output session, no simulator, firmware/update/DFU
+  boundary, raw-pcap local-only status, and OpenRacing no-output confirmation.
+- Bench-wizard and artifact-index route the next passive gap to
+  `simhub-open-idle` once Pit House scenarios are recorded.
+- Generated capture handoff uses the fresh hardware-doctor selector path and
+  passes `--hardware-doctor` into `sniff-capture`; no hard-coded remembered
+  selector is emitted.
+- Existing Pit House setting-change evidence and the prior low-yield
+  classification remain preserved.
+- Existing no-output and no-readiness claim flags remain false.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl passive_sniff -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_sniff_next_operator_commands_parse -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl artifact_index -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the `simhub-open-idle` plan/operator-note required fields,
+scenario-specific checklist wording, passive navigation next-gap display,
+focused tests, checked-in generated `simhub-open-idle/sniff-plan.json`, and
+source-of-truth updates. Do not remove the accepted Pit House sniff evidence,
+low-yield classification, bounded `sniff-capture`, finalization retry,
+USBPcap selector guard, consumed hardware attempts, or protocol evidence review
+receipts.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
