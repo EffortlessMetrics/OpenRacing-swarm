@@ -82,6 +82,14 @@ Frequency-ranked tuples are decode-priority navigation only. They do not make an
 | --- | --- | --- | --- | --- | --- |
 | `base_status_or_mode_poll_candidate` | `0x25/0x19/0x01`, `0x25/0x19/0x02`, `0x25/0x19/0x03` | `pit-house-open-idle, pit-house-full-controls, pit-house-setting-change` | `simhub-open-idle, simhub-output-session, simulator-session-start-stop` | `simhub-open-idle` | `false` |
 | `session_or_status_keepalive_candidate` | `0x5A/0x1B/0x00`, `0x5D/0x1B/0x01` | `pit-house-open-idle, pit-house-full-controls, pit-house-setting-change` | `simhub-open-idle, simhub-output-session, simulator-session-start-stop` | `simhub-open-idle` | `false` |
+- Mode/enable decode candidate count: `2`
+- Mode/enable sendability claim: `false`
+- Mode/enable evidence sufficient for output plan: `false`
+
+| Mode/enable candidate | Semantic questions | Tuples | Direction | Frame | Risk | Sendable |
+| --- | --- | --- | --- | --- | --- | --- |
+| `base_status_or_mode_poll_candidate` | `status_query, standard_pidff_mode_enable, game_control_mode_select` | `0x25/0x19/0x01`, `0x25/0x19/0x02`, `0x25/0x19/0x03` | `host_to_device` | `0x7E` | `unknown_do_not_send` | `false` |
+| `session_or_status_keepalive_candidate` | `authority_keepalive, volatile_ffb_session_enable` | `0x5A/0x1B/0x00`, `0x5D/0x1B/0x01` | `host_to_device` | `0x7E` | `unknown_do_not_send` | `false` |
 - Residual payload export gap packets: `4`
 - Payload export gap scenarios: `3`
 - Payload gap sendability claim: `false`

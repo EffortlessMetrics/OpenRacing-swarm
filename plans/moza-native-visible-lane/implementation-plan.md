@@ -116,12 +116,21 @@ decode questions, not semantic command definitions: each tuple remains
 hardware output.
 The review now also records a no-output semantic correlation plan for those
 hypotheses. It groups the five tuple hypotheses into two correlation targets,
-records that both are observed in the completed `pit-house-open-idle` and
-`pit-house-full-controls` summaries, and names `pit-house-setting-change` as the
-next passive capture priority before SimHub and simulator correlation gaps. The
+records that both are observed in the completed Pit House summaries, and routes
+the remaining passive correlation gaps to SimHub and simulator scenarios. The
 plan is capture navigation only: `semantic_decode_claim=false`,
 `registry_promotion_claim=false`, `output_sendability_claim=false`, and
 `protocol_evidence_sufficient_for_output_plan=false`.
+The same review now classifies those two low-confidence hypothesis groups into
+explicit mode/enable decode questions. The `0x25/0x19/*` triad is preserved as
+candidate questions for `status_query`, `standard_pidff_mode_enable`, and
+`game_control_mode_select`, while the `0x5A/0x1B/*` and `0x5D/0x1B/*` pair is
+preserved as candidate questions for `authority_keepalive` and
+`volatile_ffb_session_enable`. These are reviewed questions for the next
+semantic decoder/fake-transport work only: both groups remain
+`unknown_do_not_send`, with no semantic decode, registry promotion, tuple
+sendability, authorization, hardware output, native-control, native-visible, or
+smoke-ready claim.
 The `pit-house-setting-change` sniff plan now pins the scenario-specific
 operator evidence required for that next capture: exact Pit House setting,
 starting value, ending value, and an affirmative restore status. The first
@@ -4870,6 +4879,96 @@ source-of-truth updates. Do not remove the accepted Pit House sniff evidence,
 low-yield classification, bounded `sniff-capture`, finalization retry,
 USBPcap selector guard, consumed hardware attempts, or protocol evidence review
 receipts.
+
+## Work item: classify-vendor-mode-enable-decode-candidates
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: fixture-backed semantic decoder review, fake transport coverage, and
+read-only status/mode matrix planning for a future decoded volatile mode or
+enable candidate
+Blocked by: no decoded sendable vendor command exists; current evidence is
+checked-in passive tuple shape and low-confidence semantic hypotheses only.
+
+### Goal
+
+Turn the existing passive tuple semantic hypotheses into explicit no-output
+mode/enable decode questions so future protocol work can focus on likely
+authority, session, mode, and status semantics without making any tuple
+sendable.
+
+### Production Delta
+
+`wheelctl moza vendor-protocol-evidence-review` now emits
+`decode_candidate_mode_enable_review` from the checked-in passive tuple
+hypotheses. The derived review preserves two candidate groups:
+
+- `base_status_or_mode_poll_candidate` for `0x25/0x19/0x01`,
+  `0x25/0x19/0x02`, and `0x25/0x19/0x03`, with candidate semantic questions
+  `status_query`, `standard_pidff_mode_enable`, and
+  `game_control_mode_select`.
+- `session_or_status_keepalive_candidate` for `0x5A/0x1B/0x00` and
+  `0x5D/0x1B/0x01`, with candidate semantic questions
+  `authority_keepalive` and `volatile_ffb_session_enable`.
+
+The schema pins this review as
+`no_output_passive_tuple_mode_enable_candidate_review`, requires every
+candidate to remain `unknown_do_not_send`, and keeps semantic decode, registry
+promotion, output sendability, authorization, hardware output,
+native-control, native-visible, smoke-ready, simulator, coexistence, and
+release-ready claims false. Artifact-index Markdown now surfaces the
+mode/enable candidate count and candidate table in the Vendor Authority Handoff
+section.
+
+### Non-goals
+
+No semantic command decode, registry promotion, command tuple sendability,
+vendor serial write, HID output, HID feature report, PIDFF output,
+authorization receipt, hardware attempt, Pit House or SimHub dependency,
+simulator capture, read-only hardware status probe, native-control claim,
+native-visible claim, smoke-ready claim, coexistence claim, simulator readiness
+claim, firmware/DFU interaction, or release-ready claim.
+
+### Acceptance
+
+- `vendor-protocol-evidence-review.json` contains
+  `decode_candidate_mode_enable_review` with the two low-confidence hypothesis
+  groups mapped to explicit mode/enable/status semantic questions.
+- Every mode/enable candidate remains `unknown_do_not_send`,
+  `semantic_decode_claim=false`, `registry_promotion_claim=false`,
+  `output_sendability_claim=false`, `hardware_output_authorized=false`, and
+  `native_control_evidence=false`.
+- Artifact-index and bench-wizard decode-priority navigation surface the
+  candidate questions while preserving the no-output boundary.
+- The schema and focused tests reject accidental readiness or sendability
+  promotion from this passive review.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_authority_navigation_surfaces_decode_priority_without_claims -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl artifact_index -- --nocapture
+cargo run --locked -p wheelctl --bin wheelctl -- moza vendor-protocol-evidence-review --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json --json --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-mode-enable-candidates.json --md-out ci/hardware/moza-r5/2026-05-13/index.md
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the mode/enable candidate review generation, schema additions,
+artifact-index/bench-wizard rendering, focused tests, regenerated
+`vendor-protocol-evidence-review.json`, regenerated artifact index, and
+source-of-truth updates. Do not remove passive sniff evidence, low-yield
+classification, SimHub handoff staging, USBPcap selector guard, consumed
+hardware attempts, post-authority PIDFF diagnosis, or the underlying passive
+tuple hypothesis review.
 
 ## Work item: native-visible-promotion
 

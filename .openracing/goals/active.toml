@@ -1774,6 +1774,26 @@ commands = [
 ]
 
 [[work_item]]
+id = "classify-vendor-mode-enable-decode-candidates"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-classify-vendor-mode-enable-decode-candidates"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json"
+claim_boundary = "No-output passive tuple mode/enable candidate classification only; derives low-confidence semantic questions for volatile FFB/session enable, standard PIDFF mode enable, game/control mode select, authority keepalive, and status query from checked-in passive tuple hypotheses while every candidate remains unknown_do_not_send with no semantic decode, registry promotion, tuple sendability, authorization, hardware output, native-control, native-visible, smoke-ready, simulator, coexistence, firmware, or release-ready claim."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_authority_navigation_surfaces_decode_priority_without_claims -- --nocapture",
+  "cargo run --locked -p wheelctl --bin wheelctl -- moza vendor-protocol-evidence-review --lane ci/hardware/moza-r5/2026-05-13 --json-out ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json --json --overwrite",
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-mode-enable-candidates.json --md-out ci/hardware/moza-r5/2026-05-13/index.md",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
