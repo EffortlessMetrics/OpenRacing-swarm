@@ -53,11 +53,15 @@ explicit mode/enable candidate questions while keeping them non-sendable:
 `authority_keepalive` and `volatile_ffb_session_enable`. Every candidate remains
 `unknown_do_not_send`, with no semantic decode, registry promotion, output
 sendability, authorization, hardware output, native-control, native-visible, or
-smoke-ready claim. The next native-path step is semantic decoder and
-fake-transport work, not an output attempt. The current receipt also records the
-correlation plan explicitly: two non-sendable targets, completed observations in
-the three Pit House scenarios, and remaining no-output correlation gaps in
-SimHub and simulator scenarios. The first bounded setting-change capture attempt remains
+smoke-ready claim. The fake transport now records containment for those
+questions: representative frames are observed as `unknown_do_not_send`
+candidate evidence, and the command/send path still rejects the same frames as
+unknown commands. The next native-path step is read-only hardware status/mode
+matrix planning or semantic decoder refinement, not an output attempt. The
+current receipt also records the correlation plan explicitly: two non-sendable
+targets, completed observations in the three Pit House scenarios, and
+remaining no-output correlation gaps in SimHub and simulator scenarios. The
+first bounded setting-change capture attempt remains
 classified as low-yield/incomplete: 355 bytes, six packets, zero Moza
 `0x346E:0x0004` matches, and restore status `not reported`. The repeat capture
 used the corrected selector `\\.\USBPcap2 --devices 4` and is now recorded as

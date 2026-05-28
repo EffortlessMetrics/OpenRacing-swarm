@@ -126,11 +126,14 @@ explicit mode/enable decode questions. The `0x25/0x19/*` triad is preserved as
 candidate questions for `status_query`, `standard_pidff_mode_enable`, and
 `game_control_mode_select`, while the `0x5A/0x1B/*` and `0x5D/0x1B/*` pair is
 preserved as candidate questions for `authority_keepalive` and
-`volatile_ffb_session_enable`. These are reviewed questions for the next
-semantic decoder/fake-transport work only: both groups remain
-`unknown_do_not_send`, with no semantic decode, registry promotion, tuple
-sendability, authorization, hardware output, native-control, native-visible, or
-smoke-ready claim.
+`volatile_ffb_session_enable`. These are reviewed questions only: both groups
+remain `unknown_do_not_send`, with no semantic decode, registry promotion,
+tuple sendability, authorization, hardware output, native-control,
+native-visible, or smoke-ready claim. The fake transport now observes
+representative frames for both groups as software-only candidate observations
+while the command/send path still rejects the same frames as unknown commands.
+That is containment evidence only; the next native-path step is a read-only
+hardware status/mode matrix, not output.
 The `pit-house-setting-change` sniff plan now pins the scenario-specific
 operator evidence required for that next capture: exact Pit House setting,
 starting value, ending value, and an affirmative restore status. The first
@@ -4969,6 +4972,88 @@ source-of-truth updates. Do not remove passive sniff evidence, low-yield
 classification, SimHub handoff staging, USBPcap selector guard, consumed
 hardware attempts, post-authority PIDFF diagnosis, or the underlying passive
 tuple hypothesis review.
+
+## Work item: verify-vendor-mode-candidates-fake-transport
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: read-only hardware status/mode matrix planning for a future decoded
+volatile mode or enable candidate
+Blocked by: no semantic decode or sendable vendor command exists; current
+evidence remains checked-in passive tuple shape and fake-only containment.
+
+### Goal
+
+Prove that the current mode/enable candidate groups can be parsed, routed, and
+classified in software fake transport without making any tuple sendable or
+opening hardware.
+
+### Production Delta
+
+The Moza protocol fake transport now has a candidate-observation path for the
+representative passive frames listed in
+`ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json`.
+It records:
+
+- `base_status_or_mode_poll_candidate` for the `0x25/0x19/*` triad with
+  status/mode semantic questions.
+- `session_or_status_keepalive_candidate` for the `0x5A/0x1B/*` and
+  `0x5D/0x1B/*` pair with session/authority semantic questions.
+
+The same frames still fail the semantic command path as unknown commands.
+`fixtures/moza/r5/vendor-fake-serial-transport.json`,
+`schemas/moza-vendor-fake-serial-transport.schema.json`, and
+`schemas/moza-vendor-no-output-cli.schema.json` pin the candidate counts,
+send-path rejection counts, and non-claiming booleans. `wheelctl moza
+vendor-fake-transport` reports the fake-only candidate containment alongside
+the existing read-only fixture exchanges.
+
+### Non-goals
+
+No semantic command decode, registry promotion, command tuple sendability,
+vendor serial write, HID open, HID output, HID feature report, PIDFF output,
+authorization receipt, hardware attempt, Pit House or SimHub dependency,
+simulator capture, read-only hardware status probe, native-control claim,
+native-visible claim, smoke-ready claim, coexistence claim, simulator readiness
+claim, firmware/DFU interaction, high torque, or release-ready claim.
+
+### Acceptance
+
+- Fake transport ingests the five representative mode/enable candidate frames
+  from the passive evidence review.
+- The `0x25/0x19/*` group remains status/mode questions only.
+- The `0x5A/0x1B/*` and `0x5D/0x1B/*` group remains session/authority
+  questions only.
+- The command/send path rejects those candidate frames as unknown commands.
+- Unknown, firmware/DFU, and high-torque paths remain forbidden.
+- Receipt, fixture, and schema fields keep `hardware_output_authorized=false`,
+  `native_control_evidence=false`, `native_visible_ready=false`,
+  `smoke_ready=false`, `release_ready=false`,
+  `output_sendability_claim=false`, and `registry_promotion_claim=false`.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the fake-transport candidate observation path, fixture/schema/CLI
+receipt additions, focused tests, and source-of-truth updates. Do not remove
+the passive evidence review, accepted Pit House sniff evidence, low-yield
+classification, SimHub handoff staging, USBPcap selector guard, consumed
+hardware attempts, or post-authority PIDFF diagnosis.
 
 ## Work item: native-visible-promotion
 

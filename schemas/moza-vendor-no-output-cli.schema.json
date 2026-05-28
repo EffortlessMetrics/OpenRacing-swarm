@@ -10,6 +10,10 @@
     "native_control_evidence",
     "hardware_output_authorized",
     "native_visible_ready",
+    "smoke_ready",
+    "release_ready",
+    "registry_promotion_claim",
+    "output_sendability_claim",
     "next_allowed_action",
     "blocked_actions",
     "required_artifacts",
@@ -24,6 +28,7 @@
     "sent_output_writes",
     "sent_configuration_writes",
     "sent_firmware_or_dfu_commands",
+    "high_torque_enabled",
     "real_hardware_validated",
     "transport_kind",
     "fake_transport_verified",
@@ -32,7 +37,12 @@
     "accepted_fixture_count",
     "blocked_fixture_count",
     "malformed_frame_rejected",
-    "unknown_command_rejected"
+    "unknown_command_rejected",
+    "mode_enable_candidate_group_count",
+    "mode_enable_candidate_frame_count",
+    "mode_enable_candidate_send_path_rejected_count",
+    "mode_enable_candidates_unknown_do_not_send",
+    "mode_enable_candidate_observations"
   ],
   "properties": {
     "schema_version": {"const": 1},
@@ -41,6 +51,10 @@
     "native_control_evidence": {"const": false},
     "hardware_output_authorized": {"const": false},
     "native_visible_ready": {"const": false},
+    "smoke_ready": {"const": false},
+    "release_ready": {"const": false},
+    "registry_promotion_claim": {"const": false},
+    "output_sendability_claim": {"const": false},
     "next_allowed_action": {"type": "string"},
     "blocked_actions": {
       "type": "array",
@@ -61,6 +75,7 @@
     "sent_output_writes": {"const": false},
     "sent_configuration_writes": {"const": false},
     "sent_firmware_or_dfu_commands": {"const": false},
+    "high_torque_enabled": {"const": false},
     "real_hardware_validated": {"const": false},
     "transport_kind": {"const": "fake_only"},
     "fake_transport_verified": {"const": true},
@@ -69,7 +84,61 @@
     "accepted_fixture_count": {"type": "integer", "minimum": 1},
     "blocked_fixture_count": {"type": "integer", "minimum": 1},
     "malformed_frame_rejected": {"const": true},
-    "unknown_command_rejected": {"const": true}
+    "unknown_command_rejected": {"const": true},
+    "mode_enable_candidate_group_count": {"const": 2},
+    "mode_enable_candidate_frame_count": {"const": 5},
+    "mode_enable_candidate_send_path_rejected_count": {"const": 5},
+    "mode_enable_candidates_unknown_do_not_send": {"const": true},
+    "mode_enable_candidate_observations": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": [
+          "candidate_id",
+          "semantic_hypothesis",
+          "candidate_semantics",
+          "tuple_ids",
+          "representative_frame_hexes",
+          "observed_frame_count",
+          "send_path_rejected_count",
+          "risk_class",
+          "semantic_decode_claim",
+          "registry_promotion_claim",
+          "hardware_output_authorized",
+          "native_control_evidence",
+          "output_sendability_claim"
+        ],
+        "properties": {
+          "candidate_id": {"type": "string"},
+          "semantic_hypothesis": {"type": "string"},
+          "candidate_semantics": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string"}
+          },
+          "tuple_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string"}
+          },
+          "representative_frame_hexes": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string"}
+          },
+          "observed_frame_count": {"type": "integer", "minimum": 1},
+          "send_path_rejected_count": {"type": "integer", "minimum": 1},
+          "risk_class": {"const": "unknown_do_not_send"},
+          "semantic_decode_claim": {"const": false},
+          "registry_promotion_claim": {"const": false},
+          "hardware_output_authorized": {"const": false},
+          "native_control_evidence": {"const": false},
+          "output_sendability_claim": {"const": false}
+        },
+        "additionalProperties": true
+      }
+    }
   },
   "additionalProperties": true
 }

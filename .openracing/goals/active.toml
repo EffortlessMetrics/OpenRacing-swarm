@@ -1794,6 +1794,26 @@ commands = [
 ]
 
 [[work_item]]
+id = "verify-vendor-mode-candidates-fake-transport"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-verify-vendor-mode-candidates-fake-transport"
+current_pointer = "fixtures/moza/r5/vendor-fake-serial-transport.json"
+claim_boundary = "No-output fake-transport containment only; representative passive mode/enable candidate frames are parsed and routed through software fake transport as unknown_do_not_send observations while command/send paths reject them, with no semantic decode, registry promotion, tuple sendability, authorization, hardware output, native-control, native-visible, smoke-ready, simulator, coexistence, firmware, high-torque, or release-ready claim."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
