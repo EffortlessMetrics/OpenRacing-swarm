@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "moza_vendor_status_mode_matrix_plan",
+  "claim_scope": "staged_read_only_status_mode_matrix_only",
+  "native_control_evidence": false,
+  "hardware_output_authorized": false,
+  "native_visible_ready": false,
+  "smoke_ready": false,
+  "release_ready": false,
+  "registry_promotion_claim": false,
+  "output_sendability_claim": false,
+  "next_allowed_action": "Run wheelctl moza vendor-status-probe only as a read-only hardware status/mode matrix after fresh hardware doctor review, exclusive R5 serial/CDC access, and explicit --confirm-read-only-query; otherwise no output.",
+  "blocked_actions": [
+    "mode enable write",
+    "authority write",
+    "output write",
+    "configuration write",
+    "PIDFF rerun",
+    "authorization receipt",
+    "hardware writes",
+    "high torque",
+    "native-control claim",
+    "native-visible claim",
+    "smoke-ready claim",
+    "release-ready claim",
+    "semantic decode claim",
+    "registry promotion",
+    "tuple sendability",
+    "firmware or DFU command",
+    "unknown host-to-device command"
+  ],
+  "required_artifacts": [
+    "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md",
+    "docs/hardware/moza-r5-vendor-authority-test-plan.md",
+    "fixtures/moza/r5/vendor-command-registry.json",
+    "fixtures/moza/r5/vendor-serial-codec-fixtures.json",
+    "fixtures/moza/r5/vendor-fake-serial-transport.json",
+    "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
+    "schemas/moza-vendor-status-mode-matrix-plan.schema.json",
+    "schemas/moza-vendor-status-probe.schema.json",
+    "crates/hid-moza-protocol/src/serial/status_probe.rs",
+    "crates/cli/src/commands/moza.rs"
+  ],
+  "staged_only": true,
+  "live_hardware_access_performed": false,
+  "opened_hid_device": false,
+  "opened_serial_device": false,
+  "sent_read_only_query_commands": false,
+  "sent_output_writes": false,
+  "sent_configuration_writes": false,
+  "sent_firmware_or_dfu_commands": false,
+  "high_torque_enabled": false,
+  "matrix_required_before_authority": true,
+  "unknown_safety_or_mode_state_blocks_authority": true,
+  "planned_next_output_allowed": false,
+  "status_mode_matrix_stage": "staged_plan_only",
+  "read_only_command": {
+    "command": "wheelctl moza vendor-status-probe",
+    "requires_confirmation_flag": "--confirm-read-only-query",
+    "requires_serial_identity": "0x346E:0x0004 MI_00 R5 serial/CDC interface",
+    "requires_fresh_hardware_doctor_review": true,
+    "requires_exclusive_serial_owner": true,
+    "allowed_traffic": "registry_allowed_read_only_status_query_commands_only"
+  },
+  "required_preconditions": [
+    "Fresh observe-only hardware doctor reviewed immediately before the live matrix.",
+    "COM port / MI_00 identity is the MOZA R5 serial/CDC interface.",
+    "Pit House and other vendor apps are not owning the R5 serial/CDC port.",
+    "No HID output path is opened.",
+    "No firmware/update/DFU page or prompt is used.",
+    "The operator explicitly confirms the read-only query boundary."
+  ],
+  "expected_fields": [
+    {
+      "field": "serial_port_identity",
+      "required": true,
+      "unknown_allowed": false,
+      "notes": "COM port, USB VID/PID, and MI_00 serial/CDC identity."
+    },
+    {
+      "field": "current_device_identity",
+      "required": true,
+      "unknown_allowed": false,
+      "notes": "MOZA R5 0x346E:0x0004 identity from the live serial port."
+    },
+    {
+      "field": "current_mode_status",
+      "required": true,
+      "unknown_allowed": true,
+      "notes": "Mode/status values are recorded only when decoded by read-only status responses."
+    },
+    {
+      "field": "ffb_session_status_flags",
+      "required": true,
+      "unknown_allowed": true,
+      "notes": "FFB/session/status flags remain unknown when the read-only response is undecoded or absent."
+    },
+    {
+      "field": "gain_strength_status_values",
+      "required": true,
+      "unknown_allowed": true,
+      "notes": "Gain/strength/hands-off values are recorded only through registry-allowed read-only get commands."
+    },
+    {
+      "field": "pit_house_running",
+      "required": true,
+      "unknown_allowed": true,
+      "notes": "Vendor app state is a serial-owner risk, not a native-control dependency."
+    },
+    {
+      "field": "no_writes_sent",
+      "required": true,
+      "unknown_allowed": false,
+      "notes": "Output, configuration, firmware, DFU, PIDFF, and unknown writes must remain false."
+    }
+  ],
+  "allowed_read_only_command_ids": [
+    "estop_get_ffb",
+    "main_misc_get_ffb_status",
+    "base_gain_get_overall_strength",
+    "base_gain_get_speed_dependent_damping",
+    "base_gain_get_hands_off_protection",
+    "temperature_get_mosfet",
+    "temperature_get_motor",
+    "temperature_get_board",
+    "compatibility_get_mode"
+  ],
+  "blocked_mode_enable_candidate_groups": [
+    {
+      "candidate_id": "base_status_or_mode_poll_candidate",
+      "semantic_questions": [
+        "status_query",
+        "standard_pidff_mode_enable",
+        "game_control_mode_select"
+      ],
+      "tuple_ids": [
+        "0x25/0x19/0x01",
+        "0x25/0x19/0x02",
+        "0x25/0x19/0x03"
+      ],
+      "risk_class": "unknown_do_not_send",
+      "sendable": false,
+      "registry_promotion_claim": false,
+      "output_sendability_claim": false
+    },
+    {
+      "candidate_id": "session_or_status_keepalive_candidate",
+      "semantic_questions": [
+        "authority_keepalive",
+        "volatile_ffb_session_enable"
+      ],
+      "tuple_ids": [
+        "0x5A/0x1B/0x00",
+        "0x5D/0x1B/0x01"
+      ],
+      "risk_class": "unknown_do_not_send",
+      "sendable": false,
+      "registry_promotion_claim": false,
+      "output_sendability_claim": false
+    }
+  ],
+  "notes": [
+    "This artifact stages the live read-only status/mode matrix only; no live hardware access was performed while creating it.",
+    "A successful future vendor-status-probe receipt is protocol/status evidence only, not authorization or native-visible proof.",
+    "Missing or unknown mode/safety status blocks any later exact authority plan instead of permitting a write.",
+    "Unknown mode/enable candidate tuples remain unknown_do_not_send until semantic decoder coverage, registry review, and exact authorization exist."
+  ]
+}
