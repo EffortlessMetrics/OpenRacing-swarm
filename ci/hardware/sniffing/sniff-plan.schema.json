@@ -308,6 +308,64 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "scenario": {
+            "const": "simhub-open-idle"
+          }
+        },
+        "required": ["scenario"]
+      },
+      "then": {
+        "properties": {
+          "operator_notes_required": {
+            "allOf": [
+              {
+                "contains": {
+                  "const": "SimHub version/source if known"
+                }
+              },
+              {
+                "contains": {
+                  "const": "SimHub launch/open time"
+                }
+              },
+              {
+                "contains": {
+                  "const": "SimHub idle/stable confirmation"
+                }
+              },
+              {
+                "contains": {
+                  "const": "no SimHub output session started"
+                }
+              },
+              {
+                "contains": {
+                  "const": "no simulator started"
+                }
+              },
+              {
+                "contains": {
+                  "const": "firmware/update/DFU pages stayed closed or no prompt/page observed"
+                }
+              },
+              {
+                "contains": {
+                  "const": "raw pcap kept local only"
+                }
+              },
+              {
+                "contains": {
+                  "const": "OpenRacing sent no HID/output/feature/serial/firmware commands"
+                }
+              }
+            ]
+          }
+        }
+      }
     }
   ],
   "$defs": {

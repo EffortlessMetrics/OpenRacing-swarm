@@ -2723,6 +2723,25 @@ fn moza_passive_sniff_capture_checklist(
     local_dir: &Path,
     local_pcapng: &Path,
 ) -> Value {
+    let mut operator_notes_required = vec![
+        "scenario performed",
+        "external app or simulator observed",
+        "capture duration or start/stop times",
+        "device stack attached",
+        "whether firmware/update/DFU pages stayed closed",
+        "whether raw pcapng was kept local or reviewed for bundling",
+    ];
+    if scenario == "simhub-open-idle" {
+        operator_notes_required.push("SimHub version/source if known");
+        operator_notes_required.push("SimHub launch/open time");
+        operator_notes_required.push("SimHub idle/stable confirmation");
+        operator_notes_required.push("no SimHub output session started");
+        operator_notes_required.push("no simulator started");
+        operator_notes_required
+            .push("firmware/update/DFU pages stayed closed or no prompt/page observed");
+        operator_notes_required.push("raw pcap kept local only");
+        operator_notes_required.push("OpenRacing no-output boundary");
+    }
     serde_json::json!({
         "owner": "operator_external_capture_tool",
         "scenario": scenario,
@@ -2751,14 +2770,7 @@ fn moza_passive_sniff_capture_checklist(
             "Run the no-output wheelctl hardware sniff-receipt, sniff-notes-template, and sniff-summary commands from this bench-wizard handoff.".to_string(),
             "Fill operator notes before bundling and do not commit raw pcapng unless separately reviewed.".to_string()
         ],
-        "operator_notes_required": [
-            "scenario performed",
-            "external app or simulator observed",
-            "capture duration or start/stop times",
-            "device stack attached",
-            "whether firmware/update/DFU pages stayed closed",
-            "whether raw pcapng was kept local or reviewed for bundling"
-        ],
+        "operator_notes_required": operator_notes_required,
         "forbidden_actions": [
             "OpenRacing output commands",
             "OpenRacing HID output reports",
@@ -2854,7 +2866,7 @@ fn moza_passive_sniff_capture_action(scenario: &str) -> String {
             "Open MOZA Pit House before capture, let it settle, change one explicit reversible setting, record the setting name plus start/end/restored values, restore it before accepting evidence, and do not open firmware or update pages.".to_string()
         }
         "simhub-open-idle" => {
-            "Open SimHub, allow device discovery or idle polling to settle, and do not start an output session.".to_string()
+            "After capture starts, open SimHub, allow device discovery or idle polling to settle into an idle/stable state, record the SimHub version/source if known plus launch/open time, do not start a SimHub output session, do not start a simulator, and do not open firmware/update/DFU pages or prompts.".to_string()
         }
         "simhub-output-session" => {
             "Run the reviewed external SimHub output scenario only; record that any output traffic is external-app traffic, not OpenRacing FFB proof.".to_string()
@@ -3151,6 +3163,8 @@ fn moza_passive_sniff_navigation_summary(lane: &Path) -> Value {
     let mut scenarios = Vec::new();
     let mut recorded_scenarios = Vec::new();
     let mut missing_scenarios = Vec::new();
+    let mut next_passive_gap: Option<(&'static str, &'static str, &'static str, &'static str)> =
+        None;
     for (scenario, label, focus, warning) in moza_passive_sniff_navigation_requirements() {
         let committed_dir = moza_passive_sniff_committed_dir(lane, scenario);
         let plan_artifact = committed_dir.join("sniff-plan.json");
@@ -3184,9 +3198,15 @@ fn moza_passive_sniff_navigation_summary(lane: &Path) -> Value {
             recorded_scenarios.push(Value::String((*scenario).to_string()));
             "summary_recorded"
         } else if low_yield_capture_recorded {
+            if next_passive_gap.is_none() {
+                next_passive_gap = Some((*scenario, *label, *focus, *warning));
+            }
             missing_scenarios.push(Value::String((*scenario).to_string()));
             "low_yield_incomplete"
         } else {
+            if next_passive_gap.is_none() {
+                next_passive_gap = Some((*scenario, *label, *focus, *warning));
+            }
             missing_scenarios.push(Value::String((*scenario).to_string()));
             if plan_artifact.is_file()
                 || receipt_artifact.is_file()
@@ -3225,12 +3245,28 @@ fn moza_passive_sniff_navigation_summary(lane: &Path) -> Value {
     }
     let required_scenario_count = moza_passive_sniff_navigation_requirements().len() as u64;
     let recorded_scenario_count = recorded_scenarios.len() as u64;
+    let next_passive_gap = next_passive_gap.map(|(scenario, label, focus, warning)| {
+        serde_json::json!({
+            "scenario": scenario,
+            "label": label,
+            "focus": focus,
+            "warning": warning,
+            "next_physical_operator_step": true,
+            "capture_required": true,
+            "hardware_output_authorized": false,
+            "native_control_evidence": false,
+            "native_visible_ready": false,
+            "smoke_ready": false,
+            "release_ready": false
+        })
+    });
     serde_json::json!({
         "artifact_kind": "moza_passive_sniff_navigation",
         "claim_scope": "protocol_research_support_navigation_only",
         "evidence_status": "passive_external_usb_observation",
         "protocol_research_only": true,
         "support_evidence_only": true,
+        "hardware_output_authorized": false,
         "native_control_evidence": false,
         "openracing_hardware_output": false,
         "external_app_may_have_sent_output": true,
@@ -3239,6 +3275,7 @@ fn moza_passive_sniff_navigation_summary(lane: &Path) -> Value {
         "missing_scenario_count": required_scenario_count.saturating_sub(recorded_scenario_count),
         "recorded_scenarios": recorded_scenarios,
         "missing_scenarios": missing_scenarios,
+        "next_passive_gap": next_passive_gap,
         "scenarios": scenarios,
         "recommended_local_root": "target/sniff",
         "recommended_committed_root": moza_passive_sniff_committed_root(lane)
@@ -37660,6 +37697,21 @@ fn push_passive_sniff_navigation_markdown(out: &mut String, receipt: &Value) {
         "- Blocks native visible: `{blocks_native_visible}`\n"
     ));
     out.push_str(&format!("- Blocks smoke-ready: `{blocks_smoke_ready}`\n\n"));
+    if let Some(next_gap) = summary.get("next_passive_gap")
+        && !next_gap.is_null()
+    {
+        let scenario = json_string(next_gap, "scenario").unwrap_or("unknown");
+        let label = json_string(next_gap, "label").unwrap_or("unknown");
+        let capture_required = json_bool(next_gap, "capture_required").unwrap_or(false);
+        out.push_str(&format!(
+            "- Next passive gap: `{}` ({})\n",
+            markdown_escape(scenario),
+            markdown_escape(label)
+        ));
+        out.push_str(&format!(
+            "- Next capture required: `{capture_required}`\n\n"
+        ));
+    }
 
     out.push_str("| Scenario | Status | Plan | Receipt | Summary |\n");
     out.push_str("| --- | --- | --- | --- | --- |\n");
@@ -43835,6 +43887,7 @@ mod tests {
             json_string(sniff, "evidence_status"),
             Some("passive_external_usb_observation")
         );
+        assert_eq!(json_bool(sniff, "hardware_output_authorized"), Some(false));
         assert_eq!(json_bool(sniff, "native_control_evidence"), Some(false));
         assert_eq!(json_bool(sniff, "openracing_hardware_output"), Some(false));
         assert_eq!(json_bool(sniff, "readiness_claim"), Some(false));
@@ -44104,6 +44157,156 @@ mod tests {
         assert_eq!(json_bool(&step, "no_openracing_output"), Some(true));
         let markdown = render_moza_bench_wizard_markdown(&receipt);
         assert!(markdown.contains("low_yield_incomplete"));
+        Ok(())
+    }
+
+    #[test]
+    fn passive_sniff_navigation_routes_next_gap_to_simhub_open_idle() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        write_passive_sniff_artifacts(dir.path(), "pit-house-open-idle")?;
+        write_passive_sniff_artifacts(dir.path(), "pit-house-full-controls")?;
+        write_passive_sniff_artifacts(dir.path(), "pit-house-setting-change")?;
+        write_passive_sniff_plan_artifact(dir.path(), "simhub-open-idle")?;
+        write_test_json_file(
+            &dir.path().join(VENDOR_AUTHORITY_ATTEMPT_FILE),
+            &serde_json::json!({
+                "success": true,
+                "hardware_output_authorized": false,
+                "native_control_evidence": false,
+                "native_visible_ready": false,
+                "smoke_ready": false
+            }),
+        )?;
+        write_test_json_file(
+            &dir.path().join(VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE),
+            &serde_json::json!({
+                "success": true,
+                "planned_next_output": { "allowed": false },
+                "hardware_output_authorized": false,
+                "native_control_evidence": false,
+                "native_visible_ready": false,
+                "smoke_ready": false
+            }),
+        )?;
+
+        let artifact_receipt = moza_artifact_index_receipt(dir.path(), None, None)?;
+        let artifact_sniff = artifact_receipt
+            .get("passive_sniff_navigation")
+            .ok_or("expected artifact-index passive sniff navigation")?;
+        assert_eq!(json_u64(artifact_sniff, "recorded_scenario_count"), Some(3));
+        let artifact_next_gap = artifact_sniff
+            .get("next_passive_gap")
+            .ok_or("expected artifact-index next passive gap")?;
+        assert_eq!(
+            json_string(artifact_next_gap, "scenario"),
+            Some("simhub-open-idle")
+        );
+        assert_eq!(
+            json_bool(artifact_next_gap, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(artifact_next_gap, "native_control_evidence"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(artifact_next_gap, "native_visible_ready"),
+            Some(false)
+        );
+        assert_eq!(json_bool(artifact_next_gap, "smoke_ready"), Some(false));
+        assert_eq!(json_bool(artifact_next_gap, "release_ready"), Some(false));
+
+        let artifact_markdown = render_moza_lane_artifact_index_markdown(&artifact_receipt);
+        assert!(artifact_markdown.contains("Next passive gap: `simhub-open-idle`"));
+
+        let wizard_receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
+        let wizard_sniff = wizard_receipt
+            .get("passive_sniff_navigation")
+            .ok_or("expected wizard passive sniff navigation")?;
+        let wizard_next_gap = wizard_sniff
+            .get("next_passive_gap")
+            .ok_or("expected wizard next passive gap")?;
+        assert_eq!(
+            json_string(wizard_next_gap, "scenario"),
+            Some("simhub-open-idle")
+        );
+        let step = wizard_receipt
+            .get("next_operator_step")
+            .ok_or("expected SimHub next operator step")?;
+        assert_eq!(
+            json_string(step, "kind"),
+            Some("capture_passive_vendor_sniff")
+        );
+        assert_eq!(json_string(step, "scenario"), Some("simhub-open-idle"));
+        assert_eq!(json_bool(step, "hardware_output_allowed_now"), Some(false));
+        assert_eq!(json_bool(step, "no_openracing_output"), Some(true));
+        assert_eq!(
+            json_bool(step, "no_hid_device_opened_by_openracing"),
+            Some(true)
+        );
+
+        let checklist = step
+            .get("external_capture_checklist")
+            .ok_or("expected SimHub external capture checklist")?;
+        assert!(
+            checklist
+                .get("steps")
+                .and_then(Value::as_array)
+                .is_some_and(|steps| {
+                    steps.iter().any(|step| {
+                        step.as_str()
+                            .is_some_and(|text| text.contains("open SimHub"))
+                    }) && steps.iter().any(|step| {
+                        step.as_str()
+                            .is_some_and(|text| text.contains("idle/stable"))
+                    }) && steps.iter().any(|step| {
+                        step.as_str().is_some_and(|text| {
+                            text.contains("do not start a SimHub output session")
+                        })
+                    }) && steps.iter().any(|step| {
+                        step.as_str()
+                            .is_some_and(|text| text.contains("do not start a simulator"))
+                    })
+                }),
+            "SimHub open-idle checklist should stage only the passive open/idle capture: {checklist}"
+        );
+        assert!(
+            checklist
+                .get("operator_notes_required")
+                .and_then(Value::as_array)
+                .is_some_and(|notes| {
+                    notes.iter().any(|note| {
+                        note.as_str()
+                            .is_some_and(|text| text.contains("SimHub version/source"))
+                    })
+                }),
+            "SimHub operator notes should require version/source and idle state fields: {checklist}"
+        );
+
+        let external_capture_commands = step
+            .get("external_capture_commands")
+            .and_then(Value::as_array)
+            .ok_or("expected SimHub external capture commands")?;
+        assert!(
+            external_capture_commands.iter().any(|command| {
+                json_string(command, "name") == Some("run_bounded_wheelctl_usbpcap_capture")
+                    && json_bool(command, "requires_hardware_doctor_hint") == Some(true)
+                    && json_string(command, "command_template").is_some_and(|text| {
+                        text.contains("--hardware-doctor target/moza-current/passive-sniff-capture-hardware-doctor.json")
+                            && text.contains("--devices <capture_devices_value>")
+                            && text.contains("simhub-open-idle")
+                            && text.contains("capture.pcapng")
+                    })
+            }),
+            "SimHub bounded capture command should use hardware-doctor selector verification: {external_capture_commands:?}"
+        );
+
+        let wizard_markdown = render_moza_bench_wizard_markdown(&wizard_receipt);
+        assert!(wizard_markdown.contains("Next passive gap: `simhub-open-idle`"));
+        assert!(wizard_markdown.contains("wheelctl hardware sniff-capture"));
+        assert!(wizard_markdown.contains("--hardware-doctor"));
+        assert!(wizard_markdown.contains("do not authorize output"));
         Ok(())
     }
 

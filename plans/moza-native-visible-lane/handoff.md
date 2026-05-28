@@ -1,7 +1,7 @@
 # Moza Native Visible Lane Handoff
 
 Status: blocked
-Last verified: 2026-05-27
+Last verified: 2026-05-28
 Lane: `ci/hardware/moza-r5/2026-05-13`
 Active goal: `.openracing/goals/active.toml`
 
@@ -218,11 +218,15 @@ preserves pattern-only hypotheses that make the next decode questions explicit:
 `0x25/0x19/*` triad. It emits no hardware output command and no authorization
 command. The correlation plan now moves the next passive evidence target to
 SimHub and simulator scenarios, before any tuple can move toward semantic
-decoder coverage or registry review. The next implementation work should
-continue vendor-specific protocol investigation by correlating the accepted
-setting-change evidence with the frequency-ranked unknown `0x7E`/`0x80` traffic
-and by completing the remaining passive SimHub/simulator captures before any
-future motion ladder plan.
+decoder coverage or registry review. The `simhub-open-idle` handoff is staged
+only: it requires a fresh `wheelctl hardware doctor` immediately before capture,
+the current USBPcap Moza selector hint passed through
+`sniff-capture --hardware-doctor`, SimHub opened by the operator after capture
+starts, idle/stable confirmation, no SimHub output session, no simulator, no
+firmware/update/DFU page or prompt, raw pcap local-only, and OpenRacing
+no-output confirmation. The next implementation work should continue
+vendor-specific protocol investigation by completing the remaining passive
+SimHub/simulator captures before any future motion ladder plan.
 
 Passive USB sniff captures may produce non-claiming `sniff-receipt.json`,
 `sniff-summary.json`, and bundle manifest artifacts, but those are

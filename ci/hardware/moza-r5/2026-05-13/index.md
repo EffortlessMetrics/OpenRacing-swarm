@@ -184,6 +184,9 @@ This section is protocol research/support navigation only. Passive sniff artifac
 - Blocks native visible: `false`
 - Blocks smoke-ready: `false`
 
+- Next passive gap: `simhub-open-idle` (SimHub open idle)
+- Next capture required: `true`
+
 | Scenario | Status | Plan | Receipt | Summary |
 | --- | --- | --- | --- | --- |
 | `pit-house-open-idle` | `summary_recorded` | `present_non_claiming` | `present_non_claiming` | `present_non_claiming` |

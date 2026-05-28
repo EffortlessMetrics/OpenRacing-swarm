@@ -63,6 +63,15 @@ For `pit-house-firmware-page-observed`, the operator may observe that the page
 exists or that the app attempted enumeration. The operator must not start an
 update, accept a firmware prompt, enter DFU, or change firmware state.
 
+For `simhub-open-idle`, the operator must refresh `wheelctl hardware doctor`
+immediately before capture, use the current USBPcap Moza selector hint, and not
+reuse stale `--devices` values from earlier captures. Start the passive capture
+first, then open SimHub and let discovery/idle polling settle. Operator notes
+must record the SimHub version/source if known, launch/open time, idle/stable
+confirmation, that no SimHub output session or simulator was started, that no
+firmware/update/DFU page or prompt was used, that raw pcap remains local-only,
+and that OpenRacing sent no HID/output/feature/serial/firmware commands.
+
 For `simhub-output-session` and `simulator-session-start-stop`, any observed
 output reports are external-app or simulator traffic. They can inform protocol
 research, but they must not be described as OpenRacing FFB or native control.

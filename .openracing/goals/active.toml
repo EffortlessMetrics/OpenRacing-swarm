@@ -1755,6 +1755,25 @@ commands = [
 ]
 
 [[work_item]]
+id = "stage-simhub-open-idle-capture-handoff"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-stage-simhub-open-idle-capture-handoff"
+current_pointer = "ci/hardware/sniff/moza-r5/2026-05-13/simhub-open-idle/sniff-plan.json"
+claim_boundary = "No-output SimHub open-idle passive capture staging only; checked-in plan/operator-note/wizard/artifact-index handoffs route the next passive gap to simhub-open-idle and require fresh hardware-doctor USBPcap selector verification without launching SimHub, running a live capture, creating sniff receipt/summary/bundle evidence, committing raw pcap/zip/installer/binary artifacts, opening HID or serial, sending query/output/feature/configuration/firmware commands, authorizing hardware output, or claiming semantic decode, registry coverage, tuple sendability, native-control, native-visible, smoke-ready, simulator readiness, coexistence readiness, or release readiness."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl passive_sniff -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl bench_wizard_sniff_next_operator_commands_parse -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl artifact_index -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
