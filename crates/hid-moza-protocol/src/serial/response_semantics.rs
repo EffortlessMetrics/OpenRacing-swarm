@@ -13,6 +13,8 @@ use std::fmt;
 pub const STATUS_MODE_TRIAD_RESPONSE_GROUP_ID: &str = "passive_status_mode_triad_0x25_0x19";
 pub const SESSION_AUTHORITY_PAIR_RESPONSE_GROUP_ID: &str =
     "passive_session_authority_pair_0x5a_0x5d";
+pub const PAYLOAD_BEARING_STATUS_SOURCE_RESPONSE_GROUP_ID: &str =
+    "passive_payload_bearing_status_source_0x8e";
 
 const STATUS_MODE_TRIAD_RESPONSE_SEMANTICS: &[&str] = &[
     "status_mode_response_shape_question",
@@ -23,6 +25,11 @@ const SESSION_AUTHORITY_RESPONSE_SEMANTICS: &[&str] = &[
     "session_authority_response_shape_question",
     "volatile_ffb_session_state_question",
     "authority_keepalive_response_question",
+];
+const PAYLOAD_BEARING_STATUS_SOURCE_RESPONSE_SEMANTICS: &[&str] = &[
+    "payload_bearing_device_status_response_question",
+    "setting_change_state_response_question",
+    "authority_state_source_unknown",
 ];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -113,6 +120,9 @@ pub fn decode_passive_response_semantic_fixture(
     let candidate_semantics = match group_id {
         STATUS_MODE_TRIAD_RESPONSE_GROUP_ID => STATUS_MODE_TRIAD_RESPONSE_SEMANTICS,
         SESSION_AUTHORITY_PAIR_RESPONSE_GROUP_ID => SESSION_AUTHORITY_RESPONSE_SEMANTICS,
+        PAYLOAD_BEARING_STATUS_SOURCE_RESPONSE_GROUP_ID => {
+            PAYLOAD_BEARING_STATUS_SOURCE_RESPONSE_SEMANTICS
+        }
         _ => &[],
     };
 
@@ -146,6 +156,9 @@ fn passive_response_group_id(observed: &MozaSerialObservedFrame<'_>) -> Option<&
     match (observed.group, observed.device_id, observed.command_id) {
         (0xA5, 0x91, 0x01..=0x03) => Some(STATUS_MODE_TRIAD_RESPONSE_GROUP_ID),
         (0xDA, 0xB1, 0x00) | (0xDD, 0xB1, 0x01) => Some(SESSION_AUTHORITY_PAIR_RESPONSE_GROUP_ID),
+        (0x8E, 0x21 | 0x31 | 0x71 | 0x91, 0x00) => {
+            Some(PAYLOAD_BEARING_STATUS_SOURCE_RESPONSE_GROUP_ID)
+        }
         _ => None,
     }
 }

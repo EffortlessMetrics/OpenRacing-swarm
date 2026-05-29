@@ -982,6 +982,19 @@ pub enum MozaCommands {
         overwrite: bool,
     },
 
+    /// Review payload-bearing status-source candidate fixtures without sending traffic
+    VendorStatusPayloadSourceSemanticReview {
+        /// Stored payload-bearing status-source candidate receipt
+        #[arg(long)]
+        payload_source_candidates: std::path::PathBuf,
+        /// Write the non-claiming payload source semantic review receipt to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing payload source semantic review receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
     /// Create a single-use exact Moza vendor-authority authorization receipt without sending traffic
     AuthorizeVendorAuthority {
         /// Registry command id being authorized for the later exact frame

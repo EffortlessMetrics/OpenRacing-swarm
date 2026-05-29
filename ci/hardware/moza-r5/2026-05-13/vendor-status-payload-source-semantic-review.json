@@ -1,0 +1,247 @@
+{
+  "artifact_kind": "moza_vendor_status_payload_source_semantic_review",
+  "authority_state": "blocked",
+  "authority_state_source_verdict": "blocked_missing_same_tuple_payload_variation_or_timing_correlation",
+  "authorization_plan_allowed": false,
+  "blocked_actions": [
+    "live read-only probe based on 0x8E candidates",
+    "mode enable write",
+    "authority write",
+    "output write",
+    "configuration write",
+    "PIDFF rerun",
+    "authorization receipt",
+    "hardware writes",
+    "high torque",
+    "native-control claim",
+    "native-visible claim",
+    "smoke-ready claim",
+    "release-ready claim",
+    "firmware or DFU command",
+    "unknown host-to-device command"
+  ],
+  "claim_scope": "no_output_fixture_backed_payload_source_semantic_review",
+  "command": "wheelctl moza vendor-status-payload-source-semantic-review",
+  "corrected_read_only_probe_ready": false,
+  "cross_tuple_payload_diversity_observed": true,
+  "exact_next_blocker": "The stored 0x8E payload-bearing samples decode as fixture-covered status-source questions, but they are observed only in the Pit House setting-change scenario, show no same-tuple payload variation, and are not timing-correlated to authority or mode state. Authority planning, live probing, PIDFF, force escalation, and motion remain blocked until a reviewed authority-state source or equivalent timing-correlated status source exists.",
+  "fixture_decoder_group_id": "passive_payload_bearing_status_source_0x8e",
+  "fixture_review_scope": "stored_passive_0x8e_samples_only",
+  "generated_at_utc": "2026-05-29T21:34:46Z",
+  "hardware_output_authorized": false,
+  "high_torque_enabled": false,
+  "live_read_only_probe_allowed": false,
+  "mode_enable_candidates_sendable": false,
+  "motion_attempt_allowed": false,
+  "native_control_evidence": false,
+  "native_visible_ready": false,
+  "next_allowed_action": "Add timing-correlated capture or fixture review for the 0x8E payload-bearing status-source candidates, or identify another reviewed payload-bearing authority-state status source, before any live probe, authorization plan, PIDFF rerun, force escalation, or motion attempt.",
+  "no_hid_device_opened": true,
+  "notes": [
+    "This receipt reads stored JSON only; it opens no HID or serial device and sends no traffic.",
+    "Fixture decoder coverage validates frame shape, tuple routing, checksum, payload class, and non-sendable risk class for the 0x8E payload-bearing samples.",
+    "The samples are status-source questions only; they are not semantic decode, registry promotion, read-only probe eligibility, output sendability, authorization input, or motion authorization.",
+    "Native visible motion remains blocked; no wheel movement is claimed."
+  ],
+  "only_setting_change_scenario_observed": true,
+  "opened_serial_device": false,
+  "output_sendability_claim": false,
+  "output_was_sent": false,
+  "payload_bearing_authority_state_source_found": false,
+  "payload_source_candidates_receipt": "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-candidates.json",
+  "payload_value_groups": [
+    {
+      "payload_hex": "013E000000E6",
+      "tuple_ids": [
+        "0x8E/0x91/0x00"
+      ]
+    },
+    {
+      "payload_hex": "019100002624",
+      "tuple_ids": [
+        "0x8E/0x21/0x00",
+        "0x8E/0x31/0x00"
+      ]
+    },
+    {
+      "payload_hex": "0FB300000001",
+      "tuple_ids": [
+        "0x8E/0x71/0x00"
+      ]
+    }
+  ],
+  "planned_next_output_allowed": false,
+  "registry_promotion_claim": false,
+  "release_ready": false,
+  "required_artifacts": [
+    "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-candidates.json",
+    "crates/hid-moza-protocol/src/serial/response_semantics.rs",
+    "schemas/moza-vendor-status-payload-source-semantic-review.schema.json",
+    "future timing-correlated 0x8E status-source evidence or another reviewed authority-state source"
+  ],
+  "reviewed_equivalent_status_source_found": false,
+  "reviewed_group_ids": [
+    "passive_payload_bearing_status_source_0x8e"
+  ],
+  "reviewed_payload_candidate_count": 4,
+  "reviewed_payload_source_samples": [
+    {
+      "authority_state_source_verdict": "insufficient_evidence_no_same_tuple_variation_or_timing_correlation",
+      "candidate_semantics": [
+        "payload_bearing_device_status_response_question",
+        "setting_change_state_response_question",
+        "authority_state_source_unknown"
+      ],
+      "corrected_read_only_probe_ready": false,
+      "fixture_decoder_coverage": true,
+      "frame_hex": "7E078E21000191000026241D",
+      "group_id": "passive_payload_bearing_status_source_0x8e",
+      "hardware_output_authorized": false,
+      "native_control_evidence": false,
+      "output_sendability_claim": false,
+      "payload_bytes": [
+        "0x01",
+        "0x91",
+        "0x00",
+        "0x00",
+        "0x26",
+        "0x24"
+      ],
+      "payload_class": "nonzero",
+      "payload_hex": "019100002624",
+      "payload_len": 6,
+      "payload_variation_observed": false,
+      "read_only_probe_allowed": false,
+      "registry_promotion_claim": false,
+      "risk_class": "unknown_do_not_send",
+      "scenario": "pit-house-setting-change",
+      "semantic_decode_claim": false,
+      "semantic_review_verdict": "payload_bearing_status_source_question_not_authority_source",
+      "tuple_id": "0x8E/0x21/0x00"
+    },
+    {
+      "authority_state_source_verdict": "insufficient_evidence_no_same_tuple_variation_or_timing_correlation",
+      "candidate_semantics": [
+        "payload_bearing_device_status_response_question",
+        "setting_change_state_response_question",
+        "authority_state_source_unknown"
+      ],
+      "corrected_read_only_probe_ready": false,
+      "fixture_decoder_coverage": true,
+      "frame_hex": "7E078E9100013E000000E6D6",
+      "group_id": "passive_payload_bearing_status_source_0x8e",
+      "hardware_output_authorized": false,
+      "native_control_evidence": false,
+      "output_sendability_claim": false,
+      "payload_bytes": [
+        "0x01",
+        "0x3E",
+        "0x00",
+        "0x00",
+        "0x00",
+        "0xE6"
+      ],
+      "payload_class": "nonzero",
+      "payload_hex": "013E000000E6",
+      "payload_len": 6,
+      "payload_variation_observed": false,
+      "read_only_probe_allowed": false,
+      "registry_promotion_claim": false,
+      "risk_class": "unknown_do_not_send",
+      "scenario": "pit-house-setting-change",
+      "semantic_decode_claim": false,
+      "semantic_review_verdict": "payload_bearing_status_source_question_not_authority_source",
+      "tuple_id": "0x8E/0x91/0x00"
+    },
+    {
+      "authority_state_source_verdict": "insufficient_evidence_no_same_tuple_variation_or_timing_correlation",
+      "candidate_semantics": [
+        "payload_bearing_device_status_response_question",
+        "setting_change_state_response_question",
+        "authority_state_source_unknown"
+      ],
+      "corrected_read_only_probe_ready": false,
+      "fixture_decoder_coverage": true,
+      "frame_hex": "7E078E31000191000026242D",
+      "group_id": "passive_payload_bearing_status_source_0x8e",
+      "hardware_output_authorized": false,
+      "native_control_evidence": false,
+      "output_sendability_claim": false,
+      "payload_bytes": [
+        "0x01",
+        "0x91",
+        "0x00",
+        "0x00",
+        "0x26",
+        "0x24"
+      ],
+      "payload_class": "nonzero",
+      "payload_hex": "019100002624",
+      "payload_len": 6,
+      "payload_variation_observed": false,
+      "read_only_probe_allowed": false,
+      "registry_promotion_claim": false,
+      "risk_class": "unknown_do_not_send",
+      "scenario": "pit-house-setting-change",
+      "semantic_decode_claim": false,
+      "semantic_review_verdict": "payload_bearing_status_source_question_not_authority_source",
+      "tuple_id": "0x8E/0x31/0x00"
+    },
+    {
+      "authority_state_source_verdict": "insufficient_evidence_no_same_tuple_variation_or_timing_correlation",
+      "candidate_semantics": [
+        "payload_bearing_device_status_response_question",
+        "setting_change_state_response_question",
+        "authority_state_source_unknown"
+      ],
+      "corrected_read_only_probe_ready": false,
+      "fixture_decoder_coverage": true,
+      "frame_hex": "7E078E71000FB30000000154",
+      "group_id": "passive_payload_bearing_status_source_0x8e",
+      "hardware_output_authorized": false,
+      "native_control_evidence": false,
+      "output_sendability_claim": false,
+      "payload_bytes": [
+        "0x0F",
+        "0xB3",
+        "0x00",
+        "0x00",
+        "0x00",
+        "0x01"
+      ],
+      "payload_class": "nonzero",
+      "payload_hex": "0FB300000001",
+      "payload_len": 6,
+      "payload_variation_observed": false,
+      "read_only_probe_allowed": false,
+      "registry_promotion_claim": false,
+      "risk_class": "unknown_do_not_send",
+      "scenario": "pit-house-setting-change",
+      "semantic_decode_claim": false,
+      "semantic_review_verdict": "payload_bearing_status_source_question_not_authority_source",
+      "tuple_id": "0x8E/0x71/0x00"
+    }
+  ],
+  "reviewed_scenarios": [
+    "pit-house-setting-change"
+  ],
+  "reviewed_tuple_ids": [
+    "0x8E/0x21/0x00",
+    "0x8E/0x31/0x00",
+    "0x8E/0x71/0x00",
+    "0x8E/0x91/0x00"
+  ],
+  "same_tuple_payload_variation_observed": false,
+  "schema_version": 1,
+  "semantic_decode_claim": false,
+  "semantic_review_verdict": "insufficient_for_authority_source",
+  "sent_configuration_writes": false,
+  "sent_firmware_or_dfu_commands": false,
+  "sent_output_writes": false,
+  "sent_read_only_query_commands": false,
+  "smoke_ready": false,
+  "success": true,
+  "unknown_safety_or_mode_state_blocks_authority": true,
+  "visible_motion_verified": false,
+  "wheel_moved_under_openracing": false
+}

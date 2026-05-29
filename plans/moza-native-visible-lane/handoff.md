@@ -181,6 +181,7 @@ The broader Moza objective remains incomplete:
 | Read-only vendor status matrix | `vendor-status-mode-matrix.json`; `vendor-status-mode-matrix-demux.json` | Recorded COM4 read-only evidence; seven non-authority status replies decode, but authority-state replies remain missing |
 | Authority status endpoint diagnosis | `vendor-status-authority-endpoint-diagnosis.json`; `vendor-status-endpoint-candidates.json`; `vendor-status-endpoint-candidates-from-payload-rerun.json` | Broad serial transport ruled out; current authority-status endpoint returns ACK/no-payload or diagnostic telemetry only, and corrected endpoint candidates remain non-sendable |
 | Payload-bearing status-source candidates | `vendor-status-payload-source-candidates.json` | Recorded four nonzero `0x8E` device-to-host setting-change samples as `unknown_do_not_send` status-source questions; no semantic decode, probe readiness, authorization, output, or motion claim |
+| Payload-source semantic review | `vendor-status-payload-source-semantic-review.json` | Fixture decoder coverage now recognizes the four `0x8E` samples as payload-bearing status-source questions, but the review records no same-tuple payload variation, no timing correlation, no authority-state source, and no live probe/output/motion eligibility |
 | Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls`, and `pit-house-setting-change` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence; setting-change keeps the earlier low-yield classification as historical failed evidence |
 | Remaining passive sniff plans | `simhub-open-idle`, `simhub-output-session`, `simulator-session-start-stop` sniff plans | Plan-only |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |
@@ -460,6 +461,30 @@ receipt keeps `payload_bearing_authority_state_source_found=false`,
 step is fixture-backed semantic review or timing-correlated capture for the
 payload-bearing `0x8E` candidates before any live probe, authorization, PIDFF
 rerun, force escalation, or motion attempt.
+
+The fixture-backed semantic review is now recorded at
+`vendor-status-payload-source-semantic-review.json`. It confirms the `0x8E`
+samples decode through the passive fixture review group
+`passive_payload_bearing_status_source_0x8e` and preserves the payload values:
+
+```text
+0x8E/0x21/0x00 -> 019100002624
+0x8E/0x31/0x00 -> 019100002624
+0x8E/0x71/0x00 -> 0FB300000001
+0x8E/0x91/0x00 -> 013E000000E6
+```
+
+The review is still negative for authority planning:
+`same_tuple_payload_variation_observed=false`,
+`only_setting_change_scenario_observed=true`,
+`payload_bearing_authority_state_source_found=false`,
+`live_read_only_probe_allowed=false`, `authorization_plan_allowed=false`,
+`motion_attempt_allowed=false`, `wheel_moved_under_openracing=false`,
+`visible_motion_verified=false`, `output_was_sent=false`, and
+`authority_state=blocked`. The next native-path step is timing-correlated
+`0x8E` evidence or another reviewed payload-bearing authority-state status
+source before any live probe, authorization, PIDFF rerun, force escalation, or
+motion attempt.
 
 The read-only demux follow-up is now recorded at
 `vendor-status-mode-matrix-demux.json` with its fresh precondition doctor at

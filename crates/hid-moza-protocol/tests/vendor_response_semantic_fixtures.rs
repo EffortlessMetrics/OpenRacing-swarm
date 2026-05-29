@@ -4,8 +4,8 @@ use std::io;
 
 use racing_wheel_hid_moza_protocol::serial::response_semantics::{
     MozaPassiveResponsePayloadClass, MozaPassiveResponseSemanticError,
-    SESSION_AUTHORITY_PAIR_RESPONSE_GROUP_ID, STATUS_MODE_TRIAD_RESPONSE_GROUP_ID,
-    decode_passive_response_semantic_fixture,
+    PAYLOAD_BEARING_STATUS_SOURCE_RESPONSE_GROUP_ID, SESSION_AUTHORITY_PAIR_RESPONSE_GROUP_ID,
+    STATUS_MODE_TRIAD_RESPONSE_GROUP_ID, decode_passive_response_semantic_fixture,
 };
 use racing_wheel_hid_moza_protocol::serial::vendor_authority::MozaRiskClass;
 use serde_json::Value;
@@ -25,6 +25,12 @@ fn protocol_evidence_review() -> Result<Value, serde_json::Error> {
 fn response_source_correlation() -> Result<Value, serde_json::Error> {
     serde_json::from_str(include_str!(
         "../../../ci/hardware/moza-r5/2026-05-13/vendor-status-response-source-correlation.json"
+    ))
+}
+
+fn payload_source_candidates() -> Result<Value, serde_json::Error> {
+    serde_json::from_str(include_str!(
+        "../../../ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-candidates.json"
     ))
 }
 
@@ -187,6 +193,64 @@ fn registry_authority_response_tuples_remain_absent_from_passive_samples() -> Te
             Err(MozaPassiveResponseSemanticError::UnreviewedResponseTuple { .. })
         ));
     }
+
+    Ok(())
+}
+
+#[test]
+fn payload_bearing_status_source_candidates_have_fixture_decoder_coverage() -> TestResult {
+    let candidates = payload_source_candidates()?;
+    let samples = array_field(&candidates, "payload_bearing_candidates")?;
+    let mut observed_tuples = BTreeSet::new();
+
+    assert_eq!(samples.len(), 4);
+    assert!(!bool_field(
+        &candidates,
+        "payload_bearing_authority_state_source_found"
+    )?);
+    assert!(!bool_field(&candidates, "live_read_only_probe_allowed")?);
+    assert!(!bool_field(&candidates, "authorization_plan_allowed")?);
+    assert!(!bool_field(&candidates, "motion_attempt_allowed")?);
+    assert!(!bool_field(&candidates, "wheel_moved_under_openracing")?);
+    assert!(!bool_field(&candidates, "visible_motion_verified")?);
+    assert!(!bool_field(&candidates, "output_was_sent")?);
+
+    for sample in samples {
+        let frame = hex_to_bytes(str_field(sample, "frame_hex")?)?;
+        let observation = decode_passive_response_semantic_fixture(&frame)?;
+
+        assert_eq!(
+            observation.group_id,
+            PAYLOAD_BEARING_STATUS_SOURCE_RESPONSE_GROUP_ID
+        );
+        assert_eq!(observation.risk_class, MozaRiskClass::UnknownDoNotSend);
+        assert_eq!(
+            observation.payload_class,
+            MozaPassiveResponsePayloadClass::NonZero
+        );
+        assert_eq!(observation.payload_len, 6);
+        assert!(observation.fixture_decoder_coverage);
+        assert!(!observation.payload_variation_observed);
+        assert!(!observation.semantic_decode_claim);
+        assert!(!observation.registry_promotion_claim);
+        assert!(!observation.read_only_probe_allowed);
+        assert!(!observation.corrected_read_only_probe_ready);
+        assert!(!observation.hardware_output_authorized);
+        assert!(!observation.native_control_evidence);
+        assert!(!observation.output_sendability_claim);
+
+        observed_tuples.insert(observation.tuple_id);
+    }
+
+    assert_eq!(
+        observed_tuples,
+        BTreeSet::from([
+            "0x8E/0x21/0x00".to_string(),
+            "0x8E/0x31/0x00".to_string(),
+            "0x8E/0x71/0x00".to_string(),
+            "0x8E/0x91/0x00".to_string(),
+        ])
+    );
 
     Ok(())
 }
