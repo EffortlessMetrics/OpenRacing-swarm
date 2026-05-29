@@ -1,6 +1,6 @@
 # Moza R5 Vendor-Control Investigation
 
-Status: plan-only no-output protocol research
+Status: read-only protocol research; no output authorization
 Lane: `ci/hardware/moza-r5/2026-05-13`
 Sniff plan root: `ci/hardware/sniff/moza-r5/2026-05-13`
 Claim ceiling: protocol research/support navigation only
@@ -56,13 +56,18 @@ sendability, authorization, hardware output, native-control, native-visible, or
 smoke-ready claim. The fake transport now records containment for those
 questions: representative frames are observed as `unknown_do_not_send`
 candidate evidence, and the command/send path still rejects the same frames as
-unknown commands. The next native-path step is read-only hardware status/mode
-matrix execution from the staged
-`ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-plan.json`, not an
-output attempt. That matrix may only use registry-allowed read-only status
-queries after fresh hardware-doctor review and exclusive R5 serial/CDC access;
-unknown or missing mode/safety status blocks any later authority plan. The
-current receipt also records the correlation plan explicitly: two non-sendable
+unknown commands. The live read-only hardware status/mode matrix has now been
+recorded at
+`ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json`, with the fresh
+observe-only precondition doctor at
+`ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-hardware-doctor.json`.
+The probe verified COM4 as the R5 `0x346E:0x0004` serial/CDC interface and sent
+only registry-approved read-only status queries. It failed closed with zero
+decoded responses, nine failed responses, and
+`real_hardware_status_evidence=false`, so unknown mode/safety status still
+blocks any authority plan. The next native-path step is no-output diagnosis of
+that read-only serial response stream, not an output attempt. The current
+receipt also records the correlation plan explicitly: two non-sendable
 targets, completed observations in the three Pit House scenarios, and
 remaining no-output correlation gaps in SimHub and simulator scenarios. The
 first bounded setting-change capture attempt remains
@@ -153,9 +158,10 @@ recorded as passive external observation only, not OpenRacing output.
 
 Run `wheelctl moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13` to get
 the current command-bound no-output handoff. With the current post-authority
-state, the wizard records that the PIDFF comparison is present and emits no
-output command. Continue with no-output protocol review or the remaining
-passive capture scenarios before proposing any further hardware output family.
+and read-only matrix state, the wizard records that the PIDFF comparison is
+present and emits no output command. Continue with no-output diagnosis of the
+read-only serial response framing or the remaining passive capture scenarios
+before proposing any further hardware output family.
 
 For each planned scenario:
 

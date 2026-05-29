@@ -1,7 +1,7 @@
 # Moza Native Visible Lane Handoff
 
 Status: blocked
-Last verified: 2026-05-28
+Last verified: 2026-05-29
 Lane: `ci/hardware/moza-r5/2026-05-13`
 Active goal: `.openracing/goals/active.toml`
 
@@ -235,15 +235,22 @@ firmware/update/DFU page or prompt, raw pcap local-only, and OpenRacing
 no-output confirmation. The native-control implementation path has recorded
 fake-transport containment for the mode/enable candidate questions:
 representative frames are observable in software fake transport while the
-command/send path still rejects them as unknown commands. The next native step
-is the staged read-only hardware status/mode matrix in
-`vendor-status-mode-matrix-plan.json`, followed by exactly one live read-only
-`wheelctl moza vendor-status-probe` only after fresh hardware-doctor review and
-exclusive R5 serial/CDC access. That matrix is a prerequisite for any later
-exact authorization; it is not output, not a mode-enable write, not a PIDFF
-rerun, and not a motion ladder plan. Missing or unknown mode/safety status
-blocks any later authority plan. The next witness-lane operator work remains
-the remaining passive SimHub/simulator captures.
+command/send path still rejects them as unknown commands.
+
+The read-only hardware status/mode matrix is now recorded at
+`vendor-status-mode-matrix.json` with its fresh precondition doctor at
+`vendor-status-mode-matrix-hardware-doctor.json`. COM4 was verified as the R5
+`0x346E:0x0004` serial/CDC interface and Pit House was not running. The guarded
+`wheelctl moza vendor-status-probe` sent nine registry-approved read-only status
+query frames, opened no HID path, and sent no output, PIDFF, feature,
+configuration, firmware, DFU, or high-torque command. It failed closed with
+zero decoded responses and nine failed responses, so
+`real_hardware_status_evidence=false` and
+`unknown_safety_or_mode_state_blocks_authority=true` remain the controlling
+state. The next native-path step is no-output diagnosis of the read-only serial
+response framing/stream, not output, not a mode-enable write, not a PIDFF rerun,
+and not a motion ladder plan. The next witness-lane operator work remains the
+remaining passive SimHub/simulator captures.
 
 Passive USB sniff captures may produce non-claiming `sniff-receipt.json`,
 `sniff-summary.json`, and bundle manifest artifacts, but those are

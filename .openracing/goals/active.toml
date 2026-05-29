@@ -1835,6 +1835,30 @@ commands = [
 ]
 
 [[work_item]]
+id = "record-read-only-vendor-status-mode-matrix"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-record-read-only-vendor-status-mode-matrix"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json"
+claim_boundary = "Read-only serial status/mode matrix evidence only; COM4 R5 identity was verified and nine registry-approved read-only status queries were sent, but zero responses decoded, unknown mode/safety status still blocks authority planning, and no HID, PIDFF, output, feature, configuration, firmware, DFU, high-torque, authorization, registry promotion, tuple sendability, native-control, native-visible, smoke-ready, simulator, coexistence, or release-ready claim is created."
+commands = [
+  "wheelctl hardware doctor --json --json-out target/moza-current/vendor-status-precondition-hardware-doctor.json",
+  "wheelctl moza vendor-status-probe --serial-port COM4 --baud-rate 115200 --timeout-ms 250 --confirm-read-only-query --json-out target/moza-current/vendor-status-mode-matrix-live.json --json",
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_fake_serial_transport -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

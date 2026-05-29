@@ -137,6 +137,15 @@ That is containment evidence only. The staged
 prerequisite: a read-only hardware status/mode matrix, not output,
 authorization, PIDFF rerun, or motion. Unknown or missing mode/safety status
 blocks any later exact authority plan.
+The live read-only matrix has now been recorded at
+`vendor-status-mode-matrix.json` after a fresh observe-only hardware doctor
+receipt. COM4 was verified as the R5 `0x346E:0x0004` serial/CDC interface and
+Pit House was not running. `wheelctl moza vendor-status-probe` sent nine
+registry-approved read-only status query frames and no output, configuration,
+feature, PIDFF, firmware, DFU, or high-torque commands. The receipt failed
+closed with zero decoded responses, nine failed responses, and
+`real_hardware_status_evidence=false`, so mode/safety state remains unknown and
+continues to block any exact authority plan.
 The `pit-house-setting-change` sniff plan now pins the scenario-specific
 operator evidence required for that next capture: exact Pit House setting,
 starting value, ending value, and an affirmative restore status. The first
@@ -5141,6 +5150,102 @@ schema additions, focused tests, and source-of-truth updates. Do not remove the
 fake-transport containment proof, passive evidence review, accepted Pit House
 sniff evidence, low-yield classification, SimHub handoff staging, USBPcap
 selector guard, consumed hardware attempts, or post-authority PIDFF diagnosis.
+
+## Work item: record-read-only-vendor-status-mode-matrix
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: exact authorization planning for any future decoded volatile mode or
+enable candidate
+Blocked by: live read-only status/mode responses did not decode; mode/safety
+state remains unknown and blocks authority planning.
+
+### Goal
+
+Record the first live read-only vendor status/mode matrix attempt from the R5
+serial/CDC interface without crossing into output, configuration, firmware,
+PIDFF, authorization, or motion.
+
+### Production Delta
+
+`ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-hardware-doctor.json`
+records the fresh observe-only precondition. It shows the R5 as
+`0x346E:0x0004`, records COM4 as the Ports/MI_00 serial interface, keeps all
+doctor no-write flags true, and reports Pit House not running.
+
+`ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json` records the
+guarded read-only `wheelctl moza vendor-status-probe` run. The command opened
+only the serial read path, verified COM4 identity, and sent nine
+registry-approved read-only status query frames. It emitted no HID output,
+PIDFF, feature, output write, configuration write, firmware/DFU command, high
+torque, authorization, registry promotion, tuple sendability, native-control,
+native-visible, smoke-ready, simulator, coexistence, or release-ready claim.
+
+The live receipt failed closed: `decoded_response_count=0`,
+`failed_response_count=9`, `real_hardware_status_evidence=false`, and
+`unknown_safety_or_mode_state_blocks_authority=true`. The observed response
+frames were not decoded as the requested registry status tuples, so the matrix
+is recorded as negative/diagnostic evidence and not as an authority unlock.
+
+### Non-goals
+
+No retry, authority write, mode enable write, PIDFF rerun, motion attempt, HID
+output open, feature report, configuration write, firmware/update/DFU path, high
+torque, semantic decode claim, registry promotion, tuple sendability,
+native-control claim, native-visible claim, smoke-ready claim, simulator claim,
+coexistence claim, or release-ready claim.
+
+### Acceptance
+
+- The committed precondition receipt proves the fresh doctor remained
+  observe-only and saw the R5 COM4 serial/CDC interface.
+- The committed status/mode receipt records only registry-approved read-only
+  query traffic and keeps output/configuration/firmware/native/readiness claims
+  false.
+- The receipt records the failed decode result without guessing unknown
+  mode/safety values.
+- Unknown mode/safety status continues to block any later exact authorization
+  plan.
+- The next step is a no-output diagnosis of the read-only serial response
+  framing/stream, not a write, PIDFF rerun, or motion attempt.
+
+### Proof Commands
+
+```powershell
+wheelctl hardware doctor --json `
+  --json-out target/moza-current/vendor-status-precondition-hardware-doctor.json
+
+wheelctl moza vendor-status-probe `
+  --serial-port COM4 `
+  --baud-rate 115200 `
+  --timeout-ms 250 `
+  --confirm-read-only-query `
+  --json-out target/moza-current/vendor-status-mode-matrix-live.json `
+  --json
+# expected: exits non-zero with success=false; receipt remains non-claiming
+
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_fake_serial_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- `ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-hardware-doctor.json`
+- `ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json`
+- source-of-truth notes for this work item.
 
 ## Work item: native-visible-promotion
 
