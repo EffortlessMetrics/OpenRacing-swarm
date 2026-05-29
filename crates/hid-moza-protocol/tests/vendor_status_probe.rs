@@ -4,9 +4,10 @@ use std::io;
 
 use racing_wheel_hid_moza_protocol::serial::status_probe::{
     MozaReadOnlyStatusProbeError, MozaReadOnlyStatusResponseFrameClass,
-    READ_ONLY_STATUS_CODEC_STATUS, decode_read_only_status_response,
-    diagnose_read_only_status_response_frame, encode_read_only_status_query,
-    read_only_status_commands,
+    MozaReadOnlyStatusResponseFrameDisposition, READ_ONLY_STATUS_CODEC_STATUS,
+    decode_read_only_status_response, demux_read_only_status_response_frame,
+    demux_read_only_status_response_stream, diagnose_read_only_status_response_frame,
+    encode_read_only_status_query, read_only_status_commands,
 };
 use racing_wheel_hid_moza_protocol::serial::vendor_authority::{
     MozaRiskClass, MozaSerialCodecStatus, REQUIRED_VENDOR_COMMANDS,
@@ -132,6 +133,49 @@ fn read_only_status_probe_decodes_matching_responses() -> TestResult {
 }
 
 #[test]
+fn read_only_status_probe_decodes_response_group_device_transform() -> TestResult {
+    let base_gain = read_only_status_commands()
+        .find(|command| command.id == "base_gain_get_overall_strength")
+        .ok_or_else(|| invalid_data("missing base gain status command"))?;
+    let response_frame = hex_to_bytes("7E03A8310203E854")?;
+    let decoded = decode_read_only_status_response(base_gain, &response_frame)?;
+
+    assert_eq!(decoded.command.id, "base_gain_get_overall_strength");
+    assert_eq!(decoded.group, 0xA8);
+    assert_eq!(decoded.device_id, 0x31);
+    assert_eq!(decoded.command_id, 0x02);
+    assert_eq!(decoded.payload, &[0x03, 0xE8]);
+
+    let diagnosis = diagnose_read_only_status_response_frame(&response_frame);
+    assert_eq!(
+        diagnosis.classification,
+        MozaReadOnlyStatusResponseFrameClass::RegistryStatusResponse
+    );
+    assert!(diagnosis.registry_command_known);
+    assert_eq!(diagnosis.checksum_valid, Some(true));
+
+    Ok(())
+}
+
+#[test]
+fn read_only_status_probe_demux_matches_response_group_device_transform() -> TestResult {
+    let compatibility = read_only_status_commands()
+        .find(|command| command.id == "compatibility_get_mode")
+        .ok_or_else(|| invalid_data("missing compatibility status command"))?;
+    let response_frame = hex_to_bytes("7E029F21170064")?;
+
+    let diagnosis = demux_read_only_status_response_frame(compatibility, &response_frame);
+    assert_eq!(
+        diagnosis.disposition,
+        MozaReadOnlyStatusResponseFrameDisposition::MatchingRegistryStatusResponse
+    );
+    assert!(diagnosis.matched_expected_command);
+    assert!(diagnosis.decode_error.is_none());
+
+    Ok(())
+}
+
+#[test]
 fn read_only_status_probe_diagnoses_checked_in_debug_log_stream() -> TestResult {
     let matrix = checked_in_status_matrix()?;
     let responses = array_field(&matrix, "responses")?;
@@ -189,6 +233,104 @@ fn read_only_status_probe_diagnoses_fixture_frames_as_registry_status() -> TestR
         assert!(diagnosis.registry_command_known);
         assert_eq!(diagnosis.checksum_valid, Some(true));
     }
+
+    Ok(())
+}
+
+#[test]
+fn read_only_status_probe_demux_skips_debug_stream_until_matching_response() -> TestResult {
+    let matrix = checked_in_status_matrix()?;
+    let responses = array_field(&matrix, "responses")?;
+    let debug_frame = hex_to_bytes(str_field(
+        responses
+            .first()
+            .ok_or_else(|| invalid_data("missing checked-in debug response"))?,
+        "response_frame_hex",
+    )?)?;
+    let estop = read_only_status_commands()
+        .find(|command| command.id == "estop_get_ffb")
+        .ok_or_else(|| invalid_data("missing estop status command"))?;
+    let matching_frame = encode_read_only_status_query(estop)?;
+    let frames = [debug_frame.as_slice(), matching_frame.as_slice()];
+
+    let demux = demux_read_only_status_response_stream(estop, frames);
+    assert_eq!(demux.scanned_frame_count, 2);
+    assert_eq!(demux.matching_frame_index, Some(1));
+    assert_eq!(demux.skipped_diagnostic_frame_count, 1);
+    assert_eq!(demux.skipped_malformed_or_desynchronized_frame_count, 0);
+    assert_eq!(demux.skipped_non_matching_registry_frame_count, 0);
+    assert_eq!(
+        demux.frame_diagnoses[0].disposition,
+        MozaReadOnlyStatusResponseFrameDisposition::SkippableDiagnosticFrame
+    );
+    assert_eq!(
+        demux.frame_diagnoses[1].disposition,
+        MozaReadOnlyStatusResponseFrameDisposition::MatchingRegistryStatusResponse
+    );
+    assert!(demux.frame_diagnoses[1].matched_expected_command);
+
+    Ok(())
+}
+
+#[test]
+fn read_only_status_probe_demux_checked_in_matrix_has_no_matching_status_reply() -> TestResult {
+    let matrix = checked_in_status_matrix()?;
+    let responses = array_field(&matrix, "responses")?;
+    let estop = read_only_status_commands()
+        .find(|command| command.id == "estop_get_ffb")
+        .ok_or_else(|| invalid_data("missing estop status command"))?;
+    let frames = responses
+        .iter()
+        .map(|response| hex_to_bytes(str_field(response, "response_frame_hex")?))
+        .collect::<Result<Vec<_>, _>>()?;
+    let frame_slices = frames.iter().map(Vec::as_slice).collect::<Vec<_>>();
+
+    let demux = demux_read_only_status_response_stream(estop, frame_slices);
+    assert_eq!(demux.scanned_frame_count, 9);
+    assert_eq!(demux.matching_frame_index, None);
+    assert_eq!(demux.skipped_diagnostic_frame_count, 8);
+    assert_eq!(demux.skipped_malformed_or_desynchronized_frame_count, 1);
+    assert_eq!(demux.skipped_non_matching_registry_frame_count, 0);
+    assert_eq!(demux.skipped_unknown_non_registry_frame_count, 0);
+
+    Ok(())
+}
+
+#[test]
+fn read_only_status_probe_demux_rejects_mismatched_registry_response() -> TestResult {
+    let estop = read_only_status_commands()
+        .find(|command| command.id == "estop_get_ffb")
+        .ok_or_else(|| invalid_data("missing estop status command"))?;
+    let compatibility = read_only_status_commands()
+        .find(|command| command.id == "compatibility_get_mode")
+        .ok_or_else(|| invalid_data("missing compatibility status command"))?;
+    let compatibility_frame = encode_read_only_status_query(compatibility)?;
+
+    let diagnosis = demux_read_only_status_response_frame(estop, &compatibility_frame);
+    assert_eq!(
+        diagnosis.disposition,
+        MozaReadOnlyStatusResponseFrameDisposition::NonMatchingRegistryStatusResponse
+    );
+    assert!(!diagnosis.matched_expected_command);
+    assert!(
+        diagnosis
+            .decode_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("status response command mismatch")
+    );
+
+    let frames = [compatibility_frame.as_slice()];
+    let demux = demux_read_only_status_response_stream(estop, frames);
+    assert_eq!(demux.matching_frame_index, None);
+    assert_eq!(demux.skipped_non_matching_registry_frame_count, 1);
+    assert!(
+        demux
+            .first_non_matching_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("status response command mismatch")
+    );
 
     Ok(())
 }

@@ -88,6 +88,14 @@
     "transport_kind": {"const": "serial_read_only"},
     "codec_status": {"const": "round_trip_verified"},
     "hardware_write_eligible": {"const": false},
+    "response_scan_strategy": {"const": "bounded_stream_demux"},
+    "response_scan_max_frames_per_query": {"type": "integer", "minimum": 1},
+    "scanned_response_frame_count": {"type": "integer", "minimum": 0},
+    "skipped_response_frame_count": {"type": "integer", "minimum": 0},
+    "skipped_diagnostic_frame_count": {"type": "integer", "minimum": 0},
+    "skipped_malformed_or_desynchronized_frame_count": {"type": "integer", "minimum": 0},
+    "skipped_non_matching_registry_frame_count": {"type": "integer", "minimum": 0},
+    "skipped_unknown_non_registry_frame_count": {"type": "integer", "minimum": 0},
     "selected_command_count": {"type": "integer", "minimum": 1},
     "decoded_response_count": {"type": "integer", "minimum": 0},
     "failed_response_count": {"type": "integer", "minimum": 0},
@@ -114,6 +122,43 @@
           "command": {"type": "integer", "minimum": 0, "maximum": 255},
           "risk_class": {"const": "vendor_status"},
           "query_frame_hex": {"type": "string"},
+          "response_scan_stop_reason": {"type": "string"},
+          "scanned_response_frame_count": {"type": "integer", "minimum": 0},
+          "skipped_response_frame_count": {"type": "integer", "minimum": 0},
+          "skipped_diagnostic_frame_count": {"type": "integer", "minimum": 0},
+          "skipped_malformed_or_desynchronized_frame_count": {"type": "integer", "minimum": 0},
+          "skipped_non_matching_registry_frame_count": {"type": "integer", "minimum": 0},
+          "skipped_unknown_non_registry_frame_count": {"type": "integer", "minimum": 0},
+          "scanned_response_frames": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "frame_hex",
+                "disposition",
+                "response_classification",
+                "matched_expected_command"
+              ],
+              "properties": {
+                "frame_hex": {"type": "string"},
+                "disposition": {
+                  "enum": [
+                    "matching_registry_status_response",
+                    "non_matching_registry_status_response",
+                    "skippable_diagnostic_frame",
+                    "malformed_or_desynchronized_frame",
+                    "unknown_non_registry_frame"
+                  ]
+                },
+                "response_classification": {"type": "string"},
+                "observed_tuple_id": {"type": "string"},
+                "matched_expected_command": {"type": "boolean"},
+                "checksum_valid": {"type": "boolean"},
+                "error": {"type": "string"}
+              },
+              "additionalProperties": true
+            }
+          },
           "decoded": {"type": "boolean"}
         },
         "additionalProperties": true

@@ -5330,6 +5330,103 @@ Remove only:
 - the `vendor-status-framing-diagnosis` CLI/readback diagnosis helper
 - source-of-truth notes for this work item.
 
+## Work item: demux-read-only-status-response-stream
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: exact authorization planning for any future decoded volatile mode or
+enable candidate
+Blocked by: two read-only status commands still do not decode and the current
+matrix remains failed-closed.
+
+### Goal
+
+Fix the read-only serial response demux so unsolicited diagnostic stream frames
+and the observed response-side group/device tuple transform no longer cause
+valid status replies to be discarded.
+
+### Production Delta
+
+The Moza status-probe protocol now classifies read-only response frames through a
+bounded demux layer. It skips framed ASCII diagnostic stream frames, records
+malformed/desynchronized and unknown non-registry frames, and accepts registry
+status replies that use the observed response-side tuple transform:
+
+```text
+request group/device/command 0x28/0x13/0x02
+response group/device/command 0xA8/0x31/0x02
+```
+
+`wheelctl moza vendor-status-probe` records the demux strategy, per-command
+scan counts, skipped-frame classifications, and the scanned frames in its
+receipt. The original failed-closed
+`vendor-status-mode-matrix.json` remains preserved. The new derived live receipt
+at `vendor-status-mode-matrix-demux.json` was run after a fresh observe-only
+hardware doctor at `vendor-status-mode-matrix-demux-hardware-doctor.json`. It
+decoded seven registry status responses and failed closed on
+`estop_get_ffb` and `main_misc_get_ffb_status`, so
+`unknown_safety_or_mode_state_blocks_authority=true` still blocks any authority
+or motion plan.
+
+### Non-goals
+
+No HID output open, PIDFF output, feature report, output write, configuration
+write, firmware/update/DFU path, high torque, mode-enable write, authority
+write, authorization receipt, native-control claim, native-visible claim,
+smoke-ready claim, simulator claim, coexistence claim, registry promotion,
+tuple sendability, or release-ready claim.
+
+### Acceptance
+
+- Fake fixtures prove diagnostic frames can be skipped before a matching
+  read-only registry status reply.
+- Fake fixtures prove nonmatching registry replies and unknown frames remain
+  non-sendable and cannot satisfy the matrix.
+- The live demux receipt records seven decoded read-only status replies and two
+  failed-closed status replies without weakening any output/readiness gate.
+- The next blocker is the remaining read-only status reply correlation for
+  `estop_get_ffb` and `main_misc_get_ffb_status`, not output, PIDFF, or motion.
+
+### Proof Commands
+
+```powershell
+wheelctl hardware doctor --json `
+  --json-out target/moza-current/read-only-stream-demux-hardware-doctor.json
+
+wheelctl moza vendor-status-probe `
+  --serial-port COM4 `
+  --baud-rate 115200 `
+  --timeout-ms 250 `
+  --confirm-read-only-query `
+  --json-out target/moza-current/vendor-status-mode-matrix-demux-live-v2.json `
+  --json
+# expected: exits non-zero with success=false; decoded_response_count=7, failed_response_count=2
+
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- `ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux-hardware-doctor.json`
+- `ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json`
+- the read-only status demux additions in the protocol crate and CLI receipt
+- source-of-truth notes for this work item.
+
+Do not remove the original #73 matrix, the #74 framing diagnosis, passive
+evidence, consumed hardware attempts, or post-authority PIDFF regression
+evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

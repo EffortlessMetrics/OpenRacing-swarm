@@ -65,13 +65,22 @@ The probe verified COM4 as the R5 `0x346E:0x0004` serial/CDC interface and sent
 only registry-approved read-only status queries. It failed closed with zero
 decoded responses, nine failed responses, and
 `real_hardware_status_evidence=false`, so unknown mode/safety status still
-blocks any authority plan. The follow-up no-output diagnosis is recorded at
+blocked any authority plan. The follow-up no-output diagnosis is recorded at
 `ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json`: the
 stored readback frames are dominated by repeated tuple `0x0E/0x71/0x05` ASCII
 `NRFloss`/`recvGap` diagnostic stream frames, with one desynchronized partial
-frame, rather than registry status/mode replies. The next native-path blocker
-is serial stream/framing demultiplexing or endpoint/command correlation, not an
-output attempt. The current
+frame, rather than registry status/mode replies.
+
+The read-only demux follow-up is recorded at
+`ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json`, with its
+fresh observe-only precondition doctor at
+`ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux-hardware-doctor.json`.
+The demux skips diagnostic stream frames and accepts the observed response-side
+group/device tuple transform, decoding seven registry status replies. The
+receipt still failed closed because `estop_get_ffb` and
+`main_misc_get_ffb_status` did not decode; unknown safety/mode state still
+blocks any authority plan. The next native-path blocker is read-only status
+reply correlation for those two commands, not an output attempt. The current
 receipt also records the correlation plan explicitly: two non-sendable
 targets, completed observations in the three Pit House scenarios, and
 remaining no-output correlation gaps in SimHub and simulator scenarios. The
@@ -164,11 +173,11 @@ recorded as passive external observation only, not OpenRacing output.
 Run `wheelctl moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13` to get
 the current command-bound no-output handoff. With the current post-authority
 and read-only matrix state, the wizard records that the PIDFF comparison is
-present and emits no output command. The read-only framing diagnosis now
-narrows the native-path blocker to the `0x0E/0x71/0x05` diagnostic stream versus
-registry-status-reply mismatch. Continue with no-output stream/framing and
-endpoint/command correlation or the remaining passive capture scenarios before
-proposing any further hardware output family.
+present and emits no output command. The read-only demux follow-up decoded
+seven registry status replies while leaving `estop_get_ffb` and
+`main_misc_get_ffb_status` failed closed. Continue with read-only status reply
+correlation or the remaining passive capture scenarios before proposing any
+further hardware output family.
 
 For each planned scenario:
 
