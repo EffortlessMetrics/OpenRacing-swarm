@@ -187,6 +187,168 @@
       "output_sendability_claim": false
     }
   ],
+  "authority_command_id_0x07_analog_fixture_source": "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json",
+  "authority_command_id_0x07_analog_count": 5,
+  "authority_command_id_0x07_analog_frame_count": 5,
+  "authority_command_id_0x07_analog_send_path_rejected_count": 5,
+  "authority_command_id_0x07_analogs_unknown_do_not_send": true,
+  "authority_command_id_0x07_analogs_match_payload_status": false,
+  "authority_command_id_0x07_analogs_read_only_probe_allowed": false,
+  "authority_command_id_0x07_analogs_sendable": false,
+  "authority_command_id_0x07_analog_observations": [
+    {
+      "candidate_id": "authority_command_id_0x07_analog",
+      "candidate_semantics": [
+        "authority_state_status_endpoint_question",
+        "payload_bearing_read_only_status_question",
+        "command_id_0x07_analog"
+      ],
+      "tuple_id": "0x40/0x17/0x07",
+      "scenarios": [
+        "pit-house-open-idle",
+        "pit-house-full-controls",
+        "pit-house-setting-change"
+      ],
+      "total_count": 558,
+      "payload_len_min": 1,
+      "payload_len_max": 1,
+      "representative_frame_hexes": [
+        "7E0240170700EB"
+      ],
+      "observed_frame_count": 1,
+      "send_path_rejected_count": 1,
+      "command_id_matches_expected_source": true,
+      "risk_class": "unknown_do_not_send",
+      "matches_payload_authority_status_response": false,
+      "corrected_read_only_probe_ready": false,
+      "read_only_probe_allowed": false,
+      "semantic_decode_claim": false,
+      "registry_promotion_claim": false,
+      "hardware_output_authorized": false,
+      "native_control_evidence": false,
+      "output_sendability_claim": false
+    },
+    {
+      "candidate_id": "authority_command_id_0x07_analog",
+      "candidate_semantics": [
+        "authority_state_status_endpoint_question",
+        "payload_bearing_read_only_status_question",
+        "command_id_0x07_analog"
+      ],
+      "tuple_id": "0x28/0x13/0x07",
+      "scenarios": [
+        "pit-house-setting-change"
+      ],
+      "total_count": 2,
+      "payload_len_min": 2,
+      "payload_len_max": 2,
+      "representative_frame_hexes": [
+        "7E032813070000D0"
+      ],
+      "observed_frame_count": 1,
+      "send_path_rejected_count": 1,
+      "command_id_matches_expected_source": true,
+      "risk_class": "unknown_do_not_send",
+      "matches_payload_authority_status_response": false,
+      "corrected_read_only_probe_ready": false,
+      "read_only_probe_allowed": false,
+      "semantic_decode_claim": false,
+      "registry_promotion_claim": false,
+      "hardware_output_authorized": false,
+      "native_control_evidence": false,
+      "output_sendability_claim": false
+    },
+    {
+      "candidate_id": "authority_command_id_0x07_analog",
+      "candidate_semantics": [
+        "authority_state_status_endpoint_question",
+        "payload_bearing_read_only_status_question",
+        "command_id_0x07_analog"
+      ],
+      "tuple_id": "0x23/0x19/0x07",
+      "scenarios": [
+        "pit-house-setting-change"
+      ],
+      "total_count": 1,
+      "payload_len_min": 2,
+      "payload_len_max": 2,
+      "representative_frame_hexes": [
+        "7E032319070000D1"
+      ],
+      "observed_frame_count": 1,
+      "send_path_rejected_count": 1,
+      "command_id_matches_expected_source": true,
+      "risk_class": "unknown_do_not_send",
+      "matches_payload_authority_status_response": false,
+      "corrected_read_only_probe_ready": false,
+      "read_only_probe_allowed": false,
+      "semantic_decode_claim": false,
+      "registry_promotion_claim": false,
+      "hardware_output_authorized": false,
+      "native_control_evidence": false,
+      "output_sendability_claim": false
+    },
+    {
+      "candidate_id": "authority_command_id_0x07_analog",
+      "candidate_semantics": [
+        "authority_state_status_endpoint_question",
+        "payload_bearing_read_only_status_question",
+        "command_id_0x07_analog"
+      ],
+      "tuple_id": "0x3F/0x17/0x07",
+      "scenarios": [
+        "pit-house-setting-change"
+      ],
+      "total_count": 1,
+      "payload_len_min": 1,
+      "payload_len_max": 1,
+      "representative_frame_hexes": [
+        "7E023F170700EA"
+      ],
+      "observed_frame_count": 1,
+      "send_path_rejected_count": 1,
+      "command_id_matches_expected_source": true,
+      "risk_class": "unknown_do_not_send",
+      "matches_payload_authority_status_response": false,
+      "corrected_read_only_probe_ready": false,
+      "read_only_probe_allowed": false,
+      "semantic_decode_claim": false,
+      "registry_promotion_claim": false,
+      "hardware_output_authorized": false,
+      "native_control_evidence": false,
+      "output_sendability_claim": false
+    },
+    {
+      "candidate_id": "authority_command_id_0x07_analog",
+      "candidate_semantics": [
+        "authority_state_status_endpoint_question",
+        "payload_bearing_read_only_status_question",
+        "command_id_0x07_analog"
+      ],
+      "tuple_id": "0x5B/0x1B/0x07",
+      "scenarios": [
+        "pit-house-setting-change"
+      ],
+      "total_count": 1,
+      "payload_len_min": 4,
+      "payload_len_max": 4,
+      "representative_frame_hexes": [
+        "7E055B1B07000000000D"
+      ],
+      "observed_frame_count": 1,
+      "send_path_rejected_count": 1,
+      "command_id_matches_expected_source": true,
+      "risk_class": "unknown_do_not_send",
+      "matches_payload_authority_status_response": false,
+      "corrected_read_only_probe_ready": false,
+      "read_only_probe_allowed": false,
+      "semantic_decode_claim": false,
+      "registry_promotion_claim": false,
+      "hardware_output_authorized": false,
+      "native_control_evidence": false,
+      "output_sendability_claim": false
+    }
+  ],
   "fake_response": {
     "payload_hex": "00",
     "meaning": "synthetic placeholder status byte only; not a hardware response and not evidence of native control"
@@ -196,6 +358,7 @@
     "Write-like vendor output/configuration candidates remain rejected by the fake transport until a later exact authorization stage.",
     "Mode/enable candidate frames from passive evidence are observed in fake transport as unknown_do_not_send and are rejected by the command send path.",
     "Authority-status endpoint candidates from the payload rerun are observed in fake transport as unknown_do_not_send, do not match payload-bearing status responses, and are rejected by the command send path.",
+    "Authority command-id 0x07 analogs are observed in fake transport as unknown_do_not_send endpoint-search fixtures and remain rejected by the command send path.",
     "No serial device is opened and no host-to-device traffic is sent by this artifact."
   ]
 }

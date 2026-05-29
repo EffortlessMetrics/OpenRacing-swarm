@@ -377,6 +377,21 @@ step remains no-output fixture-backed decoder coverage for these command-id
 before any live probe, authorization, PIDFF rerun, force escalation, or motion
 ladder attempt.
 
+That fake-only command-id `0x07` analog containment is now in place. The fake
+transport consumes the five analog tuples from
+`vendor-status-endpoint-candidates-from-payload-rerun.json`, observes
+representative zero-payload fixture frames for them, and verifies every frame
+remains `unknown_do_not_send`, not a payload-status match,
+not corrected-probe-ready, not read-only-probe-allowed, not sendable, and
+rejected by the command send path. These are endpoint-search fixtures only, not
+semantic decode proof and not live probe inputs. Wheel movement remains
+unproven: `wheel_moved_under_openracing=false`,
+`visible_motion_verified=false`, `output_was_sent=false`, and
+`authority_state=blocked`. The next native-path step remains no-output protocol
+work to identify a payload-bearing authority-state status endpoint or
+equivalent reviewed status source before any live probe, authorization, PIDFF
+rerun, force escalation, or motion ladder attempt.
+
 The read-only demux follow-up is now recorded at
 `vendor-status-mode-matrix-demux.json` with its fresh precondition doctor at
 `vendor-status-mode-matrix-demux-hardware-doctor.json`. It kept the same

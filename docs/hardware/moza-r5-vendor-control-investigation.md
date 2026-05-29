@@ -185,6 +185,17 @@ correlation scenarios. It keeps `planned_next_output.allowed=false` and does not
 satisfy native-visible, smoke-ready, coexistence, simulator, or release-ready
 gates.
 
+The endpoint-candidate receipt now also preserves five passive command-id
+`0x07` analog tuples from the same protocol evidence review:
+`0x40/0x17/0x07`, `0x28/0x13/0x07`, `0x23/0x19/0x07`,
+`0x3F/0x17/0x07`, and `0x5B/0x1B/0x07`. The fake transport records
+representative zero-payload containment frames for those analogs and verifies
+they remain `unknown_do_not_send`, not payload-status matches, not
+read-only-probe-allowed, not sendable, and rejected by the command send path.
+They narrow the authority-status endpoint search only; they are not semantic
+decode proof, registry promotion, live probe inputs, authorization inputs, or
+native motion evidence.
+
 ## Boundaries
 
 These plans do not authorize hardware output. They do not create pcap receipts,
