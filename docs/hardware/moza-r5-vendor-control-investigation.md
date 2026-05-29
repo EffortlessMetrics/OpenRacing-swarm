@@ -226,9 +226,26 @@ passive response fixture shapes for `0xA5/0x91/*`, `0xDA/0xB1/0x00`, and
 payloads. That keeps `payload_variation_observed=false`,
 `payload_bearing_authority_state_source_found=false`,
 `corrected_read_only_probe_ready=false`, `live_read_only_probe_allowed=false`,
-and `motion_attempt_allowed=false`. The next step is a reviewed
-payload-varying authority-state status source, not a live probe,
-authorization, PIDFF rerun, force escalation, or motion attempt.
+and `motion_attempt_allowed=false`.
+
+`vendor-status-payload-source-candidates.json` records the separate
+payload-bearing device-to-host samples in the checked-in setting-change
+evidence. It preserves four nonzero `0x8E` samples:
+
+```text
+0x8E/0x21/0x00
+0x8E/0x31/0x00
+0x8E/0x71/0x00
+0x8E/0x91/0x00
+```
+
+Those samples are useful status-source questions, but they remain
+`unknown_do_not_send`. They are not same-tuple payload variation, not timing
+correlation, not semantic decode, not registry promotion, not a reviewed
+authority-state source, and not read-only probe or output eligibility. The next
+step is fixture-backed semantic review or timing-correlated capture for these
+payload-bearing candidates, not a live probe, authorization, PIDFF rerun, force
+escalation, or motion attempt.
 
 ## Boundaries
 
@@ -263,8 +280,10 @@ also decoded zero authority-state replies with a 64-frame cap, and the stored
 passive response-source correlation still found no payload-bearing
 authority-state source. The correlated response semantic fixture review now
 shows the available correlated passive payloads are zero-filled/static, so the
-native path remains blocked on a reviewed payload-varying authority-state source
-or equivalent status source before proposing any further hardware output family.
+payload-source candidate review preserves four nonzero `0x8E` setting-change
+samples as `unknown_do_not_send` questions only. The native path remains blocked
+on a reviewed payload-varying authority-state source or equivalent status source
+before proposing any further hardware output family.
 
 For each planned scenario:
 
