@@ -281,6 +281,33 @@ fn read_only_status_probe_keeps_response_like_unknown_frame_unpromoted() -> Test
 }
 
 #[test]
+fn read_only_status_probe_demux_keeps_zero_length_ack_candidate_non_matching() -> TestResult {
+    let command = read_only_status_commands()
+        .find(|command| command.id == "main_misc_get_ffb_status")
+        .ok_or_else(|| invalid_data("missing main_misc_get_ffb_status command"))?;
+    let response_frame = hex_to_bytes("7E00A1214D")?;
+    let demux = demux_read_only_status_response_frame(command, &response_frame);
+
+    assert_eq!(
+        demux.frame_diagnosis.classification,
+        MozaReadOnlyStatusResponseFrameClass::ZeroLengthResponseOrAckFrame
+    );
+    assert_eq!(
+        demux.disposition,
+        MozaReadOnlyStatusResponseFrameDisposition::UnknownNonRegistryFrame
+    );
+    assert!(!demux.matched_expected_command);
+    assert_eq!(demux.frame_diagnosis.group, Some(0xa1));
+    assert_eq!(demux.frame_diagnosis.device_id, Some(0x21));
+    assert_eq!(demux.frame_diagnosis.command, None);
+    assert_eq!(demux.frame_diagnosis.payload_len, Some(0));
+    assert_eq!(demux.frame_diagnosis.checksum_valid, Some(true));
+    assert!(demux.decode_error.is_none());
+
+    Ok(())
+}
+
+#[test]
 fn read_only_status_probe_diagnoses_fixture_frames_as_registry_status() -> TestResult {
     let codec_fixture = codec_fixture()?;
     let fixtures = fixtures_by_id(&codec_fixture)?;

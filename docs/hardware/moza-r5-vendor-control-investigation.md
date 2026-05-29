@@ -108,9 +108,20 @@ It added only a bounded scan-window option, selected the same two read-only
 commands, used `--max-response-frames-per-query 64`, decoded zero
 authority-state replies, and now classifies `7E00A1214D` as a checksum-valid
 zero-length response-like frame for `0xA1/0x21/no_command`. That removes shallow
-scan-window depth as the immediate explanation and narrows the blocker to
-zero-length ACK/status reply correlation, while still keeping authorization,
-PIDFF rerun, and motion blocked. The
+scan-window depth as the immediate explanation. The latest diagnosis narrows the
+frame to ACK-only/no-payload correlation evidence, not decoded status evidence,
+so mode and safety remain unknown until a payload-bearing status reply is
+decoded or the authority-status endpoint/command IDs are corrected.
+Authorization, PIDFF rerun, and motion remain blocked. The ACK-only live rerun
+is recorded at
+`ci/hardware/moza-r5/2026-05-13/vendor-status-ack-only-correlation-targeted.json`
+with its fresh observe-only doctor at
+`ci/hardware/moza-r5/2026-05-13/vendor-status-ack-only-correlation-hardware-doctor.json`
+and derived diagnosis at
+`ci/hardware/moza-r5/2026-05-13/vendor-status-ack-only-correlation-diagnosis.json`.
+It selected the same two read-only commands, opened no HID path, sent no
+output/configuration/firmware/PIDFF command, decoded zero authority-state
+replies, and reproduced the same ACK-only/no-payload candidate. The
 first bounded setting-change capture attempt remains
 classified as low-yield/incomplete: 355 bytes, six packets, zero Moza
 `0x346E:0x0004` matches, and restore status `not reported`. The repeat capture

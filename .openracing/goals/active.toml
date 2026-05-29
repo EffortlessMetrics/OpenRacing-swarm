@@ -1947,9 +1947,31 @@ spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
 adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
 plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-classify-zero-length-authority-status-reply"
 current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json"
-claim_boundary = "Stored-receipt read-only framing diagnosis only; reclassifies the scanned 7E00A1214D frame from the extended COM4 probe as a checksum-valid zero-length response-like ACK/status correlation candidate for 0xA1/0x21/no_command, decodes zero authority-state replies, and keeps hardware output authorization, registry promotion, tuple sendability, semantic decode, native-control, native-visible, smoke-ready, simulator, coexistence, high-torque, and release-ready claims false."
+claim_boundary = "Stored-receipt read-only framing diagnosis only; reclassifies the scanned 7E00A1214D frame from the extended COM4 probe as a checksum-valid zero-length response-like ACK-only/no-payload candidate for 0xA1/0x21/no_command, decodes zero authority-state replies, and keeps hardware output authorization, registry promotion, tuple sendability, semantic decode, native-control, native-visible, smoke-ready, simulator, coexistence, high-torque, and release-ready claims false."
 commands = [
   "wheelctl moza vendor-status-framing-diagnosis --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-targeted.json --json-out target/moza-current/vendor-status-zero-length-diagnosis-from-extended.json --overwrite --json",
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_framing_diagnosis -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_status_probe -- --nocapture",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "classify-ack-only-authority-status-reply"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-classify-ack-only-authority-status-reply"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-status-ack-only-correlation-diagnosis.json"
+claim_boundary = "Read-only ACK-only authority-status correlation only; after a fresh observe-only hardware doctor, reruns the targeted COM4 read-only probe for estop_get_ffb and main_misc_get_ffb_status, reclassifies 7E00A1214D as a checksum-valid zero-length ACK-only candidate for 0xA1/0x21/no_command with no command or status payload, decodes zero authority-state replies, leaves mode/safety unknown, and keeps hardware output authorization, registry promotion, tuple sendability, semantic decode, native-control, native-visible, smoke-ready, simulator, coexistence, high-torque, and release-ready claims false."
+commands = [
+  "wheelctl moza vendor-status-framing-diagnosis --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-targeted.json --json-out target/moza-current/vendor-status-ack-only-correlation-from-extended.json --overwrite --json",
+  "wheelctl hardware doctor --json --json-out target/moza-current/ack-only-correlation-hardware-doctor.json",
+  "wheelctl moza vendor-status-probe --serial-port COM4 --baud-rate 115200 --timeout-ms 1000 --max-response-frames-per-query 64 --command estop_get_ffb --command main_misc_get_ffb_status --confirm-read-only-query --json-out target/moza-current/vendor-status-ack-only-correlation-targeted.json --json",
+  "wheelctl moza vendor-status-framing-diagnosis --status-probe target/moza-current/vendor-status-ack-only-correlation-targeted.json --json-out target/moza-current/vendor-status-ack-only-correlation-diagnosis.json --overwrite --json",
   "python scripts/cargo_fmt_workspace.py",
   "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture",
   "cargo test --locked -p wheelctl --bin wheelctl vendor_status_framing_diagnosis -- --nocapture",
