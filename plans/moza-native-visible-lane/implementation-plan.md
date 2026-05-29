@@ -6153,6 +6153,128 @@ Do not remove the authority-endpoint diagnosis, read-only status matrix,
 passive protocol evidence review, consumed authority attempt, or post-authority
 PIDFF regression evidence.
 
+## Work item: probe-authority-status-payload-fixtures
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: no-output serial stream/framing correlation
+Blocked by: decoded authority-status payload response from the read-only serial lane
+
+### Goal
+
+Pin the payload-bearing authority-status response shapes in fake decoder tests,
+then rerun only the targeted read-only COM4 authority-status probe to determine
+whether the live lane returns those payload frames.
+
+### Production Delta
+
+`racing-wheel-hid-moza-protocol` now has explicit fixture coverage for the
+payload-bearing response shapes that would satisfy the current registry-approved
+authority-status queries:
+
+```text
+main_misc_get_ffb_status query: 7E01211207C6
+main_misc_get_ffb_status payload response fixture: 7E02A121070157
+estop_get_ffb query: 7E01461C01EF
+estop_get_ffb payload response fixture: 7E02C6C1010116
+ack-only non-payload frame: 7E00A1214D
+```
+
+The fake demux coverage accepts the payload-bearing `0xA1/0x21/0x07`
+response only after preserving the zero-length `0xA1/0x21/no_command` ACK-like
+frame as nonmatching, non-status evidence.
+
+After a fresh observe-only hardware doctor confirmed the R5 on COM4 and Pit
+House not running, `vendor-status-authority-payload-rerun-targeted.json`
+records a targeted read-only rerun for `main_misc_get_ffb_status` and
+`estop_get_ffb`. It opened COM4 only, sent two registry-approved read-only
+queries, opened no HID path, and sent no output, configuration, firmware, DFU,
+PIDFF, or mode-enable command.
+
+The rerun still decoded zero authority-state replies. The derived diagnosis at
+`vendor-status-authority-payload-rerun-diagnosis.json` classifies the captured
+readback as `serial_readback_consumed_debug_telemetry_log_frames`: all 24
+scanned frames were checksum-valid ASCII diagnostic stream frames, dominated by
+`0x0E/0x71/0x05`, with no `0xA1/0x21/0x07` or `0xC6/0xC1/0x01` payload-bearing
+status response observed.
+
+### Non-goals
+
+No HID output open, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, native-control claim, native-visible claim, smoke-ready claim,
+simulator claim, coexistence claim, or release-ready claim.
+
+### Acceptance
+
+- Fake decoder coverage proves the expected payload-bearing authority-status
+  response shapes can decode if the live device returns them.
+- `0xA1/0x21/no_command` remains ACK-only/no-payload evidence and cannot satisfy
+  authority status.
+- The live targeted rerun remains read-only and records
+  `sent_output_writes=false`, `sent_configuration_writes=false`,
+  `sent_firmware_or_dfu_commands=false`, `high_torque_enabled=false`,
+  `hardware_output_authorized=false`, `native_control_evidence=false`, and
+  `native_visible_ready=false`.
+- The diagnosis records `wheel_moved_under_openracing=false`,
+  `visible_motion_verified=false`, `output_was_sent=false`, and
+  `authority_state=blocked`.
+- The next native-path action is no-output serial stream/framing or endpoint
+  correlation before any authorization, PIDFF rerun, force escalation, or motion
+  attempt.
+
+### Proof Commands
+
+```powershell
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_status_probe -- --nocapture
+
+wheelctl hardware doctor `
+  --json `
+  --json-out target/moza-current/authority-status-payload-preflight-hardware-doctor.json
+
+wheelctl moza vendor-status-probe `
+  --serial-port COM4 `
+  --baud-rate 115200 `
+  --timeout-ms 1000 `
+  --command main_misc_get_ffb_status `
+  --command estop_get_ffb `
+  --confirm-read-only-query `
+  --json-out target/moza-current/vendor-status-authority-payload-rerun-targeted.json `
+  --json
+
+wheelctl moza vendor-status-framing-diagnosis `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-targeted.json `
+  --baseline-status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --overwrite `
+  --json
+
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- the authority-status payload response fixture tests,
+- `vendor-status-authority-payload-rerun-targeted.json`,
+- `vendor-status-authority-payload-rerun-diagnosis.json`,
+- source-of-truth notes for this work item.
+
+Do not remove the status matrix, demux receipt, endpoint-candidate plan,
+passive protocol evidence review, consumed authority attempt, or post-authority
+PIDFF regression evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

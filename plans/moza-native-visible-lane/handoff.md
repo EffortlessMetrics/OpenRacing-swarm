@@ -310,6 +310,32 @@ next native-path step is no-output fixture-backed decoder coverage for a
 corrected authority-status endpoint candidate, not a live probe, not output,
 not a mode-enable write, not PIDFF, and not motion.
 
+The authority-status payload fixture follow-up is now recorded in tests and in
+`vendor-status-authority-payload-rerun-targeted.json` /
+`vendor-status-authority-payload-rerun-diagnosis.json`. Fake decoder coverage
+now pins the payload-bearing response shapes that would satisfy the two current
+registry-approved authority-status queries:
+
+```text
+main_misc_get_ffb_status -> 0xA1/0x21/0x07 payload response
+estop_get_ffb           -> 0xC6/0xC1/0x01 payload response
+```
+
+The targeted live rerun stayed read-only: it opened COM4, sent only those two
+registry-approved read-only queries, opened no HID path, and sent no output,
+configuration, firmware, DFU, PIDFF, authority, or mode-enable command. It still
+decoded zero authority-state replies. The diagnosis classifies the readback as
+`serial_readback_consumed_debug_telemetry_log_frames`: all 24 scanned frames
+were checksum-valid ASCII diagnostic stream frames, dominated by
+`0x0E/0x71/0x05`, with no payload-bearing authority-status response observed.
+The current native-path blocker is therefore serial stream/framing
+demultiplexing or endpoint framing, not force or a motion controller issue.
+Wheel movement remains unproven:
+`wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+`output_was_sent=false`, and `authority_state=blocked`. The next native-path
+step is no-output stream/framing or endpoint correlation before any
+authorization, PIDFF rerun, force escalation, or motion ladder attempt.
+
 The read-only demux follow-up is now recorded at
 `vendor-status-mode-matrix-demux.json` with its fresh precondition doctor at
 `vendor-status-mode-matrix-demux-hardware-doctor.json`. It kept the same

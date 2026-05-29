@@ -2025,6 +2025,29 @@ commands = [
 ]
 
 [[work_item]]
+id = "probe-authority-status-payload-fixtures"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-probe-authority-status-payload-fixtures"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json"
+claim_boundary = "Read-only authority-status payload fixture and targeted COM4 rerun only; adds fake decoder coverage for payload-bearing main_misc_get_ffb_status and estop_get_ffb response shapes, then records a targeted read-only live rerun that still decodes zero authority-state replies and classifies the blocker as serial stream/framing demultiplexing or endpoint framing, with no hardware output authorization, registry promotion, tuple sendability, semantic decode, native-control, native-visible, smoke-ready, simulator, coexistence, high-torque, or release-ready claim."
+commands = [
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_status_probe -- --nocapture",
+  "wheelctl hardware doctor --json --json-out target/moza-current/authority-status-payload-preflight-hardware-doctor.json",
+  "wheelctl moza vendor-status-probe --serial-port COM4 --baud-rate 115200 --timeout-ms 1000 --command main_misc_get_ffb_status --command estop_get_ffb --confirm-read-only-query --json-out target/moza-current/vendor-status-authority-payload-rerun-targeted.json --json",
+  "wheelctl moza vendor-status-framing-diagnosis --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-targeted.json --baseline-status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json --overwrite --json",
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
