@@ -220,6 +220,10 @@ const MOZA_VENDOR_STATUS_RESPONSE_SOURCE_CORRELATION_JSON: &str = include_str!(
     "../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-response-source-correlation.json"
 );
 #[cfg(test)]
+const MOZA_VENDOR_STATUS_RESPONSE_SEMANTIC_FIXTURES_JSON: &str = include_str!(
+    "../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-response-semantic-fixtures.json"
+);
+#[cfg(test)]
 const MOZA_VENDOR_STATUS_MODE_MATRIX_PLAN_JSON: &str =
     include_str!("../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-plan.json");
 #[cfg(test)]
@@ -665,6 +669,14 @@ struct VendorStatusResponseSemanticFixturesRequest<'a> {
     overwrite: bool,
 }
 
+struct VendorStatusPayloadSourceCandidatesRequest<'a> {
+    json: bool,
+    response_semantic_fixtures: &'a Path,
+    protocol_evidence_review: &'a Path,
+    json_out: &'a Path,
+    overwrite: bool,
+}
+
 struct VendorAuthorityAuthorizationRequest<'a> {
     json: bool,
     command_id: &'a str,
@@ -952,6 +964,21 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             vendor_status_response_semantic_fixtures(VendorStatusResponseSemanticFixturesRequest {
                 json,
                 response_correlation,
+                protocol_evidence_review,
+                json_out,
+                overwrite: *overwrite,
+            })
+            .await
+        }
+        MozaCommands::VendorStatusPayloadSourceCandidates {
+            response_semantic_fixtures,
+            protocol_evidence_review,
+            json_out,
+            overwrite,
+        } => {
+            vendor_status_payload_source_candidates(VendorStatusPayloadSourceCandidatesRequest {
+                json,
+                response_semantic_fixtures,
                 protocol_evidence_review,
                 json_out,
                 overwrite: *overwrite,
@@ -7211,6 +7238,22 @@ async fn vendor_status_response_semantic_fixtures(
     )?;
     write_json_file(request.json_out, &receipt)?;
     print_vendor_status_response_semantic_fixtures_receipt(request.json, request.json_out, &receipt)
+}
+
+async fn vendor_status_payload_source_candidates(
+    request: VendorStatusPayloadSourceCandidatesRequest<'_>,
+) -> Result<()> {
+    ensure_receipt_writable(request.json_out, request.overwrite)?;
+    let response_semantic_fixtures = read_json_path(request.response_semantic_fixtures)?;
+    let protocol_evidence_review = read_json_path(request.protocol_evidence_review)?;
+    let receipt = vendor_status_payload_source_candidates_receipt(
+        request.response_semantic_fixtures,
+        &response_semantic_fixtures,
+        request.protocol_evidence_review,
+        &protocol_evidence_review,
+    )?;
+    write_json_file(request.json_out, &receipt)?;
+    print_vendor_status_payload_source_candidates_receipt(request.json, request.json_out, &receipt)
 }
 
 async fn authorize_vendor_authority(
@@ -29257,6 +29300,389 @@ fn vendor_status_response_semantic_fixtures_receipt(
     Ok(Value::Object(receipt))
 }
 
+fn vendor_status_payload_source_candidates_receipt(
+    response_semantic_fixtures_path: &Path,
+    response_semantic_fixtures: &Value,
+    protocol_evidence_review_path: &Path,
+    protocol_evidence_review: &Value,
+) -> Result<Value> {
+    validate_vendor_status_payload_source_candidates_semantic_fixtures(
+        response_semantic_fixtures_path,
+        response_semantic_fixtures,
+    )?;
+    validate_protocol_evidence_review_for_endpoint_candidates(
+        protocol_evidence_review_path,
+        protocol_evidence_review,
+    )?;
+
+    let sniff_evidence = protocol_evidence_review
+        .get("sniff_evidence")
+        .ok_or_else(|| {
+            anyhow!(
+                "protocol evidence review '{}' is missing sniff_evidence",
+                protocol_evidence_review_path.display()
+            )
+        })?;
+    let scenarios = sniff_evidence
+        .get("scenarios")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            anyhow!(
+                "protocol evidence review '{}' is missing sniff_evidence.scenarios",
+                protocol_evidence_review_path.display()
+            )
+        })?;
+
+    let mut candidate_samples = Vec::new();
+    let mut payload_bearing_tuple_ids = BTreeSet::new();
+    let mut payload_bearing_group_ids = BTreeSet::new();
+    let mut payload_bearing_scenarios = BTreeSet::new();
+    let mut device_status_response_candidate_tuple_ids = BTreeSet::new();
+    let mut setting_change_payload_bearing_tuple_ids = BTreeSet::new();
+    let mut tuple_payloads: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut all_payloads = BTreeSet::new();
+
+    for scenario in scenarios {
+        let scenario_id = json_string(scenario, "scenario").unwrap_or("unknown");
+        let Some(samples) = scenario
+            .get("device_to_host_serial_frame_tuple_samples")
+            .and_then(Value::as_array)
+        else {
+            continue;
+        };
+
+        for sample in samples {
+            if json_bool(sample, "checksum_valid") != Some(true) {
+                continue;
+            }
+            let Some(payload_hex) = json_string(sample, "payload_hex") else {
+                continue;
+            };
+            if !payload_hex_has_nonzero(payload_hex) {
+                continue;
+            }
+
+            let tuple_id = json_string(sample, "tuple_id").ok_or_else(|| {
+                anyhow!("payload-bearing device-to-host sample is missing tuple_id")
+            })?;
+            let group = json_string(sample, "group").unwrap_or("unknown");
+            let device_id = json_string(sample, "device_id").unwrap_or("unknown");
+            let command_id = json_string(sample, "command_id").unwrap_or("none");
+            let frame_hex = json_string(sample, "frame_hex").ok_or_else(|| {
+                anyhow!("payload-bearing device-to-host sample `{tuple_id}` is missing frame_hex")
+            })?;
+            let payload_len = json_u64(sample, "payload_len").unwrap_or(0);
+
+            payload_bearing_tuple_ids.insert(tuple_id.to_string());
+            payload_bearing_group_ids.insert(group.to_string());
+            payload_bearing_scenarios.insert(scenario_id.to_string());
+            all_payloads.insert(payload_hex.to_string());
+            tuple_payloads
+                .entry(tuple_id.to_string())
+                .or_default()
+                .insert(payload_hex.to_string());
+            if tuple_id.starts_with("0x8E/") {
+                device_status_response_candidate_tuple_ids.insert(tuple_id.to_string());
+            }
+            if scenario_id == "pit-house-setting-change" {
+                setting_change_payload_bearing_tuple_ids.insert(tuple_id.to_string());
+            }
+
+            let candidate_semantics = if tuple_id.starts_with("0x8E/") {
+                vec![
+                    "payload_bearing_device_status_response_question",
+                    "setting_change_state_response_question",
+                    "authority_state_source_unknown",
+                ]
+            } else {
+                vec![
+                    "payload_bearing_device_to_host_response_question",
+                    "authority_state_source_unknown",
+                ]
+            };
+
+            candidate_samples.push(serde_json::json!({
+                "scenario": scenario_id,
+                "tuple_id": tuple_id,
+                "group": group,
+                "device_id": device_id,
+                "command_id": command_id,
+                "frame_hex": frame_hex,
+                "payload_hex": payload_hex,
+                "payload_len": payload_len,
+                "payload_class": "nonzero",
+                "candidate_semantics": candidate_semantics,
+                "source_scope": "stored_passive_device_to_host_sample_only",
+                "risk_class": format_moza_risk_class(MozaRiskClass::UnknownDoNotSend),
+                "semantic_decode_claim": false,
+                "registry_promotion_claim": false,
+                "output_sendability_claim": false,
+                "read_only_probe_allowed": false,
+                "corrected_read_only_probe_ready": false,
+                "payload_bearing_authority_state_source_found": false,
+                "hardware_output_authorized": false,
+                "native_control_evidence": false
+            }));
+        }
+    }
+
+    let same_tuple_payload_variation_observed =
+        tuple_payloads.values().any(|payloads| payloads.len() > 1);
+    let cross_tuple_payload_diversity_observed = all_payloads.len() > 1;
+
+    let mut receipt = serde_json::Map::new();
+    macro_rules! insert_json {
+        ($key:literal, $value:expr) => {
+            receipt.insert($key.to_string(), serde_json::json!($value));
+        };
+    }
+
+    insert_json!("success", true);
+    insert_json!("schema_version", 1);
+    insert_json!(
+        "artifact_kind",
+        "moza_vendor_status_payload_source_candidates"
+    );
+    insert_json!(
+        "claim_scope",
+        "no_output_payload_bearing_status_source_candidate_review"
+    );
+    insert_json!(
+        "command",
+        "wheelctl moza vendor-status-payload-source-candidates"
+    );
+    insert_json!("generated_at_utc", now_utc());
+    insert_json!(
+        "response_semantic_fixtures_receipt",
+        response_semantic_fixtures_path.display().to_string()
+    );
+    insert_json!(
+        "protocol_evidence_review_receipt",
+        protocol_evidence_review_path.display().to_string()
+    );
+    insert_json!(
+        "prior_correlated_response_payload_variation_observed",
+        json_bool(response_semantic_fixtures, "payload_variation_observed").unwrap_or(false)
+    );
+    insert_json!(
+        "prior_correlated_payloads_zero_filled",
+        json_bool(
+            response_semantic_fixtures,
+            "all_correlated_payloads_zero_filled"
+        )
+        .unwrap_or(false)
+    );
+    insert_json!(
+        "device_to_host_serial_frame_sample_scope",
+        json_string(sniff_evidence, "device_to_host_serial_frame_sample_scope")
+            .unwrap_or("missing")
+    );
+    insert_json!(
+        "payload_bearing_device_to_host_sample_count",
+        candidate_samples.len()
+    );
+    insert_json!(
+        "payload_bearing_status_source_candidate_count",
+        payload_bearing_tuple_ids.len()
+    );
+    insert_json!(
+        "payload_bearing_tuple_ids",
+        payload_bearing_tuple_ids.into_iter().collect::<Vec<_>>()
+    );
+    insert_json!(
+        "payload_bearing_group_ids",
+        payload_bearing_group_ids.into_iter().collect::<Vec<_>>()
+    );
+    insert_json!(
+        "payload_bearing_scenarios",
+        payload_bearing_scenarios.into_iter().collect::<Vec<_>>()
+    );
+    insert_json!(
+        "device_status_response_candidate_tuple_ids",
+        device_status_response_candidate_tuple_ids
+            .into_iter()
+            .collect::<Vec<_>>()
+    );
+    insert_json!(
+        "setting_change_payload_bearing_tuple_ids",
+        setting_change_payload_bearing_tuple_ids
+            .into_iter()
+            .collect::<Vec<_>>()
+    );
+    insert_json!(
+        "same_tuple_payload_variation_observed",
+        same_tuple_payload_variation_observed
+    );
+    insert_json!(
+        "cross_tuple_payload_diversity_observed",
+        cross_tuple_payload_diversity_observed
+    );
+    receipt.insert(
+        "payload_bearing_candidates".to_string(),
+        Value::Array(candidate_samples),
+    );
+    insert_json!("all_candidates_unknown_do_not_send", true);
+    insert_json!("payload_bearing_authority_state_source_found", false);
+    insert_json!("reviewed_equivalent_status_source_found", false);
+    insert_json!("corrected_read_only_probe_ready", false);
+    insert_json!("live_read_only_probe_allowed", false);
+    insert_json!("authorization_plan_allowed", false);
+    insert_json!("motion_attempt_allowed", false);
+    insert_json!("native_control_evidence", false);
+    insert_json!("hardware_output_authorized", false);
+    insert_json!("native_visible_ready", false);
+    insert_json!("smoke_ready", false);
+    insert_json!("release_ready", false);
+    insert_json!("registry_promotion_claim", false);
+    insert_json!("output_sendability_claim", false);
+    insert_json!("semantic_decode_claim", false);
+    insert_json!("wheel_moved_under_openracing", false);
+    insert_json!("visible_motion_verified", false);
+    insert_json!("output_was_sent", false);
+    insert_json!("authority_state", "blocked");
+    insert_json!("no_hid_device_opened", true);
+    insert_json!("opened_serial_device", false);
+    insert_json!("sent_read_only_query_commands", false);
+    insert_json!("sent_output_writes", false);
+    insert_json!("sent_configuration_writes", false);
+    insert_json!("sent_firmware_or_dfu_commands", false);
+    insert_json!("high_torque_enabled", false);
+    insert_json!("mode_enable_candidates_sendable", false);
+    insert_json!("planned_next_output_allowed", false);
+    insert_json!("unknown_safety_or_mode_state_blocks_authority", true);
+    insert_json!(
+        "exact_next_blocker",
+        "Stored passive evidence contains nonzero device-to-host 0x8E payload candidates in the Pit House setting-change scenario, but they are not semantically decoded, not same-tuple payload-varying, not timing-correlated to authority or mode state, and remain unknown_do_not_send. No reviewed authority-state source exists, so live probe, authorization, PIDFF, force escalation, and motion remain blocked."
+    );
+    insert_json!(
+        "next_allowed_action",
+        "Add fixture-backed semantic review or timing-correlated capture for the payload-bearing 0x8E status-source candidates before any live probe, authorization plan, PIDFF rerun, force escalation, or motion attempt."
+    );
+    insert_json!(
+        "blocked_actions",
+        [
+            "live read-only probe of unknown passive tuples",
+            "mode enable write",
+            "authority write",
+            "output write",
+            "configuration write",
+            "PIDFF rerun",
+            "authorization receipt",
+            "hardware writes",
+            "high torque",
+            "native-control claim",
+            "native-visible claim",
+            "smoke-ready claim",
+            "release-ready claim",
+            "firmware or DFU command",
+            "unknown host-to-device command"
+        ]
+    );
+    insert_json!(
+        "required_artifacts",
+        [
+            response_semantic_fixtures_path.display().to_string(),
+            protocol_evidence_review_path.display().to_string(),
+            "schemas/moza-vendor-status-payload-source-candidates.schema.json".to_string(),
+            "future fixture-backed semantic review for payload-bearing 0x8E candidates or timing-correlated capture".to_string()
+        ]
+    );
+    insert_json!(
+        "notes",
+        [
+            "This receipt reads stored JSON only; it opens no HID or serial device and sends no traffic.",
+            "Payload-bearing device-to-host samples are protocol-shape candidates only and remain unknown_do_not_send.",
+            "A nonzero passive payload is not a semantic decode, registry promotion, read-only probe eligibility, output sendability, authorization input, or motion authorization.",
+            "Native visible motion remains blocked; no wheel movement is claimed."
+        ]
+    );
+
+    Ok(Value::Object(receipt))
+}
+
+fn payload_hex_has_nonzero(payload_hex: &str) -> bool {
+    payload_hex
+        .bytes()
+        .any(|byte| !byte.is_ascii_whitespace() && byte != b'0')
+}
+
+fn validate_vendor_status_payload_source_candidates_semantic_fixtures(
+    path: &Path,
+    response_semantic_fixtures: &Value,
+) -> Result<()> {
+    for (field, expected) in [
+        (
+            "artifact_kind",
+            "moza_vendor_status_response_semantic_fixtures",
+        ),
+        (
+            "claim_scope",
+            "no_output_correlated_passive_response_fixture_review",
+        ),
+        (
+            "command",
+            "wheelctl moza vendor-status-response-semantic-fixtures",
+        ),
+        ("authority_state", "blocked"),
+    ] {
+        if json_string(response_semantic_fixtures, field) != Some(expected) {
+            return Err(anyhow!(
+                "response semantic fixtures receipt '{}' field `{field}` expected `{expected}`",
+                path.display()
+            ));
+        }
+    }
+    for (field, expected) in [
+        ("success", true),
+        ("all_correlated_payloads_zero_filled", true),
+        ("unknown_safety_or_mode_state_blocks_authority", true),
+        ("no_hid_device_opened", true),
+    ] {
+        if json_bool(response_semantic_fixtures, field) != Some(expected) {
+            return Err(anyhow!(
+                "response semantic fixtures receipt '{}' field `{field}` expected {expected}",
+                path.display()
+            ));
+        }
+    }
+    for field in [
+        "payload_variation_observed",
+        "payload_bearing_authority_state_source_found",
+        "reviewed_equivalent_status_source_found",
+        "corrected_read_only_probe_ready",
+        "live_read_only_probe_allowed",
+        "authorization_plan_allowed",
+        "motion_attempt_allowed",
+        "native_control_evidence",
+        "hardware_output_authorized",
+        "native_visible_ready",
+        "smoke_ready",
+        "release_ready",
+        "registry_promotion_claim",
+        "output_sendability_claim",
+        "semantic_decode_claim",
+        "wheel_moved_under_openracing",
+        "visible_motion_verified",
+        "output_was_sent",
+        "opened_serial_device",
+        "sent_read_only_query_commands",
+        "sent_output_writes",
+        "sent_configuration_writes",
+        "sent_firmware_or_dfu_commands",
+        "high_torque_enabled",
+        "mode_enable_candidates_sendable",
+        "planned_next_output_allowed",
+    ] {
+        if json_bool(response_semantic_fixtures, field) != Some(false) {
+            return Err(anyhow!(
+                "response semantic fixtures receipt '{}' field `{field}` must remain false",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn validate_vendor_status_response_semantic_fixtures_correlation(
     path: &Path,
     response_correlation: &Value,
@@ -43423,6 +43849,25 @@ fn print_vendor_status_response_semantic_fixtures_receipt(
     Ok(())
 }
 
+fn print_vendor_status_payload_source_candidates_receipt(
+    json: bool,
+    json_out: &Path,
+    receipt: &Value,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Moza payload-bearing status-source candidates: candidate_count={}, authority_source_found={}, live_probe_allowed={}; no traffic was sent.",
+            json_u64(receipt, "payload_bearing_status_source_candidate_count").unwrap_or(0),
+            json_bool(receipt, "payload_bearing_authority_state_source_found").unwrap_or(false),
+            json_bool(receipt, "live_read_only_probe_allowed").unwrap_or(false)
+        );
+        println!("Receipt: {}", json_out.display());
+    }
+    Ok(())
+}
+
 fn print_vendor_authority_authorization_receipt(
     json: bool,
     json_out: &Path,
@@ -46567,6 +47012,151 @@ mod tests {
         assert_eq!(
             json_string(&receipt, "command"),
             Some("wheelctl moza vendor-status-response-semantic-fixtures")
+        );
+        assert_eq!(
+            json_bool(&receipt, "live_read_only_probe_allowed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "native_visible_ready"), Some(false));
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_payload_source_candidates_preserves_nonzero_samples_without_claims()
+    -> TestResult {
+        let response_semantic_fixtures: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_RESPONSE_SEMANTIC_FIXTURES_JSON)?;
+        let protocol_evidence_review: Value =
+            serde_json::from_str(MOZA_VENDOR_PROTOCOL_EVIDENCE_REVIEW_JSON)?;
+        let receipt = vendor_status_payload_source_candidates_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-response-semantic-fixtures.json",
+            ),
+            &response_semantic_fixtures,
+            Path::new("ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json"),
+            &protocol_evidence_review,
+        )?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-status-payload-source-candidates.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&receipt).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        assert_eq!(
+            json_string(&receipt, "artifact_kind"),
+            Some("moza_vendor_status_payload_source_candidates")
+        );
+        assert_eq!(
+            json_u64(&receipt, "payload_bearing_status_source_candidate_count"),
+            Some(4)
+        );
+        assert_eq!(
+            json_u64(&receipt, "payload_bearing_device_to_host_sample_count"),
+            Some(4)
+        );
+        assert_eq!(
+            json_bool(&receipt, "same_tuple_payload_variation_observed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "cross_tuple_payload_diversity_observed"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&receipt, "payload_bearing_authority_state_source_found"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "live_read_only_probe_allowed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "authorization_plan_allowed"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "motion_attempt_allowed"), Some(false));
+        assert_eq!(
+            json_bool(&receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "native_visible_ready"), Some(false));
+        assert_eq!(
+            json_bool(&receipt, "wheel_moved_under_openracing"),
+            Some(false)
+        );
+        assert_eq!(json_string(&receipt, "authority_state"), Some("blocked"));
+        assert!(json_contains_string(&receipt, "0x8E/0x21/0x00"));
+        assert!(json_contains_string(&receipt, "0x8E/0x91/0x00"));
+        assert!(json_contains_string(&receipt, "unknown_do_not_send"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_payload_source_candidates_rejects_probe_ready_semantic_fixture() -> TestResult
+    {
+        let mut response_semantic_fixtures: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_RESPONSE_SEMANTIC_FIXTURES_JSON)?;
+        let protocol_evidence_review: Value =
+            serde_json::from_str(MOZA_VENDOR_PROTOCOL_EVIDENCE_REVIEW_JSON)?;
+        response_semantic_fixtures["live_read_only_probe_allowed"] = Value::Bool(true);
+
+        let result = vendor_status_payload_source_candidates_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-response-semantic-fixtures.json",
+            ),
+            &response_semantic_fixtures,
+            Path::new("ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json"),
+            &protocol_evidence_review,
+        );
+        let Err(error) = result else {
+            return Err(
+                "payload-source candidates must reject probe-ready semantic fixtures".into(),
+            );
+        };
+        assert!(
+            error.to_string().contains("live_read_only_probe_allowed"),
+            "unexpected error: {error}"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn vendor_status_payload_source_candidates_command_writes_json_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let response_semantic_fixtures = dir.path().join("response-semantic-fixtures.json");
+        let protocol_evidence_review = dir.path().join("protocol-evidence-review.json");
+        write_test_json_file(
+            &response_semantic_fixtures,
+            &serde_json::from_str::<Value>(MOZA_VENDOR_STATUS_RESPONSE_SEMANTIC_FIXTURES_JSON)?,
+        )?;
+        write_test_json_file(
+            &protocol_evidence_review,
+            &serde_json::from_str::<Value>(MOZA_VENDOR_PROTOCOL_EVIDENCE_REVIEW_JSON)?,
+        )?;
+        let json_out = dir
+            .path()
+            .join("vendor-status-payload-source-candidates.json");
+
+        vendor_status_payload_source_candidates(VendorStatusPayloadSourceCandidatesRequest {
+            json: false,
+            response_semantic_fixtures: &response_semantic_fixtures,
+            protocol_evidence_review: &protocol_evidence_review,
+            json_out: &json_out,
+            overwrite: false,
+        })
+        .await?;
+
+        let receipt = read_json_path(&json_out)?;
+        assert_eq!(
+            json_string(&receipt, "command"),
+            Some("wheelctl moza vendor-status-payload-source-candidates")
         );
         assert_eq!(
             json_bool(&receipt, "live_read_only_probe_allowed"),

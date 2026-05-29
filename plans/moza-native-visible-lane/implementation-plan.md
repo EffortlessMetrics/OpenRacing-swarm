@@ -7289,6 +7289,125 @@ command-id `0x07` containment, targeted read-only payload rerun, payload fixture
 tests, status matrix, demux receipt, consumed authority attempt, or
 post-authority PIDFF regression evidence.
 
+## Work item: classify-payload-bearing-status-source-candidates
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: fixture-backed semantic review of payload-bearing status-source candidates
+Blocked by: reviewed payload-bearing authority-state source or equivalent timing-correlated capture
+
+### Goal
+
+Preserve the nonzero device-to-host passive samples already present in the Pit
+House setting-change evidence without promoting them into semantic decode,
+read-only probe eligibility, authorization input, or output sendability.
+
+### Production delta
+
+`wheelctl moza vendor-status-payload-source-candidates` reads only stored JSON:
+
+```text
+vendor-status-response-semantic-fixtures.json
+vendor-protocol-evidence-review.json
+```
+
+and writes `vendor-status-payload-source-candidates.json`. The receipt records
+four nonzero `0x8E` device-to-host samples from the accepted Pit House
+setting-change scenario:
+
+```text
+0x8E/0x21/0x00
+0x8E/0x31/0x00
+0x8E/0x71/0x00
+0x8E/0x91/0x00
+```
+
+Those samples are useful payload-bearing status-source questions, but they are
+not same-tuple payload variation, not packet-timing proof, not semantic decode,
+not registry promotion, not a reviewed authority-state source, and not output
+sendability.
+
+The receipt keeps:
+
+```text
+payload_bearing_status_source_candidate_count=4
+same_tuple_payload_variation_observed=false
+cross_tuple_payload_diversity_observed=true
+payload_bearing_authority_state_source_found=false
+reviewed_equivalent_status_source_found=false
+corrected_read_only_probe_ready=false
+live_read_only_probe_allowed=false
+authorization_plan_allowed=false
+motion_attempt_allowed=false
+wheel_moved_under_openracing=false
+visible_motion_verified=false
+output_was_sent=false
+authority_state=blocked
+```
+
+### Non-goals
+
+No live hardware access, HID output open, serial open, read-only query send,
+PIDFF output, feature report, configuration write, firmware/update/DFU path,
+high torque, mode-enable write, authority write, authorization receipt,
+semantic decode claim, registry promotion, tuple sendability, corrected
+read-only probe readiness, native-control claim, native-visible claim,
+smoke-ready claim, simulator claim, coexistence claim, release-ready claim, or
+wheel movement.
+
+### Acceptance
+
+- The payload-source receipt consumes the response semantic fixture receipt and
+  passive protocol evidence review.
+- Nonzero device-to-host `0x8E` samples are preserved as
+  `unknown_do_not_send` status-source questions.
+- The zero-filled correlated response fixture receipt remains preserved and
+  non-claiming.
+- `payload_bearing_authority_state_source_found=false`,
+  `live_read_only_probe_allowed=false`, `authorization_plan_allowed=false`, and
+  `motion_attempt_allowed=false`.
+- The next native-path action is fixture-backed semantic review or
+  timing-correlated capture for the payload-bearing `0x8E` candidates before
+  any live probe, authorization, PIDFF rerun, force escalation, or motion
+  attempt.
+
+### Proof Commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-payload-source-candidates `
+  --response-semantic-fixtures ci/hardware/moza-r5/2026-05-13/vendor-status-response-semantic-fixtures.json `
+  --protocol-evidence-review ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-candidates.json `
+  --overwrite
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_payload_source_candidates -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe_response_semantic_fixtures -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_response_semantic_fixtures -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- the `vendor-status-payload-source-candidates` CLI, receipt, schema, and tests,
+- `vendor-status-payload-source-candidates.json`,
+- source-of-truth notes for this work item.
+
+Do not remove the response semantic fixture receipt, response-source
+correlation receipt, source-gap receipt, endpoint-candidate receipts, targeted
+read-only payload rerun, status matrix, demux receipt, consumed authority
+attempt, or post-authority PIDFF regression evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

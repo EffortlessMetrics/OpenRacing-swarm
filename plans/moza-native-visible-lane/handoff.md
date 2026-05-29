@@ -180,6 +180,7 @@ The broader Moza objective remains incomplete:
 | Vendor protocol evidence review | `vendor-protocol-evidence-review.json`; artifact-index/bench-wizard `vendor_protocol_decode_priority` | Recorded no-output review, host-to-device candidate `0x7E`, 7,863 checksum-valid candidate frames, 159 bounded passive tuple sample frames, one read-only registry tuple match, 12 commandless tuple IDs, 17 unknown commanded tuple IDs, frequency-ranked unknown commanded tuples headed by `0x5A/0x1B/0x00` and `0x5D/0x1B/0x01`, 30 decode-candidate sample frames for the top unknown tuples, protocol-crate observed-frame, packet-order, payload-shape, packet-group, low-confidence semantic-hypothesis, semantic-correlation-plan, and mode/enable candidate-question regression coverage for those samples, two residual payload export gap packet locators, and no sufficient semantic protocol evidence for any output plan |
 | Read-only vendor status matrix | `vendor-status-mode-matrix.json`; `vendor-status-mode-matrix-demux.json` | Recorded COM4 read-only evidence; seven non-authority status replies decode, but authority-state replies remain missing |
 | Authority status endpoint diagnosis | `vendor-status-authority-endpoint-diagnosis.json`; `vendor-status-endpoint-candidates.json`; `vendor-status-endpoint-candidates-from-payload-rerun.json` | Broad serial transport ruled out; current authority-status endpoint returns ACK/no-payload or diagnostic telemetry only, and corrected endpoint candidates remain non-sendable |
+| Payload-bearing status-source candidates | `vendor-status-payload-source-candidates.json` | Recorded four nonzero `0x8E` device-to-host setting-change samples as `unknown_do_not_send` status-source questions; no semantic decode, probe readiness, authorization, output, or motion claim |
 | Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls`, and `pit-house-setting-change` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence; setting-change keeps the earlier low-yield classification as historical failed evidence |
 | Remaining passive sniff plans | `simhub-open-idle`, `simhub-output-session`, `simulator-session-start-stop` sniff plans | Plan-only |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |
@@ -434,6 +435,31 @@ and `motion_attempt_allowed=false`. Wheel movement remains unproven:
 step is to add or capture a reviewed payload-varying authority-state status
 source before any live probe, authorization plan, PIDFF rerun, force escalation,
 or motion attempt.
+
+The payload-bearing status-source candidate review is now recorded at
+`vendor-status-payload-source-candidates.json`. It preserves four nonzero
+device-to-host `0x8E` samples from the accepted Pit House setting-change
+scenario:
+
+```text
+0x8E/0x21/0x00
+0x8E/0x31/0x00
+0x8E/0x71/0x00
+0x8E/0x91/0x00
+```
+
+Those samples are useful protocol navigation, but remain
+`unknown_do_not_send`. They are not same-tuple payload variation, not
+packet-timing proof, not semantic decode, not registry promotion, not a reviewed
+authority-state source, and not read-only probe or output eligibility. The
+receipt keeps `payload_bearing_authority_state_source_found=false`,
+`corrected_read_only_probe_ready=false`, `live_read_only_probe_allowed=false`,
+`authorization_plan_allowed=false`, `motion_attempt_allowed=false`,
+`wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+`output_was_sent=false`, and `authority_state=blocked`. The next native-path
+step is fixture-backed semantic review or timing-correlated capture for the
+payload-bearing `0x8E` candidates before any live probe, authorization, PIDFF
+rerun, force escalation, or motion attempt.
 
 The read-only demux follow-up is now recorded at
 `vendor-status-mode-matrix-demux.json` with its fresh precondition doctor at
