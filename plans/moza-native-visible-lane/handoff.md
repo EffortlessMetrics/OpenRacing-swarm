@@ -179,7 +179,7 @@ The broader Moza objective remains incomplete:
 | Post-authority PIDFF response | `vendor-post-authority-pidff-smoke.json`; `vendor-post-authority-pidff-response.json`; [post-authority PIDFF response diagnosis](../../docs/hardware/moza-r5-post-authority-pidff-response.md) | Recorded regression versus baseline; no native-visible claim |
 | Vendor protocol evidence review | `vendor-protocol-evidence-review.json`; artifact-index/bench-wizard `vendor_protocol_decode_priority` | Recorded no-output review, host-to-device candidate `0x7E`, 7,863 checksum-valid candidate frames, 159 bounded passive tuple sample frames, one read-only registry tuple match, 12 commandless tuple IDs, 17 unknown commanded tuple IDs, frequency-ranked unknown commanded tuples headed by `0x5A/0x1B/0x00` and `0x5D/0x1B/0x01`, 30 decode-candidate sample frames for the top unknown tuples, protocol-crate observed-frame, packet-order, payload-shape, packet-group, low-confidence semantic-hypothesis, semantic-correlation-plan, and mode/enable candidate-question regression coverage for those samples, two residual payload export gap packet locators, and no sufficient semantic protocol evidence for any output plan |
 | Read-only vendor status matrix | `vendor-status-mode-matrix.json`; `vendor-status-mode-matrix-demux.json` | Recorded COM4 read-only evidence; seven non-authority status replies decode, but authority-state replies remain missing |
-| Authority status endpoint diagnosis | `vendor-status-authority-endpoint-diagnosis.json`; `vendor-status-endpoint-candidates.json` | Broad serial transport ruled out; current authority-status endpoint returns ACK/no-payload, and corrected endpoint candidates remain non-sendable |
+| Authority status endpoint diagnosis | `vendor-status-authority-endpoint-diagnosis.json`; `vendor-status-endpoint-candidates.json`; `vendor-status-endpoint-candidates-from-payload-rerun.json` | Broad serial transport ruled out; current authority-status endpoint returns ACK/no-payload or diagnostic telemetry only, and corrected endpoint candidates remain non-sendable |
 | Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls`, and `pit-house-setting-change` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence; setting-change keeps the earlier low-yield classification as historical failed evidence |
 | Remaining passive sniff plans | `simhub-open-idle`, `simhub-output-session`, `simulator-session-start-stop` sniff plans | Plan-only |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |
@@ -334,22 +334,20 @@ replies on the same serial lane, broad serial framing, ownership, timeout, and
 line settings are not the primary blocker. The current native-path blocker is
 authority-status endpoint/command mismatch, not force or a motion controller
 issue.
+The payload-rerun endpoint candidate plan is now recorded at
+`vendor-status-endpoint-candidates-from-payload-rerun.json`. It consumes the
+latest debug-telemetry-only diagnosis, records observed diagnostic tuple
+`0x0E/0x71/0x05`, keeps the expected payload-bearing status shape as
+`0xA1/0x21/0x07`, and keeps `corrected_read_only_probe_ready=false`. It does
+not open HID or serial, send read-only queries, authorize output, promote
+registry sendability, or claim semantic decode.
+
 Wheel movement remains unproven:
 `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
 `output_was_sent=false`, and `authority_state=blocked`. The next native-path
-step is no-output authority-status endpoint/command correction before any live
-probe, authorization, PIDFF rerun, force escalation, or motion ladder attempt.
-The next concrete no-output command may derive endpoint candidates from the
-latest diagnosis, but it still must not send traffic:
-
-```powershell
-wheelctl moza vendor-status-endpoint-candidates `
-  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
-  --protocol-evidence-review ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json `
-  --json-out target/moza-current/vendor-status-endpoint-candidates-from-payload-rerun.json `
-  --overwrite `
-  --json
-```
+step is no-output fixture-backed decoder coverage for a corrected
+authority-status endpoint candidate before any live probe, authorization, PIDFF
+rerun, force escalation, or motion ladder attempt.
 
 The read-only demux follow-up is now recorded at
 `vendor-status-mode-matrix-demux.json` with its fresh precondition doctor at

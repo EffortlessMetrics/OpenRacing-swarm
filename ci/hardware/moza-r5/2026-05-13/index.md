@@ -243,6 +243,7 @@ This section is protocol research/support navigation only. Passive sniff artifac
 | `vendor-status-authority-endpoint-diagnosis.json` | `json` | `passive_input_or_descriptor_evidence` |
 | `vendor-status-authority-payload-rerun-diagnosis.json` | `json` | `passive_input_or_descriptor_evidence` |
 | `vendor-status-authority-payload-rerun-targeted.json` | `json` | `passive_input_or_descriptor_evidence` |
+| `vendor-status-endpoint-candidates-from-payload-rerun.json` | `json` | `passive_input_or_descriptor_evidence` |
 | `vendor-status-endpoint-candidates.json` | `json` | `passive_input_or_descriptor_evidence` |
 | `vendor-status-extended-scan-diagnosis.json` | `json` | `passive_input_or_descriptor_evidence` |
 | `vendor-status-extended-scan-hardware-doctor.json` | `json` | `passive_input_or_descriptor_evidence` |

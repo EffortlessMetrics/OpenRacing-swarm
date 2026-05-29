@@ -58,7 +58,10 @@
     "authority_endpoint_diagnosis_receipt": { "type": "string" },
     "protocol_evidence_review_receipt": { "type": "string" },
     "source_diagnosis_classification": {
-      "const": "authority_status_endpoint_specific_ack_only_without_payload"
+      "enum": [
+        "authority_status_endpoint_specific_ack_only_without_payload",
+        "authority_status_endpoint_specific_debug_telemetry_without_payload"
+      ]
     },
     "source_primary_blocker": {
       "const": "authority_status_endpoint_or_command_mismatch"
@@ -73,7 +76,11 @@
     },
     "observed_ack_only_tuple_ids": {
       "type": "array",
-      "contains": { "const": "0xA1/0x21/no_command" }
+      "items": { "type": "string" }
+    },
+    "observed_diagnostic_tuple_ids": {
+      "type": "array",
+      "items": { "type": "string" }
     },
     "expected_payload_response_shape": {
       "type": "object",
@@ -89,7 +96,9 @@
         "query_tuple_id": { "const": "0x21/0x12/0x07" },
         "query_frame_hex": { "const": "7E01211207C6" },
         "expected_payload_response_tuple_id": { "const": "0xA1/0x21/0x07" },
-        "observed_response_tuple_id": { "const": "0xA1/0x21/no_command" }
+        "observed_response_tuple_id": {
+          "enum": ["0xA1/0x21/no_command", "diagnostic_telemetry_only"]
+        }
       },
       "additionalProperties": true
     },
@@ -174,5 +183,47 @@
       "items": { "type": "string" }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "source_diagnosis_classification": {
+            "const": "authority_status_endpoint_specific_ack_only_without_payload"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "observed_ack_only_tuple_ids": {
+            "contains": { "const": "0xA1/0x21/no_command" }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "source_diagnosis_classification": {
+            "const": "authority_status_endpoint_specific_debug_telemetry_without_payload"
+          }
+        }
+      },
+      "then": {
+        "required": ["observed_diagnostic_tuple_ids"],
+        "properties": {
+          "observed_diagnostic_tuple_ids": {
+            "contains": { "const": "0x0E/0x71/0x05" }
+          },
+          "expected_payload_response_shape": {
+            "properties": {
+              "observed_response_tuple_id": {
+                "const": "diagnostic_telemetry_only"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "additionalProperties": true
 }
