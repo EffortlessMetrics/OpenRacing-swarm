@@ -28305,23 +28305,48 @@ fn vendor_status_authority_source_gap_receipt(
     let completed_scenarios = json_string_array_value(sniff_evidence.get("completed_scenarios"));
     let total_device_to_host_packets =
         json_u64(sniff_evidence, "total_device_to_host_packets").unwrap_or(0);
-    let device_to_host_serial_tuple_details_present = sniff_evidence
+    let total_device_to_host_serial_frame_count =
+        json_u64(sniff_evidence, "total_device_to_host_serial_frame_count").unwrap_or(0);
+    let total_device_to_host_serial_frame_checksum_valid_count = json_u64(
+        sniff_evidence,
+        "total_device_to_host_serial_frame_checksum_valid_count",
+    )
+    .unwrap_or(0);
+    let device_to_host_serial_frame_sample_scope =
+        json_string(sniff_evidence, "device_to_host_serial_frame_sample_scope")
+            .unwrap_or("missing");
+    let device_to_host_serial_frame_tuple_ids =
+        json_string_array_value(sniff_evidence.get("device_to_host_serial_frame_tuple_ids"));
+    let device_to_host_serial_frame_tuple_sample_count = json_u64(
+        sniff_evidence,
+        "device_to_host_serial_frame_tuple_sample_count",
+    )
+    .unwrap_or(0);
+    let scenario_device_to_host_serial_tuple_details_present = sniff_evidence
         .get("scenarios")
         .and_then(Value::as_array)
         .map(|scenarios| {
             scenarios.iter().any(|scenario| {
                 scenario
                     .get("device_to_host_serial_frame_tuple_counts")
-                    .is_some()
+                    .and_then(Value::as_array)
+                    .is_some_and(|tuples| !tuples.is_empty())
                     || scenario
                         .get("device_to_host_serial_frame_tuple_samples")
-                        .is_some()
+                        .and_then(Value::as_array)
+                        .is_some_and(|samples| !samples.is_empty())
                     || scenario
                         .get("device_to_host_serial_frame_tuple_ids")
-                        .is_some()
+                        .and_then(Value::as_array)
+                        .is_some_and(|ids| !ids.is_empty())
             })
         })
         .unwrap_or(false);
+    let device_to_host_serial_tuple_details_present = total_device_to_host_serial_frame_count > 0
+        && total_device_to_host_serial_frame_checksum_valid_count > 0
+        && device_to_host_serial_frame_tuple_sample_count > 0
+        && !device_to_host_serial_frame_tuple_ids.is_empty()
+        && scenario_device_to_host_serial_tuple_details_present;
 
     let source_reviews = vec![
         serde_json::json!({
@@ -28385,6 +28410,11 @@ fn vendor_status_authority_source_gap_receipt(
             "input_artifact": protocol_evidence_review_path.display().to_string(),
             "completed_scenarios": completed_scenarios,
             "total_device_to_host_packets": total_device_to_host_packets,
+            "total_device_to_host_serial_frame_count": total_device_to_host_serial_frame_count,
+            "total_device_to_host_serial_frame_checksum_valid_count": total_device_to_host_serial_frame_checksum_valid_count,
+            "device_to_host_serial_frame_sample_scope": device_to_host_serial_frame_sample_scope,
+            "device_to_host_serial_frame_tuple_ids": device_to_host_serial_frame_tuple_ids,
+            "device_to_host_serial_frame_tuple_sample_count": device_to_host_serial_frame_tuple_sample_count,
             "device_to_host_serial_tuple_details_present": device_to_host_serial_tuple_details_present,
             "observed_payload_bearing_authority_state_source": false,
             "classification": if device_to_host_serial_tuple_details_present {
@@ -28393,7 +28423,11 @@ fn vendor_status_authority_source_gap_receipt(
                 "device_to_host_serial_tuple_details_missing_from_checked_in_review"
             },
             "read_only_probe_allowed": false,
-            "required_next_review": "add or regenerate no-output device-to-host serial frame extraction and correlate response payloads before another live probe"
+            "required_next_review": if device_to_host_serial_tuple_details_present {
+                "correlate the extracted response-side tuple samples against host-to-device timing or another reviewed authority-state source before another live probe"
+            } else {
+                "add or regenerate no-output device-to-host serial frame extraction and correlate response payloads before another live probe"
+            }
         }),
     ];
     let source_review_count = source_reviews.len();
@@ -28457,11 +28491,19 @@ fn vendor_status_authority_source_gap_receipt(
     insert_json!("unknown_safety_or_mode_state_blocks_authority", true);
     insert_json!(
         "exact_next_blocker",
-        "No checked-in source currently identifies a payload-bearing authority-state status endpoint. Current registry authority-status queries are ACK/debug-only, passive command-id 0x07 analogs and mode/enable groups remain unknown_do_not_send, and checked-in passive review lacks device-to-host serial tuple correlation for an equivalent status source."
+        if device_to_host_serial_tuple_details_present {
+            "No checked-in source currently identifies a payload-bearing authority-state status endpoint. Current registry authority-status queries are ACK/debug-only, passive command-id 0x07 analogs and mode/enable groups remain unknown_do_not_send, and extracted device-to-host passive serial samples are not yet correlated to a reviewed equivalent authority-state status source."
+        } else {
+            "No checked-in source currently identifies a payload-bearing authority-state status endpoint. Current registry authority-status queries are ACK/debug-only, passive command-id 0x07 analogs and mode/enable groups remain unknown_do_not_send, and checked-in passive review lacks device-to-host serial tuple correlation for an equivalent status source."
+        }
     );
     insert_json!(
         "next_allowed_action",
-        "Add no-output device-to-host serial response extraction/correlation or another reviewed payload-bearing authority-state status source before any live probe, authorization plan, PIDFF rerun, force escalation, or motion attempt."
+        if device_to_host_serial_tuple_details_present {
+            "Correlate extracted no-output device-to-host serial response samples against host-to-device timing or another reviewed payload-bearing authority-state status source before any live probe, authorization plan, PIDFF rerun, force escalation, or motion attempt."
+        } else {
+            "Add no-output device-to-host serial response extraction/correlation or another reviewed payload-bearing authority-state status source before any live probe, authorization plan, PIDFF rerun, force escalation, or motion attempt."
+        }
     );
     insert_json!(
         "blocked_actions",
@@ -30335,11 +30377,19 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
     let mut total_host_to_device_serial_frame_checksum_invalid_count = 0u64;
     let mut total_host_to_device_serial_frame_commandless_count = 0u64;
     let mut total_device_to_host_packets = 0u64;
+    let mut total_device_to_host_serial_frame_packet_count = 0u64;
+    let mut total_device_to_host_serial_frame_count = 0u64;
+    let mut total_device_to_host_serial_frame_checksum_valid_count = 0u64;
+    let mut total_device_to_host_serial_frame_checksum_invalid_count = 0u64;
+    let mut total_device_to_host_serial_frame_commandless_count = 0u64;
     let mut decode_gap_scenarios = Vec::new();
     let mut payload_export_gap_scenarios = Vec::new();
     let mut serial_frame_shape_decode_gap_scenarios = Vec::new();
+    let mut device_to_host_serial_frame_shape_decode_gap_scenarios = Vec::new();
     let mut host_to_device_serial_frame_tuple_ids = BTreeSet::new();
     let mut host_to_device_serial_frame_tuple_sample_count = 0usize;
+    let mut device_to_host_serial_frame_tuple_ids = BTreeSet::new();
+    let mut device_to_host_serial_frame_tuple_sample_count = 0usize;
 
     for (scenario, label, focus, _warning) in moza_passive_sniff_navigation_requirements() {
         let review = vendor_protocol_sniff_scenario_review(sniff_root, scenario, label, focus)?;
@@ -30380,6 +30430,20 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
                 .saturating_add(review.host_to_device_serial_frame_commandless_count);
         total_device_to_host_packets =
             total_device_to_host_packets.saturating_add(review.device_to_host_packets);
+        total_device_to_host_serial_frame_packet_count =
+            total_device_to_host_serial_frame_packet_count
+                .saturating_add(review.device_to_host_serial_frame_packet_count);
+        total_device_to_host_serial_frame_count = total_device_to_host_serial_frame_count
+            .saturating_add(review.device_to_host_serial_frame_count);
+        total_device_to_host_serial_frame_checksum_valid_count =
+            total_device_to_host_serial_frame_checksum_valid_count
+                .saturating_add(review.device_to_host_serial_frame_checksum_valid_count);
+        total_device_to_host_serial_frame_checksum_invalid_count =
+            total_device_to_host_serial_frame_checksum_invalid_count
+                .saturating_add(review.device_to_host_serial_frame_checksum_invalid_count);
+        total_device_to_host_serial_frame_commandless_count =
+            total_device_to_host_serial_frame_commandless_count
+                .saturating_add(review.device_to_host_serial_frame_commandless_count);
         if review.host_to_device_decode_gap {
             decode_gap_scenarios.push(review.scenario.clone());
         }
@@ -30388,6 +30452,9 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
         }
         if review.host_to_device_serial_frame_shape_decode_gap {
             serial_frame_shape_decode_gap_scenarios.push(review.scenario.clone());
+        }
+        if review.device_to_host_serial_frame_shape_decode_gap {
+            device_to_host_serial_frame_shape_decode_gap_scenarios.push(review.scenario.clone());
         }
         host_to_device_report_ids.extend(review.host_to_device_report_ids.iter().cloned());
         vendor_or_device_specific_output_candidate_report_ids.extend(
@@ -30401,6 +30468,11 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
         host_to_device_serial_frame_tuple_sample_count =
             host_to_device_serial_frame_tuple_sample_count
                 .saturating_add(review.host_to_device_serial_frame_tuple_samples.len());
+        device_to_host_serial_frame_tuple_ids
+            .extend(review.device_to_host_serial_frame_tuple_ids.iter().cloned());
+        device_to_host_serial_frame_tuple_sample_count =
+            device_to_host_serial_frame_tuple_sample_count
+                .saturating_add(review.device_to_host_serial_frame_tuple_samples.len());
         scenarios.push(review);
     }
     let payload_export_gap_summary = vendor_protocol_payload_export_gap_summary(&scenarios);
@@ -30424,14 +30496,22 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
         total_host_to_device_serial_frame_checksum_invalid_count,
         total_host_to_device_serial_frame_commandless_count,
         total_device_to_host_packets,
+        total_device_to_host_serial_frame_packet_count,
+        total_device_to_host_serial_frame_count,
+        total_device_to_host_serial_frame_checksum_valid_count,
+        total_device_to_host_serial_frame_checksum_invalid_count,
+        total_device_to_host_serial_frame_commandless_count,
         host_to_device_decode_gap_detected: total_host_to_device_unclassified_packets > 0,
         host_to_device_payload_export_gap_detected: total_host_to_device_payload_missing_packets
             > 0,
         host_to_device_serial_frame_shape_decode_gap_detected:
             !serial_frame_shape_decode_gap_scenarios.is_empty(),
+        device_to_host_serial_frame_shape_decode_gap_detected:
+            !device_to_host_serial_frame_shape_decode_gap_scenarios.is_empty(),
         decode_gap_scenarios,
         payload_export_gap_scenarios,
         serial_frame_shape_decode_gap_scenarios,
+        device_to_host_serial_frame_shape_decode_gap_scenarios,
         host_to_device_report_ids: host_to_device_report_ids.into_iter().collect(),
         vendor_or_device_specific_output_candidate_report_ids:
             vendor_or_device_specific_output_candidate_report_ids
@@ -30441,6 +30521,11 @@ fn vendor_protocol_sniff_evidence_review(sniff_root: &Path) -> Result<VendorProt
             .into_iter()
             .collect(),
         host_to_device_serial_frame_tuple_sample_count,
+        device_to_host_serial_frame_sample_scope: "observed_report_payload_hex_samples_only",
+        device_to_host_serial_frame_tuple_ids: device_to_host_serial_frame_tuple_ids
+            .into_iter()
+            .collect(),
+        device_to_host_serial_frame_tuple_sample_count,
         decode_recommended_by_summaries,
         passive_summaries_native_control_evidence,
         payload_export_gap_summary,
@@ -30505,6 +30590,15 @@ fn vendor_protocol_sniff_scenario_review(
             host_to_device_serial_frame_tuple_counts: Vec::new(),
             host_to_device_serial_frame_tuple_samples: Vec::new(),
             device_to_host_packets: 0,
+            device_to_host_serial_frame_packet_count: 0,
+            device_to_host_serial_frame_count: 0,
+            device_to_host_serial_frame_checksum_valid_count: 0,
+            device_to_host_serial_frame_checksum_invalid_count: 0,
+            device_to_host_serial_frame_commandless_count: 0,
+            device_to_host_serial_frame_shape_decode_gap: false,
+            device_to_host_serial_frame_tuple_ids: Vec::new(),
+            device_to_host_serial_frame_tuple_counts: Vec::new(),
+            device_to_host_serial_frame_tuple_samples: Vec::new(),
             standard_pidff_output_report_count: 0,
             vendor_or_device_specific_output_candidate_count: 0,
             input_or_status_report_count: 0,
@@ -30609,6 +30703,8 @@ fn vendor_protocol_sniff_scenario_review(
         usbcom_serial_frame_tuple_counts(usbcom_serial_frame_summary);
     let host_to_device_serial_frame_tuple_samples =
         usbcom_serial_frame_tuple_samples(usbcom_serial_frame_summary, scenario);
+    let device_to_host_serial_frame_summary =
+        device_to_host_serial_frame_summary_from_observed_reports(&summary, scenario);
     let mut notes =
         vec!["checked-in passive summary is non-claiming protocol evidence".to_string()];
     if host_to_device_decode_gap {
@@ -30644,6 +30740,13 @@ fn vendor_protocol_sniff_scenario_review(
     if host_to_device_serial_frame_count > 0 {
         notes.push(format!(
             "host-to-device USB CDC payloads parse into {host_to_device_serial_frame_count} candidate 0x7E serial frames with {host_to_device_serial_frame_checksum_valid_count} valid checksum(s); tuple IDs remain protocol-shape evidence only"
+        ));
+    }
+    if device_to_host_serial_frame_summary.parsed_frame_count > 0 {
+        notes.push(format!(
+            "device-to-host report 0x7E payload samples parse into {} candidate serial response frame sample(s) with {} valid checksum(s); this is sample-scoped response correlation only and does not identify a payload-bearing authority-state source",
+            device_to_host_serial_frame_summary.parsed_frame_count,
+            device_to_host_serial_frame_summary.checksum_valid_frame_count
         ));
     }
 
@@ -30690,6 +30793,20 @@ fn vendor_protocol_sniff_scenario_review(
             .pointer("/usb_transfer_summary/device_to_host")
             .and_then(Value::as_u64)
             .unwrap_or(0),
+        device_to_host_serial_frame_packet_count: device_to_host_serial_frame_summary.packet_count,
+        device_to_host_serial_frame_count: device_to_host_serial_frame_summary.parsed_frame_count,
+        device_to_host_serial_frame_checksum_valid_count: device_to_host_serial_frame_summary
+            .checksum_valid_frame_count,
+        device_to_host_serial_frame_checksum_invalid_count: device_to_host_serial_frame_summary
+            .checksum_invalid_frame_count,
+        device_to_host_serial_frame_commandless_count: device_to_host_serial_frame_summary
+            .commandless_frame_count,
+        device_to_host_serial_frame_shape_decode_gap: device_to_host_serial_frame_summary
+            .frame_shape_decode_gap,
+        device_to_host_serial_frame_tuple_ids: device_to_host_serial_frame_summary.tuple_ids,
+        device_to_host_serial_frame_tuple_counts: device_to_host_serial_frame_summary.tuple_counts,
+        device_to_host_serial_frame_tuple_samples: device_to_host_serial_frame_summary
+            .tuple_samples,
         standard_pidff_output_report_count: classification
             .get("standard_pidff_output_report_count")
             .and_then(Value::as_u64)
@@ -30950,6 +31067,235 @@ fn usbcom_serial_frame_tuple_samples(
                 .collect()
         })
         .unwrap_or_default()
+}
+
+struct PassiveDeviceToHostSerialFrameSummary {
+    packet_count: u64,
+    parsed_frame_count: u64,
+    checksum_valid_frame_count: u64,
+    checksum_invalid_frame_count: u64,
+    commandless_frame_count: u64,
+    frame_shape_decode_gap: bool,
+    tuple_ids: Vec<String>,
+    tuple_counts: Vec<VendorProtocolTupleCount>,
+    tuple_samples: Vec<VendorProtocolTupleSampleFrame>,
+}
+
+struct PassiveSerialFrameSample {
+    tuple_id: String,
+    group: String,
+    device_id: String,
+    command: Option<String>,
+    frame_hex: String,
+    declared_len: u64,
+    payload_len: u64,
+    payload_hex: String,
+    checksum_hex: String,
+    checksum_valid: bool,
+}
+
+fn device_to_host_serial_frame_summary_from_observed_reports(
+    summary: &Value,
+    scenario: &str,
+) -> PassiveDeviceToHostSerialFrameSummary {
+    let mut packet_count = 0u64;
+    let mut parsed_frame_count = 0u64;
+    let mut checksum_valid_frame_count = 0u64;
+    let mut checksum_invalid_frame_count = 0u64;
+    let mut commandless_frame_count = 0u64;
+    let mut frame_shape_decode_gap = false;
+    let mut tuple_counts = BTreeMap::<String, VendorProtocolTupleCount>::new();
+    let mut tuple_samples = Vec::new();
+
+    let reports = summary
+        .get("observed_reports")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|report| {
+            report.get("direction").and_then(Value::as_str) == Some("device_to_host")
+                && json_string(report, "report_id") == Some("0x7E")
+        });
+
+    for report in reports {
+        packet_count = packet_count.saturating_add(json_u64(report, "count").unwrap_or(0));
+        let Some(samples) = report.get("payload_hex_samples").and_then(Value::as_array) else {
+            continue;
+        };
+        for (sample_index, sample) in samples.iter().enumerate() {
+            let Some(sample_hex) = sample.as_str() else {
+                frame_shape_decode_gap = true;
+                continue;
+            };
+            let sample_bytes = match parse_hex_bytes(sample_hex) {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    frame_shape_decode_gap = true;
+                    continue;
+                }
+            };
+            let extracted = passive_serial_frame_samples_from_payload(&sample_bytes);
+            frame_shape_decode_gap |= extracted.frame_shape_decode_gap;
+            for (frame_ordinal, frame) in extracted.frames.into_iter().enumerate() {
+                parsed_frame_count = parsed_frame_count.saturating_add(1);
+                if frame.checksum_valid {
+                    checksum_valid_frame_count = checksum_valid_frame_count.saturating_add(1);
+                } else {
+                    checksum_invalid_frame_count = checksum_invalid_frame_count.saturating_add(1);
+                }
+                if frame.command.is_none() {
+                    commandless_frame_count = commandless_frame_count.saturating_add(1);
+                }
+
+                let payload_len = frame.payload_len;
+                let entry = tuple_counts
+                    .entry(frame.tuple_id.clone())
+                    .or_insert_with(|| VendorProtocolTupleCount {
+                        tuple_id: frame.tuple_id.clone(),
+                        group: frame.group.clone(),
+                        device_id: frame.device_id.clone(),
+                        command: frame.command.clone(),
+                        payload_len_min: payload_len,
+                        payload_len_max: payload_len,
+                        count: 0,
+                        checksum_valid_count: 0,
+                        checksum_invalid_count: 0,
+                    });
+                entry.payload_len_min = entry.payload_len_min.min(payload_len);
+                entry.payload_len_max = entry.payload_len_max.max(payload_len);
+                entry.count = entry.count.saturating_add(1);
+                if frame.checksum_valid {
+                    entry.checksum_valid_count = entry.checksum_valid_count.saturating_add(1);
+                } else {
+                    entry.checksum_invalid_count = entry.checksum_invalid_count.saturating_add(1);
+                }
+
+                tuple_samples.push(VendorProtocolTupleSampleFrame {
+                    scenario: scenario.to_string(),
+                    tuple_id: frame.tuple_id,
+                    group: frame.group,
+                    device_id: frame.device_id,
+                    command: frame.command,
+                    sample_index: u64::try_from(sample_index + 1).unwrap_or(u64::MAX),
+                    packet_ordinal: u64::try_from(sample_index + 1).unwrap_or(u64::MAX),
+                    frame_ordinal_in_packet: u64::try_from(frame_ordinal + 1).unwrap_or(u64::MAX),
+                    frame_hex: frame.frame_hex,
+                    declared_len: frame.declared_len,
+                    payload_len,
+                    payload_hex: frame.payload_hex,
+                    checksum_hex: frame.checksum_hex,
+                    checksum_valid: frame.checksum_valid,
+                    hardware_output_authorized: false,
+                    output_sendability_claim: false,
+                });
+            }
+        }
+    }
+
+    PassiveDeviceToHostSerialFrameSummary {
+        packet_count,
+        parsed_frame_count,
+        checksum_valid_frame_count,
+        checksum_invalid_frame_count,
+        commandless_frame_count,
+        frame_shape_decode_gap,
+        tuple_ids: tuple_counts.keys().cloned().collect(),
+        tuple_counts: tuple_counts.into_values().collect(),
+        tuple_samples,
+    }
+}
+
+struct PassiveSerialFrameExtraction {
+    frames: Vec<PassiveSerialFrameSample>,
+    frame_shape_decode_gap: bool,
+}
+
+fn passive_serial_frame_samples_from_payload(payload: &[u8]) -> PassiveSerialFrameExtraction {
+    let mut frames = Vec::new();
+    let mut frame_shape_decode_gap = false;
+    let mut cursor = 0usize;
+
+    while cursor < payload.len() {
+        let Some(relative_start) = payload[cursor..]
+            .iter()
+            .position(|byte| *byte == MESSAGE_START)
+        else {
+            if cursor < payload.len() {
+                frame_shape_decode_gap = true;
+            }
+            break;
+        };
+        let start = cursor + relative_start;
+        if start > cursor {
+            frame_shape_decode_gap = true;
+        }
+        if payload.len().saturating_sub(start) < 2 {
+            frame_shape_decode_gap = true;
+            break;
+        }
+        let declared_len = usize::from(payload[start + 1]);
+        let expected_len = 5usize.saturating_add(declared_len);
+        let end = start.saturating_add(expected_len);
+        if expected_len < 5 || end > payload.len() {
+            frame_shape_decode_gap = true;
+            break;
+        }
+        let frame = &payload[start..end];
+        if let Some(sample) = passive_serial_frame_sample(frame) {
+            frames.push(sample);
+        } else {
+            frame_shape_decode_gap = true;
+        }
+        cursor = end;
+    }
+
+    PassiveSerialFrameExtraction {
+        frames,
+        frame_shape_decode_gap,
+    }
+}
+
+fn passive_serial_frame_sample(frame: &[u8]) -> Option<PassiveSerialFrameSample> {
+    if frame.len() < 5 || frame.first().copied() != Some(MESSAGE_START) {
+        return None;
+    }
+    let declared_len = usize::from(*frame.get(1)?);
+    let expected_len = 5usize.checked_add(declared_len)?;
+    if frame.len() != expected_len {
+        return None;
+    }
+    let checksum_index = expected_len.checked_sub(1)?;
+    let checksum = *frame.get(checksum_index)?;
+    let checksum_valid = serial_checksum(&frame[..checksum_index]) == checksum;
+    let group = *frame.get(2)?;
+    let device_id = *frame.get(3)?;
+    let command = if declared_len == 0 {
+        None
+    } else {
+        Some(*frame.get(4)?)
+    };
+    let payload = if declared_len == 0 {
+        &[][..]
+    } else {
+        let payload_end = 4usize.checked_add(declared_len)?;
+        frame.get(5..payload_end)?
+    };
+    let command_for_tuple = command.map(hex_u8);
+    let tuple_command = command_for_tuple.as_deref().unwrap_or("none");
+    let group_hex = hex_u8(group);
+    let device_id_hex = hex_u8(device_id);
+    Some(PassiveSerialFrameSample {
+        tuple_id: format!("{group_hex}/{device_id_hex}/{tuple_command}"),
+        group: group_hex,
+        device_id: device_id_hex,
+        command: command_for_tuple,
+        frame_hex: bytes_hex_compact(frame),
+        declared_len: declared_len as u64,
+        payload_len: payload.len() as u64,
+        payload_hex: bytes_hex_compact(payload),
+        checksum_hex: hex_u8(checksum),
+        checksum_valid,
+    })
 }
 
 fn validate_passive_sniff_summary(path: &Path, value: &Value) -> Result<()> {
@@ -34819,16 +35165,26 @@ struct VendorProtocolSniffEvidence {
     total_host_to_device_serial_frame_checksum_invalid_count: u64,
     total_host_to_device_serial_frame_commandless_count: u64,
     total_device_to_host_packets: u64,
+    total_device_to_host_serial_frame_packet_count: u64,
+    total_device_to_host_serial_frame_count: u64,
+    total_device_to_host_serial_frame_checksum_valid_count: u64,
+    total_device_to_host_serial_frame_checksum_invalid_count: u64,
+    total_device_to_host_serial_frame_commandless_count: u64,
     host_to_device_decode_gap_detected: bool,
     host_to_device_payload_export_gap_detected: bool,
     host_to_device_serial_frame_shape_decode_gap_detected: bool,
+    device_to_host_serial_frame_shape_decode_gap_detected: bool,
     decode_gap_scenarios: Vec<String>,
     payload_export_gap_scenarios: Vec<String>,
     serial_frame_shape_decode_gap_scenarios: Vec<String>,
+    device_to_host_serial_frame_shape_decode_gap_scenarios: Vec<String>,
     host_to_device_report_ids: Vec<String>,
     vendor_or_device_specific_output_candidate_report_ids: Vec<String>,
     host_to_device_serial_frame_tuple_ids: Vec<String>,
     host_to_device_serial_frame_tuple_sample_count: usize,
+    device_to_host_serial_frame_sample_scope: &'static str,
+    device_to_host_serial_frame_tuple_ids: Vec<String>,
+    device_to_host_serial_frame_tuple_sample_count: usize,
     decode_recommended_by_summaries: bool,
     passive_summaries_native_control_evidence: bool,
     payload_export_gap_summary: VendorProtocolPayloadExportGapSummary,
@@ -34915,6 +35271,15 @@ struct VendorProtocolSniffScenarioReview {
     host_to_device_serial_frame_tuple_counts: Vec<VendorProtocolTupleCount>,
     host_to_device_serial_frame_tuple_samples: Vec<VendorProtocolTupleSampleFrame>,
     device_to_host_packets: u64,
+    device_to_host_serial_frame_packet_count: u64,
+    device_to_host_serial_frame_count: u64,
+    device_to_host_serial_frame_checksum_valid_count: u64,
+    device_to_host_serial_frame_checksum_invalid_count: u64,
+    device_to_host_serial_frame_commandless_count: u64,
+    device_to_host_serial_frame_shape_decode_gap: bool,
+    device_to_host_serial_frame_tuple_ids: Vec<String>,
+    device_to_host_serial_frame_tuple_counts: Vec<VendorProtocolTupleCount>,
+    device_to_host_serial_frame_tuple_samples: Vec<VendorProtocolTupleSampleFrame>,
     standard_pidff_output_report_count: u64,
     vendor_or_device_specific_output_candidate_count: u64,
     input_or_status_report_count: u64,
@@ -44670,7 +45035,10 @@ mod tests {
         }));
         assert!(source_reviews.iter().any(|source| {
             json_string(source, "source_id") == Some("passive_device_to_host_response_source")
-                && json_bool(source, "device_to_host_serial_tuple_details_present") == Some(false)
+                && json_bool(source, "device_to_host_serial_tuple_details_present") == Some(true)
+                && json_u64(source, "total_device_to_host_serial_frame_count").unwrap_or(0) > 0
+                && json_u64(source, "device_to_host_serial_frame_tuple_sample_count").unwrap_or(0)
+                    > 0
                 && json_u64(source, "total_device_to_host_packets").unwrap_or(0) > 0
         }));
 
@@ -46801,6 +47169,25 @@ mod tests {
                 "notes": []
             });
         }
+        if let Some(reports) = summary
+            .get_mut("observed_reports")
+            .and_then(Value::as_array_mut)
+        {
+            reports.push(serde_json::json!({
+                "direction": "device_to_host",
+                "report_id": "0x7E",
+                "classification": {
+                    "category": "input_or_status_report",
+                    "native_control_evidence": false
+                },
+                "count": 2,
+                "payload_sample_count": 2,
+                "payload_hex_samples": [
+                    "7E 03 A5 91 02 00 00 C6",
+                    "7E 00 80 91 9C"
+                ]
+            }));
+        }
         summary
     }
 
@@ -46977,9 +47364,65 @@ mod tests {
         );
         assert_eq!(
             value
+                .pointer("/sniff_evidence/total_device_to_host_serial_frame_packet_count")
+                .and_then(Value::as_u64),
+            Some(4)
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/total_device_to_host_serial_frame_count")
+                .and_then(Value::as_u64),
+            Some(4)
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/total_device_to_host_serial_frame_checksum_valid_count")
+                .and_then(Value::as_u64),
+            Some(4)
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/device_to_host_serial_frame_sample_scope")
+                .and_then(Value::as_str),
+            Some("observed_report_payload_hex_samples_only")
+        );
+        let device_to_host_tuple_ids = value
+            .pointer("/sniff_evidence/device_to_host_serial_frame_tuple_ids")
+            .and_then(Value::as_array)
+            .ok_or("device-to-host tuple IDs must be present")?;
+        assert!(
+            device_to_host_tuple_ids
+                .iter()
+                .any(|tuple| { tuple.as_str() == Some("0xA5/0x91/0x02") })
+        );
+        assert!(
+            device_to_host_tuple_ids
+                .iter()
+                .any(|tuple| { tuple.as_str() == Some("0x80/0x91/none") })
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/device_to_host_serial_frame_tuple_sample_count")
+                .and_then(Value::as_u64),
+            Some(4)
+        );
+        assert_eq!(
+            value
                 .pointer("/sniff_evidence/scenarios/0/host_to_device_serial_frame_tuple_samples/0/frame_hex")
                 .and_then(Value::as_str),
             Some("7E01281302C9")
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/scenarios/0/device_to_host_serial_frame_tuple_samples/0/frame_hex")
+                .and_then(Value::as_str),
+            Some("7E03A591020000C6")
+        );
+        assert_eq!(
+            value
+                .pointer("/sniff_evidence/scenarios/0/device_to_host_serial_frame_tuple_samples/0/output_sendability_claim")
+                .and_then(Value::as_bool),
+            Some(false)
         );
         assert_eq!(
             value

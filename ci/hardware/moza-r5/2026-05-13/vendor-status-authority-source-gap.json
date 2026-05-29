@@ -23,8 +23,8 @@
   "command": "wheelctl moza vendor-status-authority-source-gap",
   "corrected_read_only_probe_ready": false,
   "endpoint_candidates_receipt": "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json",
-  "exact_next_blocker": "No checked-in source currently identifies a payload-bearing authority-state status endpoint. Current registry authority-status queries are ACK/debug-only, passive command-id 0x07 analogs and mode/enable groups remain unknown_do_not_send, and checked-in passive review lacks device-to-host serial tuple correlation for an equivalent status source.",
-  "generated_at_utc": "2026-05-29T16:45:42Z",
+  "exact_next_blocker": "No checked-in source currently identifies a payload-bearing authority-state status endpoint. Current registry authority-status queries are ACK/debug-only, passive command-id 0x07 analogs and mode/enable groups remain unknown_do_not_send, and extracted device-to-host passive serial samples are not yet correlated to a reviewed equivalent authority-state status source.",
+  "generated_at_utc": "2026-05-29T17:37:41Z",
   "hardware_output_authorized": false,
   "high_torque_enabled": false,
   "live_read_only_probe_allowed": false,
@@ -32,7 +32,7 @@
   "motion_attempt_allowed": false,
   "native_control_evidence": false,
   "native_visible_ready": false,
-  "next_allowed_action": "Add no-output device-to-host serial response extraction/correlation or another reviewed payload-bearing authority-state status source before any live probe, authorization plan, PIDFF rerun, force escalation, or motion attempt.",
+  "next_allowed_action": "Correlate extracted no-output device-to-host serial response samples against host-to-device timing or another reviewed payload-bearing authority-state status source before any live probe, authorization plan, PIDFF rerun, force escalation, or motion attempt.",
   "no_hid_device_opened": true,
   "notes": [
     "This receipt reads stored JSON only; it opens no HID or serial device and sends no traffic.",
@@ -119,20 +119,38 @@
       "source_kind": "passive_host_to_device_mode_enable_hypotheses"
     },
     {
-      "classification": "device_to_host_serial_tuple_details_missing_from_checked_in_review",
+      "classification": "device_to_host_details_present_but_no_reviewed_authority_source",
       "completed_scenarios": [
         "pit-house-open-idle",
         "pit-house-full-controls",
         "pit-house-setting-change"
       ],
-      "device_to_host_serial_tuple_details_present": false,
+      "device_to_host_serial_frame_sample_scope": "observed_report_payload_hex_samples_only",
+      "device_to_host_serial_frame_tuple_ids": [
+        "0x80/0x21/none",
+        "0x80/0x31/none",
+        "0x80/0x91/none",
+        "0x8E/0x21/0x00",
+        "0x8E/0x31/0x00",
+        "0x8E/0x71/0x00",
+        "0x8E/0x91/0x00",
+        "0xA5/0x91/0x01",
+        "0xA5/0x91/0x02",
+        "0xA5/0x91/0x03",
+        "0xDA/0xB1/0x00",
+        "0xDD/0xB1/0x01"
+      ],
+      "device_to_host_serial_frame_tuple_sample_count": 18,
+      "device_to_host_serial_tuple_details_present": true,
       "input_artifact": "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
       "observed_payload_bearing_authority_state_source": false,
       "read_only_probe_allowed": false,
-      "required_next_review": "add or regenerate no-output device-to-host serial frame extraction and correlate response payloads before another live probe",
+      "required_next_review": "correlate the extracted response-side tuple samples against host-to-device timing or another reviewed authority-state source before another live probe",
       "source_id": "passive_device_to_host_response_source",
       "source_kind": "passive_device_to_host_packets",
-      "total_device_to_host_packets": 151058
+      "total_device_to_host_packets": 151058,
+      "total_device_to_host_serial_frame_checksum_valid_count": 18,
+      "total_device_to_host_serial_frame_count": 18
     }
   ],
   "success": true,
