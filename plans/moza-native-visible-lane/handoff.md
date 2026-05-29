@@ -397,18 +397,31 @@ The authority-status source-gap review is now recorded at
 confirms there is still no reviewed payload-bearing authority-state status
 endpoint or equivalent status source. Current registry authority-status queries
 remain ACK/debug-only, the passive command-id `0x07` analogs and mode/enable
-groups remain `unknown_do_not_send`, and the checked-in passive response-side
-samples are not yet correlated to a reviewed equivalent authority-state status
-source. The protocol evidence review now extracts 18 checksum-valid
-device-to-host serial frame samples from stored passive summaries under the
-sample scope `observed_report_payload_hex_samples_only`. This closes the
-"missing tuple details" gap, but not the status-source gap. Wheel movement
-remains unproven: `wheel_moved_under_openracing=false`,
+groups remain `unknown_do_not_send`, and the protocol evidence review extracts
+18 checksum-valid device-to-host serial frame samples from stored passive
+summaries under the sample scope `observed_report_payload_hex_samples_only`.
+
+The response-source correlation receipt is now recorded at
+`vendor-status-response-source-correlation.json`. It closes the generic
+"correlate response samples" step by recording sample-scoped response-shape
+correlation for the unknown passive question groups:
+
+```text
+0x25/0x19/* -> 0xA5/0x91/*
+0x5A/0x1B/0x00 -> 0xDA/0xB1/0x00
+0x5D/0x1B/0x01 -> 0xDD/0xB1/0x01
+```
+
+That is not packet-timing proof and not an authority-state source. The expected
+registry authority-status response tuples `0xA1/0x21/0x07` and
+`0xC6/0xC1/0x01` are absent from the stored passive response samples, and the
+passive command-id `0x07` analogs have no matching response-side sample tuples.
+Wheel movement remains unproven: `wheel_moved_under_openracing=false`,
 `visible_motion_verified=false`, `output_was_sent=false`, and
-`authority_state=blocked`. The next native-path step is no-output correlation
-between those extracted response-side samples and host-to-device timing, or
-another reviewed payload-bearing authority-state status source, before any live
-probe, authorization plan, PIDFF rerun, force escalation, or motion attempt.
+`authority_state=blocked`. The next native-path step is fixture-backed semantic
+decoder coverage for the correlated passive response groups or another reviewed
+payload-bearing authority-state status source before any live probe,
+authorization plan, PIDFF rerun, force escalation, or motion attempt.
 
 The read-only demux follow-up is now recorded at
 `vendor-status-mode-matrix-demux.json` with its fresh precondition doctor at

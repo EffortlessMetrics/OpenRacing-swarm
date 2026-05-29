@@ -203,11 +203,26 @@ endpoint or equivalent reviewed status source. Current registry
 authority-status queries are ACK/debug-only, the passive command-id `0x07`
 analogs and mode/enable groups remain `unknown_do_not_send`, and the checked-in
 passive review now extracts 18 checksum-valid device-to-host serial frame
-samples from stored response-side report `0x7E` payload samples. Those samples
-are not yet correlated to a reviewed equivalent authority-state status source.
-The next step is no-output response timing/source correlation, or another
-reviewed authority-state status source, before any live probe, authorization,
-PIDFF rerun, force escalation, or motion attempt.
+samples from stored response-side report `0x7E` payload samples.
+
+`vendor-status-response-source-correlation.json` now records the follow-up
+correlation. The stored response samples correlate to the unknown passive
+question groups as sample-scoped response-shape evidence:
+
+```text
+0x25/0x19/* -> 0xA5/0x91/*
+0x5A/0x1B/0x00 -> 0xDA/0xB1/0x00
+0x5D/0x1B/0x01 -> 0xDD/0xB1/0x01
+```
+
+The receipt still does not identify a payload-bearing authority-state status
+source. It records that the expected registry authority-status response tuples
+`0xA1/0x21/0x07` and `0xC6/0xC1/0x01` are absent from passive response samples,
+and that the command-id `0x07` analogs have no response-side sample match. The
+next step is fixture-backed semantic decoder coverage for those correlated
+passive response groups, or another reviewed authority-state status source,
+before any live probe, authorization, PIDFF rerun, force escalation, or motion
+attempt.
 
 ## Boundaries
 
@@ -238,8 +253,10 @@ and read-only matrix state, the wizard records that the PIDFF comparison is
 present and emits no output command. The read-only demux follow-up decoded
 seven registry status replies while leaving `estop_get_ffb` and
 `main_misc_get_ffb_status` failed closed. The extended scan-window follow-up
-also decoded zero authority-state replies with a 64-frame cap, so continue with
-no-output command/endpoint correlation or the remaining passive capture
+also decoded zero authority-state replies with a 64-frame cap, and the stored
+passive response-source correlation still found no payload-bearing
+authority-state source. Continue with fixture-backed semantic decoder coverage
+for the correlated passive response groups or the remaining passive capture
 scenarios before proposing any further hardware output family.
 
 For each planned scenario:
