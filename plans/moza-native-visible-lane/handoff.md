@@ -182,6 +182,7 @@ The broader Moza objective remains incomplete:
 | Authority status endpoint diagnosis | `vendor-status-authority-endpoint-diagnosis.json`; `vendor-status-endpoint-candidates.json`; `vendor-status-endpoint-candidates-from-payload-rerun.json` | Broad serial transport ruled out; current authority-status endpoint returns ACK/no-payload or diagnostic telemetry only, and corrected endpoint candidates remain non-sendable |
 | Payload-bearing status-source candidates | `vendor-status-payload-source-candidates.json` | Recorded four nonzero `0x8E` device-to-host setting-change samples as `unknown_do_not_send` status-source questions; no semantic decode, probe readiness, authorization, output, or motion claim |
 | Payload-source semantic review | `vendor-status-payload-source-semantic-review.json` | Fixture decoder coverage now recognizes the four `0x8E` samples as payload-bearing status-source questions, but the review records no same-tuple payload variation, no timing correlation, no authority-state source, and no live probe/output/motion eligibility |
+| 0x8E timing-correlation plan | `vendor-status-timing-correlation-plan.json` | Stages a passive Pit House event-marker capture for the same four `0x8E` samples with fresh hardware-doctor selector verification and complete LED default-teal/red/default-teal notes; no capture, timing proof, live probe, authorization, output, or motion claim |
 | Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls`, and `pit-house-setting-change` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence; setting-change keeps the earlier low-yield classification as historical failed evidence |
 | Remaining passive sniff plans | `simhub-open-idle`, `simhub-output-session`, `simulator-session-start-stop` sniff plans | Plan-only |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |
@@ -228,18 +229,15 @@ whether the traffic is an `authority_keepalive` or
 `volatile_ffb_session_enable`. Those questions are still
 `unknown_do_not_send`; they are not semantic decoder proof, registry entries,
 sendable tuples, authorization inputs, or output evidence. The correlation plan
-now moves the next passive evidence target to SimHub and simulator scenarios,
-before any tuple can move toward semantic decoder coverage or registry review.
-The `simhub-open-idle` handoff is staged
-only: it requires a fresh `wheelctl hardware doctor` immediately before capture,
-the current USBPcap Moza selector hint passed through
-`sniff-capture --hardware-doctor`, SimHub opened by the operator after capture
-starts, idle/stable confirmation, no SimHub output session, no simulator, no
-firmware/update/DFU page or prompt, raw pcap local-only, and OpenRacing
-no-output confirmation. The native-control implementation path has recorded
-fake-transport containment for the mode/enable candidate questions:
-representative frames are observable in software fake transport while the
-command/send path still rejects them as unknown commands.
+also keeps generic external witness gaps pointed at SimHub and simulator
+scenarios. The native-control implementation path has recorded fake-transport
+containment for the mode/enable candidate questions: representative frames are
+observable in software fake transport while the command/send path still rejects
+them as unknown commands. The current native-path passive target is now the
+planned `pit-house-0x8e-timing-correlation` capture, which requires fresh
+hardware-doctor selector verification, a passive `sniff-capture
+--hardware-doctor` command, explicit LED event markers, and no OpenRacing
+hardware output.
 
 The read-only hardware status/mode matrix is now recorded at
 `vendor-status-mode-matrix.json` with its fresh precondition doctor at
@@ -485,6 +483,20 @@ The review is still negative for authority planning:
 `0x8E` evidence or another reviewed payload-bearing authority-state status
 source before any live probe, authorization, PIDFF rerun, force escalation, or
 motion attempt.
+
+The timing-correlation capture plan is now staged at
+`vendor-status-timing-correlation-plan.json`. It consumes the semantic review and
+makes the next passive operator run concrete: refresh observe-only hardware
+doctor, use the fresh USBPcap selector with `sniff-capture --hardware-doctor`,
+open Pit House as a witness, record KS top-left front LED default teal -> red ->
+default teal with explicit event markers, keep raw pcap local by default, and
+run only a later no-output review of the derived summary. The plan records
+`capture_recorded=false`, `timing_correlation_proven=false`,
+`live_read_only_probe_allowed=false`, `authorization_plan_allowed=false`,
+`motion_attempt_allowed=false`, `wheel_moved_under_openracing=false`,
+`visible_motion_verified=false`, `output_was_sent=false`, and
+`authority_state=blocked`. It does not authorize a live probe, PIDFF rerun, force
+escalation, or motion attempt.
 
 The read-only demux follow-up is now recorded at
 `vendor-status-mode-matrix-demux.json` with its fresh precondition doctor at

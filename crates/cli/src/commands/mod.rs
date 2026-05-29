@@ -995,6 +995,19 @@ pub enum MozaCommands {
         overwrite: bool,
     },
 
+    /// Plan the no-output timing-correlated 0x8E status-source capture
+    VendorStatusTimingCorrelationPlan {
+        /// Stored payload-source semantic review receipt
+        #[arg(long)]
+        semantic_review: std::path::PathBuf,
+        /// Write the non-claiming timing-correlation capture plan to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing timing-correlation capture plan
+        #[arg(long)]
+        overwrite: bool,
+    },
+
     /// Create a single-use exact Moza vendor-authority authorization receipt without sending traffic
     AuthorizeVendorAuthority {
         /// Registry command id being authorized for the later exact frame
