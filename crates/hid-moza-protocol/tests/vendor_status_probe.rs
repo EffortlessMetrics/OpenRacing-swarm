@@ -176,6 +176,81 @@ fn read_only_status_probe_demux_matches_response_group_device_transform() -> Tes
 }
 
 #[test]
+fn read_only_status_probe_decodes_authority_status_payload_response_shapes() -> TestResult {
+    let main_misc = read_only_status_commands()
+        .find(|command| command.id == "main_misc_get_ffb_status")
+        .ok_or_else(|| invalid_data("missing main_misc_get_ffb_status command"))?;
+    let main_misc_response = hex_to_bytes("7E02A121070157")?;
+    let decoded = decode_read_only_status_response(main_misc, &main_misc_response)?;
+
+    assert_eq!(decoded.command.id, "main_misc_get_ffb_status");
+    assert_eq!(decoded.group, 0xA1);
+    assert_eq!(decoded.device_id, 0x21);
+    assert_eq!(decoded.command_id, 0x07);
+    assert_eq!(decoded.payload, &[0x01]);
+
+    let diagnosis = diagnose_read_only_status_response_frame(&main_misc_response);
+    assert_eq!(
+        diagnosis.classification,
+        MozaReadOnlyStatusResponseFrameClass::RegistryStatusResponse
+    );
+    assert!(diagnosis.registry_command_known);
+    assert_eq!(diagnosis.command, Some(0x07));
+    assert_eq!(diagnosis.checksum_valid, Some(true));
+
+    let estop = read_only_status_commands()
+        .find(|command| command.id == "estop_get_ffb")
+        .ok_or_else(|| invalid_data("missing estop_get_ffb command"))?;
+    let estop_response = hex_to_bytes("7E02C6C1010116")?;
+    let decoded = decode_read_only_status_response(estop, &estop_response)?;
+
+    assert_eq!(decoded.command.id, "estop_get_ffb");
+    assert_eq!(decoded.group, 0xC6);
+    assert_eq!(decoded.device_id, 0xC1);
+    assert_eq!(decoded.command_id, 0x01);
+    assert_eq!(decoded.payload, &[0x01]);
+
+    let diagnosis = diagnose_read_only_status_response_frame(&estop_response);
+    assert_eq!(
+        diagnosis.classification,
+        MozaReadOnlyStatusResponseFrameClass::RegistryStatusResponse
+    );
+    assert!(diagnosis.registry_command_known);
+    assert_eq!(diagnosis.command, Some(0x01));
+    assert_eq!(diagnosis.checksum_valid, Some(true));
+
+    Ok(())
+}
+
+#[test]
+fn read_only_status_probe_demux_accepts_authority_status_payload_after_ack_only() -> TestResult {
+    let command = read_only_status_commands()
+        .find(|command| command.id == "main_misc_get_ffb_status")
+        .ok_or_else(|| invalid_data("missing main_misc_get_ffb_status command"))?;
+    let ack_only = hex_to_bytes("7E00A1214D")?;
+    let payload_response = hex_to_bytes("7E02A121070157")?;
+    let frames = [ack_only.as_slice(), payload_response.as_slice()];
+
+    let demux = demux_read_only_status_response_stream(command, frames);
+
+    assert_eq!(demux.scanned_frame_count, 2);
+    assert_eq!(demux.matching_frame_index, Some(1));
+    assert_eq!(demux.skipped_unknown_non_registry_frame_count, 1);
+    assert_eq!(
+        demux.frame_diagnoses[0].disposition,
+        MozaReadOnlyStatusResponseFrameDisposition::UnknownNonRegistryFrame
+    );
+    assert_eq!(
+        demux.frame_diagnoses[1].disposition,
+        MozaReadOnlyStatusResponseFrameDisposition::MatchingRegistryStatusResponse
+    );
+    assert!(demux.frame_diagnoses[1].matched_expected_command);
+    assert!(demux.frame_diagnoses[1].decode_error.is_none());
+
+    Ok(())
+}
+
+#[test]
 fn read_only_status_probe_diagnoses_checked_in_debug_log_stream() -> TestResult {
     let matrix = checked_in_status_matrix()?;
     let responses = array_field(&matrix, "responses")?;

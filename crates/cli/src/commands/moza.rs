@@ -225,6 +225,14 @@ const MOZA_VENDOR_STATUS_FRAMING_DIAGNOSIS_JSON: &str =
 const MOZA_VENDOR_STATUS_AUTHORITY_ENDPOINT_DIAGNOSIS_JSON: &str = include_str!(
     "../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json"
 );
+#[cfg(test)]
+const MOZA_VENDOR_STATUS_AUTHORITY_PAYLOAD_RERUN_TARGETED_JSON: &str = include_str!(
+    "../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-targeted.json"
+);
+#[cfg(test)]
+const MOZA_VENDOR_STATUS_AUTHORITY_PAYLOAD_RERUN_DIAGNOSIS_JSON: &str = include_str!(
+    "../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json"
+);
 const SIMULATOR_FFB_PREREQUISITE_ARTIFACTS: [(&str, &str); 6] = [
     ("zero_torque_real_hardware", "zero-torque-proof.json"),
     ("watchdog_zero_output", "watchdog-proof.json"),
@@ -38961,7 +38969,6 @@ fn render_moza_lane_artifact_index_markdown(receipt: &Value) -> String {
             ));
         }
     }
-    out.push('\n');
     out
 }
 
@@ -42269,6 +42276,66 @@ mod tests {
     }
 
     #[test]
+    fn vendor_status_probe_checked_in_authority_payload_rerun_is_failed_closed() -> TestResult {
+        let value: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_AUTHORITY_PAYLOAD_RERUN_TARGETED_JSON)?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-status-probe.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&value).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        assert_eq!(json_bool(&value, "success"), Some(false));
+        assert_eq!(json_string(&value, "serial_port"), Some("COM4"));
+        assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "opened_serial_device"), Some(true));
+        assert_eq!(json_bool(&value, "serial_identity_verified"), Some(true));
+        assert_eq!(
+            json_bool(&value, "sent_read_only_query_commands"),
+            Some(true)
+        );
+        assert_eq!(json_u64(&value, "sent_read_only_query_count"), Some(2));
+        assert_eq!(json_bool(&value, "sent_output_writes"), Some(false));
+        assert_eq!(json_bool(&value, "sent_configuration_writes"), Some(false));
+        assert_eq!(
+            json_bool(&value, "sent_firmware_or_dfu_commands"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "hardware_output_authorized"), Some(false));
+        assert_eq!(json_bool(&value, "native_control_evidence"), Some(false));
+        assert_eq!(json_bool(&value, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(&value, "smoke_ready"), Some(false));
+        assert_eq!(json_bool(&value, "release_ready"), Some(false));
+        assert_eq!(json_bool(&value, "output_sendability_claim"), Some(false));
+        assert_eq!(json_bool(&value, "registry_promotion_claim"), Some(false));
+        assert_eq!(
+            json_bool(&value, "unknown_safety_or_mode_state_blocks_authority"),
+            Some(true)
+        );
+        assert_eq!(json_u64(&value, "decoded_response_count"), Some(0));
+        assert_eq!(json_u64(&value, "failed_response_count"), Some(2));
+        assert_eq!(json_u64(&value, "scanned_response_frame_count"), Some(24));
+        assert_eq!(json_u64(&value, "skipped_diagnostic_frame_count"), Some(24));
+
+        let responses = value
+            .get("responses")
+            .and_then(Value::as_array)
+            .ok_or("receipt must include responses")?;
+        assert_eq!(responses.len(), 2);
+        assert!(responses.iter().all(|response| {
+            response.get("risk_class").and_then(Value::as_str) == Some("vendor_status")
+                && response.get("decoded").and_then(Value::as_bool) == Some(false)
+                && response
+                    .get("response_scan_stop_reason")
+                    .and_then(Value::as_str)
+                    == Some("max_response_frame_scan_exhausted")
+        }));
+
+        Ok(())
+    }
+
+    #[test]
     fn vendor_status_framing_diagnosis_classifies_checked_in_matrix() -> TestResult {
         let status_probe: Value =
             serde_json::from_str(MOZA_VENDOR_STATUS_MODE_MATRIX_RECEIPT_JSON)?;
@@ -42595,6 +42662,101 @@ mod tests {
             "sent_configuration_writes",
             "sent_firmware_or_dfu_commands",
             "high_torque_enabled",
+            "planned_next_output_allowed",
+        ] {
+            assert_eq!(
+                json_bool(&value, field),
+                Some(false),
+                "diagnosis must keep `{field}` false"
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_framing_diagnosis_checked_in_payload_rerun_blocks_on_debug_stream()
+    -> TestResult {
+        let value: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_AUTHORITY_PAYLOAD_RERUN_DIAGNOSIS_JSON)?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-status-framing-diagnosis.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&value).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        assert_eq!(json_bool(&value, "success"), Some(true));
+        assert_eq!(
+            json_string(&value, "status_probe_receipt"),
+            Some(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-targeted.json"
+            )
+        );
+        assert_eq!(
+            json_string(&value, "diagnosis_classification"),
+            Some("serial_readback_consumed_debug_telemetry_log_frames")
+        );
+        assert_eq!(
+            json_string(&value, "primary_blocker"),
+            Some("transport_framing_or_serial_stream_demultiplexing")
+        );
+        assert_eq!(
+            json_bool(&value, "broad_serial_transport_blocker_ruled_out"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&value, "authority_status_endpoint_specific_blocker"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&value, "endpoint_or_command_correction_required"),
+            Some(false)
+        );
+        assert_eq!(json_u64(&value, "scanned_response_frame_count"), Some(24));
+        assert_eq!(
+            json_u64(&value, "scanned_framed_ascii_telemetry_log_count"),
+            Some(24)
+        );
+        assert_eq!(
+            json_u64(&value, "scanned_registry_status_response_count"),
+            Some(0)
+        );
+        assert_eq!(
+            json_u64(
+                &value,
+                "status_probe_authority_status_decoded_response_count"
+            ),
+            Some(0)
+        );
+        assert_eq!(
+            json_bool(&value, "unknown_safety_or_mode_state_blocks_authority"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&value, "wheel_moved_under_openracing"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "visible_motion_verified"), Some(false));
+        assert_eq!(json_bool(&value, "output_was_sent"), Some(false));
+        assert_eq!(json_string(&value, "authority_state"), Some("blocked"));
+
+        for field in [
+            "native_control_evidence",
+            "hardware_output_authorized",
+            "native_visible_ready",
+            "smoke_ready",
+            "release_ready",
+            "registry_promotion_claim",
+            "output_sendability_claim",
+            "semantic_decode_claim",
+            "opened_serial_device",
+            "sent_read_only_query_commands",
+            "sent_output_writes",
+            "sent_configuration_writes",
+            "sent_firmware_or_dfu_commands",
+            "high_torque_enabled",
+            "mode_enable_candidates_sendable",
             "planned_next_output_allowed",
         ] {
             assert_eq!(
