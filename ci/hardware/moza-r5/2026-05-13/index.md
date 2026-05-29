@@ -237,6 +237,7 @@ This section is protocol research/support navigation only. Passive sniff artifac
 | `vendor-authority-attempt.json` | `json` | `passive_input_or_descriptor_evidence` |
 | `vendor-authority-authorization.json` | `json` | `passive_input_or_descriptor_evidence` |
 | `vendor-authority-smoke-dry-run.json` | `json` | `passive_input_or_descriptor_evidence` |
+| `vendor-status-framing-diagnosis.json` | `json` | `passive_input_or_descriptor_evidence` |
 | `vendor-status-mode-matrix-hardware-doctor.json` | `json` | `passive_input_or_descriptor_evidence` |
 | `vendor-status-mode-matrix-plan.json` | `json` | `passive_input_or_descriptor_evidence` |
 | `vendor-status-mode-matrix.json` | `json` | `passive_input_or_descriptor_evidence` |

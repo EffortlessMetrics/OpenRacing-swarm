@@ -5247,6 +5247,89 @@ Remove only:
 - `ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json`
 - source-of-truth notes for this work item.
 
+## Work item: diagnose-read-only-serial-response-framing
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: any future exact authorization, PIDFF rerun, or motion attempt
+Blocked by: no decoded registry status/mode response has been observed from the
+live COM4 read-only probe.
+
+### Goal
+
+Explain why the recorded read-only `vendor-status-probe` decoded zero COM4
+responses without sending any new traffic or weakening the output boundary.
+
+### Production Delta
+
+`wheelctl moza vendor-status-framing-diagnosis` reads the stored
+`vendor-status-mode-matrix.json` receipt and emits a derived diagnosis receipt.
+It opens no HID or serial device and sends no read-only query, output,
+configuration, firmware/DFU, PIDFF, high-torque, authority, or mode-enable
+command.
+
+`ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json` records
+that the nine stored response frames are not registry status replies. Eight are
+valid framed ASCII telemetry/log frames with tuple `0x0E/0x71/0x05` and
+`NRFloss`/`recvGap` payloads. One is a desynchronized partial frame with an
+embedded start byte and checksum mismatch. The diagnosis classifies the next
+blocker as `transport_framing_or_serial_stream_demultiplexing`, not authority,
+force, or a closed-loop controller problem.
+
+The diagnosis keeps the movement north-star explicit:
+`wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+`output_was_sent=false`, and `authority_state=blocked`.
+
+### Non-goals
+
+No live hardware probe, HID output open, serial open, read-only query send,
+feature report, output write, configuration write, firmware/update/DFU path,
+PIDFF rerun, mode-enable write, authority write, high torque, semantic decode
+claim, registry promotion, tuple sendability, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim, or
+release-ready claim.
+
+### Acceptance
+
+- The #73 failed-closed read-only status/mode matrix receipt remains preserved.
+- The derived diagnosis receipt validates against
+  `schemas/moza-vendor-status-framing-diagnosis.schema.json`.
+- Tests prove checked-in registry status fixtures remain classified as registry
+  status responses while the #73 receipt's observed `0x0E/0x71/0x05` stream is
+  classified as diagnostic log/desynchronization evidence.
+- Unknown mode/safety state continues to block any future exact authorization.
+- The next action is no-output stream/framing and endpoint/command correlation
+  diagnosis, not output, not PIDFF, not authorization, and not motion.
+
+### Proof Commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-framing-diagnosis `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json `
+  --json-out target/moza-current/vendor-status-framing-diagnosis.json `
+  --overwrite
+
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_status_probe -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- `ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json`
+- `schemas/moza-vendor-status-framing-diagnosis.schema.json`
+- the `vendor-status-framing-diagnosis` CLI/readback diagnosis helper
+- source-of-truth notes for this work item.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

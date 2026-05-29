@@ -15,6 +15,11 @@ use std::fmt;
 
 pub const READ_ONLY_STATUS_CODEC_STATUS: MozaSerialCodecStatus =
     MozaSerialCodecStatus::RoundTripVerified;
+const DEBUG_LOG_GROUP: u8 = 0x0e;
+const DEBUG_LOG_DEVICE_ID: u8 = 0x71;
+const DEBUG_LOG_COMMAND_ID: u8 = 0x05;
+const NRFLOSS_MARKER: &[u8] = b"NRFloss";
+const RECV_GAP_MARKER: &[u8] = b"recvGap";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MozaReadOnlyStatusProbeError {
@@ -128,4 +133,168 @@ pub fn ensure_read_only_status_allowed(
             risk_class: command.risk_class,
         },
     )
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MozaReadOnlyStatusResponseFrameClass {
+    RegistryStatusResponse,
+    FramedAsciiTelemetryLog,
+    StreamDesynchronizedOrPartialLogFrame,
+    UnknownNonRegistryFrame,
+    MalformedFrame,
+}
+
+impl MozaReadOnlyStatusResponseFrameClass {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::RegistryStatusResponse => "registry_status_response",
+            Self::FramedAsciiTelemetryLog => "framed_ascii_telemetry_log",
+            Self::StreamDesynchronizedOrPartialLogFrame => {
+                "stream_desynchronized_or_partial_log_frame"
+            }
+            Self::UnknownNonRegistryFrame => "unknown_non_registry_frame",
+            Self::MalformedFrame => "malformed_frame",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MozaReadOnlyStatusResponseFrameDiagnosis {
+    pub classification: MozaReadOnlyStatusResponseFrameClass,
+    pub actual_len: usize,
+    pub declared_len: Option<usize>,
+    pub expected_len: Option<usize>,
+    pub length_matches: bool,
+    pub checksum_valid: Option<bool>,
+    pub expected_checksum: Option<u8>,
+    pub actual_checksum: Option<u8>,
+    pub group: Option<u8>,
+    pub device_id: Option<u8>,
+    pub command: Option<u8>,
+    pub registry_command_known: bool,
+    pub payload_len: Option<usize>,
+    pub printable_ascii_payload: bool,
+    pub nrfloss_recv_gap_payload: bool,
+    pub embedded_start_byte_count: usize,
+}
+
+pub fn diagnose_read_only_status_response_frame(
+    frame: &[u8],
+) -> MozaReadOnlyStatusResponseFrameDiagnosis {
+    let actual_len = frame.len();
+    if actual_len < 2 || frame.first().copied() != Some(MESSAGE_START) {
+        return MozaReadOnlyStatusResponseFrameDiagnosis {
+            classification: MozaReadOnlyStatusResponseFrameClass::MalformedFrame,
+            actual_len,
+            declared_len: frame.get(1).map(|byte| usize::from(*byte)),
+            expected_len: None,
+            length_matches: false,
+            checksum_valid: None,
+            expected_checksum: None,
+            actual_checksum: None,
+            group: frame.get(2).copied(),
+            device_id: frame.get(3).copied(),
+            command: frame.get(4).copied(),
+            registry_command_known: false,
+            payload_len: None,
+            printable_ascii_payload: false,
+            nrfloss_recv_gap_payload: false,
+            embedded_start_byte_count: count_embedded_start_bytes(frame),
+        };
+    }
+
+    let declared_len = usize::from(frame[1]);
+    let expected_len = Some(5 + declared_len);
+    let length_matches = expected_len == Some(actual_len);
+    let group = frame.get(2).copied();
+    let device_id = frame.get(3).copied();
+    let command = frame.get(4).copied();
+    let registry_command_known = group
+        .zip(command)
+        .and_then(|(group, command)| {
+            REQUIRED_VENDOR_COMMANDS
+                .iter()
+                .find(|candidate| candidate.group == group && candidate.command == command)
+        })
+        .is_some();
+
+    let mut expected_checksum = None;
+    let actual_checksum = frame.last().copied();
+    let mut checksum_valid = None;
+    let payload = if length_matches && actual_len >= 6 {
+        expected_checksum = Some(serial_checksum(&frame[..actual_len - 1]));
+        checksum_valid = expected_checksum
+            .zip(actual_checksum)
+            .map(|(expected, actual)| expected == actual);
+        Some(&frame[5..actual_len - 1])
+    } else {
+        None
+    };
+
+    let printable_ascii_payload = payload.is_some_and(payload_is_printable_ascii_or_newline);
+    let nrfloss_recv_gap_payload = payload.is_some_and(payload_has_nrfloss_recv_gap);
+    let embedded_start_byte_count = count_embedded_start_bytes(frame);
+    let is_debug_log_tuple = group == Some(DEBUG_LOG_GROUP)
+        && device_id == Some(DEBUG_LOG_DEVICE_ID)
+        && command == Some(DEBUG_LOG_COMMAND_ID);
+
+    let classification = if !length_matches {
+        MozaReadOnlyStatusResponseFrameClass::MalformedFrame
+    } else if registry_command_known && checksum_valid == Some(true) {
+        MozaReadOnlyStatusResponseFrameClass::RegistryStatusResponse
+    } else if is_debug_log_tuple && nrfloss_recv_gap_payload && checksum_valid == Some(true) {
+        MozaReadOnlyStatusResponseFrameClass::FramedAsciiTelemetryLog
+    } else if embedded_start_byte_count > 0
+        || (is_debug_log_tuple && payload.is_some())
+        || checksum_valid == Some(false)
+    {
+        MozaReadOnlyStatusResponseFrameClass::StreamDesynchronizedOrPartialLogFrame
+    } else {
+        MozaReadOnlyStatusResponseFrameClass::UnknownNonRegistryFrame
+    };
+
+    MozaReadOnlyStatusResponseFrameDiagnosis {
+        classification,
+        actual_len,
+        declared_len: Some(declared_len),
+        expected_len,
+        length_matches,
+        checksum_valid,
+        expected_checksum,
+        actual_checksum,
+        group,
+        device_id,
+        command,
+        registry_command_known,
+        payload_len: payload.map(|payload| payload.len()),
+        printable_ascii_payload,
+        nrfloss_recv_gap_payload,
+        embedded_start_byte_count,
+    }
+}
+
+fn count_embedded_start_bytes(frame: &[u8]) -> usize {
+    frame
+        .iter()
+        .skip(1)
+        .filter(|byte| **byte == MESSAGE_START)
+        .count()
+}
+
+fn payload_is_printable_ascii_or_newline(payload: &[u8]) -> bool {
+    !payload.is_empty()
+        && payload
+            .iter()
+            .all(|byte| matches!(*byte, b'\n' | b'\r' | b'\t' | 0x20..=0x7e))
+}
+
+fn payload_has_nrfloss_recv_gap(payload: &[u8]) -> bool {
+    bytes_contains(payload, NRFLOSS_MARKER) && bytes_contains(payload, RECV_GAP_MARKER)
+}
+
+fn bytes_contains(haystack: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty()
+        && haystack
+            .windows(needle.len())
+            .any(|window| window == needle)
 }

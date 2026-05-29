@@ -65,8 +65,13 @@ The probe verified COM4 as the R5 `0x346E:0x0004` serial/CDC interface and sent
 only registry-approved read-only status queries. It failed closed with zero
 decoded responses, nine failed responses, and
 `real_hardware_status_evidence=false`, so unknown mode/safety status still
-blocks any authority plan. The next native-path step is no-output diagnosis of
-that read-only serial response stream, not an output attempt. The current
+blocks any authority plan. The follow-up no-output diagnosis is recorded at
+`ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json`: the
+stored readback frames are dominated by repeated tuple `0x0E/0x71/0x05` ASCII
+`NRFloss`/`recvGap` diagnostic stream frames, with one desynchronized partial
+frame, rather than registry status/mode replies. The next native-path blocker
+is serial stream/framing demultiplexing or endpoint/command correlation, not an
+output attempt. The current
 receipt also records the correlation plan explicitly: two non-sendable
 targets, completed observations in the three Pit House scenarios, and
 remaining no-output correlation gaps in SimHub and simulator scenarios. The
@@ -159,9 +164,11 @@ recorded as passive external observation only, not OpenRacing output.
 Run `wheelctl moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13` to get
 the current command-bound no-output handoff. With the current post-authority
 and read-only matrix state, the wizard records that the PIDFF comparison is
-present and emits no output command. Continue with no-output diagnosis of the
-read-only serial response framing or the remaining passive capture scenarios
-before proposing any further hardware output family.
+present and emits no output command. The read-only framing diagnosis now
+narrows the native-path blocker to the `0x0E/0x71/0x05` diagnostic stream versus
+registry-status-reply mismatch. Continue with no-output stream/framing and
+endpoint/command correlation or the remaining passive capture scenarios before
+proposing any further hardware output family.
 
 For each planned scenario:
 

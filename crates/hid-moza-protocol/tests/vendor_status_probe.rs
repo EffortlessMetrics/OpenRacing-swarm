@@ -3,8 +3,10 @@ use std::error::Error;
 use std::io;
 
 use racing_wheel_hid_moza_protocol::serial::status_probe::{
-    MozaReadOnlyStatusProbeError, READ_ONLY_STATUS_CODEC_STATUS, decode_read_only_status_response,
-    encode_read_only_status_query, read_only_status_commands,
+    MozaReadOnlyStatusProbeError, MozaReadOnlyStatusResponseFrameClass,
+    READ_ONLY_STATUS_CODEC_STATUS, decode_read_only_status_response,
+    diagnose_read_only_status_response_frame, encode_read_only_status_query,
+    read_only_status_commands,
 };
 use racing_wheel_hid_moza_protocol::serial::vendor_authority::{
     MozaRiskClass, MozaSerialCodecStatus, REQUIRED_VENDOR_COMMANDS,
@@ -20,6 +22,12 @@ fn invalid_data(message: impl Into<String>) -> io::Error {
 fn codec_fixture() -> Result<Value, serde_json::Error> {
     serde_json::from_str(include_str!(
         "../../../fixtures/moza/r5/vendor-serial-codec-fixtures.json"
+    ))
+}
+
+fn checked_in_status_matrix() -> Result<Value, serde_json::Error> {
+    serde_json::from_str(include_str!(
+        "../../../ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json"
     ))
 }
 
@@ -118,6 +126,68 @@ fn read_only_status_probe_decodes_matching_responses() -> TestResult {
         assert_eq!(decoded.command.id, command.id);
         assert_eq!(decoded.device_id, command.device_id);
         assert!(decoded.payload.is_empty());
+    }
+
+    Ok(())
+}
+
+#[test]
+fn read_only_status_probe_diagnoses_checked_in_debug_log_stream() -> TestResult {
+    let matrix = checked_in_status_matrix()?;
+    let responses = array_field(&matrix, "responses")?;
+    assert_eq!(responses.len(), 9);
+
+    let mut framed_ascii_log_count = 0usize;
+    let mut desynchronized_count = 0usize;
+    let mut registry_status_count = 0usize;
+
+    for response in responses {
+        let frame = hex_to_bytes(str_field(response, "response_frame_hex")?)?;
+        let diagnosis = diagnose_read_only_status_response_frame(&frame);
+        if diagnosis.classification == MozaReadOnlyStatusResponseFrameClass::FramedAsciiTelemetryLog
+        {
+            framed_ascii_log_count += 1;
+        }
+        if diagnosis.classification
+            == MozaReadOnlyStatusResponseFrameClass::StreamDesynchronizedOrPartialLogFrame
+        {
+            desynchronized_count += 1;
+        }
+        if diagnosis.classification == MozaReadOnlyStatusResponseFrameClass::RegistryStatusResponse
+        {
+            registry_status_count += 1;
+        }
+
+        assert_eq!(diagnosis.group, Some(0x0e));
+        assert_eq!(diagnosis.device_id, Some(0x71));
+        assert_eq!(diagnosis.command, Some(0x05));
+        assert!(!diagnosis.registry_command_known);
+    }
+
+    assert_eq!(framed_ascii_log_count, 8);
+    assert_eq!(desynchronized_count, 1);
+    assert_eq!(registry_status_count, 0);
+
+    Ok(())
+}
+
+#[test]
+fn read_only_status_probe_diagnoses_fixture_frames_as_registry_status() -> TestResult {
+    let codec_fixture = codec_fixture()?;
+    let fixtures = fixtures_by_id(&codec_fixture)?;
+
+    for command in read_only_status_commands() {
+        let fixture = fixtures
+            .get(command.id)
+            .ok_or_else(|| invalid_data(format!("missing fixture `{}`", command.id)))?;
+        let frame = hex_to_bytes(str_field(fixture, "raw_frame_hex")?)?;
+        let diagnosis = diagnose_read_only_status_response_frame(&frame);
+        assert_eq!(
+            diagnosis.classification,
+            MozaReadOnlyStatusResponseFrameClass::RegistryStatusResponse
+        );
+        assert!(diagnosis.registry_command_known);
+        assert_eq!(diagnosis.checksum_valid, Some(true));
     }
 
     Ok(())

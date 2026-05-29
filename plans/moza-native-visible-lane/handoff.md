@@ -247,10 +247,21 @@ configuration, firmware, DFU, or high-torque command. It failed closed with
 zero decoded responses and nine failed responses, so
 `real_hardware_status_evidence=false` and
 `unknown_safety_or_mode_state_blocks_authority=true` remain the controlling
-state. The next native-path step is no-output diagnosis of the read-only serial
-response framing/stream, not output, not a mode-enable write, not a PIDFF rerun,
-and not a motion ladder plan. The next witness-lane operator work remains the
-remaining passive SimHub/simulator captures.
+state.
+
+The no-output framing diagnosis is now recorded at
+`vendor-status-framing-diagnosis.json`. It reads only the stored matrix receipt
+and opens no HID or serial device. The diagnosis classifies the nine captured
+response frames as repeated tuple `0x0E/0x71/0x05` ASCII `NRFloss`/`recvGap`
+diagnostic stream frames, including one desynchronized partial frame, rather
+than registry status/mode replies. The native-path blocker is therefore
+transport framing, serial stream demultiplexing, or endpoint/command
+correlation. Wheel movement remains unproven:
+`wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+`output_was_sent=false`, and `authority_state=blocked`. The next native-path
+step is still no-output stream/framing diagnosis, not output, not a mode-enable
+write, not a PIDFF rerun, and not a motion ladder plan. The next witness-lane
+operator work remains the remaining passive SimHub/simulator captures.
 
 Passive USB sniff captures may produce non-claiming `sniff-receipt.json`,
 `sniff-summary.json`, and bundle manifest artifacts, but those are

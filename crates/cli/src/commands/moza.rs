@@ -20,7 +20,8 @@ use racing_wheel_hid_moza_protocol::serial::frame::{
     MESSAGE_START, MozaSerialFrameError, decode_fixture_frame,
 };
 use racing_wheel_hid_moza_protocol::serial::status_probe::{
-    READ_ONLY_STATUS_CODEC_STATUS, decode_read_only_status_response, encode_read_only_status_query,
+    READ_ONLY_STATUS_CODEC_STATUS, decode_read_only_status_response,
+    diagnose_read_only_status_response_frame, encode_read_only_status_query,
     read_only_status_commands,
 };
 use racing_wheel_hid_moza_protocol::serial::vendor_authority::{
@@ -207,6 +208,9 @@ const MOZA_VENDOR_STATUS_MODE_MATRIX_PLAN_JSON: &str =
 #[cfg(test)]
 const MOZA_VENDOR_STATUS_MODE_MATRIX_RECEIPT_JSON: &str =
     include_str!("../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json");
+#[cfg(test)]
+const MOZA_VENDOR_STATUS_FRAMING_DIAGNOSIS_JSON: &str =
+    include_str!("../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json");
 const SIMULATOR_FFB_PREREQUISITE_ARTIFACTS: [(&str, &str); 6] = [
     ("zero_torque_real_hardware", "zero-torque-proof.json"),
     ("watchdog_zero_output", "watchdog-proof.json"),
@@ -583,6 +587,13 @@ struct VendorStatusProbeRequest<'a> {
     json_out: Option<&'a Path>,
 }
 
+struct VendorStatusFramingDiagnosisRequest<'a> {
+    json: bool,
+    status_probe: &'a Path,
+    json_out: &'a Path,
+    overwrite: bool,
+}
+
 struct VendorAuthorityAuthorizationRequest<'a> {
     json: bool,
     command_id: &'a str,
@@ -792,6 +803,19 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 command_ids,
                 confirm_read_only_query: *confirm_read_only_query,
                 json_out: json_out.as_deref(),
+            })
+            .await
+        }
+        MozaCommands::VendorStatusFramingDiagnosis {
+            status_probe,
+            json_out,
+            overwrite,
+        } => {
+            vendor_status_framing_diagnosis(VendorStatusFramingDiagnosisRequest {
+                json,
+                status_probe,
+                json_out,
+                overwrite: *overwrite,
             })
             .await
         }
@@ -6938,6 +6962,16 @@ async fn vendor_status_probe(request: VendorStatusProbeRequest<'_>) -> Result<()
             receipt.failed_response_count
         ))
     }
+}
+
+async fn vendor_status_framing_diagnosis(
+    request: VendorStatusFramingDiagnosisRequest<'_>,
+) -> Result<()> {
+    ensure_receipt_writable(request.json_out, request.overwrite)?;
+    let status_probe = read_json_path(request.status_probe)?;
+    let receipt = vendor_status_framing_diagnosis_receipt(request.status_probe, &status_probe)?;
+    write_json_file(request.json_out, &receipt)?;
+    print_vendor_status_framing_diagnosis_receipt(request.json, request.json_out, &receipt)
 }
 
 async fn authorize_vendor_authority(
@@ -27142,6 +27176,350 @@ fn selected_read_only_status_commands(
     Ok(selected)
 }
 
+fn vendor_status_framing_diagnosis_receipt(
+    status_probe_path: &Path,
+    status_probe: &Value,
+) -> Result<VendorStatusFramingDiagnosisReceipt> {
+    validate_vendor_status_probe_receipt_for_framing_diagnosis(status_probe_path, status_probe)?;
+
+    let responses = status_probe
+        .get("responses")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            anyhow!(
+                "status probe receipt '{}' must include responses",
+                status_probe_path.display()
+            )
+        })?;
+
+    let mut diagnosed_responses = Vec::new();
+    let mut classification_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut tuple_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut registry_status_response_count = 0usize;
+    let mut framed_ascii_telemetry_log_count = 0usize;
+    let mut desynchronized_or_partial_frame_count = 0usize;
+    let mut malformed_frame_count = 0usize;
+    let mut unknown_non_registry_frame_count = 0usize;
+    let mut checksum_valid_count = 0usize;
+    let mut checksum_invalid_count = 0usize;
+    let mut response_frame_count = 0usize;
+
+    for response in responses {
+        let diagnosed = vendor_status_framing_diagnosed_response(response)?;
+        *classification_counts
+            .entry(diagnosed.response_classification.clone())
+            .or_default() += 1;
+        if let Some(tuple_id) = &diagnosed.observed_tuple_id {
+            *tuple_counts.entry(tuple_id.clone()).or_default() += 1;
+        }
+        match diagnosed.response_classification.as_str() {
+            "registry_status_response" => registry_status_response_count += 1,
+            "framed_ascii_telemetry_log" => framed_ascii_telemetry_log_count += 1,
+            "stream_desynchronized_or_partial_log_frame" => {
+                desynchronized_or_partial_frame_count += 1;
+            }
+            "malformed_frame" => malformed_frame_count += 1,
+            "unknown_non_registry_frame" => unknown_non_registry_frame_count += 1,
+            _ => {}
+        }
+        if diagnosed.response_frame_hex.is_some() {
+            response_frame_count += 1;
+        }
+        if diagnosed.checksum_valid == Some(true) {
+            checksum_valid_count += 1;
+        } else if diagnosed.checksum_valid == Some(false) {
+            checksum_invalid_count += 1;
+        }
+        diagnosed_responses.push(diagnosed);
+    }
+
+    let repeated_observed_tuple_ids = tuple_counts
+        .iter()
+        .filter(|(_, count)| **count > 1)
+        .map(|(tuple_id, count)| VendorStatusFramingTupleCount {
+            tuple_id: tuple_id.clone(),
+            count: *count,
+        })
+        .collect::<Vec<_>>();
+
+    let diagnosis_classification = if framed_ascii_telemetry_log_count
+        + desynchronized_or_partial_frame_count
+        == response_frame_count
+        && response_frame_count > 0
+        && registry_status_response_count == 0
+    {
+        "serial_readback_consumed_debug_telemetry_log_frames"
+    } else if response_frame_count == 0 {
+        "no_response_frames_captured"
+    } else if registry_status_response_count == response_frame_count {
+        "all_response_frames_are_registry_status_responses"
+    } else {
+        "mixed_or_unknown_serial_response_stream"
+    };
+
+    Ok(VendorStatusFramingDiagnosisReceipt {
+        success: true,
+        schema_version: 1,
+        artifact_kind: "moza_vendor_status_framing_diagnosis",
+        claim_scope: "no_output_read_only_serial_response_framing_diagnosis",
+        command: "wheelctl moza vendor-status-framing-diagnosis",
+        generated_at_utc: now_utc(),
+        status_probe_receipt: status_probe_path.display().to_string(),
+        status_probe_success: json_bool(status_probe, "success").unwrap_or(false),
+        status_probe_sent_read_only_query_count: json_u64(
+            status_probe,
+            "sent_read_only_query_count",
+        )
+        .unwrap_or(0) as usize,
+        status_probe_decoded_response_count: json_u64(status_probe, "decoded_response_count")
+            .unwrap_or(0) as usize,
+        status_probe_failed_response_count: json_u64(status_probe, "failed_response_count")
+            .unwrap_or(0) as usize,
+        native_control_evidence: false,
+        hardware_output_authorized: false,
+        native_visible_ready: false,
+        smoke_ready: false,
+        release_ready: false,
+        registry_promotion_claim: false,
+        output_sendability_claim: false,
+        semantic_decode_claim: false,
+        wheel_moved_under_openracing: false,
+        visible_motion_verified: false,
+        output_was_sent: false,
+        authority_state: "blocked",
+        no_hid_device_opened: true,
+        opened_serial_device: false,
+        sent_read_only_query_commands: false,
+        sent_output_writes: false,
+        sent_configuration_writes: false,
+        sent_firmware_or_dfu_commands: false,
+        high_torque_enabled: false,
+        mode_enable_candidates_sendable: false,
+        planned_next_output_allowed: false,
+        unknown_safety_or_mode_state_blocks_authority: true,
+        diagnosis_classification,
+        primary_blocker: "transport_framing_or_serial_stream_demultiplexing",
+        response_frame_count,
+        registry_status_response_count,
+        framed_ascii_telemetry_log_count,
+        desynchronized_or_partial_frame_count,
+        malformed_frame_count,
+        unknown_non_registry_frame_count,
+        checksum_valid_count,
+        checksum_invalid_count,
+        repeated_observed_tuple_ids,
+        classification_counts: classification_counts
+            .into_iter()
+            .map(
+                |(classification, count)| VendorStatusFramingClassificationCount {
+                    classification,
+                    count,
+                },
+            )
+            .collect(),
+        diagnosed_responses,
+        conclusion: "The stored COM4 read-only probe did not capture registry status replies. Its captured frames are dominated by tuple 0x0E/0x71/0x05 ASCII NRFloss/recvGap diagnostic stream frames, with one desynchronized partial frame, so the next blocker is serial stream/framing demultiplexing or command/endpoint framing rather than authority or force.",
+        next_allowed_action: "Perform no-output diagnosis of the read-only serial stream scanner/framing and command correlation. Do not authorize mode/enable writes, PIDFF reruns, or motion attempts until a read-only status/mode reply is decoded or the transport endpoint is corrected.",
+        blocked_actions: vec![
+            "mode enable write",
+            "authority write",
+            "output write",
+            "configuration write",
+            "PIDFF rerun",
+            "authorization receipt",
+            "hardware writes",
+            "high torque",
+            "native-control claim",
+            "native-visible claim",
+            "smoke-ready claim",
+            "release-ready claim",
+            "firmware or DFU command",
+            "unknown host-to-device command",
+        ],
+        required_artifacts: vec![
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json",
+            "schemas/moza-vendor-status-probe.schema.json",
+            "schemas/moza-vendor-status-framing-diagnosis.schema.json",
+            "crates/hid-moza-protocol/src/serial/status_probe.rs",
+            "crates/cli/src/commands/moza.rs",
+        ],
+        notes: vec![
+            "This diagnosis reads a stored receipt only; it opens no HID or serial device and sends no traffic.",
+            "Framed ASCII NRFloss/recvGap payloads are diagnostic stream evidence, not semantic Moza vendor status decode.",
+            "The failed-closed read-only status/mode matrix remains preserved and still blocks authority planning.",
+            "Native visible motion remains blocked; no wheel movement is claimed.",
+        ],
+    })
+}
+
+fn validate_vendor_status_probe_receipt_for_framing_diagnosis(
+    status_probe_path: &Path,
+    status_probe: &Value,
+) -> Result<()> {
+    for (field, expected) in [
+        ("artifact_kind", "moza_vendor_status_probe"),
+        ("claim_scope", "read_only_hardware"),
+        ("command", "wheelctl moza vendor-status-probe"),
+    ] {
+        if json_string(status_probe, field) != Some(expected) {
+            return Err(anyhow!(
+                "status probe receipt '{}' has invalid `{field}`",
+                status_probe_path.display()
+            ));
+        }
+    }
+
+    for field in [
+        "no_hid_device_opened",
+        "no_ffb_writes",
+        "no_output_reports",
+        "no_feature_reports",
+        "no_serial_config_commands",
+        "no_firmware_or_dfu_commands",
+    ] {
+        if json_bool(status_probe, field) != Some(true) {
+            return Err(anyhow!(
+                "status probe receipt '{}' must keep `{field}` true",
+                status_probe_path.display()
+            ));
+        }
+    }
+
+    for field in [
+        "hardware_output_authorized",
+        "native_control_evidence",
+        "native_visible_ready",
+        "smoke_ready",
+        "release_ready",
+        "output_sendability_claim",
+        "registry_promotion_claim",
+        "mode_enable_candidates_sendable",
+        "sent_output_writes",
+        "sent_configuration_writes",
+        "sent_firmware_or_dfu_commands",
+        "high_torque_enabled",
+        "planned_next_output_allowed",
+    ] {
+        if json_bool(status_probe, field) != Some(false) {
+            return Err(anyhow!(
+                "status probe receipt '{}' must keep `{field}` false",
+                status_probe_path.display()
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn vendor_status_framing_diagnosed_response(
+    response: &Value,
+) -> Result<VendorStatusFramingDiagnosedResponse> {
+    let command_id = json_string(response, "command_id")
+        .ok_or_else(|| anyhow!("status response is missing command_id"))?
+        .to_string();
+    let query_frame_hex = json_string(response, "query_frame_hex")
+        .ok_or_else(|| anyhow!("status response `{command_id}` is missing query_frame_hex"))?
+        .to_string();
+    let response_frame_hex = json_string(response, "response_frame_hex").map(str::to_string);
+    let expected_tuple_id = format!(
+        "{}/{}/{}",
+        hex_u8(json_u64(response, "group").unwrap_or(0) as u8),
+        hex_u8(json_u64(response, "device_id").unwrap_or(0) as u8),
+        hex_u8(json_u64(response, "command").unwrap_or(0) as u8)
+    );
+
+    let Some(frame_hex) = response_frame_hex.as_deref() else {
+        return Ok(VendorStatusFramingDiagnosedResponse {
+            command_id,
+            query_frame_hex,
+            response_frame_hex,
+            expected_tuple_id,
+            observed_tuple_id: None,
+            response_classification: "missing_response_frame".to_string(),
+            actual_len: 0,
+            declared_len: None,
+            expected_len: None,
+            length_matches: false,
+            checksum_valid: None,
+            expected_checksum: None,
+            actual_checksum: None,
+            registry_command_known: false,
+            payload_len: None,
+            printable_ascii_payload: false,
+            nrfloss_recv_gap_payload: false,
+            embedded_start_byte_count: 0,
+            payload_ascii_preview: None,
+            original_error: json_string(response, "error").map(str::to_string),
+        });
+    };
+
+    let frame = parse_hex_bytes(frame_hex)
+        .map_err(|error| anyhow!("invalid response_frame_hex for `{command_id}`: {error}"))?;
+    let diagnosis = diagnose_read_only_status_response_frame(&frame);
+    let observed_tuple_id = diagnosis
+        .group
+        .zip(diagnosis.device_id)
+        .zip(diagnosis.command)
+        .map(|((group, device_id), command)| {
+            format!(
+                "{}/{}/{}",
+                hex_u8(group),
+                hex_u8(device_id),
+                hex_u8(command)
+            )
+        });
+    let payload_ascii_preview = vendor_status_response_ascii_payload_preview(&frame);
+
+    Ok(VendorStatusFramingDiagnosedResponse {
+        command_id,
+        query_frame_hex,
+        response_frame_hex,
+        expected_tuple_id,
+        observed_tuple_id,
+        response_classification: diagnosis.classification.as_str().to_string(),
+        actual_len: diagnosis.actual_len,
+        declared_len: diagnosis.declared_len,
+        expected_len: diagnosis.expected_len,
+        length_matches: diagnosis.length_matches,
+        checksum_valid: diagnosis.checksum_valid,
+        expected_checksum: diagnosis.expected_checksum.map(hex_u8),
+        actual_checksum: diagnosis.actual_checksum.map(hex_u8),
+        registry_command_known: diagnosis.registry_command_known,
+        payload_len: diagnosis.payload_len,
+        printable_ascii_payload: diagnosis.printable_ascii_payload,
+        nrfloss_recv_gap_payload: diagnosis.nrfloss_recv_gap_payload,
+        embedded_start_byte_count: diagnosis.embedded_start_byte_count,
+        payload_ascii_preview,
+        original_error: json_string(response, "error").map(str::to_string),
+    })
+}
+
+fn vendor_status_response_ascii_payload_preview(frame: &[u8]) -> Option<String> {
+    if frame.len() < 6 || frame.first().copied() != Some(MESSAGE_START) {
+        return None;
+    }
+    let declared_len = usize::from(frame[1]);
+    let expected_len = 5 + declared_len;
+    if expected_len != frame.len() {
+        return None;
+    }
+    let payload = &frame[5..frame.len() - 1];
+    if payload.is_empty() {
+        return None;
+    }
+    let preview = payload
+        .iter()
+        .take(80)
+        .map(|byte| match *byte {
+            b'\n' => ' ',
+            b'\r' => ' ',
+            0x20..=0x7e => char::from(*byte),
+            _ => '.',
+        })
+        .collect::<String>();
+    Some(preview.trim().to_string())
+}
+
 #[derive(Debug)]
 struct VendorAuthorityPreconditionHardwareDoctor {
     generated_at: String,
@@ -31480,6 +31858,107 @@ struct VendorStatusProbeResponse {
     decoded: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorStatusFramingDiagnosisReceipt {
+    success: bool,
+    schema_version: u8,
+    artifact_kind: &'static str,
+    claim_scope: &'static str,
+    command: &'static str,
+    generated_at_utc: String,
+    status_probe_receipt: String,
+    status_probe_success: bool,
+    status_probe_sent_read_only_query_count: usize,
+    status_probe_decoded_response_count: usize,
+    status_probe_failed_response_count: usize,
+    native_control_evidence: bool,
+    hardware_output_authorized: bool,
+    native_visible_ready: bool,
+    smoke_ready: bool,
+    release_ready: bool,
+    registry_promotion_claim: bool,
+    output_sendability_claim: bool,
+    semantic_decode_claim: bool,
+    wheel_moved_under_openracing: bool,
+    visible_motion_verified: bool,
+    output_was_sent: bool,
+    authority_state: &'static str,
+    no_hid_device_opened: bool,
+    opened_serial_device: bool,
+    sent_read_only_query_commands: bool,
+    sent_output_writes: bool,
+    sent_configuration_writes: bool,
+    sent_firmware_or_dfu_commands: bool,
+    high_torque_enabled: bool,
+    mode_enable_candidates_sendable: bool,
+    planned_next_output_allowed: bool,
+    unknown_safety_or_mode_state_blocks_authority: bool,
+    diagnosis_classification: &'static str,
+    primary_blocker: &'static str,
+    response_frame_count: usize,
+    registry_status_response_count: usize,
+    framed_ascii_telemetry_log_count: usize,
+    desynchronized_or_partial_frame_count: usize,
+    malformed_frame_count: usize,
+    unknown_non_registry_frame_count: usize,
+    checksum_valid_count: usize,
+    checksum_invalid_count: usize,
+    repeated_observed_tuple_ids: Vec<VendorStatusFramingTupleCount>,
+    classification_counts: Vec<VendorStatusFramingClassificationCount>,
+    diagnosed_responses: Vec<VendorStatusFramingDiagnosedResponse>,
+    conclusion: &'static str,
+    next_allowed_action: &'static str,
+    blocked_actions: Vec<&'static str>,
+    required_artifacts: Vec<&'static str>,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorStatusFramingTupleCount {
+    tuple_id: String,
+    count: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorStatusFramingClassificationCount {
+    classification: String,
+    count: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorStatusFramingDiagnosedResponse {
+    command_id: String,
+    query_frame_hex: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_frame_hex: Option<String>,
+    expected_tuple_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    observed_tuple_id: Option<String>,
+    response_classification: String,
+    actual_len: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    declared_len: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expected_len: Option<usize>,
+    length_matches: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    checksum_valid: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expected_checksum: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    actual_checksum: Option<String>,
+    registry_command_known: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    payload_len: Option<usize>,
+    printable_ascii_payload: bool,
+    nrfloss_recv_gap_payload: bool,
+    embedded_start_byte_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    payload_ascii_preview: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    original_error: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -38950,6 +39429,26 @@ fn print_vendor_status_probe_receipt(
     Ok(())
 }
 
+fn print_vendor_status_framing_diagnosis_receipt(
+    json: bool,
+    json_out: &Path,
+    receipt: &VendorStatusFramingDiagnosisReceipt,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Moza vendor status framing diagnosis: {}; registry_status_frames={}, debug_log_frames={}, desynchronized_frames={}; no traffic was sent.",
+            receipt.diagnosis_classification,
+            receipt.registry_status_response_count,
+            receipt.framed_ascii_telemetry_log_count,
+            receipt.desynchronized_or_partial_frame_count
+        );
+        println!("Receipt: {}", json_out.display());
+    }
+    Ok(())
+}
+
 fn print_vendor_authority_authorization_receipt(
     json: bool,
     json_out: &Path,
@@ -40161,6 +40660,158 @@ mod tests {
                     && response.get("decoded").and_then(Value::as_bool) == Some(false)
             }),
             "checked-in matrix must preserve failed read-only status responses"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_framing_diagnosis_classifies_checked_in_matrix() -> TestResult {
+        let status_probe: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_MODE_MATRIX_RECEIPT_JSON)?;
+        let receipt = vendor_status_framing_diagnosis_receipt(
+            Path::new("ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json"),
+            &status_probe,
+        )?;
+        let value = serde_json::to_value(&receipt)?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-status-framing-diagnosis.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&value).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        assert_eq!(
+            json_string(&value, "artifact_kind"),
+            Some("moza_vendor_status_framing_diagnosis")
+        );
+        assert_eq!(
+            json_string(&value, "diagnosis_classification"),
+            Some("serial_readback_consumed_debug_telemetry_log_frames")
+        );
+        assert_eq!(
+            json_string(&value, "primary_blocker"),
+            Some("transport_framing_or_serial_stream_demultiplexing")
+        );
+        assert_eq!(
+            json_bool(&value, "wheel_moved_under_openracing"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "visible_motion_verified"), Some(false));
+        assert_eq!(json_bool(&value, "output_was_sent"), Some(false));
+        assert_eq!(json_string(&value, "authority_state"), Some("blocked"));
+        assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "opened_serial_device"), Some(false));
+        assert_eq!(
+            json_bool(&value, "sent_read_only_query_commands"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "sent_output_writes"), Some(false));
+        assert_eq!(json_bool(&value, "sent_configuration_writes"), Some(false));
+        assert_eq!(
+            json_bool(&value, "sent_firmware_or_dfu_commands"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "native_visible_ready"), Some(false));
+        assert_eq!(
+            json_bool(&value, "unknown_safety_or_mode_state_blocks_authority"),
+            Some(true)
+        );
+        assert_eq!(json_u64(&value, "response_frame_count"), Some(9));
+        assert_eq!(json_u64(&value, "registry_status_response_count"), Some(0));
+        assert_eq!(
+            json_u64(&value, "framed_ascii_telemetry_log_count"),
+            Some(8)
+        );
+        assert_eq!(
+            json_u64(&value, "desynchronized_or_partial_frame_count"),
+            Some(1)
+        );
+
+        let tuples = value
+            .get("repeated_observed_tuple_ids")
+            .and_then(Value::as_array)
+            .ok_or("diagnosis must include repeated tuple ids")?;
+        assert!(tuples.iter().any(|tuple| {
+            json_string(tuple, "tuple_id") == Some("0x0E/0x71/0x05")
+                && json_u64(tuple, "count") == Some(9)
+        }));
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_framing_diagnosis_checked_in_receipt_is_non_claiming() -> TestResult {
+        let value: Value = serde_json::from_str(MOZA_VENDOR_STATUS_FRAMING_DIAGNOSIS_JSON)?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-status-framing-diagnosis.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&value).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        assert_eq!(json_bool(&value, "success"), Some(true));
+        assert_eq!(
+            json_string(&value, "artifact_kind"),
+            Some("moza_vendor_status_framing_diagnosis")
+        );
+        assert_eq!(
+            json_string(&value, "status_probe_receipt"),
+            Some("ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json")
+        );
+        assert_eq!(
+            json_string(&value, "diagnosis_classification"),
+            Some("serial_readback_consumed_debug_telemetry_log_frames")
+        );
+        assert_eq!(
+            json_string(&value, "primary_blocker"),
+            Some("transport_framing_or_serial_stream_demultiplexing")
+        );
+        assert_eq!(
+            json_bool(&value, "wheel_moved_under_openracing"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "visible_motion_verified"), Some(false));
+        assert_eq!(json_bool(&value, "output_was_sent"), Some(false));
+        assert_eq!(json_string(&value, "authority_state"), Some("blocked"));
+        for field in [
+            "native_control_evidence",
+            "hardware_output_authorized",
+            "native_visible_ready",
+            "smoke_ready",
+            "release_ready",
+            "registry_promotion_claim",
+            "output_sendability_claim",
+            "semantic_decode_claim",
+            "opened_serial_device",
+            "sent_read_only_query_commands",
+            "sent_output_writes",
+            "sent_configuration_writes",
+            "sent_firmware_or_dfu_commands",
+            "high_torque_enabled",
+            "mode_enable_candidates_sendable",
+            "planned_next_output_allowed",
+        ] {
+            assert_eq!(
+                json_bool(&value, field),
+                Some(false),
+                "checked-in diagnosis must keep `{field}` false"
+            );
+        }
+        assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
+        assert_eq!(
+            json_bool(&value, "unknown_safety_or_mode_state_blocks_authority"),
+            Some(true)
+        );
+        assert_eq!(json_u64(&value, "response_frame_count"), Some(9));
+        assert_eq!(json_u64(&value, "registry_status_response_count"), Some(0));
+        assert_eq!(
+            json_u64(&value, "framed_ascii_telemetry_log_count"),
+            Some(8)
+        );
+        assert_eq!(
+            json_u64(&value, "desynchronized_or_partial_frame_count"),
+            Some(1)
         );
 
         Ok(())
