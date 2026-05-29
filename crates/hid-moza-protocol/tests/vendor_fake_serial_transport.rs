@@ -41,6 +41,12 @@ fn protocol_evidence_review() -> Result<Value, serde_json::Error> {
     ))
 }
 
+fn payload_rerun_endpoint_candidates() -> Result<Value, serde_json::Error> {
+    serde_json::from_str(include_str!(
+        "../../../ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json"
+    ))
+}
+
 fn value_at<'a>(value: &'a Value, pointer: &str) -> Result<&'a Value, io::Error> {
     value
         .pointer(pointer)
@@ -126,6 +132,19 @@ fn mode_enable_candidates(review: &Value) -> Result<&Vec<Value>, io::Error> {
     )
 }
 
+fn candidates_by_id(candidates: &[Value]) -> Result<BTreeMap<&str, &Value>, io::Error> {
+    let mut by_id = BTreeMap::new();
+    for candidate in candidates {
+        let candidate_id = str_field(candidate, "candidate_id")?;
+        if by_id.insert(candidate_id, candidate).is_some() {
+            return Err(invalid_data(format!(
+                "duplicate candidate id `{candidate_id}`"
+            )));
+        }
+    }
+    Ok(by_id)
+}
+
 #[test]
 fn fake_transport_fixture_is_non_claiming() -> TestResult {
     let fixture = transport_fixture()?;
@@ -168,6 +187,30 @@ fn fake_transport_fixture_is_non_claiming() -> TestResult {
         "mode_enable_candidates_unknown_do_not_send"
     )?);
     assert_eq!(
+        usize_field(&fixture, "authority_status_endpoint_candidate_group_count")?,
+        2
+    );
+    assert_eq!(
+        usize_field(&fixture, "authority_status_endpoint_candidate_frame_count")?,
+        5
+    );
+    assert_eq!(
+        usize_field(
+            &fixture,
+            "authority_status_endpoint_candidate_send_path_rejected_count"
+        )?,
+        5
+    );
+    assert!(bool_field(
+        &fixture,
+        "authority_status_endpoint_candidates_unknown_do_not_send"
+    )?);
+    assert!(!bool_field(
+        &fixture,
+        "authority_status_endpoint_candidates_match_payload_status"
+    )?);
+    assert!(!bool_field(&fixture, "corrected_read_only_probe_ready")?);
+    assert_eq!(
         FAKE_TRANSPORT_CODEC_STATUS,
         MozaSerialCodecStatus::RoundTripVerified
     );
@@ -205,6 +248,13 @@ fn schema_requires_fake_transport_safety_gates() -> TestResult {
         "mode_enable_candidate_frame_count",
         "mode_enable_candidate_send_path_rejected_count",
         "mode_enable_candidates_unknown_do_not_send",
+        "authority_status_endpoint_candidate_group_count",
+        "authority_status_endpoint_candidate_frame_count",
+        "authority_status_endpoint_candidate_send_path_rejected_count",
+        "authority_status_endpoint_candidates_unknown_do_not_send",
+        "authority_status_endpoint_candidates_match_payload_status",
+        "corrected_read_only_probe_ready",
+        "authority_status_endpoint_candidate_observations",
     ] {
         assert!(
             required.iter().any(|entry| entry.as_str() == Some(field)),
@@ -376,6 +426,111 @@ fn mode_enable_candidates_cannot_use_command_send_path() -> TestResult {
     }
 
     assert_eq!(rejected_frame_count, 5);
+    assert!(transport.exchanges().is_empty());
+
+    Ok(())
+}
+
+#[test]
+fn authority_status_endpoint_candidates_remain_fake_only_and_non_sendable() -> TestResult {
+    let endpoint_review = payload_rerun_endpoint_candidates()?;
+    let protocol_review = protocol_evidence_review()?;
+    let mode_enable_by_id = candidates_by_id(mode_enable_candidates(&protocol_review)?)?;
+    let endpoint_candidates = array_field(&endpoint_review, "passive_tuple_candidates")?;
+    let mut transport = MozaFakeSerialTransport::new();
+    let mut observed_frame_count = 0usize;
+    let mut send_path_rejected_count = 0usize;
+
+    assert_eq!(
+        str_field(&endpoint_review, "source_diagnosis_classification")?,
+        "authority_status_endpoint_specific_debug_telemetry_without_payload"
+    );
+    assert!(!bool_field(
+        &endpoint_review,
+        "corrected_read_only_probe_ready"
+    )?);
+    assert!(!bool_field(&endpoint_review, "output_sendability_claim")?);
+    assert!(!bool_field(&endpoint_review, "registry_promotion_claim")?);
+    assert!(!bool_field(&endpoint_review, "semantic_decode_claim")?);
+    assert_eq!(endpoint_candidates.len(), 2);
+
+    for endpoint_candidate in endpoint_candidates {
+        assert_eq!(
+            str_field(endpoint_candidate, "risk_class")?,
+            "unknown_do_not_send"
+        );
+        assert!(!bool_field(endpoint_candidate, "read_only_probe_allowed")?);
+        assert!(!bool_field(endpoint_candidate, "output_sendability_claim")?);
+        assert!(!bool_field(endpoint_candidate, "registry_promotion_claim")?);
+        assert!(!bool_field(endpoint_candidate, "semantic_decode_claim")?);
+
+        let passive_hypothesis = str_field(endpoint_candidate, "passive_hypothesis")?;
+        let mode_enable_candidate = mode_enable_by_id.get(passive_hypothesis).ok_or_else(|| {
+            invalid_data(format!(
+                "endpoint candidate references missing passive hypothesis `{passive_hypothesis}`"
+            ))
+        })?;
+        let endpoint_tuple_count = array_field(endpoint_candidate, "tuple_ids")?.len();
+        assert_eq!(
+            endpoint_tuple_count,
+            array_field(mode_enable_candidate, "tuple_ids")?.len()
+        );
+        let expected_semantics = array_field(endpoint_candidate, "question_scope")?
+            .iter()
+            .map(|entry| {
+                entry
+                    .as_str()
+                    .ok_or_else(|| invalid_data("endpoint question scope must contain strings"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        for frame_hex in array_field(mode_enable_candidate, "representative_frame_hexes")? {
+            let frame_hex = frame_hex
+                .as_str()
+                .ok_or_else(|| invalid_data("representative frame must be a string"))?;
+            let frame = hex_to_bytes(frame_hex)?;
+            let observation =
+                transport.observe_authority_status_endpoint_candidate_fixture_frame(&frame)?;
+
+            assert_eq!(observation.candidate_id, passive_hypothesis);
+            assert_eq!(observation.semantic_hypothesis, passive_hypothesis);
+            assert_eq!(observation.risk_class, MozaRiskClass::UnknownDoNotSend);
+            assert!(!observation.matches_payload_authority_status_response);
+            assert!(!observation.corrected_read_only_probe_ready);
+            assert!(!observation.semantic_decode_claim);
+            assert!(!observation.registry_promotion_claim);
+            assert!(!observation.hardware_output_authorized);
+            assert!(!observation.native_control_evidence);
+            assert!(!observation.output_sendability_claim);
+            for semantic in &expected_semantics {
+                assert!(
+                    observation.candidate_semantics.contains(semantic),
+                    "endpoint candidate `{passive_hypothesis}` missing semantic question `{semantic}`"
+                );
+            }
+            observed_frame_count = observed_frame_count.saturating_add(1);
+
+            assert!(
+                matches!(
+                    transport.submit_read_only_fixture_frame(&frame),
+                    Err(MozaFakeSerialTransportError::Frame(
+                        MozaSerialFrameError::UnknownCommand { .. }
+                    ))
+                ),
+                "authority-status endpoint candidate frame `{frame_hex}` must not enter the command send path"
+            );
+            send_path_rejected_count = send_path_rejected_count.saturating_add(1);
+        }
+    }
+
+    assert_eq!(observed_frame_count, 5);
+    assert_eq!(send_path_rejected_count, 5);
+    assert_eq!(
+        transport
+            .authority_status_endpoint_candidate_observations()
+            .len(),
+        observed_frame_count
+    );
     assert!(transport.exchanges().is_empty());
 
     Ok(())

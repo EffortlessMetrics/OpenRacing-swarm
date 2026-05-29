@@ -2089,6 +2089,26 @@ commands = [
 ]
 
 [[work_item]]
+id = "contain-authority-status-endpoint-fixtures"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-contain-authority-status-endpoint-fixtures"
+current_pointer = "fixtures/moza/r5/vendor-fake-serial-transport.json"
+claim_boundary = "No-output fake-transport containment only; consumes the payload-rerun endpoint-candidate receipt and proves the passive authority-status endpoint candidates remain unknown_do_not_send, not payload-status matches, not corrected-probe-ready, and rejected by the command send path with no HID or serial open, read-only query send, output/configuration/firmware/PIDFF command, authorization, semantic decode, registry promotion, tuple sendability, native-control, native-visible, smoke-ready, simulator, coexistence, high-torque, release-ready, or wheel-movement claim."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

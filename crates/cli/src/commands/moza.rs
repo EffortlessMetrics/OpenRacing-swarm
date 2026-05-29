@@ -205,6 +205,9 @@ const MOZA_VENDOR_FAKE_SERIAL_TRANSPORT_JSON: &str =
     include_str!("../../../../fixtures/moza/r5/vendor-fake-serial-transport.json");
 const MOZA_VENDOR_PROTOCOL_EVIDENCE_REVIEW_JSON: &str =
     include_str!("../../../../ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json");
+const MOZA_VENDOR_STATUS_ENDPOINT_CANDIDATES_FROM_PAYLOAD_RERUN_JSON: &str = include_str!(
+    "../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json"
+);
 #[cfg(test)]
 const MOZA_VENDOR_STATUS_MODE_MATRIX_PLAN_JSON: &str =
     include_str!("../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-plan.json");
@@ -32352,6 +32355,11 @@ fn vendor_fake_transport_cli_receipt() -> Result<VendorFakeTransportCliReceipt> 
     let protocol_evidence_review: Value =
         serde_json::from_str(MOZA_VENDOR_PROTOCOL_EVIDENCE_REVIEW_JSON)
             .context("failed to parse checked-in Moza vendor protocol evidence review")?;
+    let authority_status_endpoint_candidates: Value =
+        serde_json::from_str(MOZA_VENDOR_STATUS_ENDPOINT_CANDIDATES_FROM_PAYLOAD_RERUN_JSON)
+            .context(
+                "failed to parse checked-in Moza authority-status endpoint candidate receipt",
+            )?;
     let fixtures = vendor_serial_fixtures_by_id(&codec_fixture)?;
     let accepted_fixture_ids = json_string_array_field(&transport_fixture, "accepted_fixture_ids")?;
     let blocked_fixture_ids = json_string_array_field(&transport_fixture, "blocked_fixture_ids")?;
@@ -32437,6 +32445,25 @@ fn vendor_fake_transport_cli_receipt() -> Result<VendorFakeTransportCliReceipt> 
         .iter()
         .map(|observation| observation.send_path_rejected_count)
         .sum();
+    let authority_status_endpoint_candidate_observations =
+        vendor_fake_transport_authority_status_endpoint_observations(
+            &mut transport,
+            &protocol_evidence_review,
+            &authority_status_endpoint_candidates,
+        )
+        .context("failed to contain authority-status endpoint candidates in fake transport")?;
+    let authority_status_endpoint_candidate_group_count =
+        authority_status_endpoint_candidate_observations.len();
+    let authority_status_endpoint_candidate_frame_count =
+        authority_status_endpoint_candidate_observations
+            .iter()
+            .map(|observation| observation.observed_frame_count)
+            .sum();
+    let authority_status_endpoint_candidate_send_path_rejected_count =
+        authority_status_endpoint_candidate_observations
+            .iter()
+            .map(|observation| observation.send_path_rejected_count)
+            .sum();
 
     Ok(VendorFakeTransportCliReceipt {
         success: true,
@@ -32452,7 +32479,7 @@ fn vendor_fake_transport_cli_receipt() -> Result<VendorFakeTransportCliReceipt> 
         release_ready: false,
         registry_promotion_claim: false,
         output_sendability_claim: false,
-        next_allowed_action: "Use this fake-only candidate containment proof to design the later read-only hardware status/mode matrix; no output, authorization, registry promotion, or hardware write is allowed from this receipt.",
+        next_allowed_action: "Use this fake-only endpoint-candidate containment proof to identify a payload-bearing authority-state status endpoint before any live probe, output, authorization, registry promotion, or hardware write.",
         blocked_actions: vec![
             "serial device open",
             "read-only hardware probe",
@@ -32475,6 +32502,7 @@ fn vendor_fake_transport_cli_receipt() -> Result<VendorFakeTransportCliReceipt> 
             "fixtures/moza/r5/vendor-serial-codec-fixtures.json",
             "fixtures/moza/r5/vendor-fake-serial-transport.json",
             "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json",
             "crates/hid-moza-protocol/src/serial/fake_transport.rs",
             "crates/cli/src/commands/moza.rs",
         ],
@@ -32509,11 +32537,20 @@ fn vendor_fake_transport_cli_receipt() -> Result<VendorFakeTransportCliReceipt> 
         mode_enable_candidate_send_path_rejected_count,
         mode_enable_candidates_unknown_do_not_send: true,
         mode_enable_candidate_observations,
+        authority_status_endpoint_candidate_fixture_source: "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json",
+        authority_status_endpoint_candidate_group_count,
+        authority_status_endpoint_candidate_frame_count,
+        authority_status_endpoint_candidate_send_path_rejected_count,
+        authority_status_endpoint_candidates_unknown_do_not_send: true,
+        authority_status_endpoint_candidates_match_payload_status: false,
+        corrected_read_only_probe_ready: false,
+        authority_status_endpoint_candidate_observations,
         notes: vec![
             "This command replays checked-in synthetic fixture bytes only.",
             "It does not open HID or serial devices and sends no host-to-device traffic.",
             "Write-like vendor output/configuration candidates remain blocked until a later exact authorization stage.",
             "Mode/enable candidate frames from passive evidence are observed in fake transport as unknown_do_not_send and are rejected by the command send path.",
+            "Authority-status endpoint candidates from the payload rerun remain fake-only, do not match payload-bearing status responses, and are rejected by the command send path.",
         ],
     })
 }
@@ -32681,6 +32718,205 @@ fn vendor_fake_transport_mode_enable_observations(
             native_control_evidence: false,
             output_sendability_claim: false,
         });
+    }
+
+    Ok(observations)
+}
+
+fn vendor_fake_transport_authority_status_endpoint_observations(
+    transport: &mut MozaFakeSerialTransport,
+    protocol_review: &Value,
+    endpoint_candidates: &Value,
+) -> Result<Vec<VendorFakeTransportAuthorityStatusEndpointCandidateObservation>> {
+    if json_string(endpoint_candidates, "source_diagnosis_classification")
+        != Some("authority_status_endpoint_specific_debug_telemetry_without_payload")
+    {
+        return Err(anyhow!(
+            "authority-status endpoint fixture must come from the debug-telemetry-only payload rerun"
+        ));
+    }
+    if json_bool(endpoint_candidates, "corrected_read_only_probe_ready") != Some(false) {
+        return Err(anyhow!(
+            "authority-status endpoint fixture must keep corrected_read_only_probe_ready false"
+        ));
+    }
+    for claim_field in [
+        "native_control_evidence",
+        "hardware_output_authorized",
+        "native_visible_ready",
+        "smoke_ready",
+        "release_ready",
+        "registry_promotion_claim",
+        "output_sendability_claim",
+        "semantic_decode_claim",
+    ] {
+        if json_bool(endpoint_candidates, claim_field) != Some(false) {
+            return Err(anyhow!(
+                "authority-status endpoint fixture must keep `{claim_field}` false"
+            ));
+        }
+    }
+
+    let mode_enable_candidates = protocol_review
+        .pointer("/passive_tuple_registry_coverage/decode_candidate_mode_enable_review/candidates")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            anyhow!("vendor protocol evidence review is missing mode/enable candidates")
+        })?;
+    let mut mode_enable_by_id = BTreeMap::new();
+    for candidate in mode_enable_candidates {
+        let candidate_id = json_string(candidate, "candidate_id")
+            .ok_or_else(|| anyhow!("mode/enable candidate is missing `candidate_id`"))?;
+        if mode_enable_by_id.insert(candidate_id, candidate).is_some() {
+            return Err(anyhow!("duplicate mode/enable candidate `{candidate_id}`"));
+        }
+    }
+
+    let candidates = endpoint_candidates
+        .get("passive_tuple_candidates")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            anyhow!("authority-status endpoint fixture is missing passive tuple candidates")
+        })?;
+    let mut observations = Vec::new();
+
+    for candidate in candidates {
+        let candidate_id = json_string(candidate, "candidate_id").ok_or_else(|| {
+            anyhow!("authority-status endpoint candidate is missing `candidate_id`")
+        })?;
+        let passive_hypothesis = json_string(candidate, "passive_hypothesis").ok_or_else(|| {
+            anyhow!(
+                "authority-status endpoint candidate `{candidate_id}` is missing `passive_hypothesis`"
+            )
+        })?;
+        let risk_class = json_string(candidate, "risk_class").ok_or_else(|| {
+            anyhow!("authority-status endpoint candidate `{candidate_id}` is missing `risk_class`")
+        })?;
+        if risk_class != "unknown_do_not_send" {
+            return Err(anyhow!(
+                "authority-status endpoint candidate `{candidate_id}` has unexpected risk class `{risk_class}`"
+            ));
+        }
+        if json_bool(candidate, "read_only_probe_allowed") != Some(false) {
+            return Err(anyhow!(
+                "authority-status endpoint candidate `{candidate_id}` must not be read-only probe allowed"
+            ));
+        }
+        for claim_field in [
+            "semantic_decode_claim",
+            "registry_promotion_claim",
+            "output_sendability_claim",
+        ] {
+            if json_bool(candidate, claim_field) != Some(false) {
+                return Err(anyhow!(
+                    "authority-status endpoint candidate `{candidate_id}` must keep `{claim_field}` false"
+                ));
+            }
+        }
+
+        let mode_enable_candidate = mode_enable_by_id
+            .get(passive_hypothesis)
+            .ok_or_else(|| {
+                anyhow!(
+                    "authority-status endpoint candidate `{candidate_id}` references missing passive hypothesis `{passive_hypothesis}`"
+                )
+            })?;
+        let candidate_semantics = json_string_array_field(candidate, "question_scope")?;
+        let tuple_ids = json_string_array_field(candidate, "tuple_ids")?;
+        let mode_enable_tuple_ids = json_string_array_field(mode_enable_candidate, "tuple_ids")?;
+        if mode_enable_tuple_ids != tuple_ids {
+            return Err(anyhow!(
+                "authority-status endpoint candidate `{candidate_id}` tuple ids do not match passive review candidate `{passive_hypothesis}`"
+            ));
+        }
+        let representative_frame_hexes =
+            json_string_array_field(mode_enable_candidate, "representative_frame_hexes")?;
+        let mut observed_frame_count = 0usize;
+        let mut send_path_rejected_count = 0usize;
+
+        for frame_hex in &representative_frame_hexes {
+            let frame = parse_hex_bytes(frame_hex).map_err(anyhow::Error::msg)?;
+            {
+                let observation = transport
+                    .observe_authority_status_endpoint_candidate_fixture_frame(&frame)
+                    .with_context(|| {
+                        format!(
+                            "authority-status endpoint candidate `{candidate_id}` frame `{frame_hex}` was not observable"
+                        )
+                    })?;
+                if observation.candidate_id != passive_hypothesis {
+                    return Err(anyhow!(
+                        "authority-status endpoint candidate frame `{frame_hex}` routed to `{}`, expected `{passive_hypothesis}`",
+                        observation.candidate_id
+                    ));
+                }
+                if observation.semantic_hypothesis != passive_hypothesis {
+                    return Err(anyhow!(
+                        "authority-status endpoint candidate frame `{frame_hex}` semantic hypothesis `{}` did not match `{passive_hypothesis}`",
+                        observation.semantic_hypothesis
+                    ));
+                }
+                if observation.risk_class != MozaRiskClass::UnknownDoNotSend {
+                    return Err(anyhow!(
+                        "authority-status endpoint candidate frame `{frame_hex}` was not fenced unknown_do_not_send"
+                    ));
+                }
+                if observation.matches_payload_authority_status_response
+                    || observation.corrected_read_only_probe_ready
+                    || observation.semantic_decode_claim
+                    || observation.registry_promotion_claim
+                    || observation.hardware_output_authorized
+                    || observation.native_control_evidence
+                    || observation.output_sendability_claim
+                {
+                    return Err(anyhow!(
+                        "authority-status endpoint candidate frame `{frame_hex}` created a forbidden claim"
+                    ));
+                }
+            }
+            observed_frame_count = observed_frame_count.saturating_add(1);
+
+            match transport.submit_read_only_fixture_frame(&frame) {
+                Err(MozaFakeSerialTransportError::Frame(
+                    MozaSerialFrameError::UnknownCommand { .. },
+                )) => {
+                    send_path_rejected_count = send_path_rejected_count.saturating_add(1);
+                }
+                Err(error) => {
+                    return Err(error).with_context(|| {
+                        format!(
+                            "authority-status endpoint candidate `{candidate_id}` frame `{frame_hex}` send-path rejection used an unexpected error"
+                        )
+                    });
+                }
+                Ok(exchange) => {
+                    return Err(anyhow!(
+                        "authority-status endpoint candidate frame `{frame_hex}` unexpectedly entered fake command path as `{}`",
+                        exchange.command_id
+                    ));
+                }
+            }
+        }
+
+        observations.push(
+            VendorFakeTransportAuthorityStatusEndpointCandidateObservation {
+                candidate_id: candidate_id.to_string(),
+                passive_hypothesis: passive_hypothesis.to_string(),
+                candidate_semantics,
+                tuple_ids,
+                representative_frame_hexes,
+                observed_frame_count,
+                send_path_rejected_count,
+                risk_class: risk_class.to_string(),
+                matches_payload_authority_status_response: false,
+                corrected_read_only_probe_ready: false,
+                semantic_decode_claim: false,
+                registry_promotion_claim: false,
+                hardware_output_authorized: false,
+                native_control_evidence: false,
+                output_sendability_claim: false,
+            },
+        );
     }
 
     Ok(observations)
@@ -32899,6 +33135,15 @@ struct VendorFakeTransportCliReceipt {
     mode_enable_candidate_send_path_rejected_count: usize,
     mode_enable_candidates_unknown_do_not_send: bool,
     mode_enable_candidate_observations: Vec<VendorFakeTransportModeEnableCandidateObservation>,
+    authority_status_endpoint_candidate_fixture_source: &'static str,
+    authority_status_endpoint_candidate_group_count: usize,
+    authority_status_endpoint_candidate_frame_count: usize,
+    authority_status_endpoint_candidate_send_path_rejected_count: usize,
+    authority_status_endpoint_candidates_unknown_do_not_send: bool,
+    authority_status_endpoint_candidates_match_payload_status: bool,
+    corrected_read_only_probe_ready: bool,
+    authority_status_endpoint_candidate_observations:
+        Vec<VendorFakeTransportAuthorityStatusEndpointCandidateObservation>,
     notes: Vec<&'static str>,
 }
 
@@ -32930,6 +33175,25 @@ struct VendorFakeTransportModeEnableCandidateObservation {
     observed_frame_count: usize,
     send_path_rejected_count: usize,
     risk_class: String,
+    semantic_decode_claim: bool,
+    registry_promotion_claim: bool,
+    hardware_output_authorized: bool,
+    native_control_evidence: bool,
+    output_sendability_claim: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorFakeTransportAuthorityStatusEndpointCandidateObservation {
+    candidate_id: String,
+    passive_hypothesis: String,
+    candidate_semantics: Vec<String>,
+    tuple_ids: Vec<String>,
+    representative_frame_hexes: Vec<String>,
+    observed_frame_count: usize,
+    send_path_rejected_count: usize,
+    risk_class: String,
+    matches_payload_authority_status_response: bool,
+    corrected_read_only_probe_ready: bool,
     semantic_decode_claim: bool,
     registry_promotion_claim: bool,
     hardware_output_authorized: bool,
@@ -41620,6 +41884,39 @@ mod tests {
             json_bool(&value, "mode_enable_candidates_unknown_do_not_send"),
             Some(true)
         );
+        assert_eq!(
+            json_u64(&value, "authority_status_endpoint_candidate_group_count"),
+            Some(2)
+        );
+        assert_eq!(
+            json_u64(&value, "authority_status_endpoint_candidate_frame_count"),
+            Some(5)
+        );
+        assert_eq!(
+            json_u64(
+                &value,
+                "authority_status_endpoint_candidate_send_path_rejected_count"
+            ),
+            Some(5)
+        );
+        assert_eq!(
+            json_bool(
+                &value,
+                "authority_status_endpoint_candidates_unknown_do_not_send"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(
+                &value,
+                "authority_status_endpoint_candidates_match_payload_status"
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&value, "corrected_read_only_probe_ready"),
+            Some(false)
+        );
 
         Ok(())
     }
@@ -41658,6 +41955,14 @@ mod tests {
             "mode_enable_candidate_send_path_rejected_count",
             "mode_enable_candidates_unknown_do_not_send",
             "mode_enable_candidate_observations",
+            "authority_status_endpoint_candidate_fixture_source",
+            "authority_status_endpoint_candidate_group_count",
+            "authority_status_endpoint_candidate_frame_count",
+            "authority_status_endpoint_candidate_send_path_rejected_count",
+            "authority_status_endpoint_candidates_unknown_do_not_send",
+            "authority_status_endpoint_candidates_match_payload_status",
+            "corrected_read_only_probe_ready",
+            "authority_status_endpoint_candidate_observations",
         ] {
             assert!(
                 required.iter().any(|entry| entry.as_str() == Some(field)),
@@ -41714,6 +42019,26 @@ mod tests {
         assert_eq!(
             schema["properties"]["mode_enable_candidate_send_path_rejected_count"]["const"],
             5
+        );
+        assert_eq!(
+            schema["properties"]["authority_status_endpoint_candidate_group_count"]["const"],
+            2
+        );
+        assert_eq!(
+            schema["properties"]["authority_status_endpoint_candidate_frame_count"]["const"],
+            5
+        );
+        assert_eq!(
+            schema["properties"]["authority_status_endpoint_candidate_send_path_rejected_count"]["const"],
+            5
+        );
+        assert_eq!(
+            schema["properties"]["authority_status_endpoint_candidates_match_payload_status"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["corrected_read_only_probe_ready"]["const"],
+            false
         );
 
         Ok(())
@@ -41783,6 +42108,49 @@ mod tests {
                         && !candidate.output_sendability_claim
                 })
         );
+        assert_eq!(receipt.authority_status_endpoint_candidate_group_count, 2);
+        assert_eq!(receipt.authority_status_endpoint_candidate_frame_count, 5);
+        assert_eq!(
+            receipt.authority_status_endpoint_candidate_send_path_rejected_count,
+            receipt.authority_status_endpoint_candidate_frame_count
+        );
+        assert!(receipt.authority_status_endpoint_candidates_unknown_do_not_send);
+        assert!(!receipt.authority_status_endpoint_candidates_match_payload_status);
+        assert!(!receipt.corrected_read_only_probe_ready);
+        assert!(
+            receipt
+                .authority_status_endpoint_candidate_observations
+                .iter()
+                .any(|candidate| {
+                    candidate.candidate_id == "passive_status_mode_triad_0x25_0x19"
+                        && candidate.passive_hypothesis == "base_status_or_mode_poll_candidate"
+                        && candidate.risk_class == "unknown_do_not_send"
+                        && !candidate.matches_payload_authority_status_response
+                        && !candidate.corrected_read_only_probe_ready
+                        && !candidate.semantic_decode_claim
+                        && !candidate.registry_promotion_claim
+                        && !candidate.hardware_output_authorized
+                        && !candidate.native_control_evidence
+                        && !candidate.output_sendability_claim
+                })
+        );
+        assert!(
+            receipt
+                .authority_status_endpoint_candidate_observations
+                .iter()
+                .any(|candidate| {
+                    candidate.candidate_id == "passive_session_authority_pair_0x5a_0x5d"
+                        && candidate.passive_hypothesis == "session_or_status_keepalive_candidate"
+                        && candidate.risk_class == "unknown_do_not_send"
+                        && !candidate.matches_payload_authority_status_response
+                        && !candidate.corrected_read_only_probe_ready
+                        && !candidate.semantic_decode_claim
+                        && !candidate.registry_promotion_claim
+                        && !candidate.hardware_output_authorized
+                        && !candidate.native_control_evidence
+                        && !candidate.output_sendability_claim
+                })
+        );
 
         Ok(())
     }
@@ -41823,6 +42191,32 @@ mod tests {
         assert_eq!(
             json_bool(&value, "mode_enable_candidates_unknown_do_not_send"),
             Some(true)
+        );
+        assert_eq!(
+            json_u64(&value, "authority_status_endpoint_candidate_group_count"),
+            Some(2)
+        );
+        assert_eq!(
+            json_u64(&value, "authority_status_endpoint_candidate_frame_count"),
+            Some(5)
+        );
+        assert_eq!(
+            json_u64(
+                &value,
+                "authority_status_endpoint_candidate_send_path_rejected_count"
+            ),
+            Some(5)
+        );
+        assert_eq!(
+            json_bool(
+                &value,
+                "authority_status_endpoint_candidates_match_payload_status"
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&value, "corrected_read_only_probe_ready"),
+            Some(false)
         );
         assert_eq!(json_bool(&value, "output_sendability_claim"), Some(false));
 
