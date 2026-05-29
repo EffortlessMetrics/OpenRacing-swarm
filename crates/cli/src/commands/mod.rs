@@ -880,6 +880,19 @@ pub enum MozaCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
+    /// Diagnose a stored Moza read-only status probe receipt without sending traffic
+    VendorStatusFramingDiagnosis {
+        /// Stored vendor-status-probe receipt to diagnose
+        #[arg(long)]
+        status_probe: std::path::PathBuf,
+        /// Write the non-claiming framing diagnosis receipt to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing diagnosis receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
     /// Create a single-use exact Moza vendor-authority authorization receipt without sending traffic
     AuthorizeVendorAuthority {
         /// Registry command id being authorized for the later exact frame

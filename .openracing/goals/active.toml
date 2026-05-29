@@ -1859,6 +1859,26 @@ commands = [
 ]
 
 [[work_item]]
+id = "diagnose-read-only-serial-response-framing"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-diagnose-read-only-serial-response-framing"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json"
+claim_boundary = "No-output diagnosis of the stored read-only status/mode matrix only; classifies the nine captured response frames as repeated 0x0E/0x71/0x05 ASCII NRFloss/recvGap diagnostic stream frames with one desynchronized partial frame, keeps the #73 failed-closed receipt intact, opens no HID or serial device, sends no read-only query/output/configuration/firmware/PIDFF command, and creates no authorization, semantic decode, registry promotion, tuple sendability, native-control, native-visible, smoke-ready, simulator, coexistence, high-torque, or release-ready claim."
+commands = [
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-framing-diagnosis --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json --json-out target/moza-current/vendor-status-framing-diagnosis.json --overwrite",
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_status_probe -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
