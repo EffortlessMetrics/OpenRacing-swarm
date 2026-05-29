@@ -256,12 +256,23 @@ response frames as repeated tuple `0x0E/0x71/0x05` ASCII `NRFloss`/`recvGap`
 diagnostic stream frames, including one desynchronized partial frame, rather
 than registry status/mode replies. The native-path blocker is therefore
 transport framing, serial stream demultiplexing, or endpoint/command
-correlation. Wheel movement remains unproven:
+correlation.
+
+The read-only demux follow-up is now recorded at
+`vendor-status-mode-matrix-demux.json` with its fresh precondition doctor at
+`vendor-status-mode-matrix-demux-hardware-doctor.json`. It kept the same
+read-only boundary, skipped diagnostic stream frames, accepted the observed
+response-side group/device tuple transform, and decoded seven registry status
+responses. The receipt still failed closed because `estop_get_ffb` and
+`main_misc_get_ffb_status` did not decode, so
+`unknown_safety_or_mode_state_blocks_authority=true` remains the authority
+blocker. Wheel movement remains unproven:
 `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
 `output_was_sent=false`, and `authority_state=blocked`. The next native-path
-step is still no-output stream/framing diagnosis, not output, not a mode-enable
-write, not a PIDFF rerun, and not a motion ladder plan. The next witness-lane
-operator work remains the remaining passive SimHub/simulator captures.
+step is still read-only status reply correlation for the two failed commands,
+not output, not a mode-enable write, not a PIDFF rerun, and not a motion ladder
+plan. The next witness-lane operator work remains the remaining passive
+SimHub/simulator captures.
 
 Passive USB sniff captures may produce non-claiming `sniff-receipt.json`,
 `sniff-summary.json`, and bundle manifest artifacts, but those are

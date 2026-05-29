@@ -20,7 +20,8 @@ use racing_wheel_hid_moza_protocol::serial::frame::{
     MESSAGE_START, MozaSerialFrameError, decode_fixture_frame,
 };
 use racing_wheel_hid_moza_protocol::serial::status_probe::{
-    READ_ONLY_STATUS_CODEC_STATUS, decode_read_only_status_response,
+    MozaReadOnlyStatusResponseFrameDisposition, READ_ONLY_STATUS_CODEC_STATUS,
+    decode_read_only_status_response, demux_read_only_status_response_frame,
     diagnose_read_only_status_response_frame, encode_read_only_status_query,
     read_only_status_commands,
 };
@@ -149,6 +150,7 @@ const VENDOR_AUTHORITY_HANDOFF_AUTHORIZED_BY: &str = "Steven";
 const VENDOR_AUTHORITY_HANDOFF_EXPIRES_AFTER_MINUTES: u64 = 10;
 const VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET: &str =
     "target/moza-current/vendor-authority-precondition-hardware-doctor.json";
+const VENDOR_STATUS_MAX_RESPONSE_FRAMES_PER_QUERY: usize = 12;
 const NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILES: &[&str] = &[
     NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE,
     NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE,
@@ -26854,13 +26856,115 @@ fn parse_hex_u8_token(token: &str) -> std::result::Result<u8, String> {
     u8::from_str_radix(value, 16).map_err(|_| format!("invalid byte token '{token}'"))
 }
 
+#[derive(Debug)]
+struct VendorStatusProbeReadOutcome {
+    matching_frame: Option<Vec<u8>>,
+    scanned_frames: Vec<VendorStatusProbeScannedFrame>,
+    stop_reason: &'static str,
+    read_error: Option<String>,
+}
+
+impl VendorStatusProbeReadOutcome {
+    fn scanned_frame_count(&self) -> usize {
+        self.scanned_frames.len()
+    }
+
+    fn skipped_frame_count(&self) -> usize {
+        self.scanned_frames
+            .iter()
+            .filter(|frame| {
+                frame.disposition
+                    != MozaReadOnlyStatusResponseFrameDisposition::MatchingRegistryStatusResponse
+            })
+            .count()
+    }
+
+    fn skipped_diagnostic_frame_count(&self) -> usize {
+        self.count_disposition(MozaReadOnlyStatusResponseFrameDisposition::SkippableDiagnosticFrame)
+    }
+
+    fn skipped_malformed_or_desynchronized_frame_count(&self) -> usize {
+        self.count_disposition(
+            MozaReadOnlyStatusResponseFrameDisposition::MalformedOrDesynchronizedFrame,
+        )
+    }
+
+    fn skipped_non_matching_registry_frame_count(&self) -> usize {
+        self.count_disposition(
+            MozaReadOnlyStatusResponseFrameDisposition::NonMatchingRegistryStatusResponse,
+        )
+    }
+
+    fn skipped_unknown_non_registry_frame_count(&self) -> usize {
+        self.count_disposition(MozaReadOnlyStatusResponseFrameDisposition::UnknownNonRegistryFrame)
+    }
+
+    fn count_disposition(&self, disposition: MozaReadOnlyStatusResponseFrameDisposition) -> usize {
+        self.scanned_frames
+            .iter()
+            .filter(|frame| frame.disposition == disposition)
+            .count()
+    }
+}
+
+#[derive(Debug)]
+struct VendorStatusProbeScannedFrame {
+    frame: Vec<u8>,
+    disposition: MozaReadOnlyStatusResponseFrameDisposition,
+    response_classification: &'static str,
+    observed_tuple_id: Option<String>,
+    matched_expected_command: bool,
+    checksum_valid: Option<bool>,
+    error: Option<String>,
+}
+
+impl VendorStatusProbeScannedFrame {
+    fn from_frame(command: &'static MozaVendorCommand, frame: Vec<u8>) -> Self {
+        let diagnosis = demux_read_only_status_response_frame(command, &frame);
+        let frame_diagnosis = diagnosis.frame_diagnosis;
+        let observed_tuple_id = frame_diagnosis
+            .group
+            .zip(frame_diagnosis.device_id)
+            .zip(frame_diagnosis.command)
+            .map(|((group, device_id), command)| {
+                format!(
+                    "{}/{}/{}",
+                    hex_u8(group),
+                    hex_u8(device_id),
+                    hex_u8(command)
+                )
+            });
+        Self {
+            frame,
+            disposition: diagnosis.disposition,
+            response_classification: frame_diagnosis.classification.as_str(),
+            observed_tuple_id,
+            matched_expected_command: diagnosis.matched_expected_command,
+            checksum_valid: frame_diagnosis.checksum_valid,
+            error: diagnosis.decode_error,
+        }
+    }
+
+    fn to_receipt_frame(&self) -> VendorStatusProbeScannedResponseFrame {
+        VendorStatusProbeScannedResponseFrame {
+            frame_hex: bytes_hex_compact(&self.frame),
+            disposition: self.disposition.as_str(),
+            response_classification: self.response_classification,
+            observed_tuple_id: self.observed_tuple_id.clone(),
+            matched_expected_command: self.matched_expected_command,
+            checksum_valid: self.checksum_valid,
+            error: self.error.clone(),
+        }
+    }
+}
+
 trait VendorStatusProbeTransport {
-    fn write_query(&mut self, command: &MozaVendorCommand, frame: &[u8]) -> Result<()>;
-    fn read_response_frame(
+    fn write_query(&mut self, command: &'static MozaVendorCommand, frame: &[u8]) -> Result<()>;
+    fn read_response(
         &mut self,
-        command: &MozaVendorCommand,
+        command: &'static MozaVendorCommand,
         timeout_ms: u64,
-    ) -> Result<Vec<u8>>;
+    ) -> Result<VendorStatusProbeReadOutcome>;
 }
 
 struct SerialPortStatusProbeTransport {
@@ -26882,7 +26986,7 @@ impl SerialPortStatusProbeTransport {
 }
 
 impl VendorStatusProbeTransport for SerialPortStatusProbeTransport {
-    fn write_query(&mut self, command: &MozaVendorCommand, frame: &[u8]) -> Result<()> {
+    fn write_query(&mut self, command: &'static MozaVendorCommand, frame: &[u8]) -> Result<()> {
         self.port
             .write_all(frame)
             .with_context(|| format!("failed to send read-only status query `{}`", command.id))?;
@@ -26891,11 +26995,11 @@ impl VendorStatusProbeTransport for SerialPortStatusProbeTransport {
             .with_context(|| format!("failed to flush read-only status query `{}`", command.id))
     }
 
-    fn read_response_frame(
+    fn read_response(
         &mut self,
-        command: &MozaVendorCommand,
+        command: &'static MozaVendorCommand,
         timeout_ms: u64,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<VendorStatusProbeReadOutcome> {
         self.port
             .set_timeout(Duration::from_millis(timeout_ms))
             .with_context(|| {
@@ -26904,8 +27008,46 @@ impl VendorStatusProbeTransport for SerialPortStatusProbeTransport {
                     command.id
                 )
             })?;
-        read_moza_serial_frame(&mut *self.port, 256)
-            .with_context(|| format!("failed to read status response `{}`", command.id))
+        let mut scanned_frames = Vec::new();
+        for _ in 0..VENDOR_STATUS_MAX_RESPONSE_FRAMES_PER_QUERY {
+            let response_frame = match read_moza_serial_frame(&mut *self.port, 256) {
+                Ok(frame) => frame,
+                Err(error) => {
+                    return Ok(VendorStatusProbeReadOutcome {
+                        matching_frame: None,
+                        scanned_frames,
+                        stop_reason: "read_error_before_matching_response",
+                        read_error: Some(format!(
+                            "failed to read status response `{}`: {error}",
+                            command.id
+                        )),
+                    });
+                }
+            };
+            let observation = VendorStatusProbeScannedFrame::from_frame(command, response_frame);
+            let matched = observation.disposition
+                == MozaReadOnlyStatusResponseFrameDisposition::MatchingRegistryStatusResponse;
+            scanned_frames.push(observation);
+            if matched {
+                let matching_frame = scanned_frames
+                    .last()
+                    .map(|frame| frame.frame.clone())
+                    .ok_or_else(|| anyhow!("missing matched status response frame"))?;
+                return Ok(VendorStatusProbeReadOutcome {
+                    matching_frame: Some(matching_frame),
+                    scanned_frames,
+                    stop_reason: "matched_registry_status_response",
+                    read_error: None,
+                });
+            }
+        }
+
+        Ok(VendorStatusProbeReadOutcome {
+            matching_frame: None,
+            scanned_frames,
+            stop_reason: "max_response_frame_scan_exhausted",
+            read_error: None,
+        })
     }
 }
 
@@ -26979,7 +27121,7 @@ fn read_moza_serial_frame(reader: &mut dyn Read, max_frame_len: usize) -> Result
     reader
         .read_exact(&mut len)
         .context("failed to read Moza serial frame length byte")?;
-    let expected_len = 5 + usize::from(len[0]);
+    let mut expected_len = 5 + usize::from(len[0]);
     if expected_len > max_frame_len {
         return Err(anyhow!(
             "Moza serial frame length {expected_len} exceeds cap {max_frame_len}"
@@ -26987,10 +27129,29 @@ fn read_moza_serial_frame(reader: &mut dyn Read, max_frame_len: usize) -> Result
     }
 
     let mut frame = vec![MESSAGE_START, len[0]];
-    frame.resize(expected_len, 0);
-    reader
-        .read_exact(&mut frame[2..])
-        .context("failed to read Moza serial frame body")?;
+    while frame.len() < expected_len {
+        let mut byte = [0u8; 1];
+        reader
+            .read_exact(&mut byte)
+            .context("failed to read Moza serial frame body")?;
+        if byte[0] == MESSAGE_START && frame.len() < expected_len - 1 {
+            frame.clear();
+            frame.push(MESSAGE_START);
+            let mut resync_len = [0u8; 1];
+            reader
+                .read_exact(&mut resync_len)
+                .context("failed to read Moza serial frame length byte after resync")?;
+            expected_len = 5 + usize::from(resync_len[0]);
+            if expected_len > max_frame_len {
+                return Err(anyhow!(
+                    "Moza serial frame length {expected_len} exceeds cap {max_frame_len}"
+                ));
+            }
+            frame.push(resync_len[0]);
+            continue;
+        }
+        frame.push(byte[0]);
+    }
     Ok(frame)
 }
 
@@ -27012,6 +27173,12 @@ fn vendor_status_probe_receipt_with_transport(
     let mut sent_query_count = 0usize;
     let mut decoded_response_count = 0usize;
     let mut failed_response_count = 0usize;
+    let mut scanned_response_frame_count = 0usize;
+    let mut skipped_response_frame_count = 0usize;
+    let mut skipped_diagnostic_frame_count = 0usize;
+    let mut skipped_malformed_or_desynchronized_frame_count = 0usize;
+    let mut skipped_non_matching_registry_frame_count = 0usize;
+    let mut skipped_unknown_non_registry_frame_count = 0usize;
 
     for command in commands {
         let query_frame = encode_read_only_status_query(command)
@@ -27027,6 +27194,14 @@ fn vendor_status_probe_receipt_with_transport(
             response_frame_hex: None,
             response_payload_hex: None,
             response_payload_len: None,
+            response_scan_stop_reason: "not_run",
+            scanned_response_frame_count: 0,
+            skipped_response_frame_count: 0,
+            skipped_diagnostic_frame_count: 0,
+            skipped_malformed_or_desynchronized_frame_count: 0,
+            skipped_non_matching_registry_frame_count: 0,
+            skipped_unknown_non_registry_frame_count: 0,
+            scanned_response_frames: Vec::new(),
             decoded: false,
             error: None,
         };
@@ -27043,19 +27218,61 @@ fn vendor_status_probe_receipt_with_transport(
             }
         }
 
-        match transport.read_response_frame(command, timeout_ms) {
-            Ok(response_frame) => {
-                response.response_frame_hex = Some(bytes_hex_compact(&response_frame));
-                match decode_read_only_status_response(command, &response_frame) {
-                    Ok(decoded) => {
-                        decoded_response_count += 1;
-                        response.decoded = true;
-                        response.response_payload_len = Some(decoded.payload.len());
-                        response.response_payload_hex = Some(bytes_hex_compact(decoded.payload));
+        match transport.read_response(command, timeout_ms) {
+            Ok(read_outcome) => {
+                response.response_scan_stop_reason = read_outcome.stop_reason;
+                response.scanned_response_frame_count = read_outcome.scanned_frame_count();
+                response.skipped_response_frame_count = read_outcome.skipped_frame_count();
+                response.skipped_diagnostic_frame_count =
+                    read_outcome.skipped_diagnostic_frame_count();
+                response.skipped_malformed_or_desynchronized_frame_count =
+                    read_outcome.skipped_malformed_or_desynchronized_frame_count();
+                response.skipped_non_matching_registry_frame_count =
+                    read_outcome.skipped_non_matching_registry_frame_count();
+                response.skipped_unknown_non_registry_frame_count =
+                    read_outcome.skipped_unknown_non_registry_frame_count();
+                response.scanned_response_frames = read_outcome
+                    .scanned_frames
+                    .iter()
+                    .map(VendorStatusProbeScannedFrame::to_receipt_frame)
+                    .collect();
+                scanned_response_frame_count += response.scanned_response_frame_count;
+                skipped_response_frame_count += response.skipped_response_frame_count;
+                skipped_diagnostic_frame_count += response.skipped_diagnostic_frame_count;
+                skipped_malformed_or_desynchronized_frame_count +=
+                    response.skipped_malformed_or_desynchronized_frame_count;
+                skipped_non_matching_registry_frame_count +=
+                    response.skipped_non_matching_registry_frame_count;
+                skipped_unknown_non_registry_frame_count +=
+                    response.skipped_unknown_non_registry_frame_count;
+
+                if let Some(response_frame) = read_outcome.matching_frame {
+                    response.response_frame_hex = Some(bytes_hex_compact(&response_frame));
+                    match decode_read_only_status_response(command, &response_frame) {
+                        Ok(decoded) => {
+                            decoded_response_count += 1;
+                            response.decoded = true;
+                            response.response_payload_len = Some(decoded.payload.len());
+                            response.response_payload_hex =
+                                Some(bytes_hex_compact(decoded.payload));
+                        }
+                        Err(error) => {
+                            failed_response_count += 1;
+                            response.error = Some(error.to_string());
+                        }
                     }
-                    Err(error) => {
-                        failed_response_count += 1;
-                        response.error = Some(error.to_string());
+                } else {
+                    failed_response_count += 1;
+                    response.error = Some(
+                        read_outcome.read_error.unwrap_or_else(|| {
+                            format!(
+                                "no matching registry status response for `{}` after scanning {} frame(s)",
+                                command.id, response.scanned_response_frame_count
+                            )
+                        }),
+                    );
+                    if let Some(last_frame) = response.scanned_response_frames.last() {
+                        response.response_frame_hex = Some(last_frame.frame_hex.clone());
                     }
                 }
             }
@@ -27139,12 +27356,22 @@ fn vendor_status_probe_receipt_with_transport(
         transport_kind: "serial_read_only",
         codec_status: moza_serial_codec_status_name(READ_ONLY_STATUS_CODEC_STATUS),
         hardware_write_eligible: READ_ONLY_STATUS_CODEC_STATUS.allows_hardware_writes(),
+        response_scan_strategy: "bounded_stream_demux",
+        response_scan_max_frames_per_query: VENDOR_STATUS_MAX_RESPONSE_FRAMES_PER_QUERY,
+        scanned_response_frame_count,
+        skipped_response_frame_count,
+        skipped_diagnostic_frame_count,
+        skipped_malformed_or_desynchronized_frame_count,
+        skipped_non_matching_registry_frame_count,
+        skipped_unknown_non_registry_frame_count,
         selected_command_count: commands.len(),
         decoded_response_count,
         failed_response_count,
         responses,
         notes: vec![
             "This command sends only registry-allowed read-only vendor status queries.",
+            "Response scanning is bounded and skips diagnostic stream frames before accepting a matching registry status response.",
+            "The observed response-side group/device tuple transform is accepted only for read-only status replies.",
             "It never sends output, configuration, firmware, DFU, or unknown commands.",
             "Unknown mode/enable candidate tuples remain non-sendable and cannot enter this read-only command path.",
             "The status/mode matrix is a prerequisite for a later reviewed plan; it is not authorization.",
@@ -31822,6 +32049,14 @@ struct VendorStatusProbeReceipt {
     transport_kind: &'static str,
     codec_status: &'static str,
     hardware_write_eligible: bool,
+    response_scan_strategy: &'static str,
+    response_scan_max_frames_per_query: usize,
+    scanned_response_frame_count: usize,
+    skipped_response_frame_count: usize,
+    skipped_diagnostic_frame_count: usize,
+    skipped_malformed_or_desynchronized_frame_count: usize,
+    skipped_non_matching_registry_frame_count: usize,
+    skipped_unknown_non_registry_frame_count: usize,
     selected_command_count: usize,
     decoded_response_count: usize,
     failed_response_count: usize,
@@ -31855,7 +32090,29 @@ struct VendorStatusProbeResponse {
     response_payload_hex: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     response_payload_len: Option<usize>,
+    response_scan_stop_reason: &'static str,
+    scanned_response_frame_count: usize,
+    skipped_response_frame_count: usize,
+    skipped_diagnostic_frame_count: usize,
+    skipped_malformed_or_desynchronized_frame_count: usize,
+    skipped_non_matching_registry_frame_count: usize,
+    skipped_unknown_non_registry_frame_count: usize,
+    scanned_response_frames: Vec<VendorStatusProbeScannedResponseFrame>,
     decoded: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorStatusProbeScannedResponseFrame {
+    frame_hex: String,
+    disposition: &'static str,
+    response_classification: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    observed_tuple_id: Option<String>,
+    matched_expected_command: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    checksum_valid: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
@@ -40464,7 +40721,7 @@ mod tests {
     }
 
     struct FakeVendorStatusProbeTransport {
-        responses: BTreeMap<&'static str, Vec<u8>>,
+        responses: BTreeMap<&'static str, Vec<Vec<u8>>>,
         writes: Vec<Vec<u8>>,
     }
 
@@ -40472,30 +40729,68 @@ mod tests {
         fn with_status_responses(commands: &[&'static MozaVendorCommand]) -> TestResult<Self> {
             let mut responses = BTreeMap::new();
             for command in commands {
-                responses.insert(command.id, encode_read_only_status_query(command)?);
+                responses.insert(command.id, vec![encode_read_only_status_query(command)?]);
             }
             Ok(Self {
                 responses,
                 writes: Vec::new(),
             })
         }
+
+        fn with_response_stream(command: &'static MozaVendorCommand, frames: Vec<Vec<u8>>) -> Self {
+            let mut responses = BTreeMap::new();
+            responses.insert(command.id, frames);
+            Self {
+                responses,
+                writes: Vec::new(),
+            }
+        }
     }
 
     impl VendorStatusProbeTransport for FakeVendorStatusProbeTransport {
-        fn write_query(&mut self, _command: &MozaVendorCommand, frame: &[u8]) -> Result<()> {
+        fn write_query(
+            &mut self,
+            _command: &'static MozaVendorCommand,
+            frame: &[u8],
+        ) -> Result<()> {
             self.writes.push(frame.to_vec());
             Ok(())
         }
 
-        fn read_response_frame(
+        fn read_response(
             &mut self,
-            command: &MozaVendorCommand,
+            command: &'static MozaVendorCommand,
             _timeout_ms: u64,
-        ) -> Result<Vec<u8>> {
-            self.responses
+        ) -> Result<VendorStatusProbeReadOutcome> {
+            let frames = self
+                .responses
                 .get(command.id)
-                .cloned()
-                .ok_or_else(|| anyhow!("missing fake response `{}`", command.id))
+                .ok_or_else(|| anyhow!("missing fake response `{}`", command.id))?;
+            let mut scanned_frames = Vec::new();
+            for frame in frames {
+                let observation = VendorStatusProbeScannedFrame::from_frame(command, frame.clone());
+                let matched = observation.disposition
+                    == MozaReadOnlyStatusResponseFrameDisposition::MatchingRegistryStatusResponse;
+                scanned_frames.push(observation);
+                if matched {
+                    let matching_frame = scanned_frames
+                        .last()
+                        .map(|frame| frame.frame.clone())
+                        .ok_or_else(|| anyhow!("missing matched fake response frame"))?;
+                    return Ok(VendorStatusProbeReadOutcome {
+                        matching_frame: Some(matching_frame),
+                        scanned_frames,
+                        stop_reason: "matched_registry_status_response",
+                        read_error: None,
+                    });
+                }
+            }
+            Ok(VendorStatusProbeReadOutcome {
+                matching_frame: None,
+                scanned_frames,
+                stop_reason: "fake_stream_exhausted_without_match",
+                read_error: None,
+            })
         }
     }
 
@@ -40594,9 +40889,156 @@ mod tests {
         assert_eq!(json_bool(&value, "hardware_write_eligible"), Some(false));
         assert_eq!(json_u64(&value, "selected_command_count"), Some(9));
         assert_eq!(json_u64(&value, "sent_read_only_query_count"), Some(9));
+        assert_eq!(
+            json_string(&value, "response_scan_strategy"),
+            Some("bounded_stream_demux")
+        );
+        assert_eq!(json_u64(&value, "scanned_response_frame_count"), Some(9));
+        assert_eq!(json_u64(&value, "skipped_response_frame_count"), Some(0));
         assert_eq!(json_u64(&value, "decoded_response_count"), Some(9));
         assert_eq!(json_u64(&value, "failed_response_count"), Some(0));
         assert_eq!(transport.writes.len(), 9);
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_probe_stream_demux_skips_diagnostic_frames_before_match() -> TestResult {
+        let command = read_only_status_commands()
+            .find(|command| command.id == "estop_get_ffb")
+            .ok_or("missing estop read-only status command")?;
+        let status_probe: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_MODE_MATRIX_RECEIPT_JSON)?;
+        let first_debug_hex = status_probe
+            .get("responses")
+            .and_then(Value::as_array)
+            .and_then(|responses| responses.first())
+            .and_then(|response| json_string(response, "response_frame_hex"))
+            .ok_or("missing checked-in debug response frame")?;
+        let debug_frame = parse_hex_bytes(first_debug_hex)?;
+        let matching_frame = encode_read_only_status_query(command)?;
+        let mut transport = FakeVendorStatusProbeTransport::with_response_stream(
+            command,
+            vec![debug_frame, matching_frame],
+        );
+
+        let receipt = vendor_status_probe_receipt_with_transport(
+            "COM4",
+            115200,
+            250,
+            &[command],
+            sample_vendor_status_port_identity(),
+            &mut transport,
+        )?;
+        let value = serde_json::to_value(&receipt)?;
+        let responses = value
+            .get("responses")
+            .and_then(Value::as_array)
+            .ok_or("receipt must include responses")?;
+        let response = responses
+            .first()
+            .ok_or("receipt must include first response")?;
+
+        assert_eq!(json_bool(&value, "success"), Some(true));
+        assert_eq!(json_u64(&value, "decoded_response_count"), Some(1));
+        assert_eq!(json_u64(&value, "failed_response_count"), Some(0));
+        assert_eq!(json_u64(&value, "scanned_response_frame_count"), Some(2));
+        assert_eq!(json_u64(&value, "skipped_response_frame_count"), Some(1));
+        assert_eq!(json_u64(&value, "skipped_diagnostic_frame_count"), Some(1));
+        assert_eq!(
+            json_string(response, "response_scan_stop_reason"),
+            Some("matched_registry_status_response")
+        );
+        assert_eq!(json_u64(response, "scanned_response_frame_count"), Some(2));
+        assert_eq!(json_u64(response, "skipped_response_frame_count"), Some(1));
+        assert_eq!(
+            json_u64(response, "skipped_diagnostic_frame_count"),
+            Some(1)
+        );
+        let scanned = response
+            .get("scanned_response_frames")
+            .and_then(Value::as_array)
+            .ok_or("response must include scanned response frames")?;
+        assert_eq!(scanned.len(), 2);
+        assert_eq!(
+            json_string(&scanned[0], "disposition"),
+            Some("skippable_diagnostic_frame")
+        );
+        assert_eq!(
+            json_string(&scanned[1], "disposition"),
+            Some("matching_registry_status_response")
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_probe_stream_demux_fails_closed_without_matching_status_reply() -> TestResult {
+        let command = read_only_status_commands()
+            .find(|command| command.id == "estop_get_ffb")
+            .ok_or("missing estop read-only status command")?;
+        let status_probe: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_MODE_MATRIX_RECEIPT_JSON)?;
+        let frames = status_probe
+            .get("responses")
+            .and_then(Value::as_array)
+            .ok_or("missing checked-in responses")?
+            .iter()
+            .map(|response| {
+                json_string(response, "response_frame_hex")
+                    .ok_or_else(|| "missing response_frame_hex".into())
+                    .and_then(|hex| parse_hex_bytes(hex).map_err(Into::into))
+            })
+            .collect::<TestResult<Vec<_>>>()?;
+        let mut transport = FakeVendorStatusProbeTransport::with_response_stream(command, frames);
+
+        let receipt = vendor_status_probe_receipt_with_transport(
+            "COM4",
+            115200,
+            250,
+            &[command],
+            sample_vendor_status_port_identity(),
+            &mut transport,
+        )?;
+        let value = serde_json::to_value(&receipt)?;
+        let response = value
+            .get("responses")
+            .and_then(Value::as_array)
+            .and_then(|responses| responses.first())
+            .ok_or("receipt must include first response")?;
+
+        assert_eq!(json_bool(&value, "success"), Some(false));
+        assert_eq!(json_u64(&value, "decoded_response_count"), Some(0));
+        assert_eq!(json_u64(&value, "failed_response_count"), Some(1));
+        assert_eq!(json_u64(&value, "scanned_response_frame_count"), Some(9));
+        assert_eq!(json_u64(&value, "skipped_response_frame_count"), Some(9));
+        assert_eq!(json_u64(&value, "skipped_diagnostic_frame_count"), Some(8));
+        assert_eq!(
+            json_u64(&value, "skipped_malformed_or_desynchronized_frame_count"),
+            Some(1)
+        );
+        assert_eq!(
+            json_string(response, "response_scan_stop_reason"),
+            Some("fake_stream_exhausted_without_match")
+        );
+        assert_eq!(json_bool(&value, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(&value, "hardware_output_authorized"), Some(false));
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_serial_frame_reader_resyncs_on_embedded_start() -> TestResult {
+        let command = read_only_status_commands()
+            .find(|command| command.id == "base_gain_get_overall_strength")
+            .ok_or("missing base gain read-only status command")?;
+        let expected_frame = encode_read_only_status_query(command)?;
+        let mut stream = vec![MESSAGE_START, 0x02, 0x0E, MESSAGE_START];
+        stream.extend_from_slice(&expected_frame[1..]);
+        let mut cursor = std::io::Cursor::new(stream);
+
+        let frame = read_moza_serial_frame(&mut cursor, 256)?;
+        assert_eq!(frame, expected_frame);
 
         Ok(())
     }

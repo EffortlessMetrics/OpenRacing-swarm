@@ -5,7 +5,7 @@
 //! firmware, DFU, or unknown host-to-device commands.
 
 use crate::serial::frame::{
-    MESSAGE_START, MozaSerialDecodedFrame, MozaSerialFrameError, decode_fixture_frame,
+    MESSAGE_START, MozaSerialDecodedFrame, MozaSerialFrameError, decode_observed_frame_shape,
     serial_checksum,
 };
 use crate::serial::vendor_authority::{
@@ -104,20 +104,186 @@ pub fn decode_read_only_status_response<'a>(
     frame: &'a [u8],
 ) -> Result<MozaSerialDecodedFrame<'a>, MozaReadOnlyStatusProbeError> {
     ensure_read_only_status_allowed(expected_command)?;
-    let decoded = decode_fixture_frame(frame)?;
-    if decoded.command.id != expected_command.id {
+    let observed = decode_observed_frame_shape(frame)?;
+    if observed.command_id != expected_command.command {
+        let actual_command_id = observed
+            .command
+            .map(|command| command.id)
+            .unwrap_or("unknown_vendor_status_response");
         return Err(MozaReadOnlyStatusProbeError::ResponseCommandMismatch {
             expected_command_id: expected_command.id,
-            actual_command_id: decoded.command.id,
+            actual_command_id,
         });
     }
-    if decoded.device_id != expected_command.device_id {
+    if !read_only_status_response_device_matches(expected_command.device_id, observed.device_id) {
         return Err(MozaReadOnlyStatusProbeError::ResponseDeviceMismatch {
             expected_device_id: expected_command.device_id,
-            actual_device_id: decoded.device_id,
+            actual_device_id: observed.device_id,
         });
     }
-    Ok(decoded)
+    if !read_only_status_response_group_matches(expected_command.group, observed.group) {
+        return Err(MozaReadOnlyStatusProbeError::ResponseCommandMismatch {
+            expected_command_id: expected_command.id,
+            actual_command_id: observed
+                .command
+                .map(|command| command.id)
+                .unwrap_or("unknown_vendor_status_response"),
+        });
+    }
+    Ok(MozaSerialDecodedFrame {
+        group: observed.group,
+        device_id: observed.device_id,
+        command_id: observed.command_id,
+        payload: observed.payload,
+        checksum: observed.checksum,
+        command: expected_command,
+    })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MozaReadOnlyStatusResponseFrameDisposition {
+    MatchingRegistryStatusResponse,
+    NonMatchingRegistryStatusResponse,
+    SkippableDiagnosticFrame,
+    MalformedOrDesynchronizedFrame,
+    UnknownNonRegistryFrame,
+}
+
+impl MozaReadOnlyStatusResponseFrameDisposition {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::MatchingRegistryStatusResponse => "matching_registry_status_response",
+            Self::NonMatchingRegistryStatusResponse => "non_matching_registry_status_response",
+            Self::SkippableDiagnosticFrame => "skippable_diagnostic_frame",
+            Self::MalformedOrDesynchronizedFrame => "malformed_or_desynchronized_frame",
+            Self::UnknownNonRegistryFrame => "unknown_non_registry_frame",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MozaReadOnlyStatusResponseFrameDemuxDiagnosis {
+    pub frame_diagnosis: MozaReadOnlyStatusResponseFrameDiagnosis,
+    pub disposition: MozaReadOnlyStatusResponseFrameDisposition,
+    pub expected_command_id: &'static str,
+    pub matched_expected_command: bool,
+    pub decode_error: Option<String>,
+}
+
+pub fn demux_read_only_status_response_frame(
+    expected_command: &'static MozaVendorCommand,
+    frame: &[u8],
+) -> MozaReadOnlyStatusResponseFrameDemuxDiagnosis {
+    let frame_diagnosis = diagnose_read_only_status_response_frame(frame);
+    if frame_diagnosis.classification
+        == MozaReadOnlyStatusResponseFrameClass::RegistryStatusResponse
+    {
+        return match decode_read_only_status_response(expected_command, frame) {
+            Ok(_) => MozaReadOnlyStatusResponseFrameDemuxDiagnosis {
+                frame_diagnosis,
+                disposition:
+                    MozaReadOnlyStatusResponseFrameDisposition::MatchingRegistryStatusResponse,
+                expected_command_id: expected_command.id,
+                matched_expected_command: true,
+                decode_error: None,
+            },
+            Err(error) => MozaReadOnlyStatusResponseFrameDemuxDiagnosis {
+                frame_diagnosis,
+                disposition:
+                    MozaReadOnlyStatusResponseFrameDisposition::NonMatchingRegistryStatusResponse,
+                expected_command_id: expected_command.id,
+                matched_expected_command: false,
+                decode_error: Some(error.to_string()),
+            },
+        };
+    }
+
+    let disposition = match frame_diagnosis.classification {
+        MozaReadOnlyStatusResponseFrameClass::FramedAsciiTelemetryLog => {
+            MozaReadOnlyStatusResponseFrameDisposition::SkippableDiagnosticFrame
+        }
+        MozaReadOnlyStatusResponseFrameClass::StreamDesynchronizedOrPartialLogFrame
+        | MozaReadOnlyStatusResponseFrameClass::MalformedFrame => {
+            MozaReadOnlyStatusResponseFrameDisposition::MalformedOrDesynchronizedFrame
+        }
+        MozaReadOnlyStatusResponseFrameClass::UnknownNonRegistryFrame => {
+            MozaReadOnlyStatusResponseFrameDisposition::UnknownNonRegistryFrame
+        }
+        MozaReadOnlyStatusResponseFrameClass::RegistryStatusResponse => {
+            MozaReadOnlyStatusResponseFrameDisposition::NonMatchingRegistryStatusResponse
+        }
+    };
+
+    MozaReadOnlyStatusResponseFrameDemuxDiagnosis {
+        frame_diagnosis,
+        disposition,
+        expected_command_id: expected_command.id,
+        matched_expected_command: false,
+        decode_error: None,
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MozaReadOnlyStatusResponseStreamDemux {
+    pub scanned_frame_count: usize,
+    pub matching_frame_index: Option<usize>,
+    pub skipped_diagnostic_frame_count: usize,
+    pub skipped_malformed_or_desynchronized_frame_count: usize,
+    pub skipped_non_matching_registry_frame_count: usize,
+    pub skipped_unknown_non_registry_frame_count: usize,
+    pub first_non_matching_error: Option<String>,
+    pub frame_diagnoses: Vec<MozaReadOnlyStatusResponseFrameDemuxDiagnosis>,
+}
+
+pub fn demux_read_only_status_response_stream<'a>(
+    expected_command: &'static MozaVendorCommand,
+    frames: impl IntoIterator<Item = &'a [u8]>,
+) -> MozaReadOnlyStatusResponseStreamDemux {
+    let mut frame_diagnoses = Vec::new();
+    let mut matching_frame_index = None;
+    let mut skipped_diagnostic_frame_count = 0usize;
+    let mut skipped_malformed_or_desynchronized_frame_count = 0usize;
+    let mut skipped_non_matching_registry_frame_count = 0usize;
+    let mut skipped_unknown_non_registry_frame_count = 0usize;
+    let mut first_non_matching_error = None;
+
+    for frame in frames {
+        let diagnosis = demux_read_only_status_response_frame(expected_command, frame);
+        match diagnosis.disposition {
+            MozaReadOnlyStatusResponseFrameDisposition::MatchingRegistryStatusResponse => {
+                matching_frame_index = Some(frame_diagnoses.len());
+                frame_diagnoses.push(diagnosis);
+                break;
+            }
+            MozaReadOnlyStatusResponseFrameDisposition::NonMatchingRegistryStatusResponse => {
+                skipped_non_matching_registry_frame_count += 1;
+                if first_non_matching_error.is_none() {
+                    first_non_matching_error = diagnosis.decode_error.clone();
+                }
+            }
+            MozaReadOnlyStatusResponseFrameDisposition::SkippableDiagnosticFrame => {
+                skipped_diagnostic_frame_count += 1;
+            }
+            MozaReadOnlyStatusResponseFrameDisposition::MalformedOrDesynchronizedFrame => {
+                skipped_malformed_or_desynchronized_frame_count += 1;
+            }
+            MozaReadOnlyStatusResponseFrameDisposition::UnknownNonRegistryFrame => {
+                skipped_unknown_non_registry_frame_count += 1;
+            }
+        }
+        frame_diagnoses.push(diagnosis);
+    }
+
+    MozaReadOnlyStatusResponseStreamDemux {
+        scanned_frame_count: frame_diagnoses.len(),
+        matching_frame_index,
+        skipped_diagnostic_frame_count,
+        skipped_malformed_or_desynchronized_frame_count,
+        skipped_non_matching_registry_frame_count,
+        skipped_unknown_non_registry_frame_count,
+        first_non_matching_error,
+        frame_diagnoses,
+    }
 }
 
 pub fn ensure_read_only_status_allowed(
@@ -133,6 +299,27 @@ pub fn ensure_read_only_status_allowed(
             risk_class: command.risk_class,
         },
     )
+}
+
+fn read_only_status_response_group_matches(expected_group: u8, actual_group: u8) -> bool {
+    actual_group == expected_group || actual_group == (expected_group | 0x80)
+}
+
+fn read_only_status_response_device_matches(expected_device_id: u8, actual_device_id: u8) -> bool {
+    actual_device_id == expected_device_id
+        || actual_device_id == swap_device_id_nibbles(expected_device_id)
+}
+
+fn swap_device_id_nibbles(device_id: u8) -> u8 {
+    device_id.rotate_right(4)
+}
+
+fn read_only_status_response_tuple_known(group: u8, device_id: u8, command_id: u8) -> bool {
+    read_only_status_commands().any(|command| {
+        command.command == command_id
+            && read_only_status_response_group_matches(command.group, group)
+            && read_only_status_response_device_matches(command.device_id, device_id)
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -216,7 +403,13 @@ pub fn diagnose_read_only_status_response_frame(
                 .iter()
                 .find(|candidate| candidate.group == group && candidate.command == command)
         })
-        .is_some();
+        .is_some()
+        || group
+            .zip(device_id)
+            .zip(command)
+            .is_some_and(|((group, device_id), command)| {
+                read_only_status_response_tuple_known(group, device_id, command)
+            });
 
     let mut expected_checksum = None;
     let actual_checksum = frame.last().copied();
