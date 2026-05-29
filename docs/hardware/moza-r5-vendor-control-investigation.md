@@ -98,6 +98,17 @@ group/device command mismatch, `0xA1/0x21/0x4D`, while requesting
 `main_misc_get_ffb_status` `0x21/0x12/0x07`. That mismatch is correlation
 evidence only; it does not promote semantic decode, registry sendability,
 authorization, native control, or native-visible motion. The
+extended read-only scan follow-up is recorded at
+`ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-targeted.json`
+with its fresh observe-only doctor at
+`ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-hardware-doctor.json`
+and derived diagnosis at
+`ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json`.
+It added only a bounded scan-window option, selected the same two read-only
+commands, used `--max-response-frames-per-query 64`, decoded zero
+authority-state replies, and preserved the same `0xA1/0x21/0x4D` mismatch. That
+removes shallow scan-window depth as the immediate explanation but still keeps
+authorization, PIDFF rerun, and motion blocked. The
 first bounded setting-change capture attempt remains
 classified as low-yield/incomplete: 355 bytes, six packets, zero Moza
 `0x346E:0x0004` matches, and restore status `not reported`. The repeat capture
@@ -189,9 +200,10 @@ the current command-bound no-output handoff. With the current post-authority
 and read-only matrix state, the wizard records that the PIDFF comparison is
 present and emits no output command. The read-only demux follow-up decoded
 seven registry status replies while leaving `estop_get_ffb` and
-`main_misc_get_ffb_status` failed closed. Continue with read-only status reply
-correlation or the remaining passive capture scenarios before proposing any
-further hardware output family.
+`main_misc_get_ffb_status` failed closed. The extended scan-window follow-up
+also decoded zero authority-state replies with a 64-frame cap, so continue with
+no-output command/endpoint correlation or the remaining passive capture
+scenarios before proposing any further hardware output family.
 
 For each planned scenario:
 

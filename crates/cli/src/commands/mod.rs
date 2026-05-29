@@ -869,6 +869,9 @@ pub enum MozaCommands {
         /// Per-command response timeout in milliseconds
         #[arg(long, default_value_t = 250)]
         timeout_ms: u64,
+        /// Maximum response frames to scan per command before failing closed
+        #[arg(long, default_value_t = 12)]
+        max_response_frames_per_query: usize,
         /// Probe only the named read-only command id; repeat to select multiple
         #[arg(long = "command")]
         command_ids: Vec<String>,

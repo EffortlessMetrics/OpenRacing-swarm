@@ -1,0 +1,295 @@
+{
+  "success": false,
+  "schema_version": 1,
+  "artifact_kind": "moza_vendor_status_probe",
+  "claim_scope": "read_only_hardware",
+  "command": "wheelctl moza vendor-status-probe",
+  "generated_at_utc": "2026-05-29T07:09:07Z",
+  "native_control_evidence": false,
+  "hardware_output_authorized": false,
+  "native_visible_ready": false,
+  "smoke_ready": false,
+  "release_ready": false,
+  "registry_promotion_claim": false,
+  "output_sendability_claim": false,
+  "next_allowed_action": "Review this read-only status/mode matrix receipt before any later exact authorization; missing or unknown mode/safety status blocks output planning.",
+  "blocked_actions": [
+    "mode enable write",
+    "authority write",
+    "output write",
+    "configuration write",
+    "PIDFF rerun",
+    "authorization receipt",
+    "hardware writes",
+    "high torque",
+    "native-control claim",
+    "native-visible claim",
+    "smoke-ready claim",
+    "release-ready claim",
+    "firmware or DFU command",
+    "unknown host-to-device command"
+  ],
+  "required_artifacts": [
+    "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md",
+    "docs/hardware/moza-r5-vendor-authority-test-plan.md",
+    "fixtures/moza/r5/vendor-command-registry.json",
+    "fixtures/moza/r5/vendor-serial-codec-fixtures.json",
+    "ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-plan.json",
+    "schemas/moza-vendor-status-mode-matrix-plan.schema.json",
+    "schemas/moza-vendor-status-probe.schema.json",
+    "crates/hid-moza-protocol/src/serial/status_probe.rs",
+    "crates/cli/src/commands/moza.rs"
+  ],
+  "serial_port": "COM4",
+  "baud_rate": 115200,
+  "timeout_ms": 1000,
+  "expected_vid": "0x346E",
+  "expected_pid": "0x0004",
+  "port_identity": {
+    "port_name": "COM4",
+    "port_type": "usb",
+    "vendor_id": "0x346E",
+    "product_id": "0x0004",
+    "manufacturer": "Microsoft",
+    "product": "USB Serial Device (COM4)",
+    "serial_number_present": true
+  },
+  "no_hid_device_opened": true,
+  "opened_serial_device": true,
+  "serial_identity_verified": true,
+  "no_ffb_writes": true,
+  "no_output_reports": true,
+  "no_feature_reports": true,
+  "no_serial_config_commands": true,
+  "no_firmware_or_dfu_commands": true,
+  "high_torque_enabled": false,
+  "sent_read_only_query_commands": true,
+  "sent_read_only_query_count": 2,
+  "sent_output_writes": false,
+  "sent_configuration_writes": false,
+  "sent_firmware_or_dfu_commands": false,
+  "mode_enable_candidates_sendable": false,
+  "status_mode_matrix_stage": "read_only_status_probe",
+  "status_mode_matrix_plan": "ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-plan.json",
+  "unknown_safety_or_mode_state_blocks_authority": true,
+  "planned_next_output_allowed": false,
+  "real_hardware_status_evidence": false,
+  "transport_kind": "serial_read_only",
+  "codec_status": "round_trip_verified",
+  "hardware_write_eligible": false,
+  "response_scan_strategy": "bounded_stream_demux",
+  "response_scan_max_frames_per_query": 64,
+  "scanned_response_frame_count": 19,
+  "skipped_response_frame_count": 19,
+  "skipped_diagnostic_frame_count": 18,
+  "skipped_malformed_or_desynchronized_frame_count": 0,
+  "skipped_non_matching_registry_frame_count": 0,
+  "skipped_unknown_non_registry_frame_count": 1,
+  "selected_command_count": 2,
+  "decoded_response_count": 0,
+  "failed_response_count": 2,
+  "responses": [
+    {
+      "command_id": "estop_get_ffb",
+      "command_name": "EstopCtrl_GetFfb",
+      "group": 70,
+      "device_id": 28,
+      "command": 1,
+      "risk_class": "vendor_status",
+      "query_frame_hex": "7E01461C01EF",
+      "response_frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+      "response_scan_stop_reason": "read_error_before_matching_response",
+      "scanned_response_frame_count": 17,
+      "skipped_response_frame_count": 17,
+      "skipped_diagnostic_frame_count": 17,
+      "skipped_malformed_or_desynchronized_frame_count": 0,
+      "skipped_non_matching_registry_frame_count": 0,
+      "skipped_unknown_non_registry_frame_count": 0,
+      "scanned_response_frames": [
+        {
+          "frame_hex": "7E190E710553686966744272696768746E6573734C6576656C3A31320ADE",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E1B0E710543616C6962325B4D61783A33353939204D696E3A323732375D0A83",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E1B0E710543616C6962335B4D61783A33353935204D696E3A323638365D0A84",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E0C0E7105373830302C20363630300A0C",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E130E7105486561727462656174204C6F6720456E640A35",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        }
+      ],
+      "decoded": false,
+      "error": "failed to read status response `estop_get_ffb`: failed to read Moza serial frame start byte"
+    },
+    {
+      "command_id": "main_misc_get_ffb_status",
+      "command_name": "MainMiscCtrl_GetFfbStatus",
+      "group": 33,
+      "device_id": 18,
+      "command": 7,
+      "risk_class": "vendor_status",
+      "query_frame_hex": "7E01211207C6",
+      "response_frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+      "response_scan_stop_reason": "read_error_before_matching_response",
+      "scanned_response_frame_count": 2,
+      "skipped_response_frame_count": 2,
+      "skipped_diagnostic_frame_count": 1,
+      "skipped_malformed_or_desynchronized_frame_count": 0,
+      "skipped_non_matching_registry_frame_count": 0,
+      "skipped_unknown_non_registry_frame_count": 1,
+      "scanned_response_frames": [
+        {
+          "frame_hex": "7E00A1214D",
+          "disposition": "unknown_non_registry_frame",
+          "response_classification": "unknown_non_registry_frame",
+          "observed_tuple_id": "0xA1/0x21/0x4D",
+          "matched_expected_command": false
+        },
+        {
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        }
+      ],
+      "decoded": false,
+      "error": "failed to read status response `main_misc_get_ffb_status`: failed to read Moza serial frame start byte"
+    }
+  ],
+  "notes": [
+    "This command sends only registry-allowed read-only vendor status queries.",
+    "Response scanning is bounded and skips diagnostic stream frames before accepting a matching registry status response.",
+    "The observed response-side group/device tuple transform is accepted only for read-only status replies.",
+    "It never sends output, configuration, firmware, DFU, or unknown commands.",
+    "Unknown mode/enable candidate tuples remain non-sendable and cannot enter this read-only command path.",
+    "The status/mode matrix is a prerequisite for a later reviewed plan; it is not authorization.",
+    "A successful receipt is status/protocol evidence only and is not native-control, native-visible, smoke-ready, or release-ready proof."
+  ]
+}

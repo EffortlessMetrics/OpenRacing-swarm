@@ -89,7 +89,7 @@
     "codec_status": {"const": "round_trip_verified"},
     "hardware_write_eligible": {"const": false},
     "response_scan_strategy": {"const": "bounded_stream_demux"},
-    "response_scan_max_frames_per_query": {"type": "integer", "minimum": 1},
+    "response_scan_max_frames_per_query": {"type": "integer", "minimum": 1, "maximum": 128},
     "scanned_response_frame_count": {"type": "integer", "minimum": 0},
     "skipped_response_frame_count": {"type": "integer", "minimum": 0},
     "skipped_diagnostic_frame_count": {"type": "integer", "minimum": 0},
