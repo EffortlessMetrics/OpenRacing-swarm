@@ -274,6 +274,22 @@ not output, not a mode-enable write, not a PIDFF rerun, and not a motion ladder
 plan. The next witness-lane operator work remains the remaining passive
 SimHub/simulator captures.
 
+The targeted read-only status reply correlation follow-up is now recorded at
+`vendor-status-reply-correlation-targeted.json`, with its fresh observe-only
+doctor at `vendor-status-reply-correlation-hardware-doctor.json` and derived
+offline diagnosis at `vendor-status-reply-correlation-diagnosis.json`. It
+selected only `estop_get_ffb` and `main_misc_get_ffb_status`, used a 1000 ms
+read-only timeout, sent two registry-approved read-only query commands, opened
+no HID path, and sent no output/configuration/firmware/PIDFF commands. It still
+decoded zero authority-state replies. The offline diagnosis classifies 23 of 24
+scanned frames as diagnostic telemetry and records one response-like
+group/device tuple with a command mismatch:
+`0xA1/0x21/0x4D` while requesting `main_misc_get_ffb_status`
+`0x21/0x12/0x07`. That is correlation evidence only. It is not semantic decode,
+registry promotion, tuple sendability, authorization input, native control, or
+native-visible motion. The current blocker is authority-status command/endpoint
+correlation, with `unknown_safety_or_mode_state_blocks_authority=true`.
+
 Passive USB sniff captures may produce non-claiming `sniff-receipt.json`,
 `sniff-summary.json`, and bundle manifest artifacts, but those are
 protocol/coexistence evidence, not native readiness evidence. Preserve all four

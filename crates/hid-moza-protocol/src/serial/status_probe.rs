@@ -16,7 +16,6 @@ use std::fmt;
 pub const READ_ONLY_STATUS_CODEC_STATUS: MozaSerialCodecStatus =
     MozaSerialCodecStatus::RoundTripVerified;
 const DEBUG_LOG_GROUP: u8 = 0x0e;
-const DEBUG_LOG_DEVICE_ID: u8 = 0x71;
 const DEBUG_LOG_COMMAND_ID: u8 = 0x05;
 const NRFLOSS_MARKER: &[u8] = b"NRFloss";
 const RECV_GAP_MARKER: &[u8] = b"recvGap";
@@ -425,17 +424,17 @@ pub fn diagnose_read_only_status_response_frame(
     };
 
     let printable_ascii_payload = payload.is_some_and(payload_is_printable_ascii_or_newline);
+    let diagnostic_text_payload = payload.is_some_and(payload_is_diagnostic_text);
     let nrfloss_recv_gap_payload = payload.is_some_and(payload_has_nrfloss_recv_gap);
     let embedded_start_byte_count = count_embedded_start_bytes(frame);
-    let is_debug_log_tuple = group == Some(DEBUG_LOG_GROUP)
-        && device_id == Some(DEBUG_LOG_DEVICE_ID)
-        && command == Some(DEBUG_LOG_COMMAND_ID);
+    let is_debug_log_tuple =
+        group == Some(DEBUG_LOG_GROUP) && command == Some(DEBUG_LOG_COMMAND_ID);
 
     let classification = if !length_matches {
         MozaReadOnlyStatusResponseFrameClass::MalformedFrame
     } else if registry_command_known && checksum_valid == Some(true) {
         MozaReadOnlyStatusResponseFrameClass::RegistryStatusResponse
-    } else if is_debug_log_tuple && nrfloss_recv_gap_payload && checksum_valid == Some(true) {
+    } else if is_debug_log_tuple && diagnostic_text_payload && checksum_valid == Some(true) {
         MozaReadOnlyStatusResponseFrameClass::FramedAsciiTelemetryLog
     } else if embedded_start_byte_count > 0
         || (is_debug_log_tuple && payload.is_some())
@@ -479,6 +478,15 @@ fn payload_is_printable_ascii_or_newline(payload: &[u8]) -> bool {
         && payload
             .iter()
             .all(|byte| matches!(*byte, b'\n' | b'\r' | b'\t' | 0x20..=0x7e))
+}
+
+fn payload_is_diagnostic_text(payload: &[u8]) -> bool {
+    std::str::from_utf8(payload).is_ok_and(|text| {
+        !text.is_empty()
+            && text
+                .chars()
+                .all(|value| matches!(value, '\n' | '\r' | '\t') || !value.is_control())
+    })
 }
 
 fn payload_has_nrfloss_recv_gap(payload: &[u8]) -> bool {
