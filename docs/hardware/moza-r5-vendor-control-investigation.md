@@ -219,10 +219,16 @@ The receipt still does not identify a payload-bearing authority-state status
 source. It records that the expected registry authority-status response tuples
 `0xA1/0x21/0x07` and `0xC6/0xC1/0x01` are absent from passive response samples,
 and that the command-id `0x07` analogs have no response-side sample match. The
-next step is fixture-backed semantic decoder coverage for those correlated
-passive response groups, or another reviewed authority-state status source,
-before any live probe, authorization, PIDFF rerun, force escalation, or motion
-attempt.
+correlated response semantic fixture review is now recorded at
+`vendor-status-response-semantic-fixtures.json`: it decodes the correlated
+passive response fixture shapes for `0xA5/0x91/*`, `0xDA/0xB1/0x00`, and
+`0xDD/0xB1/0x01`, but all 11 correlated samples have zero-filled/static
+payloads. That keeps `payload_variation_observed=false`,
+`payload_bearing_authority_state_source_found=false`,
+`corrected_read_only_probe_ready=false`, `live_read_only_probe_allowed=false`,
+and `motion_attempt_allowed=false`. The next step is a reviewed
+payload-varying authority-state status source, not a live probe,
+authorization, PIDFF rerun, force escalation, or motion attempt.
 
 ## Boundaries
 
@@ -255,9 +261,10 @@ seven registry status replies while leaving `estop_get_ffb` and
 `main_misc_get_ffb_status` failed closed. The extended scan-window follow-up
 also decoded zero authority-state replies with a 64-frame cap, and the stored
 passive response-source correlation still found no payload-bearing
-authority-state source. Continue with fixture-backed semantic decoder coverage
-for the correlated passive response groups or the remaining passive capture
-scenarios before proposing any further hardware output family.
+authority-state source. The correlated response semantic fixture review now
+shows the available correlated passive payloads are zero-filled/static, so the
+native path remains blocked on a reviewed payload-varying authority-state source
+or equivalent status source before proposing any further hardware output family.
 
 For each planned scenario:
 

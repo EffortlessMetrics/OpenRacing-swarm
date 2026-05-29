@@ -2213,6 +2213,29 @@ commands = [
 ]
 
 [[work_item]]
+id = "review-correlated-response-semantic-fixtures"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-review-correlated-response-semantic-fixtures"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-status-response-semantic-fixtures.json"
+claim_boundary = "No-output stored passive response fixture review only; consumes the response-source correlation receipt and passive protocol evidence review, records fixture decoder coverage for correlated response samples, and preserves that all observed payloads are zero-filled/static and remain unknown_do_not_send, with no HID or serial open, no read-only query send, no output/configuration/firmware/PIDFF command, no corrected probe readiness, no authorization planning, no motion attempt, no semantic decode claim, no registry promotion, no tuple sendability, no native-control, no native-visible, no smoke-ready, no simulator, no coexistence, no high-torque, no release-ready, and no wheel-movement claim."
+commands = [
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-response-semantic-fixtures --response-correlation ci/hardware/moza-r5/2026-05-13/vendor-status-response-source-correlation.json --protocol-evidence-review ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-response-semantic-fixtures.json --overwrite",
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe_response_semantic_fixtures -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_response_semantic_fixtures -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

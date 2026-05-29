@@ -200,6 +200,13 @@ from the stored passive response samples. This closes the generic response
 correlation step, but it is not packet-timing proof and not a payload-bearing
 authority-state status source. Corrected probe readiness, authorization,
 PIDFF rerun, force escalation, and motion remain blocked.
+The correlated response semantic fixture review now decodes those response
+fixture shapes structurally, but all 11 observed correlated payloads are
+zero-filled/static and remain `unknown_do_not_send`. That closes the fixture
+coverage step without creating semantic decode, registry promotion, tuple
+sendability, corrected read-only probe readiness, authorization planning, or
+motion permission. The native path remains blocked on a reviewed
+payload-varying authority-state source or equivalent status source.
 The `pit-house-setting-change` sniff plan now pins the scenario-specific
 operator evidence required for that next capture: exact Pit House setting,
 starting value, ending value, and an affirmative restore status. The first
@@ -7159,6 +7166,128 @@ Do not remove the extracted device-to-host sample fields, source-gap receipt,
 endpoint-candidate receipts, command-id `0x07` containment, targeted read-only
 payload rerun, payload fixture tests, status matrix, demux receipt, consumed
 authority attempt, or post-authority PIDFF regression evidence.
+
+## Work item: review-correlated-response-semantic-fixtures
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: reviewed payload-varying authority-state source or corrected read-only
+probe plan
+Blocked by: response-source correlation receipt and passive protocol evidence
+review
+
+### Goal
+
+Turn the response-source correlation into fixture-backed semantic review for the
+correlated passive response groups without making any tuple sendable. This
+answers whether the checked-in passive response samples already carry a
+payload-varying authority-state source.
+
+### Production Delta
+
+`wheelctl moza vendor-status-response-semantic-fixtures` reads only stored JSON:
+
+```text
+vendor-status-response-source-correlation.json
+vendor-protocol-evidence-review.json
+```
+
+and writes `vendor-status-response-semantic-fixtures.json`. The protocol crate
+decodes the correlated response fixture shapes:
+
+```text
+0x25/0x19/* -> 0xA5/0x91/*
+0x5A/0x1B/0x00 -> 0xDA/0xB1/0x00
+0x5D/0x1B/0x01 -> 0xDD/0xB1/0x01
+```
+
+The receipt records 11 decoded fixture samples across the checked-in Pit House
+passive evidence. Every correlated payload is zero-filled/static, every
+candidate remains `unknown_do_not_send`, and the fixture review is not
+packet-timing proof, not semantic decode, not registry promotion, not corrected
+read-only probe readiness, and not output sendability.
+
+The receipt keeps:
+
+```text
+all_correlated_payloads_zero_filled=true
+payload_variation_observed=false
+payload_bearing_authority_state_source_found=false
+reviewed_equivalent_status_source_found=false
+corrected_read_only_probe_ready=false
+live_read_only_probe_allowed=false
+authorization_plan_allowed=false
+motion_attempt_allowed=false
+wheel_moved_under_openracing=false
+visible_motion_verified=false
+output_was_sent=false
+authority_state=blocked
+```
+
+### Non-goals
+
+No live hardware access, HID output open, serial open, read-only query send,
+PIDFF output, feature report, configuration write, firmware/update/DFU path,
+high torque, mode-enable write, authority write, authorization receipt,
+semantic decode claim, registry promotion, tuple sendability, corrected
+read-only probe readiness, native-control claim, native-visible claim,
+smoke-ready claim, simulator claim, coexistence claim, release-ready claim, or
+wheel movement.
+
+### Acceptance
+
+- The semantic fixture receipt consumes the response-source correlation receipt
+  and passive protocol evidence review.
+- Correlated response samples decode structurally and are pinned to the two
+  known passive question groups.
+- All correlated payloads remain zero-filled/static; no payload-varying
+  authority-state source is found.
+- Registry authority response tuples and command-id `0x07` analog responses
+  remain absent from the checked-in passive samples.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain the operating
+  state.
+- The next native-path action is to add or capture a reviewed payload-varying
+  authority-state status source before any live probe, authorization, PIDFF
+  rerun, force escalation, or motion attempt.
+
+### Proof Commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-response-semantic-fixtures `
+  --response-correlation ci/hardware/moza-r5/2026-05-13/vendor-status-response-source-correlation.json `
+  --protocol-evidence-review ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-response-semantic-fixtures.json `
+  --overwrite
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe_response_semantic_fixtures -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_response_semantic_fixtures -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- the `vendor-status-response-semantic-fixtures` CLI, receipt, schema, and
+  tests,
+- `vendor-status-response-semantic-fixtures.json`,
+- source-of-truth notes for this work item.
+
+Do not remove the response-source correlation receipt, extracted
+device-to-host sample fields, source-gap receipt, endpoint-candidate receipts,
+command-id `0x07` containment, targeted read-only payload rerun, payload fixture
+tests, status matrix, demux receipt, consumed authority attempt, or
+post-authority PIDFF regression evidence.
 
 ## Work item: native-visible-promotion
 

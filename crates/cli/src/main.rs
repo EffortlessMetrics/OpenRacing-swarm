@@ -2482,6 +2482,48 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_vendor_status_probe_response_semantic_fixtures() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "vendor-status-response-semantic-fixtures",
+            "--response-correlation",
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-response-source-correlation.json",
+            "--protocol-evidence-review",
+            "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
+            "--json-out",
+            "target/moza-current/vendor-status-response-semantic-fixtures.json",
+            "--overwrite",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::VendorStatusResponseSemanticFixtures {
+                response_correlation,
+                protocol_evidence_review,
+                json_out,
+                overwrite,
+            }) => {
+                assert_eq!(
+                    response_correlation.to_str(),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/vendor-status-response-source-correlation.json"
+                    )
+                );
+                assert_eq!(
+                    protocol_evidence_review.to_str(),
+                    Some("ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json")
+                );
+                assert_eq!(
+                    json_out.to_str(),
+                    Some("target/moza-current/vendor-status-response-semantic-fixtures.json")
+                );
+                assert!(*overwrite);
+            }
+            _ => return Err("expected Moza VendorStatusResponseSemanticFixtures command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_authorize_vendor_authority() -> TestResult {
         let cli = parse_cli([
             "wheelctl",

@@ -418,10 +418,22 @@ registry authority-status response tuples `0xA1/0x21/0x07` and
 passive command-id `0x07` analogs have no matching response-side sample tuples.
 Wheel movement remains unproven: `wheel_moved_under_openracing=false`,
 `visible_motion_verified=false`, `output_was_sent=false`, and
-`authority_state=blocked`. The next native-path step is fixture-backed semantic
-decoder coverage for the correlated passive response groups or another reviewed
-payload-bearing authority-state status source before any live probe,
-authorization plan, PIDFF rerun, force escalation, or motion attempt.
+`authority_state=blocked`.
+
+The correlated response semantic fixture review is now recorded at
+`vendor-status-response-semantic-fixtures.json`. It decodes the correlated
+passive response fixture shapes for `0xA5/0x91/*`, `0xDA/0xB1/0x00`, and
+`0xDD/0xB1/0x01`, but all 11 checked-in correlated response samples have
+zero-filled/static payloads. The review keeps every candidate
+`unknown_do_not_send`, with `payload_variation_observed=false`,
+`payload_bearing_authority_state_source_found=false`,
+`corrected_read_only_probe_ready=false`, `live_read_only_probe_allowed=false`,
+and `motion_attempt_allowed=false`. Wheel movement remains unproven:
+`wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+`output_was_sent=false`, and `authority_state=blocked`. The next native-path
+step is to add or capture a reviewed payload-varying authority-state status
+source before any live probe, authorization plan, PIDFF rerun, force escalation,
+or motion attempt.
 
 The read-only demux follow-up is now recorded at
 `vendor-status-mode-matrix-demux.json` with its fresh precondition doctor at
@@ -436,8 +448,8 @@ blocker. Wheel movement remains unproven:
 `output_was_sent=false`, and `authority_state=blocked`. Later
 authority-endpoint, endpoint-candidate, and fake-containment receipts narrow
 this from broad demux repair to corrected endpoint/command review. The current
-next native-path step is no-output protocol evidence for a payload-bearing
-authority-state status endpoint before any live probe, output, mode-enable
+next native-path step is no-output protocol evidence for a payload-varying
+authority-state status source before any live probe, output, mode-enable
 write, PIDFF rerun, or motion ladder plan. The next witness-lane operator work
 remains the remaining passive SimHub/simulator captures.
 
