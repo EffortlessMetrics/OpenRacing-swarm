@@ -2603,6 +2603,41 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_vendor_status_timing_correlation_plan() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "vendor-status-timing-correlation-plan",
+            "--semantic-review",
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
+            "--json-out",
+            "target/moza-current/vendor-status-timing-correlation-plan.json",
+            "--overwrite",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::VendorStatusTimingCorrelationPlan {
+                semantic_review,
+                json_out,
+                overwrite,
+            }) => {
+                assert_eq!(
+                    semantic_review.to_str(),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json"
+                    )
+                );
+                assert_eq!(
+                    json_out.to_str(),
+                    Some("target/moza-current/vendor-status-timing-correlation-plan.json")
+                );
+                assert!(*overwrite);
+            }
+            _ => return Err("expected Moza VendorStatusTimingCorrelationPlan command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_authorize_vendor_authority() -> TestResult {
         let cli = parse_cli([
             "wheelctl",

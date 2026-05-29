@@ -7530,6 +7530,116 @@ candidate receipts, targeted read-only payload rerun, status matrix, demux
 receipt, consumed authority attempt, or post-authority PIDFF regression
 evidence.
 
+## Work item: stage-0x8e-timing-correlation-plan
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: timing-correlated 0x8E evidence review
+Blocked by: completed payload-source semantic review
+
+### Goal
+
+Turn the negative payload-source semantic review into an explicit passive
+timing-correlation capture plan while preserving the block on live probe,
+authorization, PIDFF rerun, force escalation, and motion.
+
+### Production delta
+
+`wheelctl moza vendor-status-timing-correlation-plan` reads only:
+
+```text
+vendor-status-payload-source-semantic-review.json
+```
+
+and writes `vendor-status-timing-correlation-plan.json`.
+
+The receipt stages the next passive capture as
+`pit-house-0x8e-timing-correlation`. It requires a fresh observe-only hardware
+doctor selector, a passive USBPcap capture with `--hardware-doctor`, explicit
+operator event markers, and complete notes for:
+
+```text
+Pit House opened and settled
+R5 recognized in Pit House
+KS top-left front LED default teal observed
+KS top-left front LED changed to red
+KS top-left front LED restored to default teal
+Pit House closed
+```
+
+The receipt records `capture_recorded=false`,
+`timing_correlation_proven=false`,
+`payload_bearing_authority_state_source_found=false`,
+`live_read_only_probe_allowed=false`, `authorization_plan_allowed=false`,
+`motion_attempt_allowed=false`, `wheel_moved_under_openracing=false`,
+`visible_motion_verified=false`, `output_was_sent=false`, and
+`authority_state=blocked`.
+
+### Non-goals
+
+No live hardware access, HID output open, serial open, read-only query send,
+live capture, pcap receipt, sniff summary, PIDFF output, feature report,
+configuration write, firmware/update/DFU path, high torque, mode-enable write,
+authority write, authorization receipt, semantic decode claim, registry
+promotion, tuple sendability, corrected read-only probe readiness,
+native-control claim, native-visible claim, smoke-ready claim, simulator claim,
+coexistence claim, release-ready claim, or wheel movement.
+
+### Acceptance
+
+- The timing-correlation plan consumes the payload-source semantic review and
+  refuses to proceed if that source review has live probe, authorization, output,
+  or motion eligibility.
+- The receipt names the four `0x8E` payload-bearing samples as correlation
+  targets and requires event-marker notes around the LED default-teal to red to
+  default-teal transition.
+- The capture command template includes fresh `hardware doctor` selector
+  verification and passes `--hardware-doctor` into `sniff-capture`.
+- The receipt records no capture evidence and does not mark timing correlation
+  proven.
+- The next native-path action is the planned passive timing-correlation capture
+  and later no-output review, not a live probe, authorization, PIDFF rerun, force
+  escalation, or motion attempt.
+
+### Proof Commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-plan `
+  --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza artifact-index `
+  --lane ci/hardware/moza-r5/2026-05-13 `
+  --json-out target/moza-current/artifact-index-0x8e-timing-plan.json `
+  --md-out ci/hardware/moza-r5/2026-05-13/index.md
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_plan -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_payload_source_semantic_review -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- the `vendor-status-timing-correlation-plan` CLI, receipt, schema, and tests,
+- `vendor-status-timing-correlation-plan.json`,
+- source-of-truth notes for this work item.
+
+Do not remove the payload-source semantic review, payload-source candidate
+receipt, response semantic fixture receipt, response-source correlation receipt,
+source-gap receipt, endpoint candidate receipts, targeted read-only payload
+rerun, status matrix, demux receipt, consumed authority attempt, or
+post-authority PIDFF regression evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

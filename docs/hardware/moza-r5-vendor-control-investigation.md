@@ -266,6 +266,25 @@ The next step is timing-correlated `0x8E` evidence or another reviewed
 payload-bearing authority-state source, not a live probe, authorization, PIDFF
 rerun, force escalation, or motion attempt.
 
+`vendor-status-timing-correlation-plan.json` now stages that next passive
+timing-correlation run. It consumes the semantic review and requires:
+
+```text
+fresh observe-only hardware doctor selector
+sniff-capture with --hardware-doctor
+Pit House opened and settled as a witness app
+KS top-left front LED default teal -> red -> default teal
+explicit operator event markers
+raw pcap local by default
+future no-output timing-correlation review
+```
+
+The plan is not capture evidence. It records `capture_recorded=false`,
+`timing_correlation_proven=false`, `live_read_only_probe_allowed=false`,
+`authorization_plan_allowed=false`, `motion_attempt_allowed=false`,
+`wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+`output_was_sent=false`, and `authority_state=blocked`.
+
 ## Boundaries
 
 These plans do not authorize hardware output. They do not create pcap receipts,
@@ -301,9 +320,10 @@ authority-state source. The correlated response semantic fixture review now
 shows the available correlated passive payloads are zero-filled/static, and the
 payload-source semantic review records the four nonzero `0x8E` setting-change
 samples as fixture-covered but still insufficient for authority planning. The
-native path remains blocked on a reviewed payload-varying authority-state source
-or equivalent timing-correlated status source before proposing any further
-hardware output family.
+timing-correlation plan stages the next passive Pit House LED event-marker run
+but records no capture or timing proof. The native path remains blocked on a
+reviewed payload-varying authority-state source or equivalent timing-correlated
+status source before proposing any further hardware output family.
 
 For each planned scenario:
 
