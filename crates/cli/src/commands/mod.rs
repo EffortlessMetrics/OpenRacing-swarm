@@ -899,6 +899,22 @@ pub enum MozaCommands {
         overwrite: bool,
     },
 
+    /// Derive non-sendable authority-status endpoint correction candidates from stored evidence
+    VendorStatusEndpointCandidates {
+        /// Stored authority-status endpoint diagnosis receipt
+        #[arg(long)]
+        authority_endpoint_diagnosis: std::path::PathBuf,
+        /// Stored passive vendor protocol evidence review receipt
+        #[arg(long)]
+        protocol_evidence_review: std::path::PathBuf,
+        /// Write the non-claiming endpoint candidate plan receipt to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing endpoint candidate plan receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
     /// Create a single-use exact Moza vendor-authority authorization receipt without sending traffic
     AuthorizeVendorAuthority {
         /// Registry command id being authorized for the later exact frame

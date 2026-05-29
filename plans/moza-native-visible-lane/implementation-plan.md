@@ -168,6 +168,14 @@ and line settings are no longer the primary explanation. The active blocker is
 an authority-status endpoint/command mismatch or ACK-only endpoint behavior:
 mode and safety state remain unknown until a corrected read-only endpoint
 returns payload-bearing status.
+The endpoint-candidate receipt now turns that blocker into a no-output
+candidate plan. It records the expected payload response shape for
+`main_misc_get_ffb_status` as `0xA1/0x21/0x07`, records the current observed
+authority response as ACK-only `0xA1/0x21/no_command`, and preserves the
+passive `0x25/0x19/*`, `0x5A/0x1B/*`, and `0x5D/0x1B/*` groups as
+`unknown_do_not_send`. That is not a corrected read-only probe and not a
+sendability claim; the next native-path action is no-output fixture-backed
+decoder coverage before any live probe, authorization, PIDFF rerun, or motion.
 The `pit-house-setting-change` sniff plan now pins the scenario-specific
 operator evidence required for that next capture: exact Pit House setting,
 starting value, ending value, and an affirmative restore status. The first
@@ -6044,6 +6052,106 @@ Remove only:
 Do not remove the earlier read-only status matrix, demux, targeted
 authority-status, ACK-only, passive protocol, consumed authority attempt, or
 post-authority PIDFF regression evidence.
+
+## Work item: classify-authority-status-endpoint-candidates
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: corrected read-only authority status probe
+Blocked by: fixture-backed proof that a corrected endpoint is registry-approved read-only status
+
+### Goal
+
+Turn the authority-status endpoint blocker into a no-output candidate plan
+without making any tuple sendable.
+
+### Production Delta
+
+`wheelctl moza vendor-status-endpoint-candidates` reads the stored
+`vendor-status-authority-endpoint-diagnosis.json` and
+`vendor-protocol-evidence-review.json` receipts, validates their non-claiming
+state, and writes `vendor-status-endpoint-candidates.json`. The receipt records
+the expected payload response shape for `main_misc_get_ffb_status`:
+
+```text
+query_tuple_id: 0x21/0x12/0x07
+query_frame_hex: 7E01211207C6
+expected_payload_response_tuple_id: 0xA1/0x21/0x07
+observed_response_tuple_id: 0xA1/0x21/no_command
+```
+
+It also carries forward the passive `0x25/0x19/*`, `0x5A/0x1B/*`, and
+`0x5D/0x1B/*` candidate groups as pattern-only questions with
+`risk_class=unknown_do_not_send` and `read_only_probe_allowed=false`.
+
+### Non-goals
+
+No live hardware access, HID output open, serial open, read-only query send,
+PIDFF output, feature report, configuration write, firmware/update/DFU path,
+high torque, mode-enable write, authority write, authorization receipt,
+semantic decode claim, registry promotion, tuple sendability, corrected
+read-only probe readiness, native-control claim, native-visible claim,
+smoke-ready claim, simulator claim, coexistence claim, or release-ready claim.
+
+### Acceptance
+
+- `vendor-status-endpoint-candidates.json` records
+  `corrected_read_only_probe_ready=false`.
+- The expected payload response shape is a correction target, not evidence that
+  the current authority-status command works.
+- `0xA1/0x21/no_command` remains ACK/no-payload evidence only.
+- Passive mode/enable tuple groups remain `unknown_do_not_send` and
+  non-sendable.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain explicit.
+- `hardware_output_authorized=false`, `native_control_evidence=false`,
+  `native_visible_ready=false`, `output_sendability_claim=false`,
+  `registry_promotion_claim=false`, and `semantic_decode_claim=false` remain
+  pinned.
+- The next native-path action is no-output fixture-backed decoder coverage for
+  a corrected authority-status endpoint candidate before any live read-only
+  probe, authorization, PIDFF rerun, force escalation, or motion attempt.
+
+### Proof Commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-endpoint-candidates `
+  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json `
+  --protocol-evidence-review ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates.json `
+  --overwrite
+
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza artifact-index `
+  --lane ci/hardware/moza-r5/2026-05-13 `
+  --json-out target/moza-current/artifact-index-after-status-endpoint-candidates.json `
+  --md-out ci/hardware/moza-r5/2026-05-13/index.md
+
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_endpoint_candidates -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- `wheelctl moza vendor-status-endpoint-candidates`
+- `schemas/moza-vendor-status-endpoint-candidates.schema.json`
+- `ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates.json`
+- source-of-truth notes for this work item.
+
+Do not remove the authority-endpoint diagnosis, read-only status matrix,
+passive protocol evidence review, consumed authority attempt, or post-authority
+PIDFF regression evidence.
 
 ## Work item: native-visible-promotion
 

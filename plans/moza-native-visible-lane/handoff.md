@@ -178,6 +178,8 @@ The broader Moza objective remains incomplete:
 | Consumed vendor-authority attempt | `vendor-authority-attempt.json` | Recorded exact one-frame non-claiming attempt |
 | Post-authority PIDFF response | `vendor-post-authority-pidff-smoke.json`; `vendor-post-authority-pidff-response.json`; [post-authority PIDFF response diagnosis](../../docs/hardware/moza-r5-post-authority-pidff-response.md) | Recorded regression versus baseline; no native-visible claim |
 | Vendor protocol evidence review | `vendor-protocol-evidence-review.json`; artifact-index/bench-wizard `vendor_protocol_decode_priority` | Recorded no-output review, host-to-device candidate `0x7E`, 7,863 checksum-valid candidate frames, 159 bounded passive tuple sample frames, one read-only registry tuple match, 12 commandless tuple IDs, 17 unknown commanded tuple IDs, frequency-ranked unknown commanded tuples headed by `0x5A/0x1B/0x00` and `0x5D/0x1B/0x01`, 30 decode-candidate sample frames for the top unknown tuples, protocol-crate observed-frame, packet-order, payload-shape, packet-group, low-confidence semantic-hypothesis, semantic-correlation-plan, and mode/enable candidate-question regression coverage for those samples, two residual payload export gap packet locators, and no sufficient semantic protocol evidence for any output plan |
+| Read-only vendor status matrix | `vendor-status-mode-matrix.json`; `vendor-status-mode-matrix-demux.json` | Recorded COM4 read-only evidence; seven non-authority status replies decode, but authority-state replies remain missing |
+| Authority status endpoint diagnosis | `vendor-status-authority-endpoint-diagnosis.json`; `vendor-status-endpoint-candidates.json` | Broad serial transport ruled out; current authority-status endpoint returns ACK/no-payload, and corrected endpoint candidates remain non-sendable |
 | Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls`, and `pit-house-setting-change` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence; setting-change keeps the earlier low-yield classification as historical failed evidence |
 | Remaining passive sniff plans | `simhub-open-idle`, `simhub-output-session`, `simulator-session-start-stop` sniff plans | Plan-only |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |
@@ -271,9 +273,9 @@ classifies `7E00A1214D` as a checksum-valid zero-length response-like frame:
 explanation. The latest diagnosis narrows the frame to ACK-only/no-payload
 correlation evidence, not decoded status evidence, so mode and safety remain
 unknown until a payload-bearing status reply is decoded or the endpoint/command
-IDs are corrected. The next native-path work remains no-output status-payload
-correlation or passive evidence correlation, not authorization, PIDFF, force
-escalation, or motion.
+IDs are corrected. The later endpoint-candidate receipt now turns that into a
+no-output fixture-backed decoder coverage step before any live probe,
+authorization, PIDFF, force escalation, or motion.
 
 The ACK-only correlation live rerun is now recorded at
 `vendor-status-ack-only-correlation-targeted.json`, with its fresh observe-only
@@ -296,6 +298,18 @@ correction: `estop_get_ffb` and `main_misc_get_ffb_status` still decode zero
 authority-state replies, and `0xA1/0x21/no_command` remains ACK/no-payload
 correlation evidence only.
 
+The endpoint candidate plan is now recorded at
+`vendor-status-endpoint-candidates.json`. It is a no-output stored-receipt
+review that records the expected `main_misc_get_ffb_status` payload response
+shape as `0xA1/0x21/0x07`, preserves the observed authority response as
+ACK-only `0xA1/0x21/no_command`, and carries forward the passive
+`0x25/0x19/*`, `0x5A/0x1B/*`, and `0x5D/0x1B/*` groups as
+`unknown_do_not_send`. It does not open HID or serial, send read-only queries,
+authorize output, promote registry sendability, or claim semantic decode. The
+next native-path step is no-output fixture-backed decoder coverage for a
+corrected authority-status endpoint candidate, not a live probe, not output,
+not a mode-enable write, not PIDFF, and not motion.
+
 The read-only demux follow-up is now recorded at
 `vendor-status-mode-matrix-demux.json` with its fresh precondition doctor at
 `vendor-status-mode-matrix-demux-hardware-doctor.json`. It kept the same
@@ -306,11 +320,12 @@ responses. The receipt still failed closed because `estop_get_ffb` and
 `unknown_safety_or_mode_state_blocks_authority=true` remains the authority
 blocker. Wheel movement remains unproven:
 `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
-`output_was_sent=false`, and `authority_state=blocked`. The next native-path
-step is still read-only status reply correlation for the two failed commands,
-not output, not a mode-enable write, not a PIDFF rerun, and not a motion ladder
-plan. The next witness-lane operator work remains the remaining passive
-SimHub/simulator captures.
+`output_was_sent=false`, and `authority_state=blocked`. Later
+authority-endpoint and endpoint-candidate receipts narrow this from broad demux
+repair to corrected endpoint/command review. The current next native-path step
+is no-output fixture-backed decoder coverage before any live probe, output,
+mode-enable write, PIDFF rerun, or motion ladder plan. The next witness-lane
+operator work remains the remaining passive SimHub/simulator captures.
 
 The targeted read-only status reply correlation follow-up is now recorded at
 `vendor-status-reply-correlation-targeted.json`, with its fresh observe-only
