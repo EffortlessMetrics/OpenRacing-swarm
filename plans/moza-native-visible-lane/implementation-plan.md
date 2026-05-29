@@ -6610,6 +6610,106 @@ payload rerun, payload fixture tests, status matrix, demux receipt, passive
 protocol evidence review, consumed authority attempt, or post-authority PIDFF
 regression evidence.
 
+## Work item: derive-authority-command-0x07-analogs
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: corrected read-only authority-state status endpoint review
+Blocked by: payload-rerun endpoint candidate receipt and checked-in passive
+protocol evidence review
+
+### Goal
+
+Narrow the authority-status endpoint search without touching hardware by
+deriving passive command-id `0x07` analog tuples from
+`vendor-protocol-evidence-review.json`. The current read-only authority-status
+query uses source tuple `0x21/0x12/0x07`, but the targeted rerun still returned
+only diagnostic telemetry. This work records passive unknown-commanded tuples
+whose command byte is also `0x07` so later decoder work has a smaller reviewed
+search space.
+
+### Production Delta
+
+`wheelctl moza vendor-status-endpoint-candidates` now scans the checked-in
+passive tuple frequency summary and records five command-id `0x07` analogs in
+both endpoint candidate receipts:
+
+```text
+0x40/0x17/0x07 count=558 scenarios=3
+0x28/0x13/0x07 count=2 scenarios=1
+0x23/0x19/0x07 count=1 scenarios=1
+0x3F/0x17/0x07 count=1 scenarios=1
+0x5B/0x1B/0x07 count=1 scenarios=1
+```
+
+The scan keeps every tuple:
+
+```text
+risk_class=unknown_do_not_send
+response_shape_matches_expected_authority_status=false
+read_only_probe_allowed=false
+output_sendability_claim=false
+registry_promotion_claim=false
+semantic_decode_claim=false
+```
+
+The high-frequency `0x40/0x17/0x07` analog is preserved as a protocol question
+only. It is not a corrected read-only probe input.
+
+### Non-goals
+
+No live hardware access, HID output open, serial open, read-only query send,
+PIDFF output, feature report, configuration write, firmware/update/DFU path,
+high torque, mode-enable write, authority write, authorization receipt,
+semantic decode claim, registry promotion, tuple sendability, corrected
+read-only probe readiness, native-control claim, native-visible claim,
+smoke-ready claim, simulator claim, coexistence claim, release-ready claim, or
+wheel movement.
+
+### Acceptance
+
+- The endpoint-candidate receipt records the five passive command-id `0x07`
+  analogs derived from the protocol evidence review.
+- `0x40/0x17/0x07` remains visible as the only analog observed across all three
+  completed Pit House passive scenarios.
+- The analogs remain non-sendable and do not match the expected payload-bearing
+  authority-status response shape.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain the operating
+  state.
+- The next native-path action remains no-output fixture-backed decoder coverage
+  for the passive command-id `0x07` analogs or another reviewed
+  payload-bearing authority-state source before any live probe, authorization,
+  PIDFF rerun, force escalation, or motion attempt.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- the command-id `0x07` passive analog scan and receipt/schema fields,
+- regenerated endpoint candidate receipts containing those analog fields,
+- source-of-truth notes for this work item.
+
+Do not remove the payload-rerun endpoint candidate receipt, fake-transport
+containment, targeted read-only payload rerun, payload fixture tests, status
+matrix, demux receipt, passive protocol evidence review, consumed authority
+attempt, or post-authority PIDFF regression evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

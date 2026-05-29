@@ -362,6 +362,21 @@ authority-state status endpoint or equivalent reviewed status source before any
 live probe, authorization, PIDFF rerun, force escalation, or motion ladder
 attempt.
 
+The endpoint-candidate receipt now also records a no-output passive scan for
+command-id `0x07` analog tuples because the current authority-status query is
+`0x21/0x12/0x07`. The scan derives five unknown-commanded passive analogs:
+`0x40/0x17/0x07`, `0x28/0x13/0x07`, `0x23/0x19/0x07`,
+`0x3F/0x17/0x07`, and `0x5B/0x1B/0x07`. The most frequent analog,
+`0x40/0x17/0x07`, appears in all three completed Pit House passive scenarios,
+but it remains `unknown_do_not_send`, not a payload-status match, not
+read-only-probe-allowed, and not sendable. Wheel movement remains unproven:
+`wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+`output_was_sent=false`, and `authority_state=blocked`. The next native-path
+step remains no-output fixture-backed decoder coverage for these command-id
+`0x07` analogs or another reviewed payload-bearing authority-state source
+before any live probe, authorization, PIDFF rerun, force escalation, or motion
+ladder attempt.
+
 The read-only demux follow-up is now recorded at
 `vendor-status-mode-matrix-demux.json` with its fresh precondition doctor at
 `vendor-status-mode-matrix-demux-hardware-doctor.json`. It kept the same

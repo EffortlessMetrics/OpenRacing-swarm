@@ -2109,6 +2109,25 @@ commands = [
 ]
 
 [[work_item]]
+id = "derive-authority-command-0x07-analogs"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-derive-authority-command-0x07-analogs"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json"
+claim_boundary = "No-output stored-receipt passive scan only; extends the authority-status endpoint candidate receipt to derive five unknown command-id 0x07 passive analog tuples from the checked-in protocol evidence review, including high-frequency 0x40/0x17/0x07, while keeping every analog not payload-status-matched, not read-only-probe-allowed, not sendable, and with no HID or serial open, read-only query send, output/configuration/firmware/PIDFF command, authorization, semantic decode, registry promotion, tuple sendability, native-control, native-visible, smoke-ready, simulator, coexistence, high-torque, release-ready, or wheel-movement claim."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

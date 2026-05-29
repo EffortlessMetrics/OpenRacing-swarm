@@ -4,7 +4,7 @@
   "artifact_kind": "moza_vendor_status_endpoint_candidate_plan",
   "claim_scope": "no_output_authority_status_endpoint_candidate_review",
   "command": "wheelctl moza vendor-status-endpoint-candidates",
-  "generated_at_utc": "2026-05-29T10:39:51Z",
+  "generated_at_utc": "2026-05-29T14:52:00Z",
   "authority_endpoint_diagnosis_receipt": "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json",
   "protocol_evidence_review_receipt": "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
   "source_diagnosis_classification": "authority_status_endpoint_specific_ack_only_without_payload",
@@ -17,6 +17,7 @@
   "observed_ack_only_tuple_ids": [
     "0xA1/0x21/no_command"
   ],
+  "observed_diagnostic_tuple_ids": [],
   "expected_payload_response_shape": {
     "source_command_id": "main_misc_get_ffb_status",
     "query_tuple_id": "0x21/0x12/0x07",
@@ -76,6 +77,109 @@
       "required_next_review": "fixture-backed decoder review must prove read-only status semantics before any live probe"
     }
   ],
+  "passive_command_id_0x07_analog_count": 5,
+  "passive_command_id_0x07_analogs_match_payload_status": false,
+  "passive_command_id_0x07_analogs_read_only_probe_allowed": false,
+  "passive_command_id_0x07_analogs_sendable": false,
+  "passive_command_id_0x07_analogs": [
+    {
+      "tuple_id": "0x40/0x17/0x07",
+      "registry_status": "unknown_commanded",
+      "total_count": 558,
+      "payload_len_min": 1,
+      "payload_len_max": 1,
+      "scenario_count": 3,
+      "scenarios": [
+        "pit-house-open-idle",
+        "pit-house-full-controls",
+        "pit-house-setting-change"
+      ],
+      "command_id_matches_expected_source": true,
+      "response_shape_matches_expected_authority_status": false,
+      "risk_class": "unknown_do_not_send",
+      "read_only_probe_allowed": false,
+      "output_sendability_claim": false,
+      "registry_promotion_claim": false,
+      "semantic_decode_claim": false,
+      "required_next_review": "fixture-backed decoder review must prove this command-id analog is payload-bearing read-only authority status before any live probe"
+    },
+    {
+      "tuple_id": "0x28/0x13/0x07",
+      "registry_status": "unknown_commanded",
+      "total_count": 2,
+      "payload_len_min": 2,
+      "payload_len_max": 2,
+      "scenario_count": 1,
+      "scenarios": [
+        "pit-house-setting-change"
+      ],
+      "command_id_matches_expected_source": true,
+      "response_shape_matches_expected_authority_status": false,
+      "risk_class": "unknown_do_not_send",
+      "read_only_probe_allowed": false,
+      "output_sendability_claim": false,
+      "registry_promotion_claim": false,
+      "semantic_decode_claim": false,
+      "required_next_review": "fixture-backed decoder review must prove this command-id analog is payload-bearing read-only authority status before any live probe"
+    },
+    {
+      "tuple_id": "0x23/0x19/0x07",
+      "registry_status": "unknown_commanded",
+      "total_count": 1,
+      "payload_len_min": 2,
+      "payload_len_max": 2,
+      "scenario_count": 1,
+      "scenarios": [
+        "pit-house-setting-change"
+      ],
+      "command_id_matches_expected_source": true,
+      "response_shape_matches_expected_authority_status": false,
+      "risk_class": "unknown_do_not_send",
+      "read_only_probe_allowed": false,
+      "output_sendability_claim": false,
+      "registry_promotion_claim": false,
+      "semantic_decode_claim": false,
+      "required_next_review": "fixture-backed decoder review must prove this command-id analog is payload-bearing read-only authority status before any live probe"
+    },
+    {
+      "tuple_id": "0x3F/0x17/0x07",
+      "registry_status": "unknown_commanded",
+      "total_count": 1,
+      "payload_len_min": 1,
+      "payload_len_max": 1,
+      "scenario_count": 1,
+      "scenarios": [
+        "pit-house-setting-change"
+      ],
+      "command_id_matches_expected_source": true,
+      "response_shape_matches_expected_authority_status": false,
+      "risk_class": "unknown_do_not_send",
+      "read_only_probe_allowed": false,
+      "output_sendability_claim": false,
+      "registry_promotion_claim": false,
+      "semantic_decode_claim": false,
+      "required_next_review": "fixture-backed decoder review must prove this command-id analog is payload-bearing read-only authority status before any live probe"
+    },
+    {
+      "tuple_id": "0x5B/0x1B/0x07",
+      "registry_status": "unknown_commanded",
+      "total_count": 1,
+      "payload_len_min": 4,
+      "payload_len_max": 4,
+      "scenario_count": 1,
+      "scenarios": [
+        "pit-house-setting-change"
+      ],
+      "command_id_matches_expected_source": true,
+      "response_shape_matches_expected_authority_status": false,
+      "risk_class": "unknown_do_not_send",
+      "read_only_probe_allowed": false,
+      "output_sendability_claim": false,
+      "registry_promotion_claim": false,
+      "semantic_decode_claim": false,
+      "required_next_review": "fixture-backed decoder review must prove this command-id analog is payload-bearing read-only authority status before any live probe"
+    }
+  ],
   "corrected_read_only_probe_ready": false,
   "native_control_evidence": false,
   "hardware_output_authorized": false,
@@ -99,8 +203,8 @@
   "mode_enable_candidates_sendable": false,
   "planned_next_output_allowed": false,
   "unknown_safety_or_mode_state_blocks_authority": true,
-  "exact_next_blocker": "Identify a payload-bearing authority-state status endpoint from fixtures or passive evidence; current ACK-only authority-status observations and passive mode/enable tuples are not sendable.",
-  "next_allowed_action": "Add no-output fixture-backed decoder coverage for corrected authority-status endpoint candidates. Do not run another live read-only probe until a candidate is explicitly classified as registry-approved read-only status and fake-demux approved.",
+  "exact_next_blocker": "Identify a payload-bearing authority-state status endpoint from fixtures or passive evidence; current ACK-only authority-status observations, passive mode/enable tuples, and passive command-id 0x07 analogs are not sendable.",
+  "next_allowed_action": "Add no-output fixture-backed decoder coverage for the passive command-id 0x07 analogs or another reviewed payload-bearing authority-state source. Do not run another live read-only probe until a candidate is explicitly classified as registry-approved read-only status and fake-demux approved.",
   "blocked_actions": [
     "live read-only probe of unknown passive tuples",
     "mode enable write",
@@ -127,7 +231,9 @@
   "notes": [
     "This receipt reads stored JSON only; it opens no HID or serial device and sends no traffic.",
     "The expected payload response shape is a correction target, not evidence that the current authority-status command works.",
+    "A debug-telemetry-only targeted rerun is endpoint-specific blocker evidence only; it does not identify a sendable status command.",
     "Passive tuple groups remain pattern-only questions and unknown_do_not_send until a future semantic decoder review promotes a read-only status candidate.",
+    "Passive command-id 0x07 analogs narrow the endpoint search space only; they are not payload-status matches, read-only probe inputs, or sendable commands.",
     "Native visible motion remains blocked; no wheel movement is claimed."
   ]
 }
