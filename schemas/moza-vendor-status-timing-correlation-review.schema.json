@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openracing.dev/schemas/moza-vendor-status-timing-correlation-review.schema.json",
+  "title": "Moza R5 0x8E timing-correlation review receipt",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "success",
+    "schema_version",
+    "artifact_kind",
+    "claim_scope",
+    "command",
+    "semantic_review_receipt",
+    "sniff_summary",
+    "operator_notes",
+    "target_group_id",
+    "target_tuple_ids",
+    "target_tuple_reviews",
+    "operator_event_markers_required",
+    "operator_event_markers_missing",
+    "operator_event_marker_notes_complete",
+    "summary_has_packet_timestamp_samples",
+    "any_target_samples_observed",
+    "same_tuple_payload_variation_observed",
+    "timing_correlation_proven",
+    "timing_correlation_verdict",
+    "payload_bearing_authority_state_source_found",
+    "live_read_only_probe_allowed",
+    "authorization_plan_allowed",
+    "motion_attempt_allowed",
+    "hardware_output_authorized",
+    "native_control_evidence",
+    "native_visible_ready",
+    "smoke_ready",
+    "release_ready",
+    "wheel_moved_under_openracing",
+    "visible_motion_verified",
+    "output_was_sent",
+    "authority_state",
+    "next_allowed_action",
+    "blocked_actions",
+    "required_artifacts"
+  ],
+  "properties": {
+    "success": { "const": true },
+    "schema_version": { "const": 1 },
+    "artifact_kind": {
+      "const": "moza_vendor_status_timing_correlation_review"
+    },
+    "claim_scope": {
+      "const": "no_output_0x8e_timing_correlation_review"
+    },
+    "command": {
+      "const": "wheelctl moza vendor-status-timing-correlation-review"
+    },
+    "target_group_id": {
+      "const": "passive_payload_bearing_status_source_0x8e"
+    },
+    "target_tuple_ids": {
+      "type": "array",
+      "minItems": 4,
+      "uniqueItems": true,
+      "allOf": [
+        { "contains": { "const": "0x8E/0x21/0x00" } },
+        { "contains": { "const": "0x8E/0x31/0x00" } },
+        { "contains": { "const": "0x8E/0x71/0x00" } },
+        { "contains": { "const": "0x8E/0x91/0x00" } }
+      ]
+    },
+    "target_tuple_reviews": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "required": [
+          "tuple_id",
+          "summary_observed_sample_count",
+          "summary_observed_payload_hex_values",
+          "same_tuple_payload_variation_observed",
+          "operator_event_marker_correlation_observed",
+          "timing_correlation_status",
+          "risk_class",
+          "semantic_decode_claim",
+          "registry_promotion_claim",
+          "output_sendability_claim",
+          "read_only_probe_allowed",
+          "hardware_output_authorized",
+          "native_control_evidence"
+        ],
+        "properties": {
+          "tuple_id": {
+            "enum": [
+              "0x8E/0x21/0x00",
+              "0x8E/0x31/0x00",
+              "0x8E/0x71/0x00",
+              "0x8E/0x91/0x00"
+            ]
+          },
+          "risk_class": { "const": "unknown_do_not_send" },
+          "semantic_decode_claim": { "const": false },
+          "registry_promotion_claim": { "const": false },
+          "output_sendability_claim": { "const": false },
+          "read_only_probe_allowed": { "const": false },
+          "hardware_output_authorized": { "const": false },
+          "native_control_evidence": { "const": false },
+          "operator_event_marker_correlation_observed": { "const": false }
+        }
+      }
+    },
+    "operator_event_marker_notes_complete": { "type": "boolean" },
+    "summary_has_packet_timestamp_samples": { "type": "boolean" },
+    "any_target_samples_observed": { "type": "boolean" },
+    "same_tuple_payload_variation_observed": { "type": "boolean" },
+    "timing_correlation_proven": { "const": false },
+    "payload_bearing_authority_state_source_found": { "const": false },
+    "reviewed_equivalent_status_source_found": { "const": false },
+    "corrected_read_only_probe_ready": { "const": false },
+    "live_read_only_probe_allowed": { "const": false },
+    "authorization_plan_allowed": { "const": false },
+    "motion_attempt_allowed": { "const": false },
+    "native_control_evidence": { "const": false },
+    "hardware_output_authorized": { "const": false },
+    "native_visible_ready": { "const": false },
+    "smoke_ready": { "const": false },
+    "release_ready": { "const": false },
+    "registry_promotion_claim": { "const": false },
+    "output_sendability_claim": { "const": false },
+    "semantic_decode_claim": { "const": false },
+    "wheel_moved_under_openracing": { "const": false },
+    "visible_motion_verified": { "const": false },
+    "output_was_sent": { "const": false },
+    "authority_state": { "const": "blocked" },
+    "no_hid_device_opened": { "const": true },
+    "opened_serial_device": { "const": false },
+    "sent_read_only_query_commands": { "const": false },
+    "sent_output_writes": { "const": false },
+    "sent_configuration_writes": { "const": false },
+    "sent_firmware_or_dfu_commands": { "const": false },
+    "high_torque_enabled": { "const": false },
+    "mode_enable_candidates_sendable": { "const": false },
+    "planned_next_output_allowed": { "const": false },
+    "unknown_safety_or_mode_state_blocks_authority": { "const": true },
+    "blocked_actions": {
+      "type": "array",
+      "contains": { "const": "hardware writes" }
+    },
+    "required_artifacts": {
+      "type": "array",
+      "minItems": 1
+    }
+  }
+}

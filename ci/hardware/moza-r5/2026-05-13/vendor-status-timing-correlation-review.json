@@ -1,0 +1,240 @@
+{
+  "any_target_samples_observed": true,
+  "artifact_kind": "moza_vendor_status_timing_correlation_review",
+  "authority_state": "blocked",
+  "authorization_plan_allowed": false,
+  "blocked_actions": [
+    "live read-only probe based on 0x8E candidates",
+    "mode enable write",
+    "authority write",
+    "output write",
+    "configuration write",
+    "PIDFF rerun",
+    "authorization receipt",
+    "hardware writes",
+    "high torque",
+    "native-control claim",
+    "native-visible claim",
+    "smoke-ready claim",
+    "release-ready claim",
+    "firmware or DFU command",
+    "unknown host-to-device command"
+  ],
+  "claim_scope": "no_output_0x8e_timing_correlation_review",
+  "command": "wheelctl moza vendor-status-timing-correlation-review",
+  "corrected_read_only_probe_ready": false,
+  "device_to_host_serial_frame_checksum_valid_count": 9,
+  "device_to_host_serial_frame_count": 9,
+  "device_to_host_serial_frame_shape_decode_gap": false,
+  "exact_next_blocker": "No reviewed timing-correlation evidence links the 0x8E payload-bearing status-source samples to authority or mode state. Live probe, authorization, PIDFF, force escalation, and motion remain blocked.",
+  "generated_at_utc": "2026-05-29T23:22:16Z",
+  "hardware_output_authorized": false,
+  "high_torque_enabled": false,
+  "live_read_only_probe_allowed": false,
+  "mode_enable_candidates_sendable": false,
+  "motion_attempt_allowed": false,
+  "native_control_evidence": false,
+  "native_visible_ready": false,
+  "next_allowed_action": "If this review is insufficient, run the staged passive Pit House 0x8E event-marker capture with complete operator notes and review the derived summary again. If it finds meaningful variation, create a separate reviewed read-only/status plan; do not authorize output from this receipt.",
+  "no_hid_device_opened": true,
+  "notes": [
+    "This receipt reads stored JSON and Markdown only; it opens no HID or serial device and sends no traffic.",
+    "The reviewed 0x8E samples remain unknown_do_not_send status-source questions.",
+    "Timing correlation is not semantic decode, registry promotion, read-only probe eligibility, output sendability, authorization input, or motion authorization.",
+    "Native visible motion remains blocked; no wheel movement is claimed."
+  ],
+  "opened_serial_device": false,
+  "operator_event_marker_count": 0,
+  "operator_event_marker_notes_complete": false,
+  "operator_event_markers_missing": [
+    "capture_start_utc",
+    "hardware_doctor_selector_reviewed_utc",
+    "pit_house_opened_utc",
+    "r5_recognized_in_pit_house_utc",
+    "idle_stable_before_change_utc",
+    "ks_top_left_front_led_default_teal_observed_utc",
+    "ks_top_left_front_led_changed_to_red_utc",
+    "ks_top_left_front_led_restored_to_default_teal_utc",
+    "idle_stable_after_restore_utc",
+    "pit_house_closed_utc",
+    "capture_stop_utc"
+  ],
+  "operator_event_markers_present": [],
+  "operator_event_markers_required": [
+    "capture_start_utc",
+    "hardware_doctor_selector_reviewed_utc",
+    "pit_house_opened_utc",
+    "r5_recognized_in_pit_house_utc",
+    "idle_stable_before_change_utc",
+    "ks_top_left_front_led_default_teal_observed_utc",
+    "ks_top_left_front_led_changed_to_red_utc",
+    "ks_top_left_front_led_restored_to_default_teal_utc",
+    "idle_stable_after_restore_utc",
+    "pit_house_closed_utc",
+    "capture_stop_utc"
+  ],
+  "operator_notes": "ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/operator-notes.md",
+  "output_sendability_claim": false,
+  "output_was_sent": false,
+  "payload_bearing_authority_state_source_found": false,
+  "planned_next_output_allowed": false,
+  "registry_promotion_claim": false,
+  "release_ready": false,
+  "required_artifacts": [
+    "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
+    "ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-summary.json",
+    "ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/operator-notes.md",
+    "schemas/moza-vendor-status-timing-correlation-review.schema.json"
+  ],
+  "reviewed_equivalent_status_source_found": false,
+  "same_tuple_payload_variation_observed": false,
+  "schema_version": 1,
+  "semantic_decode_claim": false,
+  "semantic_review_receipt": "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
+  "sent_configuration_writes": false,
+  "sent_firmware_or_dfu_commands": false,
+  "sent_output_writes": false,
+  "sent_read_only_query_commands": false,
+  "smoke_ready": false,
+  "sniff_summary": "ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-summary.json",
+  "success": true,
+  "summary_command": "wheelctl hardware sniff-summary",
+  "summary_has_packet_timestamp_samples": false,
+  "summary_matched_packets": 100492,
+  "summary_pcapng_sha256": "39d43f3454648ea9767e3cf88740073eec9f120ca42f36dfa438fd8f2707d3fc",
+  "target_group_id": "passive_payload_bearing_status_source_0x8e",
+  "target_tuple_ids": [
+    "0x8E/0x21/0x00",
+    "0x8E/0x31/0x00",
+    "0x8E/0x71/0x00",
+    "0x8E/0x91/0x00"
+  ],
+  "target_tuple_reviews": [
+    {
+      "hardware_output_authorized": false,
+      "native_control_evidence": false,
+      "operator_event_marker_correlation_observed": false,
+      "output_sendability_claim": false,
+      "read_only_probe_allowed": false,
+      "registry_promotion_claim": false,
+      "risk_class": "unknown_do_not_send",
+      "same_tuple_payload_variation_observed": false,
+      "semantic_decode_claim": false,
+      "semantic_review_payload_hex": "019100002624",
+      "summary_observed_payload_hex_values": [
+        "019100002624"
+      ],
+      "summary_observed_sample_count": 1,
+      "summary_samples": [
+        {
+          "checksum_valid": true,
+          "frame_hex": "7E078E21000191000026241D",
+          "frame_ordinal_in_packet": 1,
+          "hardware_output_authorized": false,
+          "output_sendability_claim": false,
+          "packet_ordinal": 1,
+          "payload_hex": "019100002624",
+          "tuple_id": "0x8E/0x21/0x00"
+        }
+      ],
+      "timing_correlation_status": "static_or_single_sample",
+      "tuple_id": "0x8E/0x21/0x00"
+    },
+    {
+      "hardware_output_authorized": false,
+      "native_control_evidence": false,
+      "operator_event_marker_correlation_observed": false,
+      "output_sendability_claim": false,
+      "read_only_probe_allowed": false,
+      "registry_promotion_claim": false,
+      "risk_class": "unknown_do_not_send",
+      "same_tuple_payload_variation_observed": false,
+      "semantic_decode_claim": false,
+      "semantic_review_payload_hex": "019100002624",
+      "summary_observed_payload_hex_values": [
+        "019100002624"
+      ],
+      "summary_observed_sample_count": 1,
+      "summary_samples": [
+        {
+          "checksum_valid": true,
+          "frame_hex": "7E078E31000191000026242D",
+          "frame_ordinal_in_packet": 2,
+          "hardware_output_authorized": false,
+          "output_sendability_claim": false,
+          "packet_ordinal": 2,
+          "payload_hex": "019100002624",
+          "tuple_id": "0x8E/0x31/0x00"
+        }
+      ],
+      "timing_correlation_status": "static_or_single_sample",
+      "tuple_id": "0x8E/0x31/0x00"
+    },
+    {
+      "hardware_output_authorized": false,
+      "native_control_evidence": false,
+      "operator_event_marker_correlation_observed": false,
+      "output_sendability_claim": false,
+      "read_only_probe_allowed": false,
+      "registry_promotion_claim": false,
+      "risk_class": "unknown_do_not_send",
+      "same_tuple_payload_variation_observed": false,
+      "semantic_decode_claim": false,
+      "semantic_review_payload_hex": "0FB300000001",
+      "summary_observed_payload_hex_values": [
+        "0FB300000001"
+      ],
+      "summary_observed_sample_count": 1,
+      "summary_samples": [
+        {
+          "checksum_valid": true,
+          "frame_hex": "7E078E71000FB30000000154",
+          "frame_ordinal_in_packet": 1,
+          "hardware_output_authorized": false,
+          "output_sendability_claim": false,
+          "packet_ordinal": 3,
+          "payload_hex": "0FB300000001",
+          "tuple_id": "0x8E/0x71/0x00"
+        }
+      ],
+      "timing_correlation_status": "static_or_single_sample",
+      "tuple_id": "0x8E/0x71/0x00"
+    },
+    {
+      "hardware_output_authorized": false,
+      "native_control_evidence": false,
+      "operator_event_marker_correlation_observed": false,
+      "output_sendability_claim": false,
+      "read_only_probe_allowed": false,
+      "registry_promotion_claim": false,
+      "risk_class": "unknown_do_not_send",
+      "same_tuple_payload_variation_observed": false,
+      "semantic_decode_claim": false,
+      "semantic_review_payload_hex": "013E000000E6",
+      "summary_observed_payload_hex_values": [
+        "013E000000E6"
+      ],
+      "summary_observed_sample_count": 1,
+      "summary_samples": [
+        {
+          "checksum_valid": true,
+          "frame_hex": "7E078E9100013E000000E6D6",
+          "frame_ordinal_in_packet": 1,
+          "hardware_output_authorized": false,
+          "output_sendability_claim": false,
+          "packet_ordinal": 2,
+          "payload_hex": "013E000000E6",
+          "tuple_id": "0x8E/0x91/0x00"
+        }
+      ],
+      "timing_correlation_status": "static_or_single_sample",
+      "tuple_id": "0x8E/0x91/0x00"
+    }
+  ],
+  "target_tuple_sample_count": 4,
+  "timing_correlation_proven": false,
+  "timing_correlation_verdict": "insufficient_static_or_single_sample_0x8e_payloads",
+  "unknown_safety_or_mode_state_blocks_authority": true,
+  "visible_motion_verified": false,
+  "wheel_moved_under_openracing": false
+}

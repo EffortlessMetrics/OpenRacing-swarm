@@ -279,6 +279,15 @@ raw pcap local by default
 future no-output timing-correlation review
 ```
 
+`vendor-status-timing-correlation-review.json` now reviews the existing accepted
+Pit House setting-change derived summary and notes with that future review
+shape. It finds all four target `0x8E` samples, but only as static/single-sample
+payloads, and the notes do not contain the explicit event-marker fields required
+by the timing-correlation plan. The verdict is
+`insufficient_static_or_single_sample_0x8e_payloads`; live read-only probe,
+authorization planning, PIDFF rerun, force escalation, and motion remain
+blocked.
+
 The plan is not capture evidence. It records `capture_recorded=false`,
 `timing_correlation_proven=false`, `live_read_only_probe_allowed=false`,
 `authorization_plan_allowed=false`, `motion_attempt_allowed=false`,

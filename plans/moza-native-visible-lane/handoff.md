@@ -183,6 +183,7 @@ The broader Moza objective remains incomplete:
 | Payload-bearing status-source candidates | `vendor-status-payload-source-candidates.json` | Recorded four nonzero `0x8E` device-to-host setting-change samples as `unknown_do_not_send` status-source questions; no semantic decode, probe readiness, authorization, output, or motion claim |
 | Payload-source semantic review | `vendor-status-payload-source-semantic-review.json` | Fixture decoder coverage now recognizes the four `0x8E` samples as payload-bearing status-source questions, but the review records no same-tuple payload variation, no timing correlation, no authority-state source, and no live probe/output/motion eligibility |
 | 0x8E timing-correlation plan | `vendor-status-timing-correlation-plan.json` | Stages a passive Pit House event-marker capture for the same four `0x8E` samples with fresh hardware-doctor selector verification and complete LED default-teal/red/default-teal notes; no capture, timing proof, live probe, authorization, output, or motion claim |
+| Existing 0x8E timing-correlation review | `vendor-status-timing-correlation-review.json` | Reviews the accepted Pit House setting-change derived summary and finds the four target `0x8E` samples, but classifies them as static/single-sample with missing event-marker timing proof; live probe, authorization, output, and motion remain blocked |
 | Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls`, and `pit-house-setting-change` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence; setting-change keeps the earlier low-yield classification as historical failed evidence |
 | Remaining passive sniff plans | `simhub-open-idle`, `simhub-output-session`, `simulator-session-start-stop` sniff plans | Plan-only |
 | Pit House coexistence | `pit-house-coexistence.json` | Missing |
@@ -233,11 +234,14 @@ also keeps generic external witness gaps pointed at SimHub and simulator
 scenarios. The native-control implementation path has recorded fake-transport
 containment for the mode/enable candidate questions: representative frames are
 observable in software fake transport while the command/send path still rejects
-them as unknown commands. The current native-path passive target is now the
+them as unknown commands. The current native-path passive target remains the
 planned `pit-house-0x8e-timing-correlation` capture, which requires fresh
 hardware-doctor selector verification, a passive `sniff-capture
 --hardware-doctor` command, explicit LED event markers, and no OpenRacing
-hardware output.
+hardware output. The existing setting-change capture was reviewed and found
+insufficient for this purpose because it exposes only static/single-sample
+`0x8E` payloads and lacks the event-marker fields required to prove timing
+correlation.
 
 The read-only hardware status/mode matrix is now recorded at
 `vendor-status-mode-matrix.json` with its fresh precondition doctor at
@@ -497,6 +501,20 @@ run only a later no-output review of the derived summary. The plan records
 `visible_motion_verified=false`, `output_was_sent=false`, and
 `authority_state=blocked`. It does not authorize a live probe, PIDFF rerun, force
 escalation, or motion attempt.
+
+`vendor-status-timing-correlation-review.json` now applies the no-output review
+shape to the existing accepted Pit House setting-change summary and notes. It
+finds all four target `0x8E` samples, but only as static/single-sample payloads;
+the existing notes also lack the explicit event-marker fields from the staged
+plan. The review records `timing_correlation_proven=false`,
+`same_tuple_payload_variation_observed=false`,
+`payload_bearing_authority_state_source_found=false`,
+`live_read_only_probe_allowed=false`, `authorization_plan_allowed=false`,
+`motion_attempt_allowed=false`, `wheel_moved_under_openracing=false`,
+`visible_motion_verified=false`, `output_was_sent=false`, and
+`authority_state=blocked`. The next native-path action remains the staged
+passive event-marker capture or another reviewed payload-bearing status source,
+not output.
 
 The read-only demux follow-up is now recorded at
 `vendor-status-mode-matrix-demux.json` with its fresh precondition doctor at

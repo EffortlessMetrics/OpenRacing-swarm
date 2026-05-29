@@ -2638,6 +2638,57 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_vendor_status_timing_correlation_review() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "vendor-status-timing-correlation-review",
+            "--semantic-review",
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
+            "--summary",
+            "target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json",
+            "--operator-notes",
+            "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
+            "--json-out",
+            "target/sniff/pit-house-0x8e-timing-correlation/vendor-status-timing-correlation-review.json",
+            "--overwrite",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::VendorStatusTimingCorrelationReview {
+                semantic_review,
+                summary,
+                operator_notes,
+                json_out,
+                overwrite,
+            }) => {
+                assert_eq!(
+                    semantic_review.to_str(),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json"
+                    )
+                );
+                assert_eq!(
+                    summary.to_str(),
+                    Some("target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json")
+                );
+                assert_eq!(
+                    operator_notes.to_str(),
+                    Some("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md")
+                );
+                assert_eq!(
+                    json_out.to_str(),
+                    Some(
+                        "target/sniff/pit-house-0x8e-timing-correlation/vendor-status-timing-correlation-review.json"
+                    )
+                );
+                assert!(*overwrite);
+            }
+            _ => return Err("expected Moza VendorStatusTimingCorrelationReview command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_authorize_vendor_authority() -> TestResult {
         let cli = parse_cli([
             "wheelctl",

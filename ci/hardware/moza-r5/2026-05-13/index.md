@@ -263,6 +263,7 @@ This section is protocol research/support navigation only. Passive sniff artifac
 | `vendor-status-response-semantic-fixtures.json` | `json` | `passive_input_or_descriptor_evidence` |
 | `vendor-status-response-source-correlation.json` | `json` | `passive_input_or_descriptor_evidence` |
 | `vendor-status-timing-correlation-plan.json` | `json` | `passive_input_or_descriptor_evidence` |
+| `vendor-status-timing-correlation-review.json` | `json` | `passive_input_or_descriptor_evidence` |
 
 ## Zero, Watchdog, Disconnect
 

@@ -696,6 +696,15 @@ struct VendorStatusTimingCorrelationPlanRequest<'a> {
     overwrite: bool,
 }
 
+struct VendorStatusTimingCorrelationReviewRequest<'a> {
+    json: bool,
+    semantic_review: &'a Path,
+    summary: &'a Path,
+    operator_notes: &'a Path,
+    json_out: &'a Path,
+    overwrite: bool,
+}
+
 struct VendorAuthorityAuthorizationRequest<'a> {
     json: bool,
     command_id: &'a str,
@@ -1027,6 +1036,23 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             vendor_status_timing_correlation_plan(VendorStatusTimingCorrelationPlanRequest {
                 json,
                 semantic_review,
+                json_out,
+                overwrite: *overwrite,
+            })
+            .await
+        }
+        MozaCommands::VendorStatusTimingCorrelationReview {
+            semantic_review,
+            summary,
+            operator_notes,
+            json_out,
+            overwrite,
+        } => {
+            vendor_status_timing_correlation_review(VendorStatusTimingCorrelationReviewRequest {
+                json,
+                semantic_review,
+                summary,
+                operator_notes,
                 json_out,
                 overwrite: *overwrite,
             })
@@ -7329,6 +7355,26 @@ async fn vendor_status_timing_correlation_plan(
         vendor_status_timing_correlation_plan_receipt(request.semantic_review, &semantic_review)?;
     write_json_file(request.json_out, &receipt)?;
     print_vendor_status_timing_correlation_plan_receipt(request.json, request.json_out, &receipt)
+}
+
+async fn vendor_status_timing_correlation_review(
+    request: VendorStatusTimingCorrelationReviewRequest<'_>,
+) -> Result<()> {
+    ensure_receipt_writable(request.json_out, request.overwrite)?;
+    let semantic_review = read_json_path(request.semantic_review)?;
+    let summary = read_json_path(request.summary)?;
+    let operator_notes = fs::read_to_string(request.operator_notes)
+        .with_context(|| format!("read operator notes '{}'", request.operator_notes.display()))?;
+    let receipt = vendor_status_timing_correlation_review_receipt(
+        request.semantic_review,
+        &semantic_review,
+        request.summary,
+        &summary,
+        request.operator_notes,
+        &operator_notes,
+    )?;
+    write_json_file(request.json_out, &receipt)?;
+    print_vendor_status_timing_correlation_review_receipt(request.json, request.json_out, &receipt)
 }
 
 async fn authorize_vendor_authority(
@@ -30213,6 +30259,391 @@ fn vendor_status_timing_correlation_plan_receipt(
     Ok(Value::Object(receipt))
 }
 
+fn vendor_status_timing_correlation_review_receipt(
+    semantic_review_path: &Path,
+    semantic_review: &Value,
+    summary_path: &Path,
+    summary: &Value,
+    operator_notes_path: &Path,
+    operator_notes: &str,
+) -> Result<Value> {
+    validate_vendor_status_timing_correlation_plan_source(semantic_review_path, semantic_review)?;
+    validate_vendor_status_timing_correlation_review_summary(summary_path, summary)?;
+
+    let required_markers = vendor_status_timing_correlation_required_markers();
+    let present_markers = required_markers
+        .iter()
+        .copied()
+        .filter(|marker| operator_notes.contains(marker))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let missing_markers = required_markers
+        .iter()
+        .copied()
+        .filter(|marker| !operator_notes.contains(marker))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let event_marker_notes_complete = missing_markers.is_empty();
+
+    let target_tuple_ids = vendor_status_timing_correlation_target_tuple_ids();
+    let semantic_samples = semantic_review
+        .get("reviewed_payload_source_samples")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            anyhow!(
+                "payload-source semantic review '{}' is missing reviewed_payload_source_samples",
+                semantic_review_path.display()
+            )
+        })?;
+    let semantic_payload_by_tuple = semantic_samples
+        .iter()
+        .filter_map(|sample| {
+            let tuple_id = json_string(sample, "tuple_id")?;
+            let payload_hex = json_string(sample, "payload_hex")?;
+            Some((tuple_id.to_string(), payload_hex.to_string()))
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    let summary_serial_frames =
+        device_to_host_serial_frame_summary_from_observed_reports(summary, "reviewed_summary");
+    let mut summary_payloads_by_tuple = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut summary_samples_by_tuple = BTreeMap::<String, Vec<Value>>::new();
+    for sample in &summary_serial_frames.tuple_samples {
+        if !target_tuple_ids.contains(&sample.tuple_id.as_str()) {
+            continue;
+        }
+        summary_payloads_by_tuple
+            .entry(sample.tuple_id.clone())
+            .or_default()
+            .insert(sample.payload_hex.clone());
+        summary_samples_by_tuple
+            .entry(sample.tuple_id.clone())
+            .or_default()
+            .push(serde_json::json!({
+                "tuple_id": sample.tuple_id,
+                "frame_hex": sample.frame_hex,
+                "packet_ordinal": sample.packet_ordinal,
+                "frame_ordinal_in_packet": sample.frame_ordinal_in_packet,
+                "payload_hex": sample.payload_hex,
+                "checksum_valid": sample.checksum_valid,
+                "hardware_output_authorized": false,
+                "output_sendability_claim": false
+            }));
+    }
+
+    let mut any_target_samples_observed = false;
+    let mut same_tuple_payload_variation_observed = false;
+    let mut tuple_reviews = Vec::new();
+    for tuple_id in &target_tuple_ids {
+        let observed_payloads = summary_payloads_by_tuple
+            .get(*tuple_id)
+            .map(|payloads| payloads.iter().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        let observed_samples = summary_samples_by_tuple
+            .get(*tuple_id)
+            .cloned()
+            .unwrap_or_default();
+        let sample_count = observed_samples.len();
+        any_target_samples_observed |= sample_count > 0;
+        let tuple_varied = observed_payloads.len() > 1;
+        same_tuple_payload_variation_observed |= tuple_varied;
+        tuple_reviews.push(serde_json::json!({
+            "tuple_id": tuple_id,
+            "semantic_review_payload_hex": semantic_payload_by_tuple
+                .get(*tuple_id)
+                .cloned()
+                .unwrap_or_else(|| "unknown".to_string()),
+            "summary_observed_sample_count": sample_count,
+            "summary_observed_payload_hex_values": observed_payloads,
+            "same_tuple_payload_variation_observed": tuple_varied,
+            "operator_event_marker_correlation_observed": false,
+            "timing_correlation_status": if sample_count == 0 {
+                "missing_from_summary"
+            } else if tuple_varied {
+                "payload_varies_but_timing_not_proven"
+            } else {
+                "static_or_single_sample"
+            },
+            "summary_samples": observed_samples,
+            "risk_class": "unknown_do_not_send",
+            "semantic_decode_claim": false,
+            "registry_promotion_claim": false,
+            "output_sendability_claim": false,
+            "read_only_probe_allowed": false,
+            "hardware_output_authorized": false,
+            "native_control_evidence": false
+        }));
+    }
+
+    let summary_has_packet_timestamp_samples = json_object_key_contains(summary, "timestamp")
+        || json_object_key_contains(summary, "time_utc");
+    let timing_correlation_proven = false;
+    let timing_correlation_verdict = if !any_target_samples_observed {
+        "insufficient_no_target_0x8e_samples"
+    } else if !same_tuple_payload_variation_observed {
+        "insufficient_static_or_single_sample_0x8e_payloads"
+    } else if !event_marker_notes_complete || !summary_has_packet_timestamp_samples {
+        "insufficient_missing_event_markers_or_packet_timestamps"
+    } else {
+        "candidate_variation_requires_separate_semantic_review"
+    };
+
+    let mut receipt = serde_json::Map::new();
+    macro_rules! insert_json {
+        ($key:literal, $value:expr) => {
+            receipt.insert($key.to_string(), serde_json::json!($value));
+        };
+    }
+
+    insert_json!("success", true);
+    insert_json!("schema_version", 1);
+    insert_json!(
+        "artifact_kind",
+        "moza_vendor_status_timing_correlation_review"
+    );
+    insert_json!("claim_scope", "no_output_0x8e_timing_correlation_review");
+    insert_json!(
+        "command",
+        "wheelctl moza vendor-status-timing-correlation-review"
+    );
+    insert_json!("generated_at_utc", now_utc());
+    insert_json!(
+        "semantic_review_receipt",
+        semantic_review_path.display().to_string()
+    );
+    insert_json!("sniff_summary", summary_path.display().to_string());
+    insert_json!("operator_notes", operator_notes_path.display().to_string());
+    insert_json!(
+        "summary_command",
+        json_string(summary, "command").unwrap_or("unknown")
+    );
+    insert_json!(
+        "summary_pcapng_sha256",
+        json_string(summary, "pcapng_sha256").unwrap_or("unknown")
+    );
+    insert_json!(
+        "summary_matched_packets",
+        json_u64(summary, "matched_packets").unwrap_or(0)
+    );
+    insert_json!(
+        "target_group_id",
+        PAYLOAD_BEARING_STATUS_SOURCE_RESPONSE_GROUP_ID
+    );
+    insert_json!(
+        "target_tuple_ids",
+        target_tuple_ids
+            .iter()
+            .copied()
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    );
+    insert_json!(
+        "device_to_host_serial_frame_count",
+        summary_serial_frames.parsed_frame_count
+    );
+    insert_json!(
+        "device_to_host_serial_frame_checksum_valid_count",
+        summary_serial_frames.checksum_valid_frame_count
+    );
+    insert_json!(
+        "device_to_host_serial_frame_shape_decode_gap",
+        summary_serial_frames.frame_shape_decode_gap
+    );
+    insert_json!(
+        "target_tuple_sample_count",
+        tuple_reviews
+            .iter()
+            .filter_map(|review| json_u64(review, "summary_observed_sample_count"))
+            .sum::<u64>()
+    );
+    receipt.insert(
+        "target_tuple_reviews".to_string(),
+        Value::Array(tuple_reviews),
+    );
+    insert_json!(
+        "operator_event_markers_required",
+        required_markers
+            .iter()
+            .copied()
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    );
+    insert_json!("operator_event_marker_count", present_markers.len());
+    insert_json!("operator_event_markers_present", present_markers);
+    insert_json!("operator_event_markers_missing", missing_markers);
+    insert_json!(
+        "operator_event_marker_notes_complete",
+        event_marker_notes_complete
+    );
+    insert_json!(
+        "summary_has_packet_timestamp_samples",
+        summary_has_packet_timestamp_samples
+    );
+    insert_json!("any_target_samples_observed", any_target_samples_observed);
+    insert_json!(
+        "same_tuple_payload_variation_observed",
+        same_tuple_payload_variation_observed
+    );
+    insert_json!("timing_correlation_proven", timing_correlation_proven);
+    insert_json!("timing_correlation_verdict", timing_correlation_verdict);
+    insert_json!("payload_bearing_authority_state_source_found", false);
+    insert_json!("reviewed_equivalent_status_source_found", false);
+    insert_json!("corrected_read_only_probe_ready", false);
+    insert_json!("live_read_only_probe_allowed", false);
+    insert_json!("authorization_plan_allowed", false);
+    insert_json!("motion_attempt_allowed", false);
+    insert_json!("native_control_evidence", false);
+    insert_json!("hardware_output_authorized", false);
+    insert_json!("native_visible_ready", false);
+    insert_json!("smoke_ready", false);
+    insert_json!("release_ready", false);
+    insert_json!("registry_promotion_claim", false);
+    insert_json!("output_sendability_claim", false);
+    insert_json!("semantic_decode_claim", false);
+    insert_json!("wheel_moved_under_openracing", false);
+    insert_json!("visible_motion_verified", false);
+    insert_json!("output_was_sent", false);
+    insert_json!("authority_state", "blocked");
+    insert_json!("no_hid_device_opened", true);
+    insert_json!("opened_serial_device", false);
+    insert_json!("sent_read_only_query_commands", false);
+    insert_json!("sent_output_writes", false);
+    insert_json!("sent_configuration_writes", false);
+    insert_json!("sent_firmware_or_dfu_commands", false);
+    insert_json!("high_torque_enabled", false);
+    insert_json!("mode_enable_candidates_sendable", false);
+    insert_json!("planned_next_output_allowed", false);
+    insert_json!("unknown_safety_or_mode_state_blocks_authority", true);
+    insert_json!(
+        "exact_next_blocker",
+        "No reviewed timing-correlation evidence links the 0x8E payload-bearing status-source samples to authority or mode state. Live probe, authorization, PIDFF, force escalation, and motion remain blocked."
+    );
+    insert_json!(
+        "next_allowed_action",
+        "If this review is insufficient, run the staged passive Pit House 0x8E event-marker capture with complete operator notes and review the derived summary again. If it finds meaningful variation, create a separate reviewed read-only/status plan; do not authorize output from this receipt."
+    );
+    insert_json!(
+        "blocked_actions",
+        [
+            "live read-only probe based on 0x8E candidates",
+            "mode enable write",
+            "authority write",
+            "output write",
+            "configuration write",
+            "PIDFF rerun",
+            "authorization receipt",
+            "hardware writes",
+            "high torque",
+            "native-control claim",
+            "native-visible claim",
+            "smoke-ready claim",
+            "release-ready claim",
+            "firmware or DFU command",
+            "unknown host-to-device command"
+        ]
+    );
+    insert_json!(
+        "required_artifacts",
+        [
+            semantic_review_path.display().to_string(),
+            summary_path.display().to_string(),
+            operator_notes_path.display().to_string(),
+            "schemas/moza-vendor-status-timing-correlation-review.schema.json".to_string()
+        ]
+    );
+    insert_json!(
+        "notes",
+        [
+            "This receipt reads stored JSON and Markdown only; it opens no HID or serial device and sends no traffic.",
+            "The reviewed 0x8E samples remain unknown_do_not_send status-source questions.",
+            "Timing correlation is not semantic decode, registry promotion, read-only probe eligibility, output sendability, authorization input, or motion authorization.",
+            "Native visible motion remains blocked; no wheel movement is claimed."
+        ]
+    );
+
+    Ok(Value::Object(receipt))
+}
+
+fn validate_vendor_status_timing_correlation_review_summary(
+    path: &Path,
+    summary: &Value,
+) -> Result<()> {
+    if json_string(summary, "command") != Some("wheelctl hardware sniff-summary") {
+        return Err(anyhow!(
+            "timing-correlation summary '{}' must be produced by `wheelctl hardware sniff-summary`",
+            path.display()
+        ));
+    }
+    if json_bool(summary, "native_control_evidence") != Some(false) {
+        return Err(anyhow!(
+            "timing-correlation summary '{}' must keep native_control_evidence=false",
+            path.display()
+        ));
+    }
+    if json_bool(summary, "openracing_hardware_output") != Some(false) {
+        return Err(anyhow!(
+            "timing-correlation summary '{}' must keep openracing_hardware_output=false",
+            path.display()
+        ));
+    }
+    if json_bool(summary, "satisfies_native_visible_ready") != Some(false) {
+        return Err(anyhow!(
+            "timing-correlation summary '{}' must keep satisfies_native_visible_ready=false",
+            path.display()
+        ));
+    }
+    if json_bool(summary, "satisfies_smoke_ready") != Some(false) {
+        return Err(anyhow!(
+            "timing-correlation summary '{}' must keep satisfies_smoke_ready=false",
+            path.display()
+        ));
+    }
+    if json_bool(summary, "satisfies_release_ready") != Some(false) {
+        return Err(anyhow!(
+            "timing-correlation summary '{}' must keep satisfies_release_ready=false",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn vendor_status_timing_correlation_target_tuple_ids() -> [&'static str; 4] {
+    [
+        "0x8E/0x21/0x00",
+        "0x8E/0x31/0x00",
+        "0x8E/0x71/0x00",
+        "0x8E/0x91/0x00",
+    ]
+}
+
+fn vendor_status_timing_correlation_required_markers() -> [&'static str; 11] {
+    [
+        "capture_start_utc",
+        "hardware_doctor_selector_reviewed_utc",
+        "pit_house_opened_utc",
+        "r5_recognized_in_pit_house_utc",
+        "idle_stable_before_change_utc",
+        "ks_top_left_front_led_default_teal_observed_utc",
+        "ks_top_left_front_led_changed_to_red_utc",
+        "ks_top_left_front_led_restored_to_default_teal_utc",
+        "idle_stable_after_restore_utc",
+        "pit_house_closed_utc",
+        "capture_stop_utc",
+    ]
+}
+
+fn json_object_key_contains(value: &Value, needle: &str) -> bool {
+    match value {
+        Value::Array(values) => values
+            .iter()
+            .any(|value| json_object_key_contains(value, needle)),
+        Value::Object(values) => values
+            .iter()
+            .any(|(key, value)| key.contains(needle) || json_object_key_contains(value, needle)),
+        _ => false,
+    }
+}
+
 fn payload_hex_has_nonzero(payload_hex: &str) -> bool {
     payload_hex
         .bytes()
@@ -44790,6 +45221,25 @@ fn print_vendor_status_timing_correlation_plan_receipt(
     Ok(())
 }
 
+fn print_vendor_status_timing_correlation_review_receipt(
+    json: bool,
+    json_out: &Path,
+    receipt: &Value,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Moza 0x8E timing-correlation review: target_samples={}, timing_proven={}, live_probe_allowed={}; no traffic was sent.",
+            json_u64(receipt, "target_tuple_sample_count").unwrap_or(0),
+            json_bool(receipt, "timing_correlation_proven").unwrap_or(false),
+            json_bool(receipt, "live_read_only_probe_allowed").unwrap_or(false)
+        );
+        println!("Receipt: {}", json_out.display());
+    }
+    Ok(())
+}
+
 fn print_vendor_authority_authorization_receipt(
     json: bool,
     json_out: &Path,
@@ -48375,6 +48825,157 @@ mod tests {
     }
 
     #[test]
+    fn vendor_status_timing_correlation_review_keeps_motion_blocked() -> TestResult {
+        let payload_source_candidates: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_PAYLOAD_SOURCE_CANDIDATES_JSON)?;
+        let semantic_review = vendor_status_payload_source_semantic_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-candidates.json",
+            ),
+            &payload_source_candidates,
+        )?;
+        let summary = sample_passive_sniff_summary_with_0x8e_frames(100_492);
+        let operator_notes = complete_0x8e_timing_operator_notes();
+
+        let receipt = vendor_status_timing_correlation_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
+            ),
+            &semantic_review,
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json"),
+            &summary,
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"),
+            &operator_notes,
+        )?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-status-timing-correlation-review.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&receipt).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        assert_eq!(
+            json_string(&receipt, "artifact_kind"),
+            Some("moza_vendor_status_timing_correlation_review")
+        );
+        assert_eq!(
+            json_string(&receipt, "timing_correlation_verdict"),
+            Some("insufficient_static_or_single_sample_0x8e_payloads")
+        );
+        assert_eq!(
+            json_bool(&receipt, "timing_correlation_proven"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "live_read_only_probe_allowed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "output_was_sent"), Some(false));
+        assert_eq!(json_bool(&receipt, "visible_motion_verified"), Some(false));
+        assert_eq!(
+            json_bool(&receipt, "wheel_moved_under_openracing"),
+            Some(false)
+        );
+        assert_eq!(json_string(&receipt, "authority_state"), Some("blocked"));
+        assert_eq!(json_u64(&receipt, "target_tuple_sample_count"), Some(4));
+        assert!(json_contains_string(&receipt, "0x8E/0x21/0x00"));
+        assert!(json_contains_string(&receipt, "unknown_do_not_send"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_timing_correlation_review_rejects_output_summary() -> TestResult {
+        let payload_source_candidates: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_PAYLOAD_SOURCE_CANDIDATES_JSON)?;
+        let semantic_review = vendor_status_payload_source_semantic_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-candidates.json",
+            ),
+            &payload_source_candidates,
+        )?;
+        let mut summary = sample_passive_sniff_summary_with_0x8e_frames(100_492);
+        summary["openracing_hardware_output"] = Value::Bool(true);
+
+        let result = vendor_status_timing_correlation_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
+            ),
+            &semantic_review,
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json"),
+            &summary,
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"),
+            &complete_0x8e_timing_operator_notes(),
+        );
+        let Err(error) = result else {
+            return Err("timing-correlation review must reject output summaries".into());
+        };
+        assert!(
+            error.to_string().contains("openracing_hardware_output"),
+            "unexpected error: {error}"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn vendor_status_timing_correlation_review_command_writes_json_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let payload_source_candidates: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_PAYLOAD_SOURCE_CANDIDATES_JSON)?;
+        let semantic_review = vendor_status_payload_source_semantic_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-candidates.json",
+            ),
+            &payload_source_candidates,
+        )?;
+        let semantic_review_path = dir
+            .path()
+            .join("vendor-status-payload-source-semantic-review.json");
+        let summary_path = dir.path().join("sniff-summary.json");
+        let operator_notes_path = dir.path().join("operator-notes.md");
+        let json_out = dir
+            .path()
+            .join("vendor-status-timing-correlation-review.json");
+        write_test_json_file(&semantic_review_path, &semantic_review)?;
+        write_test_json_file(
+            &summary_path,
+            &sample_passive_sniff_summary_with_0x8e_frames(100_492),
+        )?;
+        fs::write(&operator_notes_path, complete_0x8e_timing_operator_notes())?;
+
+        vendor_status_timing_correlation_review(VendorStatusTimingCorrelationReviewRequest {
+            json: false,
+            semantic_review: &semantic_review_path,
+            summary: &summary_path,
+            operator_notes: &operator_notes_path,
+            json_out: &json_out,
+            overwrite: false,
+        })
+        .await?;
+
+        let receipt = read_json_path(&json_out)?;
+        assert_eq!(
+            json_string(&receipt, "command"),
+            Some("wheelctl moza vendor-status-timing-correlation-review")
+        );
+        assert_eq!(
+            json_bool(&receipt, "planned_next_output_allowed"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "native_visible_ready"), Some(false));
+        assert_eq!(
+            json_bool(&receipt, "wheel_moved_under_openracing"),
+            Some(false)
+        );
+        Ok(())
+    }
+
+    #[test]
     fn vendor_status_probe_schema_pins_read_only_gates() -> TestResult {
         let schema: Value = serde_json::from_str(include_str!(
             "../../../../schemas/moza-vendor-status-probe.schema.json"
@@ -50444,6 +51045,40 @@ mod tests {
             }));
         }
         summary
+    }
+
+    fn sample_passive_sniff_summary_with_0x8e_frames(matched_packets: u64) -> Value {
+        let mut summary = sample_passive_sniff_summary(matched_packets);
+        if let Some(reports) = summary
+            .get_mut("observed_reports")
+            .and_then(Value::as_array_mut)
+        {
+            reports.push(serde_json::json!({
+                "direction": "device_to_host",
+                "report_id": "0x7E",
+                "classification": {
+                    "category": "input_or_status_report",
+                    "native_control_evidence": false
+                },
+                "count": 4,
+                "payload_sample_count": 4,
+                "payload_hex_samples": [
+                    "7E 07 8E 21 00 01 91 00 00 26 24 1D",
+                    "7E 07 8E 31 00 01 91 00 00 26 24 2D",
+                    "7E 07 8E 71 00 0F B3 00 00 00 01 54",
+                    "7E 07 8E 91 00 01 3E 00 00 00 E6 D6"
+                ]
+            }));
+        }
+        summary
+    }
+
+    fn complete_0x8e_timing_operator_notes() -> String {
+        vendor_status_timing_correlation_required_markers()
+            .iter()
+            .map(|marker| format!("- {marker}: 2026-05-29T12:00:00Z"))
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     fn write_sample_sniff_scenario(
