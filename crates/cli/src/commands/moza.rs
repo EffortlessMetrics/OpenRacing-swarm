@@ -28048,6 +28048,8 @@ fn vendor_status_endpoint_candidates_receipt(
             required_next_review: "fixture-backed decoder review must prove read-only status semantics before any live probe",
         },
     ];
+    let command_id_0x07_analogs =
+        vendor_status_endpoint_command_id_0x07_analogs(protocol_evidence_review)?;
 
     Ok(VendorStatusEndpointCandidatesReceipt {
         success: true,
@@ -28098,6 +28100,11 @@ fn vendor_status_endpoint_candidates_receipt(
         },
         passive_tuple_candidate_count: passive_tuple_candidates.len(),
         passive_tuple_candidates,
+        passive_command_id_0x07_analog_count: command_id_0x07_analogs.len(),
+        passive_command_id_0x07_analogs_match_payload_status: false,
+        passive_command_id_0x07_analogs_read_only_probe_allowed: false,
+        passive_command_id_0x07_analogs_sendable: false,
+        passive_command_id_0x07_analogs: command_id_0x07_analogs,
         corrected_read_only_probe_ready: false,
         native_control_evidence: false,
         hardware_output_authorized: false,
@@ -28121,8 +28128,8 @@ fn vendor_status_endpoint_candidates_receipt(
         mode_enable_candidates_sendable: false,
         planned_next_output_allowed: false,
         unknown_safety_or_mode_state_blocks_authority: true,
-        exact_next_blocker: "Identify a payload-bearing authority-state status endpoint from fixtures or passive evidence; current ACK-only authority-status observations and passive mode/enable tuples are not sendable.",
-        next_allowed_action: "Add no-output fixture-backed decoder coverage for corrected authority-status endpoint candidates. Do not run another live read-only probe until a candidate is explicitly classified as registry-approved read-only status and fake-demux approved.",
+        exact_next_blocker: "Identify a payload-bearing authority-state status endpoint from fixtures or passive evidence; current ACK-only authority-status observations, passive mode/enable tuples, and passive command-id 0x07 analogs are not sendable.",
+        next_allowed_action: "Add no-output fixture-backed decoder coverage for the passive command-id 0x07 analogs or another reviewed payload-bearing authority-state source. Do not run another live read-only probe until a candidate is explicitly classified as registry-approved read-only status and fake-demux approved.",
         blocked_actions: vec![
             "live read-only probe of unknown passive tuples",
             "mode enable write",
@@ -28151,9 +28158,100 @@ fn vendor_status_endpoint_candidates_receipt(
             "The expected payload response shape is a correction target, not evidence that the current authority-status command works.",
             "A debug-telemetry-only targeted rerun is endpoint-specific blocker evidence only; it does not identify a sendable status command.",
             "Passive tuple groups remain pattern-only questions and unknown_do_not_send until a future semantic decoder review promotes a read-only status candidate.",
+            "Passive command-id 0x07 analogs narrow the endpoint search space only; they are not payload-status matches, read-only probe inputs, or sendable commands.",
             "Native visible motion remains blocked; no wheel movement is claimed.",
         ],
     })
+}
+
+fn vendor_status_endpoint_command_id_0x07_analogs(
+    protocol_evidence_review: &Value,
+) -> Result<Vec<VendorStatusEndpointCommandIdAnalogCandidate>> {
+    let frequency_summary = protocol_evidence_review
+        .pointer("/passive_tuple_registry_coverage/tuple_frequency_summary")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            anyhow!(
+                "protocol evidence review is missing passive tuple frequency summary for command-id 0x07 scan"
+            )
+        })?;
+    let mut candidates = Vec::new();
+
+    for tuple in frequency_summary {
+        let tuple_id = json_string(tuple, "tuple_id")
+            .ok_or_else(|| anyhow!("passive tuple frequency entry missing tuple_id"))?;
+        if tuple_id_command_hex(tuple_id) != Some("0x07") {
+            continue;
+        }
+        if json_string(tuple, "registry_status") != Some("unknown_commanded") {
+            continue;
+        }
+
+        let scenarios = tuple
+            .get("scenarios")
+            .and_then(Value::as_array)
+            .ok_or_else(|| anyhow!("passive tuple `{tuple_id}` missing scenarios"))?
+            .iter()
+            .map(|scenario| {
+                json_string(scenario, "scenario")
+                    .map(str::to_string)
+                    .ok_or_else(|| anyhow!("passive tuple `{tuple_id}` has unnamed scenario"))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        candidates.push(VendorStatusEndpointCommandIdAnalogCandidate {
+            tuple_id: tuple_id.to_string(),
+            registry_status: "unknown_commanded",
+            total_count: json_u64(tuple, "total_count")
+                .ok_or_else(|| anyhow!("passive tuple `{tuple_id}` missing total_count"))?
+                as usize,
+            payload_len_min: json_u64(tuple, "payload_len_min")
+                .ok_or_else(|| anyhow!("passive tuple `{tuple_id}` missing payload_len_min"))?
+                as usize,
+            payload_len_max: json_u64(tuple, "payload_len_max")
+                .ok_or_else(|| anyhow!("passive tuple `{tuple_id}` missing payload_len_max"))?
+                as usize,
+            scenario_count: json_u64(tuple, "scenario_count")
+                .ok_or_else(|| anyhow!("passive tuple `{tuple_id}` missing scenario_count"))?
+                as usize,
+            scenarios,
+            command_id_matches_expected_source: true,
+            response_shape_matches_expected_authority_status: false,
+            risk_class: "unknown_do_not_send",
+            read_only_probe_allowed: false,
+            output_sendability_claim: false,
+            registry_promotion_claim: false,
+            semantic_decode_claim: false,
+            required_next_review: "fixture-backed decoder review must prove this command-id analog is payload-bearing read-only authority status before any live probe",
+        });
+    }
+
+    candidates.sort_by(|left, right| {
+        right
+            .total_count
+            .cmp(&left.total_count)
+            .then_with(|| left.tuple_id.cmp(&right.tuple_id))
+    });
+
+    if candidates.is_empty() {
+        return Err(anyhow!(
+            "protocol evidence review has no unknown passive command-id 0x07 analog tuples"
+        ));
+    }
+
+    Ok(candidates)
+}
+
+fn tuple_id_command_hex(tuple_id: &str) -> Option<&str> {
+    let mut parts = tuple_id.split('/');
+    let _group = parts.next()?;
+    let _device_id = parts.next()?;
+    let command = parts.next()?;
+    if parts.next().is_some() || command == "none" {
+        return None;
+    }
+
+    Some(command)
 }
 
 fn validate_authority_endpoint_diagnosis_for_candidate_plan(
@@ -33420,6 +33518,11 @@ struct VendorStatusEndpointCandidatesReceipt {
     reference_payload_response_shape: VendorStatusEndpointExpectedPayloadShape,
     passive_tuple_candidate_count: usize,
     passive_tuple_candidates: Vec<VendorStatusEndpointPassiveTupleCandidate>,
+    passive_command_id_0x07_analog_count: usize,
+    passive_command_id_0x07_analogs_match_payload_status: bool,
+    passive_command_id_0x07_analogs_read_only_probe_allowed: bool,
+    passive_command_id_0x07_analogs_sendable: bool,
+    passive_command_id_0x07_analogs: Vec<VendorStatusEndpointCommandIdAnalogCandidate>,
     corrected_read_only_probe_ready: bool,
     native_control_evidence: bool,
     hardware_output_authorized: bool,
@@ -33467,6 +33570,25 @@ struct VendorStatusEndpointPassiveTupleCandidate {
     tuple_ids: Vec<&'static str>,
     passive_hypothesis: &'static str,
     question_scope: Vec<&'static str>,
+    risk_class: &'static str,
+    read_only_probe_allowed: bool,
+    output_sendability_claim: bool,
+    registry_promotion_claim: bool,
+    semantic_decode_claim: bool,
+    required_next_review: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorStatusEndpointCommandIdAnalogCandidate {
+    tuple_id: String,
+    registry_status: &'static str,
+    total_count: usize,
+    payload_len_min: usize,
+    payload_len_max: usize,
+    scenario_count: usize,
+    scenarios: Vec<String>,
+    command_id_matches_expected_source: bool,
+    response_shape_matches_expected_authority_status: bool,
     risk_class: &'static str,
     read_only_probe_allowed: bool,
     output_sendability_claim: bool,
@@ -43406,6 +43528,73 @@ mod tests {
         assert!(json_contains_string(&value, "0x25/0x19/0x03"));
         assert!(json_contains_string(&value, "0x5A/0x1B/0x00"));
         assert!(json_contains_string(&value, "0x5D/0x1B/0x01"));
+        assert_eq!(
+            json_u64(&value, "passive_command_id_0x07_analog_count"),
+            Some(5)
+        );
+        assert_eq!(
+            json_bool(
+                &value,
+                "passive_command_id_0x07_analogs_match_payload_status"
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(
+                &value,
+                "passive_command_id_0x07_analogs_read_only_probe_allowed"
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&value, "passive_command_id_0x07_analogs_sendable"),
+            Some(false)
+        );
+        let command_id_analogs = value
+            .get("passive_command_id_0x07_analogs")
+            .and_then(Value::as_array)
+            .ok_or("candidate receipt must include command-id 0x07 analogs")?;
+        assert_eq!(command_id_analogs.len(), 5);
+        assert!(command_id_analogs.iter().all(|candidate| {
+            json_string(candidate, "registry_status") == Some("unknown_commanded")
+                && json_string(candidate, "risk_class") == Some("unknown_do_not_send")
+                && json_bool(candidate, "command_id_matches_expected_source") == Some(true)
+                && json_bool(
+                    candidate,
+                    "response_shape_matches_expected_authority_status",
+                ) == Some(false)
+                && json_bool(candidate, "read_only_probe_allowed") == Some(false)
+                && json_bool(candidate, "output_sendability_claim") == Some(false)
+                && json_bool(candidate, "registry_promotion_claim") == Some(false)
+                && json_bool(candidate, "semantic_decode_claim") == Some(false)
+        }));
+        let high_frequency_analog = command_id_analogs
+            .iter()
+            .find(|candidate| json_string(candidate, "tuple_id") == Some("0x40/0x17/0x07"))
+            .ok_or("candidate receipt must include high-frequency 0x40/0x17/0x07 analog")?;
+        assert_eq!(json_u64(high_frequency_analog, "total_count"), Some(558));
+        assert_eq!(json_u64(high_frequency_analog, "payload_len_min"), Some(1));
+        assert_eq!(json_u64(high_frequency_analog, "payload_len_max"), Some(1));
+        assert_eq!(json_u64(high_frequency_analog, "scenario_count"), Some(3));
+        let high_frequency_scenarios = high_frequency_analog
+            .get("scenarios")
+            .and_then(Value::as_array)
+            .ok_or("high-frequency analog must record scenarios")?;
+        assert!(
+            high_frequency_scenarios
+                .iter()
+                .any(|scenario| { scenario.as_str() == Some("pit-house-open-idle") })
+        );
+        assert!(
+            high_frequency_scenarios
+                .iter()
+                .any(|scenario| { scenario.as_str() == Some("pit-house-full-controls") })
+        );
+        assert!(
+            high_frequency_scenarios
+                .iter()
+                .any(|scenario| { scenario.as_str() == Some("pit-house-setting-change") })
+        );
 
         Ok(())
     }
