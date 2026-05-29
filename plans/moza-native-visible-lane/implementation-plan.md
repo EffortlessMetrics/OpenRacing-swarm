@@ -160,6 +160,14 @@ ACK-only/no-payload correlation evidence, not decoded status evidence. That
 keeps authorization, PIDFF rerun, and motion blocked on status-payload
 correlation, corrected endpoint/command IDs, or unknown device state rather
 than scan-window depth.
+The authority-endpoint diagnosis now compares that ACK-only targeted probe
+against the demuxed read-only matrix. Because the same serial lane decoded
+seven payload-bearing non-authority status replies while both authority-status
+queries still decoded zero replies, broad serial framing, ownership, timeout,
+and line settings are no longer the primary explanation. The active blocker is
+an authority-status endpoint/command mismatch or ACK-only endpoint behavior:
+mode and safety state remain unknown until a corrected read-only endpoint
+returns payload-bearing status.
 The `pit-house-setting-change` sniff plan now pins the scenario-specific
 operator evidence required for that next capture: exact Pit House setting,
 starting value, ending value, and an affirmative restore status. The first
@@ -5927,6 +5935,115 @@ Remove only:
 Do not remove the live #77 extended scan receipt, its hardware doctor, earlier
 read-only matrix/demux/correlation evidence, passive evidence, consumed hardware
 attempts, or post-authority PIDFF regression evidence.
+
+## Work item: diagnose-authority-status-endpoint-specific-blocker
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: exact authorization planning for any future decoded volatile mode or
+enable candidate
+Blocked by: no payload-bearing authority-state reply for `estop_get_ffb` or
+`main_misc_get_ffb_status`.
+
+### Goal
+
+Decide whether the read-only authority-status failure is still a broad serial
+framing problem or a narrower authority-status endpoint/command blocker.
+
+### Production Delta
+
+`wheelctl moza vendor-status-framing-diagnosis` now accepts an optional
+`--baseline-status-probe` receipt. When supplied, the no-output diagnosis
+compares the targeted authority-status probe against a broader read-only
+matrix and records:
+
+```text
+baseline_status_probe_summary
+broad_serial_transport_blocker_ruled_out
+authority_status_endpoint_specific_blocker
+endpoint_or_command_correction_required
+```
+
+The checked-in diagnosis at
+`vendor-status-authority-endpoint-diagnosis.json` compares
+`vendor-status-ack-only-correlation-targeted.json` against
+`vendor-status-mode-matrix-demux.json`. The baseline demuxed matrix decoded
+seven payload-bearing non-authority status replies, but both authority-status
+commands still decoded zero replies and `main_misc_get_ffb_status` only
+correlates with `0xA1/0x21/no_command` ACK/no-payload evidence.
+
+This classifies the current blocker as:
+
+```text
+diagnosis_classification: authority_status_endpoint_specific_ack_only_without_payload
+primary_blocker: authority_status_endpoint_or_command_mismatch
+broad_serial_transport_blocker_ruled_out: true
+authority_status_endpoint_specific_blocker: true
+```
+
+That does not decode mode/safety status. It says the next useful native-path
+work is no-output endpoint/command correction using registry, fixture, and
+passive protocol evidence, not another live output attempt.
+
+### Non-goals
+
+No live hardware access, HID output open, serial read or write, read-only query
+send, PIDFF output, feature report, configuration write, firmware/update/DFU
+path, high torque, mode-enable write, authority write, authorization receipt,
+semantic decode claim, registry promotion, tuple sendability, native-control
+claim, native-visible claim, smoke-ready claim, simulator claim, coexistence
+claim, or release-ready claim.
+
+### Acceptance
+
+- The receipt compares the targeted ACK-only probe with the demux baseline.
+- Payload-bearing non-authority status replies rule out broad serial framing,
+  ownership, timeout, or line settings as the primary blocker.
+- `estop_get_ffb` and `main_misc_get_ffb_status` remain failed closed with zero
+  decoded authority-state replies.
+- `0xA1/0x21/no_command` remains ACK/no-payload correlation evidence only.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain explicit.
+- `hardware_output_authorized=false`, `native_control_evidence=false`,
+  `native_visible_ready=false`, `output_sendability_claim=false`, and
+  `registry_promotion_claim=false` remain pinned.
+- The next native-path action is no-output authority-status endpoint/command
+  correction before any authorization, PIDFF rerun, force escalation, or motion
+  attempt.
+
+### Proof Commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-framing-diagnosis `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-ack-only-correlation-targeted.json `
+  --baseline-status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json `
+  --overwrite
+
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- `--baseline-status-probe` and the baseline comparison fields
+- `ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json`
+- schema allowance for `authority_status_endpoint_specific_ack_only_without_payload`
+- source-of-truth notes for this work item.
+
+Do not remove the earlier read-only status matrix, demux, targeted
+authority-status, ACK-only, passive protocol, consumed authority attempt, or
+post-authority PIDFF regression evidence.
 
 ## Work item: native-visible-promotion
 

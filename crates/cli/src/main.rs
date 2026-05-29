@@ -2284,6 +2284,7 @@ mod tests {
         match &cli.command {
             Commands::Moza(MozaCommands::VendorStatusFramingDiagnosis {
                 status_probe,
+                baseline_status_probe,
                 json_out,
                 overwrite,
             }) => {
@@ -2291,9 +2292,54 @@ mod tests {
                     status_probe.to_str(),
                     Some("ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json")
                 );
+                assert!(baseline_status_probe.is_none());
                 assert_eq!(
                     json_out.to_str(),
                     Some("target/moza-current/vendor-status-framing-diagnosis.json")
+                );
+                assert!(*overwrite);
+            }
+            _ => return Err("expected Moza VendorStatusFramingDiagnosis command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_moza_vendor_status_framing_diagnosis_with_baseline() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "vendor-status-framing-diagnosis",
+            "--status-probe",
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-ack-only-correlation-targeted.json",
+            "--baseline-status-probe",
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json",
+            "--json-out",
+            "target/moza-current/vendor-status-authority-endpoint-diagnosis.json",
+            "--overwrite",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::VendorStatusFramingDiagnosis {
+                status_probe,
+                baseline_status_probe,
+                json_out,
+                overwrite,
+            }) => {
+                assert_eq!(
+                    status_probe.to_str(),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/vendor-status-ack-only-correlation-targeted.json"
+                    )
+                );
+                assert_eq!(
+                    baseline_status_probe
+                        .as_ref()
+                        .and_then(|path| path.to_str()),
+                    Some("ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json")
+                );
+                assert_eq!(
+                    json_out.to_str(),
+                    Some("target/moza-current/vendor-status-authority-endpoint-diagnosis.json")
                 );
                 assert!(*overwrite);
             }
