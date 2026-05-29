@@ -1008,6 +1008,25 @@ pub enum MozaCommands {
         overwrite: bool,
     },
 
+    /// Review passive 0x8E timing-correlation evidence without sending traffic
+    VendorStatusTimingCorrelationReview {
+        /// Stored payload-source semantic review receipt
+        #[arg(long)]
+        semantic_review: std::path::PathBuf,
+        /// Derived passive sniff summary from wheelctl hardware sniff-summary
+        #[arg(long)]
+        summary: std::path::PathBuf,
+        /// Operator notes with event markers for the passive capture
+        #[arg(long)]
+        operator_notes: std::path::PathBuf,
+        /// Write the non-claiming timing-correlation review receipt to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing timing-correlation review receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
     /// Create a single-use exact Moza vendor-authority authorization receipt without sending traffic
     AuthorizeVendorAuthority {
         /// Registry command id being authorized for the later exact frame

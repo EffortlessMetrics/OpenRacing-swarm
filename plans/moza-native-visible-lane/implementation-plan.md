@@ -7640,6 +7640,118 @@ source-gap receipt, endpoint candidate receipts, targeted read-only payload
 rerun, status matrix, demux receipt, consumed authority attempt, or
 post-authority PIDFF regression evidence.
 
+## Work item: review-existing-0x8e-timing-correlation
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: live read-only probe planning from payload-bearing status evidence
+Blocked by: completed payload-source semantic review and accepted setting-change summary
+
+### Goal
+
+Review the accepted Pit House setting-change derived summary against the four
+payload-bearing `0x8E` status-source samples, without treating that existing
+capture as the staged event-marker timing-correlation run.
+
+### Production delta
+
+`wheelctl moza vendor-status-timing-correlation-review` reads only:
+
+```text
+vendor-status-payload-source-semantic-review.json
+sniff-summary.json
+operator-notes.md
+```
+
+and writes `vendor-status-timing-correlation-review.json`.
+
+The checked-in receipt consumes the accepted `pit-house-setting-change` derived
+summary and notes. It finds the four target samples:
+
+```text
+0x8E/0x21/0x00 payload 019100002624
+0x8E/0x31/0x00 payload 019100002624
+0x8E/0x71/0x00 payload 0FB300000001
+0x8E/0x91/0x00 payload 013E000000E6
+```
+
+but classifies the evidence as
+`insufficient_static_or_single_sample_0x8e_payloads` because the existing
+derived summary provides only one observed payload per target tuple and the
+operator notes do not contain the new event-marker fields required by the
+timing-correlation plan.
+
+The receipt records `timing_correlation_proven=false`,
+`same_tuple_payload_variation_observed=false`,
+`payload_bearing_authority_state_source_found=false`,
+`live_read_only_probe_allowed=false`, `authorization_plan_allowed=false`,
+`motion_attempt_allowed=false`, `wheel_moved_under_openracing=false`,
+`visible_motion_verified=false`, `output_was_sent=false`, and
+`authority_state=blocked`.
+
+### Non-goals
+
+No live hardware access, HID output open, serial open, read-only query send,
+live capture, raw pcap commit, PIDFF output, feature report, configuration
+write, firmware/update/DFU path, high torque, mode-enable write, authority
+write, authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, or wheel movement.
+
+### Acceptance
+
+- The timing-correlation review consumes only stored JSON and Markdown.
+- The review preserves every `0x8E` target as `unknown_do_not_send`.
+- The existing Pit House setting-change evidence is classified as insufficient
+  for timing correlation, not promoted to live-probe readiness.
+- If a future review sees meaningful same-tuple variation, the next step is
+  still a separate reviewed read-only/status plan, not output.
+- All native-control, native-visible, smoke-ready, release-ready, authorization,
+  output, semantic decode, registry promotion, and wheel-movement claims remain
+  false.
+
+### Proof Commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-review `
+  --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json `
+  --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-summary.json `
+  --operator-notes ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/operator-notes.md `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza artifact-index `
+  --lane ci/hardware/moza-r5/2026-05-13 `
+  --json-out target/moza-current/artifact-index-0x8e-timing-review.json `
+  --md-out ci/hardware/moza-r5/2026-05-13/index.md
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_review -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_plan -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- the `vendor-status-timing-correlation-review` CLI, receipt, schema, and tests,
+- `vendor-status-timing-correlation-review.json`,
+- source-of-truth notes for this work item.
+
+Do not remove the timing-correlation plan, payload-source semantic review,
+payload-source candidate receipt, response semantic fixture receipt,
+response-source correlation receipt, source-gap receipt, endpoint candidate
+receipts, targeted read-only payload rerun, status matrix, demux receipt,
+consumed authority attempt, or post-authority PIDFF regression evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
