@@ -191,6 +191,15 @@ the same no-output correction planner. It records diagnostic telemetry
 `0x0E/0x71/0x05` as the observed authority-status path output, keeps the
 expected payload-bearing status shape as `0xA1/0x21/0x07`, and still marks the
 corrected read-only probe as not ready. No candidate becomes sendable.
+The response-source correlation receipt now consumes the extracted passive
+device-to-host samples and records sample-scoped response-shape correlation for
+the unknown passive `0x25/0x19/*`, `0x5A/0x1B/0x00`, and `0x5D/0x1B/0x01`
+question groups. It also records that the expected registry authority-status
+response tuples and passive command-id `0x07` analog response tuples are absent
+from the stored passive response samples. This closes the generic response
+correlation step, but it is not packet-timing proof and not a payload-bearing
+authority-state status source. Corrected probe readiness, authorization,
+PIDFF rerun, force escalation, and motion remain blocked.
 The `pit-house-setting-change` sniff plan now pins the scenario-specific
 operator evidence required for that next capture: exact Pit House setting,
 starting value, ending value, and an affirmative restore status. The first
@@ -7030,6 +7039,126 @@ Do not remove prior passive summaries, the command-id `0x07` passive analog
 scan, command-id analog fake containment, endpoint-candidate receipts, targeted
 read-only payload rerun, payload fixture tests, status matrix, demux receipt,
 consumed authority attempt, or post-authority PIDFF regression evidence.
+
+## Work item: correlate-response-source-samples
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: fixture-backed semantic decoder review for correlated response groups
+Blocked by: extracted response-side tuple samples and source-gap receipt
+
+### Goal
+
+Turn the response-side tuple extraction into an explicit no-output correlation
+receipt. The purpose is to answer whether the stored passive device-to-host
+samples identify a payload-bearing authority-state status source, while keeping
+all unknown tuples non-sendable.
+
+### Production Delta
+
+`wheelctl moza vendor-status-response-source-correlation` reads only stored
+JSON receipts:
+
+```text
+vendor-status-authority-source-gap.json
+vendor-status-endpoint-candidates-from-payload-rerun.json
+vendor-protocol-evidence-review.json
+```
+
+and writes `vendor-status-response-source-correlation.json`. The receipt
+records that the checked-in device-to-host samples have scenario-level,
+sample-scoped response-shape correlation for:
+
+```text
+0x25/0x19/* -> 0xA5/0x91/*
+0x5A/0x1B/0x00 -> 0xDA/0xB1/0x00
+0x5D/0x1B/0x01 -> 0xDD/0xB1/0x01
+```
+
+It also records that the expected registry authority-status response tuples
+`0xA1/0x21/0x07` and `0xC6/0xC1/0x01` are absent from the stored passive
+response samples, and the passive command-id `0x07` analogs have no matching
+response-side sample tuples. The correlation is not packet-timing proof because
+the checked-in passive evidence stores bounded samples, not a full packet
+timeline.
+
+The receipt keeps:
+
+```text
+payload_bearing_authority_state_source_found=false
+reviewed_equivalent_status_source_found=false
+corrected_read_only_probe_ready=false
+live_read_only_probe_allowed=false
+authorization_plan_allowed=false
+motion_attempt_allowed=false
+wheel_moved_under_openracing=false
+visible_motion_verified=false
+output_was_sent=false
+authority_state=blocked
+```
+
+### Non-goals
+
+No live hardware access, HID output open, serial open, read-only query send,
+PIDFF output, feature report, configuration write, firmware/update/DFU path,
+high torque, mode-enable write, authority write, authorization receipt,
+semantic decode claim, registry promotion, tuple sendability, corrected
+read-only probe readiness, native-control claim, native-visible claim,
+smoke-ready claim, simulator claim, coexistence claim, release-ready claim, or
+wheel movement.
+
+### Acceptance
+
+- The response-source correlation receipt consumes the source-gap receipt,
+  endpoint candidates, and protocol evidence review.
+- Stored response samples correlate only to unknown passive question groups,
+  not to a reviewed payload-bearing authority-state source.
+- The registry authority-status response tuples remain absent from passive
+  response samples.
+- The command-id `0x07` analogs remain unmatched, non-sendable, and blocked
+  from live probing.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain the operating
+  state.
+- The next native-path action is fixture-backed semantic decoder coverage for
+  the correlated passive response groups or another reviewed payload-bearing
+  authority-state source before any live probe, authorization, PIDFF rerun,
+  force escalation, or motion attempt.
+
+### Proof Commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-response-source-correlation `
+  --source-gap ci/hardware/moza-r5/2026-05-13/vendor-status-authority-source-gap.json `
+  --endpoint-candidates ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json `
+  --protocol-evidence-review ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-response-source-correlation.json `
+  --overwrite
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- the `vendor-status-response-source-correlation` CLI, receipt, schema, and
+  tests,
+- `vendor-status-response-source-correlation.json`,
+- source-of-truth notes for this work item.
+
+Do not remove the extracted device-to-host sample fields, source-gap receipt,
+endpoint-candidate receipts, command-id `0x07` containment, targeted read-only
+payload rerun, payload fixture tests, status matrix, demux receipt, consumed
+authority attempt, or post-authority PIDFF regression evidence.
 
 ## Work item: native-visible-promotion
 

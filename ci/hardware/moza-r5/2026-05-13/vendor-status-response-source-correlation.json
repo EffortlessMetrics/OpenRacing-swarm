@@ -1,0 +1,361 @@
+{
+  "artifact_kind": "moza_vendor_status_response_source_correlation",
+  "authority_state": "blocked",
+  "authorization_plan_allowed": false,
+  "blocked_actions": [
+    "live read-only probe of unknown passive tuples",
+    "mode enable write",
+    "authority write",
+    "output write",
+    "configuration write",
+    "PIDFF rerun",
+    "authorization receipt",
+    "hardware writes",
+    "high torque",
+    "native-control claim",
+    "native-visible claim",
+    "smoke-ready claim",
+    "release-ready claim",
+    "firmware or DFU command",
+    "unknown host-to-device command"
+  ],
+  "claim_scope": "no_output_authority_status_response_source_correlation",
+  "command": "wheelctl moza vendor-status-response-source-correlation",
+  "command_id_0x07_response_correlation_found": false,
+  "corrected_read_only_probe_ready": false,
+  "correlated_response_group_count": 2,
+  "correlation_scope": "stored_passive_sample_tuple_cooccurrence_only",
+  "device_to_host_serial_frame_sample_scope": "observed_report_payload_hex_samples_only",
+  "device_to_host_serial_frame_tuple_ids": [
+    "0x80/0x21/none",
+    "0x80/0x31/none",
+    "0x80/0x91/none",
+    "0x8E/0x21/0x00",
+    "0x8E/0x31/0x00",
+    "0x8E/0x71/0x00",
+    "0x8E/0x91/0x00",
+    "0xA5/0x91/0x01",
+    "0xA5/0x91/0x02",
+    "0xA5/0x91/0x03",
+    "0xDA/0xB1/0x00",
+    "0xDD/0xB1/0x01"
+  ],
+  "device_to_host_serial_frame_tuple_sample_count": 18,
+  "endpoint_candidates_receipt": "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json",
+  "exact_next_blocker": "Stored passive response samples correlate to the unknown 0x25/0x19 and 0x5A/0x1B plus 0x5D/0x1B question groups only as sample-scoped response-shape evidence. The expected registry authority-status response tuples and passive command-id 0x07 analog response tuples are not present as reviewed payload-bearing authority-state sources, so mode/safety state remains unknown.",
+  "full_packet_timeline_available": false,
+  "generated_at_utc": "2026-05-29T18:33:12Z",
+  "hardware_output_authorized": false,
+  "high_torque_enabled": false,
+  "live_read_only_probe_allowed": false,
+  "mode_enable_candidates_sendable": false,
+  "mode_or_session_response_correlation_found": true,
+  "motion_attempt_allowed": false,
+  "native_control_evidence": false,
+  "native_visible_ready": false,
+  "next_allowed_action": "Add fixture-backed semantic decoder coverage for the correlated passive response groups or obtain another reviewed payload-bearing authority-state status source before any live probe, authorization plan, PIDFF rerun, force escalation, or motion attempt.",
+  "no_hid_device_opened": true,
+  "notes": [
+    "This receipt reads stored JSON only; it opens no HID or serial device and sends no traffic.",
+    "Scenario-level tuple co-occurrence is not packet-timing proof because the checked-in passive evidence stores bounded samples, not a full timeline.",
+    "Response-shaped samples for unknown passive tuples do not create semantic decode, registry promotion, read-only probe eligibility, output sendability, or motion authorization.",
+    "Native visible motion remains blocked; no wheel movement is claimed."
+  ],
+  "opened_serial_device": false,
+  "output_sendability_claim": false,
+  "output_was_sent": false,
+  "payload_bearing_authority_state_source_found": false,
+  "planned_next_output_allowed": false,
+  "protocol_evidence_review_receipt": "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
+  "registry_authority_response_tuple_found": false,
+  "registry_promotion_claim": false,
+  "release_ready": false,
+  "required_artifacts": [
+    "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-source-gap.json",
+    "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json",
+    "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
+    "schemas/moza-vendor-status-response-source-correlation.schema.json",
+    "future fixture-backed semantic decoder for correlated response groups or equivalent reviewed authority-state source"
+  ],
+  "response_correlation_group_count": 4,
+  "response_correlation_groups": [
+    {
+      "all_expected_response_tuples_observed": false,
+      "classification": "expected_authority_response_tuples_absent_from_passive_samples",
+      "corrected_read_only_probe_ready": false,
+      "expected_response_tuple_ids": [
+        "0xA1/0x21/0x07",
+        "0xC6/0xC1/0x01"
+      ],
+      "group_id": "current_registry_authority_status_queries",
+      "hardware_output_authorized": false,
+      "input_artifact": "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json",
+      "input_tuple_ids": [
+        "0x21/0x12/0x07",
+        "0x46/0x1C/0x01"
+      ],
+      "matched_expected_response_tuple_ids": [],
+      "native_control_evidence": false,
+      "output_sendability_claim": false,
+      "payload_bearing_authority_state_source_found": false,
+      "read_only_probe_allowed": false,
+      "registry_promotion_claim": false,
+      "required_next_review": "fixture-backed semantic decoder review or equivalent payload-bearing status-source evidence before any live probe",
+      "reviewed_equivalent_status_source_found": false,
+      "sample_scoped_response_correlation_found": false,
+      "scenario_cooccurrence_count": 0,
+      "scenario_cooccurrences": [],
+      "semantic_decode_claim": false,
+      "source_kind": "registry_approved_read_only_queries",
+      "timing_correlation_proven": false
+    },
+    {
+      "all_expected_response_tuples_observed": true,
+      "classification": "sample_scoped_response_shape_correlation_only",
+      "corrected_read_only_probe_ready": false,
+      "expected_response_tuple_ids": [
+        "0xA5/0x91/0x01",
+        "0xA5/0x91/0x02",
+        "0xA5/0x91/0x03"
+      ],
+      "group_id": "passive_status_mode_triad_0x25_0x19",
+      "hardware_output_authorized": false,
+      "input_artifact": "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json",
+      "input_tuple_ids": [
+        "0x25/0x19/0x01",
+        "0x25/0x19/0x02",
+        "0x25/0x19/0x03"
+      ],
+      "matched_expected_response_tuple_ids": [
+        "0xA5/0x91/0x01",
+        "0xA5/0x91/0x02",
+        "0xA5/0x91/0x03"
+      ],
+      "native_control_evidence": false,
+      "output_sendability_claim": false,
+      "payload_bearing_authority_state_source_found": false,
+      "read_only_probe_allowed": false,
+      "registry_promotion_claim": false,
+      "required_next_review": "fixture-backed semantic decoder review or equivalent payload-bearing status-source evidence before any live probe",
+      "reviewed_equivalent_status_source_found": false,
+      "sample_scoped_response_correlation_found": true,
+      "scenario_cooccurrence_count": 1,
+      "scenario_cooccurrences": [
+        {
+          "expected_response_tuple_ids_observed": [],
+          "input_tuple_ids_observed": [
+            "0x25/0x19/0x01",
+            "0x25/0x19/0x02",
+            "0x25/0x19/0x03"
+          ],
+          "sample_scoped_cooccurrence": false,
+          "scenario": "pit-house-open-idle",
+          "timing_correlation_proven": false
+        },
+        {
+          "expected_response_tuple_ids_observed": [],
+          "input_tuple_ids_observed": [
+            "0x25/0x19/0x01",
+            "0x25/0x19/0x02",
+            "0x25/0x19/0x03"
+          ],
+          "sample_scoped_cooccurrence": false,
+          "scenario": "pit-house-full-controls",
+          "timing_correlation_proven": false
+        },
+        {
+          "expected_response_tuple_ids_observed": [
+            "0xA5/0x91/0x01",
+            "0xA5/0x91/0x02",
+            "0xA5/0x91/0x03"
+          ],
+          "input_tuple_ids_observed": [
+            "0x25/0x19/0x01",
+            "0x25/0x19/0x02",
+            "0x25/0x19/0x03"
+          ],
+          "sample_scoped_cooccurrence": true,
+          "scenario": "pit-house-setting-change",
+          "timing_correlation_proven": false
+        }
+      ],
+      "semantic_decode_claim": false,
+      "source_kind": "passive_host_to_device_mode_or_session_question",
+      "timing_correlation_proven": false
+    },
+    {
+      "all_expected_response_tuples_observed": true,
+      "classification": "sample_scoped_response_shape_correlation_only",
+      "corrected_read_only_probe_ready": false,
+      "expected_response_tuple_ids": [
+        "0xDA/0xB1/0x00",
+        "0xDD/0xB1/0x01"
+      ],
+      "group_id": "passive_session_authority_pair_0x5a_0x5d",
+      "hardware_output_authorized": false,
+      "input_artifact": "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json",
+      "input_tuple_ids": [
+        "0x5A/0x1B/0x00",
+        "0x5D/0x1B/0x01"
+      ],
+      "matched_expected_response_tuple_ids": [
+        "0xDA/0xB1/0x00",
+        "0xDD/0xB1/0x01"
+      ],
+      "native_control_evidence": false,
+      "output_sendability_claim": false,
+      "payload_bearing_authority_state_source_found": false,
+      "read_only_probe_allowed": false,
+      "registry_promotion_claim": false,
+      "required_next_review": "fixture-backed semantic decoder review or equivalent payload-bearing status-source evidence before any live probe",
+      "reviewed_equivalent_status_source_found": false,
+      "sample_scoped_response_correlation_found": true,
+      "scenario_cooccurrence_count": 3,
+      "scenario_cooccurrences": [
+        {
+          "expected_response_tuple_ids_observed": [
+            "0xDA/0xB1/0x00",
+            "0xDD/0xB1/0x01"
+          ],
+          "input_tuple_ids_observed": [
+            "0x5A/0x1B/0x00",
+            "0x5D/0x1B/0x01"
+          ],
+          "sample_scoped_cooccurrence": true,
+          "scenario": "pit-house-open-idle",
+          "timing_correlation_proven": false
+        },
+        {
+          "expected_response_tuple_ids_observed": [
+            "0xDA/0xB1/0x00",
+            "0xDD/0xB1/0x01"
+          ],
+          "input_tuple_ids_observed": [
+            "0x5A/0x1B/0x00",
+            "0x5D/0x1B/0x01"
+          ],
+          "sample_scoped_cooccurrence": true,
+          "scenario": "pit-house-full-controls",
+          "timing_correlation_proven": false
+        },
+        {
+          "expected_response_tuple_ids_observed": [
+            "0xDA/0xB1/0x00",
+            "0xDD/0xB1/0x01"
+          ],
+          "input_tuple_ids_observed": [
+            "0x5A/0x1B/0x00",
+            "0x5D/0x1B/0x01"
+          ],
+          "sample_scoped_cooccurrence": true,
+          "scenario": "pit-house-setting-change",
+          "timing_correlation_proven": false
+        }
+      ],
+      "semantic_decode_claim": false,
+      "source_kind": "passive_host_to_device_mode_or_session_question",
+      "timing_correlation_proven": false
+    },
+    {
+      "all_expected_response_tuples_observed": false,
+      "classification": "command_id_0x07_analogs_lack_response_sample_correlation",
+      "corrected_read_only_probe_ready": false,
+      "expected_response_tuple_ids": [
+        "0xC0/0x71/0x07",
+        "0xA8/0x31/0x07",
+        "0xA3/0x91/0x07",
+        "0xBF/0x71/0x07",
+        "0xDB/0xB1/0x07"
+      ],
+      "group_id": "passive_command_id_0x07_analogs",
+      "hardware_output_authorized": false,
+      "input_artifact": "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json",
+      "input_tuple_ids": [
+        "0x40/0x17/0x07",
+        "0x28/0x13/0x07",
+        "0x23/0x19/0x07",
+        "0x3F/0x17/0x07",
+        "0x5B/0x1B/0x07"
+      ],
+      "matched_expected_response_tuple_ids": [],
+      "native_control_evidence": false,
+      "output_sendability_claim": false,
+      "payload_bearing_authority_state_source_found": false,
+      "read_only_probe_allowed": false,
+      "registry_promotion_claim": false,
+      "required_next_review": "fixture-backed semantic decoder review or equivalent payload-bearing status-source evidence before any live probe",
+      "reviewed_equivalent_status_source_found": false,
+      "sample_scoped_response_correlation_found": false,
+      "scenario_cooccurrence_count": 0,
+      "scenario_cooccurrences": [
+        {
+          "expected_response_tuple_ids_observed": [],
+          "input_tuple_ids_observed": [
+            "0x40/0x17/0x07"
+          ],
+          "sample_scoped_cooccurrence": false,
+          "scenario": "pit-house-open-idle",
+          "timing_correlation_proven": false
+        },
+        {
+          "expected_response_tuple_ids_observed": [],
+          "input_tuple_ids_observed": [
+            "0x40/0x17/0x07"
+          ],
+          "sample_scoped_cooccurrence": false,
+          "scenario": "pit-house-full-controls",
+          "timing_correlation_proven": false
+        },
+        {
+          "expected_response_tuple_ids_observed": [],
+          "input_tuple_ids_observed": [
+            "0x40/0x17/0x07",
+            "0x28/0x13/0x07",
+            "0x23/0x19/0x07",
+            "0x3F/0x17/0x07",
+            "0x5B/0x1B/0x07"
+          ],
+          "sample_scoped_cooccurrence": false,
+          "scenario": "pit-house-setting-change",
+          "timing_correlation_proven": false
+        }
+      ],
+      "semantic_decode_claim": false,
+      "source_kind": "passive_host_to_device_authority_status_analog_questions",
+      "timing_correlation_proven": false
+    }
+  ],
+  "response_nonzero_payload_tuple_ids": [
+    "0x8E/0x21/0x00",
+    "0x8E/0x31/0x00",
+    "0x8E/0x71/0x00",
+    "0x8E/0x91/0x00"
+  ],
+  "response_payload_tuple_ids": [
+    "0x8E/0x21/0x00",
+    "0x8E/0x31/0x00",
+    "0x8E/0x71/0x00",
+    "0x8E/0x91/0x00",
+    "0xA5/0x91/0x01",
+    "0xA5/0x91/0x02",
+    "0xA5/0x91/0x03",
+    "0xDA/0xB1/0x00",
+    "0xDD/0xB1/0x01"
+  ],
+  "reviewed_equivalent_status_source_found": false,
+  "schema_version": 1,
+  "semantic_decode_claim": false,
+  "sent_configuration_writes": false,
+  "sent_firmware_or_dfu_commands": false,
+  "sent_output_writes": false,
+  "sent_read_only_query_commands": false,
+  "smoke_ready": false,
+  "source_gap_blocker_before_correlation": "No checked-in source currently identifies a payload-bearing authority-state status endpoint. Current registry authority-status queries are ACK/debug-only, passive command-id 0x07 analogs and mode/enable groups remain unknown_do_not_send, and extracted device-to-host passive serial samples are not yet correlated to a reviewed equivalent authority-state status source.",
+  "source_gap_receipt": "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-source-gap.json",
+  "source_gap_validated": true,
+  "success": true,
+  "timing_correlation_proven": false,
+  "unknown_safety_or_mode_state_blocks_authority": true,
+  "visible_motion_verified": false,
+  "wheel_moved_under_openracing": false
+}

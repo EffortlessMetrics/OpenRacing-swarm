@@ -931,6 +931,25 @@ pub enum MozaCommands {
         overwrite: bool,
     },
 
+    /// Correlate stored device-to-host response samples without sending traffic
+    VendorStatusResponseSourceCorrelation {
+        /// Stored authority-status source-gap receipt
+        #[arg(long)]
+        source_gap: std::path::PathBuf,
+        /// Stored non-sendable endpoint candidate receipt
+        #[arg(long)]
+        endpoint_candidates: std::path::PathBuf,
+        /// Stored passive vendor protocol evidence review receipt
+        #[arg(long)]
+        protocol_evidence_review: std::path::PathBuf,
+        /// Write the non-claiming response-source correlation receipt to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing response-source correlation receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
     /// Create a single-use exact Moza vendor-authority authorization receipt without sending traffic
     AuthorizeVendorAuthority {
         /// Registry command id being authorized for the later exact frame

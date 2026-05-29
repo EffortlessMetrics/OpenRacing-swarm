@@ -209,6 +209,10 @@ const MOZA_VENDOR_STATUS_ENDPOINT_CANDIDATES_FROM_PAYLOAD_RERUN_JSON: &str = inc
     "../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json"
 );
 #[cfg(test)]
+const MOZA_VENDOR_STATUS_AUTHORITY_SOURCE_GAP_JSON: &str = include_str!(
+    "../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-authority-source-gap.json"
+);
+#[cfg(test)]
 const MOZA_VENDOR_STATUS_MODE_MATRIX_PLAN_JSON: &str =
     include_str!("../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-plan.json");
 #[cfg(test)]
@@ -637,6 +641,15 @@ struct VendorStatusAuthoritySourceGapRequest<'a> {
     overwrite: bool,
 }
 
+struct VendorStatusResponseSourceCorrelationRequest<'a> {
+    json: bool,
+    source_gap: &'a Path,
+    endpoint_candidates: &'a Path,
+    protocol_evidence_review: &'a Path,
+    json_out: &'a Path,
+    overwrite: bool,
+}
+
 struct VendorAuthorityAuthorizationRequest<'a> {
     json: bool,
     command_id: &'a str,
@@ -894,6 +907,25 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 json_out,
                 overwrite: *overwrite,
             })
+            .await
+        }
+        MozaCommands::VendorStatusResponseSourceCorrelation {
+            source_gap,
+            endpoint_candidates,
+            protocol_evidence_review,
+            json_out,
+            overwrite,
+        } => {
+            vendor_status_response_source_correlation(
+                VendorStatusResponseSourceCorrelationRequest {
+                    json,
+                    source_gap,
+                    endpoint_candidates,
+                    protocol_evidence_review,
+                    json_out,
+                    overwrite: *overwrite,
+                },
+            )
             .await
         }
         MozaCommands::AuthorizeVendorAuthority {
@@ -7110,6 +7142,29 @@ async fn vendor_status_authority_source_gap(
     )?;
     write_json_file(request.json_out, &receipt)?;
     print_vendor_status_authority_source_gap_receipt(request.json, request.json_out, &receipt)
+}
+
+async fn vendor_status_response_source_correlation(
+    request: VendorStatusResponseSourceCorrelationRequest<'_>,
+) -> Result<()> {
+    ensure_receipt_writable(request.json_out, request.overwrite)?;
+    let source_gap = read_json_path(request.source_gap)?;
+    let endpoint_candidates = read_json_path(request.endpoint_candidates)?;
+    let protocol_evidence_review = read_json_path(request.protocol_evidence_review)?;
+    let receipt = vendor_status_response_source_correlation_receipt(
+        request.source_gap,
+        &source_gap,
+        request.endpoint_candidates,
+        &endpoint_candidates,
+        request.protocol_evidence_review,
+        &protocol_evidence_review,
+    )?;
+    write_json_file(request.json_out, &receipt)?;
+    print_vendor_status_response_source_correlation_receipt(
+        request.json,
+        request.json_out,
+        &receipt,
+    )
 }
 
 async fn authorize_vendor_authority(
@@ -28547,6 +28602,624 @@ fn vendor_status_authority_source_gap_receipt(
     Ok(Value::Object(receipt))
 }
 
+fn vendor_status_response_source_correlation_receipt(
+    source_gap_path: &Path,
+    source_gap: &Value,
+    endpoint_candidates_path: &Path,
+    endpoint_candidates: &Value,
+    protocol_evidence_review_path: &Path,
+    protocol_evidence_review: &Value,
+) -> Result<Value> {
+    validate_vendor_status_response_source_correlation_source_gap(source_gap_path, source_gap)?;
+    validate_authority_source_gap_endpoint_candidates(
+        endpoint_candidates_path,
+        endpoint_candidates,
+    )?;
+    validate_protocol_evidence_review_for_endpoint_candidates(
+        protocol_evidence_review_path,
+        protocol_evidence_review,
+    )?;
+
+    let sniff_evidence = protocol_evidence_review
+        .get("sniff_evidence")
+        .ok_or_else(|| {
+            anyhow!(
+                "protocol evidence review '{}' is missing sniff_evidence",
+                protocol_evidence_review_path.display()
+            )
+        })?;
+    let scenarios = sniff_evidence
+        .get("scenarios")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            anyhow!(
+                "protocol evidence review '{}' is missing sniff_evidence.scenarios",
+                protocol_evidence_review_path.display()
+            )
+        })?;
+    let device_to_host_tuple_ids =
+        json_string_array_value(sniff_evidence.get("device_to_host_serial_frame_tuple_ids"));
+    let device_to_host_tuple_set = device_to_host_tuple_ids
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let device_to_host_sample_count = json_u64(
+        sniff_evidence,
+        "device_to_host_serial_frame_tuple_sample_count",
+    )
+    .unwrap_or(0);
+    if device_to_host_tuple_set.is_empty() || device_to_host_sample_count == 0 {
+        return Err(anyhow!(
+            "protocol evidence review '{}' must include extracted device-to-host tuple samples before response-source correlation",
+            protocol_evidence_review_path.display()
+        ));
+    }
+
+    let response_payload_tuple_ids =
+        response_source_payload_tuple_ids(scenarios, ResponsePayloadFilter::AnyPayload);
+    let response_nonzero_payload_tuple_ids =
+        response_source_payload_tuple_ids(scenarios, ResponsePayloadFilter::NonZeroPayload);
+
+    let registry_query_tuple_id = endpoint_candidates
+        .pointer("/expected_payload_response_shape/query_tuple_id")
+        .and_then(Value::as_str)
+        .unwrap_or("0x21/0x12/0x07");
+    let registry_expected_response_tuple_id = endpoint_candidates
+        .pointer("/expected_payload_response_shape/expected_payload_response_tuple_id")
+        .and_then(Value::as_str)
+        .unwrap_or("0xA1/0x21/0x07");
+    let registry_group = response_source_correlation_group(ResponseSourceCorrelationGroupInput {
+        group_id: "current_registry_authority_status_queries",
+        source_kind: "registry_approved_read_only_queries",
+        input_artifact: endpoint_candidates_path,
+        input_tuple_ids: vec![
+            registry_query_tuple_id.to_string(),
+            "0x46/0x1C/0x01".to_string(),
+        ],
+        expected_response_tuple_ids: vec![
+            registry_expected_response_tuple_id.to_string(),
+            "0xC6/0xC1/0x01".to_string(),
+        ],
+        device_to_host_tuple_set: &device_to_host_tuple_set,
+        scenarios,
+        missing_classification: "expected_authority_response_tuples_absent_from_passive_samples",
+        matched_classification: "expected_authority_response_tuple_samples_present_but_unreviewed",
+    });
+
+    let mut passive_groups = Vec::new();
+    for candidate in endpoint_candidates
+        .get("passive_tuple_candidates")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            anyhow!(
+                "endpoint candidate receipt '{}' is missing passive tuple candidates",
+                endpoint_candidates_path.display()
+            )
+        })?
+    {
+        let candidate_id = json_string(candidate, "candidate_id")
+            .ok_or_else(|| anyhow!("passive tuple candidate is missing candidate_id"))?;
+        let tuple_ids = json_string_array_field(candidate, "tuple_ids")?;
+        let expected_response_tuple_ids = tuple_ids
+            .iter()
+            .map(|tuple_id| response_tuple_id_for_host_tuple(tuple_id))
+            .collect::<Result<Vec<_>>>()?;
+        passive_groups.push(response_source_correlation_group(
+            ResponseSourceCorrelationGroupInput {
+                group_id: candidate_id,
+                source_kind: "passive_host_to_device_mode_or_session_question",
+                input_artifact: endpoint_candidates_path,
+                input_tuple_ids: tuple_ids,
+                expected_response_tuple_ids,
+                device_to_host_tuple_set: &device_to_host_tuple_set,
+                scenarios,
+                missing_classification: "passive_question_lacks_response_sample_correlation",
+                matched_classification: "sample_scoped_response_shape_correlation_only",
+            },
+        ));
+    }
+
+    let analog_tuple_ids = endpoint_candidates
+        .get("passive_command_id_0x07_analogs")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            anyhow!(
+                "endpoint candidate receipt '{}' is missing passive command-id 0x07 analogs",
+                endpoint_candidates_path.display()
+            )
+        })?
+        .iter()
+        .map(|analog| {
+            json_string(analog, "tuple_id")
+                .map(str::to_string)
+                .ok_or_else(|| anyhow!("passive command-id 0x07 analog missing tuple_id"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let analog_expected_response_tuple_ids = analog_tuple_ids
+        .iter()
+        .map(|tuple_id| response_tuple_id_for_host_tuple(tuple_id))
+        .collect::<Result<Vec<_>>>()?;
+    let analog_group = response_source_correlation_group(ResponseSourceCorrelationGroupInput {
+        group_id: "passive_command_id_0x07_analogs",
+        source_kind: "passive_host_to_device_authority_status_analog_questions",
+        input_artifact: endpoint_candidates_path,
+        input_tuple_ids: analog_tuple_ids,
+        expected_response_tuple_ids: analog_expected_response_tuple_ids,
+        device_to_host_tuple_set: &device_to_host_tuple_set,
+        scenarios,
+        missing_classification: "command_id_0x07_analogs_lack_response_sample_correlation",
+        matched_classification: "command_id_0x07_response_shape_samples_present_but_unreviewed",
+    });
+
+    let mut response_correlation_groups = Vec::new();
+    response_correlation_groups.push(registry_group);
+    response_correlation_groups.extend(passive_groups);
+    response_correlation_groups.push(analog_group);
+
+    let correlated_response_group_count = response_correlation_groups
+        .iter()
+        .filter(|group| json_bool(group, "sample_scoped_response_correlation_found") == Some(true))
+        .count();
+    let registry_authority_response_tuple_found =
+        response_correlation_groups.first().is_some_and(|group| {
+            json_bool(group, "sample_scoped_response_correlation_found") == Some(true)
+        });
+    let command_id_0x07_response_correlation_found =
+        response_correlation_groups.last().is_some_and(|group| {
+            json_bool(group, "sample_scoped_response_correlation_found") == Some(true)
+        });
+    let mode_or_session_response_correlation_found = response_correlation_groups
+        .iter()
+        .skip(1)
+        .take(response_correlation_groups.len().saturating_sub(2))
+        .any(|group| json_bool(group, "sample_scoped_response_correlation_found") == Some(true));
+
+    let mut receipt = serde_json::Map::new();
+    macro_rules! insert_json {
+        ($key:literal, $value:expr) => {
+            receipt.insert($key.to_string(), serde_json::json!($value));
+        };
+    }
+
+    insert_json!("success", true);
+    insert_json!("schema_version", 1);
+    insert_json!(
+        "artifact_kind",
+        "moza_vendor_status_response_source_correlation"
+    );
+    insert_json!(
+        "claim_scope",
+        "no_output_authority_status_response_source_correlation"
+    );
+    insert_json!(
+        "command",
+        "wheelctl moza vendor-status-response-source-correlation"
+    );
+    insert_json!("generated_at_utc", now_utc());
+    insert_json!("source_gap_receipt", source_gap_path.display().to_string());
+    insert_json!(
+        "endpoint_candidates_receipt",
+        endpoint_candidates_path.display().to_string()
+    );
+    insert_json!(
+        "protocol_evidence_review_receipt",
+        protocol_evidence_review_path.display().to_string()
+    );
+    insert_json!("source_gap_validated", true);
+    insert_json!(
+        "source_gap_blocker_before_correlation",
+        json_string(source_gap, "exact_next_blocker").unwrap_or("unknown")
+    );
+    insert_json!(
+        "correlation_scope",
+        "stored_passive_sample_tuple_cooccurrence_only"
+    );
+    insert_json!(
+        "device_to_host_serial_frame_sample_scope",
+        json_string(sniff_evidence, "device_to_host_serial_frame_sample_scope")
+            .unwrap_or("missing")
+    );
+    insert_json!("timing_correlation_proven", false);
+    insert_json!("full_packet_timeline_available", false);
+    insert_json!(
+        "device_to_host_serial_frame_tuple_ids",
+        device_to_host_tuple_ids
+    );
+    insert_json!(
+        "device_to_host_serial_frame_tuple_sample_count",
+        device_to_host_sample_count
+    );
+    insert_json!(
+        "response_payload_tuple_ids",
+        response_payload_tuple_ids.into_iter().collect::<Vec<_>>()
+    );
+    insert_json!(
+        "response_nonzero_payload_tuple_ids",
+        response_nonzero_payload_tuple_ids
+            .into_iter()
+            .collect::<Vec<_>>()
+    );
+    insert_json!(
+        "response_correlation_group_count",
+        response_correlation_groups.len()
+    );
+    insert_json!(
+        "correlated_response_group_count",
+        correlated_response_group_count
+    );
+    insert_json!(
+        "registry_authority_response_tuple_found",
+        registry_authority_response_tuple_found
+    );
+    insert_json!(
+        "mode_or_session_response_correlation_found",
+        mode_or_session_response_correlation_found
+    );
+    insert_json!(
+        "command_id_0x07_response_correlation_found",
+        command_id_0x07_response_correlation_found
+    );
+    receipt.insert(
+        "response_correlation_groups".to_string(),
+        Value::Array(response_correlation_groups),
+    );
+    insert_json!("payload_bearing_authority_state_source_found", false);
+    insert_json!("reviewed_equivalent_status_source_found", false);
+    insert_json!("corrected_read_only_probe_ready", false);
+    insert_json!("live_read_only_probe_allowed", false);
+    insert_json!("authorization_plan_allowed", false);
+    insert_json!("motion_attempt_allowed", false);
+    insert_json!("native_control_evidence", false);
+    insert_json!("hardware_output_authorized", false);
+    insert_json!("native_visible_ready", false);
+    insert_json!("smoke_ready", false);
+    insert_json!("release_ready", false);
+    insert_json!("registry_promotion_claim", false);
+    insert_json!("output_sendability_claim", false);
+    insert_json!("semantic_decode_claim", false);
+    insert_json!("wheel_moved_under_openracing", false);
+    insert_json!("visible_motion_verified", false);
+    insert_json!("output_was_sent", false);
+    insert_json!("authority_state", "blocked");
+    insert_json!("no_hid_device_opened", true);
+    insert_json!("opened_serial_device", false);
+    insert_json!("sent_read_only_query_commands", false);
+    insert_json!("sent_output_writes", false);
+    insert_json!("sent_configuration_writes", false);
+    insert_json!("sent_firmware_or_dfu_commands", false);
+    insert_json!("high_torque_enabled", false);
+    insert_json!("mode_enable_candidates_sendable", false);
+    insert_json!("planned_next_output_allowed", false);
+    insert_json!("unknown_safety_or_mode_state_blocks_authority", true);
+    insert_json!(
+        "exact_next_blocker",
+        "Stored passive response samples correlate to the unknown 0x25/0x19 and 0x5A/0x1B plus 0x5D/0x1B question groups only as sample-scoped response-shape evidence. The expected registry authority-status response tuples and passive command-id 0x07 analog response tuples are not present as reviewed payload-bearing authority-state sources, so mode/safety state remains unknown."
+    );
+    insert_json!(
+        "next_allowed_action",
+        "Add fixture-backed semantic decoder coverage for the correlated passive response groups or obtain another reviewed payload-bearing authority-state status source before any live probe, authorization plan, PIDFF rerun, force escalation, or motion attempt."
+    );
+    insert_json!(
+        "blocked_actions",
+        [
+            "live read-only probe of unknown passive tuples",
+            "mode enable write",
+            "authority write",
+            "output write",
+            "configuration write",
+            "PIDFF rerun",
+            "authorization receipt",
+            "hardware writes",
+            "high torque",
+            "native-control claim",
+            "native-visible claim",
+            "smoke-ready claim",
+            "release-ready claim",
+            "firmware or DFU command",
+            "unknown host-to-device command"
+        ]
+    );
+    insert_json!(
+        "required_artifacts",
+        [
+            source_gap_path.display().to_string(),
+            endpoint_candidates_path.display().to_string(),
+            protocol_evidence_review_path.display().to_string(),
+            "schemas/moza-vendor-status-response-source-correlation.schema.json".to_string(),
+            "future fixture-backed semantic decoder for correlated response groups or equivalent reviewed authority-state source".to_string()
+        ]
+    );
+    insert_json!(
+        "notes",
+        [
+            "This receipt reads stored JSON only; it opens no HID or serial device and sends no traffic.",
+            "Scenario-level tuple co-occurrence is not packet-timing proof because the checked-in passive evidence stores bounded samples, not a full timeline.",
+            "Response-shaped samples for unknown passive tuples do not create semantic decode, registry promotion, read-only probe eligibility, output sendability, or motion authorization.",
+            "Native visible motion remains blocked; no wheel movement is claimed."
+        ]
+    );
+
+    Ok(Value::Object(receipt))
+}
+
+fn validate_vendor_status_response_source_correlation_source_gap(
+    path: &Path,
+    source_gap: &Value,
+) -> Result<()> {
+    for (field, expected) in [
+        ("artifact_kind", "moza_vendor_status_authority_source_gap"),
+        (
+            "claim_scope",
+            "no_output_authority_status_source_gap_review",
+        ),
+        (
+            "command",
+            "wheelctl moza vendor-status-authority-source-gap",
+        ),
+        ("authority_state", "blocked"),
+    ] {
+        if json_string(source_gap, field) != Some(expected) {
+            return Err(anyhow!(
+                "authority source-gap receipt '{}' field `{field}` expected `{expected}`",
+                path.display()
+            ));
+        }
+    }
+    for (field, expected) in [
+        ("success", true),
+        ("unknown_safety_or_mode_state_blocks_authority", true),
+        ("no_hid_device_opened", true),
+    ] {
+        if json_bool(source_gap, field) != Some(expected) {
+            return Err(anyhow!(
+                "authority source-gap receipt '{}' field `{field}` expected {expected}",
+                path.display()
+            ));
+        }
+    }
+    for field in [
+        "payload_bearing_authority_state_source_found",
+        "reviewed_equivalent_status_source_found",
+        "corrected_read_only_probe_ready",
+        "live_read_only_probe_allowed",
+        "authorization_plan_allowed",
+        "motion_attempt_allowed",
+        "native_control_evidence",
+        "hardware_output_authorized",
+        "native_visible_ready",
+        "smoke_ready",
+        "release_ready",
+        "registry_promotion_claim",
+        "output_sendability_claim",
+        "semantic_decode_claim",
+        "wheel_moved_under_openracing",
+        "visible_motion_verified",
+        "output_was_sent",
+        "opened_serial_device",
+        "sent_read_only_query_commands",
+        "sent_output_writes",
+        "sent_configuration_writes",
+        "sent_firmware_or_dfu_commands",
+        "high_torque_enabled",
+        "mode_enable_candidates_sendable",
+        "planned_next_output_allowed",
+    ] {
+        if json_bool(source_gap, field) != Some(false) {
+            return Err(anyhow!(
+                "authority source-gap receipt '{}' field `{field}` must remain false",
+                path.display()
+            ));
+        }
+    }
+    if !json_contains_string(
+        source_gap,
+        "device_to_host_details_present_but_no_reviewed_authority_source",
+    ) {
+        return Err(anyhow!(
+            "authority source-gap receipt '{}' must require response-source correlation",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+struct ResponseSourceCorrelationGroupInput<'a> {
+    group_id: &'a str,
+    source_kind: &'a str,
+    input_artifact: &'a Path,
+    input_tuple_ids: Vec<String>,
+    expected_response_tuple_ids: Vec<String>,
+    device_to_host_tuple_set: &'a BTreeSet<String>,
+    scenarios: &'a [Value],
+    missing_classification: &'static str,
+    matched_classification: &'static str,
+}
+
+fn response_source_correlation_group(input: ResponseSourceCorrelationGroupInput<'_>) -> Value {
+    let ResponseSourceCorrelationGroupInput {
+        group_id,
+        source_kind,
+        input_artifact,
+        input_tuple_ids,
+        expected_response_tuple_ids,
+        device_to_host_tuple_set,
+        scenarios,
+        missing_classification,
+        matched_classification,
+    } = input;
+    let expected_response_tuple_set = expected_response_tuple_ids
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let matched_expected_response_tuple_ids = expected_response_tuple_ids
+        .iter()
+        .filter(|tuple_id| device_to_host_tuple_set.contains(*tuple_id))
+        .cloned()
+        .collect::<Vec<_>>();
+    let scenario_cooccurrences = scenarios
+        .iter()
+        .filter_map(|scenario| {
+            let scenario_id = json_string(scenario, "scenario")?.to_string();
+            let scenario_host_tuple_ids =
+                json_string_array_value(scenario.get("host_to_device_serial_frame_tuple_ids"))
+                    .into_iter()
+                    .collect::<BTreeSet<_>>();
+            let scenario_response_tuple_ids =
+                json_string_array_value(scenario.get("device_to_host_serial_frame_tuple_ids"))
+                    .into_iter()
+                    .collect::<BTreeSet<_>>();
+            let observed_input_tuple_ids = input_tuple_ids
+                .iter()
+                .filter(|tuple_id| scenario_host_tuple_ids.contains(*tuple_id))
+                .cloned()
+                .collect::<Vec<_>>();
+            let observed_expected_response_tuple_ids = expected_response_tuple_ids
+                .iter()
+                .filter(|tuple_id| scenario_response_tuple_ids.contains(*tuple_id))
+                .cloned()
+                .collect::<Vec<_>>();
+            if observed_input_tuple_ids.is_empty()
+                && observed_expected_response_tuple_ids.is_empty()
+            {
+                return None;
+            }
+            Some(serde_json::json!({
+                "scenario": scenario_id,
+                "input_tuple_ids_observed": observed_input_tuple_ids,
+                "expected_response_tuple_ids_observed": observed_expected_response_tuple_ids,
+                "sample_scoped_cooccurrence": !observed_input_tuple_ids.is_empty()
+                    && !observed_expected_response_tuple_ids.is_empty(),
+                "timing_correlation_proven": false
+            }))
+        })
+        .collect::<Vec<_>>();
+    let scenario_cooccurrence_count = scenario_cooccurrences
+        .iter()
+        .filter(|scenario| json_bool(scenario, "sample_scoped_cooccurrence") == Some(true))
+        .count();
+    let sample_scoped_response_correlation_found =
+        !matched_expected_response_tuple_ids.is_empty() && scenario_cooccurrence_count > 0;
+
+    serde_json::json!({
+        "group_id": group_id,
+        "source_kind": source_kind,
+        "input_artifact": input_artifact.display().to_string(),
+        "input_tuple_ids": input_tuple_ids,
+        "expected_response_tuple_ids": expected_response_tuple_ids,
+        "matched_expected_response_tuple_ids": matched_expected_response_tuple_ids,
+        "sample_scoped_response_correlation_found": sample_scoped_response_correlation_found,
+        "all_expected_response_tuples_observed": expected_response_tuple_set
+            .iter()
+            .all(|tuple_id| device_to_host_tuple_set.contains(tuple_id)),
+        "scenario_cooccurrence_count": scenario_cooccurrence_count,
+        "scenario_cooccurrences": scenario_cooccurrences,
+        "payload_bearing_authority_state_source_found": false,
+        "reviewed_equivalent_status_source_found": false,
+        "classification": if sample_scoped_response_correlation_found {
+            matched_classification
+        } else {
+            missing_classification
+        },
+        "read_only_probe_allowed": false,
+        "corrected_read_only_probe_ready": false,
+        "semantic_decode_claim": false,
+        "registry_promotion_claim": false,
+        "output_sendability_claim": false,
+        "hardware_output_authorized": false,
+        "native_control_evidence": false,
+        "timing_correlation_proven": false,
+        "required_next_review": "fixture-backed semantic decoder review or equivalent payload-bearing status-source evidence before any live probe"
+    })
+}
+
+enum ResponsePayloadFilter {
+    AnyPayload,
+    NonZeroPayload,
+}
+
+fn response_source_payload_tuple_ids(
+    scenarios: &[Value],
+    filter: ResponsePayloadFilter,
+) -> BTreeSet<String> {
+    scenarios
+        .iter()
+        .flat_map(|scenario| {
+            scenario
+                .get("device_to_host_serial_frame_tuple_samples")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+        })
+        .filter(|sample| {
+            let payload_len = json_u64(sample, "payload_len").unwrap_or(0);
+            if payload_len == 0 {
+                return false;
+            }
+            match filter {
+                ResponsePayloadFilter::AnyPayload => true,
+                ResponsePayloadFilter::NonZeroPayload => {
+                    json_string(sample, "payload_hex").is_some_and(payload_hex_has_nonzero_byte)
+                }
+            }
+        })
+        .filter_map(|sample| json_string(sample, "tuple_id").map(str::to_string))
+        .collect()
+}
+
+fn payload_hex_has_nonzero_byte(payload_hex: &str) -> bool {
+    payload_hex
+        .as_bytes()
+        .chunks_exact(2)
+        .filter_map(|chunk| std::str::from_utf8(chunk).ok())
+        .filter_map(|hex| u8::from_str_radix(hex, 16).ok())
+        .any(|byte| byte != 0)
+}
+
+fn response_tuple_id_for_host_tuple(tuple_id: &str) -> Result<String> {
+    let (group, device_id, command) = parse_vendor_serial_tuple_id(tuple_id)?;
+    let response_group = group | 0x80;
+    let response_device_id = device_id.rotate_right(4);
+    let response_command = command.map_or_else(|| "none".to_string(), hex_u8);
+    Ok(format!(
+        "{}/{}/{}",
+        hex_u8(response_group),
+        hex_u8(response_device_id),
+        response_command
+    ))
+}
+
+fn parse_vendor_serial_tuple_id(tuple_id: &str) -> Result<(u8, u8, Option<u8>)> {
+    let mut parts = tuple_id.split('/');
+    let group = parts
+        .next()
+        .ok_or_else(|| anyhow!("tuple id `{tuple_id}` is missing group"))?;
+    let device_id = parts
+        .next()
+        .ok_or_else(|| anyhow!("tuple id `{tuple_id}` is missing device id"))?;
+    let command = parts
+        .next()
+        .ok_or_else(|| anyhow!("tuple id `{tuple_id}` is missing command"))?;
+    if parts.next().is_some() {
+        return Err(anyhow!("tuple id `{tuple_id}` has too many components"));
+    }
+    let group = parse_tuple_hex_byte(group)?;
+    let device_id = parse_tuple_hex_byte(device_id)?;
+    let command = if command == "none" || command == "no_command" {
+        None
+    } else {
+        Some(parse_tuple_hex_byte(command)?)
+    };
+    Ok((group, device_id, command))
+}
+
+fn parse_tuple_hex_byte(value: &str) -> Result<u8> {
+    let hex = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+        .ok_or_else(|| anyhow!("tuple component `{value}` must use 0x hex notation"))?;
+    u8::from_str_radix(hex, 16).with_context(|| format!("tuple component `{value}` is not a byte"))
+}
+
 fn validate_authority_source_gap_endpoint_candidates(
     path: &Path,
     endpoint_candidates: &Value,
@@ -42286,6 +42959,25 @@ fn print_vendor_status_authority_source_gap_receipt(
     Ok(())
 }
 
+fn print_vendor_status_response_source_correlation_receipt(
+    json: bool,
+    json_out: &Path,
+    receipt: &Value,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Moza authority-status response correlation: source_found={}, correlated_group_count={}, live_probe_allowed={}; no traffic was sent.",
+            json_bool(receipt, "payload_bearing_authority_state_source_found").unwrap_or(false),
+            json_u64(receipt, "correlated_response_group_count").unwrap_or(0),
+            json_bool(receipt, "live_read_only_probe_allowed").unwrap_or(false)
+        );
+        println!("Receipt: {}", json_out.display());
+    }
+    Ok(())
+}
+
 fn print_vendor_authority_authorization_receipt(
     json: bool,
     json_out: &Path,
@@ -45106,6 +45798,187 @@ mod tests {
         assert_eq!(
             json_bool(&receipt, "payload_bearing_authority_state_source_found"),
             Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "live_read_only_probe_allowed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "native_visible_ready"), Some(false));
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_probe_response_source_correlation_blocks_live_probe_and_motion() -> TestResult
+    {
+        let source_gap: Value = serde_json::from_str(MOZA_VENDOR_STATUS_AUTHORITY_SOURCE_GAP_JSON)?;
+        let endpoint_candidates: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_ENDPOINT_CANDIDATES_FROM_PAYLOAD_RERUN_JSON)?;
+        let protocol_evidence_review: Value =
+            serde_json::from_str(MOZA_VENDOR_PROTOCOL_EVIDENCE_REVIEW_JSON)?;
+        let receipt = vendor_status_response_source_correlation_receipt(
+            Path::new("ci/hardware/moza-r5/2026-05-13/vendor-status-authority-source-gap.json"),
+            &source_gap,
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json",
+            ),
+            &endpoint_candidates,
+            Path::new("ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json"),
+            &protocol_evidence_review,
+        )?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-status-response-source-correlation.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&receipt).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        assert_eq!(
+            json_string(&receipt, "artifact_kind"),
+            Some("moza_vendor_status_response_source_correlation")
+        );
+        assert_eq!(
+            json_bool(&receipt, "payload_bearing_authority_state_source_found"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "reviewed_equivalent_status_source_found"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "corrected_read_only_probe_ready"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "live_read_only_probe_allowed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "authorization_plan_allowed"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "motion_attempt_allowed"), Some(false));
+        assert_eq!(
+            json_bool(&receipt, "wheel_moved_under_openracing"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "visible_motion_verified"), Some(false));
+        assert_eq!(json_bool(&receipt, "output_was_sent"), Some(false));
+        assert_eq!(json_string(&receipt, "authority_state"), Some("blocked"));
+        assert_eq!(
+            json_bool(&receipt, "timing_correlation_proven"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "registry_authority_response_tuple_found"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "mode_or_session_response_correlation_found"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&receipt, "command_id_0x07_response_correlation_found"),
+            Some(false)
+        );
+
+        let groups = receipt
+            .get("response_correlation_groups")
+            .and_then(Value::as_array)
+            .ok_or("response correlation receipt must include groups")?;
+        assert!(groups.iter().any(|group| {
+            json_string(group, "group_id") == Some("passive_status_mode_triad_0x25_0x19")
+                && json_bool(group, "sample_scoped_response_correlation_found") == Some(true)
+                && json_contains_string(group, "0xA5/0x91/0x01")
+                && json_bool(group, "read_only_probe_allowed") == Some(false)
+        }));
+        assert!(groups.iter().any(|group| {
+            json_string(group, "group_id") == Some("passive_session_authority_pair_0x5a_0x5d")
+                && json_bool(group, "sample_scoped_response_correlation_found") == Some(true)
+                && json_contains_string(group, "0xDA/0xB1/0x00")
+                && json_bool(group, "payload_bearing_authority_state_source_found") == Some(false)
+        }));
+        assert!(groups.iter().any(|group| {
+            json_string(group, "group_id") == Some("passive_command_id_0x07_analogs")
+                && json_bool(group, "sample_scoped_response_correlation_found") == Some(false)
+                && json_bool(group, "corrected_read_only_probe_ready") == Some(false)
+        }));
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_probe_response_source_correlation_rejects_probe_ready_source_gap() -> TestResult
+    {
+        let mut source_gap: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_AUTHORITY_SOURCE_GAP_JSON)?;
+        let endpoint_candidates: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_ENDPOINT_CANDIDATES_FROM_PAYLOAD_RERUN_JSON)?;
+        let protocol_evidence_review: Value =
+            serde_json::from_str(MOZA_VENDOR_PROTOCOL_EVIDENCE_REVIEW_JSON)?;
+        source_gap["live_read_only_probe_allowed"] = Value::Bool(true);
+
+        let error = vendor_status_response_source_correlation_receipt(
+            Path::new("ci/hardware/moza-r5/2026-05-13/vendor-status-authority-source-gap.json"),
+            &source_gap,
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json",
+            ),
+            &endpoint_candidates,
+            Path::new("ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json"),
+            &protocol_evidence_review,
+        )
+        .expect_err("response correlation must reject probe-ready source gap receipts");
+        assert!(
+            error.to_string().contains("live_read_only_probe_allowed"),
+            "unexpected error: {error}"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn vendor_status_probe_response_source_correlation_command_writes_json_receipt()
+    -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let source_gap = dir.path().join("source-gap.json");
+        let endpoint_candidates = dir.path().join("endpoint-candidates.json");
+        let protocol_evidence_review = dir.path().join("protocol-evidence-review.json");
+        write_test_json_file(
+            &source_gap,
+            &serde_json::from_str::<Value>(MOZA_VENDOR_STATUS_AUTHORITY_SOURCE_GAP_JSON)?,
+        )?;
+        write_test_json_file(
+            &endpoint_candidates,
+            &serde_json::from_str::<Value>(
+                MOZA_VENDOR_STATUS_ENDPOINT_CANDIDATES_FROM_PAYLOAD_RERUN_JSON,
+            )?,
+        )?;
+        write_test_json_file(
+            &protocol_evidence_review,
+            &serde_json::from_str::<Value>(MOZA_VENDOR_PROTOCOL_EVIDENCE_REVIEW_JSON)?,
+        )?;
+        let json_out = dir
+            .path()
+            .join("vendor-status-response-source-correlation.json");
+
+        vendor_status_response_source_correlation(VendorStatusResponseSourceCorrelationRequest {
+            json: false,
+            source_gap: &source_gap,
+            endpoint_candidates: &endpoint_candidates,
+            protocol_evidence_review: &protocol_evidence_review,
+            json_out: &json_out,
+            overwrite: false,
+        })
+        .await?;
+
+        let receipt = read_json_path(&json_out)?;
+        assert_eq!(
+            json_string(&receipt, "command"),
+            Some("wheelctl moza vendor-status-response-source-correlation")
         );
         assert_eq!(
             json_bool(&receipt, "live_read_only_probe_allowed"),

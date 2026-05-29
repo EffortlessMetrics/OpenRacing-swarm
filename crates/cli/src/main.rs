@@ -2433,6 +2433,55 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_vendor_status_probe_response_source_correlation() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "vendor-status-response-source-correlation",
+            "--source-gap",
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-source-gap.json",
+            "--endpoint-candidates",
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json",
+            "--protocol-evidence-review",
+            "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
+            "--json-out",
+            "target/moza-current/vendor-status-response-source-correlation.json",
+            "--overwrite",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::VendorStatusResponseSourceCorrelation {
+                source_gap,
+                endpoint_candidates,
+                protocol_evidence_review,
+                json_out,
+                overwrite,
+            }) => {
+                assert_eq!(
+                    source_gap.to_str(),
+                    Some("ci/hardware/moza-r5/2026-05-13/vendor-status-authority-source-gap.json")
+                );
+                assert_eq!(
+                    endpoint_candidates.to_str(),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json"
+                    )
+                );
+                assert_eq!(
+                    protocol_evidence_review.to_str(),
+                    Some("ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json")
+                );
+                assert_eq!(
+                    json_out.to_str(),
+                    Some("target/moza-current/vendor-status-response-source-correlation.json")
+                );
+                assert!(*overwrite);
+            }
+            _ => return Err("expected Moza VendorStatusResponseSourceCorrelation command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_authorize_vendor_authority() -> TestResult {
         let cli = parse_cli([
             "wheelctl",
