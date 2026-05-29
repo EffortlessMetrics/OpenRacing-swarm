@@ -204,6 +204,9 @@ const MOZA_VENDOR_PROTOCOL_EVIDENCE_REVIEW_JSON: &str =
 #[cfg(test)]
 const MOZA_VENDOR_STATUS_MODE_MATRIX_PLAN_JSON: &str =
     include_str!("../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-plan.json");
+#[cfg(test)]
+const MOZA_VENDOR_STATUS_MODE_MATRIX_RECEIPT_JSON: &str =
+    include_str!("../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json");
 const SIMULATOR_FFB_PREREQUISITE_ARTIFACTS: [(&str, &str); 6] = [
     ("zero_torque_real_hardware", "zero-torque-proof.json"),
     ("watchdog_zero_output", "watchdog-proof.json"),
@@ -40095,6 +40098,70 @@ mod tests {
         assert_eq!(json_u64(&value, "decoded_response_count"), Some(9));
         assert_eq!(json_u64(&value, "failed_response_count"), Some(0));
         assert_eq!(transport.writes.len(), 9);
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_probe_checked_in_mode_matrix_receipt_is_failed_closed() -> TestResult {
+        let value: Value = serde_json::from_str(MOZA_VENDOR_STATUS_MODE_MATRIX_RECEIPT_JSON)?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-status-probe.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&value).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        assert_eq!(json_bool(&value, "success"), Some(false));
+        assert_eq!(json_string(&value, "serial_port"), Some("COM4"));
+        assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
+        assert_eq!(json_bool(&value, "opened_serial_device"), Some(true));
+        assert_eq!(json_bool(&value, "serial_identity_verified"), Some(true));
+        assert_eq!(
+            json_bool(&value, "sent_read_only_query_commands"),
+            Some(true)
+        );
+        assert_eq!(json_u64(&value, "sent_read_only_query_count"), Some(9));
+        assert_eq!(json_bool(&value, "sent_output_writes"), Some(false));
+        assert_eq!(json_bool(&value, "sent_configuration_writes"), Some(false));
+        assert_eq!(
+            json_bool(&value, "sent_firmware_or_dfu_commands"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "hardware_output_authorized"), Some(false));
+        assert_eq!(json_bool(&value, "native_control_evidence"), Some(false));
+        assert_eq!(json_bool(&value, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(&value, "smoke_ready"), Some(false));
+        assert_eq!(json_bool(&value, "release_ready"), Some(false));
+        assert_eq!(json_bool(&value, "output_sendability_claim"), Some(false));
+        assert_eq!(json_bool(&value, "registry_promotion_claim"), Some(false));
+        assert_eq!(
+            json_bool(&value, "mode_enable_candidates_sendable"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&value, "unknown_safety_or_mode_state_blocks_authority"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&value, "real_hardware_status_evidence"),
+            Some(false)
+        );
+        assert_eq!(json_u64(&value, "decoded_response_count"), Some(0));
+        assert_eq!(json_u64(&value, "failed_response_count"), Some(9));
+
+        let responses = value
+            .get("responses")
+            .and_then(Value::as_array)
+            .ok_or("receipt must include responses")?;
+        assert_eq!(responses.len(), 9);
+        assert!(
+            responses.iter().all(|response| {
+                response.get("risk_class").and_then(Value::as_str) == Some("vendor_status")
+                    && response.get("decoded").and_then(Value::as_bool) == Some(false)
+            }),
+            "checked-in matrix must preserve failed read-only status responses"
+        );
 
         Ok(())
     }
