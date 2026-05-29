@@ -106,9 +106,11 @@ and derived diagnosis at
 `ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json`.
 It added only a bounded scan-window option, selected the same two read-only
 commands, used `--max-response-frames-per-query 64`, decoded zero
-authority-state replies, and preserved the same `0xA1/0x21/0x4D` mismatch. That
-removes shallow scan-window depth as the immediate explanation but still keeps
-authorization, PIDFF rerun, and motion blocked. The
+authority-state replies, and now classifies `7E00A1214D` as a checksum-valid
+zero-length response-like frame for `0xA1/0x21/no_command`. That removes shallow
+scan-window depth as the immediate explanation and narrows the blocker to
+zero-length ACK/status reply correlation, while still keeping authorization,
+PIDFF rerun, and motion blocked. The
 first bounded setting-change capture attempt remains
 classified as low-yield/incomplete: 355 bytes, six packets, zero Moza
 `0x346E:0x0004` matches, and restore status `not reported`. The repeat capture

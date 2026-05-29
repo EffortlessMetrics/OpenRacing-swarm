@@ -153,10 +153,11 @@ correlation receipt then selected only those two commands, decoded zero replies,
 and recorded one response-like command mismatch, `0xA1/0x21/0x4D`, while
 requesting `main_misc_get_ffb_status` `0x21/0x12/0x07`. The latest extended
 scan repeats that targeted read-only probe with a 64-frame per-command cap,
-scans 19 frames, still decodes zero authority-state replies, and preserves the
-same mismatch. That keeps authorization, PIDFF rerun, and motion blocked on
-authority-status command/endpoint correlation or unknown device state rather
-than scan-window depth.
+scans 19 frames, still decodes zero authority-state replies, and classifies
+`7E00A1214D` as a checksum-valid zero-length response-like frame for
+`0xA1/0x21/no_command`. That keeps authorization, PIDFF rerun, and motion
+blocked on zero-length ACK/status reply correlation or unknown device state
+rather than scan-window depth.
 The `pit-house-setting-change` sniff plan now pins the scenario-specific
 operator evidence required for that next capture: exact Pit House setting,
 starting value, ending value, and an affirmative restore status. The first
@@ -5588,18 +5589,19 @@ fresh observe-only hardware doctor. It selected only `estop_get_ffb` and
 a 64-frame scan cap, sent two registry-approved read-only query commands, and
 decoded zero authority-state replies. The derived no-output diagnosis at
 `vendor-status-extended-scan-diagnosis.json` scanned 19 frames total, classified
-18 as diagnostic telemetry, and preserved the same response-like command
-mismatch:
+18 as diagnostic telemetry, and preserved one checksum-valid zero-length
+response-like frame:
 
 ```text
 requested: main_misc_get_ffb_status 0x21/0x12/0x07
-observed:  0xA1/0x21/0x4D
+observed:  0xA1/0x21/no_command
+frame:     7E00A1214D
 ```
 
 The extended scan removes shallow scan-window exhaustion as the immediate
-explanation for missing authority-state replies. The current blocker remains
-authority-status command/endpoint correlation or unknown device state, not
-output, force, PIDFF, or motion.
+explanation for missing authority-state replies. The current blocker is
+zero-length ACK/status reply correlation or unknown device state, not output,
+force, PIDFF, or motion.
 
 ### Non-goals
 
@@ -5619,13 +5621,13 @@ simulator claim, coexistence claim, or release-ready claim.
   COM4 R5 serial/CDC identity, zero HID/output/configuration/firmware actions,
   and failed-closed status.
 - The offline diagnosis records the 64-frame-cap probe result without
-  promoting the `0xA1/0x21/0x4D` mismatch.
+  promoting the zero-length `0xA1/0x21/no_command` ACK/status candidate.
 - `unknown_safety_or_mode_state_blocks_authority=true`,
   `hardware_output_authorized=false`, `native_control_evidence=false`,
   `native_visible_ready=false`, `output_sendability_claim=false`, and
   `registry_promotion_claim=false` remain pinned.
-- The next native-path action is no-output authority-status command/endpoint
-  correlation or passive evidence correlation, not output, PIDFF, or motion.
+- The next native-path action is no-output zero-length reply correlation or
+  passive evidence correlation, not output, PIDFF, or motion.
 
 ### Proof Commands
 
@@ -5676,6 +5678,110 @@ Remove only:
 Do not remove the #73 matrix, #74 framing diagnosis, #75 demux receipt, #76
 targeted correlation evidence, passive evidence, consumed hardware attempts, or
 post-authority PIDFF regression evidence.
+
+## Work item: classify-zero-length-authority-status-reply
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: exact authorization planning for any future decoded volatile mode or
+enable candidate
+Blocked by: no semantic decode or authority-state correlation for zero-length
+status-like replies.
+
+### Goal
+
+Correct the stored-receipt framing diagnosis for the extended read-only
+authority-status scan so checksum-valid zero-length frames are not mislabeled as
+command-byte mismatches.
+
+### Production Delta
+
+The read-only status frame classifier now treats a length byte of `0x00` as a
+five-byte frame with no command byte and a normal checksum. For the observed
+frame `7E00A1214D`, `0x4D` is therefore the checksum, not a command. The frame
+is classified as `zero_length_response_or_ack_frame`, remains
+`unknown_non_registry_frame` for demux/sendability, and is rendered in receipts
+as `0xA1/0x21/no_command`.
+
+`vendor-status-extended-scan-diagnosis.json` was regenerated from the stored
+`vendor-status-extended-scan-targeted.json` receipt only. No HID or serial
+device was opened by the diagnosis command, no query or output traffic was sent,
+and the live read-only probe receipt itself remains preserved. The regenerated
+diagnosis records:
+
+```text
+diagnosis_classification: authority_status_replies_zero_length_ack_candidate_after_targeted_read_only_probe
+primary_blocker: authority_status_zero_length_reply_correlation
+scanned_zero_length_response_or_ack_frame_count: 1
+scanned_response_like_zero_length_frame_count: 1
+response_like_zero_length_tuples: 0xA1/0x21/no_command
+```
+
+This narrows the next native-path blocker from generic command mismatch to
+zero-length ACK/status reply correlation. It is still not semantic decode,
+registry promotion, tuple sendability, authorization input, native control, or
+native-visible motion.
+
+### Non-goals
+
+No live hardware probe, HID output open, PIDFF output, feature report, serial
+write, output write, configuration write, firmware/update/DFU path, high torque,
+mode-enable write, authority write, authorization receipt, semantic decode
+claim, registry promotion, tuple sendability, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim, or
+release-ready claim.
+
+### Acceptance
+
+- `7E00A1214D` is diagnosed as a checksum-valid zero-length response-like
+  frame, not `0xA1/0x21/0x4D`.
+- Demux still treats zero-length response-like frames as unknown and
+  non-sendable.
+- The derived diagnosis keeps `wheel_moved_under_openracing=false`,
+  `visible_motion_verified=false`, `output_was_sent=false`, and
+  `authority_state=blocked`.
+- `unknown_safety_or_mode_state_blocks_authority=true`,
+  `hardware_output_authorized=false`, `native_control_evidence=false`,
+  `native_visible_ready=false`, `output_sendability_claim=false`, and
+  `registry_promotion_claim=false` remain pinned.
+- The next native-path action is no-output zero-length reply correlation using
+  stored receipts, fake fixtures, or passive protocol evidence, not output,
+  PIDFF, authorization, or motion.
+
+### Proof Commands
+
+```powershell
+wheelctl moza vendor-status-framing-diagnosis `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-targeted.json `
+  --json-out target/moza-current/vendor-status-zero-length-diagnosis-from-extended.json `
+  --overwrite `
+  --json
+
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_framing_diagnosis -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_status_probe -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- the zero-length read-only status frame classifier branch
+- the regenerated `vendor-status-extended-scan-diagnosis.json`
+- schema fields for zero-length response-like diagnosis
+- source-of-truth notes for this work item.
+
+Do not remove the live #77 extended scan receipt, its hardware doctor, earlier
+read-only matrix/demux/correlation evidence, passive evidence, consumed hardware
+attempts, or post-authority PIDFF regression evidence.
 
 ## Work item: native-visible-promotion
 

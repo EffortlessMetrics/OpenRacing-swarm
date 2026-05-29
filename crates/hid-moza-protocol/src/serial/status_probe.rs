@@ -201,6 +201,9 @@ pub fn demux_read_only_status_response_frame(
         MozaReadOnlyStatusResponseFrameClass::FramedAsciiTelemetryLog => {
             MozaReadOnlyStatusResponseFrameDisposition::SkippableDiagnosticFrame
         }
+        MozaReadOnlyStatusResponseFrameClass::ZeroLengthResponseOrAckFrame => {
+            MozaReadOnlyStatusResponseFrameDisposition::UnknownNonRegistryFrame
+        }
         MozaReadOnlyStatusResponseFrameClass::StreamDesynchronizedOrPartialLogFrame
         | MozaReadOnlyStatusResponseFrameClass::MalformedFrame => {
             MozaReadOnlyStatusResponseFrameDisposition::MalformedOrDesynchronizedFrame
@@ -325,6 +328,7 @@ fn read_only_status_response_tuple_known(group: u8, device_id: u8, command_id: u
 pub enum MozaReadOnlyStatusResponseFrameClass {
     RegistryStatusResponse,
     FramedAsciiTelemetryLog,
+    ZeroLengthResponseOrAckFrame,
     StreamDesynchronizedOrPartialLogFrame,
     UnknownNonRegistryFrame,
     MalformedFrame,
@@ -335,6 +339,7 @@ impl MozaReadOnlyStatusResponseFrameClass {
         match self {
             Self::RegistryStatusResponse => "registry_status_response",
             Self::FramedAsciiTelemetryLog => "framed_ascii_telemetry_log",
+            Self::ZeroLengthResponseOrAckFrame => "zero_length_response_or_ack_frame",
             Self::StreamDesynchronizedOrPartialLogFrame => {
                 "stream_desynchronized_or_partial_log_frame"
             }
@@ -394,7 +399,11 @@ pub fn diagnose_read_only_status_response_frame(
     let length_matches = expected_len == Some(actual_len);
     let group = frame.get(2).copied();
     let device_id = frame.get(3).copied();
-    let command = frame.get(4).copied();
+    let command = if declared_len > 0 {
+        frame.get(4).copied()
+    } else {
+        None
+    };
     let registry_command_known = group
         .zip(command)
         .and_then(|(group, command)| {
@@ -413,12 +422,16 @@ pub fn diagnose_read_only_status_response_frame(
     let mut expected_checksum = None;
     let actual_checksum = frame.last().copied();
     let mut checksum_valid = None;
-    let payload = if length_matches && actual_len >= 6 {
+    let payload = if length_matches && actual_len >= 5 {
         expected_checksum = Some(serial_checksum(&frame[..actual_len - 1]));
         checksum_valid = expected_checksum
             .zip(actual_checksum)
             .map(|(expected, actual)| expected == actual);
-        Some(&frame[5..actual_len - 1])
+        Some(if declared_len > 0 {
+            &frame[5..actual_len - 1]
+        } else {
+            &frame[actual_len - 1..actual_len - 1]
+        })
     } else {
         None
     };
@@ -432,6 +445,8 @@ pub fn diagnose_read_only_status_response_frame(
 
     let classification = if !length_matches {
         MozaReadOnlyStatusResponseFrameClass::MalformedFrame
+    } else if declared_len == 0 && checksum_valid == Some(true) {
+        MozaReadOnlyStatusResponseFrameClass::ZeroLengthResponseOrAckFrame
     } else if registry_command_known && checksum_valid == Some(true) {
         MozaReadOnlyStatusResponseFrameClass::RegistryStatusResponse
     } else if is_debug_log_tuple && diagnostic_text_payload && checksum_valid == Some(true) {
