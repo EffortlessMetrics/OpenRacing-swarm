@@ -1982,6 +1982,26 @@ commands = [
 ]
 
 [[work_item]]
+id = "diagnose-authority-status-endpoint-specific-blocker"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-diagnose-authority-status-endpoint-specific-blocker"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json"
+claim_boundary = "No-output stored-receipt authority-status endpoint diagnosis only; compares the ACK-only targeted read-only probe against the demux baseline, rules out broad serial framing/ownership/timeout/line settings as the primary blocker because seven non-authority status replies decoded on the same serial lane, and keeps the authority-status blocker on endpoint/command correction with no hardware access, authorization, semantic decode, registry promotion, tuple sendability, hardware output, native-control, native-visible, smoke-ready, simulator, coexistence, high-torque, or release-ready claim."
+commands = [
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-framing-diagnosis --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-ack-only-correlation-targeted.json --baseline-status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json --overwrite",
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

@@ -286,6 +286,16 @@ authority-state replies. The diagnosis reproduced the same
 `0xA1/0x21/no_command` ACK-only/no-payload candidate. The exact blocker remains
 status-payload correlation or corrected authority-status endpoint/command IDs.
 
+The authority endpoint diagnosis is now recorded at
+`vendor-status-authority-endpoint-diagnosis.json`. It compares the ACK-only
+targeted probe with `vendor-status-mode-matrix-demux.json`, which decoded seven
+payload-bearing non-authority status replies on the same serial lane. That
+rules out broad serial framing, ownership, timeout, or line settings as the
+primary blocker. The native path is blocked on authority-status endpoint/command
+correction: `estop_get_ffb` and `main_misc_get_ffb_status` still decode zero
+authority-state replies, and `0xA1/0x21/no_command` remains ACK/no-payload
+correlation evidence only.
+
 The read-only demux follow-up is now recorded at
 `vendor-status-mode-matrix-demux.json` with its fresh precondition doctor at
 `vendor-status-mode-matrix-demux-hardware-doctor.json`. It kept the same

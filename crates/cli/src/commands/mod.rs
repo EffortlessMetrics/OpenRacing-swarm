@@ -888,6 +888,9 @@ pub enum MozaCommands {
         /// Stored vendor-status-probe receipt to diagnose
         #[arg(long)]
         status_probe: std::path::PathBuf,
+        /// Optional stored matrix/probe receipt used to rule out broad serial framing issues
+        #[arg(long)]
+        baseline_status_probe: Option<std::path::PathBuf>,
         /// Write the non-claiming framing diagnosis receipt to this JSON file
         #[arg(long)]
         json_out: std::path::PathBuf,

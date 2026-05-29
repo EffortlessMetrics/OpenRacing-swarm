@@ -212,6 +212,13 @@ const MOZA_VENDOR_STATUS_MODE_MATRIX_PLAN_JSON: &str =
 const MOZA_VENDOR_STATUS_MODE_MATRIX_RECEIPT_JSON: &str =
     include_str!("../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json");
 #[cfg(test)]
+const MOZA_VENDOR_STATUS_MODE_MATRIX_DEMUX_JSON: &str =
+    include_str!("../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json");
+#[cfg(test)]
+const MOZA_VENDOR_STATUS_ACK_ONLY_TARGETED_JSON: &str = include_str!(
+    "../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-ack-only-correlation-targeted.json"
+);
+#[cfg(test)]
 const MOZA_VENDOR_STATUS_FRAMING_DIAGNOSIS_JSON: &str =
     include_str!("../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json");
 const SIMULATOR_FFB_PREREQUISITE_ARTIFACTS: [(&str, &str); 6] = [
@@ -594,6 +601,7 @@ struct VendorStatusProbeRequest<'a> {
 struct VendorStatusFramingDiagnosisRequest<'a> {
     json: bool,
     status_probe: &'a Path,
+    baseline_status_probe: Option<&'a Path>,
     json_out: &'a Path,
     overwrite: bool,
 }
@@ -814,12 +822,14 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
         }
         MozaCommands::VendorStatusFramingDiagnosis {
             status_probe,
+            baseline_status_probe,
             json_out,
             overwrite,
         } => {
             vendor_status_framing_diagnosis(VendorStatusFramingDiagnosisRequest {
                 json,
                 status_probe,
+                baseline_status_probe: baseline_status_probe.as_deref(),
                 json_out,
                 overwrite: *overwrite,
             })
@@ -6992,7 +7002,18 @@ async fn vendor_status_framing_diagnosis(
 ) -> Result<()> {
     ensure_receipt_writable(request.json_out, request.overwrite)?;
     let status_probe = read_json_path(request.status_probe)?;
-    let receipt = vendor_status_framing_diagnosis_receipt(request.status_probe, &status_probe)?;
+    let baseline_status_probe = request
+        .baseline_status_probe
+        .map(read_json_path)
+        .transpose()?;
+    let baseline_status_probe = request
+        .baseline_status_probe
+        .zip(baseline_status_probe.as_ref());
+    let receipt = vendor_status_framing_diagnosis_receipt(
+        request.status_probe,
+        &status_probe,
+        baseline_status_probe,
+    )?;
     write_json_file(request.json_out, &receipt)?;
     print_vendor_status_framing_diagnosis_receipt(request.json, request.json_out, &receipt)
 }
@@ -27417,11 +27438,91 @@ fn selected_read_only_status_commands(
     Ok(selected)
 }
 
+fn vendor_status_probe_command_summary(
+    status_probe_path: &Path,
+    status_probe: &Value,
+) -> Result<VendorStatusProbeCommandSummary> {
+    validate_vendor_status_probe_receipt_for_framing_diagnosis(status_probe_path, status_probe)?;
+
+    let responses = status_probe
+        .get("responses")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            anyhow!(
+                "status probe receipt '{}' must include responses",
+                status_probe_path.display()
+            )
+        })?;
+
+    let mut authority_status_command_ids = Vec::new();
+    let mut non_authority_command_ids = Vec::new();
+    let mut authority_status_command_count = 0usize;
+    let mut authority_status_decoded_response_count = 0usize;
+    let mut authority_status_failed_response_count = 0usize;
+    let mut non_authority_command_count = 0usize;
+    let mut non_authority_decoded_response_count = 0usize;
+    let mut non_authority_failed_response_count = 0usize;
+
+    for response in responses {
+        let command_id = json_string(response, "command_id").ok_or_else(|| {
+            anyhow!(
+                "status probe receipt '{}' response is missing command_id",
+                status_probe_path.display()
+            )
+        })?;
+        let decoded = json_bool(response, "decoded").unwrap_or(false);
+        if is_authority_status_command_id(command_id) {
+            authority_status_command_count += 1;
+            authority_status_command_ids.push(command_id.to_string());
+            if decoded {
+                authority_status_decoded_response_count += 1;
+            } else {
+                authority_status_failed_response_count += 1;
+            }
+        } else {
+            non_authority_command_count += 1;
+            non_authority_command_ids.push(command_id.to_string());
+            if decoded {
+                non_authority_decoded_response_count += 1;
+            } else {
+                non_authority_failed_response_count += 1;
+            }
+        }
+    }
+
+    Ok(VendorStatusProbeCommandSummary {
+        receipt: status_probe_path.display().to_string(),
+        selected_command_count: json_u64(status_probe, "selected_command_count")
+            .or_else(|| json_u64(status_probe, "sent_read_only_query_count"))
+            .unwrap_or(responses.len() as u64) as usize,
+        decoded_response_count: json_u64(status_probe, "decoded_response_count").unwrap_or(0)
+            as usize,
+        failed_response_count: json_u64(status_probe, "failed_response_count").unwrap_or(0)
+            as usize,
+        authority_status_command_count,
+        authority_status_decoded_response_count,
+        authority_status_failed_response_count,
+        authority_status_command_ids,
+        non_authority_command_count,
+        non_authority_decoded_response_count,
+        non_authority_failed_response_count,
+        non_authority_command_ids,
+    })
+}
+
+fn is_authority_status_command_id(command_id: &str) -> bool {
+    matches!(command_id, "estop_get_ffb" | "main_misc_get_ffb_status")
+}
+
 fn vendor_status_framing_diagnosis_receipt(
     status_probe_path: &Path,
     status_probe: &Value,
+    baseline_status_probe: Option<(&Path, &Value)>,
 ) -> Result<VendorStatusFramingDiagnosisReceipt> {
     validate_vendor_status_probe_receipt_for_framing_diagnosis(status_probe_path, status_probe)?;
+    let baseline_status_summary = baseline_status_probe
+        .map(|(path, value)| vendor_status_probe_command_summary(path, value))
+        .transpose()?;
 
     let responses = status_probe
         .get("responses")
@@ -27461,6 +27562,8 @@ fn vendor_status_framing_diagnosis_receipt(
     let mut scanned_checksum_invalid_count = 0usize;
     let mut scanned_response_like_command_mismatch_count = 0usize;
     let mut scanned_response_like_zero_length_frame_count = 0usize;
+    let status_probe_command_summary =
+        vendor_status_probe_command_summary(status_probe_path, status_probe)?;
 
     for response in responses {
         let diagnosed = vendor_status_framing_diagnosed_response(response)?;
@@ -27538,6 +27641,19 @@ fn vendor_status_framing_diagnosis_receipt(
         diagnosed_responses.push(diagnosed);
     }
 
+    let broad_serial_transport_blocker_ruled_out =
+        baseline_status_summary.as_ref().is_some_and(|summary| {
+            summary.non_authority_decoded_response_count > 0
+                && status_probe_command_summary.authority_status_command_count > 0
+                && status_probe_command_summary.authority_status_decoded_response_count == 0
+        });
+    let authority_status_endpoint_specific_blocker = broad_serial_transport_blocker_ruled_out
+        && response_like_zero_length_ack_only_candidate_count > 0;
+    let endpoint_or_command_correction_required = authority_status_endpoint_specific_blocker
+        || response_like_zero_length_ack_only_candidate_count > 0
+        || scanned_response_like_zero_length_frame_count > 0
+        || scanned_response_like_command_mismatch_count > 0;
+
     let repeated_observed_tuple_ids = tuple_counts
         .iter()
         .filter(|(_, count)| **count > 1)
@@ -27563,7 +27679,9 @@ fn vendor_status_framing_diagnosis_receipt(
         .map(|(tuple_id, count)| VendorStatusFramingTupleCount { tuple_id, count })
         .collect::<Vec<_>>();
 
-    let diagnosis_classification = if response_like_zero_length_ack_only_candidate_count > 0 {
+    let diagnosis_classification = if authority_status_endpoint_specific_blocker {
+        "authority_status_endpoint_specific_ack_only_without_payload"
+    } else if response_like_zero_length_ack_only_candidate_count > 0 {
         "authority_status_ack_only_without_payload_after_targeted_read_only_probe"
     } else if scanned_response_like_zero_length_frame_count > 0 {
         "authority_status_replies_zero_length_ack_candidate_after_targeted_read_only_probe"
@@ -27582,7 +27700,9 @@ fn vendor_status_framing_diagnosis_receipt(
     } else {
         "mixed_or_unknown_serial_response_stream"
     };
-    let primary_blocker = if response_like_zero_length_ack_only_candidate_count > 0 {
+    let primary_blocker = if authority_status_endpoint_specific_blocker {
+        "authority_status_endpoint_or_command_mismatch"
+    } else if response_like_zero_length_ack_only_candidate_count > 0 {
         "authority_status_ack_without_status_payload"
     } else if scanned_response_like_zero_length_frame_count > 0 {
         "authority_status_zero_length_reply_correlation"
@@ -27591,7 +27711,9 @@ fn vendor_status_framing_diagnosis_receipt(
     } else {
         "transport_framing_or_serial_stream_demultiplexing"
     };
-    let exact_next_blocker = if response_like_zero_length_ack_only_candidate_count > 0 {
+    let exact_next_blocker = if authority_status_endpoint_specific_blocker {
+        "Correct or decode the authority-status endpoint/command for FFB status. Broad serial framing, ownership, and line settings are not the primary blocker because the baseline read-only matrix decoded payload-bearing non-authority status replies; the current authority-status path returns only ACK/no-payload correlation evidence."
+    } else if response_like_zero_length_ack_only_candidate_count > 0 {
         "Determine whether 0xA1/0x21/no_command is an ACK-only reply to main_misc_get_ffb_status or evidence that the authority-status query endpoint/command is wrong; mode/safety state remains unknown until a payload-bearing status reply is decoded."
     } else if scanned_response_like_zero_length_frame_count > 0 {
         "Correlate checksum-valid zero-length response-like frames with the requested authority-status command before any authorization or motion planning."
@@ -27600,7 +27722,9 @@ fn vendor_status_framing_diagnosis_receipt(
     } else {
         "Resolve serial stream demultiplexing or command/endpoint framing before any authorization or motion planning."
     };
-    let conclusion = if response_like_zero_length_ack_only_candidate_count > 0 {
+    let conclusion = if authority_status_endpoint_specific_blocker {
+        "The targeted COM4 read-only authority-status probe decoded no authority-state replies and observed only ACK/no-payload correlation for the status path. The baseline read-only matrix decoded payload-bearing non-authority status replies from the same serial lane, so this is now an authority-status endpoint/command blocker rather than a broad serial framing, ownership, timeout, or line-setting blocker. It still does not authorize output or motion."
+    } else if response_like_zero_length_ack_only_candidate_count > 0 {
         "The targeted COM4 read-only probe still decoded no authority-state replies. It observed checksum-valid framed serial traffic plus a response-like zero-length frame for the requested group/device; because that frame carries no command or status payload, it is ACK-only correlation evidence, not mode/safety evidence. The current blocker is authority-status payload correlation or corrected query endpoint/command, not output, force, or motion."
     } else if scanned_response_like_zero_length_frame_count > 0 {
         "The targeted COM4 read-only probe still decoded no authority-state replies. It observed at least one checksum-valid zero-length response-like frame for the requested group/device, which is an ack/status correlation candidate only; the next blocker is authority-status zero-length reply correlation rather than output, force, or motion."
@@ -27609,7 +27733,9 @@ fn vendor_status_framing_diagnosis_receipt(
     } else {
         "The stored COM4 read-only probe did not capture registry status replies. Its captured frames are dominated by tuple 0x0E/0x71/0x05 ASCII NRFloss/recvGap diagnostic stream frames, with one desynchronized partial frame, so the next blocker is serial stream/framing demultiplexing or command/endpoint framing rather than authority or force."
     };
-    let next_allowed_action = if response_like_zero_length_ack_only_candidate_count > 0 {
+    let next_allowed_action = if authority_status_endpoint_specific_blocker {
+        "Perform no-output authority-status endpoint/command correction using the registry, fake fixtures, and passive protocol evidence. Do not authorize mode/enable writes, PIDFF reruns, or motion attempts until a corrected read-only endpoint decodes a payload-bearing authority-state reply or an equivalent reviewed status source proves the mode/safety state."
+    } else if response_like_zero_length_ack_only_candidate_count > 0 {
         "Continue no-output ACK-only status-payload correlation using stored receipts, fake fixtures, or passive protocol evidence. If live bench preflight is clean, rerun only the read-only status probe; do not authorize mode/enable writes, PIDFF reruns, or motion attempts until a payload-bearing authority-state reply is decoded or the endpoint/command IDs are corrected."
     } else if scanned_response_like_zero_length_frame_count > 0 {
         "Continue no-output authority-status zero-length reply correlation using stored receipts, fake fixtures, or passive protocol evidence. Do not authorize mode/enable writes, PIDFF reruns, or motion attempts until zero-length frames are semantically decoded or the endpoint/command IDs are corrected."
@@ -27637,6 +27763,16 @@ fn vendor_status_framing_diagnosis_receipt(
             .unwrap_or(0) as usize,
         status_probe_failed_response_count: json_u64(status_probe, "failed_response_count")
             .unwrap_or(0) as usize,
+        baseline_status_probe_summary: baseline_status_summary,
+        status_probe_authority_status_command_count: status_probe_command_summary
+            .authority_status_command_count,
+        status_probe_authority_status_decoded_response_count: status_probe_command_summary
+            .authority_status_decoded_response_count,
+        status_probe_non_authority_decoded_response_count: status_probe_command_summary
+            .non_authority_decoded_response_count,
+        broad_serial_transport_blocker_ruled_out,
+        authority_status_endpoint_specific_blocker,
+        endpoint_or_command_correction_required,
         native_control_evidence: false,
         hardware_output_authorized: false,
         native_visible_ready: false,
@@ -32464,6 +32600,14 @@ struct VendorStatusFramingDiagnosisReceipt {
     status_probe_sent_read_only_query_count: usize,
     status_probe_decoded_response_count: usize,
     status_probe_failed_response_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    baseline_status_probe_summary: Option<VendorStatusProbeCommandSummary>,
+    status_probe_authority_status_command_count: usize,
+    status_probe_authority_status_decoded_response_count: usize,
+    status_probe_non_authority_decoded_response_count: usize,
+    broad_serial_transport_blocker_ruled_out: bool,
+    authority_status_endpoint_specific_blocker: bool,
+    endpoint_or_command_correction_required: bool,
     native_control_evidence: bool,
     hardware_output_authorized: bool,
     native_visible_ready: bool,
@@ -32522,6 +32666,22 @@ struct VendorStatusFramingDiagnosisReceipt {
     blocked_actions: Vec<&'static str>,
     required_artifacts: Vec<&'static str>,
     notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorStatusProbeCommandSummary {
+    receipt: String,
+    selected_command_count: usize,
+    decoded_response_count: usize,
+    failed_response_count: usize,
+    authority_status_command_count: usize,
+    authority_status_decoded_response_count: usize,
+    authority_status_failed_response_count: usize,
+    authority_status_command_ids: Vec<String>,
+    non_authority_command_count: usize,
+    non_authority_decoded_response_count: usize,
+    non_authority_failed_response_count: usize,
+    non_authority_command_ids: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -41639,6 +41799,7 @@ mod tests {
         let receipt = vendor_status_framing_diagnosis_receipt(
             Path::new("ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json"),
             &status_probe,
+            None,
         )?;
         let value = serde_json::to_value(&receipt)?;
         let schema: Value = serde_json::from_str(include_str!(
@@ -41780,6 +41941,7 @@ mod tests {
         let receipt = vendor_status_framing_diagnosis_receipt(
             Path::new("target/moza-current/vendor-status-reply-correlation-targeted.json"),
             &status_probe,
+            None,
         )?;
         let value = serde_json::to_value(&receipt)?;
 
@@ -41866,6 +42028,105 @@ mod tests {
                 && json_string(frame, "zero_length_correlation")
                     == Some("ack_only_candidate_no_status_payload")
         }));
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_framing_diagnosis_rules_out_broad_serial_blocker() -> TestResult {
+        let status_probe: Value = serde_json::from_str(MOZA_VENDOR_STATUS_ACK_ONLY_TARGETED_JSON)?;
+        let baseline_status_probe: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_MODE_MATRIX_DEMUX_JSON)?;
+        let receipt = vendor_status_framing_diagnosis_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-ack-only-correlation-targeted.json",
+            ),
+            &status_probe,
+            Some((
+                Path::new("ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json"),
+                &baseline_status_probe,
+            )),
+        )?;
+        let value = serde_json::to_value(&receipt)?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-status-framing-diagnosis.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&value).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        assert_eq!(
+            json_string(&value, "diagnosis_classification"),
+            Some("authority_status_endpoint_specific_ack_only_without_payload")
+        );
+        assert_eq!(
+            json_string(&value, "primary_blocker"),
+            Some("authority_status_endpoint_or_command_mismatch")
+        );
+        assert_eq!(
+            json_bool(&value, "broad_serial_transport_blocker_ruled_out"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&value, "authority_status_endpoint_specific_blocker"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&value, "endpoint_or_command_correction_required"),
+            Some(true)
+        );
+        assert_eq!(
+            json_u64(&value, "status_probe_authority_status_command_count"),
+            Some(2)
+        );
+        assert_eq!(
+            json_u64(
+                &value,
+                "status_probe_authority_status_decoded_response_count"
+            ),
+            Some(0)
+        );
+
+        let baseline = value
+            .get("baseline_status_probe_summary")
+            .ok_or("diagnosis must include baseline summary")?;
+        assert_eq!(
+            json_string(baseline, "receipt"),
+            Some("ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json")
+        );
+        assert_eq!(json_u64(baseline, "decoded_response_count"), Some(7));
+        assert_eq!(
+            json_u64(baseline, "non_authority_decoded_response_count"),
+            Some(7)
+        );
+        assert_eq!(
+            json_u64(baseline, "authority_status_decoded_response_count"),
+            Some(0)
+        );
+
+        for field in [
+            "native_control_evidence",
+            "hardware_output_authorized",
+            "native_visible_ready",
+            "smoke_ready",
+            "release_ready",
+            "registry_promotion_claim",
+            "output_sendability_claim",
+            "semantic_decode_claim",
+            "opened_serial_device",
+            "sent_read_only_query_commands",
+            "sent_output_writes",
+            "sent_configuration_writes",
+            "sent_firmware_or_dfu_commands",
+            "high_torque_enabled",
+            "planned_next_output_allowed",
+        ] {
+            assert_eq!(
+                json_bool(&value, field),
+                Some(false),
+                "diagnosis must keep `{field}` false"
+            );
+        }
 
         Ok(())
     }

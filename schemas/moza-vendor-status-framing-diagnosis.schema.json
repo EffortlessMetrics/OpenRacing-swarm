@@ -78,6 +78,7 @@
     "unknown_safety_or_mode_state_blocks_authority": {"const": true},
     "diagnosis_classification": {
       "enum": [
+        "authority_status_endpoint_specific_ack_only_without_payload",
         "serial_readback_consumed_debug_telemetry_log_frames",
         "authority_status_replies_uncorrelated_after_targeted_read_only_probe",
         "authority_status_replies_zero_length_ack_candidate_after_targeted_read_only_probe",
@@ -88,6 +89,45 @@
       ]
     },
     "primary_blocker": {"type": "string"},
+    "baseline_status_probe_summary": {
+      "type": "object",
+      "required": [
+        "receipt",
+        "selected_command_count",
+        "decoded_response_count",
+        "failed_response_count",
+        "authority_status_command_count",
+        "authority_status_decoded_response_count",
+        "non_authority_decoded_response_count"
+      ],
+      "properties": {
+        "receipt": {"type": "string"},
+        "selected_command_count": {"type": "integer", "minimum": 0},
+        "decoded_response_count": {"type": "integer", "minimum": 0},
+        "failed_response_count": {"type": "integer", "minimum": 0},
+        "authority_status_command_count": {"type": "integer", "minimum": 0},
+        "authority_status_decoded_response_count": {"type": "integer", "minimum": 0},
+        "authority_status_failed_response_count": {"type": "integer", "minimum": 0},
+        "authority_status_command_ids": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "non_authority_command_count": {"type": "integer", "minimum": 0},
+        "non_authority_decoded_response_count": {"type": "integer", "minimum": 0},
+        "non_authority_failed_response_count": {"type": "integer", "minimum": 0},
+        "non_authority_command_ids": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      },
+      "additionalProperties": true
+    },
+    "status_probe_authority_status_command_count": {"type": "integer", "minimum": 0},
+    "status_probe_authority_status_decoded_response_count": {"type": "integer", "minimum": 0},
+    "status_probe_non_authority_decoded_response_count": {"type": "integer", "minimum": 0},
+    "broad_serial_transport_blocker_ruled_out": {"type": "boolean"},
+    "authority_status_endpoint_specific_blocker": {"type": "boolean"},
+    "endpoint_or_command_correction_required": {"type": "boolean"},
     "response_frame_count": {"type": "integer", "minimum": 0},
     "registry_status_response_count": {"type": "integer", "minimum": 0},
     "framed_ascii_telemetry_log_count": {"type": "integer", "minimum": 0},
