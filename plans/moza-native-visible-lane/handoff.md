@@ -324,17 +324,32 @@ estop_get_ffb           -> 0xC6/0xC1/0x01 payload response
 The targeted live rerun stayed read-only: it opened COM4, sent only those two
 registry-approved read-only queries, opened no HID path, and sent no output,
 configuration, firmware, DFU, PIDFF, authority, or mode-enable command. It still
-decoded zero authority-state replies. The diagnosis classifies the readback as
-`serial_readback_consumed_debug_telemetry_log_frames`: all 24 scanned frames
-were checksum-valid ASCII diagnostic stream frames, dominated by
+decoded zero authority-state replies. The regenerated diagnosis classifies the
+readback as
+`authority_status_endpoint_specific_debug_telemetry_without_payload`: all 24
+scanned frames were checksum-valid ASCII diagnostic stream frames, dominated by
 `0x0E/0x71/0x05`, with no payload-bearing authority-status response observed.
-The current native-path blocker is therefore serial stream/framing
-demultiplexing or endpoint framing, not force or a motion controller issue.
+Because the demux baseline decoded seven payload-bearing non-authority status
+replies on the same serial lane, broad serial framing, ownership, timeout, and
+line settings are not the primary blocker. The current native-path blocker is
+authority-status endpoint/command mismatch, not force or a motion controller
+issue.
 Wheel movement remains unproven:
 `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
 `output_was_sent=false`, and `authority_state=blocked`. The next native-path
-step is no-output stream/framing or endpoint correlation before any
-authorization, PIDFF rerun, force escalation, or motion ladder attempt.
+step is no-output authority-status endpoint/command correction before any live
+probe, authorization, PIDFF rerun, force escalation, or motion ladder attempt.
+The next concrete no-output command may derive endpoint candidates from the
+latest diagnosis, but it still must not send traffic:
+
+```powershell
+wheelctl moza vendor-status-endpoint-candidates `
+  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --protocol-evidence-review ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json `
+  --json-out target/moza-current/vendor-status-endpoint-candidates-from-payload-rerun.json `
+  --overwrite `
+  --json
+```
 
 The read-only demux follow-up is now recorded at
 `vendor-status-mode-matrix-demux.json` with its fresh precondition doctor at

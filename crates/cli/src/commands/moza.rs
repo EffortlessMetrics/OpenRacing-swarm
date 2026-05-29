@@ -27698,8 +27698,16 @@ fn vendor_status_framing_diagnosis_receipt(
                 && status_probe_command_summary.authority_status_command_count > 0
                 && status_probe_command_summary.authority_status_decoded_response_count == 0
         });
-    let authority_status_endpoint_specific_blocker = broad_serial_transport_blocker_ruled_out
-        && response_like_zero_length_ack_only_candidate_count > 0;
+    let authority_status_endpoint_specific_blocker = broad_serial_transport_blocker_ruled_out;
+    let authority_status_endpoint_specific_ack_only_blocker =
+        authority_status_endpoint_specific_blocker
+            && response_like_zero_length_ack_only_candidate_count > 0;
+    let authority_status_endpoint_specific_debug_only_blocker =
+        authority_status_endpoint_specific_blocker
+            && response_like_zero_length_ack_only_candidate_count == 0
+            && scanned_registry_status_response_count == 0
+            && scanned_response_frame_count > 0
+            && scanned_framed_ascii_telemetry_log_count == scanned_response_frame_count;
     let endpoint_or_command_correction_required = authority_status_endpoint_specific_blocker
         || response_like_zero_length_ack_only_candidate_count > 0
         || scanned_response_like_zero_length_frame_count > 0
@@ -27730,8 +27738,12 @@ fn vendor_status_framing_diagnosis_receipt(
         .map(|(tuple_id, count)| VendorStatusFramingTupleCount { tuple_id, count })
         .collect::<Vec<_>>();
 
-    let diagnosis_classification = if authority_status_endpoint_specific_blocker {
+    let diagnosis_classification = if authority_status_endpoint_specific_ack_only_blocker {
         "authority_status_endpoint_specific_ack_only_without_payload"
+    } else if authority_status_endpoint_specific_debug_only_blocker {
+        "authority_status_endpoint_specific_debug_telemetry_without_payload"
+    } else if authority_status_endpoint_specific_blocker {
+        "authority_status_endpoint_specific_no_payload_after_targeted_read_only_probe"
     } else if response_like_zero_length_ack_only_candidate_count > 0 {
         "authority_status_ack_only_without_payload_after_targeted_read_only_probe"
     } else if scanned_response_like_zero_length_frame_count > 0 {
@@ -27762,8 +27774,12 @@ fn vendor_status_framing_diagnosis_receipt(
     } else {
         "transport_framing_or_serial_stream_demultiplexing"
     };
-    let exact_next_blocker = if authority_status_endpoint_specific_blocker {
+    let exact_next_blocker = if authority_status_endpoint_specific_ack_only_blocker {
         "Correct or decode the authority-status endpoint/command for FFB status. Broad serial framing, ownership, and line settings are not the primary blocker because the baseline read-only matrix decoded payload-bearing non-authority status replies; the current authority-status path returns only ACK/no-payload correlation evidence."
+    } else if authority_status_endpoint_specific_debug_only_blocker {
+        "Correct or decode the authority-status endpoint/command for FFB status. Broad serial framing, ownership, and line settings are not the primary blocker because the baseline read-only matrix decoded payload-bearing non-authority status replies; the current targeted authority-status path returns only diagnostic telemetry frames and no payload-bearing authority-state reply."
+    } else if authority_status_endpoint_specific_blocker {
+        "Correct or decode the authority-status endpoint/command before any authorization or motion planning. Broad serial framing, ownership, and line settings are not the primary blocker because the baseline read-only matrix decoded payload-bearing non-authority status replies while authority-status queries still decoded no payload."
     } else if response_like_zero_length_ack_only_candidate_count > 0 {
         "Determine whether 0xA1/0x21/no_command is an ACK-only reply to main_misc_get_ffb_status or evidence that the authority-status query endpoint/command is wrong; mode/safety state remains unknown until a payload-bearing status reply is decoded."
     } else if scanned_response_like_zero_length_frame_count > 0 {
@@ -27773,8 +27789,12 @@ fn vendor_status_framing_diagnosis_receipt(
     } else {
         "Resolve serial stream demultiplexing or command/endpoint framing before any authorization or motion planning."
     };
-    let conclusion = if authority_status_endpoint_specific_blocker {
+    let conclusion = if authority_status_endpoint_specific_ack_only_blocker {
         "The targeted COM4 read-only authority-status probe decoded no authority-state replies and observed only ACK/no-payload correlation for the status path. The baseline read-only matrix decoded payload-bearing non-authority status replies from the same serial lane, so this is now an authority-status endpoint/command blocker rather than a broad serial framing, ownership, timeout, or line-setting blocker. It still does not authorize output or motion."
+    } else if authority_status_endpoint_specific_debug_only_blocker {
+        "The targeted COM4 read-only authority-status probe decoded no authority-state replies and scanned only diagnostic telemetry frames. The baseline read-only matrix decoded payload-bearing non-authority status replies from the same serial lane, so this is now an authority-status endpoint/command blocker rather than a broad serial framing, ownership, timeout, or line-setting blocker. It still does not authorize output or motion."
+    } else if authority_status_endpoint_specific_blocker {
+        "The targeted COM4 read-only authority-status probe decoded no authority-state replies. The baseline read-only matrix decoded payload-bearing non-authority status replies from the same serial lane, so this is now an authority-status endpoint/command blocker rather than a broad serial framing, ownership, timeout, or line-setting blocker. It still does not authorize output or motion."
     } else if response_like_zero_length_ack_only_candidate_count > 0 {
         "The targeted COM4 read-only probe still decoded no authority-state replies. It observed checksum-valid framed serial traffic plus a response-like zero-length frame for the requested group/device; because that frame carries no command or status payload, it is ACK-only correlation evidence, not mode/safety evidence. The current blocker is authority-status payload correlation or corrected query endpoint/command, not output, force, or motion."
     } else if scanned_response_like_zero_length_frame_count > 0 {
@@ -42695,11 +42715,11 @@ mod tests {
         );
         assert_eq!(
             json_string(&value, "diagnosis_classification"),
-            Some("serial_readback_consumed_debug_telemetry_log_frames")
+            Some("authority_status_endpoint_specific_debug_telemetry_without_payload")
         );
         assert_eq!(
             json_string(&value, "primary_blocker"),
-            Some("transport_framing_or_serial_stream_demultiplexing")
+            Some("authority_status_endpoint_or_command_mismatch")
         );
         assert_eq!(
             json_bool(&value, "broad_serial_transport_blocker_ruled_out"),
@@ -42707,11 +42727,11 @@ mod tests {
         );
         assert_eq!(
             json_bool(&value, "authority_status_endpoint_specific_blocker"),
-            Some(false)
+            Some(true)
         );
         assert_eq!(
             json_bool(&value, "endpoint_or_command_correction_required"),
-            Some(false)
+            Some(true)
         );
         assert_eq!(json_u64(&value, "scanned_response_frame_count"), Some(24));
         assert_eq!(

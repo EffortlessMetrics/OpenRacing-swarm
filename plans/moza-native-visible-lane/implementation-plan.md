@@ -176,6 +176,16 @@ passive `0x25/0x19/*`, `0x5A/0x1B/*`, and `0x5D/0x1B/*` groups as
 `unknown_do_not_send`. That is not a corrected read-only probe and not a
 sendability claim; the next native-path action is no-output fixture-backed
 decoder coverage before any live probe, authorization, PIDFF rerun, or motion.
+The authority-status payload rerun then pinned the expected payload-bearing
+response fixtures and reran the two current registry-approved authority-status
+queries. That rerun decoded zero authority-state replies and scanned only
+diagnostic telemetry frames. Because the baseline demux matrix decoded seven
+payload-bearing non-authority status replies on the same serial lane, the
+current blocker is now classified as authority-status endpoint/command mismatch
+with diagnostic telemetry only, not broad serial ownership, line setting,
+timeout, or controller force. The next native-path action remains no-output
+authority-status endpoint/command correction before any live probe,
+authorization, PIDFF rerun, force escalation, or motion.
 The `pit-house-setting-change` sniff plan now pins the scenario-specific
 operator evidence required for that next capture: exact Pit House setting,
 starting value, ending value, and an affirmative restore status. The first
@@ -6274,6 +6284,125 @@ Remove only:
 Do not remove the status matrix, demux receipt, endpoint-candidate plan,
 passive protocol evidence review, consumed authority attempt, or post-authority
 PIDFF regression evidence.
+
+## Work item: classify-authority-payload-rerun-endpoint-blocker
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: any future live probe, exact authorization, PIDFF rerun, force
+escalation, or motion attempt
+Blocked by: payload-bearing authority-state reply from a corrected read-only
+authority-status endpoint or equivalent reviewed status source
+
+### Goal
+
+Make the latest payload-rerun diagnosis name the exact blocker. The target is
+not another hardware step; it is to prevent the lane from falling back to a
+generic serial/framing explanation after the demux baseline already proved that
+the serial lane can decode payload-bearing non-authority status replies.
+
+### Production Delta
+
+`wheelctl moza vendor-status-framing-diagnosis` now treats a targeted
+authority-status probe with zero decoded authority replies as an
+authority-status endpoint-specific blocker whenever a supplied baseline matrix
+decoded payload-bearing non-authority status replies on the same serial lane.
+
+The checked-in
+`vendor-status-authority-payload-rerun-diagnosis.json` is regenerated from the
+stored read-only targeted rerun and `vendor-status-mode-matrix-demux.json`. It
+now records:
+
+```text
+diagnosis_classification=authority_status_endpoint_specific_debug_telemetry_without_payload
+primary_blocker=authority_status_endpoint_or_command_mismatch
+broad_serial_transport_blocker_ruled_out=true
+authority_status_endpoint_specific_blocker=true
+endpoint_or_command_correction_required=true
+wheel_moved_under_openracing=false
+visible_motion_verified=false
+output_was_sent=false
+authority_state=blocked
+```
+
+The diagnosis still decodes zero authority-state replies. The current concrete
+next command remains no-output diagnosis/candidate work, for example:
+
+```powershell
+wheelctl moza vendor-status-endpoint-candidates `
+  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --protocol-evidence-review ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json `
+  --json-out target/moza-current/vendor-status-endpoint-candidates-from-payload-rerun.json `
+  --overwrite `
+  --json
+```
+
+That command is still no-output review. It is not live hardware access, not a
+corrected probe, not an authorization, and not motion.
+
+### Non-goals
+
+No live hardware access, HID output open, serial open, read-only query send,
+PIDFF output, feature report, configuration write, firmware/update/DFU path,
+high torque, mode-enable write, authority write, authorization receipt,
+semantic decode claim, registry promotion, tuple sendability, corrected
+read-only probe readiness, native-control claim, native-visible claim,
+smoke-ready claim, simulator claim, coexistence claim, release-ready claim, or
+wheel movement.
+
+### Acceptance
+
+- The stored payload rerun is classified against the demux baseline, not in
+  isolation.
+- Broad serial framing, ownership, timeout, and line settings are not named as
+  the primary blocker when the baseline decoded seven non-authority status
+  replies.
+- The authority-status path still decodes zero payload-bearing status replies.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain explicit.
+- `hardware_output_authorized=false`, `native_control_evidence=false`,
+  `native_visible_ready=false`, `output_sendability_claim=false`,
+  `registry_promotion_claim=false`, `semantic_decode_claim=false`, and
+  `planned_next_output_allowed=false` remain pinned.
+- The next native-path action is no-output authority-status endpoint/command
+  correction before any live probe, exact authorization, PIDFF rerun, force
+  escalation, or motion attempt.
+
+### Proof Commands
+
+```powershell
+wheelctl moza vendor-status-framing-diagnosis `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-targeted.json `
+  --baseline-status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --overwrite `
+  --json
+
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- the classifier branch that promotes baseline-backed debug-only authority
+  reruns to endpoint-specific blocker classification,
+- the two added framing diagnosis schema enum values,
+- the regenerated `vendor-status-authority-payload-rerun-diagnosis.json`,
+- source-of-truth notes for this work item.
+
+Do not remove the targeted read-only payload rerun, payload fixture tests,
+status matrix, demux receipt, endpoint-candidate plan, passive protocol evidence
+review, consumed authority attempt, or post-authority PIDFF regression evidence.
 
 ## Work item: native-visible-promotion
 

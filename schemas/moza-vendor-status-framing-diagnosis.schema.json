@@ -79,6 +79,8 @@
     "diagnosis_classification": {
       "enum": [
         "authority_status_endpoint_specific_ack_only_without_payload",
+        "authority_status_endpoint_specific_debug_telemetry_without_payload",
+        "authority_status_endpoint_specific_no_payload_after_targeted_read_only_probe",
         "serial_readback_consumed_debug_telemetry_log_frames",
         "authority_status_replies_uncorrelated_after_targeted_read_only_probe",
         "authority_status_replies_zero_length_ack_candidate_after_targeted_read_only_probe",
