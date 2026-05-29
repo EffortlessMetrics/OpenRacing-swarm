@@ -196,6 +196,17 @@ They narrow the authority-status endpoint search only; they are not semantic
 decode proof, registry promotion, live probe inputs, authorization inputs, or
 native motion evidence.
 
+`vendor-status-authority-source-gap.json` now records the current native-path
+blocker as a source gap, not a motion-controller or force-tuning gap. The
+checked-in evidence still lacks a payload-bearing authority-state status
+endpoint or equivalent reviewed status source. Current registry
+authority-status queries are ACK/debug-only, the passive command-id `0x07`
+analogs and mode/enable groups remain `unknown_do_not_send`, and the checked-in
+passive review lacks device-to-host serial tuple details for response
+correlation. The next step is no-output device-to-host serial response
+extraction/correlation or another reviewed authority-state status source before
+any live probe, authorization, PIDFF rerun, force escalation, or motion attempt.
+
 ## Boundaries
 
 These plans do not authorize hardware output. They do not create pcap receipts,
