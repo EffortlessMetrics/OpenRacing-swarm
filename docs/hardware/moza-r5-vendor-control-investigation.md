@@ -84,6 +84,20 @@ reply correlation for those two commands, not an output attempt. The current
 receipt also records the correlation plan explicitly: two non-sendable
 targets, completed observations in the three Pit House scenarios, and
 remaining no-output correlation gaps in SimHub and simulator scenarios. The
+targeted read-only correlation follow-up is recorded at
+`ci/hardware/moza-r5/2026-05-13/vendor-status-reply-correlation-targeted.json`
+with its fresh observe-only doctor at
+`ci/hardware/moza-r5/2026-05-13/vendor-status-reply-correlation-hardware-doctor.json`
+and derived offline diagnosis at
+`ci/hardware/moza-r5/2026-05-13/vendor-status-reply-correlation-diagnosis.json`.
+It selected only `estop_get_ffb` and `main_misc_get_ffb_status`, sent two
+registry-approved read-only queries, decoded zero authority-state replies, and
+kept all output/readiness claims false. The diagnosis classifies 23 of 24
+scanned frames as diagnostic telemetry and records one response-like
+group/device command mismatch, `0xA1/0x21/0x4D`, while requesting
+`main_misc_get_ffb_status` `0x21/0x12/0x07`. That mismatch is correlation
+evidence only; it does not promote semantic decode, registry sendability,
+authorization, native control, or native-visible motion. The
 first bounded setting-change capture attempt remains
 classified as low-yield/incomplete: 355 bytes, six packets, zero Moza
 `0x346E:0x0004` matches, and restore status `not reported`. The repeat capture

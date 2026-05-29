@@ -1900,6 +1900,26 @@ commands = [
 ]
 
 [[work_item]]
+id = "correlate-read-only-authority-status-replies"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-correlate-read-only-authority-status-replies"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-status-reply-correlation-diagnosis.json"
+claim_boundary = "Read-only authority-status reply correlation only; records a targeted two-command COM4 read-only probe and offline scanned-frame diagnosis for estop_get_ffb and main_misc_get_ffb_status, decodes zero authority-state replies, classifies diagnostic telemetry and one response-like command mismatch, and keeps hardware output authorization, registry promotion, tuple sendability, semantic decode, native-control, native-visible, smoke-ready, simulator, coexistence, high-torque, and release-ready claims false."
+commands = [
+  "wheelctl hardware doctor --json --json-out target/moza-current/status-reply-correlation-hardware-doctor.json",
+  "wheelctl moza vendor-status-probe --serial-port COM4 --baud-rate 115200 --timeout-ms 1000 --command estop_get_ffb --command main_misc_get_ffb_status --confirm-read-only-query --json-out target/moza-current/vendor-status-reply-correlation-targeted.json --json",
+  "wheelctl moza vendor-status-framing-diagnosis --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-reply-correlation-targeted.json --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-reply-correlation-diagnosis.json --overwrite --json",
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_framing_diagnosis -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_status_probe -- --nocapture",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

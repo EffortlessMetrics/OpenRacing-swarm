@@ -20,10 +20,10 @@ use racing_wheel_hid_moza_protocol::serial::frame::{
     MESSAGE_START, MozaSerialFrameError, decode_fixture_frame,
 };
 use racing_wheel_hid_moza_protocol::serial::status_probe::{
-    MozaReadOnlyStatusResponseFrameDisposition, READ_ONLY_STATUS_CODEC_STATUS,
-    decode_read_only_status_response, demux_read_only_status_response_frame,
-    diagnose_read_only_status_response_frame, encode_read_only_status_query,
-    read_only_status_commands,
+    MozaReadOnlyStatusResponseFrameDiagnosis, MozaReadOnlyStatusResponseFrameDisposition,
+    READ_ONLY_STATUS_CODEC_STATUS, decode_read_only_status_response,
+    demux_read_only_status_response_frame, diagnose_read_only_status_response_frame,
+    encode_read_only_status_query, read_only_status_commands,
 };
 use racing_wheel_hid_moza_protocol::serial::vendor_authority::{
     MozaRiskClass, MozaSerialCodecStatus, MozaVendorCommand, REQUIRED_VENDOR_COMMANDS,
@@ -27422,6 +27422,9 @@ fn vendor_status_framing_diagnosis_receipt(
     let mut diagnosed_responses = Vec::new();
     let mut classification_counts: BTreeMap<String, usize> = BTreeMap::new();
     let mut tuple_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut scanned_classification_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut scanned_tuple_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut response_like_command_mismatch_tuples: BTreeMap<String, usize> = BTreeMap::new();
     let mut registry_status_response_count = 0usize;
     let mut framed_ascii_telemetry_log_count = 0usize;
     let mut desynchronized_or_partial_frame_count = 0usize;
@@ -27430,6 +27433,15 @@ fn vendor_status_framing_diagnosis_receipt(
     let mut checksum_valid_count = 0usize;
     let mut checksum_invalid_count = 0usize;
     let mut response_frame_count = 0usize;
+    let mut scanned_response_frame_count = 0usize;
+    let mut scanned_registry_status_response_count = 0usize;
+    let mut scanned_framed_ascii_telemetry_log_count = 0usize;
+    let mut scanned_desynchronized_or_partial_frame_count = 0usize;
+    let mut scanned_malformed_frame_count = 0usize;
+    let mut scanned_unknown_non_registry_frame_count = 0usize;
+    let mut scanned_checksum_valid_count = 0usize;
+    let mut scanned_checksum_invalid_count = 0usize;
+    let mut scanned_response_like_command_mismatch_count = 0usize;
 
     for response in responses {
         let diagnosed = vendor_status_framing_diagnosed_response(response)?;
@@ -27457,6 +27469,38 @@ fn vendor_status_framing_diagnosis_receipt(
         } else if diagnosed.checksum_valid == Some(false) {
             checksum_invalid_count += 1;
         }
+        for scanned in &diagnosed.scanned_response_frames {
+            scanned_response_frame_count += 1;
+            *scanned_classification_counts
+                .entry(scanned.response_classification.clone())
+                .or_default() += 1;
+            if let Some(tuple_id) = &scanned.observed_tuple_id {
+                *scanned_tuple_counts.entry(tuple_id.clone()).or_default() += 1;
+            }
+            match scanned.response_classification.as_str() {
+                "registry_status_response" => scanned_registry_status_response_count += 1,
+                "framed_ascii_telemetry_log" => scanned_framed_ascii_telemetry_log_count += 1,
+                "stream_desynchronized_or_partial_log_frame" => {
+                    scanned_desynchronized_or_partial_frame_count += 1;
+                }
+                "malformed_frame" => scanned_malformed_frame_count += 1,
+                "unknown_non_registry_frame" => scanned_unknown_non_registry_frame_count += 1,
+                _ => {}
+            }
+            if scanned.checksum_valid == Some(true) {
+                scanned_checksum_valid_count += 1;
+            } else if scanned.checksum_valid == Some(false) {
+                scanned_checksum_invalid_count += 1;
+            }
+            if scanned.response_like_command_mismatch {
+                scanned_response_like_command_mismatch_count += 1;
+                if let Some(tuple_id) = &scanned.observed_tuple_id {
+                    *response_like_command_mismatch_tuples
+                        .entry(tuple_id.clone())
+                        .or_default() += 1;
+                }
+            }
+        }
         diagnosed_responses.push(diagnosed);
     }
 
@@ -27468,9 +27512,22 @@ fn vendor_status_framing_diagnosis_receipt(
             count: *count,
         })
         .collect::<Vec<_>>();
+    let scanned_repeated_observed_tuple_ids = scanned_tuple_counts
+        .iter()
+        .filter(|(_, count)| **count > 1)
+        .map(|(tuple_id, count)| VendorStatusFramingTupleCount {
+            tuple_id: tuple_id.clone(),
+            count: *count,
+        })
+        .collect::<Vec<_>>();
+    let response_like_command_mismatch_tuples = response_like_command_mismatch_tuples
+        .into_iter()
+        .map(|(tuple_id, count)| VendorStatusFramingTupleCount { tuple_id, count })
+        .collect::<Vec<_>>();
 
-    let diagnosis_classification = if framed_ascii_telemetry_log_count
-        + desynchronized_or_partial_frame_count
+    let diagnosis_classification = if scanned_response_like_command_mismatch_count > 0 {
+        "authority_status_replies_uncorrelated_after_targeted_read_only_probe"
+    } else if framed_ascii_telemetry_log_count + desynchronized_or_partial_frame_count
         == response_frame_count
         && response_frame_count > 0
         && registry_status_response_count == 0
@@ -27482,6 +27539,21 @@ fn vendor_status_framing_diagnosis_receipt(
         "all_response_frames_are_registry_status_responses"
     } else {
         "mixed_or_unknown_serial_response_stream"
+    };
+    let primary_blocker = if scanned_response_like_command_mismatch_count > 0 {
+        "authority_status_reply_command_correlation"
+    } else {
+        "transport_framing_or_serial_stream_demultiplexing"
+    };
+    let conclusion = if scanned_response_like_command_mismatch_count > 0 {
+        "The targeted COM4 read-only probe still decoded no authority-state replies. Its scanned stream is dominated by framed diagnostic telemetry, and at least one response-like group/device tuple used an unregistered command byte, so the next blocker is authority-status command correlation rather than output, force, or motion."
+    } else {
+        "The stored COM4 read-only probe did not capture registry status replies. Its captured frames are dominated by tuple 0x0E/0x71/0x05 ASCII NRFloss/recvGap diagnostic stream frames, with one desynchronized partial frame, so the next blocker is serial stream/framing demultiplexing or command/endpoint framing rather than authority or force."
+    };
+    let next_allowed_action = if scanned_response_like_command_mismatch_count > 0 {
+        "Continue no-output authority-status reply correlation using stored receipts, fake fixtures, or passive protocol evidence. Do not authorize mode/enable writes, PIDFF reruns, or motion attempts until the remaining authority-state status replies are decoded or their endpoint/command IDs are corrected."
+    } else {
+        "Perform no-output diagnosis of the read-only serial stream scanner/framing and command correlation. Do not authorize mode/enable writes, PIDFF reruns, or motion attempts until a read-only status/mode reply is decoded or the transport endpoint is corrected."
     };
 
     Ok(VendorStatusFramingDiagnosisReceipt {
@@ -27525,7 +27597,7 @@ fn vendor_status_framing_diagnosis_receipt(
         planned_next_output_allowed: false,
         unknown_safety_or_mode_state_blocks_authority: true,
         diagnosis_classification,
-        primary_blocker: "transport_framing_or_serial_stream_demultiplexing",
+        primary_blocker,
         response_frame_count,
         registry_status_response_count,
         framed_ascii_telemetry_log_count,
@@ -27534,7 +27606,18 @@ fn vendor_status_framing_diagnosis_receipt(
         unknown_non_registry_frame_count,
         checksum_valid_count,
         checksum_invalid_count,
+        scanned_response_frame_count,
+        scanned_registry_status_response_count,
+        scanned_framed_ascii_telemetry_log_count,
+        scanned_desynchronized_or_partial_frame_count,
+        scanned_malformed_frame_count,
+        scanned_unknown_non_registry_frame_count,
+        scanned_checksum_valid_count,
+        scanned_checksum_invalid_count,
+        scanned_response_like_command_mismatch_count,
+        response_like_command_mismatch_tuples,
         repeated_observed_tuple_ids,
+        scanned_repeated_observed_tuple_ids,
         classification_counts: classification_counts
             .into_iter()
             .map(
@@ -27544,9 +27627,18 @@ fn vendor_status_framing_diagnosis_receipt(
                 },
             )
             .collect(),
+        scanned_classification_counts: scanned_classification_counts
+            .into_iter()
+            .map(
+                |(classification, count)| VendorStatusFramingClassificationCount {
+                    classification,
+                    count,
+                },
+            )
+            .collect(),
         diagnosed_responses,
-        conclusion: "The stored COM4 read-only probe did not capture registry status replies. Its captured frames are dominated by tuple 0x0E/0x71/0x05 ASCII NRFloss/recvGap diagnostic stream frames, with one desynchronized partial frame, so the next blocker is serial stream/framing demultiplexing or command/endpoint framing rather than authority or force.",
-        next_allowed_action: "Perform no-output diagnosis of the read-only serial stream scanner/framing and command correlation. Do not authorize mode/enable writes, PIDFF reruns, or motion attempts until a read-only status/mode reply is decoded or the transport endpoint is corrected.",
+        conclusion,
+        next_allowed_action,
         blocked_actions: vec![
             "mode enable write",
             "authority write",
@@ -27654,6 +27746,25 @@ fn vendor_status_framing_diagnosed_response(
         hex_u8(json_u64(response, "device_id").unwrap_or(0) as u8),
         hex_u8(json_u64(response, "command").unwrap_or(0) as u8)
     );
+    let scanned_response_frames = vendor_status_framing_diagnosed_scanned_frames(response)?;
+    let scanned_response_like_command_mismatch_count = scanned_response_frames
+        .iter()
+        .filter(|frame| frame.response_like_command_mismatch)
+        .count();
+    let response_scan_stop_reason =
+        json_string(response, "response_scan_stop_reason").map(str::to_string);
+    let scanned_response_frame_count =
+        json_u64(response, "scanned_response_frame_count").unwrap_or(0) as usize;
+    let skipped_response_frame_count =
+        json_u64(response, "skipped_response_frame_count").unwrap_or(0) as usize;
+    let skipped_diagnostic_frame_count =
+        json_u64(response, "skipped_diagnostic_frame_count").unwrap_or(0) as usize;
+    let skipped_malformed_or_desynchronized_frame_count =
+        json_u64(response, "skipped_malformed_or_desynchronized_frame_count").unwrap_or(0) as usize;
+    let skipped_non_matching_registry_frame_count =
+        json_u64(response, "skipped_non_matching_registry_frame_count").unwrap_or(0) as usize;
+    let skipped_unknown_non_registry_frame_count =
+        json_u64(response, "skipped_unknown_non_registry_frame_count").unwrap_or(0) as usize;
 
     let Some(frame_hex) = response_frame_hex.as_deref() else {
         return Ok(VendorStatusFramingDiagnosedResponse {
@@ -27677,6 +27788,15 @@ fn vendor_status_framing_diagnosed_response(
             embedded_start_byte_count: 0,
             payload_ascii_preview: None,
             original_error: json_string(response, "error").map(str::to_string),
+            response_scan_stop_reason,
+            scanned_response_frame_count,
+            skipped_response_frame_count,
+            skipped_diagnostic_frame_count,
+            skipped_malformed_or_desynchronized_frame_count,
+            skipped_non_matching_registry_frame_count,
+            skipped_unknown_non_registry_frame_count,
+            scanned_response_like_command_mismatch_count,
+            scanned_response_frames,
         });
     };
 
@@ -27718,7 +27838,119 @@ fn vendor_status_framing_diagnosed_response(
         embedded_start_byte_count: diagnosis.embedded_start_byte_count,
         payload_ascii_preview,
         original_error: json_string(response, "error").map(str::to_string),
+        response_scan_stop_reason,
+        scanned_response_frame_count,
+        skipped_response_frame_count,
+        skipped_diagnostic_frame_count,
+        skipped_malformed_or_desynchronized_frame_count,
+        skipped_non_matching_registry_frame_count,
+        skipped_unknown_non_registry_frame_count,
+        scanned_response_like_command_mismatch_count,
+        scanned_response_frames,
     })
+}
+
+fn vendor_status_framing_diagnosed_scanned_frames(
+    response: &Value,
+) -> Result<Vec<VendorStatusFramingDiagnosedScannedFrame>> {
+    let Some(scanned_frames) = response
+        .get("scanned_response_frames")
+        .and_then(Value::as_array)
+    else {
+        return Ok(Vec::new());
+    };
+
+    scanned_frames
+        .iter()
+        .map(|frame| vendor_status_framing_diagnosed_scanned_frame(response, frame))
+        .collect()
+}
+
+fn vendor_status_framing_diagnosed_scanned_frame(
+    response: &Value,
+    frame: &Value,
+) -> Result<VendorStatusFramingDiagnosedScannedFrame> {
+    let frame_hex = json_string(frame, "frame_hex")
+        .ok_or_else(|| anyhow!("scanned response frame is missing frame_hex"))?
+        .to_string();
+    let bytes = parse_hex_bytes(&frame_hex)
+        .map_err(|error| anyhow!("invalid scanned response frame `{frame_hex}`: {error}"))?;
+    let expected_command = json_string(response, "command_id").and_then(|command_id| {
+        read_only_status_commands().find(|command| command.id == command_id)
+    });
+    let demux =
+        expected_command.map(|command| demux_read_only_status_response_frame(command, &bytes));
+    let diagnosis = demux
+        .as_ref()
+        .map(|diagnosis| diagnosis.frame_diagnosis.clone())
+        .unwrap_or_else(|| diagnose_read_only_status_response_frame(&bytes));
+    let disposition = demux
+        .as_ref()
+        .map(|diagnosis| diagnosis.disposition.as_str())
+        .unwrap_or("unknown");
+    let source_disposition = json_string(frame, "disposition")
+        .filter(|source_disposition| *source_disposition != disposition)
+        .map(str::to_string);
+    let observed_tuple_id = diagnosis
+        .group
+        .zip(diagnosis.device_id)
+        .zip(diagnosis.command)
+        .map(|((group, device_id), command)| {
+            format!(
+                "{}/{}/{}",
+                hex_u8(group),
+                hex_u8(device_id),
+                hex_u8(command)
+            )
+        });
+    let response_like_expected_group_device =
+        vendor_status_response_like_expected_group_device(response, &diagnosis);
+    let response_like_command_mismatch = response_like_expected_group_device
+        && diagnosis
+            .command
+            .is_some_and(|command| Some(u64::from(command)) != json_u64(response, "command"));
+
+    Ok(VendorStatusFramingDiagnosedScannedFrame {
+        frame_hex,
+        disposition: disposition.to_string(),
+        source_disposition,
+        response_classification: diagnosis.classification.as_str().to_string(),
+        observed_tuple_id,
+        matched_expected_command: demux
+            .as_ref()
+            .map(|diagnosis| diagnosis.matched_expected_command)
+            .unwrap_or_else(|| json_bool(frame, "matched_expected_command").unwrap_or(false)),
+        response_like_expected_group_device,
+        response_like_command_mismatch,
+        checksum_valid: diagnosis.checksum_valid,
+        payload_ascii_preview: vendor_status_response_ascii_payload_preview(&bytes),
+        original_error: demux
+            .and_then(|diagnosis| diagnosis.decode_error)
+            .or_else(|| json_string(frame, "error").map(str::to_string)),
+    })
+}
+
+fn vendor_status_response_like_expected_group_device(
+    response: &Value,
+    diagnosis: &MozaReadOnlyStatusResponseFrameDiagnosis,
+) -> bool {
+    let Some(expected_group) = json_u64(response, "group").map(|value| value as u8) else {
+        return false;
+    };
+    let Some(expected_device_id) = json_u64(response, "device_id").map(|value| value as u8) else {
+        return false;
+    };
+    let Some(actual_group) = diagnosis.group else {
+        return false;
+    };
+    let Some(actual_device_id) = diagnosis.device_id else {
+        return false;
+    };
+
+    let group_matches = actual_group == expected_group || actual_group == (expected_group | 0x80);
+    let device_matches = actual_device_id == expected_device_id
+        || actual_device_id == expected_device_id.rotate_right(4);
+    group_matches && device_matches
 }
 
 fn vendor_status_response_ascii_payload_preview(frame: &[u8]) -> Option<String> {
@@ -32162,8 +32394,20 @@ struct VendorStatusFramingDiagnosisReceipt {
     unknown_non_registry_frame_count: usize,
     checksum_valid_count: usize,
     checksum_invalid_count: usize,
+    scanned_response_frame_count: usize,
+    scanned_registry_status_response_count: usize,
+    scanned_framed_ascii_telemetry_log_count: usize,
+    scanned_desynchronized_or_partial_frame_count: usize,
+    scanned_malformed_frame_count: usize,
+    scanned_unknown_non_registry_frame_count: usize,
+    scanned_checksum_valid_count: usize,
+    scanned_checksum_invalid_count: usize,
+    scanned_response_like_command_mismatch_count: usize,
+    response_like_command_mismatch_tuples: Vec<VendorStatusFramingTupleCount>,
     repeated_observed_tuple_ids: Vec<VendorStatusFramingTupleCount>,
+    scanned_repeated_observed_tuple_ids: Vec<VendorStatusFramingTupleCount>,
     classification_counts: Vec<VendorStatusFramingClassificationCount>,
+    scanned_classification_counts: Vec<VendorStatusFramingClassificationCount>,
     diagnosed_responses: Vec<VendorStatusFramingDiagnosedResponse>,
     conclusion: &'static str,
     next_allowed_action: &'static str,
@@ -32212,6 +32456,36 @@ struct VendorStatusFramingDiagnosedResponse {
     printable_ascii_payload: bool,
     nrfloss_recv_gap_payload: bool,
     embedded_start_byte_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    payload_ascii_preview: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    original_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_scan_stop_reason: Option<String>,
+    scanned_response_frame_count: usize,
+    skipped_response_frame_count: usize,
+    skipped_diagnostic_frame_count: usize,
+    skipped_malformed_or_desynchronized_frame_count: usize,
+    skipped_non_matching_registry_frame_count: usize,
+    skipped_unknown_non_registry_frame_count: usize,
+    scanned_response_like_command_mismatch_count: usize,
+    scanned_response_frames: Vec<VendorStatusFramingDiagnosedScannedFrame>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorStatusFramingDiagnosedScannedFrame {
+    frame_hex: String,
+    disposition: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_disposition: Option<String>,
+    response_classification: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    observed_tuple_id: Option<String>,
+    matched_expected_command: bool,
+    response_like_expected_group_device: bool,
+    response_like_command_mismatch: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    checksum_valid: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     payload_ascii_preview: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -41177,6 +41451,142 @@ mod tests {
         assert!(tuples.iter().any(|tuple| {
             json_string(tuple, "tuple_id") == Some("0x0E/0x71/0x05")
                 && json_u64(tuple, "count") == Some(9)
+        }));
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_framing_diagnosis_correlates_scanned_response_like_mismatch() -> TestResult {
+        let status_probe: Value = serde_json::from_str(
+            r#"{
+              "success": false,
+              "artifact_kind": "moza_vendor_status_probe",
+              "claim_scope": "read_only_hardware",
+              "command": "wheelctl moza vendor-status-probe",
+              "no_hid_device_opened": true,
+              "no_ffb_writes": true,
+              "no_output_reports": true,
+              "no_feature_reports": true,
+              "no_serial_config_commands": true,
+              "no_firmware_or_dfu_commands": true,
+              "hardware_output_authorized": false,
+              "native_control_evidence": false,
+              "native_visible_ready": false,
+              "smoke_ready": false,
+              "release_ready": false,
+              "output_sendability_claim": false,
+              "registry_promotion_claim": false,
+              "mode_enable_candidates_sendable": false,
+              "sent_output_writes": false,
+              "sent_configuration_writes": false,
+              "sent_firmware_or_dfu_commands": false,
+              "high_torque_enabled": false,
+              "planned_next_output_allowed": false,
+              "sent_read_only_query_count": 1,
+              "decoded_response_count": 0,
+              "failed_response_count": 1,
+              "responses": [
+                {
+                  "command_id": "main_misc_get_ffb_status",
+                  "query_frame_hex": "7E01211207B3",
+                  "group": 33,
+                  "device_id": 18,
+                  "command": 7,
+                  "response_frame_hex": "7E00A1214D",
+                  "response_scan_stop_reason": "fake_stream_exhausted_without_match",
+                  "scanned_response_frame_count": 2,
+                  "skipped_response_frame_count": 2,
+                  "skipped_diagnostic_frame_count": 1,
+                  "skipped_malformed_or_desynchronized_frame_count": 0,
+                  "skipped_non_matching_registry_frame_count": 0,
+                  "skipped_unknown_non_registry_frame_count": 1,
+                  "scanned_response_frames": [
+                    {
+                      "frame_hex": "7E190E7105576865656C205561727420697320636F6E6E65637465640AB2",
+                      "disposition": "skippable_diagnostic_frame",
+                      "response_classification": "framed_ascii_telemetry_log",
+                      "observed_tuple_id": "0x0E/0x71/0x05",
+                      "matched_expected_command": false,
+                      "checksum_valid": true
+                    },
+                    {
+                      "frame_hex": "7E00A1214D",
+                      "disposition": "unknown_non_registry_frame",
+                      "response_classification": "unknown_non_registry_frame",
+                      "observed_tuple_id": "0xA1/0x21/0x4D",
+                      "matched_expected_command": false,
+                      "checksum_valid": true
+                    }
+                  ],
+                  "decoded": false,
+                  "error": "failed to read status response `main_misc_get_ffb_status`: fake stream exhausted without match"
+                }
+              ]
+            }"#,
+        )?;
+
+        let receipt = vendor_status_framing_diagnosis_receipt(
+            Path::new("target/moza-current/vendor-status-reply-correlation-targeted.json"),
+            &status_probe,
+        )?;
+        let value = serde_json::to_value(&receipt)?;
+
+        assert_eq!(
+            json_string(&value, "diagnosis_classification"),
+            Some("authority_status_replies_uncorrelated_after_targeted_read_only_probe")
+        );
+        assert_eq!(
+            json_string(&value, "primary_blocker"),
+            Some("authority_status_reply_command_correlation")
+        );
+        assert_eq!(json_u64(&value, "scanned_response_frame_count"), Some(2));
+        assert_eq!(
+            json_u64(&value, "scanned_framed_ascii_telemetry_log_count"),
+            Some(1)
+        );
+        assert_eq!(
+            json_u64(&value, "scanned_unknown_non_registry_frame_count"),
+            Some(1)
+        );
+        assert_eq!(
+            json_u64(&value, "scanned_response_like_command_mismatch_count"),
+            Some(1)
+        );
+        assert_eq!(
+            json_bool(&value, "planned_next_output_allowed"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "native_visible_ready"), Some(false));
+
+        let mismatch_tuples = value
+            .get("response_like_command_mismatch_tuples")
+            .and_then(Value::as_array)
+            .ok_or("diagnosis must include response-like mismatch tuples")?;
+        assert!(mismatch_tuples.iter().any(|tuple| {
+            json_string(tuple, "tuple_id") == Some("0xA1/0x21/0x4D")
+                && json_u64(tuple, "count") == Some(1)
+        }));
+
+        let responses = value
+            .get("diagnosed_responses")
+            .and_then(Value::as_array)
+            .ok_or("diagnosis must include diagnosed responses")?;
+        let response = responses
+            .first()
+            .ok_or("diagnosis must include one diagnosed response")?;
+        assert_eq!(
+            json_u64(response, "scanned_response_like_command_mismatch_count"),
+            Some(1)
+        );
+        let scanned = response
+            .get("scanned_response_frames")
+            .and_then(Value::as_array)
+            .ok_or("diagnosed response must include scanned frames")?;
+        assert!(scanned.iter().any(|frame| {
+            json_string(frame, "observed_tuple_id") == Some("0xA1/0x21/0x4D")
+                && json_bool(frame, "response_like_expected_group_device") == Some(true)
+                && json_bool(frame, "response_like_command_mismatch") == Some(true)
         }));
 
         Ok(())

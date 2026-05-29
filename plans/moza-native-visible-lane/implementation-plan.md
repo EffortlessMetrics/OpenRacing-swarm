@@ -5427,6 +5427,123 @@ Do not remove the original #73 matrix, the #74 framing diagnosis, passive
 evidence, consumed hardware attempts, or post-authority PIDFF regression
 evidence.
 
+## Work item: correlate-read-only-authority-status-replies
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: exact authorization planning for any future decoded volatile mode or
+enable candidate
+Blocked by: no decoded authority-state reply for `estop_get_ffb` or
+`main_misc_get_ffb_status`.
+
+### Goal
+
+Correlate the two remaining failed read-only authority-state status commands
+without sending output, mode-enable, authority, configuration, firmware, DFU, or
+PIDFF commands.
+
+### Production Delta
+
+The status-probe frame diagnosis now treats checksum-valid text telemetry on
+diagnostic tuple `0x0E/*/0x05` as framed diagnostic telemetry, including the
+observed UTF-8 temperature logs and non-`NRFloss` `wheel_diag` status lines. The
+offline `vendor-status-framing-diagnosis` receipt now consumes
+`scanned_response_frames` from demux receipts instead of looking only at the
+last per-command frame. It records scanned-frame classification counts,
+source-vs-recomputed disposition drift, and response-like group/device tuples
+whose command byte does not match the requested read-only registry command.
+
+`vendor-status-reply-correlation-targeted.json` records the targeted live
+read-only run after a fresh observe-only hardware doctor. It selected only
+`estop_get_ffb` and `main_misc_get_ffb_status`, used COM4 at 115200 baud with a
+1000 ms timeout, sent two registry-approved read-only query commands, and still
+decoded zero authority-state replies. The derived offline diagnosis at
+`vendor-status-reply-correlation-diagnosis.json` classifies 23 of 24 scanned
+frames as diagnostic telemetry and records one response-like command mismatch:
+
+```text
+requested: main_misc_get_ffb_status 0x21/0x12/0x07
+observed:  0xA1/0x21/0x4D
+```
+
+That tuple matches the observed response-side group/device transform but does
+not match the requested command id, so it remains correlation evidence only. It
+is not a semantic decode, registry promotion, tuple sendability proof,
+authorization input, or native-control proof.
+
+### Non-goals
+
+No HID output open, PIDFF output, feature report, output write, configuration
+write, firmware/update/DFU path, high torque, mode-enable write, authority
+write, authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, native-control claim, native-visible claim, smoke-ready claim,
+simulator claim, coexistence claim, or release-ready claim.
+
+### Acceptance
+
+- The targeted live read-only receipt preserves the fresh hardware doctor,
+  verified COM4 R5 serial/CDC identity, zero HID/output/configuration/firmware
+  actions, and failed-closed status.
+- The offline diagnosis records all scanned frames, classifies diagnostic
+  telemetry consistently, and surfaces the `0xA1/0x21/0x4D` response-like
+  command mismatch without promoting it.
+- `unknown_safety_or_mode_state_blocks_authority=true`,
+  `hardware_output_authorized=false`, `native_control_evidence=false`,
+  `native_visible_ready=false`, `output_sendability_claim=false`, and
+  `registry_promotion_claim=false` remain pinned.
+- The next native-path action is no-output authority-status command/endpoint
+  correlation or passive evidence correlation, not output, PIDFF, or motion.
+
+### Proof Commands
+
+```powershell
+wheelctl hardware doctor --json `
+  --json-out target/moza-current/status-reply-correlation-hardware-doctor.json
+
+wheelctl moza vendor-status-probe `
+  --serial-port COM4 `
+  --baud-rate 115200 `
+  --timeout-ms 1000 `
+  --command estop_get_ffb `
+  --command main_misc_get_ffb_status `
+  --confirm-read-only-query `
+  --json-out target/moza-current/vendor-status-reply-correlation-targeted.json `
+  --json
+# expected: exits non-zero with success=false; decoded_response_count=0, failed_response_count=2
+
+wheelctl moza vendor-status-framing-diagnosis `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-reply-correlation-targeted.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-reply-correlation-diagnosis.json `
+  --overwrite `
+  --json
+
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_framing_diagnosis -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_status_probe -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- `ci/hardware/moza-r5/2026-05-13/vendor-status-reply-correlation-hardware-doctor.json`
+- `ci/hardware/moza-r5/2026-05-13/vendor-status-reply-correlation-targeted.json`
+- `ci/hardware/moza-r5/2026-05-13/vendor-status-reply-correlation-diagnosis.json`
+- the scanned-frame additions to the framing-diagnosis receipt
+- the broader diagnostic telemetry classification tests
+- source-of-truth notes for this work item.
+
+Do not remove the #73 matrix, #74 framing diagnosis, #75 demux receipt,
+passive evidence, consumed hardware attempts, or post-authority PIDFF regression
+evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

@@ -243,6 +243,9 @@ This section is protocol research/support navigation only. Passive sniff artifac
 | `vendor-status-mode-matrix-hardware-doctor.json` | `json` | `passive_input_or_descriptor_evidence` |
 | `vendor-status-mode-matrix-plan.json` | `json` | `passive_input_or_descriptor_evidence` |
 | `vendor-status-mode-matrix.json` | `json` | `passive_input_or_descriptor_evidence` |
+| `vendor-status-reply-correlation-diagnosis.json` | `json` | `passive_input_or_descriptor_evidence` |
+| `vendor-status-reply-correlation-hardware-doctor.json` | `json` | `passive_input_or_descriptor_evidence` |
+| `vendor-status-reply-correlation-targeted.json` | `json` | `passive_input_or_descriptor_evidence` |
 
 ## Zero, Watchdog, Disconnect
 

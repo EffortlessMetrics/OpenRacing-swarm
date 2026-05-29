@@ -216,6 +216,65 @@ fn read_only_status_probe_diagnoses_checked_in_debug_log_stream() -> TestResult 
 }
 
 #[test]
+fn read_only_status_probe_diagnoses_non_nrfloss_ascii_debug_log() -> TestResult {
+    let response_frame = hex_to_bytes(
+        "7E2F0E71055B494E464F5D776865656C5F646961672E633A3133372052656C6561736520486561727462656174204C6F673A0AA8",
+    )?;
+    let diagnosis = diagnose_read_only_status_response_frame(&response_frame);
+
+    assert_eq!(
+        diagnosis.classification,
+        MozaReadOnlyStatusResponseFrameClass::FramedAsciiTelemetryLog
+    );
+    assert_eq!(diagnosis.group, Some(0x0e));
+    assert_eq!(diagnosis.device_id, Some(0x71));
+    assert_eq!(diagnosis.command, Some(0x05));
+    assert_eq!(diagnosis.checksum_valid, Some(true));
+    assert!(diagnosis.printable_ascii_payload);
+    assert!(!diagnosis.nrfloss_recv_gap_payload);
+
+    Ok(())
+}
+
+#[test]
+fn read_only_status_probe_diagnoses_utf8_temperature_debug_log() -> TestResult {
+    let response_frame =
+        hex_to_bytes("7E1B0E21054D43552074656D70203A2033382E30303030302028C2B043290AC8")?;
+    let diagnosis = diagnose_read_only_status_response_frame(&response_frame);
+
+    assert_eq!(
+        diagnosis.classification,
+        MozaReadOnlyStatusResponseFrameClass::FramedAsciiTelemetryLog
+    );
+    assert_eq!(diagnosis.group, Some(0x0e));
+    assert_eq!(diagnosis.device_id, Some(0x21));
+    assert_eq!(diagnosis.command, Some(0x05));
+    assert_eq!(diagnosis.checksum_valid, Some(true));
+    assert!(!diagnosis.printable_ascii_payload);
+    assert!(!diagnosis.nrfloss_recv_gap_payload);
+
+    Ok(())
+}
+
+#[test]
+fn read_only_status_probe_keeps_response_like_unknown_frame_unpromoted() -> TestResult {
+    let response_frame = hex_to_bytes("7E00A1214D")?;
+    let diagnosis = diagnose_read_only_status_response_frame(&response_frame);
+
+    assert_eq!(
+        diagnosis.classification,
+        MozaReadOnlyStatusResponseFrameClass::UnknownNonRegistryFrame
+    );
+    assert_eq!(diagnosis.group, Some(0xa1));
+    assert_eq!(diagnosis.device_id, Some(0x21));
+    assert_eq!(diagnosis.command, Some(0x4d));
+    assert_eq!(diagnosis.checksum_valid, None);
+    assert!(!diagnosis.registry_command_known);
+
+    Ok(())
+}
+
+#[test]
 fn read_only_status_probe_diagnoses_fixture_frames_as_registry_status() -> TestResult {
     let codec_fixture = codec_fixture()?;
     let fixtures = fixtures_by_id(&codec_fixture)?;
