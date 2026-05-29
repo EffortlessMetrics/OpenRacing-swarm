@@ -392,6 +392,20 @@ work to identify a payload-bearing authority-state status endpoint or
 equivalent reviewed status source before any live probe, authorization, PIDFF
 rerun, force escalation, or motion ladder attempt.
 
+The authority-status source-gap review is now recorded at
+`vendor-status-authority-source-gap.json`. It reads only checked-in evidence and
+confirms there is still no reviewed payload-bearing authority-state status
+endpoint or equivalent status source. Current registry authority-status queries
+remain ACK/debug-only, the passive command-id `0x07` analogs and mode/enable
+groups remain `unknown_do_not_send`, and the checked-in passive review lacks
+device-to-host serial tuple details for response correlation. Wheel movement
+remains unproven: `wheel_moved_under_openracing=false`,
+`visible_motion_verified=false`, `output_was_sent=false`, and
+`authority_state=blocked`. The next native-path step is no-output
+device-to-host serial response extraction/correlation or another reviewed
+payload-bearing authority-state status source before any live probe,
+authorization plan, PIDFF rerun, force escalation, or motion attempt.
+
 The read-only demux follow-up is now recorded at
 `vendor-status-mode-matrix-demux.json` with its fresh precondition doctor at
 `vendor-status-mode-matrix-demux-hardware-doctor.json`. It kept the same

@@ -629,6 +629,14 @@ struct VendorStatusEndpointCandidatesRequest<'a> {
     overwrite: bool,
 }
 
+struct VendorStatusAuthoritySourceGapRequest<'a> {
+    json: bool,
+    endpoint_candidates: &'a Path,
+    protocol_evidence_review: &'a Path,
+    json_out: &'a Path,
+    overwrite: bool,
+}
+
 struct VendorAuthorityAuthorizationRequest<'a> {
     json: bool,
     command_id: &'a str,
@@ -867,6 +875,21 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             vendor_status_endpoint_candidates(VendorStatusEndpointCandidatesRequest {
                 json,
                 authority_endpoint_diagnosis,
+                protocol_evidence_review,
+                json_out,
+                overwrite: *overwrite,
+            })
+            .await
+        }
+        MozaCommands::VendorStatusAuthoritySourceGap {
+            endpoint_candidates,
+            protocol_evidence_review,
+            json_out,
+            overwrite,
+        } => {
+            vendor_status_authority_source_gap(VendorStatusAuthoritySourceGapRequest {
+                json,
+                endpoint_candidates,
                 protocol_evidence_review,
                 json_out,
                 overwrite: *overwrite,
@@ -1657,6 +1680,7 @@ fn moza_artifact_index_receipt(
     let simulator_compatibility = moza_simulator_compatibility_summary(lane);
     let vendor_authority_navigation = moza_vendor_authority_navigation_summary(lane);
     let passive_sniff_navigation = moza_passive_sniff_navigation_summary(lane);
+
     Ok(serde_json::json!({
         "success": true,
         "command": "wheelctl moza artifact-index",
@@ -7070,6 +7094,22 @@ async fn vendor_status_endpoint_candidates(
     )?;
     write_json_file(request.json_out, &receipt)?;
     print_vendor_status_endpoint_candidates_receipt(request.json, request.json_out, &receipt)
+}
+
+async fn vendor_status_authority_source_gap(
+    request: VendorStatusAuthoritySourceGapRequest<'_>,
+) -> Result<()> {
+    ensure_receipt_writable(request.json_out, request.overwrite)?;
+    let endpoint_candidates = read_json_path(request.endpoint_candidates)?;
+    let protocol_evidence_review = read_json_path(request.protocol_evidence_review)?;
+    let receipt = vendor_status_authority_source_gap_receipt(
+        request.endpoint_candidates,
+        &endpoint_candidates,
+        request.protocol_evidence_review,
+        &protocol_evidence_review,
+    )?;
+    write_json_file(request.json_out, &receipt)?;
+    print_vendor_status_authority_source_gap_receipt(request.json, request.json_out, &receipt)
 }
 
 async fn authorize_vendor_authority(
@@ -28164,6 +28204,390 @@ fn vendor_status_endpoint_candidates_receipt(
     })
 }
 
+fn vendor_status_authority_source_gap_receipt(
+    endpoint_candidates_path: &Path,
+    endpoint_candidates: &Value,
+    protocol_evidence_review_path: &Path,
+    protocol_evidence_review: &Value,
+) -> Result<Value> {
+    validate_authority_source_gap_endpoint_candidates(
+        endpoint_candidates_path,
+        endpoint_candidates,
+    )?;
+    validate_protocol_evidence_review_for_endpoint_candidates(
+        protocol_evidence_review_path,
+        protocol_evidence_review,
+    )?;
+
+    let analogs = endpoint_candidates
+        .get("passive_command_id_0x07_analogs")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            anyhow!(
+                "endpoint candidate receipt '{}' is missing passive command-id 0x07 analogs",
+                endpoint_candidates_path.display()
+            )
+        })?;
+    let analog_tuple_ids = analogs
+        .iter()
+        .map(|analog| {
+            json_string(analog, "tuple_id")
+                .map(str::to_string)
+                .ok_or_else(|| anyhow!("passive command-id 0x07 analog missing tuple_id"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let analog_read_only_probe_allowed = analogs
+        .iter()
+        .any(|analog| json_bool(analog, "read_only_probe_allowed") == Some(true));
+    let analog_sendable = analogs
+        .iter()
+        .any(|analog| json_bool(analog, "output_sendability_claim") == Some(true));
+    let analog_payload_match = analogs.iter().any(|analog| {
+        json_bool(analog, "response_shape_matches_expected_authority_status") == Some(true)
+    });
+
+    let passive_candidates = endpoint_candidates
+        .get("passive_tuple_candidates")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            anyhow!(
+                "endpoint candidate receipt '{}' is missing passive tuple candidates",
+                endpoint_candidates_path.display()
+            )
+        })?;
+    let passive_candidate_ids = passive_candidates
+        .iter()
+        .map(|candidate| {
+            json_string(candidate, "candidate_id")
+                .map(str::to_string)
+                .ok_or_else(|| anyhow!("passive tuple candidate missing candidate_id"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let passive_candidates_read_only_allowed = passive_candidates
+        .iter()
+        .any(|candidate| json_bool(candidate, "read_only_probe_allowed") == Some(true));
+    let passive_candidates_sendable = passive_candidates
+        .iter()
+        .any(|candidate| json_bool(candidate, "output_sendability_claim") == Some(true));
+
+    let mode_enable_review = protocol_evidence_review
+        .pointer("/passive_tuple_registry_coverage/decode_candidate_mode_enable_review")
+        .cloned()
+        .unwrap_or_else(|| {
+            serde_json::json!({
+                "claim_scope": "no_output_passive_tuple_mode_enable_candidate_review",
+                "candidate_count": 0,
+                "candidates": [],
+                "all_candidates_unknown_do_not_send": false,
+                "semantic_decode_claim": false,
+                "registry_promotion_claim": false,
+                "hardware_output_authorized": false,
+                "native_control_evidence": false,
+                "output_sendability_claim": false,
+                "protocol_evidence_sufficient_for_output_plan": false
+            })
+        });
+    let mode_enable_candidate_count =
+        json_u64(&mode_enable_review, "candidate_count").unwrap_or(0) as usize;
+    let mode_enable_candidates_sendable =
+        json_bool(&mode_enable_review, "output_sendability_claim") == Some(true)
+            || json_bool(&mode_enable_review, "registry_promotion_claim") == Some(true)
+            || json_bool(&mode_enable_review, "semantic_decode_claim") == Some(true);
+
+    let sniff_evidence = protocol_evidence_review
+        .get("sniff_evidence")
+        .ok_or_else(|| {
+            anyhow!(
+                "protocol evidence review '{}' is missing sniff_evidence",
+                protocol_evidence_review_path.display()
+            )
+        })?;
+    let completed_scenarios = json_string_array_value(sniff_evidence.get("completed_scenarios"));
+    let total_device_to_host_packets =
+        json_u64(sniff_evidence, "total_device_to_host_packets").unwrap_or(0);
+    let device_to_host_serial_tuple_details_present = sniff_evidence
+        .get("scenarios")
+        .and_then(Value::as_array)
+        .map(|scenarios| {
+            scenarios.iter().any(|scenario| {
+                scenario
+                    .get("device_to_host_serial_frame_tuple_counts")
+                    .is_some()
+                    || scenario
+                        .get("device_to_host_serial_frame_tuple_samples")
+                        .is_some()
+                    || scenario
+                        .get("device_to_host_serial_frame_tuple_ids")
+                        .is_some()
+            })
+        })
+        .unwrap_or(false);
+
+    let source_reviews = vec![
+        serde_json::json!({
+            "source_id": "current_registry_authority_status_queries",
+            "source_kind": "registry_approved_read_only_queries",
+            "input_artifact": endpoint_candidates_path.display().to_string(),
+            "query_tuple_ids": [
+                endpoint_candidates
+                    .pointer("/expected_payload_response_shape/query_tuple_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("0x21/0x12/0x07"),
+                "0x46/0x1C/0x01"
+            ],
+            "expected_payload_response_tuple_ids": [
+                endpoint_candidates
+                    .pointer("/expected_payload_response_shape/expected_payload_response_tuple_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("0xA1/0x21/0x07"),
+                "0xC6/0xC1/0x01"
+            ],
+            "observed_payload_bearing_authority_state_source": false,
+            "decoded_authority_state_reply_count": json_u64(
+                endpoint_candidates,
+                "authority_status_decoded_response_count"
+            )
+            .unwrap_or(0),
+            "classification": "current_queries_ack_or_debug_only",
+            "read_only_probe_allowed": false,
+            "required_next_review": "identify corrected endpoint/command or equivalent reviewed payload-bearing status source before another live probe"
+        }),
+        serde_json::json!({
+            "source_id": "passive_command_id_0x07_analogs",
+            "source_kind": "passive_host_to_device_unknown_command_analogs",
+            "input_artifact": endpoint_candidates_path.display().to_string(),
+            "candidate_count": analogs.len(),
+            "tuple_ids": analog_tuple_ids,
+            "any_payload_status_match": analog_payload_match,
+            "any_read_only_probe_allowed": analog_read_only_probe_allowed,
+            "any_sendable": analog_sendable,
+            "observed_payload_bearing_authority_state_source": false,
+            "classification": "endpoint_search_questions_only",
+            "read_only_probe_allowed": false,
+            "required_next_review": "fixture-backed decoder review plus response correlation before any tuple can become a read-only probe input"
+        }),
+        serde_json::json!({
+            "source_id": "passive_mode_enable_question_groups",
+            "source_kind": "passive_host_to_device_mode_enable_hypotheses",
+            "input_artifact": protocol_evidence_review_path.display().to_string(),
+            "candidate_count": mode_enable_candidate_count,
+            "candidate_ids": passive_candidate_ids,
+            "any_read_only_probe_allowed": passive_candidates_read_only_allowed,
+            "any_sendable": passive_candidates_sendable || mode_enable_candidates_sendable,
+            "observed_payload_bearing_authority_state_source": false,
+            "classification": "mode_enable_questions_not_status_source",
+            "read_only_probe_allowed": false,
+            "required_next_review": "semantic decoder and status-response correlation before any authority or mode plan"
+        }),
+        serde_json::json!({
+            "source_id": "passive_device_to_host_response_source",
+            "source_kind": "passive_device_to_host_packets",
+            "input_artifact": protocol_evidence_review_path.display().to_string(),
+            "completed_scenarios": completed_scenarios,
+            "total_device_to_host_packets": total_device_to_host_packets,
+            "device_to_host_serial_tuple_details_present": device_to_host_serial_tuple_details_present,
+            "observed_payload_bearing_authority_state_source": false,
+            "classification": if device_to_host_serial_tuple_details_present {
+                "device_to_host_details_present_but_no_reviewed_authority_source"
+            } else {
+                "device_to_host_serial_tuple_details_missing_from_checked_in_review"
+            },
+            "read_only_probe_allowed": false,
+            "required_next_review": "add or regenerate no-output device-to-host serial frame extraction and correlate response payloads before another live probe"
+        }),
+    ];
+    let source_review_count = source_reviews.len();
+
+    let mut receipt = serde_json::Map::new();
+    macro_rules! insert_json {
+        ($key:literal, $value:expr) => {
+            receipt.insert($key.to_string(), serde_json::json!($value));
+        };
+    }
+
+    insert_json!("success", true);
+    insert_json!("schema_version", 1);
+    insert_json!("artifact_kind", "moza_vendor_status_authority_source_gap");
+    insert_json!(
+        "claim_scope",
+        "no_output_authority_status_source_gap_review"
+    );
+    insert_json!(
+        "command",
+        "wheelctl moza vendor-status-authority-source-gap"
+    );
+    insert_json!("generated_at_utc", now_utc());
+    insert_json!(
+        "endpoint_candidates_receipt",
+        endpoint_candidates_path.display().to_string()
+    );
+    insert_json!(
+        "protocol_evidence_review_receipt",
+        protocol_evidence_review_path.display().to_string()
+    );
+    insert_json!("source_review_count", source_review_count);
+    receipt.insert("source_reviews".to_string(), Value::Array(source_reviews));
+    insert_json!("payload_bearing_authority_state_source_found", false);
+    insert_json!("reviewed_equivalent_status_source_found", false);
+    insert_json!("corrected_read_only_probe_ready", false);
+    insert_json!("live_read_only_probe_allowed", false);
+    insert_json!("authorization_plan_allowed", false);
+    insert_json!("motion_attempt_allowed", false);
+    insert_json!("native_control_evidence", false);
+    insert_json!("hardware_output_authorized", false);
+    insert_json!("native_visible_ready", false);
+    insert_json!("smoke_ready", false);
+    insert_json!("release_ready", false);
+    insert_json!("registry_promotion_claim", false);
+    insert_json!("output_sendability_claim", false);
+    insert_json!("semantic_decode_claim", false);
+    insert_json!("wheel_moved_under_openracing", false);
+    insert_json!("visible_motion_verified", false);
+    insert_json!("output_was_sent", false);
+    insert_json!("authority_state", "blocked");
+    insert_json!("no_hid_device_opened", true);
+    insert_json!("opened_serial_device", false);
+    insert_json!("sent_read_only_query_commands", false);
+    insert_json!("sent_output_writes", false);
+    insert_json!("sent_configuration_writes", false);
+    insert_json!("sent_firmware_or_dfu_commands", false);
+    insert_json!("high_torque_enabled", false);
+    insert_json!("mode_enable_candidates_sendable", false);
+    insert_json!("planned_next_output_allowed", false);
+    insert_json!("unknown_safety_or_mode_state_blocks_authority", true);
+    insert_json!(
+        "exact_next_blocker",
+        "No checked-in source currently identifies a payload-bearing authority-state status endpoint. Current registry authority-status queries are ACK/debug-only, passive command-id 0x07 analogs and mode/enable groups remain unknown_do_not_send, and checked-in passive review lacks device-to-host serial tuple correlation for an equivalent status source."
+    );
+    insert_json!(
+        "next_allowed_action",
+        "Add no-output device-to-host serial response extraction/correlation or another reviewed payload-bearing authority-state status source before any live probe, authorization plan, PIDFF rerun, force escalation, or motion attempt."
+    );
+    insert_json!(
+        "blocked_actions",
+        [
+            "live read-only probe of unknown passive tuples",
+            "mode enable write",
+            "authority write",
+            "output write",
+            "configuration write",
+            "PIDFF rerun",
+            "authorization receipt",
+            "hardware writes",
+            "high torque",
+            "native-control claim",
+            "native-visible claim",
+            "smoke-ready claim",
+            "release-ready claim",
+            "firmware or DFU command",
+            "unknown host-to-device command"
+        ]
+    );
+    insert_json!(
+        "required_artifacts",
+        [
+            endpoint_candidates_path.display().to_string(),
+            protocol_evidence_review_path.display().to_string(),
+            "schemas/moza-vendor-status-authority-source-gap.schema.json".to_string(),
+            "future no-output device-to-host serial response correlation artifact or equivalent reviewed status source".to_string()
+        ]
+    );
+    insert_json!(
+        "notes",
+        [
+            "This receipt reads stored JSON only; it opens no HID or serial device and sends no traffic.",
+            "A passive host-to-device tuple is not an authority-state status source without decoded response correlation.",
+            "The current blocker is protocol/status-source evidence, not closed-loop controller shape, force, Pit House, SimHub, or simulator dependency.",
+            "Native visible motion remains blocked; no wheel movement is claimed."
+        ]
+    );
+
+    Ok(Value::Object(receipt))
+}
+
+fn validate_authority_source_gap_endpoint_candidates(
+    path: &Path,
+    endpoint_candidates: &Value,
+) -> Result<()> {
+    if json_bool(endpoint_candidates, "success") != Some(true) {
+        return Err(anyhow!(
+            "endpoint candidate receipt '{}' must be successful",
+            path.display()
+        ));
+    }
+    if json_string(endpoint_candidates, "command")
+        != Some("wheelctl moza vendor-status-endpoint-candidates")
+    {
+        return Err(anyhow!(
+            "endpoint candidate receipt '{}' must come from `wheelctl moza vendor-status-endpoint-candidates`",
+            path.display()
+        ));
+    }
+    if json_bool(endpoint_candidates, "corrected_read_only_probe_ready") != Some(false) {
+        return Err(anyhow!(
+            "endpoint candidate receipt '{}' must not claim corrected read-only probe readiness",
+            path.display()
+        ));
+    }
+    for field in [
+        "native_control_evidence",
+        "hardware_output_authorized",
+        "native_visible_ready",
+        "smoke_ready",
+        "release_ready",
+        "registry_promotion_claim",
+        "output_sendability_claim",
+        "semantic_decode_claim",
+        "wheel_moved_under_openracing",
+        "visible_motion_verified",
+        "output_was_sent",
+        "sent_read_only_query_commands",
+        "sent_output_writes",
+        "sent_configuration_writes",
+        "sent_firmware_or_dfu_commands",
+        "high_torque_enabled",
+        "mode_enable_candidates_sendable",
+        "planned_next_output_allowed",
+        "passive_command_id_0x07_analogs_match_payload_status",
+        "passive_command_id_0x07_analogs_read_only_probe_allowed",
+        "passive_command_id_0x07_analogs_sendable",
+    ] {
+        if json_bool(endpoint_candidates, field) != Some(false) {
+            return Err(anyhow!(
+                "endpoint candidate receipt '{}' must keep `{field}=false`",
+                path.display()
+            ));
+        }
+    }
+    if json_string(endpoint_candidates, "authority_state") != Some("blocked") {
+        return Err(anyhow!(
+            "endpoint candidate receipt '{}' must keep authority_state=blocked",
+            path.display()
+        ));
+    }
+    if json_bool(
+        endpoint_candidates,
+        "unknown_safety_or_mode_state_blocks_authority",
+    ) != Some(true)
+    {
+        return Err(anyhow!(
+            "endpoint candidate receipt '{}' must keep unknown safety/mode as an authority blocker",
+            path.display()
+        ));
+    }
+    if json_u64(
+        endpoint_candidates,
+        "authority_status_decoded_response_count",
+    ) != Some(0)
+    {
+        return Err(anyhow!(
+            "endpoint candidate receipt '{}' must decode zero authority-state responses",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
 fn vendor_status_endpoint_command_id_0x07_analogs(
     protocol_evidence_review: &Value,
 ) -> Result<Vec<VendorStatusEndpointCommandIdAnalogCandidate>> {
@@ -41479,6 +41903,24 @@ fn print_vendor_status_endpoint_candidates_receipt(
     Ok(())
 }
 
+fn print_vendor_status_authority_source_gap_receipt(
+    json: bool,
+    json_out: &Path,
+    receipt: &Value,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Moza authority-status source gap: source_found={}, read_only_probe_allowed={}; no traffic was sent.",
+            json_bool(receipt, "payload_bearing_authority_state_source_found").unwrap_or(false),
+            json_bool(receipt, "live_read_only_probe_allowed").unwrap_or(false)
+        );
+        println!("Receipt: {}", json_out.display());
+    }
+    Ok(())
+}
+
 fn print_vendor_authority_authorization_receipt(
     json: bool,
     json_out: &Path,
@@ -44148,6 +44590,157 @@ mod tests {
         );
         assert_eq!(
             json_bool(&receipt, "corrected_read_only_probe_ready"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "native_visible_ready"), Some(false));
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_authority_source_gap_receipt_blocks_live_probe_and_motion() -> TestResult {
+        let endpoint_candidates: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_ENDPOINT_CANDIDATES_FROM_PAYLOAD_RERUN_JSON)?;
+        let protocol_evidence_review: Value =
+            serde_json::from_str(MOZA_VENDOR_PROTOCOL_EVIDENCE_REVIEW_JSON)?;
+        let receipt = vendor_status_authority_source_gap_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json",
+            ),
+            &endpoint_candidates,
+            Path::new("ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json"),
+            &protocol_evidence_review,
+        )?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-status-authority-source-gap.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&receipt).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        assert_eq!(
+            json_string(&receipt, "artifact_kind"),
+            Some("moza_vendor_status_authority_source_gap")
+        );
+        assert_eq!(
+            json_bool(&receipt, "payload_bearing_authority_state_source_found"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "reviewed_equivalent_status_source_found"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "corrected_read_only_probe_ready"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "live_read_only_probe_allowed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "authorization_plan_allowed"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "motion_attempt_allowed"), Some(false));
+        assert_eq!(
+            json_bool(&receipt, "wheel_moved_under_openracing"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "visible_motion_verified"), Some(false));
+        assert_eq!(json_bool(&receipt, "output_was_sent"), Some(false));
+        assert_eq!(json_string(&receipt, "authority_state"), Some("blocked"));
+
+        let source_reviews = receipt
+            .get("source_reviews")
+            .and_then(Value::as_array)
+            .ok_or("source gap receipt must include source reviews")?;
+        assert_eq!(source_reviews.len(), 4);
+        assert!(source_reviews.iter().all(|source| {
+            json_bool(source, "observed_payload_bearing_authority_state_source") == Some(false)
+                && json_bool(source, "read_only_probe_allowed") == Some(false)
+        }));
+        assert!(source_reviews.iter().any(|source| {
+            json_string(source, "source_id") == Some("passive_command_id_0x07_analogs")
+                && json_u64(source, "candidate_count") == Some(5)
+                && json_bool(source, "any_read_only_probe_allowed") == Some(false)
+        }));
+        assert!(source_reviews.iter().any(|source| {
+            json_string(source, "source_id") == Some("passive_device_to_host_response_source")
+                && json_bool(source, "device_to_host_serial_tuple_details_present") == Some(false)
+                && json_u64(source, "total_device_to_host_packets").unwrap_or(0) > 0
+        }));
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_authority_source_gap_rejects_probe_ready_candidate_receipt() -> TestResult {
+        let mut endpoint_candidates: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_ENDPOINT_CANDIDATES_FROM_PAYLOAD_RERUN_JSON)?;
+        let protocol_evidence_review: Value =
+            serde_json::from_str(MOZA_VENDOR_PROTOCOL_EVIDENCE_REVIEW_JSON)?;
+        endpoint_candidates["corrected_read_only_probe_ready"] = Value::Bool(true);
+
+        let error = vendor_status_authority_source_gap_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json",
+            ),
+            &endpoint_candidates,
+            Path::new("ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json"),
+            &protocol_evidence_review,
+        )
+        .expect_err("source gap review must reject a probe-ready endpoint candidate receipt");
+        assert!(
+            error
+                .to_string()
+                .contains("must not claim corrected read-only probe readiness"),
+            "unexpected error: {error}"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn vendor_status_authority_source_gap_command_writes_json_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let endpoint_candidates = dir.path().join("endpoint-candidates.json");
+        let protocol_evidence_review = dir.path().join("protocol-evidence-review.json");
+        write_test_json_file(
+            &endpoint_candidates,
+            &serde_json::from_str::<Value>(
+                MOZA_VENDOR_STATUS_ENDPOINT_CANDIDATES_FROM_PAYLOAD_RERUN_JSON,
+            )?,
+        )?;
+        write_test_json_file(
+            &protocol_evidence_review,
+            &serde_json::from_str::<Value>(MOZA_VENDOR_PROTOCOL_EVIDENCE_REVIEW_JSON)?,
+        )?;
+        let json_out = dir.path().join("vendor-status-authority-source-gap.json");
+
+        vendor_status_authority_source_gap(VendorStatusAuthoritySourceGapRequest {
+            json: false,
+            endpoint_candidates: &endpoint_candidates,
+            protocol_evidence_review: &protocol_evidence_review,
+            json_out: &json_out,
+            overwrite: false,
+        })
+        .await?;
+
+        let receipt = read_json_path(&json_out)?;
+        assert_eq!(
+            json_string(&receipt, "command"),
+            Some("wheelctl moza vendor-status-authority-source-gap")
+        );
+        assert_eq!(
+            json_bool(&receipt, "payload_bearing_authority_state_source_found"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "live_read_only_probe_allowed"),
             Some(false)
         );
         assert_eq!(

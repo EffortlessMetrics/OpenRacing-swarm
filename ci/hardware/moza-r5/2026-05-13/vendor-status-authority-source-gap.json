@@ -1,0 +1,142 @@
+{
+  "artifact_kind": "moza_vendor_status_authority_source_gap",
+  "authority_state": "blocked",
+  "authorization_plan_allowed": false,
+  "blocked_actions": [
+    "live read-only probe of unknown passive tuples",
+    "mode enable write",
+    "authority write",
+    "output write",
+    "configuration write",
+    "PIDFF rerun",
+    "authorization receipt",
+    "hardware writes",
+    "high torque",
+    "native-control claim",
+    "native-visible claim",
+    "smoke-ready claim",
+    "release-ready claim",
+    "firmware or DFU command",
+    "unknown host-to-device command"
+  ],
+  "claim_scope": "no_output_authority_status_source_gap_review",
+  "command": "wheelctl moza vendor-status-authority-source-gap",
+  "corrected_read_only_probe_ready": false,
+  "endpoint_candidates_receipt": "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json",
+  "exact_next_blocker": "No checked-in source currently identifies a payload-bearing authority-state status endpoint. Current registry authority-status queries are ACK/debug-only, passive command-id 0x07 analogs and mode/enable groups remain unknown_do_not_send, and checked-in passive review lacks device-to-host serial tuple correlation for an equivalent status source.",
+  "generated_at_utc": "2026-05-29T16:45:42Z",
+  "hardware_output_authorized": false,
+  "high_torque_enabled": false,
+  "live_read_only_probe_allowed": false,
+  "mode_enable_candidates_sendable": false,
+  "motion_attempt_allowed": false,
+  "native_control_evidence": false,
+  "native_visible_ready": false,
+  "next_allowed_action": "Add no-output device-to-host serial response extraction/correlation or another reviewed payload-bearing authority-state status source before any live probe, authorization plan, PIDFF rerun, force escalation, or motion attempt.",
+  "no_hid_device_opened": true,
+  "notes": [
+    "This receipt reads stored JSON only; it opens no HID or serial device and sends no traffic.",
+    "A passive host-to-device tuple is not an authority-state status source without decoded response correlation.",
+    "The current blocker is protocol/status-source evidence, not closed-loop controller shape, force, Pit House, SimHub, or simulator dependency.",
+    "Native visible motion remains blocked; no wheel movement is claimed."
+  ],
+  "opened_serial_device": false,
+  "output_sendability_claim": false,
+  "output_was_sent": false,
+  "payload_bearing_authority_state_source_found": false,
+  "planned_next_output_allowed": false,
+  "protocol_evidence_review_receipt": "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
+  "registry_promotion_claim": false,
+  "release_ready": false,
+  "required_artifacts": [
+    "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json",
+    "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
+    "schemas/moza-vendor-status-authority-source-gap.schema.json",
+    "future no-output device-to-host serial response correlation artifact or equivalent reviewed status source"
+  ],
+  "reviewed_equivalent_status_source_found": false,
+  "schema_version": 1,
+  "semantic_decode_claim": false,
+  "sent_configuration_writes": false,
+  "sent_firmware_or_dfu_commands": false,
+  "sent_output_writes": false,
+  "sent_read_only_query_commands": false,
+  "smoke_ready": false,
+  "source_review_count": 4,
+  "source_reviews": [
+    {
+      "classification": "current_queries_ack_or_debug_only",
+      "decoded_authority_state_reply_count": 0,
+      "expected_payload_response_tuple_ids": [
+        "0xA1/0x21/0x07",
+        "0xC6/0xC1/0x01"
+      ],
+      "input_artifact": "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json",
+      "observed_payload_bearing_authority_state_source": false,
+      "query_tuple_ids": [
+        "0x21/0x12/0x07",
+        "0x46/0x1C/0x01"
+      ],
+      "read_only_probe_allowed": false,
+      "required_next_review": "identify corrected endpoint/command or equivalent reviewed payload-bearing status source before another live probe",
+      "source_id": "current_registry_authority_status_queries",
+      "source_kind": "registry_approved_read_only_queries"
+    },
+    {
+      "any_payload_status_match": false,
+      "any_read_only_probe_allowed": false,
+      "any_sendable": false,
+      "candidate_count": 5,
+      "classification": "endpoint_search_questions_only",
+      "input_artifact": "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json",
+      "observed_payload_bearing_authority_state_source": false,
+      "read_only_probe_allowed": false,
+      "required_next_review": "fixture-backed decoder review plus response correlation before any tuple can become a read-only probe input",
+      "source_id": "passive_command_id_0x07_analogs",
+      "source_kind": "passive_host_to_device_unknown_command_analogs",
+      "tuple_ids": [
+        "0x40/0x17/0x07",
+        "0x28/0x13/0x07",
+        "0x23/0x19/0x07",
+        "0x3F/0x17/0x07",
+        "0x5B/0x1B/0x07"
+      ]
+    },
+    {
+      "any_read_only_probe_allowed": false,
+      "any_sendable": false,
+      "candidate_count": 2,
+      "candidate_ids": [
+        "passive_status_mode_triad_0x25_0x19",
+        "passive_session_authority_pair_0x5a_0x5d"
+      ],
+      "classification": "mode_enable_questions_not_status_source",
+      "input_artifact": "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
+      "observed_payload_bearing_authority_state_source": false,
+      "read_only_probe_allowed": false,
+      "required_next_review": "semantic decoder and status-response correlation before any authority or mode plan",
+      "source_id": "passive_mode_enable_question_groups",
+      "source_kind": "passive_host_to_device_mode_enable_hypotheses"
+    },
+    {
+      "classification": "device_to_host_serial_tuple_details_missing_from_checked_in_review",
+      "completed_scenarios": [
+        "pit-house-open-idle",
+        "pit-house-full-controls",
+        "pit-house-setting-change"
+      ],
+      "device_to_host_serial_tuple_details_present": false,
+      "input_artifact": "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
+      "observed_payload_bearing_authority_state_source": false,
+      "read_only_probe_allowed": false,
+      "required_next_review": "add or regenerate no-output device-to-host serial frame extraction and correlate response payloads before another live probe",
+      "source_id": "passive_device_to_host_response_source",
+      "source_kind": "passive_device_to_host_packets",
+      "total_device_to_host_packets": 151058
+    }
+  ],
+  "success": true,
+  "unknown_safety_or_mode_state_blocks_authority": true,
+  "visible_motion_verified": false,
+  "wheel_moved_under_openracing": false
+}
