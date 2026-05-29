@@ -146,6 +146,17 @@ feature, PIDFF, firmware, DFU, or high-torque commands. The receipt failed
 closed with zero decoded responses, nine failed responses, and
 `real_hardware_status_evidence=false`, so mode/safety state remains unknown and
 continues to block any exact authority plan.
+Follow-up read-only diagnosis now narrows that blocker. The demux receipt
+decoded seven registry status replies but left `estop_get_ffb` and
+`main_misc_get_ffb_status` failed closed. The targeted authority-status
+correlation receipt then selected only those two commands, decoded zero replies,
+and recorded one response-like command mismatch, `0xA1/0x21/0x4D`, while
+requesting `main_misc_get_ffb_status` `0x21/0x12/0x07`. The latest extended
+scan repeats that targeted read-only probe with a 64-frame per-command cap,
+scans 19 frames, still decodes zero authority-state replies, and preserves the
+same mismatch. That keeps authorization, PIDFF rerun, and motion blocked on
+authority-status command/endpoint correlation or unknown device state rather
+than scan-window depth.
 The `pit-house-setting-change` sniff plan now pins the scenario-specific
 operator evidence required for that next capture: exact Pit House setting,
 starting value, ending value, and an affirmative restore status. The first
@@ -5543,6 +5554,128 @@ Remove only:
 Do not remove the #73 matrix, #74 framing diagnosis, #75 demux receipt,
 passive evidence, consumed hardware attempts, or post-authority PIDFF regression
 evidence.
+
+## Work item: extend-read-only-authority-status-scan-window
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: exact authorization planning for any future decoded volatile mode or
+enable candidate
+Blocked by: no decoded authority-state reply for `estop_get_ffb` or
+`main_misc_get_ffb_status`.
+
+### Goal
+
+Prove whether the two remaining authority-status read-only replies were merely
+hidden behind a deeper diagnostic telemetry stream, while keeping the probe
+bounded, read-only, and non-claiming.
+
+### Production Delta
+
+`wheelctl moza vendor-status-probe` now accepts
+`--max-response-frames-per-query`, defaulting to the original 12-frame scan and
+failing closed above the 128-frame cap. The serial transport and fake transport
+both honor the configured bound, and the receipt records the configured
+`response_scan_max_frames_per_query` when the new command emits a receipt. The
+schema validates the optional field with the same 128-frame maximum while
+preserving older checked-in receipts that predate the scan metadata.
+
+`vendor-status-extended-scan-targeted.json` records the live follow-up after a
+fresh observe-only hardware doctor. It selected only `estop_get_ffb` and
+`main_misc_get_ffb_status`, used COM4 at 115200 baud with a 1000 ms timeout and
+a 64-frame scan cap, sent two registry-approved read-only query commands, and
+decoded zero authority-state replies. The derived no-output diagnosis at
+`vendor-status-extended-scan-diagnosis.json` scanned 19 frames total, classified
+18 as diagnostic telemetry, and preserved the same response-like command
+mismatch:
+
+```text
+requested: main_misc_get_ffb_status 0x21/0x12/0x07
+observed:  0xA1/0x21/0x4D
+```
+
+The extended scan removes shallow scan-window exhaustion as the immediate
+explanation for missing authority-state replies. The current blocker remains
+authority-status command/endpoint correlation or unknown device state, not
+output, force, PIDFF, or motion.
+
+### Non-goals
+
+No HID output open, PIDFF output, feature report, output write, configuration
+write, firmware/update/DFU path, high torque, mode-enable write, authority
+write, authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, native-control claim, native-visible claim, smoke-ready claim,
+simulator claim, coexistence claim, or release-ready claim.
+
+### Acceptance
+
+- The CLI exposes a bounded scan-window option and rejects `0` or values above
+  128.
+- Fake transport tests prove the default 12-frame scan can fail closed before a
+  delayed matching reply while an extended bounded scan can find the same reply.
+- The live extended scan receipt preserves the fresh hardware doctor, verified
+  COM4 R5 serial/CDC identity, zero HID/output/configuration/firmware actions,
+  and failed-closed status.
+- The offline diagnosis records the 64-frame-cap probe result without
+  promoting the `0xA1/0x21/0x4D` mismatch.
+- `unknown_safety_or_mode_state_blocks_authority=true`,
+  `hardware_output_authorized=false`, `native_control_evidence=false`,
+  `native_visible_ready=false`, `output_sendability_claim=false`, and
+  `registry_promotion_claim=false` remain pinned.
+- The next native-path action is no-output authority-status command/endpoint
+  correlation or passive evidence correlation, not output, PIDFF, or motion.
+
+### Proof Commands
+
+```powershell
+wheelctl hardware doctor --json `
+  --json-out target/moza-current/status-extended-scan-hardware-doctor.json
+
+wheelctl moza vendor-status-probe `
+  --serial-port COM4 `
+  --baud-rate 115200 `
+  --timeout-ms 1000 `
+  --max-response-frames-per-query 64 `
+  --command estop_get_ffb `
+  --command main_misc_get_ffb_status `
+  --confirm-read-only-query `
+  --json-out target/moza-current/vendor-status-extended-scan-targeted.json `
+  --json
+# expected: exits non-zero with success=false; decoded_response_count=0, failed_response_count=2
+
+wheelctl moza vendor-status-framing-diagnosis `
+  --status-probe target/moza-current/vendor-status-extended-scan-targeted.json `
+  --json-out target/moza-current/vendor-status-extended-scan-diagnosis.json `
+  --overwrite `
+  --json
+
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_framing_diagnosis -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_status_probe -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- `ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-hardware-doctor.json`
+- `ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-targeted.json`
+- `ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json`
+- the bounded scan-window CLI option and fake-transport tests
+- the optional schema maximum for `response_scan_max_frames_per_query`
+- source-of-truth notes for this work item.
+
+Do not remove the #73 matrix, #74 framing diagnosis, #75 demux receipt, #76
+targeted correlation evidence, passive evidence, consumed hardware attempts, or
+post-authority PIDFF regression evidence.
 
 ## Work item: native-visible-promotion
 

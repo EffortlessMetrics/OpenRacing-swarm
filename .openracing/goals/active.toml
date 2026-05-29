@@ -1920,6 +1920,27 @@ commands = [
 ]
 
 [[work_item]]
+id = "extend-read-only-authority-status-scan-window"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-extend-read-only-authority-status-scan-window"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json"
+claim_boundary = "Read-only authority-status extended scan only; adds a bounded --max-response-frames-per-query option and records a targeted COM4 read-only probe for estop_get_ffb and main_misc_get_ffb_status with a 64-frame scan cap, still decoding zero authority-state replies and keeping hardware output authorization, registry promotion, tuple sendability, semantic decode, native-control, native-visible, smoke-ready, simulator, coexistence, high-torque, and release-ready claims false."
+commands = [
+  "wheelctl hardware doctor --json --json-out target/moza-current/status-extended-scan-hardware-doctor.json",
+  "wheelctl moza vendor-status-probe --serial-port COM4 --baud-rate 115200 --timeout-ms 1000 --max-response-frames-per-query 64 --command estop_get_ffb --command main_misc_get_ffb_status --confirm-read-only-query --json-out target/moza-current/vendor-status-extended-scan-targeted.json --json",
+  "wheelctl moza vendor-status-framing-diagnosis --status-probe target/moza-current/vendor-status-extended-scan-targeted.json --json-out target/moza-current/vendor-status-extended-scan-diagnosis.json --overwrite --json",
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_framing_diagnosis -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_status_probe -- --nocapture",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

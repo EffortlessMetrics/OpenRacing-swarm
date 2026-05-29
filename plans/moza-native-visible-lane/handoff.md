@@ -258,6 +258,18 @@ than registry status/mode replies. The native-path blocker is therefore
 transport framing, serial stream demultiplexing, or endpoint/command
 correlation.
 
+The read-only authority-status correlation follow-ups have now narrowed that
+blocker. `vendor-status-reply-correlation-targeted.json` selected only
+`estop_get_ffb` and `main_misc_get_ffb_status`, decoded zero authority-state
+replies, and the diagnosis preserved one response-like command mismatch
+`0xA1/0x21/0x4D` while requesting `main_misc_get_ffb_status`
+`0x21/0x12/0x07`. `vendor-status-extended-scan-targeted.json` repeats that same
+read-only probe with `--max-response-frames-per-query 64`; it scanned 19 frames,
+decoded zero authority-state replies, and preserved the same mismatch. Shallow
+scan-window depth is no longer the immediate explanation. The next native-path
+work remains no-output command/endpoint correlation or passive evidence
+correlation, not authorization, PIDFF, force escalation, or motion.
+
 The read-only demux follow-up is now recorded at
 `vendor-status-mode-matrix-demux.json` with its fresh precondition doctor at
 `vendor-status-mode-matrix-demux-hardware-doctor.json`. It kept the same

@@ -150,7 +150,7 @@ const VENDOR_AUTHORITY_HANDOFF_AUTHORIZED_BY: &str = "Steven";
 const VENDOR_AUTHORITY_HANDOFF_EXPIRES_AFTER_MINUTES: u64 = 10;
 const VENDOR_AUTHORITY_LIVE_HARDWARE_DOCTOR_TARGET: &str =
     "target/moza-current/vendor-authority-precondition-hardware-doctor.json";
-const VENDOR_STATUS_MAX_RESPONSE_FRAMES_PER_QUERY: usize = 12;
+const VENDOR_STATUS_MAX_RESPONSE_FRAMES_PER_QUERY: usize = 128;
 const NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILES: &[&str] = &[
     NATIVE_CONTROLLED_ANGLE_AUTHORIZATION_FILE,
     NATIVE_CONTROLLED_ANGLE_RETRY_AUTHORIZATION_FILE,
@@ -584,6 +584,7 @@ struct VendorStatusProbeRequest<'a> {
     serial_port: &'a str,
     baud_rate: u32,
     timeout_ms: u64,
+    max_response_frames_per_query: usize,
     command_ids: &'a [String],
     confirm_read_only_query: bool,
     json_out: Option<&'a Path>,
@@ -793,6 +794,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             serial_port,
             baud_rate,
             timeout_ms,
+            max_response_frames_per_query,
             command_ids,
             confirm_read_only_query,
             json_out,
@@ -802,6 +804,7 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 serial_port,
                 baud_rate: *baud_rate,
                 timeout_ms: *timeout_ms,
+                max_response_frames_per_query: *max_response_frames_per_query,
                 command_ids,
                 confirm_read_only_query: *confirm_read_only_query,
                 json_out: json_out.as_deref(),
@@ -6936,6 +6939,7 @@ async fn vendor_status_probe(request: VendorStatusProbeRequest<'_>) -> Result<()
     if request.timeout_ms == 0 {
         return Err(anyhow!("--timeout-ms must be greater than zero"));
     }
+    validate_vendor_status_response_scan_bound(request.max_response_frames_per_query)?;
 
     let commands = selected_read_only_status_commands(request.command_ids)?;
     let port_identity = moza_serial_port_identity(request.serial_port)?;
@@ -6948,6 +6952,7 @@ async fn vendor_status_probe(request: VendorStatusProbeRequest<'_>) -> Result<()
         request.serial_port,
         request.baud_rate,
         request.timeout_ms,
+        request.max_response_frames_per_query,
         &commands,
         port_identity,
         &mut transport,
@@ -6964,6 +6969,21 @@ async fn vendor_status_probe(request: VendorStatusProbeRequest<'_>) -> Result<()
             receipt.failed_response_count
         ))
     }
+}
+
+fn validate_vendor_status_response_scan_bound(max_response_frames_per_query: usize) -> Result<()> {
+    if max_response_frames_per_query == 0 {
+        return Err(anyhow!(
+            "--max-response-frames-per-query must be greater than zero"
+        ));
+    }
+    if max_response_frames_per_query > VENDOR_STATUS_MAX_RESPONSE_FRAMES_PER_QUERY {
+        return Err(anyhow!(
+            "--max-response-frames-per-query must be at most {}",
+            VENDOR_STATUS_MAX_RESPONSE_FRAMES_PER_QUERY
+        ));
+    }
+    Ok(())
 }
 
 async fn vendor_status_framing_diagnosis(
@@ -26964,6 +26984,7 @@ trait VendorStatusProbeTransport {
         &mut self,
         command: &'static MozaVendorCommand,
         timeout_ms: u64,
+        max_response_frames_per_query: usize,
     ) -> Result<VendorStatusProbeReadOutcome>;
 }
 
@@ -26999,6 +27020,7 @@ impl VendorStatusProbeTransport for SerialPortStatusProbeTransport {
         &mut self,
         command: &'static MozaVendorCommand,
         timeout_ms: u64,
+        max_response_frames_per_query: usize,
     ) -> Result<VendorStatusProbeReadOutcome> {
         self.port
             .set_timeout(Duration::from_millis(timeout_ms))
@@ -27009,7 +27031,7 @@ impl VendorStatusProbeTransport for SerialPortStatusProbeTransport {
                 )
             })?;
         let mut scanned_frames = Vec::new();
-        for _ in 0..VENDOR_STATUS_MAX_RESPONSE_FRAMES_PER_QUERY {
+        for _ in 0..max_response_frames_per_query {
             let response_frame = match read_moza_serial_frame(&mut *self.port, 256) {
                 Ok(frame) => frame,
                 Err(error) => {
@@ -27159,10 +27181,12 @@ fn vendor_status_probe_receipt_with_transport(
     serial_port: &str,
     baud_rate: u32,
     timeout_ms: u64,
+    max_response_frames_per_query: usize,
     commands: &[&'static MozaVendorCommand],
     port_identity: VendorStatusProbePortIdentity,
     transport: &mut dyn VendorStatusProbeTransport,
 ) -> Result<VendorStatusProbeReceipt> {
+    validate_vendor_status_response_scan_bound(max_response_frames_per_query)?;
     if commands.is_empty() {
         return Err(anyhow!(
             "at least one read-only vendor status command must be selected"
@@ -27218,7 +27242,7 @@ fn vendor_status_probe_receipt_with_transport(
             }
         }
 
-        match transport.read_response(command, timeout_ms) {
+        match transport.read_response(command, timeout_ms, max_response_frames_per_query) {
             Ok(read_outcome) => {
                 response.response_scan_stop_reason = read_outcome.stop_reason;
                 response.scanned_response_frame_count = read_outcome.scanned_frame_count();
@@ -27357,7 +27381,7 @@ fn vendor_status_probe_receipt_with_transport(
         codec_status: moza_serial_codec_status_name(READ_ONLY_STATUS_CODEC_STATUS),
         hardware_write_eligible: READ_ONLY_STATUS_CODEC_STATUS.allows_hardware_writes(),
         response_scan_strategy: "bounded_stream_demux",
-        response_scan_max_frames_per_query: VENDOR_STATUS_MAX_RESPONSE_FRAMES_PER_QUERY,
+        response_scan_max_frames_per_query: max_response_frames_per_query,
         scanned_response_frame_count,
         skipped_response_frame_count,
         skipped_diagnostic_frame_count,
@@ -40220,6 +40244,8 @@ fn receipt_template_kind_label(kind: MozaReceiptTemplateKind) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const VENDOR_STATUS_DEFAULT_RESPONSE_FRAMES_PER_QUERY: usize = 12;
     use clap::Parser;
     use racing_wheel_hid_moza_protocol::rim_ids;
     use std::path::PathBuf;
@@ -41035,13 +41061,14 @@ mod tests {
             &mut self,
             command: &'static MozaVendorCommand,
             _timeout_ms: u64,
+            max_response_frames_per_query: usize,
         ) -> Result<VendorStatusProbeReadOutcome> {
             let frames = self
                 .responses
                 .get(command.id)
                 .ok_or_else(|| anyhow!("missing fake response `{}`", command.id))?;
             let mut scanned_frames = Vec::new();
-            for frame in frames {
+            for frame in frames.iter().take(max_response_frames_per_query) {
                 let observation = VendorStatusProbeScannedFrame::from_frame(command, frame.clone());
                 let matched = observation.disposition
                     == MozaReadOnlyStatusResponseFrameDisposition::MatchingRegistryStatusResponse;
@@ -41058,6 +41085,14 @@ mod tests {
                         read_error: None,
                     });
                 }
+            }
+            if frames.len() >= max_response_frames_per_query {
+                return Ok(VendorStatusProbeReadOutcome {
+                    matching_frame: None,
+                    scanned_frames,
+                    stop_reason: "max_response_frame_scan_exhausted",
+                    read_error: None,
+                });
             }
             Ok(VendorStatusProbeReadOutcome {
                 matching_frame: None,
@@ -41089,6 +41124,7 @@ mod tests {
             "COM4",
             115200,
             250,
+            VENDOR_STATUS_DEFAULT_RESPONSE_FRAMES_PER_QUERY,
             &commands,
             sample_vendor_status_port_identity(),
             &mut transport,
@@ -41167,6 +41203,10 @@ mod tests {
             json_string(&value, "response_scan_strategy"),
             Some("bounded_stream_demux")
         );
+        assert_eq!(
+            json_u64(&value, "response_scan_max_frames_per_query"),
+            Some(VENDOR_STATUS_DEFAULT_RESPONSE_FRAMES_PER_QUERY as u64)
+        );
         assert_eq!(json_u64(&value, "scanned_response_frame_count"), Some(9));
         assert_eq!(json_u64(&value, "skipped_response_frame_count"), Some(0));
         assert_eq!(json_u64(&value, "decoded_response_count"), Some(9));
@@ -41200,6 +41240,7 @@ mod tests {
             "COM4",
             115200,
             250,
+            VENDOR_STATUS_DEFAULT_RESPONSE_FRAMES_PER_QUERY,
             &[command],
             sample_vendor_status_port_identity(),
             &mut transport,
@@ -41247,6 +41288,125 @@ mod tests {
     }
 
     #[test]
+    fn vendor_status_probe_extended_scan_window_finds_delayed_registry_response() -> TestResult {
+        let command = read_only_status_commands()
+            .find(|command| command.id == "estop_get_ffb")
+            .ok_or("missing estop read-only status command")?;
+        let status_probe: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_MODE_MATRIX_RECEIPT_JSON)?;
+        let first_debug_hex = status_probe
+            .get("responses")
+            .and_then(Value::as_array)
+            .and_then(|responses| responses.first())
+            .and_then(|response| json_string(response, "response_frame_hex"))
+            .ok_or("missing checked-in debug response frame")?;
+        let debug_frame = parse_hex_bytes(first_debug_hex)?;
+        let matching_frame = encode_read_only_status_query(command)?;
+        let delayed_match_scan_bound = VENDOR_STATUS_DEFAULT_RESPONSE_FRAMES_PER_QUERY + 4;
+
+        let mut default_frames =
+            vec![debug_frame.clone(); VENDOR_STATUS_DEFAULT_RESPONSE_FRAMES_PER_QUERY + 3];
+        default_frames.push(matching_frame.clone());
+        let mut default_transport =
+            FakeVendorStatusProbeTransport::with_response_stream(command, default_frames);
+        let default_receipt = vendor_status_probe_receipt_with_transport(
+            "COM4",
+            115200,
+            250,
+            VENDOR_STATUS_DEFAULT_RESPONSE_FRAMES_PER_QUERY,
+            &[command],
+            sample_vendor_status_port_identity(),
+            &mut default_transport,
+        )?;
+        let default_value = serde_json::to_value(&default_receipt)?;
+        let default_response = default_value
+            .get("responses")
+            .and_then(Value::as_array)
+            .and_then(|responses| responses.first())
+            .ok_or("receipt must include first default-scan response")?;
+
+        assert_eq!(json_bool(&default_value, "success"), Some(false));
+        assert_eq!(json_u64(&default_value, "decoded_response_count"), Some(0));
+        assert_eq!(
+            json_u64(&default_value, "response_scan_max_frames_per_query"),
+            Some(VENDOR_STATUS_DEFAULT_RESPONSE_FRAMES_PER_QUERY as u64)
+        );
+        assert_eq!(
+            json_u64(&default_value, "scanned_response_frame_count"),
+            Some(VENDOR_STATUS_DEFAULT_RESPONSE_FRAMES_PER_QUERY as u64)
+        );
+        assert_eq!(
+            json_string(default_response, "response_scan_stop_reason"),
+            Some("max_response_frame_scan_exhausted")
+        );
+
+        let mut extended_frames =
+            vec![debug_frame; VENDOR_STATUS_DEFAULT_RESPONSE_FRAMES_PER_QUERY + 3];
+        extended_frames.push(matching_frame);
+        let mut extended_transport =
+            FakeVendorStatusProbeTransport::with_response_stream(command, extended_frames);
+        let extended_receipt = vendor_status_probe_receipt_with_transport(
+            "COM4",
+            115200,
+            250,
+            delayed_match_scan_bound,
+            &[command],
+            sample_vendor_status_port_identity(),
+            &mut extended_transport,
+        )?;
+        let extended_value = serde_json::to_value(&extended_receipt)?;
+        let extended_response = extended_value
+            .get("responses")
+            .and_then(Value::as_array)
+            .and_then(|responses| responses.first())
+            .ok_or("receipt must include first extended-scan response")?;
+
+        assert_eq!(json_bool(&extended_value, "success"), Some(true));
+        assert_eq!(json_u64(&extended_value, "decoded_response_count"), Some(1));
+        assert_eq!(json_u64(&extended_value, "failed_response_count"), Some(0));
+        assert_eq!(
+            json_u64(&extended_value, "response_scan_max_frames_per_query"),
+            Some(delayed_match_scan_bound as u64)
+        );
+        assert_eq!(
+            json_u64(&extended_value, "scanned_response_frame_count"),
+            Some(delayed_match_scan_bound as u64)
+        );
+        assert_eq!(
+            json_string(extended_response, "response_scan_stop_reason"),
+            Some("matched_registry_status_response")
+        );
+        assert_eq!(
+            json_bool(&extended_value, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&extended_value, "native_visible_ready"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&extended_value, "output_sendability_claim"),
+            Some(false)
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_probe_rejects_unbounded_response_scan_window() -> TestResult {
+        assert!(validate_vendor_status_response_scan_bound(0).is_err());
+        assert!(
+            validate_vendor_status_response_scan_bound(
+                VENDOR_STATUS_MAX_RESPONSE_FRAMES_PER_QUERY + 1
+            )
+            .is_err()
+        );
+        validate_vendor_status_response_scan_bound(VENDOR_STATUS_MAX_RESPONSE_FRAMES_PER_QUERY)?;
+
+        Ok(())
+    }
+
+    #[test]
     fn vendor_status_probe_stream_demux_fails_closed_without_matching_status_reply() -> TestResult {
         let command = read_only_status_commands()
             .find(|command| command.id == "estop_get_ffb")
@@ -41270,6 +41430,7 @@ mod tests {
             "COM4",
             115200,
             250,
+            VENDOR_STATUS_DEFAULT_RESPONSE_FRAMES_PER_QUERY,
             &[command],
             sample_vendor_status_port_identity(),
             &mut transport,
@@ -41737,6 +41898,10 @@ mod tests {
         );
         assert_eq!(schema["properties"]["opened_serial_device"]["const"], true);
         assert_eq!(schema["properties"]["high_torque_enabled"]["const"], false);
+        assert_eq!(
+            schema["properties"]["response_scan_max_frames_per_query"]["maximum"],
+            VENDOR_STATUS_MAX_RESPONSE_FRAMES_PER_QUERY
+        );
         assert_eq!(
             schema["properties"]["sent_read_only_query_commands"]["const"],
             true

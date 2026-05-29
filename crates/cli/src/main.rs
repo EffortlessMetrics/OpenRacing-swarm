@@ -2235,6 +2235,8 @@ mod tests {
             "115200",
             "--timeout-ms",
             "500",
+            "--max-response-frames-per-query",
+            "64",
             "--command",
             "estop_get_ffb",
             "--confirm-read-only-query",
@@ -2246,6 +2248,7 @@ mod tests {
                 serial_port,
                 baud_rate,
                 timeout_ms,
+                max_response_frames_per_query,
                 command_ids,
                 confirm_read_only_query,
                 json_out,
@@ -2253,6 +2256,7 @@ mod tests {
                 assert_eq!(serial_port, "COM4");
                 assert_eq!(*baud_rate, 115200);
                 assert_eq!(*timeout_ms, 500);
+                assert_eq!(*max_response_frames_per_query, 64);
                 assert_eq!(command_ids, &["estop_get_ffb".to_string()]);
                 assert!(*confirm_read_only_query);
                 assert_eq!(
