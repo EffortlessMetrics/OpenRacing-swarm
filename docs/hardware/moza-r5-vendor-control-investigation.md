@@ -242,10 +242,29 @@ evidence. It preserves four nonzero `0x8E` samples:
 Those samples are useful status-source questions, but they remain
 `unknown_do_not_send`. They are not same-tuple payload variation, not timing
 correlation, not semantic decode, not registry promotion, not a reviewed
-authority-state source, and not read-only probe or output eligibility. The next
-step is fixture-backed semantic review or timing-correlated capture for these
-payload-bearing candidates, not a live probe, authorization, PIDFF rerun, force
-escalation, or motion attempt.
+authority-state source, and not read-only probe or output eligibility.
+
+`vendor-status-payload-source-semantic-review.json` now adds fixture-backed
+decoder coverage for those same four `0x8E` samples under the passive review
+group `passive_payload_bearing_status_source_0x8e`. The review preserves their
+nonzero payloads but remains negative for authority planning:
+
+```text
+same_tuple_payload_variation_observed=false
+only_setting_change_scenario_observed=true
+payload_bearing_authority_state_source_found=false
+live_read_only_probe_allowed=false
+authorization_plan_allowed=false
+motion_attempt_allowed=false
+wheel_moved_under_openracing=false
+visible_motion_verified=false
+output_was_sent=false
+authority_state=blocked
+```
+
+The next step is timing-correlated `0x8E` evidence or another reviewed
+payload-bearing authority-state source, not a live probe, authorization, PIDFF
+rerun, force escalation, or motion attempt.
 
 ## Boundaries
 
@@ -279,11 +298,12 @@ seven registry status replies while leaving `estop_get_ffb` and
 also decoded zero authority-state replies with a 64-frame cap, and the stored
 passive response-source correlation still found no payload-bearing
 authority-state source. The correlated response semantic fixture review now
-shows the available correlated passive payloads are zero-filled/static, so the
-payload-source candidate review preserves four nonzero `0x8E` setting-change
-samples as `unknown_do_not_send` questions only. The native path remains blocked
-on a reviewed payload-varying authority-state source or equivalent status source
-before proposing any further hardware output family.
+shows the available correlated passive payloads are zero-filled/static, and the
+payload-source semantic review records the four nonzero `0x8E` setting-change
+samples as fixture-covered but still insufficient for authority planning. The
+native path remains blocked on a reviewed payload-varying authority-state source
+or equivalent timing-correlated status source before proposing any further
+hardware output family.
 
 For each planned scenario:
 

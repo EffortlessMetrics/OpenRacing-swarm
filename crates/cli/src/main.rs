@@ -2566,6 +2566,43 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_vendor_status_payload_source_semantic_review() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "vendor-status-payload-source-semantic-review",
+            "--payload-source-candidates",
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-candidates.json",
+            "--json-out",
+            "target/moza-current/vendor-status-payload-source-semantic-review.json",
+            "--overwrite",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::VendorStatusPayloadSourceSemanticReview {
+                payload_source_candidates,
+                json_out,
+                overwrite,
+            }) => {
+                assert_eq!(
+                    payload_source_candidates.to_str(),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-candidates.json"
+                    )
+                );
+                assert_eq!(
+                    json_out.to_str(),
+                    Some("target/moza-current/vendor-status-payload-source-semantic-review.json")
+                );
+                assert!(*overwrite);
+            }
+            _ => {
+                return Err("expected Moza VendorStatusPayloadSourceSemanticReview command".into());
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_authorize_vendor_authority() -> TestResult {
         let cli = parse_cli([
             "wheelctl",
