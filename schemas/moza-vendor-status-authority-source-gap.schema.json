@@ -82,10 +82,33 @@
       },
       "contains": {
         "type": "object",
-        "required": ["source_id", "device_to_host_serial_tuple_details_present"],
+        "required": [
+          "source_id",
+          "device_to_host_serial_tuple_details_present",
+          "total_device_to_host_serial_frame_count",
+          "device_to_host_serial_frame_sample_scope",
+          "device_to_host_serial_frame_tuple_ids",
+          "device_to_host_serial_frame_tuple_sample_count"
+        ],
         "properties": {
           "source_id": { "const": "passive_device_to_host_response_source" },
-          "device_to_host_serial_tuple_details_present": { "const": false }
+          "device_to_host_serial_tuple_details_present": { "const": true },
+          "total_device_to_host_serial_frame_count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "device_to_host_serial_frame_sample_scope": {
+            "const": "observed_report_payload_hex_samples_only"
+          },
+          "device_to_host_serial_frame_tuple_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string" }
+          },
+          "device_to_host_serial_frame_tuple_sample_count": {
+            "type": "integer",
+            "minimum": 1
+          }
         }
       }
     },

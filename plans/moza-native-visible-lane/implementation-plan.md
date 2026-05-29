@@ -6886,8 +6886,8 @@ wheel movement.
   evidence, not a payload-bearing authority-state source.
 - Passive command-id `0x07` analogs and mode/enable groups remain
   `unknown_do_not_send`, non-sendable, and disallowed as live probe inputs.
-- Checked-in passive evidence is classified as missing device-to-host serial
-  tuple details for equivalent authority-state source correlation.
+- Checked-in passive evidence is classified as needing device-to-host serial
+  tuple details or equivalent authority-state source correlation.
 - `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
   `output_was_sent=false`, and `authority_state=blocked` remain the operating
   state.
@@ -6926,6 +6926,110 @@ Do not remove the command-id `0x07` passive analog scan, command-id analog fake
 containment, endpoint-candidate receipts, targeted read-only payload rerun,
 payload fixture tests, status matrix, demux receipt, passive protocol evidence
 review, consumed authority attempt, or post-authority PIDFF regression evidence.
+
+## Work item: extract-device-to-host-response-samples
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: no-output response timing/source correlation
+Blocked by: authority-status source-gap receipt and checked-in passive summaries
+
+### Goal
+
+Close the "missing device-to-host serial tuple details" gap without touching
+live hardware, then keep the authority path blocked until those response-side
+samples are correlated to a reviewed payload-bearing authority-state source.
+
+### Production Delta
+
+`wheelctl moza vendor-protocol-evidence-review` now parses device-to-host
+report `0x7E` payload samples from checked-in passive summaries as sample-scoped
+serial response frames. The regenerated protocol review records 18
+checksum-valid device-to-host serial frame samples under:
+
+```text
+sniff_evidence.device_to_host_serial_frame_sample_scope=observed_report_payload_hex_samples_only
+sniff_evidence.device_to_host_serial_frame_tuple_ids
+sniff_evidence.device_to_host_serial_frame_tuple_sample_count
+```
+
+`wheelctl moza vendor-status-authority-source-gap` consumes those fields and
+reclassifies the passive response source as:
+
+```text
+device_to_host_details_present_but_no_reviewed_authority_source
+```
+
+This changes the blocker from missing response-side tuple extraction to missing
+reviewed response correlation. It opens no HID or serial device and sends no
+read-only query, output, configuration, firmware, or PIDFF command.
+
+### Non-goals
+
+No live hardware access, HID output open, serial open, read-only query send,
+PIDFF output, feature report, configuration write, firmware/update/DFU path,
+high torque, mode-enable write, authority write, authorization receipt,
+semantic decode claim, registry promotion, tuple sendability, corrected
+read-only probe readiness, native-control claim, native-visible claim,
+smoke-ready claim, simulator claim, coexistence claim, release-ready claim, or
+wheel movement.
+
+### Acceptance
+
+- The protocol evidence review extracts device-to-host serial frame samples
+  only from checked-in passive `payload_hex_samples`.
+- The sample scope is explicit and does not imply full packet coverage or
+  timing correlation.
+- The source-gap receipt records response-side tuple details as present while
+  keeping `payload_bearing_authority_state_source_found=false`.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain the operating
+  state.
+- The next native-path action is no-output correlation between extracted
+  response-side samples and host-to-device timing, or another reviewed
+  payload-bearing authority-state status source, before any live probe,
+  authorization, PIDFF rerun, force escalation, or motion attempt.
+
+### Proof Commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-protocol-evidence-review `
+  --lane ci/hardware/moza-r5/2026-05-13 `
+  --sniff-root ci/hardware/sniff/moza-r5/2026-05-13 `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-authority-source-gap `
+  --endpoint-candidates ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json `
+  --protocol-evidence-review ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-authority-source-gap.json `
+  --overwrite
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_authority_source_gap -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- the device-to-host passive sample extraction fields,
+- the schema requirements for those fields,
+- regenerated protocol/source-gap receipts from this work item,
+- source-of-truth notes for this work item.
+
+Do not remove prior passive summaries, the command-id `0x07` passive analog
+scan, command-id analog fake containment, endpoint-candidate receipts, targeted
+read-only payload rerun, payload fixture tests, status matrix, demux receipt,
+consumed authority attempt, or post-authority PIDFF regression evidence.
 
 ## Work item: native-visible-promotion
 
