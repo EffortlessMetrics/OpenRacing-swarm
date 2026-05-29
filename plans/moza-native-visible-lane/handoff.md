@@ -265,10 +265,12 @@ replies, and the diagnosis preserved one response-like command mismatch
 `0xA1/0x21/0x4D` while requesting `main_misc_get_ffb_status`
 `0x21/0x12/0x07`. `vendor-status-extended-scan-targeted.json` repeats that same
 read-only probe with `--max-response-frames-per-query 64`; it scanned 19 frames,
-decoded zero authority-state replies, and preserved the same mismatch. Shallow
-scan-window depth is no longer the immediate explanation. The next native-path
-work remains no-output command/endpoint correlation or passive evidence
-correlation, not authorization, PIDFF, force escalation, or motion.
+decoded zero authority-state replies, and the regenerated diagnosis now
+classifies `7E00A1214D` as a checksum-valid zero-length response-like frame:
+`0xA1/0x21/no_command`. Shallow scan-window depth is no longer the immediate
+explanation. The next native-path work remains no-output zero-length reply
+correlation or passive evidence correlation, not authorization, PIDFF, force
+escalation, or motion.
 
 The read-only demux follow-up is now recorded at
 `vendor-status-mode-matrix-demux.json` with its fresh precondition doctor at

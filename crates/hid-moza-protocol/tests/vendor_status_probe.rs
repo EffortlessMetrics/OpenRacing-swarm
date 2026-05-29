@@ -263,12 +263,18 @@ fn read_only_status_probe_keeps_response_like_unknown_frame_unpromoted() -> Test
 
     assert_eq!(
         diagnosis.classification,
-        MozaReadOnlyStatusResponseFrameClass::UnknownNonRegistryFrame
+        MozaReadOnlyStatusResponseFrameClass::ZeroLengthResponseOrAckFrame
     );
     assert_eq!(diagnosis.group, Some(0xa1));
     assert_eq!(diagnosis.device_id, Some(0x21));
-    assert_eq!(diagnosis.command, Some(0x4d));
-    assert_eq!(diagnosis.checksum_valid, None);
+    assert_eq!(diagnosis.command, None);
+    assert_eq!(diagnosis.declared_len, Some(0));
+    assert_eq!(diagnosis.expected_len, Some(5));
+    assert!(diagnosis.length_matches);
+    assert_eq!(diagnosis.payload_len, Some(0));
+    assert_eq!(diagnosis.checksum_valid, Some(true));
+    assert_eq!(diagnosis.expected_checksum, Some(0x4d));
+    assert_eq!(diagnosis.actual_checksum, Some(0x4d));
     assert!(!diagnosis.registry_command_known);
 
     Ok(())

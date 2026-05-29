@@ -80,6 +80,7 @@
       "enum": [
         "serial_readback_consumed_debug_telemetry_log_frames",
         "authority_status_replies_uncorrelated_after_targeted_read_only_probe",
+        "authority_status_replies_zero_length_ack_candidate_after_targeted_read_only_probe",
         "no_response_frames_captured",
         "all_response_frames_are_registry_status_responses",
         "mixed_or_unknown_serial_response_stream"
@@ -89,6 +90,7 @@
     "response_frame_count": {"type": "integer", "minimum": 0},
     "registry_status_response_count": {"type": "integer", "minimum": 0},
     "framed_ascii_telemetry_log_count": {"type": "integer", "minimum": 0},
+    "zero_length_response_or_ack_frame_count": {"type": "integer", "minimum": 0},
     "desynchronized_or_partial_frame_count": {"type": "integer", "minimum": 0},
     "malformed_frame_count": {"type": "integer", "minimum": 0},
     "unknown_non_registry_frame_count": {"type": "integer", "minimum": 0},
@@ -97,13 +99,19 @@
     "scanned_response_frame_count": {"type": "integer", "minimum": 0},
     "scanned_registry_status_response_count": {"type": "integer", "minimum": 0},
     "scanned_framed_ascii_telemetry_log_count": {"type": "integer", "minimum": 0},
+    "scanned_zero_length_response_or_ack_frame_count": {"type": "integer", "minimum": 0},
     "scanned_desynchronized_or_partial_frame_count": {"type": "integer", "minimum": 0},
     "scanned_malformed_frame_count": {"type": "integer", "minimum": 0},
     "scanned_unknown_non_registry_frame_count": {"type": "integer", "minimum": 0},
     "scanned_checksum_valid_count": {"type": "integer", "minimum": 0},
     "scanned_checksum_invalid_count": {"type": "integer", "minimum": 0},
     "scanned_response_like_command_mismatch_count": {"type": "integer", "minimum": 0},
+    "scanned_response_like_zero_length_frame_count": {"type": "integer", "minimum": 0},
     "response_like_command_mismatch_tuples": {
+      "type": "array",
+      "items": {"type": "object"}
+    },
+    "response_like_zero_length_tuples": {
       "type": "array",
       "items": {"type": "object"}
     },

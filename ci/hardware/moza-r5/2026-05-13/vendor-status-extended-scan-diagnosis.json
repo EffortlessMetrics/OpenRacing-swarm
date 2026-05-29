@@ -4,8 +4,8 @@
   "artifact_kind": "moza_vendor_status_framing_diagnosis",
   "claim_scope": "no_output_read_only_serial_response_framing_diagnosis",
   "command": "wheelctl moza vendor-status-framing-diagnosis",
-  "generated_at_utc": "2026-05-29T07:12:40Z",
-  "status_probe_receipt": "ci\\hardware\\moza-r5\\2026-05-13\\vendor-status-extended-scan-targeted.json",
+  "generated_at_utc": "2026-05-29T08:06:07Z",
+  "status_probe_receipt": "ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-targeted.json",
   "status_probe_success": false,
   "status_probe_sent_read_only_query_count": 2,
   "status_probe_decoded_response_count": 0,
@@ -32,11 +32,12 @@
   "mode_enable_candidates_sendable": false,
   "planned_next_output_allowed": false,
   "unknown_safety_or_mode_state_blocks_authority": true,
-  "diagnosis_classification": "authority_status_replies_uncorrelated_after_targeted_read_only_probe",
-  "primary_blocker": "authority_status_reply_command_correlation",
+  "diagnosis_classification": "authority_status_replies_zero_length_ack_candidate_after_targeted_read_only_probe",
+  "primary_blocker": "authority_status_zero_length_reply_correlation",
   "response_frame_count": 2,
   "registry_status_response_count": 0,
   "framed_ascii_telemetry_log_count": 2,
+  "zero_length_response_or_ack_frame_count": 0,
   "desynchronized_or_partial_frame_count": 0,
   "malformed_frame_count": 0,
   "unknown_non_registry_frame_count": 0,
@@ -45,15 +46,18 @@
   "scanned_response_frame_count": 19,
   "scanned_registry_status_response_count": 0,
   "scanned_framed_ascii_telemetry_log_count": 18,
+  "scanned_zero_length_response_or_ack_frame_count": 1,
   "scanned_desynchronized_or_partial_frame_count": 0,
   "scanned_malformed_frame_count": 0,
-  "scanned_unknown_non_registry_frame_count": 1,
-  "scanned_checksum_valid_count": 18,
+  "scanned_unknown_non_registry_frame_count": 0,
+  "scanned_checksum_valid_count": 19,
   "scanned_checksum_invalid_count": 0,
-  "scanned_response_like_command_mismatch_count": 1,
-  "response_like_command_mismatch_tuples": [
+  "scanned_response_like_command_mismatch_count": 0,
+  "scanned_response_like_zero_length_frame_count": 1,
+  "response_like_command_mismatch_tuples": [],
+  "response_like_zero_length_tuples": [
     {
-      "tuple_id": "0xA1/0x21/0x4D",
+      "tuple_id": "0xA1/0x21/no_command",
       "count": 1
     }
   ],
@@ -81,7 +85,7 @@
       "count": 18
     },
     {
-      "classification": "unknown_non_registry_frame",
+      "classification": "zero_length_response_or_ack_frame",
       "count": 1
     }
   ],
@@ -115,6 +119,7 @@
       "skipped_non_matching_registry_frame_count": 0,
       "skipped_unknown_non_registry_frame_count": 0,
       "scanned_response_like_command_mismatch_count": 0,
+      "scanned_response_like_zero_length_frame_count": 0,
       "scanned_response_frames": [
         {
           "frame_hex": "7E190E710553686966744272696768746E6573734C6576656C3A31320ADE",
@@ -124,6 +129,7 @@
           "matched_expected_command": false,
           "response_like_expected_group_device": false,
           "response_like_command_mismatch": false,
+          "response_like_zero_length_frame": false,
           "checksum_valid": true,
           "payload_ascii_preview": "ShiftBrightnessLevel:12"
         },
@@ -135,6 +141,7 @@
           "matched_expected_command": false,
           "response_like_expected_group_device": false,
           "response_like_command_mismatch": false,
+          "response_like_zero_length_frame": false,
           "checksum_valid": true,
           "payload_ascii_preview": "Calib2[Max:3599 Min:2727]"
         },
@@ -146,6 +153,7 @@
           "matched_expected_command": false,
           "response_like_expected_group_device": false,
           "response_like_command_mismatch": false,
+          "response_like_zero_length_frame": false,
           "checksum_valid": true,
           "payload_ascii_preview": "Calib3[Max:3595 Min:2686]"
         },
@@ -157,6 +165,7 @@
           "matched_expected_command": false,
           "response_like_expected_group_device": false,
           "response_like_command_mismatch": false,
+          "response_like_zero_length_frame": false,
           "checksum_valid": true,
           "payload_ascii_preview": "7800, 6600"
         },
@@ -168,6 +177,7 @@
           "matched_expected_command": false,
           "response_like_expected_group_device": false,
           "response_like_command_mismatch": false,
+          "response_like_zero_length_frame": false,
           "checksum_valid": true,
           "payload_ascii_preview": "Heartbeat Log End"
         },
@@ -179,6 +189,7 @@
           "matched_expected_command": false,
           "response_like_expected_group_device": false,
           "response_like_command_mismatch": false,
+          "response_like_zero_length_frame": false,
           "checksum_valid": true,
           "payload_ascii_preview": "NRFloss[avg:0.00000%] recvGap[avg:3.96600ms]"
         },
@@ -190,6 +201,7 @@
           "matched_expected_command": false,
           "response_like_expected_group_device": false,
           "response_like_command_mismatch": false,
+          "response_like_zero_length_frame": false,
           "checksum_valid": true,
           "payload_ascii_preview": "NRFloss[avg:0.00000%] recvGap[avg:3.96600ms]"
         },
@@ -201,6 +213,7 @@
           "matched_expected_command": false,
           "response_like_expected_group_device": false,
           "response_like_command_mismatch": false,
+          "response_like_zero_length_frame": false,
           "checksum_valid": true,
           "payload_ascii_preview": "NRFloss[avg:0.00000%] recvGap[avg:3.96600ms]"
         },
@@ -212,6 +225,7 @@
           "matched_expected_command": false,
           "response_like_expected_group_device": false,
           "response_like_command_mismatch": false,
+          "response_like_zero_length_frame": false,
           "checksum_valid": true,
           "payload_ascii_preview": "NRFloss[avg:0.00000%] recvGap[avg:3.96600ms]"
         },
@@ -223,6 +237,7 @@
           "matched_expected_command": false,
           "response_like_expected_group_device": false,
           "response_like_command_mismatch": false,
+          "response_like_zero_length_frame": false,
           "checksum_valid": true,
           "payload_ascii_preview": "NRFloss[avg:0.00000%] recvGap[avg:3.96600ms]"
         },
@@ -234,6 +249,7 @@
           "matched_expected_command": false,
           "response_like_expected_group_device": false,
           "response_like_command_mismatch": false,
+          "response_like_zero_length_frame": false,
           "checksum_valid": true,
           "payload_ascii_preview": "NRFloss[avg:0.00000%] recvGap[avg:3.96600ms]"
         },
@@ -245,6 +261,7 @@
           "matched_expected_command": false,
           "response_like_expected_group_device": false,
           "response_like_command_mismatch": false,
+          "response_like_zero_length_frame": false,
           "checksum_valid": true,
           "payload_ascii_preview": "NRFloss[avg:0.00000%] recvGap[avg:3.96600ms]"
         },
@@ -256,6 +273,7 @@
           "matched_expected_command": false,
           "response_like_expected_group_device": false,
           "response_like_command_mismatch": false,
+          "response_like_zero_length_frame": false,
           "checksum_valid": true,
           "payload_ascii_preview": "NRFloss[avg:0.00000%] recvGap[avg:3.96600ms]"
         },
@@ -267,6 +285,7 @@
           "matched_expected_command": false,
           "response_like_expected_group_device": false,
           "response_like_command_mismatch": false,
+          "response_like_zero_length_frame": false,
           "checksum_valid": true,
           "payload_ascii_preview": "NRFloss[avg:0.00000%] recvGap[avg:3.96600ms]"
         },
@@ -278,6 +297,7 @@
           "matched_expected_command": false,
           "response_like_expected_group_device": false,
           "response_like_command_mismatch": false,
+          "response_like_zero_length_frame": false,
           "checksum_valid": true,
           "payload_ascii_preview": "NRFloss[avg:0.00000%] recvGap[avg:3.96600ms]"
         },
@@ -289,6 +309,7 @@
           "matched_expected_command": false,
           "response_like_expected_group_device": false,
           "response_like_command_mismatch": false,
+          "response_like_zero_length_frame": false,
           "checksum_valid": true,
           "payload_ascii_preview": "NRFloss[avg:0.00000%] recvGap[avg:3.96600ms]"
         },
@@ -300,6 +321,7 @@
           "matched_expected_command": false,
           "response_like_expected_group_device": false,
           "response_like_command_mismatch": false,
+          "response_like_zero_length_frame": false,
           "checksum_valid": true,
           "payload_ascii_preview": "NRFloss[avg:0.00000%] recvGap[avg:3.96600ms]"
         }
@@ -333,16 +355,19 @@
       "skipped_malformed_or_desynchronized_frame_count": 0,
       "skipped_non_matching_registry_frame_count": 0,
       "skipped_unknown_non_registry_frame_count": 1,
-      "scanned_response_like_command_mismatch_count": 1,
+      "scanned_response_like_command_mismatch_count": 0,
+      "scanned_response_like_zero_length_frame_count": 1,
       "scanned_response_frames": [
         {
           "frame_hex": "7E00A1214D",
           "disposition": "unknown_non_registry_frame",
-          "response_classification": "unknown_non_registry_frame",
-          "observed_tuple_id": "0xA1/0x21/0x4D",
+          "response_classification": "zero_length_response_or_ack_frame",
+          "observed_tuple_id": "0xA1/0x21/no_command",
           "matched_expected_command": false,
           "response_like_expected_group_device": true,
-          "response_like_command_mismatch": true
+          "response_like_command_mismatch": false,
+          "response_like_zero_length_frame": true,
+          "checksum_valid": true
         },
         {
           "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
@@ -352,14 +377,15 @@
           "matched_expected_command": false,
           "response_like_expected_group_device": false,
           "response_like_command_mismatch": false,
+          "response_like_zero_length_frame": false,
           "checksum_valid": true,
           "payload_ascii_preview": "NRFloss[avg:0.00000%] recvGap[avg:3.96600ms]"
         }
       ]
     }
   ],
-  "conclusion": "The targeted COM4 read-only probe still decoded no authority-state replies. Its scanned stream is dominated by framed diagnostic telemetry, and at least one response-like group/device tuple used an unregistered command byte, so the next blocker is authority-status command correlation rather than output, force, or motion.",
-  "next_allowed_action": "Continue no-output authority-status reply correlation using stored receipts, fake fixtures, or passive protocol evidence. Do not authorize mode/enable writes, PIDFF reruns, or motion attempts until the remaining authority-state status replies are decoded or their endpoint/command IDs are corrected.",
+  "conclusion": "The targeted COM4 read-only probe still decoded no authority-state replies. It observed at least one checksum-valid zero-length response-like frame for the requested group/device, which is an ack/status correlation candidate only; the next blocker is authority-status zero-length reply correlation rather than output, force, or motion.",
+  "next_allowed_action": "Continue no-output authority-status zero-length reply correlation using stored receipts, fake fixtures, or passive protocol evidence. Do not authorize mode/enable writes, PIDFF reruns, or motion attempts until zero-length frames are semantically decoded or the endpoint/command IDs are corrected.",
   "blocked_actions": [
     "mode enable write",
     "authority write",
