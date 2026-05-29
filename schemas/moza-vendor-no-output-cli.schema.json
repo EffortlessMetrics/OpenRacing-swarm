@@ -42,7 +42,15 @@
     "mode_enable_candidate_frame_count",
     "mode_enable_candidate_send_path_rejected_count",
     "mode_enable_candidates_unknown_do_not_send",
-    "mode_enable_candidate_observations"
+    "mode_enable_candidate_observations",
+    "authority_status_endpoint_candidate_fixture_source",
+    "authority_status_endpoint_candidate_group_count",
+    "authority_status_endpoint_candidate_frame_count",
+    "authority_status_endpoint_candidate_send_path_rejected_count",
+    "authority_status_endpoint_candidates_unknown_do_not_send",
+    "authority_status_endpoint_candidates_match_payload_status",
+    "corrected_read_only_probe_ready",
+    "authority_status_endpoint_candidate_observations"
   ],
   "properties": {
     "schema_version": {"const": 1},
@@ -130,6 +138,69 @@
           "observed_frame_count": {"type": "integer", "minimum": 1},
           "send_path_rejected_count": {"type": "integer", "minimum": 1},
           "risk_class": {"const": "unknown_do_not_send"},
+          "semantic_decode_claim": {"const": false},
+          "registry_promotion_claim": {"const": false},
+          "hardware_output_authorized": {"const": false},
+          "native_control_evidence": {"const": false},
+          "output_sendability_claim": {"const": false}
+        },
+        "additionalProperties": true
+      }
+    },
+    "authority_status_endpoint_candidate_fixture_source": {
+      "const": "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json"
+    },
+    "authority_status_endpoint_candidate_group_count": {"const": 2},
+    "authority_status_endpoint_candidate_frame_count": {"const": 5},
+    "authority_status_endpoint_candidate_send_path_rejected_count": {"const": 5},
+    "authority_status_endpoint_candidates_unknown_do_not_send": {"const": true},
+    "authority_status_endpoint_candidates_match_payload_status": {"const": false},
+    "corrected_read_only_probe_ready": {"const": false},
+    "authority_status_endpoint_candidate_observations": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": [
+          "candidate_id",
+          "passive_hypothesis",
+          "candidate_semantics",
+          "tuple_ids",
+          "representative_frame_hexes",
+          "observed_frame_count",
+          "send_path_rejected_count",
+          "risk_class",
+          "matches_payload_authority_status_response",
+          "corrected_read_only_probe_ready",
+          "semantic_decode_claim",
+          "registry_promotion_claim",
+          "hardware_output_authorized",
+          "native_control_evidence",
+          "output_sendability_claim"
+        ],
+        "properties": {
+          "candidate_id": {"type": "string"},
+          "passive_hypothesis": {"type": "string"},
+          "candidate_semantics": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string"}
+          },
+          "tuple_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string"}
+          },
+          "representative_frame_hexes": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string"}
+          },
+          "observed_frame_count": {"type": "integer", "minimum": 1},
+          "send_path_rejected_count": {"type": "integer", "minimum": 1},
+          "risk_class": {"const": "unknown_do_not_send"},
+          "matches_payload_authority_status_response": {"const": false},
+          "corrected_read_only_probe_ready": {"const": false},
           "semantic_decode_claim": {"const": false},
           "registry_promotion_claim": {"const": false},
           "hardware_output_authorized": {"const": false},

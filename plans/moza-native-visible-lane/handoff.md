@@ -349,6 +349,19 @@ step is no-output fixture-backed decoder coverage for a corrected
 authority-status endpoint candidate before any live probe, authorization, PIDFF
 rerun, force escalation, or motion ladder attempt.
 
+That fake-only endpoint-candidate containment is now in place. The fake
+transport consumes `vendor-status-endpoint-candidates-from-payload-rerun.json`
+with the passive evidence review, observes the two passive endpoint-candidate
+groups and five representative frames, and verifies every frame remains
+`unknown_do_not_send`, not a payload-status match, not corrected-probe-ready,
+and rejected by the command send path. Wheel movement remains unproven:
+`wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+`output_was_sent=false`, and `authority_state=blocked`. The next native-path
+step is still no-output protocol work to identify a payload-bearing
+authority-state status endpoint or equivalent reviewed status source before any
+live probe, authorization, PIDFF rerun, force escalation, or motion ladder
+attempt.
+
 The read-only demux follow-up is now recorded at
 `vendor-status-mode-matrix-demux.json` with its fresh precondition doctor at
 `vendor-status-mode-matrix-demux-hardware-doctor.json`. It kept the same
@@ -360,11 +373,12 @@ responses. The receipt still failed closed because `estop_get_ffb` and
 blocker. Wheel movement remains unproven:
 `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
 `output_was_sent=false`, and `authority_state=blocked`. Later
-authority-endpoint and endpoint-candidate receipts narrow this from broad demux
-repair to corrected endpoint/command review. The current next native-path step
-is no-output fixture-backed decoder coverage before any live probe, output,
-mode-enable write, PIDFF rerun, or motion ladder plan. The next witness-lane
-operator work remains the remaining passive SimHub/simulator captures.
+authority-endpoint, endpoint-candidate, and fake-containment receipts narrow
+this from broad demux repair to corrected endpoint/command review. The current
+next native-path step is no-output protocol evidence for a payload-bearing
+authority-state status endpoint before any live probe, output, mode-enable
+write, PIDFF rerun, or motion ladder plan. The next witness-lane operator work
+remains the remaining passive SimHub/simulator captures.
 
 The targeted read-only status reply correlation follow-up is now recorded at
 `vendor-status-reply-correlation-targeted.json`, with its fresh observe-only

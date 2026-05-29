@@ -32,6 +32,30 @@ fn checked_in_status_matrix() -> Result<Value, serde_json::Error> {
     ))
 }
 
+fn protocol_evidence_review() -> Result<Value, serde_json::Error> {
+    serde_json::from_str(include_str!(
+        "../../../ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json"
+    ))
+}
+
+fn payload_rerun_endpoint_candidates() -> Result<Value, serde_json::Error> {
+    serde_json::from_str(include_str!(
+        "../../../ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json"
+    ))
+}
+
+fn value_at<'a>(value: &'a Value, pointer: &str) -> Result<&'a Value, io::Error> {
+    value
+        .pointer(pointer)
+        .ok_or_else(|| invalid_data(format!("missing JSON pointer `{pointer}`")))
+}
+
+fn array_at<'a>(value: &'a Value, pointer: &str) -> Result<&'a Vec<Value>, io::Error> {
+    value_at(value, pointer)?
+        .as_array()
+        .ok_or_else(|| invalid_data(format!("JSON pointer `{pointer}` is not an array")))
+}
+
 fn array_field<'a>(value: &'a Value, field: &str) -> Result<&'a Vec<Value>, io::Error> {
     value
         .get(field)
@@ -44,6 +68,13 @@ fn str_field<'a>(value: &'a Value, field: &str) -> Result<&'a str, io::Error> {
         .get(field)
         .and_then(Value::as_str)
         .ok_or_else(|| invalid_data(format!("missing string field `{field}`")))
+}
+
+fn bool_field(value: &Value, field: &str) -> Result<bool, io::Error> {
+    value
+        .get(field)
+        .and_then(Value::as_bool)
+        .ok_or_else(|| invalid_data(format!("missing bool field `{field}`")))
 }
 
 fn fixtures_by_id(codec_fixture: &Value) -> Result<BTreeMap<&str, &Value>, io::Error> {
@@ -246,6 +277,89 @@ fn read_only_status_probe_demux_accepts_authority_status_payload_after_ack_only(
     );
     assert!(demux.frame_diagnoses[1].matched_expected_command);
     assert!(demux.frame_diagnoses[1].decode_error.is_none());
+
+    Ok(())
+}
+
+#[test]
+fn read_only_status_probe_keeps_endpoint_candidates_out_of_payload_status_shape() -> TestResult {
+    let endpoint_review = payload_rerun_endpoint_candidates()?;
+    let protocol_review = protocol_evidence_review()?;
+    let mode_enable_candidates = array_at(
+        &protocol_review,
+        "/passive_tuple_registry_coverage/decode_candidate_mode_enable_review/candidates",
+    )?;
+    let mut mode_enable_by_id = BTreeMap::new();
+    for candidate in mode_enable_candidates {
+        let candidate_id = str_field(candidate, "candidate_id")?;
+        if mode_enable_by_id.insert(candidate_id, candidate).is_some() {
+            return Err(Box::new(invalid_data(format!(
+                "duplicate candidate id `{candidate_id}`"
+            ))));
+        }
+    }
+
+    assert_eq!(
+        str_field(&endpoint_review, "source_diagnosis_classification")?,
+        "authority_status_endpoint_specific_debug_telemetry_without_payload"
+    );
+    assert!(!bool_field(
+        &endpoint_review,
+        "corrected_read_only_probe_ready"
+    )?);
+    assert!(!bool_field(&endpoint_review, "semantic_decode_claim")?);
+    assert!(!bool_field(&endpoint_review, "registry_promotion_claim")?);
+    assert!(!bool_field(&endpoint_review, "output_sendability_claim")?);
+
+    let authority_commands = read_only_status_commands()
+        .filter(|command| matches!(command.id, "main_misc_get_ffb_status" | "estop_get_ffb"))
+        .collect::<Vec<_>>();
+    assert_eq!(authority_commands.len(), 2);
+
+    let mut checked_frame_count = 0usize;
+    for endpoint_candidate in array_field(&endpoint_review, "passive_tuple_candidates")? {
+        assert_eq!(
+            str_field(endpoint_candidate, "risk_class")?,
+            "unknown_do_not_send"
+        );
+        assert!(!bool_field(endpoint_candidate, "read_only_probe_allowed")?);
+
+        let passive_hypothesis = str_field(endpoint_candidate, "passive_hypothesis")?;
+        let mode_enable_candidate = mode_enable_by_id.get(passive_hypothesis).ok_or_else(|| {
+            invalid_data(format!(
+                "endpoint candidate references missing passive hypothesis `{passive_hypothesis}`"
+            ))
+        })?;
+
+        for frame_hex in array_field(mode_enable_candidate, "representative_frame_hexes")? {
+            let frame_hex = frame_hex
+                .as_str()
+                .ok_or_else(|| invalid_data("representative frame must be a string"))?;
+            let frame = hex_to_bytes(frame_hex)?;
+            let diagnosis = diagnose_read_only_status_response_frame(&frame);
+
+            assert_ne!(
+                diagnosis.classification,
+                MozaReadOnlyStatusResponseFrameClass::RegistryStatusResponse
+            );
+            assert!(!diagnosis.registry_command_known);
+            assert_ne!(diagnosis.group, Some(0xA1));
+            assert_ne!(diagnosis.device_id, Some(0x21));
+            assert_ne!(diagnosis.command, Some(0x07));
+
+            for command in &authority_commands {
+                let demux = demux_read_only_status_response_frame(command, &frame);
+                assert_ne!(
+                    demux.disposition,
+                    MozaReadOnlyStatusResponseFrameDisposition::MatchingRegistryStatusResponse
+                );
+                assert!(!demux.matched_expected_command);
+            }
+            checked_frame_count = checked_frame_count.saturating_add(1);
+        }
+    }
+
+    assert_eq!(checked_frame_count, 5);
 
     Ok(())
 }

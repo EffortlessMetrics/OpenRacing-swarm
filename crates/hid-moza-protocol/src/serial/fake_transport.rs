@@ -33,6 +33,11 @@ pub enum MozaFakeSerialTransportError {
         device_id: u8,
         command: u8,
     },
+    AuthorityStatusEndpointCandidateNotReviewed {
+        group: u8,
+        device_id: u8,
+        command: u8,
+    },
 }
 
 impl fmt::Display for MozaFakeSerialTransportError {
@@ -53,6 +58,14 @@ impl fmt::Display for MozaFakeSerialTransportError {
             } => write!(
                 formatter,
                 "fake serial transport refused unreviewed mode/enable candidate tuple 0x{group:02X}/0x{device_id:02X}/0x{command:02X}"
+            ),
+            Self::AuthorityStatusEndpointCandidateNotReviewed {
+                group,
+                device_id,
+                command,
+            } => write!(
+                formatter,
+                "fake serial transport refused unreviewed authority-status endpoint candidate tuple 0x{group:02X}/0x{device_id:02X}/0x{command:02X}"
             ),
         }
     }
@@ -96,10 +109,33 @@ pub struct MozaFakeModeEnableCandidateObservation {
     pub output_sendability_claim: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MozaFakeAuthorityStatusEndpointCandidateObservation {
+    pub candidate_id: &'static str,
+    pub semantic_hypothesis: &'static str,
+    pub candidate_semantics: &'static [&'static str],
+    pub tuple_id: String,
+    pub group: u8,
+    pub device_id: u8,
+    pub command: u8,
+    pub payload_len: usize,
+    pub checksum: u8,
+    pub risk_class: MozaRiskClass,
+    pub matches_payload_authority_status_response: bool,
+    pub corrected_read_only_probe_ready: bool,
+    pub semantic_decode_claim: bool,
+    pub registry_promotion_claim: bool,
+    pub hardware_output_authorized: bool,
+    pub native_control_evidence: bool,
+    pub output_sendability_claim: bool,
+}
+
 #[derive(Default, Debug)]
 pub struct MozaFakeSerialTransport {
     exchanges: Vec<MozaFakeSerialExchange>,
     mode_enable_candidate_observations: Vec<MozaFakeModeEnableCandidateObservation>,
+    authority_status_endpoint_candidate_observations:
+        Vec<MozaFakeAuthorityStatusEndpointCandidateObservation>,
 }
 
 impl MozaFakeSerialTransport {
@@ -170,12 +206,63 @@ impl MozaFakeSerialTransport {
         Ok(&self.mode_enable_candidate_observations[observation_index])
     }
 
+    pub fn observe_authority_status_endpoint_candidate_fixture_frame(
+        &mut self,
+        frame: &[u8],
+    ) -> Result<&MozaFakeAuthorityStatusEndpointCandidateObservation, MozaFakeSerialTransportError>
+    {
+        let observed = decode_observed_frame_shape(frame)?;
+        let route =
+            mode_enable_candidate_route(observed.group, observed.device_id, observed.command_id)
+                .ok_or(
+                    MozaFakeSerialTransportError::AuthorityStatusEndpointCandidateNotReviewed {
+                        group: observed.group,
+                        device_id: observed.device_id,
+                        command: observed.command_id,
+                    },
+                )?;
+
+        let observation = MozaFakeAuthorityStatusEndpointCandidateObservation {
+            candidate_id: route.candidate_id,
+            semantic_hypothesis: route.semantic_hypothesis,
+            candidate_semantics: route.candidate_semantics,
+            tuple_id: format!(
+                "0x{:02X}/0x{:02X}/0x{:02X}",
+                observed.group, observed.device_id, observed.command_id
+            ),
+            group: observed.group,
+            device_id: observed.device_id,
+            command: observed.command_id,
+            payload_len: observed.payload.len(),
+            checksum: observed.checksum,
+            risk_class: MozaRiskClass::UnknownDoNotSend,
+            matches_payload_authority_status_response: false,
+            corrected_read_only_probe_ready: false,
+            semantic_decode_claim: false,
+            registry_promotion_claim: false,
+            hardware_output_authorized: false,
+            native_control_evidence: false,
+            output_sendability_claim: false,
+        };
+        self.authority_status_endpoint_candidate_observations
+            .push(observation);
+
+        let observation_index = self.authority_status_endpoint_candidate_observations.len() - 1;
+        Ok(&self.authority_status_endpoint_candidate_observations[observation_index])
+    }
+
     pub fn exchanges(&self) -> &[MozaFakeSerialExchange] {
         &self.exchanges
     }
 
     pub fn mode_enable_candidate_observations(&self) -> &[MozaFakeModeEnableCandidateObservation] {
         &self.mode_enable_candidate_observations
+    }
+
+    pub fn authority_status_endpoint_candidate_observations(
+        &self,
+    ) -> &[MozaFakeAuthorityStatusEndpointCandidateObservation] {
+        &self.authority_status_endpoint_candidate_observations
     }
 }
 

@@ -6522,6 +6522,94 @@ payload rerun, payload fixture tests, status matrix, demux receipt, passive
 protocol evidence review, consumed authority attempt, or post-authority PIDFF
 regression evidence.
 
+## Work item: contain-authority-status-endpoint-fixtures
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: corrected read-only authority-state status endpoint review
+Blocked by: payload-rerun endpoint candidate receipt
+
+### Goal
+
+Consume `vendor-status-endpoint-candidates-from-payload-rerun.json` in
+fake-only software coverage and prove that the passive endpoint candidates are
+still containment inputs, not corrected probe inputs.
+
+### Production Delta
+
+The Moza fake serial transport now has a separate observation path for
+authority-status endpoint candidates. It accepts the same representative
+passive frames already reviewed from `0x25/0x19/*`, `0x5A/0x1B/0x00`, and
+`0x5D/0x1B/0x01`, records them as `unknown_do_not_send`, and keeps:
+
+```text
+authority_status_endpoint_candidates_match_payload_status=false
+corrected_read_only_probe_ready=false
+output_sendability_claim=false
+registry_promotion_claim=false
+semantic_decode_claim=false
+```
+
+`wheelctl moza vendor-fake-transport` now cross-checks the payload-rerun
+endpoint candidate receipt against the passive protocol evidence review,
+records two endpoint-candidate groups and five frames, and verifies all five
+frames remain rejected by the command send path.
+
+### Non-goals
+
+No live hardware access, HID output open, serial open, read-only query send,
+PIDFF output, feature report, configuration write, firmware/update/DFU path,
+high torque, mode-enable write, authority write, authorization receipt,
+semantic decode claim, registry promotion, tuple sendability, corrected
+read-only probe readiness, native-control claim, native-visible claim,
+smoke-ready claim, simulator claim, coexistence claim, release-ready claim, or
+wheel movement.
+
+### Acceptance
+
+- The fake transport consumes the payload-rerun endpoint candidate artifact and
+  the passive evidence fixture together.
+- The expected payload-bearing authority-status response shape remains
+  fixture-tested, but the passive endpoint candidates do not match that shape.
+- The command send path rejects every endpoint candidate frame as unknown.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain the operating
+  state.
+- The next native-path action remains no-output protocol work to identify a
+  payload-bearing authority-state status endpoint or equivalent reviewed
+  status source before any live probe, authorization, PIDFF rerun, force
+  escalation, or motion attempt.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- the fake-transport authority-status endpoint observation path,
+- the fake transport receipt/schema fields for payload-rerun endpoint
+  containment,
+- source-of-truth notes for this work item.
+
+Do not remove the payload-rerun endpoint candidate receipt, targeted read-only
+payload rerun, payload fixture tests, status matrix, demux receipt, passive
+protocol evidence review, consumed authority attempt, or post-authority PIDFF
+regression evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
