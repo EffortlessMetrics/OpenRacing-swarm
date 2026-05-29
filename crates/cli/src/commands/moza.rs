@@ -27983,6 +27983,37 @@ fn vendor_status_endpoint_candidates_receipt(
             missing_passive_tuples.join(", ")
         ));
     }
+    let source_diagnosis_classification =
+        json_string(authority_endpoint_diagnosis, "diagnosis_classification").unwrap_or("unknown");
+    let ack_only_source = source_diagnosis_classification
+        == "authority_status_endpoint_specific_ack_only_without_payload";
+    let debug_only_source = source_diagnosis_classification
+        == "authority_status_endpoint_specific_debug_telemetry_without_payload";
+    let observed_ack_only_tuple_ids = if ack_only_source {
+        vec!["0xA1/0x21/no_command"]
+    } else {
+        Vec::new()
+    };
+    let observed_diagnostic_tuple_ids = if debug_only_source {
+        vec!["0x0E/0x71/0x05"]
+    } else {
+        Vec::new()
+    };
+    let observed_response_tuple_id = if ack_only_source {
+        "0xA1/0x21/no_command"
+    } else {
+        "diagnostic_telemetry_only"
+    };
+    let expected_payload_correlation_basis = if ack_only_source {
+        "compatibility_get_mode query 0x1F/0x12/0x17 decoded as response 0x9F/0x21/0x17 on the same device-id transform path"
+    } else {
+        "baseline read-only matrix decoded non-authority payload replies on the same serial lane, but the targeted authority-status rerun scanned only diagnostic telemetry frames"
+    };
+    let expected_payload_conclusion = if ack_only_source {
+        "current authority-status endpoint returns ACK/no-payload correlation rather than payload-bearing status"
+    } else {
+        "current authority-status endpoint returns diagnostic telemetry only rather than payload-bearing status"
+    };
 
     let passive_tuple_candidates = vec![
         VendorStatusEndpointPassiveTupleCandidate {
@@ -28026,12 +28057,7 @@ fn vendor_status_endpoint_candidates_receipt(
             .display()
             .to_string(),
         protocol_evidence_review_receipt: protocol_evidence_review_path.display().to_string(),
-        source_diagnosis_classification: json_string(
-            authority_endpoint_diagnosis,
-            "diagnosis_classification",
-        )
-        .unwrap_or("unknown")
-        .to_string(),
+        source_diagnosis_classification: source_diagnosis_classification.to_string(),
         source_primary_blocker: json_string(authority_endpoint_diagnosis, "primary_blocker")
             .unwrap_or("unknown")
             .to_string(),
@@ -28047,15 +28073,16 @@ fn vendor_status_endpoint_candidates_receipt(
             .pointer("/baseline_status_probe_summary/non_authority_decoded_response_count")
             .and_then(Value::as_u64)
             .unwrap_or(0) as usize,
-        observed_ack_only_tuple_ids: vec!["0xA1/0x21/no_command"],
+        observed_ack_only_tuple_ids,
+        observed_diagnostic_tuple_ids,
         expected_payload_response_shape: VendorStatusEndpointExpectedPayloadShape {
             source_command_id: "main_misc_get_ffb_status",
             query_tuple_id: "0x21/0x12/0x07",
             query_frame_hex: "7E01211207C6",
             expected_payload_response_tuple_id: "0xA1/0x21/0x07",
-            observed_response_tuple_id: "0xA1/0x21/no_command",
-            correlation_basis: "compatibility_get_mode query 0x1F/0x12/0x17 decoded as response 0x9F/0x21/0x17 on the same device-id transform path",
-            conclusion: "current authority-status endpoint returns ACK/no-payload correlation rather than payload-bearing status",
+            observed_response_tuple_id,
+            correlation_basis: expected_payload_correlation_basis,
+            conclusion: expected_payload_conclusion,
         },
         reference_payload_response_shape: VendorStatusEndpointExpectedPayloadShape {
             source_command_id: "compatibility_get_mode",
@@ -28111,14 +28138,15 @@ fn vendor_status_endpoint_candidates_receipt(
             "unknown host-to-device command",
         ],
         required_artifacts: vec![
-            "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json",
-            "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
-            "fixtures/moza/r5/vendor-command-registry.json",
-            "schemas/moza-vendor-status-endpoint-candidates.schema.json",
+            authority_endpoint_diagnosis_path.display().to_string(),
+            protocol_evidence_review_path.display().to_string(),
+            "fixtures/moza/r5/vendor-command-registry.json".to_string(),
+            "schemas/moza-vendor-status-endpoint-candidates.schema.json".to_string(),
         ],
         notes: vec![
             "This receipt reads stored JSON only; it opens no HID or serial device and sends no traffic.",
             "The expected payload response shape is a correction target, not evidence that the current authority-status command works.",
+            "A debug-telemetry-only targeted rerun is endpoint-specific blocker evidence only; it does not identify a sendable status command.",
             "Passive tuple groups remain pattern-only questions and unknown_do_not_send until a future semantic decoder review promotes a read-only status candidate.",
             "Native visible motion remains blocked; no wheel movement is claimed.",
         ],
@@ -28132,10 +28160,6 @@ fn validate_authority_endpoint_diagnosis_for_candidate_plan(
     for (field, expected) in [
         ("artifact_kind", "moza_vendor_status_framing_diagnosis"),
         (
-            "diagnosis_classification",
-            "authority_status_endpoint_specific_ack_only_without_payload",
-        ),
-        (
             "primary_blocker",
             "authority_status_endpoint_or_command_mismatch",
         ),
@@ -28147,6 +28171,23 @@ fn validate_authority_endpoint_diagnosis_for_candidate_plan(
                 path.display()
             ));
         }
+    }
+    let diagnosis_classification =
+        json_string(value, "diagnosis_classification").ok_or_else(|| {
+            anyhow!(
+                "authority endpoint diagnosis '{}' field `diagnosis_classification` is missing",
+                path.display()
+            )
+        })?;
+    let ack_only_source =
+        diagnosis_classification == "authority_status_endpoint_specific_ack_only_without_payload";
+    let debug_only_source = diagnosis_classification
+        == "authority_status_endpoint_specific_debug_telemetry_without_payload";
+    if !ack_only_source && !debug_only_source {
+        return Err(anyhow!(
+            "authority endpoint diagnosis '{}' field `diagnosis_classification` must be endpoint-specific ACK-only or debug-telemetry-only",
+            path.display()
+        ));
     }
     for (field, expected) in [
         ("success", true),
@@ -28212,11 +28253,25 @@ fn validate_authority_endpoint_diagnosis_for_candidate_plan(
             path.display()
         ));
     }
-    if !json_contains_string(value, "0xA1/0x21/no_command") {
+    if ack_only_source && !json_contains_string(value, "0xA1/0x21/no_command") {
         return Err(anyhow!(
             "authority endpoint diagnosis '{}' must include the ACK-only 0xA1/0x21/no_command tuple",
             path.display()
         ));
+    }
+    if debug_only_source {
+        if json_u64(value, "scanned_framed_ascii_telemetry_log_count").unwrap_or(0) == 0 {
+            return Err(anyhow!(
+                "authority endpoint diagnosis '{}' must include scanned diagnostic telemetry frames",
+                path.display()
+            ));
+        }
+        if json_u64(value, "scanned_registry_status_response_count").unwrap_or(0) != 0 {
+            return Err(anyhow!(
+                "authority endpoint diagnosis '{}' must not include decoded registry status responses for debug-only classification",
+                path.display()
+            ));
+        }
     }
     Ok(())
 }
@@ -33096,6 +33151,7 @@ struct VendorStatusEndpointCandidatesReceipt {
     authority_status_decoded_response_count: usize,
     baseline_non_authority_decoded_response_count: usize,
     observed_ack_only_tuple_ids: Vec<&'static str>,
+    observed_diagnostic_tuple_ids: Vec<&'static str>,
     expected_payload_response_shape: VendorStatusEndpointExpectedPayloadShape,
     reference_payload_response_shape: VendorStatusEndpointExpectedPayloadShape,
     passive_tuple_candidate_count: usize,
@@ -33126,7 +33182,7 @@ struct VendorStatusEndpointCandidatesReceipt {
     exact_next_blocker: &'static str,
     next_allowed_action: &'static str,
     blocked_actions: Vec<&'static str>,
-    required_artifacts: Vec<&'static str>,
+    required_artifacts: Vec<String>,
     notes: Vec<&'static str>,
 }
 
@@ -42908,6 +42964,11 @@ mod tests {
                 .and_then(Value::as_str),
             Some("0xA1/0x21/no_command")
         );
+        let diagnostic_tuple_ids = value
+            .get("observed_diagnostic_tuple_ids")
+            .and_then(Value::as_array)
+            .ok_or("candidate receipt must include diagnostic tuple ids")?;
+        assert!(diagnostic_tuple_ids.is_empty());
         assert_eq!(
             value
                 .pointer("/reference_payload_response_shape/observed_response_tuple_id")
@@ -42951,6 +43012,69 @@ mod tests {
         assert!(json_contains_string(&value, "0x25/0x19/0x03"));
         assert!(json_contains_string(&value, "0x5A/0x1B/0x00"));
         assert!(json_contains_string(&value, "0x5D/0x1B/0x01"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_endpoint_candidates_accepts_payload_rerun_debug_only_diagnosis() -> TestResult
+    {
+        let authority_endpoint_diagnosis: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_AUTHORITY_PAYLOAD_RERUN_DIAGNOSIS_JSON)?;
+        let protocol_evidence_review: Value =
+            serde_json::from_str(MOZA_VENDOR_PROTOCOL_EVIDENCE_REVIEW_JSON)?;
+        let receipt = vendor_status_endpoint_candidates_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json",
+            ),
+            &authority_endpoint_diagnosis,
+            Path::new("ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json"),
+            &protocol_evidence_review,
+        )?;
+        let value = serde_json::to_value(&receipt)?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-status-endpoint-candidates.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&value).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        assert_eq!(
+            json_string(&value, "source_diagnosis_classification"),
+            Some("authority_status_endpoint_specific_debug_telemetry_without_payload")
+        );
+        assert_eq!(
+            value
+                .pointer("/expected_payload_response_shape/expected_payload_response_tuple_id")
+                .and_then(Value::as_str),
+            Some("0xA1/0x21/0x07")
+        );
+        assert_eq!(
+            value
+                .pointer("/expected_payload_response_shape/observed_response_tuple_id")
+                .and_then(Value::as_str),
+            Some("diagnostic_telemetry_only")
+        );
+        let ack_tuple_ids = value
+            .get("observed_ack_only_tuple_ids")
+            .and_then(Value::as_array)
+            .ok_or("candidate receipt must include ACK-only tuple ids")?;
+        assert!(ack_tuple_ids.is_empty());
+        assert!(json_contains_string(&value, "0x0E/0x71/0x05"));
+        assert_eq!(
+            json_bool(&value, "corrected_read_only_probe_ready"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "output_sendability_claim"), Some(false));
+        assert_eq!(json_bool(&value, "registry_promotion_claim"), Some(false));
+        assert_eq!(json_bool(&value, "semantic_decode_claim"), Some(false));
+        assert_eq!(
+            json_bool(&value, "wheel_moved_under_openracing"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "visible_motion_verified"), Some(false));
+        assert_eq!(json_bool(&value, "output_was_sent"), Some(false));
+        assert_eq!(json_string(&value, "authority_state"), Some("blocked"));
 
         Ok(())
     }

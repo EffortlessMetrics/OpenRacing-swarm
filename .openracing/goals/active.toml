@@ -2068,6 +2068,27 @@ commands = [
 ]
 
 [[work_item]]
+id = "derive-payload-rerun-endpoint-candidates"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-derive-payload-rerun-endpoint-candidates"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json"
+claim_boundary = "No-output stored-receipt endpoint candidate review only; extends the endpoint-candidate planner to consume the debug-telemetry-only authority-status payload rerun, records diagnostic telemetry as endpoint-specific blocker evidence, keeps every passive candidate unknown_do_not_send and non-sendable, opens no HID or serial device, sends no read-only query or output/configuration/firmware/PIDFF command, and keeps authorization, semantic decode, registry promotion, tuple sendability, native-control, native-visible, smoke-ready, simulator, coexistence, high-torque, and release-ready claims false."
+commands = [
+  "wheelctl moza vendor-status-endpoint-candidates --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json --protocol-evidence-review ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json --overwrite --json",
+  "wheelctl moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-after-payload-endpoint-candidates.json --md-out ci/hardware/moza-r5/2026-05-13/index.md --json",
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

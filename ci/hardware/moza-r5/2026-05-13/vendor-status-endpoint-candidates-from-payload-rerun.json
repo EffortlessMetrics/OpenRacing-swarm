@@ -1,0 +1,135 @@
+{
+  "success": true,
+  "schema_version": 1,
+  "artifact_kind": "moza_vendor_status_endpoint_candidate_plan",
+  "claim_scope": "no_output_authority_status_endpoint_candidate_review",
+  "command": "wheelctl moza vendor-status-endpoint-candidates",
+  "generated_at_utc": "2026-05-29T13:13:26Z",
+  "authority_endpoint_diagnosis_receipt": "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json",
+  "protocol_evidence_review_receipt": "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
+  "source_diagnosis_classification": "authority_status_endpoint_specific_debug_telemetry_without_payload",
+  "source_primary_blocker": "authority_status_endpoint_or_command_mismatch",
+  "broad_serial_transport_blocker_ruled_out": true,
+  "authority_status_endpoint_specific_blocker": true,
+  "endpoint_or_command_correction_required": true,
+  "authority_status_decoded_response_count": 0,
+  "baseline_non_authority_decoded_response_count": 7,
+  "observed_ack_only_tuple_ids": [],
+  "observed_diagnostic_tuple_ids": [
+    "0x0E/0x71/0x05"
+  ],
+  "expected_payload_response_shape": {
+    "source_command_id": "main_misc_get_ffb_status",
+    "query_tuple_id": "0x21/0x12/0x07",
+    "query_frame_hex": "7E01211207C6",
+    "expected_payload_response_tuple_id": "0xA1/0x21/0x07",
+    "observed_response_tuple_id": "diagnostic_telemetry_only",
+    "correlation_basis": "baseline read-only matrix decoded non-authority payload replies on the same serial lane, but the targeted authority-status rerun scanned only diagnostic telemetry frames",
+    "conclusion": "current authority-status endpoint returns diagnostic telemetry only rather than payload-bearing status"
+  },
+  "reference_payload_response_shape": {
+    "source_command_id": "compatibility_get_mode",
+    "query_tuple_id": "0x1F/0x12/0x17",
+    "query_frame_hex": "7E011F1217D4",
+    "expected_payload_response_tuple_id": "0x9F/0x21/0x17",
+    "observed_response_tuple_id": "0x9F/0x21/0x17",
+    "correlation_basis": "demuxed read-only matrix decoded compatibility_get_mode with group|0x80 and nibble-swapped device response tuple",
+    "conclusion": "response transform works for non-authority status on the same serial lane"
+  },
+  "passive_tuple_candidate_count": 2,
+  "passive_tuple_candidates": [
+    {
+      "candidate_id": "passive_status_mode_triad_0x25_0x19",
+      "tuple_ids": [
+        "0x25/0x19/0x01",
+        "0x25/0x19/0x02",
+        "0x25/0x19/0x03"
+      ],
+      "passive_hypothesis": "base_status_or_mode_poll_candidate",
+      "question_scope": [
+        "status_query",
+        "standard_pidff_mode_enable",
+        "game_control_mode_select"
+      ],
+      "risk_class": "unknown_do_not_send",
+      "read_only_probe_allowed": false,
+      "output_sendability_claim": false,
+      "registry_promotion_claim": false,
+      "semantic_decode_claim": false,
+      "required_next_review": "fixture-backed decoder review must prove this is read-only status before any live probe"
+    },
+    {
+      "candidate_id": "passive_session_authority_pair_0x5a_0x5d",
+      "tuple_ids": [
+        "0x5A/0x1B/0x00",
+        "0x5D/0x1B/0x01"
+      ],
+      "passive_hypothesis": "session_or_status_keepalive_candidate",
+      "question_scope": [
+        "authority_keepalive",
+        "volatile_ffb_session_enable"
+      ],
+      "risk_class": "unknown_do_not_send",
+      "read_only_probe_allowed": false,
+      "output_sendability_claim": false,
+      "registry_promotion_claim": false,
+      "semantic_decode_claim": false,
+      "required_next_review": "fixture-backed decoder review must prove read-only status semantics before any live probe"
+    }
+  ],
+  "corrected_read_only_probe_ready": false,
+  "native_control_evidence": false,
+  "hardware_output_authorized": false,
+  "native_visible_ready": false,
+  "smoke_ready": false,
+  "release_ready": false,
+  "registry_promotion_claim": false,
+  "output_sendability_claim": false,
+  "semantic_decode_claim": false,
+  "wheel_moved_under_openracing": false,
+  "visible_motion_verified": false,
+  "output_was_sent": false,
+  "authority_state": "blocked",
+  "no_hid_device_opened": true,
+  "opened_serial_device": false,
+  "sent_read_only_query_commands": false,
+  "sent_output_writes": false,
+  "sent_configuration_writes": false,
+  "sent_firmware_or_dfu_commands": false,
+  "high_torque_enabled": false,
+  "mode_enable_candidates_sendable": false,
+  "planned_next_output_allowed": false,
+  "unknown_safety_or_mode_state_blocks_authority": true,
+  "exact_next_blocker": "Identify a payload-bearing authority-state status endpoint from fixtures or passive evidence; current ACK-only authority-status observations and passive mode/enable tuples are not sendable.",
+  "next_allowed_action": "Add no-output fixture-backed decoder coverage for corrected authority-status endpoint candidates. Do not run another live read-only probe until a candidate is explicitly classified as registry-approved read-only status and fake-demux approved.",
+  "blocked_actions": [
+    "live read-only probe of unknown passive tuples",
+    "mode enable write",
+    "authority write",
+    "output write",
+    "configuration write",
+    "PIDFF rerun",
+    "authorization receipt",
+    "hardware writes",
+    "high torque",
+    "native-control claim",
+    "native-visible claim",
+    "smoke-ready claim",
+    "release-ready claim",
+    "firmware or DFU command",
+    "unknown host-to-device command"
+  ],
+  "required_artifacts": [
+    "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json",
+    "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
+    "fixtures/moza/r5/vendor-command-registry.json",
+    "schemas/moza-vendor-status-endpoint-candidates.schema.json"
+  ],
+  "notes": [
+    "This receipt reads stored JSON only; it opens no HID or serial device and sends no traffic.",
+    "The expected payload response shape is a correction target, not evidence that the current authority-status command works.",
+    "A debug-telemetry-only targeted rerun is endpoint-specific blocker evidence only; it does not identify a sendable status command.",
+    "Passive tuple groups remain pattern-only questions and unknown_do_not_send until a future semantic decoder review promotes a read-only status candidate.",
+    "Native visible motion remains blocked; no wheel movement is claimed."
+  ]
+}

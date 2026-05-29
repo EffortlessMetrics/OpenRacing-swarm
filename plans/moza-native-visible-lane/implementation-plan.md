@@ -186,6 +186,11 @@ with diagnostic telemetry only, not broad serial ownership, line setting,
 timeout, or controller force. The next native-path action remains no-output
 authority-status endpoint/command correction before any live probe,
 authorization, PIDFF rerun, force escalation, or motion.
+The payload-rerun endpoint candidate receipt now lets that newer diagnosis feed
+the same no-output correction planner. It records diagnostic telemetry
+`0x0E/0x71/0x05` as the observed authority-status path output, keeps the
+expected payload-bearing status shape as `0xA1/0x21/0x07`, and still marks the
+corrected read-only probe as not ready. No candidate becomes sendable.
 The `pit-house-setting-change` sniff plan now pins the scenario-specific
 operator evidence required for that next capture: exact Pit House setting,
 starting value, ending value, and an affirmative restore status. The first
@@ -6403,6 +6408,119 @@ Remove only:
 Do not remove the targeted read-only payload rerun, payload fixture tests,
 status matrix, demux receipt, endpoint-candidate plan, passive protocol evidence
 review, consumed authority attempt, or post-authority PIDFF regression evidence.
+
+## Work item: derive-payload-rerun-endpoint-candidates
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: any future live probe, exact authorization, PIDFF rerun, force
+escalation, or motion attempt
+Blocked by: fixture-backed decoder coverage that identifies a payload-bearing
+authority-state status endpoint or an equivalent reviewed status source
+
+### Goal
+
+Let the latest debug-telemetry-only payload rerun feed the endpoint-correction
+planner without weakening the no-send boundary. The target is a no-output
+candidate receipt, not a corrected live probe and not motion.
+
+### Production Delta
+
+`wheelctl moza vendor-status-endpoint-candidates` now accepts both
+endpoint-specific authority-status diagnosis classes:
+
+```text
+authority_status_endpoint_specific_ack_only_without_payload
+authority_status_endpoint_specific_debug_telemetry_without_payload
+```
+
+The checked-in
+`vendor-status-endpoint-candidates-from-payload-rerun.json` is generated from
+`vendor-status-authority-payload-rerun-diagnosis.json` and records:
+
+```text
+source_diagnosis_classification=authority_status_endpoint_specific_debug_telemetry_without_payload
+observed_ack_only_tuple_ids=[]
+observed_diagnostic_tuple_ids=[0x0E/0x71/0x05]
+expected_payload_response_tuple_id=0xA1/0x21/0x07
+observed_response_tuple_id=diagnostic_telemetry_only
+corrected_read_only_probe_ready=false
+wheel_moved_under_openracing=false
+visible_motion_verified=false
+output_was_sent=false
+authority_state=blocked
+```
+
+The receipt keeps passive `0x25/0x19/*`, `0x5A/0x1B/*`, and `0x5D/0x1B/*`
+groups as `unknown_do_not_send` and non-sendable.
+
+### Non-goals
+
+No live hardware access, HID output open, serial open, read-only query send,
+PIDFF output, feature report, configuration write, firmware/update/DFU path,
+high torque, mode-enable write, authority write, authorization receipt,
+semantic decode claim, registry promotion, tuple sendability, corrected
+read-only probe readiness, native-control claim, native-visible claim,
+smoke-ready claim, simulator claim, coexistence claim, release-ready claim, or
+wheel movement.
+
+### Acceptance
+
+- The endpoint-candidate planner accepts the debug-telemetry-only payload rerun
+  diagnosis only when all non-claiming gates remain pinned.
+- The new receipt records diagnostic telemetry as endpoint-specific blocker
+  evidence, not as a decoded payload status reply.
+- `corrected_read_only_probe_ready=false`,
+  `mode_enable_candidates_sendable=false`, `output_sendability_claim=false`,
+  `registry_promotion_claim=false`, `semantic_decode_claim=false`, and
+  `planned_next_output_allowed=false` remain pinned.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain explicit.
+- The next native-path action is no-output fixture-backed decoder coverage for
+  a corrected authority-status endpoint candidate before any live probe, exact
+  authorization, PIDFF rerun, force escalation, or motion attempt.
+
+### Proof Commands
+
+```powershell
+wheelctl moza vendor-status-endpoint-candidates `
+  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --protocol-evidence-review ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json `
+  --overwrite `
+  --json
+
+wheelctl moza artifact-index `
+  --lane ci/hardware/moza-r5/2026-05-13 `
+  --json-out target/moza-current/artifact-index-after-payload-endpoint-candidates.json `
+  --md-out ci/hardware/moza-r5/2026-05-13/index.md `
+  --json
+
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- the endpoint-candidate planner acceptance of debug-telemetry-only diagnoses,
+- `observed_diagnostic_tuple_ids` schema support,
+- `vendor-status-endpoint-candidates-from-payload-rerun.json`,
+- source-of-truth notes for this work item.
+
+Do not remove the ACK-only endpoint candidate receipt, targeted read-only
+payload rerun, payload fixture tests, status matrix, demux receipt, passive
+protocol evidence review, consumed authority attempt, or post-authority PIDFF
+regression evidence.
 
 ## Work item: native-visible-promotion
 
