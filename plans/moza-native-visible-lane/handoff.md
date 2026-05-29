@@ -268,9 +268,23 @@ read-only probe with `--max-response-frames-per-query 64`; it scanned 19 frames,
 decoded zero authority-state replies, and the regenerated diagnosis now
 classifies `7E00A1214D` as a checksum-valid zero-length response-like frame:
 `0xA1/0x21/no_command`. Shallow scan-window depth is no longer the immediate
-explanation. The next native-path work remains no-output zero-length reply
+explanation. The latest diagnosis narrows the frame to ACK-only/no-payload
+correlation evidence, not decoded status evidence, so mode and safety remain
+unknown until a payload-bearing status reply is decoded or the endpoint/command
+IDs are corrected. The next native-path work remains no-output status-payload
 correlation or passive evidence correlation, not authorization, PIDFF, force
 escalation, or motion.
+
+The ACK-only correlation live rerun is now recorded at
+`vendor-status-ack-only-correlation-targeted.json`, with its fresh observe-only
+doctor at `vendor-status-ack-only-correlation-hardware-doctor.json` and derived
+diagnosis at `vendor-status-ack-only-correlation-diagnosis.json`. It selected
+only `estop_get_ffb` and `main_misc_get_ffb_status`, sent two
+registry-approved read-only queries, opened no HID path, sent no output,
+configuration, firmware, DFU, or PIDFF commands, and decoded zero
+authority-state replies. The diagnosis reproduced the same
+`0xA1/0x21/no_command` ACK-only/no-payload candidate. The exact blocker remains
+status-payload correlation or corrected authority-status endpoint/command IDs.
 
 The read-only demux follow-up is now recorded at
 `vendor-status-mode-matrix-demux.json` with its fresh precondition doctor at

@@ -27443,6 +27443,7 @@ fn vendor_status_framing_diagnosis_receipt(
     let mut registry_status_response_count = 0usize;
     let mut framed_ascii_telemetry_log_count = 0usize;
     let mut zero_length_response_or_ack_frame_count = 0usize;
+    let mut response_like_zero_length_ack_only_candidate_count = 0usize;
     let mut desynchronized_or_partial_frame_count = 0usize;
     let mut malformed_frame_count = 0usize;
     let mut unknown_non_registry_frame_count = 0usize;
@@ -27530,6 +27531,9 @@ fn vendor_status_framing_diagnosis_receipt(
                         .or_default() += 1;
                 }
             }
+            if scanned.zero_length_ack_only_candidate {
+                response_like_zero_length_ack_only_candidate_count += 1;
+            }
         }
         diagnosed_responses.push(diagnosed);
     }
@@ -27559,7 +27563,9 @@ fn vendor_status_framing_diagnosis_receipt(
         .map(|(tuple_id, count)| VendorStatusFramingTupleCount { tuple_id, count })
         .collect::<Vec<_>>();
 
-    let diagnosis_classification = if scanned_response_like_zero_length_frame_count > 0 {
+    let diagnosis_classification = if response_like_zero_length_ack_only_candidate_count > 0 {
+        "authority_status_ack_only_without_payload_after_targeted_read_only_probe"
+    } else if scanned_response_like_zero_length_frame_count > 0 {
         "authority_status_replies_zero_length_ack_candidate_after_targeted_read_only_probe"
     } else if scanned_response_like_command_mismatch_count > 0 {
         "authority_status_replies_uncorrelated_after_targeted_read_only_probe"
@@ -27576,21 +27582,36 @@ fn vendor_status_framing_diagnosis_receipt(
     } else {
         "mixed_or_unknown_serial_response_stream"
     };
-    let primary_blocker = if scanned_response_like_zero_length_frame_count > 0 {
+    let primary_blocker = if response_like_zero_length_ack_only_candidate_count > 0 {
+        "authority_status_ack_without_status_payload"
+    } else if scanned_response_like_zero_length_frame_count > 0 {
         "authority_status_zero_length_reply_correlation"
     } else if scanned_response_like_command_mismatch_count > 0 {
         "authority_status_reply_command_correlation"
     } else {
         "transport_framing_or_serial_stream_demultiplexing"
     };
-    let conclusion = if scanned_response_like_zero_length_frame_count > 0 {
+    let exact_next_blocker = if response_like_zero_length_ack_only_candidate_count > 0 {
+        "Determine whether 0xA1/0x21/no_command is an ACK-only reply to main_misc_get_ffb_status or evidence that the authority-status query endpoint/command is wrong; mode/safety state remains unknown until a payload-bearing status reply is decoded."
+    } else if scanned_response_like_zero_length_frame_count > 0 {
+        "Correlate checksum-valid zero-length response-like frames with the requested authority-status command before any authorization or motion planning."
+    } else if scanned_response_like_command_mismatch_count > 0 {
+        "Correlate the response-like authority-status command byte with stored receipts, fake fixtures, or passive evidence before any authorization or motion planning."
+    } else {
+        "Resolve serial stream demultiplexing or command/endpoint framing before any authorization or motion planning."
+    };
+    let conclusion = if response_like_zero_length_ack_only_candidate_count > 0 {
+        "The targeted COM4 read-only probe still decoded no authority-state replies. It observed checksum-valid framed serial traffic plus a response-like zero-length frame for the requested group/device; because that frame carries no command or status payload, it is ACK-only correlation evidence, not mode/safety evidence. The current blocker is authority-status payload correlation or corrected query endpoint/command, not output, force, or motion."
+    } else if scanned_response_like_zero_length_frame_count > 0 {
         "The targeted COM4 read-only probe still decoded no authority-state replies. It observed at least one checksum-valid zero-length response-like frame for the requested group/device, which is an ack/status correlation candidate only; the next blocker is authority-status zero-length reply correlation rather than output, force, or motion."
     } else if scanned_response_like_command_mismatch_count > 0 {
         "The targeted COM4 read-only probe still decoded no authority-state replies. Its scanned stream is dominated by framed diagnostic telemetry, and at least one response-like group/device tuple used an unregistered command byte, so the next blocker is authority-status command correlation rather than output, force, or motion."
     } else {
         "The stored COM4 read-only probe did not capture registry status replies. Its captured frames are dominated by tuple 0x0E/0x71/0x05 ASCII NRFloss/recvGap diagnostic stream frames, with one desynchronized partial frame, so the next blocker is serial stream/framing demultiplexing or command/endpoint framing rather than authority or force."
     };
-    let next_allowed_action = if scanned_response_like_zero_length_frame_count > 0 {
+    let next_allowed_action = if response_like_zero_length_ack_only_candidate_count > 0 {
+        "Continue no-output ACK-only status-payload correlation using stored receipts, fake fixtures, or passive protocol evidence. If live bench preflight is clean, rerun only the read-only status probe; do not authorize mode/enable writes, PIDFF reruns, or motion attempts until a payload-bearing authority-state reply is decoded or the endpoint/command IDs are corrected."
+    } else if scanned_response_like_zero_length_frame_count > 0 {
         "Continue no-output authority-status zero-length reply correlation using stored receipts, fake fixtures, or passive protocol evidence. Do not authorize mode/enable writes, PIDFF reruns, or motion attempts until zero-length frames are semantically decoded or the endpoint/command IDs are corrected."
     } else if scanned_response_like_command_mismatch_count > 0 {
         "Continue no-output authority-status reply correlation using stored receipts, fake fixtures, or passive protocol evidence. Do not authorize mode/enable writes, PIDFF reruns, or motion attempts until the remaining authority-state status replies are decoded or their endpoint/command IDs are corrected."
@@ -27660,6 +27681,7 @@ fn vendor_status_framing_diagnosis_receipt(
         scanned_checksum_invalid_count,
         scanned_response_like_command_mismatch_count,
         scanned_response_like_zero_length_frame_count,
+        response_like_zero_length_ack_only_candidate_count,
         response_like_command_mismatch_tuples,
         response_like_zero_length_tuples,
         repeated_observed_tuple_ids,
@@ -27683,6 +27705,7 @@ fn vendor_status_framing_diagnosis_receipt(
             )
             .collect(),
         diagnosed_responses,
+        exact_next_blocker,
         conclusion,
         next_allowed_action,
         blocked_actions: vec![
@@ -27711,6 +27734,7 @@ fn vendor_status_framing_diagnosis_receipt(
         notes: vec![
             "This diagnosis reads a stored receipt only; it opens no HID or serial device and sends no traffic.",
             "Framed ASCII NRFloss/recvGap payloads are diagnostic stream evidence, not semantic Moza vendor status decode.",
+            "A zero-length response-like frame has no command or status payload, so it cannot prove FFB authority, mode, safety, or readiness state.",
             "The failed-closed read-only status/mode matrix remains preserved and still blocks authority planning.",
             "Native visible motion remains blocked; no wheel movement is claimed.",
         ],
@@ -27954,6 +27978,20 @@ fn vendor_status_framing_diagnosed_scanned_frame(
         && diagnosis.command.is_none()
         && diagnosis.classification
             == MozaReadOnlyStatusResponseFrameClass::ZeroLengthResponseOrAckFrame;
+    let zero_length_ack_only_candidate = response_like_zero_length_frame
+        && diagnosis.payload_len == Some(0)
+        && diagnosis.checksum_valid == Some(true);
+    let status_payload_decoded = diagnosis.classification
+        == MozaReadOnlyStatusResponseFrameClass::RegistryStatusResponse
+        && diagnosis.payload_len.unwrap_or(0) > 0
+        && diagnosis.checksum_valid == Some(true);
+    let zero_length_correlation = if zero_length_ack_only_candidate {
+        Some("ack_only_candidate_no_status_payload")
+    } else if response_like_zero_length_frame {
+        Some("zero_length_response_like_candidate")
+    } else {
+        None
+    };
 
     Ok(VendorStatusFramingDiagnosedScannedFrame {
         frame_hex,
@@ -27968,6 +28006,9 @@ fn vendor_status_framing_diagnosed_scanned_frame(
         response_like_expected_group_device,
         response_like_command_mismatch,
         response_like_zero_length_frame,
+        zero_length_ack_only_candidate,
+        status_payload_decoded,
+        zero_length_correlation,
         checksum_valid: diagnosis.checksum_valid,
         payload_ascii_preview: vendor_status_response_ascii_payload_preview(&bytes),
         original_error: demux
@@ -32467,6 +32508,7 @@ struct VendorStatusFramingDiagnosisReceipt {
     scanned_checksum_invalid_count: usize,
     scanned_response_like_command_mismatch_count: usize,
     scanned_response_like_zero_length_frame_count: usize,
+    response_like_zero_length_ack_only_candidate_count: usize,
     response_like_command_mismatch_tuples: Vec<VendorStatusFramingTupleCount>,
     response_like_zero_length_tuples: Vec<VendorStatusFramingTupleCount>,
     repeated_observed_tuple_ids: Vec<VendorStatusFramingTupleCount>,
@@ -32474,6 +32516,7 @@ struct VendorStatusFramingDiagnosisReceipt {
     classification_counts: Vec<VendorStatusFramingClassificationCount>,
     scanned_classification_counts: Vec<VendorStatusFramingClassificationCount>,
     diagnosed_responses: Vec<VendorStatusFramingDiagnosedResponse>,
+    exact_next_blocker: &'static str,
     conclusion: &'static str,
     next_allowed_action: &'static str,
     blocked_actions: Vec<&'static str>,
@@ -32551,6 +32594,10 @@ struct VendorStatusFramingDiagnosedScannedFrame {
     response_like_expected_group_device: bool,
     response_like_command_mismatch: bool,
     response_like_zero_length_frame: bool,
+    zero_length_ack_only_candidate: bool,
+    status_payload_decoded: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    zero_length_correlation: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     checksum_valid: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -41738,13 +41785,11 @@ mod tests {
 
         assert_eq!(
             json_string(&value, "diagnosis_classification"),
-            Some(
-                "authority_status_replies_zero_length_ack_candidate_after_targeted_read_only_probe"
-            )
+            Some("authority_status_ack_only_without_payload_after_targeted_read_only_probe")
         );
         assert_eq!(
             json_string(&value, "primary_blocker"),
-            Some("authority_status_zero_length_reply_correlation")
+            Some("authority_status_ack_without_status_payload")
         );
         assert_eq!(json_u64(&value, "scanned_response_frame_count"), Some(2));
         assert_eq!(
@@ -41766,6 +41811,16 @@ mod tests {
         assert_eq!(
             json_u64(&value, "scanned_response_like_zero_length_frame_count"),
             Some(1)
+        );
+        assert_eq!(
+            json_u64(&value, "response_like_zero_length_ack_only_candidate_count"),
+            Some(1)
+        );
+        assert_eq!(
+            json_string(&value, "exact_next_blocker"),
+            Some(
+                "Determine whether 0xA1/0x21/no_command is an ACK-only reply to main_misc_get_ffb_status or evidence that the authority-status query endpoint/command is wrong; mode/safety state remains unknown until a payload-bearing status reply is decoded."
+            )
         );
         assert_eq!(
             json_bool(&value, "planned_next_output_allowed"),
@@ -41806,6 +41861,10 @@ mod tests {
                 && json_bool(frame, "response_like_expected_group_device") == Some(true)
                 && json_bool(frame, "response_like_command_mismatch") == Some(false)
                 && json_bool(frame, "response_like_zero_length_frame") == Some(true)
+                && json_bool(frame, "zero_length_ack_only_candidate") == Some(true)
+                && json_bool(frame, "status_payload_decoded") == Some(false)
+                && json_string(frame, "zero_length_correlation")
+                    == Some("ack_only_candidate_no_status_payload")
         }));
 
         Ok(())

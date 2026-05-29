@@ -155,9 +155,11 @@ requesting `main_misc_get_ffb_status` `0x21/0x12/0x07`. The latest extended
 scan repeats that targeted read-only probe with a 64-frame per-command cap,
 scans 19 frames, still decodes zero authority-state replies, and classifies
 `7E00A1214D` as a checksum-valid zero-length response-like frame for
-`0xA1/0x21/no_command`. That keeps authorization, PIDFF rerun, and motion
-blocked on zero-length ACK/status reply correlation or unknown device state
-rather than scan-window depth.
+`0xA1/0x21/no_command`. The latest diagnosis narrows that frame to
+ACK-only/no-payload correlation evidence, not decoded status evidence. That
+keeps authorization, PIDFF rerun, and motion blocked on status-payload
+correlation, corrected endpoint/command IDs, or unknown device state rather
+than scan-window depth.
 The `pit-house-setting-change` sniff plan now pins the scenario-specific
 operator evidence required for that next capture: exact Pit House setting,
 starting value, ending value, and an affirmative restore status. The first
@@ -5600,8 +5602,8 @@ frame:     7E00A1214D
 
 The extended scan removes shallow scan-window exhaustion as the immediate
 explanation for missing authority-state replies. The current blocker is
-zero-length ACK/status reply correlation or unknown device state, not output,
-force, PIDFF, or motion.
+ACK-only/no-payload status reply correlation or unknown device state, not
+output, force, PIDFF, or motion.
 
 ### Non-goals
 
@@ -5626,8 +5628,8 @@ simulator claim, coexistence claim, or release-ready claim.
   `hardware_output_authorized=false`, `native_control_evidence=false`,
   `native_visible_ready=false`, `output_sendability_claim=false`, and
   `registry_promotion_claim=false` remain pinned.
-- The next native-path action is no-output zero-length reply correlation or
-  passive evidence correlation, not output, PIDFF, or motion.
+- The next native-path action is no-output ACK-only status-payload correlation
+  or passive evidence correlation, not output, PIDFF, or motion.
 
 ### Proof Commands
 
@@ -5687,8 +5689,8 @@ Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
 Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
 Blocks: exact authorization planning for any future decoded volatile mode or
 enable candidate
-Blocked by: no semantic decode or authority-state correlation for zero-length
-status-like replies.
+Blocked by: no payload-bearing authority-state reply or semantic decode for
+zero-length status-like replies.
 
 ### Goal
 
@@ -5712,17 +5714,19 @@ and the live read-only probe receipt itself remains preserved. The regenerated
 diagnosis records:
 
 ```text
-diagnosis_classification: authority_status_replies_zero_length_ack_candidate_after_targeted_read_only_probe
-primary_blocker: authority_status_zero_length_reply_correlation
+diagnosis_classification: authority_status_ack_only_without_payload_after_targeted_read_only_probe
+primary_blocker: authority_status_ack_without_status_payload
 scanned_zero_length_response_or_ack_frame_count: 1
 scanned_response_like_zero_length_frame_count: 1
+response_like_zero_length_ack_only_candidate_count: 1
 response_like_zero_length_tuples: 0xA1/0x21/no_command
 ```
 
 This narrows the next native-path blocker from generic command mismatch to
-zero-length ACK/status reply correlation. It is still not semantic decode,
-registry promotion, tuple sendability, authorization input, native control, or
-native-visible motion.
+ACK-only status-payload correlation or corrected endpoint/command IDs. It is
+still not a payload-bearing status reply, semantic decode, registry promotion,
+tuple sendability, authorization input, native control, or native-visible
+motion.
 
 ### Non-goals
 
@@ -5746,9 +5750,9 @@ release-ready claim.
   `hardware_output_authorized=false`, `native_control_evidence=false`,
   `native_visible_ready=false`, `output_sendability_claim=false`, and
   `registry_promotion_claim=false` remain pinned.
-- The next native-path action is no-output zero-length reply correlation using
-  stored receipts, fake fixtures, or passive protocol evidence, not output,
-  PIDFF, authorization, or motion.
+- The next native-path action is no-output ACK-only status-payload correlation
+  using stored receipts, fake fixtures, or passive protocol evidence, not
+  output, PIDFF, authorization, or motion.
 
 ### Proof Commands
 
@@ -5777,6 +5781,147 @@ Remove only:
 - the zero-length read-only status frame classifier branch
 - the regenerated `vendor-status-extended-scan-diagnosis.json`
 - schema fields for zero-length response-like diagnosis
+- source-of-truth notes for this work item.
+
+Do not remove the live #77 extended scan receipt, its hardware doctor, earlier
+read-only matrix/demux/correlation evidence, passive evidence, consumed hardware
+attempts, or post-authority PIDFF regression evidence.
+
+## Work item: classify-ack-only-authority-status-reply
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: exact authorization planning for any future decoded volatile mode or
+enable candidate
+Blocked by: no payload-bearing authority-state reply for `estop_get_ffb` or
+`main_misc_get_ffb_status`.
+
+### Goal
+
+Make the zero-length authority-status correlation precise enough that future
+work cannot treat an ACK-like frame as decoded mode, safety, or authority
+state.
+
+### Production Delta
+
+`wheelctl moza vendor-status-framing-diagnosis` now separates a
+response-like zero-length frame from a payload-bearing status reply. The
+diagnosis receipt records `zero_length_ack_only_candidate`,
+`status_payload_decoded`, `zero_length_correlation`, and
+`response_like_zero_length_ack_only_candidate_count`.
+
+The regenerated `vendor-status-extended-scan-diagnosis.json` keeps the stored
+#77 targeted read-only probe as the evidence source and classifies
+`7E00A1214D` as:
+
+```text
+diagnosis_classification: authority_status_ack_only_without_payload_after_targeted_read_only_probe
+primary_blocker: authority_status_ack_without_status_payload
+response_like_zero_length_ack_only_candidate_count: 1
+exact_next_blocker: determine whether 0xA1/0x21/no_command is an ACK-only reply to main_misc_get_ffb_status or evidence that the authority-status query endpoint/command is wrong
+```
+
+The protocol fake/demux regression also pins `7E00A1214D` as a
+`ZeroLengthResponseOrAckFrame` with no command, zero payload bytes, valid
+checksum, no decode error, and `UnknownNonRegistryFrame` disposition for
+`main_misc_get_ffb_status`.
+
+After a fresh observe-only hardware doctor, the guarded live read-only rerun at
+`vendor-status-ack-only-correlation-targeted.json` selected the same two
+commands, used COM4 at 115200 baud, kept `--max-response-frames-per-query 64`,
+sent two registry-approved read-only queries, opened no HID path, sent no
+output/configuration/firmware/PIDFF command, and decoded zero authority-state
+replies. Its offline diagnosis at
+`vendor-status-ack-only-correlation-diagnosis.json` reproduced the same
+ACK-only/no-payload `0xA1/0x21/no_command` candidate for
+`main_misc_get_ffb_status`.
+
+This is ACK-only correlation evidence. It is not a payload-bearing status
+decode and cannot prove FFB authority, mode, safety, native control, or
+native-visible motion.
+
+### Non-goals
+
+No HID output open, PIDFF output, feature report, serial write, output write,
+configuration write, firmware/update/DFU path, high torque, mode-enable write,
+authority write, authorization receipt, semantic decode claim, registry
+promotion, tuple sendability, native-control claim, native-visible claim,
+smoke-ready claim, simulator claim, coexistence claim, or release-ready claim.
+
+### Acceptance
+
+- `7E00A1214D` is diagnosed as an ACK-only/no-payload candidate, not status
+  evidence.
+- No scanned frame in the targeted authority-status probe decodes a
+  payload-bearing authority-state response.
+- The live rerun, when preflight is clean, remains read-only by construction:
+  no HID path, no output/configuration/firmware/PIDFF command, no authorization,
+  and no hardware output.
+- Demux still treats the frame as unknown and non-sendable.
+- The derived diagnosis keeps `wheel_moved_under_openracing=false`,
+  `visible_motion_verified=false`, `output_was_sent=false`, and
+  `authority_state=blocked`.
+- `unknown_safety_or_mode_state_blocks_authority=true`,
+  `hardware_output_authorized=false`, `native_control_evidence=false`,
+  `native_visible_ready=false`, `output_sendability_claim=false`, and
+  `registry_promotion_claim=false` remain pinned.
+- The next native-path action is no-output ACK-only status-payload correlation
+  or a clean read-only-only probe rerun, not authorization, PIDFF, or motion.
+
+### Proof Commands
+
+```powershell
+wheelctl moza vendor-status-framing-diagnosis `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-targeted.json `
+  --json-out target/moza-current/vendor-status-ack-only-correlation-from-extended.json `
+  --overwrite `
+  --json
+
+wheelctl hardware doctor --json `
+  --json-out target/moza-current/ack-only-correlation-hardware-doctor.json
+
+wheelctl moza vendor-status-probe `
+  --serial-port COM4 `
+  --baud-rate 115200 `
+  --timeout-ms 1000 `
+  --max-response-frames-per-query 64 `
+  --command estop_get_ffb `
+  --command main_misc_get_ffb_status `
+  --confirm-read-only-query `
+  --json-out target/moza-current/vendor-status-ack-only-correlation-targeted.json `
+  --json
+# expected: exits non-zero with success=false; decoded_response_count=0, failed_response_count=2
+
+wheelctl moza vendor-status-framing-diagnosis `
+  --status-probe target/moza-current/vendor-status-ack-only-correlation-targeted.json `
+  --json-out target/moza-current/vendor-status-ack-only-correlation-diagnosis.json `
+  --overwrite `
+  --json
+
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_framing_diagnosis -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_status_probe -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- the ACK-only diagnosis fields and counters
+- the fake demux regression for `7E00A1214D`
+- the regenerated `vendor-status-extended-scan-diagnosis.json`
+- `ci/hardware/moza-r5/2026-05-13/vendor-status-ack-only-correlation-hardware-doctor.json`
+- `ci/hardware/moza-r5/2026-05-13/vendor-status-ack-only-correlation-targeted.json`
+- `ci/hardware/moza-r5/2026-05-13/vendor-status-ack-only-correlation-diagnosis.json`
+- schema fields for ACK-only/no-payload response-like diagnosis
 - source-of-truth notes for this work item.
 
 Do not remove the live #77 extended scan receipt, its hardware doctor, earlier

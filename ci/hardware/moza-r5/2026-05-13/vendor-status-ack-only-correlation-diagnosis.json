@@ -4,8 +4,8 @@
   "artifact_kind": "moza_vendor_status_framing_diagnosis",
   "claim_scope": "no_output_read_only_serial_response_framing_diagnosis",
   "command": "wheelctl moza vendor-status-framing-diagnosis",
-  "generated_at_utc": "2026-05-29T08:52:53Z",
-  "status_probe_receipt": "ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-targeted.json",
+  "generated_at_utc": "2026-05-29T09:00:26Z",
+  "status_probe_receipt": "ci/hardware/moza-r5/2026-05-13/vendor-status-ack-only-correlation-targeted.json",
   "status_probe_success": false,
   "status_probe_sent_read_only_query_count": 2,
   "status_probe_decoded_response_count": 0,
@@ -43,14 +43,14 @@
   "unknown_non_registry_frame_count": 0,
   "checksum_valid_count": 2,
   "checksum_invalid_count": 0,
-  "scanned_response_frame_count": 19,
+  "scanned_response_frame_count": 14,
   "scanned_registry_status_response_count": 0,
-  "scanned_framed_ascii_telemetry_log_count": 18,
+  "scanned_framed_ascii_telemetry_log_count": 13,
   "scanned_zero_length_response_or_ack_frame_count": 1,
   "scanned_desynchronized_or_partial_frame_count": 0,
   "scanned_malformed_frame_count": 0,
   "scanned_unknown_non_registry_frame_count": 0,
-  "scanned_checksum_valid_count": 19,
+  "scanned_checksum_valid_count": 14,
   "scanned_checksum_invalid_count": 0,
   "scanned_response_like_command_mismatch_count": 0,
   "scanned_response_like_zero_length_frame_count": 1,
@@ -71,7 +71,7 @@
   "scanned_repeated_observed_tuple_ids": [
     {
       "tuple_id": "0x0E/0x71/0x05",
-      "count": 18
+      "count": 13
     }
   ],
   "classification_counts": [
@@ -83,7 +83,7 @@
   "scanned_classification_counts": [
     {
       "classification": "framed_ascii_telemetry_log",
-      "count": 18
+      "count": 13
     },
     {
       "classification": "zero_length_response_or_ack_frame",
@@ -113,85 +113,15 @@
       "payload_ascii_preview": "NRFloss[avg:0.00000%] recvGap[avg:3.96600ms]",
       "original_error": "failed to read status response `estop_get_ffb`: failed to read Moza serial frame start byte",
       "response_scan_stop_reason": "read_error_before_matching_response",
-      "scanned_response_frame_count": 17,
-      "skipped_response_frame_count": 17,
-      "skipped_diagnostic_frame_count": 17,
+      "scanned_response_frame_count": 12,
+      "skipped_response_frame_count": 12,
+      "skipped_diagnostic_frame_count": 12,
       "skipped_malformed_or_desynchronized_frame_count": 0,
       "skipped_non_matching_registry_frame_count": 0,
       "skipped_unknown_non_registry_frame_count": 0,
       "scanned_response_like_command_mismatch_count": 0,
       "scanned_response_like_zero_length_frame_count": 0,
       "scanned_response_frames": [
-        {
-          "frame_hex": "7E190E710553686966744272696768746E6573734C6576656C3A31320ADE",
-          "disposition": "skippable_diagnostic_frame",
-          "response_classification": "framed_ascii_telemetry_log",
-          "observed_tuple_id": "0x0E/0x71/0x05",
-          "matched_expected_command": false,
-          "response_like_expected_group_device": false,
-          "response_like_command_mismatch": false,
-          "response_like_zero_length_frame": false,
-          "zero_length_ack_only_candidate": false,
-          "status_payload_decoded": false,
-          "checksum_valid": true,
-          "payload_ascii_preview": "ShiftBrightnessLevel:12"
-        },
-        {
-          "frame_hex": "7E1B0E710543616C6962325B4D61783A33353939204D696E3A323732375D0A83",
-          "disposition": "skippable_diagnostic_frame",
-          "response_classification": "framed_ascii_telemetry_log",
-          "observed_tuple_id": "0x0E/0x71/0x05",
-          "matched_expected_command": false,
-          "response_like_expected_group_device": false,
-          "response_like_command_mismatch": false,
-          "response_like_zero_length_frame": false,
-          "zero_length_ack_only_candidate": false,
-          "status_payload_decoded": false,
-          "checksum_valid": true,
-          "payload_ascii_preview": "Calib2[Max:3599 Min:2727]"
-        },
-        {
-          "frame_hex": "7E1B0E710543616C6962335B4D61783A33353935204D696E3A323638365D0A84",
-          "disposition": "skippable_diagnostic_frame",
-          "response_classification": "framed_ascii_telemetry_log",
-          "observed_tuple_id": "0x0E/0x71/0x05",
-          "matched_expected_command": false,
-          "response_like_expected_group_device": false,
-          "response_like_command_mismatch": false,
-          "response_like_zero_length_frame": false,
-          "zero_length_ack_only_candidate": false,
-          "status_payload_decoded": false,
-          "checksum_valid": true,
-          "payload_ascii_preview": "Calib3[Max:3595 Min:2686]"
-        },
-        {
-          "frame_hex": "7E0C0E7105373830302C20363630300A0C",
-          "disposition": "skippable_diagnostic_frame",
-          "response_classification": "framed_ascii_telemetry_log",
-          "observed_tuple_id": "0x0E/0x71/0x05",
-          "matched_expected_command": false,
-          "response_like_expected_group_device": false,
-          "response_like_command_mismatch": false,
-          "response_like_zero_length_frame": false,
-          "zero_length_ack_only_candidate": false,
-          "status_payload_decoded": false,
-          "checksum_valid": true,
-          "payload_ascii_preview": "7800, 6600"
-        },
-        {
-          "frame_hex": "7E130E7105486561727462656174204C6F6720456E640A35",
-          "disposition": "skippable_diagnostic_frame",
-          "response_classification": "framed_ascii_telemetry_log",
-          "observed_tuple_id": "0x0E/0x71/0x05",
-          "matched_expected_command": false,
-          "response_like_expected_group_device": false,
-          "response_like_command_mismatch": false,
-          "response_like_zero_length_frame": false,
-          "zero_length_ack_only_candidate": false,
-          "status_payload_decoded": false,
-          "checksum_valid": true,
-          "payload_ascii_preview": "Heartbeat Log End"
-        },
         {
           "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
           "disposition": "skippable_diagnostic_frame",

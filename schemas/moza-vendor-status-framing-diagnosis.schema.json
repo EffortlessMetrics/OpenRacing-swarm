@@ -81,6 +81,7 @@
         "serial_readback_consumed_debug_telemetry_log_frames",
         "authority_status_replies_uncorrelated_after_targeted_read_only_probe",
         "authority_status_replies_zero_length_ack_candidate_after_targeted_read_only_probe",
+        "authority_status_ack_only_without_payload_after_targeted_read_only_probe",
         "no_response_frames_captured",
         "all_response_frames_are_registry_status_responses",
         "mixed_or_unknown_serial_response_stream"
@@ -107,6 +108,10 @@
     "scanned_checksum_invalid_count": {"type": "integer", "minimum": 0},
     "scanned_response_like_command_mismatch_count": {"type": "integer", "minimum": 0},
     "scanned_response_like_zero_length_frame_count": {"type": "integer", "minimum": 0},
+    "response_like_zero_length_ack_only_candidate_count": {
+      "type": "integer",
+      "minimum": 0
+    },
     "response_like_command_mismatch_tuples": {
       "type": "array",
       "items": {"type": "object"}
@@ -158,7 +163,8 @@
     "required_artifacts": {
       "type": "array",
       "items": {"type": "string"}
-    }
+    },
+    "exact_next_blocker": {"type": "string"}
   },
   "additionalProperties": true
 }
