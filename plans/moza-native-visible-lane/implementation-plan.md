@@ -6710,6 +6710,109 @@ containment, targeted read-only payload rerun, payload fixture tests, status
 matrix, demux receipt, passive protocol evidence review, consumed authority
 attempt, or post-authority PIDFF regression evidence.
 
+## Work item: contain-authority-command-0x07-analogs
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: corrected read-only authority-state status endpoint review
+Blocked by: command-id `0x07` passive analog receipt
+
+### Goal
+
+Contain the five passive command-id `0x07` analog tuples in software fake
+transport before any live probe. This preserves them as reviewed endpoint-search
+questions while proving they are not sendable commands, not corrected read-only
+probe inputs, and not authority-state payload matches.
+
+### Production Delta
+
+The Moza fake serial transport now has a separate observation path for
+authority command-id `0x07` analogs. It accepts representative zero-payload
+fixture frames derived from:
+
+```text
+0x40/0x17/0x07
+0x28/0x13/0x07
+0x23/0x19/0x07
+0x3F/0x17/0x07
+0x5B/0x1B/0x07
+```
+
+and records each as:
+
+```text
+risk_class=unknown_do_not_send
+matches_payload_authority_status_response=false
+corrected_read_only_probe_ready=false
+read_only_probe_allowed=false
+output_sendability_claim=false
+registry_promotion_claim=false
+semantic_decode_claim=false
+```
+
+`wheelctl moza vendor-fake-transport`,
+`fixtures/moza/r5/vendor-fake-serial-transport.json`, and the fake transport
+schemas now record five analog observations and five command-send-path
+rejections. These frames are representative fake-containment frames only; they
+are not semantic decode proof and they are not live probe inputs.
+
+### Non-goals
+
+No live hardware access, HID output open, serial open, read-only query send,
+PIDFF output, feature report, configuration write, firmware/update/DFU path,
+high torque, mode-enable write, authority write, authorization receipt,
+semantic decode claim, registry promotion, tuple sendability, corrected
+read-only probe readiness, native-control claim, native-visible claim,
+smoke-ready claim, simulator claim, coexistence claim, release-ready claim, or
+wheel movement.
+
+### Acceptance
+
+- The fake transport consumes the command-id `0x07` analogs from
+  `vendor-status-endpoint-candidates-from-payload-rerun.json`.
+- Each analog is observable only through the fake containment path and remains
+  rejected by the command send path.
+- The high-frequency `0x40/0x17/0x07` analog remains an endpoint-search
+  question, not a sendable tuple.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain the operating
+  state.
+- The next native-path action remains no-output protocol work to identify a
+  payload-bearing authority-state status endpoint or equivalent reviewed
+  status source before any live probe, authorization, PIDFF rerun, force
+  escalation, or motion attempt.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_fake_serial_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only:
+
+- the fake-transport authority command-id `0x07` analog observation path,
+- the fake transport receipt/schema fields for command-id analog containment,
+- source-of-truth notes for this work item.
+
+Do not remove the command-id `0x07` passive analog scan, payload-rerun endpoint
+candidate receipt, fake-transport endpoint containment, targeted read-only
+payload rerun, payload fixture tests, status matrix, demux receipt, passive
+protocol evidence review, consumed authority attempt, or post-authority PIDFF
+regression evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

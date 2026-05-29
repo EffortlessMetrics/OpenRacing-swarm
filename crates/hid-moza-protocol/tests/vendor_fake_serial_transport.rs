@@ -5,7 +5,7 @@ use std::io;
 use racing_wheel_hid_moza_protocol::serial::fake_transport::{
     FAKE_TRANSPORT_CODEC_STATUS, MozaFakeSerialTransport, MozaFakeSerialTransportError,
 };
-use racing_wheel_hid_moza_protocol::serial::frame::MozaSerialFrameError;
+use racing_wheel_hid_moza_protocol::serial::frame::{MozaSerialFrameError, serial_checksum};
 use racing_wheel_hid_moza_protocol::serial::vendor_authority::{
     FORBIDDEN_VENDOR_CLASSES, MozaRiskClass, MozaSerialCodecStatus,
 };
@@ -125,11 +125,65 @@ fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, io::Error> {
     Ok(bytes)
 }
 
+fn tuple_bytes(tuple_id: &str) -> Result<(u8, u8, u8), io::Error> {
+    let mut parts = tuple_id.split('/');
+    let group = parse_hex_byte(
+        parts
+            .next()
+            .ok_or_else(|| invalid_data(format!("tuple `{tuple_id}` missing group")))?,
+    )?;
+    let device_id = parse_hex_byte(
+        parts
+            .next()
+            .ok_or_else(|| invalid_data(format!("tuple `{tuple_id}` missing device id")))?,
+    )?;
+    let command = parse_hex_byte(
+        parts
+            .next()
+            .ok_or_else(|| invalid_data(format!("tuple `{tuple_id}` missing command")))?,
+    )?;
+    if parts.next().is_some() {
+        return Err(invalid_data(format!("tuple `{tuple_id}` has extra parts")));
+    }
+    Ok((group, device_id, command))
+}
+
+fn parse_hex_byte(value: &str) -> Result<u8, io::Error> {
+    let trimmed = value
+        .trim()
+        .strip_prefix("0x")
+        .or_else(|| value.trim().strip_prefix("0X"))
+        .unwrap_or_else(|| value.trim());
+    u8::from_str_radix(trimmed, 16)
+        .map_err(|_| invalid_data(format!("invalid tuple byte `{value}`")))
+}
+
+fn representative_frame_hex(tuple_id: &str, payload_len: usize) -> Result<String, io::Error> {
+    let (group, device_id, command) = tuple_bytes(tuple_id)?;
+    let declared_len = payload_len
+        .checked_add(1)
+        .ok_or_else(|| invalid_data("representative payload length overflow"))?;
+    let declared_len = u8::try_from(declared_len)
+        .map_err(|_| invalid_data("representative payload length does not fit in u8"))?;
+    let mut frame = vec![0x7e, declared_len, group, device_id, command];
+    frame.resize(frame.len() + payload_len, 0);
+    let checksum = serial_checksum(&frame);
+    frame.push(checksum);
+    Ok(frame
+        .iter()
+        .map(|byte| format!("{byte:02X}"))
+        .collect::<String>())
+}
+
 fn mode_enable_candidates(review: &Value) -> Result<&Vec<Value>, io::Error> {
     array_at(
         review,
         "/passive_tuple_registry_coverage/decode_candidate_mode_enable_review/candidates",
     )
+}
+
+fn command_id_0x07_analogs(endpoint_review: &Value) -> Result<&Vec<Value>, io::Error> {
+    array_field(endpoint_review, "passive_command_id_0x07_analogs")
 }
 
 fn candidates_by_id(candidates: &[Value]) -> Result<BTreeMap<&str, &Value>, io::Error> {
@@ -211,6 +265,37 @@ fn fake_transport_fixture_is_non_claiming() -> TestResult {
     )?);
     assert!(!bool_field(&fixture, "corrected_read_only_probe_ready")?);
     assert_eq!(
+        usize_field(&fixture, "authority_command_id_0x07_analog_count")?,
+        5
+    );
+    assert_eq!(
+        usize_field(&fixture, "authority_command_id_0x07_analog_frame_count")?,
+        5
+    );
+    assert_eq!(
+        usize_field(
+            &fixture,
+            "authority_command_id_0x07_analog_send_path_rejected_count"
+        )?,
+        5
+    );
+    assert!(bool_field(
+        &fixture,
+        "authority_command_id_0x07_analogs_unknown_do_not_send"
+    )?);
+    assert!(!bool_field(
+        &fixture,
+        "authority_command_id_0x07_analogs_match_payload_status"
+    )?);
+    assert!(!bool_field(
+        &fixture,
+        "authority_command_id_0x07_analogs_read_only_probe_allowed"
+    )?);
+    assert!(!bool_field(
+        &fixture,
+        "authority_command_id_0x07_analogs_sendable"
+    )?);
+    assert_eq!(
         FAKE_TRANSPORT_CODEC_STATUS,
         MozaSerialCodecStatus::RoundTripVerified
     );
@@ -254,6 +339,15 @@ fn schema_requires_fake_transport_safety_gates() -> TestResult {
         "authority_status_endpoint_candidates_unknown_do_not_send",
         "authority_status_endpoint_candidates_match_payload_status",
         "corrected_read_only_probe_ready",
+        "authority_command_id_0x07_analog_fixture_source",
+        "authority_command_id_0x07_analog_count",
+        "authority_command_id_0x07_analog_frame_count",
+        "authority_command_id_0x07_analog_send_path_rejected_count",
+        "authority_command_id_0x07_analogs_unknown_do_not_send",
+        "authority_command_id_0x07_analogs_match_payload_status",
+        "authority_command_id_0x07_analogs_read_only_probe_allowed",
+        "authority_command_id_0x07_analogs_sendable",
+        "authority_command_id_0x07_analog_observations",
         "authority_status_endpoint_candidate_observations",
     ] {
         assert!(
@@ -528,6 +622,98 @@ fn authority_status_endpoint_candidates_remain_fake_only_and_non_sendable() -> T
     assert_eq!(
         transport
             .authority_status_endpoint_candidate_observations()
+            .len(),
+        observed_frame_count
+    );
+    assert!(transport.exchanges().is_empty());
+
+    Ok(())
+}
+
+#[test]
+fn authority_command_id_0x07_analogs_remain_fake_only_and_non_sendable() -> TestResult {
+    let endpoint_review = payload_rerun_endpoint_candidates()?;
+    let analogs = command_id_0x07_analogs(&endpoint_review)?;
+    let mut transport = MozaFakeSerialTransport::new();
+    let mut observed_frame_count = 0usize;
+    let mut send_path_rejected_count = 0usize;
+
+    assert_eq!(analogs.len(), 5);
+    assert!(!bool_field(
+        &endpoint_review,
+        "passive_command_id_0x07_analogs_match_payload_status"
+    )?);
+    assert!(!bool_field(
+        &endpoint_review,
+        "passive_command_id_0x07_analogs_read_only_probe_allowed"
+    )?);
+    assert!(!bool_field(
+        &endpoint_review,
+        "passive_command_id_0x07_analogs_sendable"
+    )?);
+
+    for analog in analogs {
+        let tuple_id = str_field(analog, "tuple_id")?;
+        assert_eq!(str_field(analog, "risk_class")?, "unknown_do_not_send");
+        assert_eq!(str_field(analog, "registry_status")?, "unknown_commanded");
+        assert!(bool_field(analog, "command_id_matches_expected_source")?);
+        assert!(!bool_field(
+            analog,
+            "response_shape_matches_expected_authority_status"
+        )?);
+        assert!(!bool_field(analog, "read_only_probe_allowed")?);
+        assert!(!bool_field(analog, "output_sendability_claim")?);
+        assert!(!bool_field(analog, "registry_promotion_claim")?);
+        assert!(!bool_field(analog, "semantic_decode_claim")?);
+
+        let payload_len = usize_field(analog, "payload_len_min")?;
+        assert_eq!(payload_len, usize_field(analog, "payload_len_max")?);
+        let frame_hex = representative_frame_hex(tuple_id, payload_len)?;
+        let frame = hex_to_bytes(&frame_hex)?;
+        let observation =
+            transport.observe_authority_command_id_0x07_analog_fixture_frame(&frame)?;
+
+        assert_eq!(observation.candidate_id, "authority_command_id_0x07_analog");
+        assert_eq!(observation.tuple_id, tuple_id);
+        assert_eq!(observation.payload_len, payload_len);
+        assert_eq!(observation.risk_class, MozaRiskClass::UnknownDoNotSend);
+        assert!(!observation.matches_payload_authority_status_response);
+        assert!(!observation.corrected_read_only_probe_ready);
+        assert!(!observation.read_only_probe_allowed);
+        assert!(!observation.semantic_decode_claim);
+        assert!(!observation.registry_promotion_claim);
+        assert!(!observation.hardware_output_authorized);
+        assert!(!observation.native_control_evidence);
+        assert!(!observation.output_sendability_claim);
+        for semantic in [
+            "authority_state_status_endpoint_question",
+            "payload_bearing_read_only_status_question",
+            "command_id_0x07_analog",
+        ] {
+            assert!(
+                observation.candidate_semantics.contains(&semantic),
+                "authority command-id analog `{tuple_id}` missing semantic question `{semantic}`"
+            );
+        }
+        observed_frame_count = observed_frame_count.saturating_add(1);
+
+        assert!(
+            matches!(
+                transport.submit_read_only_fixture_frame(&frame),
+                Err(MozaFakeSerialTransportError::Frame(
+                    MozaSerialFrameError::UnknownCommand { .. }
+                ))
+            ),
+            "authority command-id analog frame `{frame_hex}` must not enter the command send path"
+        );
+        send_path_rejected_count = send_path_rejected_count.saturating_add(1);
+    }
+
+    assert_eq!(observed_frame_count, 5);
+    assert_eq!(send_path_rejected_count, 5);
+    assert_eq!(
+        transport
+            .authority_command_id_0x07_analog_observations()
             .len(),
         observed_frame_count
     );

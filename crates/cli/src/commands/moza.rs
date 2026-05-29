@@ -17,7 +17,7 @@ use racing_wheel_hid_moza_protocol::serial::fake_transport::{
     FAKE_TRANSPORT_CODEC_STATUS, MozaFakeSerialTransport, MozaFakeSerialTransportError,
 };
 use racing_wheel_hid_moza_protocol::serial::frame::{
-    MESSAGE_START, MozaSerialFrameError, decode_fixture_frame,
+    MESSAGE_START, MozaSerialFrameError, decode_fixture_frame, serial_checksum,
 };
 use racing_wheel_hid_moza_protocol::serial::status_probe::{
     MozaReadOnlyStatusResponseFrameClass, MozaReadOnlyStatusResponseFrameDiagnosis,
@@ -32562,6 +32562,24 @@ fn vendor_fake_transport_cli_receipt() -> Result<VendorFakeTransportCliReceipt> 
             .iter()
             .map(|observation| observation.send_path_rejected_count)
             .sum();
+    let authority_command_id_0x07_analog_observations =
+        vendor_fake_transport_authority_command_id_0x07_analog_observations(
+            &mut transport,
+            &authority_status_endpoint_candidates,
+        )
+        .context("failed to contain authority command-id 0x07 analogs in fake transport")?;
+    let authority_command_id_0x07_analog_count =
+        authority_command_id_0x07_analog_observations.len();
+    let authority_command_id_0x07_analog_frame_count =
+        authority_command_id_0x07_analog_observations
+            .iter()
+            .map(|observation| observation.observed_frame_count)
+            .sum();
+    let authority_command_id_0x07_analog_send_path_rejected_count =
+        authority_command_id_0x07_analog_observations
+            .iter()
+            .map(|observation| observation.send_path_rejected_count)
+            .sum();
 
     Ok(VendorFakeTransportCliReceipt {
         success: true,
@@ -32643,12 +32661,22 @@ fn vendor_fake_transport_cli_receipt() -> Result<VendorFakeTransportCliReceipt> 
         authority_status_endpoint_candidates_match_payload_status: false,
         corrected_read_only_probe_ready: false,
         authority_status_endpoint_candidate_observations,
+        authority_command_id_0x07_analog_fixture_source: "ci/hardware/moza-r5/2026-05-13/vendor-status-endpoint-candidates-from-payload-rerun.json",
+        authority_command_id_0x07_analog_count,
+        authority_command_id_0x07_analog_frame_count,
+        authority_command_id_0x07_analog_send_path_rejected_count,
+        authority_command_id_0x07_analogs_unknown_do_not_send: true,
+        authority_command_id_0x07_analogs_match_payload_status: false,
+        authority_command_id_0x07_analogs_read_only_probe_allowed: false,
+        authority_command_id_0x07_analogs_sendable: false,
+        authority_command_id_0x07_analog_observations,
         notes: vec![
             "This command replays checked-in synthetic fixture bytes only.",
             "It does not open HID or serial devices and sends no host-to-device traffic.",
             "Write-like vendor output/configuration candidates remain blocked until a later exact authorization stage.",
             "Mode/enable candidate frames from passive evidence are observed in fake transport as unknown_do_not_send and are rejected by the command send path.",
             "Authority-status endpoint candidates from the payload rerun remain fake-only, do not match payload-bearing status responses, and are rejected by the command send path.",
+            "Authority command-id 0x07 analogs are observed in fake transport as unknown_do_not_send endpoint-search fixtures and remain rejected by the command send path.",
         ],
     })
 }
@@ -33020,6 +33048,224 @@ fn vendor_fake_transport_authority_status_endpoint_observations(
     Ok(observations)
 }
 
+fn vendor_fake_transport_authority_command_id_0x07_analog_observations(
+    transport: &mut MozaFakeSerialTransport,
+    endpoint_candidates: &Value,
+) -> Result<Vec<VendorFakeTransportAuthorityCommandId0x07AnalogObservation>> {
+    if json_bool(
+        endpoint_candidates,
+        "passive_command_id_0x07_analogs_match_payload_status",
+    ) != Some(false)
+    {
+        return Err(anyhow!(
+            "authority command-id 0x07 analogs must not match payload status"
+        ));
+    }
+    if json_bool(
+        endpoint_candidates,
+        "passive_command_id_0x07_analogs_read_only_probe_allowed",
+    ) != Some(false)
+    {
+        return Err(anyhow!(
+            "authority command-id 0x07 analogs must not be read-only probe allowed"
+        ));
+    }
+    if json_bool(
+        endpoint_candidates,
+        "passive_command_id_0x07_analogs_sendable",
+    ) != Some(false)
+    {
+        return Err(anyhow!(
+            "authority command-id 0x07 analogs must not be sendable"
+        ));
+    }
+
+    let analogs = endpoint_candidates
+        .get("passive_command_id_0x07_analogs")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            anyhow!("authority-status endpoint fixture is missing command-id 0x07 analogs")
+        })?;
+    let mut observations = Vec::new();
+
+    for analog in analogs {
+        let tuple_id = json_string(analog, "tuple_id")
+            .ok_or_else(|| anyhow!("command-id 0x07 analog is missing `tuple_id`"))?;
+        if json_string(analog, "registry_status") != Some("unknown_commanded") {
+            return Err(anyhow!(
+                "command-id 0x07 analog `{tuple_id}` must remain unknown_commanded"
+            ));
+        }
+        if json_string(analog, "risk_class") != Some("unknown_do_not_send") {
+            return Err(anyhow!(
+                "command-id 0x07 analog `{tuple_id}` must remain unknown_do_not_send"
+            ));
+        }
+        if json_bool(analog, "command_id_matches_expected_source") != Some(true) {
+            return Err(anyhow!(
+                "command-id 0x07 analog `{tuple_id}` must preserve command-id match context"
+            ));
+        }
+        if json_bool(analog, "response_shape_matches_expected_authority_status") != Some(false) {
+            return Err(anyhow!(
+                "command-id 0x07 analog `{tuple_id}` must not match payload authority status"
+            ));
+        }
+        if json_bool(analog, "read_only_probe_allowed") != Some(false) {
+            return Err(anyhow!(
+                "command-id 0x07 analog `{tuple_id}` must not be read-only probe allowed"
+            ));
+        }
+        for claim_field in [
+            "semantic_decode_claim",
+            "registry_promotion_claim",
+            "output_sendability_claim",
+        ] {
+            if json_bool(analog, claim_field) != Some(false) {
+                return Err(anyhow!(
+                    "command-id 0x07 analog `{tuple_id}` must keep `{claim_field}` false"
+                ));
+            }
+        }
+
+        let payload_len_min = json_u64(analog, "payload_len_min")
+            .ok_or_else(|| anyhow!("command-id 0x07 analog `{tuple_id}` missing payload_len_min"))?
+            as usize;
+        let payload_len_max = json_u64(analog, "payload_len_max")
+            .ok_or_else(|| anyhow!("command-id 0x07 analog `{tuple_id}` missing payload_len_max"))?
+            as usize;
+        if payload_len_min != payload_len_max {
+            return Err(anyhow!(
+                "command-id 0x07 analog `{tuple_id}` must have a stable payload length for representative fake containment"
+            ));
+        }
+
+        let representative_frame_hex =
+            representative_unknown_tuple_frame_hex(tuple_id, payload_len_min).with_context(
+                || format!("failed to build representative frame for `{tuple_id}`"),
+            )?;
+        let frame = parse_hex_bytes(&representative_frame_hex).map_err(anyhow::Error::msg)?;
+        {
+            let observation = transport
+                .observe_authority_command_id_0x07_analog_fixture_frame(&frame)
+                .with_context(|| {
+                    format!(
+                        "command-id 0x07 analog `{tuple_id}` frame `{representative_frame_hex}` was not observable"
+                    )
+                })?;
+            if observation.tuple_id != tuple_id {
+                return Err(anyhow!(
+                    "command-id 0x07 analog frame `{representative_frame_hex}` routed to `{}`, expected `{tuple_id}`",
+                    observation.tuple_id
+                ));
+            }
+            if observation.risk_class != MozaRiskClass::UnknownDoNotSend {
+                return Err(anyhow!(
+                    "command-id 0x07 analog frame `{representative_frame_hex}` was not fenced unknown_do_not_send"
+                ));
+            }
+            if observation.matches_payload_authority_status_response
+                || observation.corrected_read_only_probe_ready
+                || observation.read_only_probe_allowed
+                || observation.semantic_decode_claim
+                || observation.registry_promotion_claim
+                || observation.hardware_output_authorized
+                || observation.native_control_evidence
+                || observation.output_sendability_claim
+            {
+                return Err(anyhow!(
+                    "command-id 0x07 analog frame `{representative_frame_hex}` created a forbidden claim"
+                ));
+            }
+        }
+
+        let mut send_path_rejected_count = 0usize;
+        match transport.submit_read_only_fixture_frame(&frame) {
+            Err(MozaFakeSerialTransportError::Frame(MozaSerialFrameError::UnknownCommand {
+                ..
+            })) => {
+                send_path_rejected_count = send_path_rejected_count.saturating_add(1);
+            }
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!(
+                        "command-id 0x07 analog `{tuple_id}` frame `{representative_frame_hex}` send-path rejection used an unexpected error"
+                    )
+                });
+            }
+            Ok(exchange) => {
+                return Err(anyhow!(
+                    "command-id 0x07 analog frame `{representative_frame_hex}` unexpectedly entered fake command path as `{}`",
+                    exchange.command_id
+                ));
+            }
+        }
+
+        observations.push(VendorFakeTransportAuthorityCommandId0x07AnalogObservation {
+            candidate_id: "authority_command_id_0x07_analog".to_string(),
+            candidate_semantics: vec![
+                "authority_state_status_endpoint_question".to_string(),
+                "payload_bearing_read_only_status_question".to_string(),
+                "command_id_0x07_analog".to_string(),
+            ],
+            tuple_id: tuple_id.to_string(),
+            scenarios: json_string_array_field(analog, "scenarios")?,
+            total_count: json_u64(analog, "total_count")
+                .ok_or_else(|| anyhow!("command-id 0x07 analog `{tuple_id}` missing total_count"))?
+                as usize,
+            payload_len_min,
+            payload_len_max,
+            representative_frame_hexes: vec![representative_frame_hex],
+            observed_frame_count: 1,
+            send_path_rejected_count,
+            command_id_matches_expected_source: true,
+            risk_class: "unknown_do_not_send".to_string(),
+            matches_payload_authority_status_response: false,
+            corrected_read_only_probe_ready: false,
+            read_only_probe_allowed: false,
+            semantic_decode_claim: false,
+            registry_promotion_claim: false,
+            hardware_output_authorized: false,
+            native_control_evidence: false,
+            output_sendability_claim: false,
+        });
+    }
+
+    Ok(observations)
+}
+
+fn representative_unknown_tuple_frame_hex(tuple_id: &str, payload_len: usize) -> Result<String> {
+    let (group, device_id, command) = parse_tuple_id_bytes(tuple_id)?;
+    let declared_len = payload_len
+        .checked_add(1)
+        .ok_or_else(|| anyhow!("representative payload length overflow"))?;
+    let declared_len = u8::try_from(declared_len)
+        .with_context(|| format!("representative payload for `{tuple_id}` is too long"))?;
+    let mut frame = vec![MESSAGE_START, declared_len, group, device_id, command];
+    frame.resize(frame.len() + payload_len, 0);
+    let checksum = serial_checksum(&frame);
+    frame.push(checksum);
+    Ok(bytes_hex_compact(&frame))
+}
+
+fn parse_tuple_id_bytes(tuple_id: &str) -> Result<(u8, u8, u8)> {
+    let mut parts = tuple_id.split('/');
+    let group = parse_tuple_id_byte(tuple_id, "group", parts.next())?;
+    let device_id = parse_tuple_id_byte(tuple_id, "device_id", parts.next())?;
+    let command = parse_tuple_id_byte(tuple_id, "command", parts.next())?;
+    if parts.next().is_some() {
+        return Err(anyhow!("tuple id `{tuple_id}` has more than three parts"));
+    }
+    Ok((group, device_id, command))
+}
+
+fn parse_tuple_id_byte(tuple_id: &str, label: &str, part: Option<&str>) -> Result<u8> {
+    let part = part.ok_or_else(|| anyhow!("tuple id `{tuple_id}` is missing {label}"))?;
+    parse_hex_u8_token(part)
+        .map_err(anyhow::Error::msg)
+        .with_context(|| format!("tuple id `{tuple_id}` has invalid {label} byte `{part}`"))
+}
+
 #[derive(Default)]
 struct CaptureValidationSummary {
     total_reports: usize,
@@ -33242,6 +33488,16 @@ struct VendorFakeTransportCliReceipt {
     corrected_read_only_probe_ready: bool,
     authority_status_endpoint_candidate_observations:
         Vec<VendorFakeTransportAuthorityStatusEndpointCandidateObservation>,
+    authority_command_id_0x07_analog_fixture_source: &'static str,
+    authority_command_id_0x07_analog_count: usize,
+    authority_command_id_0x07_analog_frame_count: usize,
+    authority_command_id_0x07_analog_send_path_rejected_count: usize,
+    authority_command_id_0x07_analogs_unknown_do_not_send: bool,
+    authority_command_id_0x07_analogs_match_payload_status: bool,
+    authority_command_id_0x07_analogs_read_only_probe_allowed: bool,
+    authority_command_id_0x07_analogs_sendable: bool,
+    authority_command_id_0x07_analog_observations:
+        Vec<VendorFakeTransportAuthorityCommandId0x07AnalogObservation>,
     notes: Vec<&'static str>,
 }
 
@@ -33292,6 +33548,30 @@ struct VendorFakeTransportAuthorityStatusEndpointCandidateObservation {
     risk_class: String,
     matches_payload_authority_status_response: bool,
     corrected_read_only_probe_ready: bool,
+    semantic_decode_claim: bool,
+    registry_promotion_claim: bool,
+    hardware_output_authorized: bool,
+    native_control_evidence: bool,
+    output_sendability_claim: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorFakeTransportAuthorityCommandId0x07AnalogObservation {
+    candidate_id: String,
+    candidate_semantics: Vec<String>,
+    tuple_id: String,
+    scenarios: Vec<String>,
+    total_count: usize,
+    payload_len_min: usize,
+    payload_len_max: usize,
+    representative_frame_hexes: Vec<String>,
+    observed_frame_count: usize,
+    send_path_rejected_count: usize,
+    command_id_matches_expected_source: bool,
+    risk_class: String,
+    matches_payload_authority_status_response: bool,
+    corrected_read_only_probe_ready: bool,
+    read_only_probe_allowed: bool,
     semantic_decode_claim: bool,
     registry_promotion_claim: bool,
     hardware_output_authorized: bool,
@@ -42039,6 +42319,46 @@ mod tests {
             json_bool(&value, "corrected_read_only_probe_ready"),
             Some(false)
         );
+        assert_eq!(
+            json_u64(&value, "authority_command_id_0x07_analog_count"),
+            Some(5)
+        );
+        assert_eq!(
+            json_u64(&value, "authority_command_id_0x07_analog_frame_count"),
+            Some(5)
+        );
+        assert_eq!(
+            json_u64(
+                &value,
+                "authority_command_id_0x07_analog_send_path_rejected_count"
+            ),
+            Some(5)
+        );
+        assert_eq!(
+            json_bool(
+                &value,
+                "authority_command_id_0x07_analogs_unknown_do_not_send"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(
+                &value,
+                "authority_command_id_0x07_analogs_match_payload_status"
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(
+                &value,
+                "authority_command_id_0x07_analogs_read_only_probe_allowed"
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&value, "authority_command_id_0x07_analogs_sendable"),
+            Some(false)
+        );
 
         Ok(())
     }
@@ -42085,6 +42405,15 @@ mod tests {
             "authority_status_endpoint_candidates_match_payload_status",
             "corrected_read_only_probe_ready",
             "authority_status_endpoint_candidate_observations",
+            "authority_command_id_0x07_analog_fixture_source",
+            "authority_command_id_0x07_analog_count",
+            "authority_command_id_0x07_analog_frame_count",
+            "authority_command_id_0x07_analog_send_path_rejected_count",
+            "authority_command_id_0x07_analogs_unknown_do_not_send",
+            "authority_command_id_0x07_analogs_match_payload_status",
+            "authority_command_id_0x07_analogs_read_only_probe_allowed",
+            "authority_command_id_0x07_analogs_sendable",
+            "authority_command_id_0x07_analog_observations",
         ] {
             assert!(
                 required.iter().any(|entry| entry.as_str() == Some(field)),
@@ -42160,6 +42489,30 @@ mod tests {
         );
         assert_eq!(
             schema["properties"]["corrected_read_only_probe_ready"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["authority_command_id_0x07_analog_count"]["const"],
+            5
+        );
+        assert_eq!(
+            schema["properties"]["authority_command_id_0x07_analog_frame_count"]["const"],
+            5
+        );
+        assert_eq!(
+            schema["properties"]["authority_command_id_0x07_analog_send_path_rejected_count"]["const"],
+            5
+        );
+        assert_eq!(
+            schema["properties"]["authority_command_id_0x07_analogs_match_payload_status"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["authority_command_id_0x07_analogs_read_only_probe_allowed"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["authority_command_id_0x07_analogs_sendable"]["const"],
             false
         );
 
@@ -42239,6 +42592,16 @@ mod tests {
         assert!(receipt.authority_status_endpoint_candidates_unknown_do_not_send);
         assert!(!receipt.authority_status_endpoint_candidates_match_payload_status);
         assert!(!receipt.corrected_read_only_probe_ready);
+        assert_eq!(receipt.authority_command_id_0x07_analog_count, 5);
+        assert_eq!(receipt.authority_command_id_0x07_analog_frame_count, 5);
+        assert_eq!(
+            receipt.authority_command_id_0x07_analog_send_path_rejected_count,
+            receipt.authority_command_id_0x07_analog_frame_count
+        );
+        assert!(receipt.authority_command_id_0x07_analogs_unknown_do_not_send);
+        assert!(!receipt.authority_command_id_0x07_analogs_match_payload_status);
+        assert!(!receipt.authority_command_id_0x07_analogs_read_only_probe_allowed);
+        assert!(!receipt.authority_command_id_0x07_analogs_sendable);
         assert!(
             receipt
                 .authority_status_endpoint_candidate_observations
@@ -42266,6 +42629,24 @@ mod tests {
                         && candidate.risk_class == "unknown_do_not_send"
                         && !candidate.matches_payload_authority_status_response
                         && !candidate.corrected_read_only_probe_ready
+                        && !candidate.semantic_decode_claim
+                        && !candidate.registry_promotion_claim
+                        && !candidate.hardware_output_authorized
+                        && !candidate.native_control_evidence
+                        && !candidate.output_sendability_claim
+                })
+        );
+        assert!(
+            receipt
+                .authority_command_id_0x07_analog_observations
+                .iter()
+                .any(|candidate| {
+                    candidate.tuple_id == "0x40/0x17/0x07"
+                        && candidate.total_count == 558
+                        && candidate.risk_class == "unknown_do_not_send"
+                        && !candidate.matches_payload_authority_status_response
+                        && !candidate.corrected_read_only_probe_ready
+                        && !candidate.read_only_probe_allowed
                         && !candidate.semantic_decode_claim
                         && !candidate.registry_promotion_claim
                         && !candidate.hardware_output_authorized
@@ -42338,6 +42719,25 @@ mod tests {
         );
         assert_eq!(
             json_bool(&value, "corrected_read_only_probe_ready"),
+            Some(false)
+        );
+        assert_eq!(
+            json_u64(&value, "authority_command_id_0x07_analog_count"),
+            Some(5)
+        );
+        assert_eq!(
+            json_u64(&value, "authority_command_id_0x07_analog_frame_count"),
+            Some(5)
+        );
+        assert_eq!(
+            json_u64(
+                &value,
+                "authority_command_id_0x07_analog_send_path_rejected_count"
+            ),
+            Some(5)
+        );
+        assert_eq!(
+            json_bool(&value, "authority_command_id_0x07_analogs_sendable"),
             Some(false)
         );
         assert_eq!(json_bool(&value, "output_sendability_claim"), Some(false));

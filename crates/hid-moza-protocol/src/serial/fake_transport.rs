@@ -20,6 +20,11 @@ const BASE_STATUS_OR_MODE_POLL_SEMANTICS: &[&str] = &[
     "standard_pidff_mode_enable",
     "game_control_mode_select",
 ];
+const AUTHORITY_COMMAND_ID_0X07_ANALOG_SEMANTICS: &[&str] = &[
+    "authority_state_status_endpoint_question",
+    "payload_bearing_read_only_status_question",
+    "command_id_0x07_analog",
+];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MozaFakeSerialTransportError {
@@ -34,6 +39,11 @@ pub enum MozaFakeSerialTransportError {
         command: u8,
     },
     AuthorityStatusEndpointCandidateNotReviewed {
+        group: u8,
+        device_id: u8,
+        command: u8,
+    },
+    AuthorityCommandIdAnalogNotReviewed {
         group: u8,
         device_id: u8,
         command: u8,
@@ -66,6 +76,14 @@ impl fmt::Display for MozaFakeSerialTransportError {
             } => write!(
                 formatter,
                 "fake serial transport refused unreviewed authority-status endpoint candidate tuple 0x{group:02X}/0x{device_id:02X}/0x{command:02X}"
+            ),
+            Self::AuthorityCommandIdAnalogNotReviewed {
+                group,
+                device_id,
+                command,
+            } => write!(
+                formatter,
+                "fake serial transport refused unreviewed authority command-id analog tuple 0x{group:02X}/0x{device_id:02X}/0x{command:02X}"
             ),
         }
     }
@@ -130,12 +148,34 @@ pub struct MozaFakeAuthorityStatusEndpointCandidateObservation {
     pub output_sendability_claim: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MozaFakeAuthorityCommandIdAnalogObservation {
+    pub candidate_id: &'static str,
+    pub candidate_semantics: &'static [&'static str],
+    pub tuple_id: String,
+    pub group: u8,
+    pub device_id: u8,
+    pub command: u8,
+    pub payload_len: usize,
+    pub checksum: u8,
+    pub risk_class: MozaRiskClass,
+    pub matches_payload_authority_status_response: bool,
+    pub corrected_read_only_probe_ready: bool,
+    pub read_only_probe_allowed: bool,
+    pub semantic_decode_claim: bool,
+    pub registry_promotion_claim: bool,
+    pub hardware_output_authorized: bool,
+    pub native_control_evidence: bool,
+    pub output_sendability_claim: bool,
+}
+
 #[derive(Default, Debug)]
 pub struct MozaFakeSerialTransport {
     exchanges: Vec<MozaFakeSerialExchange>,
     mode_enable_candidate_observations: Vec<MozaFakeModeEnableCandidateObservation>,
     authority_status_endpoint_candidate_observations:
         Vec<MozaFakeAuthorityStatusEndpointCandidateObservation>,
+    authority_command_id_0x07_analog_observations: Vec<MozaFakeAuthorityCommandIdAnalogObservation>,
 }
 
 impl MozaFakeSerialTransport {
@@ -251,6 +291,53 @@ impl MozaFakeSerialTransport {
         Ok(&self.authority_status_endpoint_candidate_observations[observation_index])
     }
 
+    pub fn observe_authority_command_id_0x07_analog_fixture_frame(
+        &mut self,
+        frame: &[u8],
+    ) -> Result<&MozaFakeAuthorityCommandIdAnalogObservation, MozaFakeSerialTransportError> {
+        let observed = decode_observed_frame_shape(frame)?;
+        let route = authority_command_id_0x07_analog_route(
+            observed.group,
+            observed.device_id,
+            observed.command_id,
+        )
+        .ok_or(
+            MozaFakeSerialTransportError::AuthorityCommandIdAnalogNotReviewed {
+                group: observed.group,
+                device_id: observed.device_id,
+                command: observed.command_id,
+            },
+        )?;
+
+        let observation = MozaFakeAuthorityCommandIdAnalogObservation {
+            candidate_id: route.candidate_id,
+            candidate_semantics: route.candidate_semantics,
+            tuple_id: format!(
+                "0x{:02X}/0x{:02X}/0x{:02X}",
+                observed.group, observed.device_id, observed.command_id
+            ),
+            group: observed.group,
+            device_id: observed.device_id,
+            command: observed.command_id,
+            payload_len: observed.payload.len(),
+            checksum: observed.checksum,
+            risk_class: MozaRiskClass::UnknownDoNotSend,
+            matches_payload_authority_status_response: false,
+            corrected_read_only_probe_ready: false,
+            read_only_probe_allowed: false,
+            semantic_decode_claim: false,
+            registry_promotion_claim: false,
+            hardware_output_authorized: false,
+            native_control_evidence: false,
+            output_sendability_claim: false,
+        };
+        self.authority_command_id_0x07_analog_observations
+            .push(observation);
+
+        let observation_index = self.authority_command_id_0x07_analog_observations.len() - 1;
+        Ok(&self.authority_command_id_0x07_analog_observations[observation_index])
+    }
+
     pub fn exchanges(&self) -> &[MozaFakeSerialExchange] {
         &self.exchanges
     }
@@ -263,6 +350,12 @@ impl MozaFakeSerialTransport {
         &self,
     ) -> &[MozaFakeAuthorityStatusEndpointCandidateObservation] {
         &self.authority_status_endpoint_candidate_observations
+    }
+
+    pub fn authority_command_id_0x07_analog_observations(
+        &self,
+    ) -> &[MozaFakeAuthorityCommandIdAnalogObservation] {
+        &self.authority_command_id_0x07_analog_observations
     }
 }
 
@@ -301,6 +394,30 @@ fn mode_enable_candidate_route(
             candidate_id: "session_or_status_keepalive_candidate",
             semantic_hypothesis: "session_or_status_keepalive_candidate",
             candidate_semantics: SESSION_OR_STATUS_KEEPALIVE_SEMANTICS,
+        }),
+        _ => None,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct AuthorityCommandId0x07AnalogRoute {
+    candidate_id: &'static str,
+    candidate_semantics: &'static [&'static str],
+}
+
+fn authority_command_id_0x07_analog_route(
+    group: u8,
+    device_id: u8,
+    command: u8,
+) -> Option<AuthorityCommandId0x07AnalogRoute> {
+    match (group, device_id, command) {
+        (0x40, 0x17, 0x07)
+        | (0x28, 0x13, 0x07)
+        | (0x23, 0x19, 0x07)
+        | (0x3F, 0x17, 0x07)
+        | (0x5B, 0x1B, 0x07) => Some(AuthorityCommandId0x07AnalogRoute {
+            candidate_id: "authority_command_id_0x07_analog",
+            candidate_semantics: AUTHORITY_COMMAND_ID_0X07_ANALOG_SEMANTICS,
         }),
         _ => None,
     }
