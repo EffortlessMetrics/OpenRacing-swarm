@@ -236,10 +236,14 @@ no-output confirmation. The native-control implementation path has recorded
 fake-transport containment for the mode/enable candidate questions:
 representative frames are observable in software fake transport while the
 command/send path still rejects them as unknown commands. The next native step
-is read-only hardware status/mode matrix planning or semantic decoder
-refinement, not a future authority write or motion ladder plan; the next
-witness-lane operator work remains the remaining passive SimHub/simulator
-captures.
+is the staged read-only hardware status/mode matrix in
+`vendor-status-mode-matrix-plan.json`, followed by exactly one live read-only
+`wheelctl moza vendor-status-probe` only after fresh hardware-doctor review and
+exclusive R5 serial/CDC access. That matrix is a prerequisite for any later
+exact authorization; it is not output, not a mode-enable write, not a PIDFF
+rerun, and not a motion ladder plan. Missing or unknown mode/safety status
+blocks any later authority plan. The next witness-lane operator work remains
+the remaining passive SimHub/simulator captures.
 
 Passive USB sniff captures may produce non-claiming `sniff-receipt.json`,
 `sniff-summary.json`, and bundle manifest artifacts, but those are

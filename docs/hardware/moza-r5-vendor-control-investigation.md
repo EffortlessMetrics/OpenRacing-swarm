@@ -57,7 +57,11 @@ smoke-ready claim. The fake transport now records containment for those
 questions: representative frames are observed as `unknown_do_not_send`
 candidate evidence, and the command/send path still rejects the same frames as
 unknown commands. The next native-path step is read-only hardware status/mode
-matrix planning or semantic decoder refinement, not an output attempt. The
+matrix execution from the staged
+`ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-plan.json`, not an
+output attempt. That matrix may only use registry-allowed read-only status
+queries after fresh hardware-doctor review and exclusive R5 serial/CDC access;
+unknown or missing mode/safety status blocks any later authority plan. The
 current receipt also records the correlation plan explicitly: two non-sendable
 targets, completed observations in the three Pit House scenarios, and
 remaining no-output correlation gaps in SimHub and simulator scenarios. The

@@ -132,8 +132,11 @@ tuple sendability, authorization, hardware output, native-control,
 native-visible, or smoke-ready claim. The fake transport now observes
 representative frames for both groups as software-only candidate observations
 while the command/send path still rejects the same frames as unknown commands.
-That is containment evidence only; the next native-path step is a read-only
-hardware status/mode matrix, not output.
+That is containment evidence only. The staged
+`vendor-status-mode-matrix-plan.json` now defines the next physical bench
+prerequisite: a read-only hardware status/mode matrix, not output,
+authorization, PIDFF rerun, or motion. Unknown or missing mode/safety status
+blocks any later exact authority plan.
 The `pit-house-setting-change` sniff plan now pins the scenario-specific
 operator evidence required for that next capture: exact Pit House setting,
 starting value, ending value, and an affirmative restore status. The first
@@ -5054,6 +5057,90 @@ receipt additions, focused tests, and source-of-truth updates. Do not remove
 the passive evidence review, accepted Pit House sniff evidence, low-yield
 classification, SimHub handoff staging, USBPcap selector guard, consumed
 hardware attempts, or post-authority PIDFF diagnosis.
+
+## Work item: stage-read-only-vendor-status-mode-matrix
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: exact authorization planning for any future decoded volatile mode or
+enable candidate
+Blocked by: no live read-only status/mode matrix receipt has been recorded;
+this item stages the matrix and keeps hardware access closed.
+
+### Goal
+
+Define the read-only vendor status/mode matrix required before any future
+volatile mode/enable write can be reviewed, while preserving the current
+unknown tuple fence and avoiding live hardware access in this PR.
+
+### Production Delta
+
+`ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-plan.json`
+records the staged matrix fields, preconditions, allowed registry read-only
+status commands, and blocked mode/enable candidate groups. It explicitly marks
+the artifact as `staged_read_only_status_mode_matrix_only` with no live
+hardware access, no serial open, no query send, no output/configuration/
+firmware write, and no readiness or sendability claim.
+
+`schemas/moza-vendor-status-mode-matrix-plan.schema.json` pins that staged
+boundary. The existing `wheelctl moza vendor-status-probe` receipt schema and
+tests now also pin `smoke_ready=false`, `release_ready=false`,
+`registry_promotion_claim=false`, `output_sendability_claim=false`,
+`high_torque_enabled=false`, `mode_enable_candidates_sendable=false`, and
+`planned_next_output_allowed=false`. The read-only command path still accepts
+only registry-approved status commands and rejects the current mode/enable
+candidate group IDs, raw tuple IDs, firmware/DFU labels, high-torque labels,
+and write-like registry commands.
+
+### Non-goals
+
+No live hardware probe, serial open, read-only query send, HID output,
+HID feature report, PIDFF output, vendor authority write, mode enable write,
+authorization receipt, motion attempt, Pit House or SimHub dependency,
+simulator capture, semantic command decode, registry promotion, tuple
+sendability, native-control claim, native-visible claim, smoke-ready claim,
+coexistence claim, simulator readiness claim, firmware/DFU interaction,
+high torque, or release-ready claim.
+
+### Acceptance
+
+- The staged plan records COM/MI_00 identity, device identity, mode/status,
+  FFB/session/status flags, gain/strength/status values, Pit House serial-owner
+  state, no-write proof, and firmware/DFU absence as expected matrix fields.
+- The staged plan says unknown or missing mode/safety status blocks any later
+  authority plan.
+- The allowed command list contains only registry read-only status commands.
+- The `0x25/0x19/*`, `0x5A/0x1B/*`, and `0x5D/0x1B/*` candidate groups remain
+  `unknown_do_not_send`, non-sendable, and not registry-promoted.
+- The existing live read-only status-probe receipt remains non-claiming and
+  cannot be used as output authorization or readiness proof.
+- Focused tests reject write-like, firmware/DFU, high-torque, unknown, and
+  current mode/enable candidate IDs from the read-only command selection path.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --test vendor_fake_serial_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the staged status/mode matrix plan, schema, status-probe receipt
+schema additions, focused tests, and source-of-truth updates. Do not remove the
+fake-transport containment proof, passive evidence review, accepted Pit House
+sniff evidence, low-yield classification, SimHub handoff staging, USBPcap
+selector guard, consumed hardware attempts, or post-authority PIDFF diagnosis.
 
 ## Work item: native-visible-promotion
 

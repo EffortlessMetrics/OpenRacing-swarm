@@ -201,6 +201,9 @@ const MOZA_VENDOR_FAKE_SERIAL_TRANSPORT_JSON: &str =
     include_str!("../../../../fixtures/moza/r5/vendor-fake-serial-transport.json");
 const MOZA_VENDOR_PROTOCOL_EVIDENCE_REVIEW_JSON: &str =
     include_str!("../../../../ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json");
+#[cfg(test)]
+const MOZA_VENDOR_STATUS_MODE_MATRIX_PLAN_JSON: &str =
+    include_str!("../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-plan.json");
 const SIMULATOR_FFB_PREREQUISITE_ARTIFACTS: [(&str, &str); 6] = [
     ("zero_torque_real_hardware", "zero-torque-proof.json"),
     ("watchdog_zero_output", "watchdog-proof.json"),
@@ -27038,12 +27041,20 @@ fn vendor_status_probe_receipt_with_transport(
         native_control_evidence: false,
         hardware_output_authorized: false,
         native_visible_ready: false,
-        next_allowed_action: "Review this read-only status receipt before implementing exact authorization support.",
+        smoke_ready: false,
+        release_ready: false,
+        registry_promotion_claim: false,
+        output_sendability_claim: false,
+        next_allowed_action: "Review this read-only status/mode matrix receipt before any later exact authorization; missing or unknown mode/safety status blocks output planning.",
         blocked_actions: vec![
+            "mode enable write",
+            "authority write",
             "output write",
             "configuration write",
+            "PIDFF rerun",
             "authorization receipt",
             "hardware writes",
+            "high torque",
             "native-control claim",
             "native-visible claim",
             "smoke-ready claim",
@@ -27056,6 +27067,8 @@ fn vendor_status_probe_receipt_with_transport(
             "docs/hardware/moza-r5-vendor-authority-test-plan.md",
             "fixtures/moza/r5/vendor-command-registry.json",
             "fixtures/moza/r5/vendor-serial-codec-fixtures.json",
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-plan.json",
+            "schemas/moza-vendor-status-mode-matrix-plan.schema.json",
             "schemas/moza-vendor-status-probe.schema.json",
             "crates/hid-moza-protocol/src/serial/status_probe.rs",
             "crates/cli/src/commands/moza.rs",
@@ -27074,11 +27087,17 @@ fn vendor_status_probe_receipt_with_transport(
         no_feature_reports: true,
         no_serial_config_commands: true,
         no_firmware_or_dfu_commands: true,
+        high_torque_enabled: false,
         sent_read_only_query_commands: sent_query_count > 0,
         sent_read_only_query_count: sent_query_count,
         sent_output_writes: false,
         sent_configuration_writes: false,
         sent_firmware_or_dfu_commands: false,
+        mode_enable_candidates_sendable: false,
+        status_mode_matrix_stage: "read_only_status_probe",
+        status_mode_matrix_plan: "ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-plan.json",
+        unknown_safety_or_mode_state_blocks_authority: true,
+        planned_next_output_allowed: false,
         real_hardware_status_evidence: failed_response_count == 0 && decoded_response_count > 0,
         transport_kind: "serial_read_only",
         codec_status: moza_serial_codec_status_name(READ_ONLY_STATUS_CODEC_STATUS),
@@ -27090,6 +27109,8 @@ fn vendor_status_probe_receipt_with_transport(
         notes: vec![
             "This command sends only registry-allowed read-only vendor status queries.",
             "It never sends output, configuration, firmware, DFU, or unknown commands.",
+            "Unknown mode/enable candidate tuples remain non-sendable and cannot enter this read-only command path.",
+            "The status/mode matrix is a prerequisite for a later reviewed plan; it is not authorization.",
             "A successful receipt is status/protocol evidence only and is not native-control, native-visible, smoke-ready, or release-ready proof.",
         ],
     })
@@ -31384,6 +31405,10 @@ struct VendorStatusProbeReceipt {
     native_control_evidence: bool,
     hardware_output_authorized: bool,
     native_visible_ready: bool,
+    smoke_ready: bool,
+    release_ready: bool,
+    registry_promotion_claim: bool,
+    output_sendability_claim: bool,
     next_allowed_action: &'static str,
     blocked_actions: Vec<&'static str>,
     required_artifacts: Vec<&'static str>,
@@ -31401,11 +31426,17 @@ struct VendorStatusProbeReceipt {
     no_feature_reports: bool,
     no_serial_config_commands: bool,
     no_firmware_or_dfu_commands: bool,
+    high_torque_enabled: bool,
     sent_read_only_query_commands: bool,
     sent_read_only_query_count: usize,
     sent_output_writes: bool,
     sent_configuration_writes: bool,
     sent_firmware_or_dfu_commands: bool,
+    mode_enable_candidates_sendable: bool,
+    status_mode_matrix_stage: &'static str,
+    status_mode_matrix_plan: &'static str,
+    unknown_safety_or_mode_state_blocks_authority: bool,
+    planned_next_output_allowed: bool,
     real_hardware_status_evidence: bool,
     transport_kind: &'static str,
     codec_status: &'static str,
@@ -39992,6 +40023,12 @@ mod tests {
             &mut transport,
         )?;
         let value = serde_json::to_value(&receipt)?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-status-probe.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&value).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
 
         assert_eq!(
             json_string(&value, "artifact_kind"),
@@ -40004,11 +40041,16 @@ mod tests {
         assert_eq!(json_bool(&value, "native_control_evidence"), Some(false));
         assert_eq!(json_bool(&value, "hardware_output_authorized"), Some(false));
         assert_eq!(json_bool(&value, "native_visible_ready"), Some(false));
+        assert_eq!(json_bool(&value, "smoke_ready"), Some(false));
+        assert_eq!(json_bool(&value, "release_ready"), Some(false));
+        assert_eq!(json_bool(&value, "registry_promotion_claim"), Some(false));
+        assert_eq!(json_bool(&value, "output_sendability_claim"), Some(false));
         assert_eq!(json_bool(&value, "no_hid_device_opened"), Some(true));
         assert_eq!(json_bool(&value, "opened_serial_device"), Some(true));
         assert_eq!(json_bool(&value, "serial_identity_verified"), Some(true));
         assert_eq!(json_bool(&value, "no_output_reports"), Some(true));
         assert_eq!(json_bool(&value, "no_feature_reports"), Some(true));
+        assert_eq!(json_bool(&value, "high_torque_enabled"), Some(false));
         assert_eq!(
             json_bool(&value, "sent_read_only_query_commands"),
             Some(true)
@@ -40017,6 +40059,26 @@ mod tests {
         assert_eq!(json_bool(&value, "sent_configuration_writes"), Some(false));
         assert_eq!(
             json_bool(&value, "sent_firmware_or_dfu_commands"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&value, "mode_enable_candidates_sendable"),
+            Some(false)
+        );
+        assert_eq!(
+            json_string(&value, "status_mode_matrix_stage"),
+            Some("read_only_status_probe")
+        );
+        assert_eq!(
+            json_string(&value, "status_mode_matrix_plan"),
+            Some("ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-plan.json")
+        );
+        assert_eq!(
+            json_bool(&value, "unknown_safety_or_mode_state_blocks_authority"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&value, "planned_next_output_allowed"),
             Some(false)
         );
         assert_eq!(
@@ -40051,15 +40113,25 @@ mod tests {
             "native_control_evidence",
             "hardware_output_authorized",
             "native_visible_ready",
+            "smoke_ready",
+            "release_ready",
+            "registry_promotion_claim",
+            "output_sendability_claim",
             "no_hid_device_opened",
             "opened_serial_device",
             "serial_identity_verified",
             "no_output_reports",
             "no_feature_reports",
+            "high_torque_enabled",
             "sent_read_only_query_commands",
             "sent_output_writes",
             "sent_configuration_writes",
             "sent_firmware_or_dfu_commands",
+            "mode_enable_candidates_sendable",
+            "status_mode_matrix_stage",
+            "status_mode_matrix_plan",
+            "unknown_safety_or_mode_state_blocks_authority",
+            "planned_next_output_allowed",
             "transport_kind",
             "codec_status",
             "hardware_write_eligible",
@@ -40083,7 +40155,18 @@ mod tests {
             false
         );
         assert_eq!(schema["properties"]["native_visible_ready"]["const"], false);
+        assert_eq!(schema["properties"]["smoke_ready"]["const"], false);
+        assert_eq!(schema["properties"]["release_ready"]["const"], false);
+        assert_eq!(
+            schema["properties"]["registry_promotion_claim"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["output_sendability_claim"]["const"],
+            false
+        );
         assert_eq!(schema["properties"]["opened_serial_device"]["const"], true);
+        assert_eq!(schema["properties"]["high_torque_enabled"]["const"], false);
         assert_eq!(
             schema["properties"]["sent_read_only_query_commands"]["const"],
             true
@@ -40098,6 +40181,18 @@ mod tests {
             false
         );
         assert_eq!(
+            schema["properties"]["mode_enable_candidates_sendable"]["const"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["status_mode_matrix_stage"]["const"],
+            "read_only_status_probe"
+        );
+        assert_eq!(
+            schema["properties"]["planned_next_output_allowed"]["const"],
+            false
+        );
+        assert_eq!(
             schema["properties"]["hardware_write_eligible"]["const"],
             false
         );
@@ -40106,19 +40201,142 @@ mod tests {
     }
 
     #[test]
-    fn vendor_status_probe_rejects_write_like_command_selection() -> TestResult {
-        let command_ids = vec!["base_gain_set_overall_strength".to_string()];
-        let error = match selected_read_only_status_commands(&command_ids) {
-            Ok(_) => return Err("write-like commands must not be status probe eligible".into()),
-            Err(error) => error,
-        };
+    fn vendor_status_mode_matrix_plan_is_staged_and_non_claiming() -> TestResult {
+        let plan: Value = serde_json::from_str(MOZA_VENDOR_STATUS_MODE_MATRIX_PLAN_JSON)?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-status-mode-matrix-plan.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&plan).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
 
-        assert!(
-            error
-                .to_string()
-                .contains("not read-only status probe eligible"),
-            "unexpected error: {error}"
+        assert_eq!(
+            json_string(&plan, "artifact_kind"),
+            Some("moza_vendor_status_mode_matrix_plan")
         );
+        assert_eq!(
+            json_string(&plan, "claim_scope"),
+            Some("staged_read_only_status_mode_matrix_only")
+        );
+        assert_eq!(json_bool(&plan, "staged_only"), Some(true));
+        assert_eq!(
+            json_bool(&plan, "live_hardware_access_performed"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&plan, "opened_hid_device"), Some(false));
+        assert_eq!(json_bool(&plan, "opened_serial_device"), Some(false));
+        assert_eq!(
+            json_bool(&plan, "sent_read_only_query_commands"),
+            Some(false)
+        );
+        for claim in [
+            "native_control_evidence",
+            "hardware_output_authorized",
+            "native_visible_ready",
+            "smoke_ready",
+            "release_ready",
+            "registry_promotion_claim",
+            "output_sendability_claim",
+            "sent_output_writes",
+            "sent_configuration_writes",
+            "sent_firmware_or_dfu_commands",
+            "high_torque_enabled",
+            "planned_next_output_allowed",
+        ] {
+            assert_eq!(
+                json_bool(&plan, claim),
+                Some(false),
+                "`{claim}` must stay false"
+            );
+        }
+        assert_eq!(
+            json_bool(&plan, "matrix_required_before_authority"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&plan, "unknown_safety_or_mode_state_blocks_authority"),
+            Some(true)
+        );
+
+        let allowed = plan
+            .get("allowed_read_only_command_ids")
+            .and_then(Value::as_array)
+            .ok_or("plan must list allowed read-only commands")?;
+        assert_eq!(allowed.len(), read_only_status_commands().count());
+        assert!(
+            allowed
+                .iter()
+                .any(|entry| entry.as_str() == Some("compatibility_get_mode"))
+        );
+
+        let blocked = plan
+            .get("blocked_mode_enable_candidate_groups")
+            .and_then(Value::as_array)
+            .ok_or("plan must list blocked candidate groups")?;
+        assert_eq!(blocked.len(), 2);
+        assert!(blocked.iter().any(|candidate| {
+            json_string(candidate, "candidate_id") == Some("base_status_or_mode_poll_candidate")
+                && json_string(candidate, "risk_class") == Some("unknown_do_not_send")
+                && json_bool(candidate, "sendable") == Some(false)
+        }));
+        assert!(blocked.iter().any(|candidate| {
+            json_string(candidate, "candidate_id") == Some("session_or_status_keepalive_candidate")
+                && json_string(candidate, "risk_class") == Some("unknown_do_not_send")
+                && json_bool(candidate, "sendable") == Some(false)
+        }));
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_probe_rejects_write_like_command_selection() -> TestResult {
+        for command_id in [
+            "base_gain_set_overall_strength",
+            "main_misc_set_ffb_status",
+            "compatibility_set_mode",
+            "estop_set_ffb",
+        ] {
+            let error = match selected_read_only_status_commands(&[command_id.to_string()]) {
+                Ok(_) => {
+                    return Err(format!(
+                        "write-like command `{command_id}` must not be status probe eligible"
+                    )
+                    .into());
+                }
+                Err(error) => error,
+            };
+
+            assert!(
+                error
+                    .to_string()
+                    .contains("not read-only status probe eligible"),
+                "unexpected error for `{command_id}`: {error}"
+            );
+        }
+
+        for command_id in [
+            "base_status_or_mode_poll_candidate",
+            "session_or_status_keepalive_candidate",
+            "0x25/0x19/0x01",
+            "0x5A/0x1B/0x00",
+            "firmware_or_dfu",
+            "high_torque_enable",
+        ] {
+            let error = match selected_read_only_status_commands(&[command_id.to_string()]) {
+                Ok(_) => {
+                    return Err(format!(
+                        "unknown candidate `{command_id}` must not enter the read-only status path"
+                    )
+                    .into());
+                }
+                Err(error) => error,
+            };
+
+            assert!(
+                error.to_string().contains("unknown Moza vendor command"),
+                "unexpected error for `{command_id}`: {error}"
+            );
+        }
 
         Ok(())
     }

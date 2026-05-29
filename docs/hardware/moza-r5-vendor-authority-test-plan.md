@@ -48,6 +48,7 @@ Provide a step-by-step implementation queue for Moza R5 vendor authority infrast
    - Add a guarded `wheelctl moza vendor-status-probe` command for the R5 serial/CDC interface.
    - Require explicit `--confirm-read-only-query` and USB VID/PID port identity matching before opening the serial port or sending query frames.
    - Send only registry-allowed vendor status queries, record decoded status responses, and emit a non-claiming receipt with `sent_read_only_query_commands=true`, `sent_output_writes=false`, `sent_configuration_writes=false`, `sent_firmware_or_dfu_commands=false`, `hardware_output_authorized=false`, and `native_control_evidence=false`.
+   - Treat the read-only status/mode matrix as the prerequisite for any later exact authorization; missing or unknown safety/mode status blocks authority planning instead of permitting a write.
    - Do not add exact authorization, output/configuration writes, firmware/DFU behavior, native-visible promotion, smoke-ready promotion, or simulator claims.
 7. **Exact authorization support**
    - Add a guarded `wheelctl moza authorize-vendor-authority` command that creates a single-use authorization receipt without opening HID, opening serial, sending read-only queries, or sending output/configuration/firmware writes.
