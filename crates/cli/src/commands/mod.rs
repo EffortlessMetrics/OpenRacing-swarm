@@ -950,6 +950,22 @@ pub enum MozaCommands {
         overwrite: bool,
     },
 
+    /// Review correlated passive response fixtures without sending traffic
+    VendorStatusResponseSemanticFixtures {
+        /// Stored response-source correlation receipt
+        #[arg(long)]
+        response_correlation: std::path::PathBuf,
+        /// Stored passive vendor protocol evidence review receipt
+        #[arg(long)]
+        protocol_evidence_review: std::path::PathBuf,
+        /// Write the non-claiming response semantic fixture receipt to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing response semantic fixture receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
     /// Create a single-use exact Moza vendor-authority authorization receipt without sending traffic
     AuthorizeVendorAuthority {
         /// Registry command id being authorized for the later exact frame
