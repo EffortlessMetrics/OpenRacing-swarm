@@ -2349,6 +2349,48 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_vendor_status_endpoint_candidates() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "vendor-status-endpoint-candidates",
+            "--authority-endpoint-diagnosis",
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json",
+            "--protocol-evidence-review",
+            "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
+            "--json-out",
+            "target/moza-current/vendor-status-endpoint-candidates.json",
+            "--overwrite",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::VendorStatusEndpointCandidates {
+                authority_endpoint_diagnosis,
+                protocol_evidence_review,
+                json_out,
+                overwrite,
+            }) => {
+                assert_eq!(
+                    authority_endpoint_diagnosis.to_str(),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json"
+                    )
+                );
+                assert_eq!(
+                    protocol_evidence_review.to_str(),
+                    Some("ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json")
+                );
+                assert_eq!(
+                    json_out.to_str(),
+                    Some("target/moza-current/vendor-status-endpoint-candidates.json")
+                );
+                assert!(*overwrite);
+            }
+            _ => return Err("expected Moza VendorStatusEndpointCandidates command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_authorize_vendor_authority() -> TestResult {
         let cli = parse_cli([
             "wheelctl",

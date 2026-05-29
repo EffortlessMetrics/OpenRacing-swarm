@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openracing.dev/schemas/moza-vendor-status-endpoint-candidates.schema.json",
+  "title": "Moza Vendor Status Endpoint Candidate Plan",
+  "type": "object",
+  "required": [
+    "success",
+    "schema_version",
+    "artifact_kind",
+    "claim_scope",
+    "command",
+    "authority_endpoint_diagnosis_receipt",
+    "protocol_evidence_review_receipt",
+    "broad_serial_transport_blocker_ruled_out",
+    "authority_status_endpoint_specific_blocker",
+    "endpoint_or_command_correction_required",
+    "authority_status_decoded_response_count",
+    "baseline_non_authority_decoded_response_count",
+    "observed_ack_only_tuple_ids",
+    "expected_payload_response_shape",
+    "reference_payload_response_shape",
+    "passive_tuple_candidate_count",
+    "passive_tuple_candidates",
+    "corrected_read_only_probe_ready",
+    "native_control_evidence",
+    "hardware_output_authorized",
+    "native_visible_ready",
+    "smoke_ready",
+    "release_ready",
+    "registry_promotion_claim",
+    "output_sendability_claim",
+    "semantic_decode_claim",
+    "wheel_moved_under_openracing",
+    "visible_motion_verified",
+    "output_was_sent",
+    "authority_state",
+    "no_hid_device_opened",
+    "opened_serial_device",
+    "sent_read_only_query_commands",
+    "sent_output_writes",
+    "sent_configuration_writes",
+    "sent_firmware_or_dfu_commands",
+    "high_torque_enabled",
+    "mode_enable_candidates_sendable",
+    "planned_next_output_allowed",
+    "unknown_safety_or_mode_state_blocks_authority",
+    "exact_next_blocker",
+    "next_allowed_action",
+    "blocked_actions",
+    "required_artifacts"
+  ],
+  "properties": {
+    "success": { "const": true },
+    "schema_version": { "const": 1 },
+    "artifact_kind": { "const": "moza_vendor_status_endpoint_candidate_plan" },
+    "claim_scope": { "const": "no_output_authority_status_endpoint_candidate_review" },
+    "command": { "const": "wheelctl moza vendor-status-endpoint-candidates" },
+    "authority_endpoint_diagnosis_receipt": { "type": "string" },
+    "protocol_evidence_review_receipt": { "type": "string" },
+    "source_diagnosis_classification": {
+      "const": "authority_status_endpoint_specific_ack_only_without_payload"
+    },
+    "source_primary_blocker": {
+      "const": "authority_status_endpoint_or_command_mismatch"
+    },
+    "broad_serial_transport_blocker_ruled_out": { "const": true },
+    "authority_status_endpoint_specific_blocker": { "const": true },
+    "endpoint_or_command_correction_required": { "const": true },
+    "authority_status_decoded_response_count": { "const": 0 },
+    "baseline_non_authority_decoded_response_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "observed_ack_only_tuple_ids": {
+      "type": "array",
+      "contains": { "const": "0xA1/0x21/no_command" }
+    },
+    "expected_payload_response_shape": {
+      "type": "object",
+      "required": [
+        "source_command_id",
+        "query_tuple_id",
+        "query_frame_hex",
+        "expected_payload_response_tuple_id",
+        "observed_response_tuple_id"
+      ],
+      "properties": {
+        "source_command_id": { "const": "main_misc_get_ffb_status" },
+        "query_tuple_id": { "const": "0x21/0x12/0x07" },
+        "query_frame_hex": { "const": "7E01211207C6" },
+        "expected_payload_response_tuple_id": { "const": "0xA1/0x21/0x07" },
+        "observed_response_tuple_id": { "const": "0xA1/0x21/no_command" }
+      },
+      "additionalProperties": true
+    },
+    "reference_payload_response_shape": {
+      "type": "object",
+      "required": [
+        "source_command_id",
+        "query_tuple_id",
+        "observed_response_tuple_id"
+      ],
+      "properties": {
+        "source_command_id": { "const": "compatibility_get_mode" },
+        "query_tuple_id": { "const": "0x1F/0x12/0x17" },
+        "observed_response_tuple_id": { "const": "0x9F/0x21/0x17" }
+      },
+      "additionalProperties": true
+    },
+    "passive_tuple_candidate_count": { "type": "integer", "minimum": 2 },
+    "passive_tuple_candidates": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": [
+          "candidate_id",
+          "tuple_ids",
+          "passive_hypothesis",
+          "risk_class",
+          "read_only_probe_allowed",
+          "output_sendability_claim",
+          "registry_promotion_claim",
+          "semantic_decode_claim"
+        ],
+        "properties": {
+          "candidate_id": { "type": "string" },
+          "tuple_ids": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1
+          },
+          "passive_hypothesis": { "type": "string" },
+          "risk_class": { "const": "unknown_do_not_send" },
+          "read_only_probe_allowed": { "const": false },
+          "output_sendability_claim": { "const": false },
+          "registry_promotion_claim": { "const": false },
+          "semantic_decode_claim": { "const": false }
+        },
+        "additionalProperties": true
+      }
+    },
+    "corrected_read_only_probe_ready": { "const": false },
+    "native_control_evidence": { "const": false },
+    "hardware_output_authorized": { "const": false },
+    "native_visible_ready": { "const": false },
+    "smoke_ready": { "const": false },
+    "release_ready": { "const": false },
+    "registry_promotion_claim": { "const": false },
+    "output_sendability_claim": { "const": false },
+    "semantic_decode_claim": { "const": false },
+    "wheel_moved_under_openracing": { "const": false },
+    "visible_motion_verified": { "const": false },
+    "output_was_sent": { "const": false },
+    "authority_state": { "const": "blocked" },
+    "no_hid_device_opened": { "const": true },
+    "opened_serial_device": { "const": false },
+    "sent_read_only_query_commands": { "const": false },
+    "sent_output_writes": { "const": false },
+    "sent_configuration_writes": { "const": false },
+    "sent_firmware_or_dfu_commands": { "const": false },
+    "high_torque_enabled": { "const": false },
+    "mode_enable_candidates_sendable": { "const": false },
+    "planned_next_output_allowed": { "const": false },
+    "unknown_safety_or_mode_state_blocks_authority": { "const": true },
+    "exact_next_blocker": { "type": "string" },
+    "next_allowed_action": { "type": "string" },
+    "blocked_actions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "required_artifacts": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": true
+}

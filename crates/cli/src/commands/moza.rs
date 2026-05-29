@@ -221,6 +221,10 @@ const MOZA_VENDOR_STATUS_ACK_ONLY_TARGETED_JSON: &str = include_str!(
 #[cfg(test)]
 const MOZA_VENDOR_STATUS_FRAMING_DIAGNOSIS_JSON: &str =
     include_str!("../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json");
+#[cfg(test)]
+const MOZA_VENDOR_STATUS_AUTHORITY_ENDPOINT_DIAGNOSIS_JSON: &str = include_str!(
+    "../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json"
+);
 const SIMULATOR_FFB_PREREQUISITE_ARTIFACTS: [(&str, &str); 6] = [
     ("zero_torque_real_hardware", "zero-torque-proof.json"),
     ("watchdog_zero_output", "watchdog-proof.json"),
@@ -606,6 +610,14 @@ struct VendorStatusFramingDiagnosisRequest<'a> {
     overwrite: bool,
 }
 
+struct VendorStatusEndpointCandidatesRequest<'a> {
+    json: bool,
+    authority_endpoint_diagnosis: &'a Path,
+    protocol_evidence_review: &'a Path,
+    json_out: &'a Path,
+    overwrite: bool,
+}
+
 struct VendorAuthorityAuthorizationRequest<'a> {
     json: bool,
     command_id: &'a str,
@@ -830,6 +842,21 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 json,
                 status_probe,
                 baseline_status_probe: baseline_status_probe.as_deref(),
+                json_out,
+                overwrite: *overwrite,
+            })
+            .await
+        }
+        MozaCommands::VendorStatusEndpointCandidates {
+            authority_endpoint_diagnosis,
+            protocol_evidence_review,
+            json_out,
+            overwrite,
+        } => {
+            vendor_status_endpoint_candidates(VendorStatusEndpointCandidatesRequest {
+                json,
+                authority_endpoint_diagnosis,
+                protocol_evidence_review,
                 json_out,
                 overwrite: *overwrite,
             })
@@ -7016,6 +7043,22 @@ async fn vendor_status_framing_diagnosis(
     )?;
     write_json_file(request.json_out, &receipt)?;
     print_vendor_status_framing_diagnosis_receipt(request.json, request.json_out, &receipt)
+}
+
+async fn vendor_status_endpoint_candidates(
+    request: VendorStatusEndpointCandidatesRequest<'_>,
+) -> Result<()> {
+    ensure_receipt_writable(request.json_out, request.overwrite)?;
+    let authority_endpoint_diagnosis = read_json_path(request.authority_endpoint_diagnosis)?;
+    let protocol_evidence_review = read_json_path(request.protocol_evidence_review)?;
+    let receipt = vendor_status_endpoint_candidates_receipt(
+        request.authority_endpoint_diagnosis,
+        &authority_endpoint_diagnosis,
+        request.protocol_evidence_review,
+        &protocol_evidence_review,
+    )?;
+    write_json_file(request.json_out, &receipt)?;
+    print_vendor_status_endpoint_candidates_receipt(request.json, request.json_out, &receipt)
 }
 
 async fn authorize_vendor_authority(
@@ -27877,6 +27920,345 @@ fn vendor_status_framing_diagnosis_receipt(
     })
 }
 
+fn vendor_status_endpoint_candidates_receipt(
+    authority_endpoint_diagnosis_path: &Path,
+    authority_endpoint_diagnosis: &Value,
+    protocol_evidence_review_path: &Path,
+    protocol_evidence_review: &Value,
+) -> Result<VendorStatusEndpointCandidatesReceipt> {
+    validate_authority_endpoint_diagnosis_for_candidate_plan(
+        authority_endpoint_diagnosis_path,
+        authority_endpoint_diagnosis,
+    )?;
+    validate_protocol_evidence_review_for_endpoint_candidates(
+        protocol_evidence_review_path,
+        protocol_evidence_review,
+    )?;
+
+    let required_passive_tuples = [
+        "0x25/0x19/0x01",
+        "0x25/0x19/0x02",
+        "0x25/0x19/0x03",
+        "0x5A/0x1B/0x00",
+        "0x5D/0x1B/0x01",
+    ];
+    let mut missing_passive_tuples = Vec::new();
+    for tuple_id in required_passive_tuples {
+        if !json_contains_string(protocol_evidence_review, tuple_id) {
+            missing_passive_tuples.push(tuple_id.to_string());
+        }
+    }
+    if !missing_passive_tuples.is_empty() {
+        return Err(anyhow!(
+            "protocol evidence review '{}' is missing required passive candidate tuple(s): {}",
+            protocol_evidence_review_path.display(),
+            missing_passive_tuples.join(", ")
+        ));
+    }
+
+    let passive_tuple_candidates = vec![
+        VendorStatusEndpointPassiveTupleCandidate {
+            candidate_id: "passive_status_mode_triad_0x25_0x19",
+            tuple_ids: vec!["0x25/0x19/0x01", "0x25/0x19/0x02", "0x25/0x19/0x03"],
+            passive_hypothesis: "base_status_or_mode_poll_candidate",
+            question_scope: vec![
+                "status_query",
+                "standard_pidff_mode_enable",
+                "game_control_mode_select",
+            ],
+            risk_class: "unknown_do_not_send",
+            read_only_probe_allowed: false,
+            output_sendability_claim: false,
+            registry_promotion_claim: false,
+            semantic_decode_claim: false,
+            required_next_review: "fixture-backed decoder review must prove this is read-only status before any live probe",
+        },
+        VendorStatusEndpointPassiveTupleCandidate {
+            candidate_id: "passive_session_authority_pair_0x5a_0x5d",
+            tuple_ids: vec!["0x5A/0x1B/0x00", "0x5D/0x1B/0x01"],
+            passive_hypothesis: "session_or_status_keepalive_candidate",
+            question_scope: vec!["authority_keepalive", "volatile_ffb_session_enable"],
+            risk_class: "unknown_do_not_send",
+            read_only_probe_allowed: false,
+            output_sendability_claim: false,
+            registry_promotion_claim: false,
+            semantic_decode_claim: false,
+            required_next_review: "fixture-backed decoder review must prove read-only status semantics before any live probe",
+        },
+    ];
+
+    Ok(VendorStatusEndpointCandidatesReceipt {
+        success: true,
+        schema_version: 1,
+        artifact_kind: "moza_vendor_status_endpoint_candidate_plan",
+        claim_scope: "no_output_authority_status_endpoint_candidate_review",
+        command: "wheelctl moza vendor-status-endpoint-candidates",
+        generated_at_utc: now_utc(),
+        authority_endpoint_diagnosis_receipt: authority_endpoint_diagnosis_path
+            .display()
+            .to_string(),
+        protocol_evidence_review_receipt: protocol_evidence_review_path.display().to_string(),
+        source_diagnosis_classification: json_string(
+            authority_endpoint_diagnosis,
+            "diagnosis_classification",
+        )
+        .unwrap_or("unknown")
+        .to_string(),
+        source_primary_blocker: json_string(authority_endpoint_diagnosis, "primary_blocker")
+            .unwrap_or("unknown")
+            .to_string(),
+        broad_serial_transport_blocker_ruled_out: true,
+        authority_status_endpoint_specific_blocker: true,
+        endpoint_or_command_correction_required: true,
+        authority_status_decoded_response_count: json_u64(
+            authority_endpoint_diagnosis,
+            "status_probe_authority_status_decoded_response_count",
+        )
+        .unwrap_or(0) as usize,
+        baseline_non_authority_decoded_response_count: authority_endpoint_diagnosis
+            .pointer("/baseline_status_probe_summary/non_authority_decoded_response_count")
+            .and_then(Value::as_u64)
+            .unwrap_or(0) as usize,
+        observed_ack_only_tuple_ids: vec!["0xA1/0x21/no_command"],
+        expected_payload_response_shape: VendorStatusEndpointExpectedPayloadShape {
+            source_command_id: "main_misc_get_ffb_status",
+            query_tuple_id: "0x21/0x12/0x07",
+            query_frame_hex: "7E01211207C6",
+            expected_payload_response_tuple_id: "0xA1/0x21/0x07",
+            observed_response_tuple_id: "0xA1/0x21/no_command",
+            correlation_basis: "compatibility_get_mode query 0x1F/0x12/0x17 decoded as response 0x9F/0x21/0x17 on the same device-id transform path",
+            conclusion: "current authority-status endpoint returns ACK/no-payload correlation rather than payload-bearing status",
+        },
+        reference_payload_response_shape: VendorStatusEndpointExpectedPayloadShape {
+            source_command_id: "compatibility_get_mode",
+            query_tuple_id: "0x1F/0x12/0x17",
+            query_frame_hex: "7E011F1217D4",
+            expected_payload_response_tuple_id: "0x9F/0x21/0x17",
+            observed_response_tuple_id: "0x9F/0x21/0x17",
+            correlation_basis: "demuxed read-only matrix decoded compatibility_get_mode with group|0x80 and nibble-swapped device response tuple",
+            conclusion: "response transform works for non-authority status on the same serial lane",
+        },
+        passive_tuple_candidate_count: passive_tuple_candidates.len(),
+        passive_tuple_candidates,
+        corrected_read_only_probe_ready: false,
+        native_control_evidence: false,
+        hardware_output_authorized: false,
+        native_visible_ready: false,
+        smoke_ready: false,
+        release_ready: false,
+        registry_promotion_claim: false,
+        output_sendability_claim: false,
+        semantic_decode_claim: false,
+        wheel_moved_under_openracing: false,
+        visible_motion_verified: false,
+        output_was_sent: false,
+        authority_state: "blocked",
+        no_hid_device_opened: true,
+        opened_serial_device: false,
+        sent_read_only_query_commands: false,
+        sent_output_writes: false,
+        sent_configuration_writes: false,
+        sent_firmware_or_dfu_commands: false,
+        high_torque_enabled: false,
+        mode_enable_candidates_sendable: false,
+        planned_next_output_allowed: false,
+        unknown_safety_or_mode_state_blocks_authority: true,
+        exact_next_blocker: "Identify a payload-bearing authority-state status endpoint from fixtures or passive evidence; current ACK-only authority-status observations and passive mode/enable tuples are not sendable.",
+        next_allowed_action: "Add no-output fixture-backed decoder coverage for corrected authority-status endpoint candidates. Do not run another live read-only probe until a candidate is explicitly classified as registry-approved read-only status and fake-demux approved.",
+        blocked_actions: vec![
+            "live read-only probe of unknown passive tuples",
+            "mode enable write",
+            "authority write",
+            "output write",
+            "configuration write",
+            "PIDFF rerun",
+            "authorization receipt",
+            "hardware writes",
+            "high torque",
+            "native-control claim",
+            "native-visible claim",
+            "smoke-ready claim",
+            "release-ready claim",
+            "firmware or DFU command",
+            "unknown host-to-device command",
+        ],
+        required_artifacts: vec![
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json",
+            "ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json",
+            "fixtures/moza/r5/vendor-command-registry.json",
+            "schemas/moza-vendor-status-endpoint-candidates.schema.json",
+        ],
+        notes: vec![
+            "This receipt reads stored JSON only; it opens no HID or serial device and sends no traffic.",
+            "The expected payload response shape is a correction target, not evidence that the current authority-status command works.",
+            "Passive tuple groups remain pattern-only questions and unknown_do_not_send until a future semantic decoder review promotes a read-only status candidate.",
+            "Native visible motion remains blocked; no wheel movement is claimed.",
+        ],
+    })
+}
+
+fn validate_authority_endpoint_diagnosis_for_candidate_plan(
+    path: &Path,
+    value: &Value,
+) -> Result<()> {
+    for (field, expected) in [
+        ("artifact_kind", "moza_vendor_status_framing_diagnosis"),
+        (
+            "diagnosis_classification",
+            "authority_status_endpoint_specific_ack_only_without_payload",
+        ),
+        (
+            "primary_blocker",
+            "authority_status_endpoint_or_command_mismatch",
+        ),
+        ("authority_state", "blocked"),
+    ] {
+        if json_string(value, field) != Some(expected) {
+            return Err(anyhow!(
+                "authority endpoint diagnosis '{}' field `{field}` expected `{expected}`",
+                path.display()
+            ));
+        }
+    }
+    for (field, expected) in [
+        ("success", true),
+        ("broad_serial_transport_blocker_ruled_out", true),
+        ("authority_status_endpoint_specific_blocker", true),
+        ("endpoint_or_command_correction_required", true),
+        ("unknown_safety_or_mode_state_blocks_authority", true),
+        ("no_hid_device_opened", true),
+    ] {
+        if json_bool(value, field) != Some(expected) {
+            return Err(anyhow!(
+                "authority endpoint diagnosis '{}' field `{field}` expected {expected}",
+                path.display()
+            ));
+        }
+    }
+    for field in [
+        "native_control_evidence",
+        "hardware_output_authorized",
+        "native_visible_ready",
+        "smoke_ready",
+        "release_ready",
+        "registry_promotion_claim",
+        "output_sendability_claim",
+        "semantic_decode_claim",
+        "wheel_moved_under_openracing",
+        "visible_motion_verified",
+        "output_was_sent",
+        "opened_serial_device",
+        "sent_read_only_query_commands",
+        "sent_output_writes",
+        "sent_configuration_writes",
+        "sent_firmware_or_dfu_commands",
+        "high_torque_enabled",
+        "mode_enable_candidates_sendable",
+        "planned_next_output_allowed",
+    ] {
+        if json_bool(value, field) != Some(false) {
+            return Err(anyhow!(
+                "authority endpoint diagnosis '{}' field `{field}` must remain false",
+                path.display()
+            ));
+        }
+    }
+    if json_u64(
+        value,
+        "status_probe_authority_status_decoded_response_count",
+    ) != Some(0)
+    {
+        return Err(anyhow!(
+            "authority endpoint diagnosis '{}' must decode zero authority status responses",
+            path.display()
+        ));
+    }
+    if value
+        .pointer("/baseline_status_probe_summary/non_authority_decoded_response_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        == 0
+    {
+        return Err(anyhow!(
+            "authority endpoint diagnosis '{}' must include payload-bearing non-authority baseline decode evidence",
+            path.display()
+        ));
+    }
+    if !json_contains_string(value, "0xA1/0x21/no_command") {
+        return Err(anyhow!(
+            "authority endpoint diagnosis '{}' must include the ACK-only 0xA1/0x21/no_command tuple",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn validate_protocol_evidence_review_for_endpoint_candidates(
+    path: &Path,
+    value: &Value,
+) -> Result<()> {
+    for (field, expected) in [
+        ("artifact_kind", "moza_vendor_protocol_evidence_review"),
+        ("claim_scope", "no_output_protocol_evidence_review"),
+    ] {
+        if json_string(value, field) != Some(expected) {
+            return Err(anyhow!(
+                "protocol evidence review '{}' field `{field}` expected `{expected}`",
+                path.display()
+            ));
+        }
+    }
+    for (field, expected) in [
+        ("success", true),
+        ("evidence_inputs_validated", true),
+        ("no_hid_device_opened", true),
+        ("no_serial_device_opened", true),
+        ("no_read_only_query_sent", true),
+        ("no_output_reports_sent", true),
+        ("no_feature_reports_sent", true),
+        ("no_serial_writes_sent", true),
+    ] {
+        if json_bool(value, field) != Some(expected) {
+            return Err(anyhow!(
+                "protocol evidence review '{}' field `{field}` expected {expected}",
+                path.display()
+            ));
+        }
+    }
+    for field in [
+        "native_control_evidence",
+        "hardware_output_authorized",
+        "native_visible_ready",
+        "smoke_ready",
+        "sent_output_writes",
+        "sent_configuration_writes",
+        "sent_firmware_or_dfu_commands",
+        "high_torque_enabled",
+        "protocol_evidence_sufficient_for_output_plan",
+    ] {
+        if json_bool(value, field) != Some(false) {
+            return Err(anyhow!(
+                "protocol evidence review '{}' field `{field}` must remain false",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn json_contains_string(value: &Value, needle: &str) -> bool {
+    match value {
+        Value::String(value) => value == needle,
+        Value::Array(values) => values
+            .iter()
+            .any(|value| json_contains_string(value, needle)),
+        Value::Object(values) => values
+            .values()
+            .any(|value| json_contains_string(value, needle)),
+        _ => false,
+    }
+}
+
 fn validate_vendor_status_probe_receipt_for_framing_diagnosis(
     status_probe_path: &Path,
     status_probe: &Value,
@@ -32666,6 +33048,83 @@ struct VendorStatusFramingDiagnosisReceipt {
     blocked_actions: Vec<&'static str>,
     required_artifacts: Vec<&'static str>,
     notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorStatusEndpointCandidatesReceipt {
+    success: bool,
+    schema_version: u8,
+    artifact_kind: &'static str,
+    claim_scope: &'static str,
+    command: &'static str,
+    generated_at_utc: String,
+    authority_endpoint_diagnosis_receipt: String,
+    protocol_evidence_review_receipt: String,
+    source_diagnosis_classification: String,
+    source_primary_blocker: String,
+    broad_serial_transport_blocker_ruled_out: bool,
+    authority_status_endpoint_specific_blocker: bool,
+    endpoint_or_command_correction_required: bool,
+    authority_status_decoded_response_count: usize,
+    baseline_non_authority_decoded_response_count: usize,
+    observed_ack_only_tuple_ids: Vec<&'static str>,
+    expected_payload_response_shape: VendorStatusEndpointExpectedPayloadShape,
+    reference_payload_response_shape: VendorStatusEndpointExpectedPayloadShape,
+    passive_tuple_candidate_count: usize,
+    passive_tuple_candidates: Vec<VendorStatusEndpointPassiveTupleCandidate>,
+    corrected_read_only_probe_ready: bool,
+    native_control_evidence: bool,
+    hardware_output_authorized: bool,
+    native_visible_ready: bool,
+    smoke_ready: bool,
+    release_ready: bool,
+    registry_promotion_claim: bool,
+    output_sendability_claim: bool,
+    semantic_decode_claim: bool,
+    wheel_moved_under_openracing: bool,
+    visible_motion_verified: bool,
+    output_was_sent: bool,
+    authority_state: &'static str,
+    no_hid_device_opened: bool,
+    opened_serial_device: bool,
+    sent_read_only_query_commands: bool,
+    sent_output_writes: bool,
+    sent_configuration_writes: bool,
+    sent_firmware_or_dfu_commands: bool,
+    high_torque_enabled: bool,
+    mode_enable_candidates_sendable: bool,
+    planned_next_output_allowed: bool,
+    unknown_safety_or_mode_state_blocks_authority: bool,
+    exact_next_blocker: &'static str,
+    next_allowed_action: &'static str,
+    blocked_actions: Vec<&'static str>,
+    required_artifacts: Vec<&'static str>,
+    notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorStatusEndpointExpectedPayloadShape {
+    source_command_id: &'static str,
+    query_tuple_id: &'static str,
+    query_frame_hex: &'static str,
+    expected_payload_response_tuple_id: &'static str,
+    observed_response_tuple_id: &'static str,
+    correlation_basis: &'static str,
+    conclusion: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct VendorStatusEndpointPassiveTupleCandidate {
+    candidate_id: &'static str,
+    tuple_ids: Vec<&'static str>,
+    passive_hypothesis: &'static str,
+    question_scope: Vec<&'static str>,
+    risk_class: &'static str,
+    read_only_probe_allowed: bool,
+    output_sendability_claim: bool,
+    registry_promotion_claim: bool,
+    semantic_decode_claim: bool,
+    required_next_review: &'static str,
 }
 
 #[derive(Debug, Serialize)]
@@ -40254,6 +40713,23 @@ fn print_vendor_status_framing_diagnosis_receipt(
     Ok(())
 }
 
+fn print_vendor_status_endpoint_candidates_receipt(
+    json: bool,
+    json_out: &Path,
+    receipt: &VendorStatusEndpointCandidatesReceipt,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Moza vendor status endpoint candidates: {} passive group(s), corrected read-only probe ready={}; no traffic was sent.",
+            receipt.passive_tuple_candidate_count, receipt.corrected_read_only_probe_ready
+        );
+        println!("Receipt: {}", json_out.display());
+    }
+    Ok(())
+}
+
 fn print_vendor_authority_authorization_receipt(
     json: bool,
     json_out: &Path,
@@ -42205,6 +42681,191 @@ mod tests {
             Some(1)
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_endpoint_candidates_receipt_is_non_sendable() -> TestResult {
+        let authority_endpoint_diagnosis: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_AUTHORITY_ENDPOINT_DIAGNOSIS_JSON)?;
+        let protocol_evidence_review: Value =
+            serde_json::from_str(MOZA_VENDOR_PROTOCOL_EVIDENCE_REVIEW_JSON)?;
+        let receipt = vendor_status_endpoint_candidates_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json",
+            ),
+            &authority_endpoint_diagnosis,
+            Path::new("ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json"),
+            &protocol_evidence_review,
+        )?;
+        let value = serde_json::to_value(&receipt)?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-status-endpoint-candidates.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&value).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        assert_eq!(
+            json_string(&value, "artifact_kind"),
+            Some("moza_vendor_status_endpoint_candidate_plan")
+        );
+        assert_eq!(
+            json_string(&value, "source_primary_blocker"),
+            Some("authority_status_endpoint_or_command_mismatch")
+        );
+        assert_eq!(
+            value
+                .pointer("/expected_payload_response_shape/expected_payload_response_tuple_id")
+                .and_then(Value::as_str),
+            Some("0xA1/0x21/0x07")
+        );
+        assert_eq!(
+            value
+                .pointer("/expected_payload_response_shape/observed_response_tuple_id")
+                .and_then(Value::as_str),
+            Some("0xA1/0x21/no_command")
+        );
+        assert_eq!(
+            value
+                .pointer("/reference_payload_response_shape/observed_response_tuple_id")
+                .and_then(Value::as_str),
+            Some("0x9F/0x21/0x17")
+        );
+        assert_eq!(
+            json_bool(&value, "corrected_read_only_probe_ready"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&value, "mode_enable_candidates_sendable"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&value, "planned_next_output_allowed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&value, "wheel_moved_under_openracing"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&value, "visible_motion_verified"), Some(false));
+        assert_eq!(json_bool(&value, "output_was_sent"), Some(false));
+        assert_eq!(json_string(&value, "authority_state"), Some("blocked"));
+
+        let candidates = value
+            .get("passive_tuple_candidates")
+            .and_then(Value::as_array)
+            .ok_or("candidate receipt must include passive tuple candidates")?;
+        assert_eq!(candidates.len(), 2);
+        assert!(candidates.iter().all(|candidate| {
+            json_string(candidate, "risk_class") == Some("unknown_do_not_send")
+                && json_bool(candidate, "read_only_probe_allowed") == Some(false)
+                && json_bool(candidate, "output_sendability_claim") == Some(false)
+                && json_bool(candidate, "registry_promotion_claim") == Some(false)
+                && json_bool(candidate, "semantic_decode_claim") == Some(false)
+        }));
+        assert!(json_contains_string(&value, "0x25/0x19/0x01"));
+        assert!(json_contains_string(&value, "0x25/0x19/0x02"));
+        assert!(json_contains_string(&value, "0x25/0x19/0x03"));
+        assert!(json_contains_string(&value, "0x5A/0x1B/0x00"));
+        assert!(json_contains_string(&value, "0x5D/0x1B/0x01"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_endpoint_candidates_rejects_claiming_protocol_review() -> TestResult {
+        let authority_endpoint_diagnosis: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_AUTHORITY_ENDPOINT_DIAGNOSIS_JSON)?;
+        let mut protocol_evidence_review: Value =
+            serde_json::from_str(MOZA_VENDOR_PROTOCOL_EVIDENCE_REVIEW_JSON)?;
+        protocol_evidence_review["hardware_output_authorized"] = Value::Bool(true);
+
+        let error = vendor_status_endpoint_candidates_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json",
+            ),
+            &authority_endpoint_diagnosis,
+            Path::new("ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json"),
+            &protocol_evidence_review,
+        )
+        .expect_err("claiming protocol evidence review must fail closed");
+        assert!(
+            error
+                .to_string()
+                .contains("field `hardware_output_authorized` must remain false"),
+            "unexpected error: {error}"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_endpoint_candidates_rejects_non_endpoint_diagnosis() -> TestResult {
+        let mut authority_endpoint_diagnosis: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_AUTHORITY_ENDPOINT_DIAGNOSIS_JSON)?;
+        let protocol_evidence_review: Value =
+            serde_json::from_str(MOZA_VENDOR_PROTOCOL_EVIDENCE_REVIEW_JSON)?;
+        authority_endpoint_diagnosis["broad_serial_transport_blocker_ruled_out"] =
+            Value::Bool(false);
+
+        let error = vendor_status_endpoint_candidates_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json",
+            ),
+            &authority_endpoint_diagnosis,
+            Path::new("ci/hardware/moza-r5/2026-05-13/vendor-protocol-evidence-review.json"),
+            &protocol_evidence_review,
+        )
+        .expect_err("non-endpoint diagnosis must fail closed");
+        assert!(
+            error
+                .to_string()
+                .contains("field `broad_serial_transport_blocker_ruled_out` expected true"),
+            "unexpected error: {error}"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn vendor_status_endpoint_candidates_command_writes_json_receipt() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let authority_endpoint_diagnosis = dir.path().join("authority-endpoint-diagnosis.json");
+        let protocol_evidence_review = dir.path().join("protocol-evidence-review.json");
+        write_test_json_file(
+            &authority_endpoint_diagnosis,
+            &serde_json::from_str::<Value>(MOZA_VENDOR_STATUS_AUTHORITY_ENDPOINT_DIAGNOSIS_JSON)?,
+        )?;
+        write_test_json_file(
+            &protocol_evidence_review,
+            &serde_json::from_str::<Value>(MOZA_VENDOR_PROTOCOL_EVIDENCE_REVIEW_JSON)?,
+        )?;
+        let json_out = dir.path().join("vendor-status-endpoint-candidates.json");
+
+        vendor_status_endpoint_candidates(VendorStatusEndpointCandidatesRequest {
+            json: false,
+            authority_endpoint_diagnosis: &authority_endpoint_diagnosis,
+            protocol_evidence_review: &protocol_evidence_review,
+            json_out: &json_out,
+            overwrite: false,
+        })
+        .await?;
+
+        let receipt = read_json_path(&json_out)?;
+        assert_eq!(
+            json_string(&receipt, "command"),
+            Some("wheelctl moza vendor-status-endpoint-candidates")
+        );
+        assert_eq!(
+            json_bool(&receipt, "corrected_read_only_probe_ready"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "native_visible_ready"), Some(false));
         Ok(())
     }
 
