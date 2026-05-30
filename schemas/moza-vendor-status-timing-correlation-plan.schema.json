@@ -109,7 +109,7 @@
     },
     "capture_command_templates": {
       "type": "array",
-      "minItems": 8,
+      "minItems": 9,
       "allOf": [
         {
           "contains": {
@@ -142,15 +142,51 @@
               "name",
               "edits_operator_notes_only",
               "requires_capture_running",
+              "requires_capture_not_started",
+              "marker_phase",
               "command_example_marker",
               "all_marker_commands_materialized_in",
               "marker_command_source"
             ],
             "properties": {
-              "name": { "const": "stamp_operator_event_markers" },
+              "name": { "const": "stamp_hardware_doctor_selector_marker" },
+              "output_enabled": { "const": false },
+              "edits_operator_notes_only": { "const": true },
+              "requires_capture_running": { "const": false },
+              "requires_capture_not_started": { "const": true },
+              "marker_phase": { "const": "pre_capture_selector_review" },
+              "command_example_marker": {
+                "const": "hardware_doctor_selector_reviewed_utc"
+              },
+              "all_marker_commands_materialized_in": {
+                "const": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"
+              },
+              "marker_command_source": {
+                "const": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"
+              }
+            }
+          }
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "name",
+              "edits_operator_notes_only",
+              "requires_capture_running",
+              "requires_capture_not_started",
+              "marker_phase",
+              "command_example_marker",
+              "all_marker_commands_materialized_in",
+              "marker_command_source"
+            ],
+            "properties": {
+              "name": { "const": "stamp_capture_event_markers" },
               "output_enabled": { "const": false },
               "edits_operator_notes_only": { "const": true },
               "requires_capture_running": { "const": true },
+              "requires_capture_not_started": { "const": false },
+              "marker_phase": { "const": "capture_runtime_events" },
               "command_example_marker": { "const": "capture_start_utc" },
               "all_marker_commands_materialized_in": {
                 "const": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"

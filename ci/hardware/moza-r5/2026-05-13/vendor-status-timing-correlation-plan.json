@@ -44,13 +44,16 @@
     },
     {
       "all_marker_commands_materialized_in": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
-      "command": "wheelctl hardware sniff-marker --operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --marker capture_start_utc --json-out target/sniff/pit-house-0x8e-timing-correlation/marker-capture_start_utc.json",
-      "command_example_marker": "capture_start_utc",
+      "command": "wheelctl hardware sniff-marker --operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --marker hardware_doctor_selector_reviewed_utc --json-out target/sniff/pit-house-0x8e-timing-correlation/marker-hardware_doctor_selector_reviewed_utc.json",
+      "command_example_marker": "hardware_doctor_selector_reviewed_utc",
       "edits_operator_notes_only": true,
       "marker_command_source": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
-      "name": "stamp_operator_event_markers",
+      "marker_phase": "pre_capture_selector_review",
+      "name": "stamp_hardware_doctor_selector_marker",
       "output_enabled": false,
-      "requires_capture_running": true
+      "requires_capture_not_started": true,
+      "requires_capture_running": false,
+      "sequencing_note": "stamp after reviewing the fresh hardware doctor selector and before starting USBPcap capture"
     },
     {
       "command": "wheelctl hardware sniff-capture --usbpcapcmd '<USBPcapCMD.exe from hardware doctor>' --usbpcap-interface '<USBPcap interface from hardware doctor>' --devices <capture_devices_value> --hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --duration-ms 180000 --out target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --confirm-external-passive-capture --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json",
@@ -61,6 +64,19 @@
       "openracing_hardware_output": false,
       "output_enabled": false,
       "selector_source": "fresh hardware doctor Moza USBPcap hint rendered by sniff-notes-template"
+    },
+    {
+      "all_marker_commands_materialized_in": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
+      "command": "wheelctl hardware sniff-marker --operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --marker capture_start_utc --json-out target/sniff/pit-house-0x8e-timing-correlation/marker-capture_start_utc.json",
+      "command_example_marker": "capture_start_utc",
+      "edits_operator_notes_only": true,
+      "marker_command_source": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
+      "marker_phase": "capture_runtime_events",
+      "name": "stamp_capture_event_markers",
+      "output_enabled": false,
+      "requires_capture_not_started": false,
+      "requires_capture_running": true,
+      "sequencing_note": "stamp capture_start_utc and semantic Pit House/LED event markers while USBPcap capture is running"
     },
     {
       "command": "wheelctl hardware sniff-receipt --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json --pcapng target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --operator Steven --app 'MOZA Pit House' --scenario pit-house-0x8e-timing-correlation --evidence 'Pit House 0x8E timing-correlation passive capture with complete operator event markers; raw pcap local only; OpenRacing sent no HID/output/feature/serial/firmware commands' --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-receipt.json",
@@ -92,7 +108,7 @@
   "command": "wheelctl moza vendor-status-timing-correlation-plan",
   "corrected_read_only_probe_ready": false,
   "exact_next_blocker": "No checked-in artifact currently timing-correlates the 0x8E payload-bearing status-source samples to authority or mode state. This plan makes the next passive capture concrete, but it does not itself record timing evidence or allow live probing, authorization, PIDFF, force escalation, or motion.",
-  "generated_at_utc": "2026-05-30T13:02:42Z",
+  "generated_at_utc": "2026-05-30T13:48:59Z",
   "hardware_output_authorized": false,
   "high_torque_enabled": false,
   "live_read_only_probe_allowed": false,
