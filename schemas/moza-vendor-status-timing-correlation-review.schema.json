@@ -13,6 +13,11 @@
     "semantic_review_receipt",
     "sniff_summary",
     "operator_notes",
+    "capture_provenance_inputs_provided",
+    "capture_provenance_verified",
+    "capture_provenance_required_for_candidate",
+    "capture_provenance_status",
+    "capture_provenance",
     "target_group_id",
     "target_tuple_ids",
     "target_tuple_reviews",
@@ -37,6 +42,7 @@
     "operator_event_marker_correlation_observed",
     "same_tuple_payload_variation_with_event_markers_observed",
     "timing_correlation_candidate_observed",
+    "timing_correlation_candidate_without_capture_provenance",
     "timing_correlation_proven",
     "timing_correlation_verdict",
     "payload_bearing_authority_state_source_found",
@@ -188,6 +194,29 @@
     },
     "event_correlation_window_seconds": { "type": "number", "exclusiveMinimum": 0 },
     "summary_has_packet_timestamp_samples": { "type": "boolean" },
+    "capture_provenance_inputs_provided": { "type": "boolean" },
+    "capture_provenance_verified": { "type": "boolean" },
+    "capture_provenance_required_for_candidate": { "const": true },
+    "capture_provenance_status": {
+      "enum": ["not_provided", "verified"]
+    },
+    "capture_provenance": {
+      "type": "object",
+      "required": [
+        "capture_provenance_inputs_provided",
+        "capture_provenance_verified",
+        "capture_provenance_required_for_candidate",
+        "capture_provenance_status"
+      ],
+      "properties": {
+        "capture_provenance_required_for_candidate": { "const": true },
+        "capture_provenance_verified": { "type": "boolean" },
+        "hardware_output_authorized": { "const": false },
+        "native_control_evidence": { "const": false },
+        "native_visible_ready": { "const": false },
+        "output_was_sent": { "const": false }
+      }
+    },
     "target_sample_timestamp_count": { "type": "integer", "minimum": 0 },
     "target_samples_within_capture_window": { "type": "boolean" },
     "target_samples_outside_capture_window": {
@@ -201,6 +230,9 @@
       "type": "boolean"
     },
     "timing_correlation_candidate_observed": { "type": "boolean" },
+    "timing_correlation_candidate_without_capture_provenance": {
+      "type": "boolean"
+    },
     "timing_correlation_proven": { "const": false },
     "payload_bearing_authority_state_source_found": { "const": false },
     "reviewed_equivalent_status_source_found": { "const": false },

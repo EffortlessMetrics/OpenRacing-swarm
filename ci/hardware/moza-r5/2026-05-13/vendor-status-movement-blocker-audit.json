@@ -69,7 +69,7 @@
   "fresh_command_bound_bench_clear_present": false,
   "fresh_command_bound_bench_clear_required_for_motion": true,
   "fresh_exact_authorization_present": false,
-  "generated_at_utc": "2026-05-30T14:36:33Z",
+  "generated_at_utc": "2026-05-30T15:17:38Z",
   "hardware_output_authorized": false,
   "high_torque_enabled": false,
   "line_setting_or_ownership_primary_blocker": false,
@@ -157,11 +157,13 @@
       "requires_sniff_summary": true
     },
     {
-      "command": "wheelctl moza vendor-status-timing-correlation-review --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json --summary target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json --operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --json-out target/sniff/pit-house-0x8e-timing-correlation/vendor-status-timing-correlation-review.json",
+      "command": "wheelctl moza vendor-status-timing-correlation-review --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json --sniff-capture-receipt target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json --sniff-receipt target/sniff/pit-house-0x8e-timing-correlation/sniff-receipt.json --summary target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json --operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --json-out target/sniff/pit-house-0x8e-timing-correlation/vendor-status-timing-correlation-review.json",
       "name": "future_no_output_timing_review",
       "output_enabled": false,
       "requires_completed_capture": true,
       "requires_operator_notes": true,
+      "requires_sniff_capture_receipt": true,
+      "requires_sniff_receipt": true,
       "requires_sniff_summary": true
     }
   ],

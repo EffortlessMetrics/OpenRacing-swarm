@@ -9676,6 +9676,109 @@ item. Do not remove the marker helper, strict timestamp validators,
 timing-correlation plan, movement blocker audit, or native-visible promotion
 block.
 
+## Work item: bind-0x8e-timing-review-capture-provenance
+
+Status: completed
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: stale or mismatched passive capture artifacts becoming authority-source input
+Blocked by: completed 0x8E handoff command phase gating
+
+### Goal
+
+Require the no-output 0x8E timing-correlation review to bind candidate timing
+correlation to the passive capture helper receipt and derived sniff receipt.
+
+### Production delta
+
+`wheelctl moza vendor-status-timing-correlation-review` accepts optional
+`--sniff-capture-receipt` and `--sniff-receipt` inputs. When supplied, the
+review validates that:
+
+- the capture receipt came from `wheelctl hardware sniff-capture`;
+- selector verification accepted the current Moza USBPcap selector;
+- the capture finalized a non-empty pcap;
+- the sniff receipt came from `wheelctl hardware sniff-receipt`;
+- the scenario is `pit-house-0x8e-timing-correlation`;
+- the capture receipt, sniff receipt, and summary share the same pcap hash; and
+- all OpenRacing output, HID, feature, serial-config, firmware/DFU, readiness,
+  and native-control claims remain false.
+
+The future 0x8E timing-review command template now passes both receipts. A
+legacy blocked review can still be regenerated without those inputs, but it
+records `capture_provenance_verified=false` and cannot surface
+`timing_correlation_candidate_observed=true`.
+
+### Non-goals
+
+No live hardware access, HID open, serial open, read-only query send, live
+capture, raw pcap commit, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, output claim, or wheel movement.
+
+### Acceptance
+
+- Event-correlated payload variation without validated capture provenance is
+  recorded as
+  `insufficient_capture_provenance_missing_or_unverified`.
+- Matching `sniff-capture-receipt`, `sniff-receipt`, and summary hash
+  provenance is required before a candidate timing correlation can be surfaced.
+- Stale scenario receipts, non-Moza selector receipts, output-looking receipts,
+  and mismatched pcap hashes fail closed.
+- The checked-in legacy setting-change review remains blocked because it lacks
+  event-marker timing and capture provenance.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain the operating
+  state.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-plan `
+  --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-review `
+  --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json `
+  --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-summary.json `
+  --operator-notes ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/operator-notes.md `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-movement-blocker-audit `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json `
+  --demux-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json `
+  --framing-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json `
+  --extended-scan-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json `
+  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json `
+  --payload-rerun-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --timing-correlation-plan ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --timing-correlation-review ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json `
+  --overwrite
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_review -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_plan -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Restore only the previous timing-review command shape, provenance gate,
+schema/tests, regenerated plan/review/audit receipts, and this source-of-truth
+work item. Do not remove event-marker helpers, strict timestamp validators,
+timing-correlation plan, movement blocker audit, or native-visible promotion
+block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
