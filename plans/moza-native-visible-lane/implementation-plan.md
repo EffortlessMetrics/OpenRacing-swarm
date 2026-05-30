@@ -10264,6 +10264,90 @@ this source-of-truth work item. Do not remove the movement-blocker audit,
 timing-correlation plan/review artifacts, materialized capture command
 consumption, or native-visible promotion block.
 
+## Work item: expire-0x8e-materialized-capture-prep
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: stale local selector evidence being treated as the next runnable
+passive 0x8E timing-correlation capture command
+Blocked by: completed materialized 0x8E capture command consumption
+
+### Goal
+
+Keep the passive `0x8E` timing-correlation capture path from reusing stale
+local `target/` pre-capture receipts.
+
+### Production delta
+
+`wheelctl moza bench-wizard` now requires the local
+`pit-house-0x8e-timing-correlation` sniff-notes-template receipt and
+`hardware_doctor_selector_reviewed_utc` marker receipt to carry fresh UTC
+timestamps before the wizard surfaces a materialized passive `sniff-capture`
+command as runnable.
+
+If either receipt is missing its freshness timestamp, is from the future, or is
+older than the 10-minute local capture-prep freshness window, the wizard falls
+back to the safe pre-capture sequence:
+
+```text
+refresh_observe_only_hardware_doctor
+render_checked_in_operator_notes_template
+stamp_hardware_doctor_selector_marker
+```
+
+This keeps the next capture tied to a current hardware-doctor USBPcap selector
+and avoids repeating the stale-selector failure mode that produced wrong
+evidence earlier in the lane.
+
+### Non-goals
+
+No live capture, raw pcap commit, HID open, serial open, read-only query send,
+PIDFF output, feature report, configuration write, firmware/update/DFU path,
+high torque, mode-enable write, authority write, authorization receipt,
+semantic decode claim, registry promotion, tuple sendability, corrected
+read-only probe readiness, native-control claim, native-visible claim,
+smoke-ready claim, simulator claim, coexistence claim, release-ready claim,
+output claim, or wheel movement.
+
+### Acceptance
+
+- Fresh local sniff-notes-template and selector-marker receipts can still
+  surface the materialized passive `sniff-capture` command.
+- Expired sniff-notes-template receipts are classified as stale and cannot
+  surface the passive capture command.
+- Expired selector-marker receipts are classified as stale and cannot surface
+  the passive capture command.
+- The fallback next concrete command is the observe-only hardware doctor, not a
+  read-only probe, authorization command, PIDFF command, or motion command.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain the operating
+  state.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_rejects_expired_sniff_notes_capture_receipt -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_rejects_expired_selector_marker_capture_receipt -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the local capture-prep freshness gate, focused assertions, and this
+source-of-truth work item. Do not remove the materialized capture command
+consumption, selector guard, movement-blocker audit, timing-correlation
+plan/review artifacts, or native-visible promotion block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

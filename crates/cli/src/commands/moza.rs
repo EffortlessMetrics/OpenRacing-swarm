@@ -73,6 +73,8 @@ const MOZA_VENDOR_HEX: &str = "0x346E";
 const MOZA_PIT_HOUSE_DOWNLOADS_URL: &str = "https://support.mozaracing.com/en/support/solutions/articles/70000627795-moza-pit-house-downloads";
 const MOZA_PIT_HOUSE_INSTALL_GUIDANCE: &str = "Install or update Pit House from the official MOZA Pit House Downloads support page; do not treat package-manager availability as authoritative evidence.";
 const PASSIVE_SNIFF_POST_CAPTURE_EVIDENCE_COMMANDS_CHECKLIST_ITEM: &str = "run sniff-receipt, sniff-notes-template, and sniff-summary before treating the capture as lane evidence";
+const PIT_HOUSE_0X8E_CAPTURE_PREP_MAX_AGE_MINUTES: i64 = 10;
+const LOCAL_CAPTURE_PREP_FUTURE_TOLERANCE_SECONDS: i64 = 30;
 const PASSIVE_SNIFF_LOW_YIELD_CLASSIFICATION_FILE: &str = "low-yield-capture-classification.json";
 const HIGH_TORQUE_FEATURE_REPORT_ID: &str = "0x02";
 const START_REPORTING_FEATURE_REPORT_ID: &str = "0x03";
@@ -2746,11 +2748,29 @@ fn moza_native_motion_blocker_sniff_notes_template_receipt(
     };
 
     let (selector_marker_status, selector_marker_recorded, selector_marker_error) =
-        moza_native_motion_blocker_selector_marker_status(&marker_path);
+        moza_native_motion_blocker_selector_marker_status(
+            &marker_path,
+            json_string(&receipt, "generated_at_utc"),
+        );
+    if selector_marker_status == "stale" {
+        return (
+            moza_native_motion_blocker_invalid_sniff_notes_template_receipt(
+                &receipt_path,
+                &marker_path,
+                "stale_selector_marker_receipt",
+                true,
+                selector_marker_error.as_deref().unwrap_or(
+                    "selector marker receipt is too old for the materialized capture command",
+                ),
+            ),
+            None,
+        );
+    }
     let materialized_capture_command_runnable = selector_marker_recorded;
     let mut status = serde_json::json!({
         "status": "valid",
         "path": receipt_path.display().to_string(),
+        "freshness_max_age_minutes": PIT_HOUSE_0X8E_CAPTURE_PREP_MAX_AGE_MINUTES,
         "selector_marker_status": selector_marker_status,
         "selector_marker_receipt": marker_path.display().to_string(),
         "selector_marker_recorded": selector_marker_recorded,
@@ -2798,6 +2818,10 @@ fn moza_native_motion_blocker_invalid_sniff_notes_template_receipt(
 fn moza_native_motion_blocker_sniff_notes_invalid_reason(error: &str) -> (&'static str, bool) {
     if error.contains("lacks next command claim boundary") {
         ("stale_missing_next_concrete_command_boundary", true)
+    } else if error.contains("freshness timestamp") {
+        ("stale_missing_capture_prep_freshness_timestamp", true)
+    } else if error.contains("older than") || error.contains("from the future") {
+        ("stale_materialized_capture_prep_expired", true)
     } else if error.contains("lacks command sequence")
         || error.contains("lacks materialized sniff-capture command")
         || error.contains("materialized sniff-capture command is missing text")
@@ -2831,6 +2855,14 @@ fn moza_native_motion_blocker_validate_sniff_notes_capture_receipt(
             "sniff-notes-template receipt scenario must match {scenario}"
         ));
     }
+    let generated_at_utc = json_string(receipt, "generated_at_utc").ok_or_else(|| {
+        anyhow!("sniff-notes-template receipt lacks freshness timestamp generated_at_utc")
+    })?;
+    moza_validate_local_capture_prep_timestamp(
+        "sniff-notes-template receipt",
+        receipt_path,
+        generated_at_utc,
+    )?;
     for (field, expected) in [
         ("native_control_evidence", false),
         ("openracing_hardware_output", false),
@@ -2976,6 +3008,7 @@ fn moza_native_motion_blocker_validate_sniff_notes_capture_receipt(
 
 fn moza_native_motion_blocker_selector_marker_status(
     marker_path: &Path,
+    sniff_notes_generated_at_utc: Option<&str>,
 ) -> (&'static str, bool, Option<String>) {
     if !marker_path.is_file() {
         return ("missing", false, None);
@@ -3005,7 +3038,105 @@ fn moza_native_motion_blocker_selector_marker_status(
             Some("selector marker receipt does not preserve the no-output boundary".to_string()),
         );
     }
+
+    let generated_at_utc = match json_string(&marker, "generated_at_utc") {
+        Some(generated_at_utc) => generated_at_utc,
+        None => {
+            return (
+                "stale",
+                false,
+                Some(
+                    "selector marker receipt lacks freshness timestamp generated_at_utc"
+                        .to_string(),
+                ),
+            );
+        }
+    };
+    let marker_generated_at = match moza_validate_local_capture_prep_timestamp(
+        "selector marker receipt",
+        marker_path,
+        generated_at_utc,
+    ) {
+        Ok(timestamp) => timestamp,
+        Err(error) => return ("stale", false, Some(error.to_string())),
+    };
+    let marker_timestamp_utc = match json_string(&marker, "marker_timestamp_utc") {
+        Some(marker_timestamp_utc) => marker_timestamp_utc,
+        None => {
+            return (
+                "stale",
+                false,
+                Some("selector marker receipt lacks marker_timestamp_utc".to_string()),
+            );
+        }
+    };
+    let marker_timestamp = match moza_validate_local_capture_prep_timestamp(
+        "selector marker timestamp",
+        marker_path,
+        marker_timestamp_utc,
+    ) {
+        Ok(timestamp) => timestamp,
+        Err(error) => return ("stale", false, Some(error.to_string())),
+    };
+    if let Some(sniff_notes_generated_at_utc) = sniff_notes_generated_at_utc {
+        let sniff_notes_generated_at = match chrono::DateTime::parse_from_rfc3339(
+            sniff_notes_generated_at_utc,
+        ) {
+            Ok(timestamp) => timestamp.with_timezone(&chrono::Utc),
+            Err(error) => {
+                return (
+                    "stale",
+                    false,
+                    Some(format!(
+                        "sniff-notes-template receipt has invalid generated_at_utc `{sniff_notes_generated_at_utc}`: {error}"
+                    )),
+                );
+            }
+        };
+        if marker_generated_at < sniff_notes_generated_at
+            || marker_timestamp < sniff_notes_generated_at
+        {
+            return (
+                "stale",
+                false,
+                Some(
+                    "selector marker receipt predates the sniff-notes-template receipt; rerun fresh hardware doctor and notes rendering before capture".to_string(),
+                ),
+            );
+        }
+    }
     ("recorded", true, None)
+}
+
+fn moza_validate_local_capture_prep_timestamp(
+    label: &str,
+    path: &Path,
+    timestamp: &str,
+) -> Result<chrono::DateTime<chrono::Utc>> {
+    let timestamp_utc = chrono::DateTime::parse_from_rfc3339(timestamp)
+        .with_context(|| {
+            format!(
+                "{label} '{}' has invalid freshness timestamp `{timestamp}`",
+                path.display()
+            )
+        })?
+        .with_timezone(&chrono::Utc);
+    let now = chrono::Utc::now();
+    if timestamp_utc > now + chrono::Duration::seconds(LOCAL_CAPTURE_PREP_FUTURE_TOLERANCE_SECONDS)
+    {
+        return Err(anyhow!(
+            "{label} '{}' is from the future; rerun fresh observe-only hardware doctor and notes rendering before capture",
+            path.display()
+        ));
+    }
+    let max_age = chrono::Duration::minutes(PIT_HOUSE_0X8E_CAPTURE_PREP_MAX_AGE_MINUTES);
+    if now.signed_duration_since(timestamp_utc) > max_age {
+        return Err(anyhow!(
+            "{label} '{}' is older than {PIT_HOUSE_0X8E_CAPTURE_PREP_MAX_AGE_MINUTES} minute(s); rerun fresh observe-only hardware doctor and notes rendering before capture",
+            path.display()
+        ));
+    }
+    Ok(timestamp_utc)
 }
 
 fn moza_native_motion_blocker_apply_materialized_capture_command(
@@ -58798,6 +58929,7 @@ mod tests {
             "schema_version": 1,
             "success": true,
             "command": "wheelctl hardware sniff-notes-template",
+            "generated_at_utc": now_utc(),
             "scenario": "pit-house-0x8e-timing-correlation",
             "next_concrete_command": command,
             "next_concrete_command_count": 1,
@@ -58856,16 +58988,21 @@ mod tests {
         })
     }
 
-    fn write_selector_review_marker_receipt(path: &Path) -> TestResult {
+    fn write_selector_review_marker_receipt_at(
+        path: &Path,
+        generated_at_utc: &str,
+        marker_timestamp_utc: &str,
+    ) -> TestResult {
         write_test_json_file(
             path,
             &serde_json::json!({
                 "schema_version": 1,
                 "success": true,
                 "command": "wheelctl hardware sniff-marker",
+                "generated_at_utc": generated_at_utc,
                 "operator_notes_path": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
                 "marker": "hardware_doctor_selector_reviewed_utc",
-                "marker_timestamp_utc": "2026-05-30T00:00:00Z",
+                "marker_timestamp_utc": marker_timestamp_utc,
                 "native_control_evidence": false,
                 "openracing_hardware_output": false,
                 "no_hid_device_opened": true,
@@ -58880,6 +59017,11 @@ mod tests {
                 "satisfies_release_ready": false
             }),
         )
+    }
+
+    fn write_selector_review_marker_receipt(path: &Path) -> TestResult {
+        let timestamp = now_utc();
+        write_selector_review_marker_receipt_at(path, &timestamp, &timestamp)
     }
 
     #[test]
@@ -59157,6 +59299,130 @@ mod tests {
             command_text.contains("wheelctl hardware doctor")
                 && !command_text.contains("wheelctl hardware sniff-capture"),
             "stale legacy receipt must not surface capture command: {command_text}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn bench_wizard_rejects_expired_sniff_notes_capture_receipt() -> TestResult {
+        let lane = tempfile::tempdir()?;
+        write_0x8e_timing_blocker_test_lane(lane.path())?;
+        let local = tempfile::tempdir()?;
+        let receipt_path = local.path().join("sniff-notes-template-receipt.json");
+        let marker_path = local
+            .path()
+            .join("marker-hardware_doctor_selector_reviewed_utc.json");
+        let mut expired_receipt = materialized_0x8e_sniff_notes_receipt(false);
+        expired_receipt["generated_at_utc"] = serde_json::json!("2026-05-18T00:00:00Z");
+        write_test_json_file(&receipt_path, &expired_receipt)?;
+        write_selector_review_marker_receipt(&marker_path)?;
+
+        let wizard_receipt = moza_bench_wizard_receipt_with_sniff_notes_receipt(
+            lane.path(),
+            None,
+            None,
+            Some(&receipt_path),
+        )?;
+        let step = wizard_receipt
+            .get("next_operator_step")
+            .ok_or("expected next operator step")?;
+        let receipt_status = step
+            .get("sniff_notes_template_receipt")
+            .ok_or("expected sniff notes template receipt status")?;
+        assert_eq!(json_string(receipt_status, "status"), Some("invalid"));
+        assert_eq!(
+            json_string(receipt_status, "invalid_reason"),
+            Some("stale_materialized_capture_prep_expired")
+        );
+        assert_eq!(
+            json_bool(receipt_status, "stale_legacy_receipt"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(receipt_status, "materialized_capture_command_available"),
+            Some(false)
+        );
+        assert!(
+            json_string(receipt_status, "error").is_some_and(|error| error.contains("older than")),
+            "expired receipt should explain the age gate: {receipt_status}"
+        );
+
+        let next_concrete_command = wizard_receipt
+            .get("next_concrete_command")
+            .ok_or("expected safe fallback next concrete command")?;
+        assert_eq!(
+            json_string(next_concrete_command, "name"),
+            Some("refresh_observe_only_hardware_doctor")
+        );
+        let command_text =
+            json_string(next_concrete_command, "command").ok_or("missing command text")?;
+        assert!(
+            command_text.contains("wheelctl hardware doctor")
+                && !command_text.contains("wheelctl hardware sniff-capture"),
+            "expired capture prep must route back to fresh hardware doctor: {command_text}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn bench_wizard_rejects_expired_selector_marker_capture_receipt() -> TestResult {
+        let lane = tempfile::tempdir()?;
+        write_0x8e_timing_blocker_test_lane(lane.path())?;
+        let local = tempfile::tempdir()?;
+        let receipt_path = local.path().join("sniff-notes-template-receipt.json");
+        let marker_path = local
+            .path()
+            .join("marker-hardware_doctor_selector_reviewed_utc.json");
+        write_test_json_file(&receipt_path, &materialized_0x8e_sniff_notes_receipt(false))?;
+        write_selector_review_marker_receipt_at(
+            &marker_path,
+            "2026-05-18T00:00:00Z",
+            "2026-05-18T00:00:00Z",
+        )?;
+
+        let wizard_receipt = moza_bench_wizard_receipt_with_sniff_notes_receipt(
+            lane.path(),
+            None,
+            None,
+            Some(&receipt_path),
+        )?;
+        let step = wizard_receipt
+            .get("next_operator_step")
+            .ok_or("expected next operator step")?;
+        let receipt_status = step
+            .get("sniff_notes_template_receipt")
+            .ok_or("expected sniff notes template receipt status")?;
+        assert_eq!(json_string(receipt_status, "status"), Some("invalid"));
+        assert_eq!(
+            json_string(receipt_status, "invalid_reason"),
+            Some("stale_selector_marker_receipt")
+        );
+        assert_eq!(
+            json_bool(receipt_status, "stale_legacy_receipt"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(receipt_status, "materialized_capture_command_available"),
+            Some(false)
+        );
+        assert!(
+            json_string(receipt_status, "error").is_some_and(|error| error.contains("older than")),
+            "expired selector marker should explain the age gate: {receipt_status}"
+        );
+
+        let next_concrete_command = wizard_receipt
+            .get("next_concrete_command")
+            .ok_or("expected safe fallback next concrete command")?;
+        assert_eq!(
+            json_string(next_concrete_command, "name"),
+            Some("refresh_observe_only_hardware_doctor")
+        );
+        let command_text =
+            json_string(next_concrete_command, "command").ok_or("missing command text")?;
+        assert!(
+            command_text.contains("wheelctl hardware doctor")
+                && !command_text.contains("wheelctl hardware sniff-capture"),
+            "expired selector marker must not surface capture command: {command_text}"
         );
         Ok(())
     }
