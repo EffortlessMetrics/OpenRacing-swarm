@@ -8128,6 +8128,93 @@ remove the timing-correlation review, movement-blocker audit, status probe
 receipts, demux evidence, endpoint diagnoses, payload-source reviews, consumed
 authority attempt, or post-authority PIDFF regression evidence.
 
+## Work item: pin-status-probe-rerun-gate
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: accidental read-only rerun or motion attempt from a clean bench preflight
+Blocked by: completed movement blocker audit and staged 0x8E timing-correlation handoff
+
+### Goal
+
+Make the native-motion blocker audit explicitly distinguish bench visibility
+from permission to probe or move the wheel. A fresh observe-only hardware
+doctor can prove that the R5 and COM4 are visible and that vendor apps are not
+holding the port, but it does not override the current source blocker:
+missing timing-correlated 0x8E authority/status evidence.
+
+### Production delta
+
+`wheelctl moza vendor-status-movement-blocker-audit` now records that clean
+bench preflight evidence is visibility-only and is not read-only probe
+permission, motion permission, exact authorization, or command-bound bench
+clearance. The schema pins those fields so future receipts cannot treat a
+clean hardware doctor as enough to rerun the status query set, authorize a
+mode/enable write, rerun PIDFF, or attempt the closed-loop motion ladder.
+
+### Non-goals
+
+No live hardware access, HID open, serial open, read-only query send, live
+capture, raw pcap commit, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, or wheel movement.
+
+### Acceptance
+
+- The movement-blocker audit requires:
+  `bench_preflight_scope=visibility_only_not_probe_or_motion_authorization`.
+- The audit requires clean bench preflight to be classified as not read-only
+  probe permission and not motion permission.
+- The audit records that a fresh exact authorization and command-bound bench
+  clear receipt are absent.
+- The stored receipt still routes the next concrete action to passive 0x8E
+  timing-correlation capture and no-output review.
+- `wheel_moved_under_openracing=false`,
+  `visible_motion_verified=false`, `output_was_sent=false`, and
+  `authority_state=blocked` remain pinned.
+
+### Proof Commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-movement-blocker-audit `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json `
+  --demux-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json `
+  --framing-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json `
+  --extended-scan-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json `
+  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json `
+  --payload-rerun-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --timing-correlation-plan ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --timing-correlation-review ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza artifact-index `
+  --lane ci/hardware/moza-r5/2026-05-13 `
+  --json-out target/moza-current/artifact-index-status-rerun-gate.json `
+  --md-out ci/hardware/moza-r5/2026-05-13/index.md
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe_movement_blocker_audit -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the bench-preflight gate fields, schema requirements, audit
+receipt refresh, tests, and this source-of-truth work item. Do not remove the
+timing-correlation handoff, movement-blocker audit, status probe receipts,
+demux evidence, endpoint diagnoses, payload-source reviews, consumed authority
+attempt, or post-authority PIDFF regression evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

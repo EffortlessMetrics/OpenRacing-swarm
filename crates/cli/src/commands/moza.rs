@@ -31132,8 +31132,19 @@ fn vendor_status_movement_blocker_audit_receipt(
     insert_json!("authorization_plan_allowed", false);
     insert_json!("motion_attempt_allowed", false);
     insert_json!(
+        "bench_preflight_scope",
+        "visibility_only_not_probe_or_motion_authorization"
+    );
+    insert_json!("clean_bench_preflight_is_not_probe_permission", true);
+    insert_json!("clean_bench_preflight_is_not_motion_permission", true);
+    insert_json!("source_blocker_overrides_clean_bench_preflight", true);
+    insert_json!("fresh_command_bound_bench_clear_present", false);
+    insert_json!("fresh_command_bound_bench_clear_required_for_motion", true);
+    insert_json!("fresh_exact_authorization_present", false);
+    insert_json!("tiny_closed_loop_motion_attempt_allowed", false);
+    insert_json!(
         "reason_read_only_rerun_not_allowed",
-        "No corrected registry-approved read-only authority/status endpoint or timing-correlated equivalent status source exists yet; rerunning the same read-only query set would repeat the known endpoint mismatch."
+        "No corrected registry-approved read-only authority/status endpoint or timing-correlated equivalent status source exists yet; a clean observe-only hardware doctor proves bench visibility only and does not make rerunning the same read-only query set useful or allowed."
     );
     insert_json!(
         "reason_motion_not_allowed",
@@ -31193,7 +31204,9 @@ fn vendor_status_movement_blocker_audit_receipt(
             "smoke-ready claim",
             "release-ready claim",
             "firmware or DFU command",
-            "unknown host-to-device command"
+            "unknown host-to-device command",
+            "treating a clean hardware doctor as read-only rerun permission",
+            "treating a bench-clear phrase as motion authorization without an exact command-bound receipt"
         ]
     );
     insert_json!(
@@ -31215,6 +31228,7 @@ fn vendor_status_movement_blocker_audit_receipt(
         [
             "This audit reads stored receipts only; it opens no HID or serial device and sends no traffic.",
             "The original zero-response status probe is diagnosed, but the current blocker remains authority/status source identification.",
+            "A clean observe-only hardware doctor can prove R5/COM4 visibility and process ownership, but it does not override live_read_only_probe_allowed=false or motion_attempt_allowed=false.",
             "The next command path is passive timing-correlation evidence, not OpenRacing output.",
             "Native visible motion remains blocked; no wheel movement is claimed."
         ]
@@ -50103,6 +50117,41 @@ mod tests {
         );
         assert_eq!(json_bool(&receipt, "motion_attempt_allowed"), Some(false));
         assert_eq!(
+            json_string(&receipt, "bench_preflight_scope"),
+            Some("visibility_only_not_probe_or_motion_authorization")
+        );
+        assert_eq!(
+            json_bool(&receipt, "clean_bench_preflight_is_not_probe_permission"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&receipt, "clean_bench_preflight_is_not_motion_permission"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&receipt, "source_blocker_overrides_clean_bench_preflight"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&receipt, "fresh_command_bound_bench_clear_present"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(
+                &receipt,
+                "fresh_command_bound_bench_clear_required_for_motion"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&receipt, "fresh_exact_authorization_present"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "tiny_closed_loop_motion_attempt_allowed"),
+            Some(false)
+        );
+        assert_eq!(
             json_bool(&receipt, "wheel_moved_under_openracing"),
             Some(false)
         );
@@ -50285,6 +50334,10 @@ mod tests {
         assert_eq!(
             json_bool(&receipt, "live_read_only_probe_allowed"),
             Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "clean_bench_preflight_is_not_probe_permission"),
+            Some(true)
         );
         assert_eq!(
             json_bool(&receipt, "hardware_output_authorized"),

@@ -3,6 +3,7 @@
   "authority_state": "blocked",
   "authority_status_endpoint_or_command_mismatch": true,
   "authorization_plan_allowed": false,
+  "bench_preflight_scope": "visibility_only_not_probe_or_motion_authorization",
   "blocked_actions": [
     "live read-only probe",
     "mode enable write",
@@ -18,10 +19,14 @@
     "smoke-ready claim",
     "release-ready claim",
     "firmware or DFU command",
-    "unknown host-to-device command"
+    "unknown host-to-device command",
+    "treating a clean hardware doctor as read-only rerun permission",
+    "treating a bench-clear phrase as motion authorization without an exact command-bound receipt"
   ],
   "broad_serial_transport_blocker_ruled_out": true,
   "claim_scope": "no_output_vendor_status_movement_blocker_audit",
+  "clean_bench_preflight_is_not_motion_permission": true,
+  "clean_bench_preflight_is_not_probe_permission": true,
   "command": "wheelctl moza vendor-status-movement-blocker-audit",
   "corrected_read_only_probe_ready": false,
   "demux_follow_up": {
@@ -61,7 +66,10 @@
       "status": "active_blocker"
     }
   ],
-  "generated_at_utc": "2026-05-30T02:46:02Z",
+  "fresh_command_bound_bench_clear_present": false,
+  "fresh_command_bound_bench_clear_required_for_motion": true,
+  "fresh_exact_authorization_present": false,
+  "generated_at_utc": "2026-05-30T03:32:20Z",
   "hardware_output_authorized": false,
   "high_torque_enabled": false,
   "line_setting_or_ownership_primary_blocker": false,
@@ -103,6 +111,7 @@
   "notes": [
     "This audit reads stored receipts only; it opens no HID or serial device and sends no traffic.",
     "The original zero-response status probe is diagnosed, but the current blocker remains authority/status source identification.",
+    "A clean observe-only hardware doctor can prove R5/COM4 visibility and process ownership, but it does not override live_read_only_probe_allowed=false or motion_attempt_allowed=false.",
     "The next command path is passive timing-correlation evidence, not OpenRacing output.",
     "Native visible motion remains blocked; no wheel movement is claimed."
   ],
@@ -121,7 +130,7 @@
   "payload_bearing_authority_state_source_found": false,
   "planned_next_output_allowed": false,
   "reason_motion_not_allowed": "Mode and safety state remain unknown, no volatile mode/enable candidate is decoded or sendable, and no fresh command-bound bench-clear receipt exists for a tiny closed-loop motion run.",
-  "reason_read_only_rerun_not_allowed": "No corrected registry-approved read-only authority/status endpoint or timing-correlated equivalent status source exists yet; rerunning the same read-only query set would repeat the known endpoint mismatch.",
+  "reason_read_only_rerun_not_allowed": "No corrected registry-approved read-only authority/status endpoint or timing-correlated equivalent status source exists yet; a clean observe-only hardware doctor proves bench visibility only and does not make rerunning the same read-only query set useful or allowed.",
   "registry_promotion_claim": false,
   "release_ready": false,
   "required_artifacts": [
@@ -144,6 +153,7 @@
   "sent_read_only_query_commands": false,
   "serial_response_framing_primary_blocker": false,
   "smoke_ready": false,
+  "source_blocker_overrides_clean_bench_preflight": true,
   "source_receipts": {
     "authority_endpoint_diagnosis": "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json",
     "demux_probe": "ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json",
@@ -156,6 +166,7 @@
   },
   "success": true,
   "timing_correlated_payload_source_missing": true,
+  "tiny_closed_loop_motion_attempt_allowed": false,
   "unknown_safety_or_mode_state_blocks_authority": true,
   "visible_motion_verified": false,
   "wheel_moved_under_openracing": false,
