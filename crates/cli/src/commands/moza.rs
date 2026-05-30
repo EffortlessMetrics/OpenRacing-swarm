@@ -22833,60 +22833,114 @@ fn verify_steering_angle_stream_gate(lane: &Path) -> BundleGateCheck {
         Err(e) => return BundleGateCheck::fail("steering_angle_stream_proof", e.to_string()),
     };
 
-    let success = json_bool(&receipt, "success") == Some(true);
-    let command_ok =
-        json_string(&receipt, "command") == Some("wheelctl moza steering-stream-proof");
-    let receipt_path_ok = receipt_path_matches(lane, &receipt, "steering-angle-stream-proof.json");
-    let selector_matches_lane_endpoint = receipt_selector_matches_lane_endpoint(lane, &receipt);
-    let no_output_reports = json_bool(&receipt, "no_output_reports");
-    let no_feature_reports = json_bool(&receipt, "no_feature_reports");
-    let no_ffb_writes = json_bool(&receipt, "no_ffb_writes");
-    let hardware_output_enabled = json_bool(&receipt, "hardware_output_enabled");
-    let no_out_of_scope = no_out_of_scope_device_commands(&receipt);
-    let generated_at_utc = json_string(&receipt, "generated_at_utc");
-    let generated_at_valid = generated_at_utc
-        .map(|value| utc_timestamp_pair_is_ordered(value, value))
-        .unwrap_or(false);
-    let duration_ms = json_u64(&receipt, "duration_ms").unwrap_or(0);
-    let sample_count = json_u64(&receipt, "sample_count").unwrap_or(0);
-    let timestamps_monotonic = json_bool(&receipt, "timestamps_monotonic");
-    let sequence_monotonic = json_bool(&receipt, "sequence_monotonic");
-    let angle_units_ok = json_string(&receipt, "angle_units") == Some("degrees");
-    let center_baseline_present = receipt.get("center_baseline_degrees").is_some();
-    let device = receipt.get("device");
-    let r5_device = device.map(is_r5_device_value).unwrap_or(false);
-
-    let safe = success
-        && command_ok
-        && receipt_path_ok
-        && selector_matches_lane_endpoint
-        && no_output_reports == Some(true)
-        && no_feature_reports == Some(true)
-        && no_ffb_writes == Some(true)
-        && hardware_output_enabled == Some(false)
-        && no_out_of_scope
-        && generated_at_valid
-        && duration_ms > 0
-        && sample_count > 0
-        && timestamps_monotonic == Some(true)
-        && sequence_monotonic == Some(true)
-        && angle_units_ok
-        && center_baseline_present
-        && r5_device;
-
-    if safe {
+    let checks = SteeringAngleStreamGateChecks::from_receipt(lane, &receipt);
+    if checks.is_safe() {
         BundleGateCheck::pass(
             "steering_angle_stream_proof",
             format!(
-                "native steering angle stream recorded {sample_count} sample(s) with no output"
+                "native steering angle stream recorded {} sample(s) with no output",
+                checks.sample_count
             ),
         )
     } else {
-        BundleGateCheck::fail(
-            "steering_angle_stream_proof",
-            format!(
-                "success={success}, command_ok={command_ok}, receipt_path_ok={receipt_path_ok}, selector_matches_lane_endpoint={selector_matches_lane_endpoint}, no_output_reports={no_output_reports:?}, no_feature_reports={no_feature_reports:?}, no_ffb_writes={no_ffb_writes:?}, hardware_output_enabled={hardware_output_enabled:?}, no_out_of_scope={no_out_of_scope}, generated_at_valid={generated_at_valid}, duration_ms={duration_ms}, sample_count={sample_count}, timestamps_monotonic={timestamps_monotonic:?}, sequence_monotonic={sequence_monotonic:?}, angle_units_ok={angle_units_ok}, center_baseline_present={center_baseline_present}, r5_device={r5_device}"
+        BundleGateCheck::fail("steering_angle_stream_proof", checks.failure_details())
+    }
+}
+
+struct SteeringAngleStreamGateChecks {
+    success: bool,
+    command_ok: bool,
+    receipt_path_ok: bool,
+    selector_matches_lane_endpoint: bool,
+    no_output_reports: Option<bool>,
+    no_feature_reports: Option<bool>,
+    no_ffb_writes: Option<bool>,
+    hardware_output_enabled: Option<bool>,
+    no_out_of_scope: bool,
+    generated_at_valid: bool,
+    duration_ms: u64,
+    sample_count: u64,
+    timestamps_monotonic: Option<bool>,
+    sequence_monotonic: Option<bool>,
+    angle_units_ok: bool,
+    center_baseline_present: bool,
+    r5_device: bool,
+}
+
+impl SteeringAngleStreamGateChecks {
+    fn from_receipt(lane: &Path, receipt: &Value) -> Self {
+        let generated_at_utc = json_string(receipt, "generated_at_utc");
+        Self {
+            success: json_bool(receipt, "success") == Some(true),
+            command_ok: json_string(receipt, "command")
+                == Some("wheelctl moza steering-stream-proof"),
+            receipt_path_ok: receipt_path_matches(
+                lane,
+                receipt,
+                "steering-angle-stream-proof.json",
             ),
+            selector_matches_lane_endpoint: receipt_selector_matches_lane_endpoint(lane, receipt),
+            no_output_reports: json_bool(receipt, "no_output_reports"),
+            no_feature_reports: json_bool(receipt, "no_feature_reports"),
+            no_ffb_writes: json_bool(receipt, "no_ffb_writes"),
+            hardware_output_enabled: json_bool(receipt, "hardware_output_enabled"),
+            no_out_of_scope: no_out_of_scope_device_commands(receipt),
+            generated_at_valid: generated_at_utc
+                .map(|value| utc_timestamp_pair_is_ordered(value, value))
+                .unwrap_or(false),
+            duration_ms: json_u64(receipt, "duration_ms").unwrap_or(0),
+            sample_count: json_u64(receipt, "sample_count").unwrap_or(0),
+            timestamps_monotonic: json_bool(receipt, "timestamps_monotonic"),
+            sequence_monotonic: json_bool(receipt, "sequence_monotonic"),
+            angle_units_ok: json_string(receipt, "angle_units") == Some("degrees"),
+            center_baseline_present: receipt.get("center_baseline_degrees").is_some(),
+            r5_device: receipt
+                .get("device")
+                .map(is_r5_device_value)
+                .unwrap_or(false),
+        }
+    }
+
+    fn is_safe(&self) -> bool {
+        self.success
+            && self.command_ok
+            && self.receipt_path_ok
+            && self.selector_matches_lane_endpoint
+            && self.no_output_reports == Some(true)
+            && self.no_feature_reports == Some(true)
+            && self.no_ffb_writes == Some(true)
+            && self.hardware_output_enabled == Some(false)
+            && self.no_out_of_scope
+            && self.generated_at_valid
+            && self.duration_ms > 0
+            && self.sample_count > 0
+            && self.timestamps_monotonic == Some(true)
+            && self.sequence_monotonic == Some(true)
+            && self.angle_units_ok
+            && self.center_baseline_present
+            && self.r5_device
+    }
+
+    fn failure_details(&self) -> String {
+        format!(
+            "success={}, command_ok={}, receipt_path_ok={}, selector_matches_lane_endpoint={}, no_output_reports={:?}, no_feature_reports={:?}, no_ffb_writes={:?}, hardware_output_enabled={:?}, no_out_of_scope={}, generated_at_valid={}, duration_ms={}, sample_count={}, timestamps_monotonic={:?}, sequence_monotonic={:?}, angle_units_ok={}, center_baseline_present={}, r5_device={}",
+            self.success,
+            self.command_ok,
+            self.receipt_path_ok,
+            self.selector_matches_lane_endpoint,
+            self.no_output_reports,
+            self.no_feature_reports,
+            self.no_ffb_writes,
+            self.hardware_output_enabled,
+            self.no_out_of_scope,
+            self.generated_at_valid,
+            self.duration_ms,
+            self.sample_count,
+            self.timestamps_monotonic,
+            self.sequence_monotonic,
+            self.angle_units_ok,
+            self.center_baseline_present,
+            self.r5_device
         )
     }
 }
