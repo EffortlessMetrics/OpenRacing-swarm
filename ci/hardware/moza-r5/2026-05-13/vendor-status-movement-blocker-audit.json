@@ -61,7 +61,7 @@
       "status": "active_blocker"
     }
   ],
-  "generated_at_utc": "2026-05-30T00:15:23Z",
+  "generated_at_utc": "2026-05-30T02:46:02Z",
   "hardware_output_authorized": false,
   "high_torque_enabled": false,
   "line_setting_or_ownership_primary_blocker": false,
@@ -75,6 +75,11 @@
     {
       "command": "wheelctl hardware doctor --json-out target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --json",
       "name": "refresh_observe_only_hardware_doctor",
+      "output_enabled": false
+    },
+    {
+      "command": "wheelctl hardware sniff-notes-template --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json --hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --out target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-notes-template-receipt.json",
+      "name": "render_checked_in_operator_notes_template",
       "output_enabled": false
     },
     {

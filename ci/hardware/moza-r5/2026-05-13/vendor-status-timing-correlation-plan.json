@@ -33,6 +33,11 @@
       "output_enabled": false
     },
     {
+      "command": "wheelctl hardware sniff-notes-template --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json --hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --out target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-notes-template-receipt.json",
+      "name": "render_checked_in_operator_notes_template",
+      "output_enabled": false
+    },
+    {
       "command": "wheelctl hardware sniff-capture --usbpcapcmd '<USBPcapCMD.exe from hardware doctor>' --usbpcap-interface '<USBPcap interface from hardware doctor>' --devices <capture_devices_value> --hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --duration-ms 180000 --out target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --confirm-external-passive-capture --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json",
       "name": "run_bounded_passive_usbpcap_capture",
       "openracing_hardware_output": false,
@@ -54,7 +59,7 @@
   "command": "wheelctl moza vendor-status-timing-correlation-plan",
   "corrected_read_only_probe_ready": false,
   "exact_next_blocker": "No checked-in artifact currently timing-correlates the 0x8E payload-bearing status-source samples to authority or mode state. This plan makes the next passive capture concrete, but it does not itself record timing evidence or allow live probing, authorization, PIDFF, force escalation, or motion.",
-  "generated_at_utc": "2026-05-29T22:30:43Z",
+  "generated_at_utc": "2026-05-30T02:45:13Z",
   "hardware_output_authorized": false,
   "high_torque_enabled": false,
   "live_read_only_probe_allowed": false,
@@ -101,7 +106,9 @@
   "release_ready": false,
   "required_artifacts": [
     "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
+    "ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json",
     "target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json",
+    "target/sniff/pit-house-0x8e-timing-correlation/sniff-notes-template-receipt.json",
     "target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng",
     "target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json",
     "target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json",

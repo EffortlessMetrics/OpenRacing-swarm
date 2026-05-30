@@ -2395,6 +2395,30 @@ commands = [
 ]
 
 [[work_item]]
+id = "stage-0x8e-timing-correlation-sniff-handoff"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-stage-0x8e-timing-correlation-sniff-handoff"
+current_pointer = "ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json"
+claim_boundary = "No-output passive capture handoff hardening only; adds a checked-in pit-house-0x8e-timing-correlation sniff plan, operator-note event marker requirements, schema and bundle validation, and a 180000 ms hardware-doctor selector-verified capture template without opening HID or serial, sending read-only queries, running a live capture, sending output/configuration/firmware/PIDFF commands, creating authorization, promoting semantic decode or tuple sendability, or claiming native-control, native-visible, smoke-ready, simulator, coexistence, high-torque, release-ready, or wheel movement."
+commands = [
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json hardware sniff-plan --family moza-r5 --scenario pit-house-0x8e-timing-correlation --lane ci/hardware/moza-r5/2026-05-13 --operator Steven --device-note \"Moza R5 PID 0x0004 with KS/ES wheels, SR-P pedals, and HBP handbrake attached through the R5 hub\" --capture-tool usbpcap --capture-tool wireshark --capture-tool tshark --platform-hint windows --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-plan --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json --overwrite",
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl hardware_sniff -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl sniff_bundle -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_plan -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

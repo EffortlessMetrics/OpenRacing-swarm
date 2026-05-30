@@ -183,6 +183,7 @@ The broader Moza objective remains incomplete:
 | Payload-bearing status-source candidates | `vendor-status-payload-source-candidates.json` | Recorded four nonzero `0x8E` device-to-host setting-change samples as `unknown_do_not_send` status-source questions; no semantic decode, probe readiness, authorization, output, or motion claim |
 | Payload-source semantic review | `vendor-status-payload-source-semantic-review.json` | Fixture decoder coverage now recognizes the four `0x8E` samples as payload-bearing status-source questions, but the review records no same-tuple payload variation, no timing correlation, no authority-state source, and no live probe/output/motion eligibility |
 | 0x8E timing-correlation plan | `vendor-status-timing-correlation-plan.json` | Stages a passive Pit House event-marker capture for the same four `0x8E` samples with fresh hardware-doctor selector verification and complete LED default-teal/red/default-teal notes; no capture, timing proof, live probe, authorization, output, or motion claim |
+| 0x8E timing-correlation sniff plan | `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json` | Checked-in passive handoff that requires fresh USBPcap selector review, explicit event markers, KS top-left front LED default-teal/red/default-teal notes, and 180000 ms `sniff-capture --hardware-doctor`; still no capture, semantic decode, output, or motion claim |
 | Existing 0x8E timing-correlation review | `vendor-status-timing-correlation-review.json` | Reviews the accepted Pit House setting-change derived summary and finds the four target `0x8E` samples, but classifies them as static/single-sample with missing event-marker timing proof; live probe, authorization, output, and motion remain blocked |
 | Vendor status movement blocker audit | `vendor-status-movement-blocker-audit.json` | Consolidates the zero-response probe thread: broad serial ownership/line-setting/framing/scan-window depth are not the current blocker; authority endpoint/command mismatch and missing timing-correlated payload-bearing status-source evidence still block live probe, authorization, output, and motion |
 | Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls`, and `pit-house-setting-change` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence; setting-change keeps the earlier low-yield classification as historical failed evidence |
@@ -490,12 +491,14 @@ source before any live probe, authorization, PIDFF rerun, force escalation, or
 motion attempt.
 
 The timing-correlation capture plan is now staged at
-`vendor-status-timing-correlation-plan.json`. It consumes the semantic review and
-makes the next passive operator run concrete: refresh observe-only hardware
-doctor, use the fresh USBPcap selector with `sniff-capture --hardware-doctor`,
-open Pit House as a witness, record KS top-left front LED default teal -> red ->
-default teal with explicit event markers, keep raw pcap local by default, and
-run only a later no-output review of the derived summary. The plan records
+`vendor-status-timing-correlation-plan.json` and backed by the checked-in
+`pit-house-0x8e-timing-correlation/sniff-plan.json` handoff. It consumes the
+semantic review and makes the next passive operator run concrete: refresh
+observe-only hardware doctor, use the fresh USBPcap selector with
+`sniff-capture --hardware-doctor`, open Pit House as a witness, record KS
+top-left front LED default teal -> red -> default teal with explicit event
+markers, keep raw pcap local by default, and run only a later no-output review
+of the derived summary. The plan records
 `capture_recorded=false`, `timing_correlation_proven=false`,
 `live_read_only_probe_allowed=false`, `authorization_plan_allowed=false`,
 `motion_attempt_allowed=false`, `wheel_moved_under_openracing=false`,
