@@ -6063,10 +6063,12 @@ cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-frami
   --overwrite
 
 python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_review -- --nocapture
 cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
 cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
 cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
 cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
 cargo run --locked -p openracing-tools --bin package-surface -- --check
 python scripts/policy_file.py
 git diff --check
@@ -10592,6 +10594,106 @@ focused assertions, and this source-of-truth work item. Do not remove the
 sniff-capture hardware-doctor freshness check, selector guard, local
 capture-prep freshness gate, movement-blocker audit, timing-correlation
 plan/review artifacts, or native-visible promotion block.
+
+## Work item: refresh-0x8e-timing-blocker-after-capture-window
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: stale checked-in timing-correlation diagnosis that omits the current
+sniff-capture receipt-window gate
+Blocked by: completed `bind-0x8e-review-to-sniff-capture-window`
+
+### Goal
+
+Refresh the stored 0x8E timing-correlation blocker artifacts after the
+sniff-capture receipt-window guard landed, using the rebuilt current
+`wheelctl` binary.
+
+### Production delta
+
+Regenerate:
+
+```text
+ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json
+ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json
+```
+
+The refreshed timing review keeps the current legacy Pit House setting-change
+capture blocked, but now explicitly records:
+
+```text
+capture_receipt_window_required_for_candidate=true
+capture_receipt_window_verified=false
+capture_receipt_window_status=not_applicable_capture_provenance_unverified
+operator_event_markers_inside_capture_receipt_window=false
+```
+
+The movement-blocker audit remains unchanged in substance: the next concrete
+step is still the staged passive Pit House 0x8E event-marker capture and
+no-output timing review, not a read-only rerun, authorization, PIDFF rerun, or
+motion attempt.
+
+### Non-goals
+
+No code change, live capture, raw pcap commit, HID open, serial open,
+read-only query send, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, output claim, or wheel movement.
+
+### Acceptance
+
+- Checked-in `vendor-status-timing-correlation-review.json` includes the
+  capture-window required/verified/status fields emitted by current
+  `wheelctl`.
+- Checked-in `vendor-status-movement-blocker-audit.json` consumes the refreshed
+  timing review and keeps `wheel_moved_under_openracing=false`,
+  `visible_motion_verified=false`, `output_was_sent=false`, and
+  `authority_state=blocked`.
+- `live_read_only_probe_allowed=false`, `authorization_plan_allowed=false`, and
+  `motion_attempt_allowed=false` remain true-to-state blockers.
+- The next concrete action remains the staged passive Pit House 0x8E
+  event-marker capture with complete operator event timing.
+
+### Proof commands
+
+```powershell
+cargo build --locked -p wheelctl --bin wheelctl
+.\target\debug\wheelctl.exe --json moza vendor-status-timing-correlation-review `
+  --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json `
+  --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-summary.json `
+  --operator-notes ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/operator-notes.md `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --overwrite
+.\target\debug\wheelctl.exe --json moza vendor-status-movement-blocker-audit `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json `
+  --demux-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json `
+  --framing-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json `
+  --extended-scan-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json `
+  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json `
+  --payload-rerun-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --timing-correlation-plan ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --timing-correlation-review ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json `
+  --overwrite
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert only the refreshed receipts and this source-of-truth work item. Do not
+remove the capture-window gate or relax the current blocker.
 
 ## Work item: native-visible-promotion
 
