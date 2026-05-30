@@ -1999,6 +1999,16 @@ fn moza_bench_wizard_receipt(
     let next_operator_step = moza_bench_wizard_next_operator_step(lane, &readiness, &frontier);
     let native_motion_status =
         moza_bench_wizard_native_motion_status(&readiness, &next_operator_step);
+    let next_concrete_command_sequence =
+        moza_bench_wizard_next_concrete_commands(&next_operator_step);
+    let next_concrete_command_count = next_concrete_command_sequence
+        .as_array()
+        .map_or(0, Vec::len);
+    let next_concrete_command = next_concrete_command_sequence
+        .as_array()
+        .and_then(|commands| commands.first())
+        .cloned()
+        .unwrap_or(Value::Null);
     let wheel_moved_under_openracing =
         json_bool(&native_motion_status, "wheel_moved_under_openracing").unwrap_or(false);
     let visible_motion_verified =
@@ -2049,8 +2059,21 @@ fn moza_bench_wizard_receipt(
         "bench-wizard is operator navigation only; it is not readiness promotion and does not authorize hardware output",
         "Pit House, SimHub, simulator telemetry, and passive sniff artifacts remain external compatibility or support evidence, not native-control prerequisites"
     ]);
+    let next_concrete_command_claim_boundary = serde_json::json!({
+        "scope": "bench_wizard_no_output_navigation_only",
+        "hardware_output_authorized": false,
+        "opens_hid": false,
+        "opens_serial": false,
+        "sends_read_only_query": false,
+        "sends_output": false,
+        "sends_configuration": false,
+        "sends_firmware_or_dfu": false,
+        "creates_authorization": false,
+        "moves_wheel": false,
+        "reason": "These commands are the immediately runnable no-output pre-capture commands from the current movement blocker; they are not authorization and do not prove or perform motion."
+    });
 
-    Ok(serde_json::json!({
+    let mut receipt = serde_json::json!({
         "success": true,
         "command": "wheelctl moza bench-wizard",
         "artifact_kind": "moza_bench_wizard",
@@ -2089,7 +2112,40 @@ fn moza_bench_wizard_receipt(
         "blocked_output_boundary": blocked_output_boundary,
         "next_milestones": next_milestones,
         "notes": notes
-    }))
+    });
+    if let Some(object) = receipt.as_object_mut() {
+        object.insert("next_concrete_command".to_string(), next_concrete_command);
+        object.insert(
+            "next_concrete_command_sequence".to_string(),
+            next_concrete_command_sequence,
+        );
+        object.insert(
+            "next_concrete_command_count".to_string(),
+            serde_json::json!(next_concrete_command_count),
+        );
+        object.insert(
+            "next_concrete_command_claim_boundary".to_string(),
+            next_concrete_command_claim_boundary,
+        );
+    }
+    Ok(receipt)
+}
+
+fn moza_bench_wizard_next_concrete_commands(next_operator_step: &Value) -> Value {
+    let commands = next_operator_step
+        .get("commands")
+        .and_then(Value::as_array)
+        .map(|commands| {
+            commands
+                .iter()
+                .filter(|command| {
+                    json_bool(command, "runnable_next_operator_command") == Some(true)
+                })
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    Value::Array(commands)
 }
 
 fn moza_bench_wizard_native_motion_status(readiness: &Value, next_operator_step: &Value) -> Value {
@@ -45222,6 +45278,7 @@ fn render_moza_bench_wizard_markdown(receipt: &Value) -> String {
         markdown_escape(step_summary)
     ));
     push_native_motion_status_markdown(&mut out, receipt);
+    push_next_concrete_command_markdown(&mut out, receipt);
     push_next_operator_step_capture_checklist_markdown(&mut out, step);
     push_next_operator_step_external_capture_commands_markdown(&mut out, step);
     push_next_operator_step_commands_markdown(&mut out, step);
@@ -45356,6 +45413,58 @@ fn push_native_motion_status_markdown(out: &mut String, receipt: &Value) {
         "- Next concrete action: {}\n\n",
         markdown_escape(next_action)
     ));
+}
+
+fn push_next_concrete_command_markdown(out: &mut String, receipt: &Value) {
+    let Some(command) = receipt.get("next_concrete_command") else {
+        return;
+    };
+    if command.is_null() {
+        return;
+    }
+    let command_text = json_string(command, "command").unwrap_or("");
+    if command_text.is_empty() {
+        return;
+    }
+
+    let name = json_string(command, "name").unwrap_or("unknown");
+    let sequence_count = receipt
+        .get("next_concrete_command_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let output_enabled = json_bool(command, "output_enabled").unwrap_or(false);
+    let openracing_output = json_bool(command, "openracing_hardware_output").unwrap_or(false);
+    let openracing_hid = json_bool(command, "openracing_hid_open").unwrap_or(false);
+    let openracing_feature_reports =
+        json_bool(command, "openracing_feature_reports").unwrap_or(false);
+    let openracing_serial_config =
+        json_bool(command, "openracing_serial_config_commands").unwrap_or(false);
+    let openracing_firmware_or_dfu =
+        json_bool(command, "openracing_firmware_or_dfu_commands").unwrap_or(false);
+
+    out.push_str("## Next Concrete Command\n\n");
+    out.push_str("This is the next immediately runnable no-output command from the current movement blocker. It is not authorization, it does not move the wheel, and it does not promote readiness.\n\n");
+    out.push_str(&format!("- Name: `{}`\n", markdown_escape(name)));
+    out.push_str(&format!(
+        "- Runnable next-command sequence length: `{sequence_count}`\n"
+    ));
+    out.push_str(&format!("- output_enabled: `{output_enabled}`\n"));
+    out.push_str(&format!(
+        "- openracing_hardware_output: `{openracing_output}`\n"
+    ));
+    out.push_str(&format!("- openracing_hid_open: `{openracing_hid}`\n"));
+    out.push_str(&format!(
+        "- openracing_feature_reports: `{openracing_feature_reports}`\n"
+    ));
+    out.push_str(&format!(
+        "- openracing_serial_config_commands: `{openracing_serial_config}`\n"
+    ));
+    out.push_str(&format!(
+        "- openracing_firmware_or_dfu_commands: `{openracing_firmware_or_dfu}`\n"
+    ));
+    out.push_str("\n```powershell\n");
+    out.push_str(command_text);
+    out.push_str("\n```\n\n");
 }
 
 fn push_artifact_markdown_table(out: &mut String, title: &str, artifacts: &[&Value]) {
@@ -57551,6 +57660,115 @@ mod tests {
             json_string(native_motion_status, "source_audit"),
             Some(VENDOR_STATUS_MOVEMENT_BLOCKER_AUDIT_FILE)
         );
+        let next_concrete_command = wizard_receipt
+            .get("next_concrete_command")
+            .ok_or("expected top-level next concrete command")?;
+        assert_eq!(
+            json_string(next_concrete_command, "name"),
+            Some("refresh_observe_only_hardware_doctor")
+        );
+        assert_eq!(
+            json_bool(next_concrete_command, "output_enabled"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(next_concrete_command, "openracing_hardware_output"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(next_concrete_command, "openracing_hid_open"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(next_concrete_command, "openracing_feature_reports"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(next_concrete_command, "openracing_serial_config_commands"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(next_concrete_command, "openracing_firmware_or_dfu_commands"),
+            Some(false)
+        );
+        assert!(
+            json_string(next_concrete_command, "command").is_some_and(|text| {
+                text.contains("wheelctl hardware doctor")
+                    && text.contains(
+                        "target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json",
+                    )
+            }),
+            "top-level next concrete command should be the observe-only hardware doctor: {next_concrete_command:?}"
+        );
+        let next_concrete_sequence = wizard_receipt
+            .get("next_concrete_command_sequence")
+            .and_then(Value::as_array)
+            .ok_or("expected top-level next concrete command sequence")?;
+        assert_eq!(
+            json_u64(&wizard_receipt, "next_concrete_command_count"),
+            Some(3)
+        );
+        assert_eq!(next_concrete_sequence.len(), 3);
+        let next_concrete_names = next_concrete_sequence
+            .iter()
+            .filter_map(|command| json_string(command, "name"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            next_concrete_names,
+            vec![
+                "refresh_observe_only_hardware_doctor",
+                "render_checked_in_operator_notes_template",
+                "stamp_hardware_doctor_selector_marker"
+            ]
+        );
+        for command in next_concrete_sequence {
+            let command_text =
+                json_string(command, "command").ok_or("missing concrete command text")?;
+            assert_eq!(
+                json_bool(command, "runnable_next_operator_command"),
+                Some(true)
+            );
+            assert_eq!(json_bool(command, "output_enabled"), Some(false));
+            assert_eq!(
+                json_bool(command, "openracing_hardware_output"),
+                Some(false)
+            );
+            assert_eq!(json_bool(command, "openracing_hid_open"), Some(false));
+            assert_eq!(
+                json_bool(command, "openracing_feature_reports"),
+                Some(false)
+            );
+            assert_eq!(
+                json_bool(command, "openracing_serial_config_commands"),
+                Some(false)
+            );
+            assert_eq!(
+                json_bool(command, "openracing_firmware_or_dfu_commands"),
+                Some(false)
+            );
+            assert!(
+                !command_text.contains("<USBPcapCMD.exe from hardware doctor>")
+                    && !command_text.contains("<capture_devices_value>")
+                    && !command_text.contains("authorize")
+                    && !command_text.contains("controlled-angle-smoke")
+                    && !command_text.contains("vendor-authority-attempt")
+                    && !command_text.contains("vendor-status-probe")
+                    && !command_text.contains("pidff"),
+                "next concrete sequence must contain only immediate no-output pre-capture commands: {command_text}"
+            );
+        }
+        let command_boundary = wizard_receipt
+            .get("next_concrete_command_claim_boundary")
+            .ok_or("expected next concrete command claim boundary")?;
+        assert_eq!(
+            json_bool(command_boundary, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(json_bool(command_boundary, "moves_wheel"), Some(false));
+        assert_eq!(
+            json_bool(command_boundary, "creates_authorization"),
+            Some(false)
+        );
 
         let commands = step
             .get("commands")
@@ -57823,6 +58041,29 @@ mod tests {
         assert!(wizard_markdown.contains("output_was_sent: `false`"));
         assert!(wizard_markdown.contains("authority_state: `blocked`"));
         assert!(wizard_markdown.contains("Next concrete action:"));
+        assert!(wizard_markdown.contains("## Next Concrete Command"));
+        let next_concrete_section = wizard_markdown
+            .split("## Next Concrete Command")
+            .nth(1)
+            .and_then(|section| section.split("## ").next())
+            .ok_or("expected Next Concrete Command section")?;
+        assert!(
+            next_concrete_section.contains("wheelctl hardware doctor")
+                && next_concrete_section.contains(
+                    "target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json",
+                )
+                && next_concrete_section.contains("openracing_hardware_output: `false`")
+                && next_concrete_section.contains("openracing_hid_open: `false`"),
+            "Next Concrete Command should surface the first no-output command and boundary: {next_concrete_section}"
+        );
+        assert!(
+            !next_concrete_section.contains("vendor-authority-attempt")
+                && !next_concrete_section.contains("controlled-angle-smoke")
+                && !next_concrete_section.contains("authorize")
+                && !next_concrete_section.contains("vendor-status-probe")
+                && !next_concrete_section.contains("pidff"),
+            "Next Concrete Command must not surface output, authorization, or read-only rerun commands: {next_concrete_section}"
+        );
         Ok(())
     }
 
