@@ -9779,6 +9779,91 @@ work item. Do not remove event-marker helpers, strict timestamp validators,
 timing-correlation plan, movement blocker audit, or native-visible promotion
 block.
 
+## Work item: surface-native-motion-status-in-bench-wizard
+
+Status: completed
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: operator confusion between prerequisite completion and real native wheel movement
+Blocked by: completed 0x8E timing-review provenance gate
+
+### Goal
+
+Make `wheelctl moza bench-wizard` state the current OpenRacing-controlled
+movement state directly at the top level, instead of requiring operators to
+infer it from nested blocker details.
+
+### Production delta
+
+The bench-wizard receipt now exposes:
+
+- `native_motion_status`;
+- `wheel_moved_under_openracing`;
+- `visible_motion_verified`;
+- `output_was_sent`;
+- `authority_state`;
+- `exact_native_motion_blocker`; and
+- `next_native_motion_action`.
+
+The generated Markdown also includes a `Native Motion State` section before the
+capture handoff. In the current lane state, it reports:
+
+```text
+wheel_moved_under_openracing=false
+visible_motion_verified=false
+output_was_sent=false
+authority_state=blocked
+```
+
+The exact blocker remains the missing reviewed timing-correlated
+payload-bearing authority/mode status source. The next concrete action remains
+the 0x8E timing-correlation capture/review path, not a read-only rerun,
+authorization, PIDFF rerun, force escalation, or motion attempt.
+
+### Non-goals
+
+No live hardware access, HID open, serial open, read-only query send, live
+capture, raw pcap commit, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, output claim, or wheel movement.
+
+### Acceptance
+
+- The bench-wizard JSON receipt has top-level `wheel_moved_under_openracing`,
+  `visible_motion_verified`, `output_was_sent`, `authority_state`,
+  `exact_native_motion_blocker`, and `next_native_motion_action` fields.
+- The nested `native_motion_status` object keeps motion, live read-only probe,
+  authorization, and hardware output allow flags false for the current blocked
+  lane state.
+- The bench-wizard Markdown includes a `Native Motion State` section before the
+  operator command handoff.
+- The native-visible verifier still fails closed; no readiness or movement
+  claim is promoted.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the bench-wizard top-level/native-motion-status rendering fields,
+the focused regression assertions, and this source-of-truth work item. Do not
+remove timing-correlation plan/review artifacts, the movement blocker audit, or
+the native-visible promotion block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

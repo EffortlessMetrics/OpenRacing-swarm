@@ -1997,11 +1997,58 @@ fn moza_bench_wizard_receipt(
     let readiness = artifact_index_readiness_summary(lane, &support_status);
     let frontier = moza_lane_frontier_label(lane, &support_status);
     let next_operator_step = moza_bench_wizard_next_operator_step(lane, &readiness, &frontier);
+    let native_motion_status =
+        moza_bench_wizard_native_motion_status(&readiness, &next_operator_step);
+    let wheel_moved_under_openracing =
+        json_bool(&native_motion_status, "wheel_moved_under_openracing").unwrap_or(false);
+    let visible_motion_verified =
+        json_bool(&native_motion_status, "visible_motion_verified").unwrap_or(false);
+    let output_was_sent = json_bool(&native_motion_status, "output_was_sent").unwrap_or(false);
+    let authority_state = json_string(&native_motion_status, "authority_state")
+        .unwrap_or("blocked")
+        .to_string();
+    let exact_native_motion_blocker = json_string(&native_motion_status, "exact_blocker")
+        .unwrap_or("native visible motion remains blocked")
+        .to_string();
+    let next_native_motion_action = json_string(&native_motion_status, "next_action")
+        .unwrap_or("continue no-output diagnosis before any motion attempt")
+        .to_string();
     let input_role_semantics = moza_input_role_semantics_summary(lane);
     let pit_house_compatibility = moza_pit_house_compatibility_summary(lane);
     let simulator_compatibility = moza_simulator_compatibility_summary(lane);
     let vendor_authority_navigation = moza_vendor_authority_navigation_summary(lane);
     let passive_sniff_navigation = moza_passive_sniff_navigation_summary(lane);
+    let blocked_output_boundary = serde_json::json!({
+        "output_allowed": false,
+        "authorization_allowed_from_wizard": false,
+        "reason": "bench-wizard is a read-only planner; it does not create authorization receipts or hardware output commands",
+        "requires_separate_fresh_command_bound_bench_clear": true,
+        "requires_exact_authorization_receipt": true,
+        "forbidden_without_new_plan": [
+            "blind rerun",
+            "force escalation",
+            "longer dwell",
+            "30 degree target",
+            "90 degree target",
+            "direct report 0x20",
+            "high torque",
+            "serial config",
+            "firmware or DFU"
+        ]
+    });
+    let next_milestones = serde_json::json!([
+        "native_visible_ready",
+        "controlled_movement_ladder",
+        "pit_house_coexistence",
+        "simulator_telemetry",
+        "bounded_simulator_ffb_smoke",
+        "smoke_ready"
+    ]);
+    let notes = serde_json::json!([
+        "bench-wizard reads stored lane files only; it opens no HID device and sends no output, feature, serial, firmware, or DFU commands",
+        "bench-wizard is operator navigation only; it is not readiness promotion and does not authorize hardware output",
+        "Pit House, SimHub, simulator telemetry, and passive sniff artifacts remain external compatibility or support evidence, not native-control prerequisites"
+    ]);
 
     Ok(serde_json::json!({
         "success": true,
@@ -2013,6 +2060,13 @@ fn moza_bench_wizard_receipt(
         "md_out": md_out.map(|path| path.display().to_string()),
         "frontier": frontier,
         "next_operator_step": next_operator_step,
+        "native_motion_status": native_motion_status,
+        "wheel_moved_under_openracing": wheel_moved_under_openracing,
+        "visible_motion_verified": visible_motion_verified,
+        "output_was_sent": output_was_sent,
+        "authority_state": authority_state,
+        "exact_native_motion_blocker": exact_native_motion_blocker,
+        "next_native_motion_action": next_native_motion_action,
         "no_hid_device_opened": true,
         "no_ffb_writes": true,
         "no_output_reports": true,
@@ -2032,38 +2086,68 @@ fn moza_bench_wizard_receipt(
         "passive_sniff_navigation": passive_sniff_navigation,
         "safe_no_output_commands": moza_bench_wizard_safe_no_output_commands(lane),
         "active_blockers": moza_bench_wizard_active_blockers(lane),
-        "blocked_output_boundary": {
-            "output_allowed": false,
-            "authorization_allowed_from_wizard": false,
-            "reason": "bench-wizard is a read-only planner; it does not create authorization receipts or hardware output commands",
-            "requires_separate_fresh_command_bound_bench_clear": true,
-            "requires_exact_authorization_receipt": true,
-            "forbidden_without_new_plan": [
-                "blind rerun",
-                "force escalation",
-                "longer dwell",
-                "30 degree target",
-                "90 degree target",
-                "direct report 0x20",
-                "high torque",
-                "serial config",
-                "firmware or DFU"
-            ]
-        },
-        "next_milestones": [
-            "native_visible_ready",
-            "controlled_movement_ladder",
-            "pit_house_coexistence",
-            "simulator_telemetry",
-            "bounded_simulator_ffb_smoke",
-            "smoke_ready"
-        ],
-        "notes": [
-            "bench-wizard reads stored lane files only; it opens no HID device and sends no output, feature, serial, firmware, or DFU commands",
-            "bench-wizard is operator navigation only; it is not readiness promotion and does not authorize hardware output",
-            "Pit House, SimHub, simulator telemetry, and passive sniff artifacts remain external compatibility or support evidence, not native-control prerequisites"
-        ]
+        "blocked_output_boundary": blocked_output_boundary,
+        "next_milestones": next_milestones,
+        "notes": notes
     }))
+}
+
+fn moza_bench_wizard_native_motion_status(readiness: &Value, next_operator_step: &Value) -> Value {
+    let native_visible_ready = readiness
+        .get("native_visible_motion_proven")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let wheel_moved_under_openracing =
+        json_bool(next_operator_step, "wheel_moved_under_openracing")
+            .unwrap_or(native_visible_ready);
+    let visible_motion_verified =
+        json_bool(next_operator_step, "visible_motion_verified").unwrap_or(native_visible_ready);
+    let output_was_sent = json_bool(next_operator_step, "output_was_sent").unwrap_or(false);
+    let authority_state = json_string(next_operator_step, "authority_state").unwrap_or({
+        if native_visible_ready {
+            "native_visible_verified"
+        } else {
+            "blocked"
+        }
+    });
+    let exact_blocker = json_string(next_operator_step, "exact_next_blocker")
+        .or_else(|| json_string(next_operator_step, "summary"))
+        .unwrap_or({
+            if native_visible_ready {
+                "native visible motion is verified"
+            } else {
+                "native visible motion remains blocked"
+            }
+        });
+    let next_action = json_string(next_operator_step, "next_allowed_action")
+        .or_else(|| json_string(next_operator_step, "summary"))
+        .unwrap_or({
+            if native_visible_ready {
+                "plan the controlled movement ladder with fresh authorization per rung"
+            } else {
+                "continue no-output diagnosis before any motion attempt"
+            }
+        });
+
+    serde_json::json!({
+        "wheel_moved_under_openracing": wheel_moved_under_openracing,
+        "visible_motion_verified": visible_motion_verified,
+        "output_was_sent": output_was_sent,
+        "authority_state": authority_state,
+        "native_visible_ready": native_visible_ready,
+        "motion_attempt_allowed": json_bool(next_operator_step, "motion_attempt_allowed").unwrap_or(false),
+        "live_read_only_probe_allowed": json_bool(next_operator_step, "live_read_only_probe_allowed").unwrap_or(false),
+        "authorization_plan_allowed": json_bool(next_operator_step, "authorization_plan_allowed").unwrap_or(false),
+        "hardware_output_allowed_now": json_bool(next_operator_step, "hardware_output_allowed_now").unwrap_or(false),
+        "exact_blocker": exact_blocker,
+        "next_action": next_action,
+        "source_audit": json_string(next_operator_step, "source_audit"),
+        "source_reason": json_string(next_operator_step, "source_reason").unwrap_or("bench_wizard_next_operator_step"),
+        "notes": [
+            "This status is operator navigation only and does not authorize hardware output.",
+            "A false wheel_moved_under_openracing value means no OpenRacing-controlled visible motion is verified."
+        ]
+    })
 }
 
 fn moza_bench_wizard_next_operator_step(lane: &Path, readiness: &Value, frontier: &str) -> Value {
@@ -45137,6 +45221,7 @@ fn render_moza_bench_wizard_markdown(receipt: &Value) -> String {
         markdown_escape(step_kind),
         markdown_escape(step_summary)
     ));
+    push_native_motion_status_markdown(&mut out, receipt);
     push_next_operator_step_capture_checklist_markdown(&mut out, step);
     push_next_operator_step_external_capture_commands_markdown(&mut out, step);
     push_next_operator_step_commands_markdown(&mut out, step);
@@ -45227,6 +45312,50 @@ fn render_moza_bench_wizard_markdown(receipt: &Value) -> String {
         out.push('\n');
     }
     out
+}
+
+fn push_native_motion_status_markdown(out: &mut String, receipt: &Value) {
+    let Some(status) = receipt.get("native_motion_status") else {
+        return;
+    };
+    if status.is_null() {
+        return;
+    }
+
+    let wheel_moved = json_bool(status, "wheel_moved_under_openracing").unwrap_or(false);
+    let visible_motion = json_bool(status, "visible_motion_verified").unwrap_or(false);
+    let output_sent = json_bool(status, "output_was_sent").unwrap_or(false);
+    let authority_state = json_string(status, "authority_state").unwrap_or("blocked");
+    let motion_allowed = json_bool(status, "motion_attempt_allowed").unwrap_or(false);
+    let read_only_allowed = json_bool(status, "live_read_only_probe_allowed").unwrap_or(false);
+    let exact_blocker =
+        json_string(status, "exact_blocker").unwrap_or("native visible motion remains blocked");
+    let next_action =
+        json_string(status, "next_action").unwrap_or("continue no-output diagnosis before motion");
+
+    out.push_str("## Native Motion State\n\n");
+    out.push_str("This is the current native OpenRacing movement state, not a prerequisite-completion summary.\n\n");
+    out.push_str(&format!(
+        "- wheel_moved_under_openracing: `{wheel_moved}`\n"
+    ));
+    out.push_str(&format!("- visible_motion_verified: `{visible_motion}`\n"));
+    out.push_str(&format!("- output_was_sent: `{output_sent}`\n"));
+    out.push_str(&format!(
+        "- authority_state: `{}`\n",
+        markdown_escape(authority_state)
+    ));
+    out.push_str(&format!("- motion_attempt_allowed: `{motion_allowed}`\n"));
+    out.push_str(&format!(
+        "- live_read_only_probe_allowed: `{read_only_allowed}`\n"
+    ));
+    out.push_str(&format!(
+        "- Exact blocker: {}\n",
+        markdown_escape(exact_blocker)
+    ));
+    out.push_str(&format!(
+        "- Next concrete action: {}\n\n",
+        markdown_escape(next_action)
+    ));
 }
 
 fn push_artifact_markdown_table(out: &mut String, title: &str, artifacts: &[&Value]) {
@@ -57374,6 +57503,54 @@ mod tests {
             json_string(step, "exact_next_blocker")
                 .is_some_and(|text| text.contains("Missing reviewed timing-correlated"))
         );
+        assert_eq!(
+            json_bool(&wizard_receipt, "wheel_moved_under_openracing"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&wizard_receipt, "visible_motion_verified"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&wizard_receipt, "output_was_sent"), Some(false));
+        assert_eq!(
+            json_string(&wizard_receipt, "authority_state"),
+            Some("blocked")
+        );
+        assert!(
+            json_string(&wizard_receipt, "exact_native_motion_blocker")
+                .is_some_and(|text| text.contains("Missing reviewed timing-correlated"))
+        );
+        assert!(
+            json_string(&wizard_receipt, "next_native_motion_action")
+                .is_some_and(|text| text.contains("vendor-status-timing-correlation-review"))
+        );
+        let native_motion_status = wizard_receipt
+            .get("native_motion_status")
+            .ok_or("expected top-level native motion status")?;
+        assert_eq!(
+            json_bool(native_motion_status, "wheel_moved_under_openracing"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(native_motion_status, "visible_motion_verified"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(native_motion_status, "motion_attempt_allowed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(native_motion_status, "live_read_only_probe_allowed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(native_motion_status, "authorization_plan_allowed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_string(native_motion_status, "source_audit"),
+            Some(VENDOR_STATUS_MOVEMENT_BLOCKER_AUDIT_FILE)
+        );
 
         let commands = step
             .get("commands")
@@ -57640,7 +57817,12 @@ mod tests {
             "Next Operator Commands must not present capture-runtime or post-capture commands as immediately runnable: {next_operator_commands}"
         );
         assert!(wizard_markdown.contains("Native Motion Blocker"));
+        assert!(wizard_markdown.contains("## Native Motion State"));
         assert!(wizard_markdown.contains("wheel_moved_under_openracing: `false`"));
+        assert!(wizard_markdown.contains("visible_motion_verified: `false`"));
+        assert!(wizard_markdown.contains("output_was_sent: `false`"));
+        assert!(wizard_markdown.contains("authority_state: `blocked`"));
+        assert!(wizard_markdown.contains("Next concrete action:"));
         Ok(())
     }
 
