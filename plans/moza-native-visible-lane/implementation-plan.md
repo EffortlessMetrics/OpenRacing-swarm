@@ -8718,6 +8718,91 @@ timing-correlation handoff, movement-blocker audit, status probe receipts,
 demux evidence, endpoint diagnoses, timing-correlation plan/review, or
 event-marker capture handoff.
 
+## Work item: gate-0x8e-event-marker-timestamps
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: accepting malformed 0x8E timing-correlation evidence as a reviewed
+authority/mode status source
+Blocked by: completed 0x8E event-marker capture handoff
+
+### Goal
+
+Keep the shortest native-motion path honest by making the next passive 0x8E
+event-marker evidence fail before bundling if the operator timestamps cannot
+support timing correlation. A future capture must prove when Pit House opened,
+when the R5 was recognized, when the KS top-left front LED moved from default
+teal to red and back to default teal, and when capture stopped.
+
+### Production delta
+
+`wheelctl hardware sniff-bundle` now validates
+`pit-house-0x8e-timing-correlation` operator notes more strictly:
+
+```text
+hardware_doctor_selector_reviewed_utc <= capture_start_utc
+capture_start_utc
+  <= pit_house_opened_utc
+  <= r5_recognized_in_pit_house_utc
+  <= idle_stable_before_change_utc
+  <= ks_top_left_front_led_default_teal_observed_utc
+  <= ks_top_left_front_led_changed_to_red_utc
+  <= ks_top_left_front_led_restored_to_default_teal_utc
+  <= idle_stable_after_restore_utc
+  <= pit_house_closed_utc
+  <= capture_stop_utc
+```
+
+Every timestamp in that sequence must parse as RFC3339 before a derived bundle
+can be accepted. This prevents a future 0x8E capture with vague, malformed, or
+out-of-order event markers from being treated as timing-correlation evidence.
+
+### Non-goals
+
+No live hardware access, HID open, serial open, read-only query send, live
+capture, raw pcap commit, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, or wheel movement.
+
+### Acceptance
+
+- 0x8E timing bundles with malformed event-marker timestamps are rejected.
+- 0x8E timing bundles with out-of-order event-marker timestamps are rejected.
+- 0x8E timing bundles where hardware doctor review happens after capture start
+  are rejected.
+- Complete chronological event-marker notes still bundle successfully without
+  including raw pcap by default.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain the operating
+  state.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_bundle -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the timestamp parsing/order validation, focused sniff-bundle tests,
+and this source-of-truth work item. Do not remove the timing-correlation
+handoff, movement-blocker audit, status probe receipts, demux evidence,
+endpoint diagnoses, timing-correlation plan/review, or event-marker capture
+handoff.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

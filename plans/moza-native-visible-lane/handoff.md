@@ -580,6 +580,13 @@ protocol evidence, a
 reviewed vendor-control plan, fresh command-bound bench clear, and a new exact
 authorization.
 
+For the staged `pit-house-0x8e-timing-correlation` capture, accepted derived
+evidence now requires parseable RFC3339 event-marker timestamps and a
+chronological sequence from hardware-doctor selector review through capture
+stop. Malformed, vague, or out-of-order event notes must fail before bundling;
+the lane still needs timing-correlated payload-bearing authority/mode status
+evidence before any live probe, authorization, PIDFF rerun, or motion attempt.
+
 ## Do Not Do
 
 - Do not create another authorization receipt from this handoff.
