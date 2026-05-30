@@ -2541,6 +2541,27 @@ commands = [
 ]
 
 [[work_item]]
+id = "gate-0x8e-placeholder-capture-command"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-gate-0x8e-placeholder-capture-command"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json"
+claim_boundary = "No-output bench-wizard navigation hardening only; the 0x8E timing-correlation sniff-capture placeholder remains visible as an external capture template for review, but it is no longer rendered as a runnable Next Operator Command until sniff-notes-template materializes a concrete current hardware-doctor selector-bound command. Opens no HID or serial device, sends no read-only query/output/configuration/firmware/PIDFF command, runs no live capture, creates no authorization, promotes no semantic decode or tuple sendability, and keeps live probe, PIDFF rerun, force escalation, native-control, native-visible, smoke-ready, simulator, coexistence, high-torque, release-ready, and wheel-movement claims false."
+commands = [
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-0x8e-placeholder-gate.json --md-out target/moza-current/bench-wizard-0x8e-placeholder-gate.md",
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

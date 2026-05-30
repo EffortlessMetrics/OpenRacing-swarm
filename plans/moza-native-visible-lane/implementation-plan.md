@@ -8626,6 +8626,98 @@ generated index, tests if any, and this source-of-truth work item. Do not remove
 the original zero-response receipt, framing diagnosis, authority endpoint
 diagnoses, timing-correlation plan/review, or event-marker capture handoff.
 
+## Work item: gate-0x8e-placeholder-capture-command
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: accidental execution of an unrendered USBPcap selector placeholder
+Blocked by: completed 0x8E timing-correlation selector handoff and movement blocker audit
+
+### Goal
+
+Keep the next command path concrete while the native-motion blocker remains
+the missing timing-correlated `0x8E` authority/mode status source. The wizard
+must not present a placeholder USBPcap capture template as a runnable operator
+command.
+
+### Production delta
+
+`wheelctl moza bench-wizard` now marks placeholder capture templates with:
+
+```text
+runnable_next_operator_command=false
+next_operator_command_status=placeholder_template_not_runnable
+```
+
+The full placeholder remains visible in the external capture-template section
+for review, but the Markdown `Next Operator Commands` table omits it and tells
+the operator to materialize the concrete selector-bound command with
+`wheelctl hardware sniff-notes-template` after a fresh `hardware doctor`.
+
+This keeps the next executable commands as:
+
+```text
+hardware doctor
+sniff-notes-template
+sniff-summary after the passive pcap exists
+vendor-status-timing-correlation-review after derived summary and notes exist
+```
+
+The actual `sniff-capture` command remains non-runnable until the fresh
+hardware-doctor selector is materialized into `operator-notes.md`.
+
+### Non-goals
+
+No live hardware access, HID open, serial open, read-only query send, live
+capture, raw pcap commit, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, or wheel movement.
+
+### Acceptance
+
+- The 0x8E timing-correlation placeholder capture command remains available as
+  reviewable external capture metadata.
+- The placeholder is marked not runnable as a `Next Operator Command`.
+- The Markdown `Next Operator Commands` section omits `<USBPcapCMD.exe from
+  hardware doctor>` and `<capture_devices_value>`.
+- The materialization step using `wheelctl hardware sniff-notes-template`
+  remains visible as the concrete next step.
+- `live_read_only_probe_allowed=false`, `authorization_plan_allowed=false`,
+  `motion_attempt_allowed=false`, `output_was_sent=false`,
+  `wheel_moved_under_openracing=false`, and `authority_state=blocked` remain
+  pinned.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza bench-wizard `
+  --lane ci/hardware/moza-r5/2026-05-13 `
+  --json-out target/moza-current/bench-wizard-0x8e-placeholder-gate.json `
+  --md-out target/moza-current/bench-wizard-0x8e-placeholder-gate.md
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the placeholder runnable-status metadata, Markdown filtering,
+focused test assertions, and this source-of-truth work item. Do not remove the
+timing-correlation handoff, movement-blocker audit, status probe receipts,
+demux evidence, endpoint diagnoses, timing-correlation plan/review, or
+event-marker capture handoff.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
