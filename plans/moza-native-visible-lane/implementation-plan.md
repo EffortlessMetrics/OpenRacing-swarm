@@ -8019,6 +8019,115 @@ movement-blocker audit, status probe receipts, demux evidence, endpoint
 diagnoses, payload-source reviews, consumed authority attempt, or
 post-authority PIDFF regression evidence.
 
+## Work item: stage-0x8e-timing-correlation-sniff-handoff
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: future passive 0x8E event-marker timing-correlation capture
+Blocked by: completed packet timestamp sample plumbing
+
+### Goal
+
+Turn the 0x8E timing-correlation capture plan into a checked-in passive sniff
+handoff with operator-note and bundle-validation guardrails. The next physical
+step remains a passive Pit House event-marker capture, not a read-only probe,
+authorization, PIDFF rerun, force escalation, or motion attempt.
+
+### Production delta
+
+`wheelctl hardware sniff-plan` now supports the dedicated
+`pit-house-0x8e-timing-correlation` scenario. The scenario pins:
+
+```text
+fresh hardware doctor selector review
+no stale USBPcap --devices reuse
+Pit House opened only after capture start
+KS top-left front LED default teal -> red -> default teal
+explicit UTC or monotonic event markers
+no SimHub, simulator, output session, firmware/update/DFU, or OpenRacing output
+```
+
+`wheelctl hardware sniff-notes-template` uses a 180000 ms
+`sniff-capture --hardware-doctor` command for this scenario and writes the
+scenario-specific scratch path under
+`target/sniff/pit-house-0x8e-timing-correlation`.
+
+`sniff-bundle` now rejects this scenario unless the operator notes complete the
+event-marker fields and explicitly record the default-teal/red/default-teal
+setting values. The checked-in sniff-plan schema also requires those fields.
+
+`wheelctl moza vendor-status-timing-correlation-plan` now points to the
+checked-in sniff plan and notes-template receipt in its required artifact list
+and command templates.
+
+### Non-goals
+
+No live hardware access, HID open, serial open, read-only query send, live
+capture, raw pcap commit, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, or wheel movement.
+
+### Acceptance
+
+- A checked-in
+  `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json`
+  exists and validates against the sniff-plan schema.
+- The scenario requires fresh hardware-doctor USBPcap selector verification and
+  warns against stale `--devices` values.
+- Operator notes require explicit event markers for capture start/stop,
+  hardware-doctor selector review, Pit House open/close, R5 recognition,
+  default-teal observation, red change, default-teal restore, and stable idle
+  before/after the change.
+- Bundle validation rejects missing event-marker notes or wrong LED restore
+  values.
+- The timing-correlation plan remains no-output and still keeps live probe,
+  authorization planning, PIDFF rerun, force escalation, and motion blocked.
+
+### Proof Commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json hardware sniff-plan `
+  --family moza-r5 `
+  --scenario pit-house-0x8e-timing-correlation `
+  --lane ci/hardware/moza-r5/2026-05-13 `
+  --operator Steven `
+  --device-note "Moza R5 PID 0x0004 with KS/ES wheels, SR-P pedals, and HBP handbrake attached through the R5 hub" `
+  --capture-tool usbpcap `
+  --capture-tool wireshark `
+  --capture-tool tshark `
+  --platform-hint windows `
+  --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-plan `
+  --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --overwrite
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl hardware_sniff -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl sniff_bundle -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_plan -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the `pit-house-0x8e-timing-correlation` sniff scenario, schema
+conditionals, bundle/operator-note validation, checked-in sniff plan, refreshed
+timing-correlation plan pointers, and this source-of-truth work item. Do not
+remove the timing-correlation review, movement-blocker audit, status probe
+receipts, demux evidence, endpoint diagnoses, payload-source reviews, consumed
+authority attempt, or post-authority PIDFF regression evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

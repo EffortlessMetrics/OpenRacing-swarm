@@ -156,6 +156,7 @@
         "pit-house-open-idle",
         "pit-house-full-controls",
         "pit-house-setting-change",
+        "pit-house-0x8e-timing-correlation",
         "pit-house-firmware-page-observed",
         "simhub-open-idle",
         "simhub-device-detect",

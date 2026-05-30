@@ -313,6 +313,128 @@
       "if": {
         "properties": {
           "scenario": {
+            "const": "pit-house-0x8e-timing-correlation"
+          }
+        },
+        "required": ["scenario"]
+      },
+      "then": {
+        "properties": {
+          "operator_notes_required": {
+            "allOf": [
+              {
+                "contains": {
+                  "const": "capture_start_utc"
+                }
+              },
+              {
+                "contains": {
+                  "const": "hardware_doctor_selector_reviewed_utc"
+                }
+              },
+              {
+                "contains": {
+                  "const": "pit_house_opened_utc"
+                }
+              },
+              {
+                "contains": {
+                  "const": "r5_recognized_in_pit_house_utc"
+                }
+              },
+              {
+                "contains": {
+                  "const": "idle_stable_before_change_utc"
+                }
+              },
+              {
+                "contains": {
+                  "const": "ks_top_left_front_led_default_teal_observed_utc"
+                }
+              },
+              {
+                "contains": {
+                  "const": "ks_top_left_front_led_changed_to_red_utc"
+                }
+              },
+              {
+                "contains": {
+                  "const": "ks_top_left_front_led_restored_to_default_teal_utc"
+                }
+              },
+              {
+                "contains": {
+                  "const": "idle_stable_after_restore_utc"
+                }
+              },
+              {
+                "contains": {
+                  "const": "pit_house_closed_utc"
+                }
+              },
+              {
+                "contains": {
+                  "const": "capture_stop_utc"
+                }
+              },
+              {
+                "contains": {
+                  "const": "fresh hardware doctor path and USBPcap selector used"
+                }
+              },
+              {
+                "contains": {
+                  "const": "exact setting changed: KS top-left front LED"
+                }
+              },
+              {
+                "contains": {
+                  "const": "starting setting value: default teal"
+                }
+              },
+              {
+                "contains": {
+                  "const": "ending setting value: red"
+                }
+              },
+              {
+                "contains": {
+                  "const": "restored setting value: default teal"
+                }
+              },
+              {
+                "contains": {
+                  "const": "OpenRacing sent no HID/output/feature/serial/firmware commands"
+                }
+              }
+            ]
+          },
+          "pre_capture_checklist": {
+            "allOf": [
+              {
+                "contains": {
+                  "const": "refresh hardware doctor immediately before capture and use its current USBPcap Moza selector hint"
+                }
+              },
+              {
+                "contains": {
+                  "const": "do not reuse stale USBPcap --devices values from earlier captures"
+                }
+              },
+              {
+                "contains": {
+                  "const": "change only the KS wheel top-left front LED from default teal to red and back to default teal"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "scenario": {
             "const": "simhub-open-idle"
           }
         },
@@ -377,6 +499,7 @@
         "pit-house-open-idle",
         "pit-house-full-controls",
         "pit-house-setting-change",
+        "pit-house-0x8e-timing-correlation",
         "pit-house-firmware-page-observed",
         "simhub-open-idle",
         "simhub-device-detect",

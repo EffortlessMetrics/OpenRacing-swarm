@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "success": true,
+  "command": "wheelctl hardware sniff-plan",
+  "generated_at_utc": "2026-05-30T02:43:17Z",
+  "family": "moza-r5",
+  "scenario": "pit-house-0x8e-timing-correlation",
+  "lane": "ci/hardware/moza-r5/2026-05-13",
+  "operator": "Steven",
+  "device_note": "Moza R5 PID 0x0004 with KS/ES wheels, SR-P pedals, and HBP handbrake attached through the R5 hub",
+  "capture_kind": "software_usb_urb_capture",
+  "capture_tools": [
+    "tshark",
+    "usbpcap",
+    "wireshark"
+  ],
+  "platform_hint": "windows",
+  "allowed_actions": [
+    "capture host-side USB URBs with Wireshark, USBPcap, tshark, or usbmon",
+    "observe operating-system, vendor-app, simulator, or bridge traffic",
+    "record operator notes, scenario details, pcapng hashes, and support evidence",
+    "stop capture and save the passive observation as .pcapng"
+  ],
+  "forbidden_actions": [
+    "install Zadig",
+    "replace HID driver",
+    "switch device to WinUSB",
+    "run OpenRacing output commands",
+    "send OpenRacing HID output reports",
+    "send OpenRacing HID feature reports",
+    "touch serial configuration",
+    "open firmware update flows",
+    "run firmware or DFU tools"
+  ],
+  "pre_capture_checklist": [
+    "confirm the target device stack is attached before starting capture",
+    "start USBPcap, Wireshark, tshark, or usbmon before launching or changing the external app",
+    "keep OpenRacing hardware output commands stopped for this passive capture",
+    "keep firmware, update, DFU, driver replacement, Zadig, and WinUSB conversion flows closed",
+    "refresh hardware doctor immediately before capture and use its current USBPcap Moza selector hint",
+    "do not reuse stale USBPcap --devices values from earlier captures",
+    "start the passive capture before opening Pit House for the event-marker sequence",
+    "open Pit House only as an external passive witness lane after capture starts",
+    "record UTC or monotonic elapsed markers for Pit House open, R5 recognition, default-teal observation, red change, default-teal restore, Pit House close, and capture stop",
+    "change only the KS wheel top-left front LED from default teal to red and back to default teal",
+    "do not start SimHub, a simulator, a SimHub output session, or an OpenRacing output command during this capture"
+  ],
+  "post_capture_checklist": [
+    "stop capture and save the pcapng in local scratch storage",
+    "record operator notes before bundling",
+    "run sniff-receipt, sniff-notes-template, and sniff-summary before treating the capture as lane evidence",
+    "do not commit raw pcapng unless it is separately reviewed for size, sensitivity, and operator consent"
+  ],
+  "operator_notes_required": [
+    "scenario performed",
+    "external app, simulator, or OS stack observed",
+    "capture duration or start/stop times",
+    "device stack attached",
+    "whether firmware/update/DFU pages stayed closed",
+    "whether raw pcapng was kept local or reviewed for bundling",
+    "capture_start_utc",
+    "hardware_doctor_selector_reviewed_utc",
+    "pit_house_opened_utc",
+    "r5_recognized_in_pit_house_utc",
+    "idle_stable_before_change_utc",
+    "ks_top_left_front_led_default_teal_observed_utc",
+    "ks_top_left_front_led_changed_to_red_utc",
+    "ks_top_left_front_led_restored_to_default_teal_utc",
+    "idle_stable_after_restore_utc",
+    "pit_house_closed_utc",
+    "capture_stop_utc",
+    "fresh hardware doctor path and USBPcap selector used",
+    "Pit House version/source if known",
+    "exact setting changed: KS top-left front LED",
+    "starting setting value: default teal",
+    "ending setting value: red",
+    "restored setting value: default teal",
+    "firmware/update/DFU pages stayed closed or no prompt/page observed",
+    "raw pcap kept local only",
+    "OpenRacing sent no HID/output/feature/serial/firmware commands"
+  ],
+  "raw_pcap_commit_default": false,
+  "evidence_status": "passive_external_usb_observation",
+  "native_control_evidence": false,
+  "openracing_hardware_output": false,
+  "external_app_may_have_sent_output": true,
+  "satisfies_native_response_ready": false,
+  "satisfies_native_visible_ready": false,
+  "satisfies_smoke_ready": false,
+  "satisfies_release_ready": false,
+  "readiness_claims": {
+    "satisfies_native_response_ready": false,
+    "satisfies_native_visible_ready": false,
+    "satisfies_smoke_ready": false,
+    "satisfies_release_ready": false
+  },
+  "notes": [
+    "passive sniffing observes host-side USB traffic only",
+    "this plan is protocol research/support evidence, not OpenRacing hardware output",
+    "sniff artifacts cannot satisfy native response, native visible, smoke, or release gates"
+  ]
+}

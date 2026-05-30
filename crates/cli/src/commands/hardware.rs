@@ -1625,12 +1625,17 @@ fn validate_sniff_bundle_operator_notes(
     if plan.scenario == "pit-house-setting-change" {
         validate_setting_change_restore_status(path, notes)?;
     }
+    if plan.scenario == "pit-house-0x8e-timing-correlation" {
+        validate_0x8e_timing_operator_notes(path, notes)?;
+    }
     Ok(())
 }
 
 fn bundle_operator_note_value_fields(plan: &StoredHardwareSniffPlan) -> Vec<&'static str> {
     if plan.scenario == "pit-house-setting-change" {
         PIT_HOUSE_SETTING_CHANGE_OPERATOR_NOTES_REQUIRED.to_vec()
+    } else if plan.scenario == "pit-house-0x8e-timing-correlation" {
+        PIT_HOUSE_0X8E_TIMING_OPERATOR_NOTES_REQUIRED.to_vec()
     } else {
         Vec::new()
     }
@@ -1665,6 +1670,37 @@ fn validate_setting_change_restore_status(path: &Path, notes: &str) -> Result<()
         field,
         value
     )
+}
+
+fn validate_0x8e_timing_operator_notes(path: &Path, notes: &str) -> Result<()> {
+    let expected = [
+        (
+            "exact setting changed: KS top-left front LED",
+            "ks top left front led",
+        ),
+        ("starting setting value: default teal", "default teal"),
+        ("ending setting value: red", "red"),
+        ("restored setting value: default teal", "default teal"),
+    ];
+
+    for (field, expected_value) in expected {
+        let Some(value) = operator_note_field_value(notes, field) else {
+            continue;
+        };
+        let normalized = value.trim().to_ascii_lowercase().replace(['_', '-'], " ");
+        let normalized = normalized.split_whitespace().collect::<Vec<_>>().join(" ");
+        if !normalized.contains(expected_value) {
+            anyhow::bail!(
+                "operator notes '{}' field '{}' must mention '{}' for pit-house-0x8e-timing-correlation evidence; got '{}'",
+                path.display(),
+                field,
+                expected_value,
+                value
+            );
+        }
+    }
+
+    Ok(())
 }
 
 fn setting_change_restore_status_is_affirmative(value: &str) -> bool {
@@ -2502,6 +2538,7 @@ fn validate_sniff_scenario(value: &str) -> Result<()> {
         | "pit-house-open-idle"
         | "pit-house-full-controls"
         | "pit-house-setting-change"
+        | "pit-house-0x8e-timing-correlation"
         | "pit-house-firmware-page-observed"
         | "simhub-open-idle"
         | "simhub-device-detect"
@@ -2619,6 +2656,14 @@ fn sniff_notes_active_usbpcap_processes_from_hardware_doctor(
 
 fn sniff_notes_local_capture_path(plan: &StoredHardwareSniffPlan) -> String {
     format!("target\\sniff\\{}\\capture.pcapng", plan.scenario)
+}
+
+fn sniff_notes_capture_duration_ms(plan: &StoredHardwareSniffPlan) -> u64 {
+    if plan.scenario == "pit-house-0x8e-timing-correlation" {
+        180_000
+    } else {
+        60_000
+    }
 }
 
 fn usbpcapcmd_capture_command(
@@ -2778,7 +2823,7 @@ fn render_sniff_operator_notes_template(
                         hint,
                         &capture_hints.source,
                         &local_capture_path,
-                        60_000,
+                        sniff_notes_capture_duration_ms(plan),
                     ));
                     out.push_str("\n```\n");
                     out.push_str(
@@ -6417,6 +6462,28 @@ const PIT_HOUSE_SETTING_CHANGE_OPERATOR_NOTES_REQUIRED: &[&str] = &[
     "ending setting value",
     "whether the setting value was restored",
 ];
+const PIT_HOUSE_0X8E_TIMING_OPERATOR_NOTES_REQUIRED: &[&str] = &[
+    "capture_start_utc",
+    "hardware_doctor_selector_reviewed_utc",
+    "pit_house_opened_utc",
+    "r5_recognized_in_pit_house_utc",
+    "idle_stable_before_change_utc",
+    "ks_top_left_front_led_default_teal_observed_utc",
+    "ks_top_left_front_led_changed_to_red_utc",
+    "ks_top_left_front_led_restored_to_default_teal_utc",
+    "idle_stable_after_restore_utc",
+    "pit_house_closed_utc",
+    "capture_stop_utc",
+    "fresh hardware doctor path and USBPcap selector used",
+    "Pit House version/source if known",
+    "exact setting changed: KS top-left front LED",
+    "starting setting value: default teal",
+    "ending setting value: red",
+    "restored setting value: default teal",
+    "firmware/update/DFU pages stayed closed or no prompt/page observed",
+    "raw pcap kept local only",
+    "OpenRacing sent no HID/output/feature/serial/firmware commands",
+];
 const SIMHUB_OPEN_IDLE_OPERATOR_NOTES_REQUIRED: &[&str] = &[
     "SimHub version/source if known",
     "SimHub launch/open time",
@@ -6434,6 +6501,17 @@ fn sniff_pre_capture_checklist(scenario: HardwareSniffScenario) -> Vec<String> {
         .copied()
         .map(str::to_string)
         .collect::<Vec<_>>();
+    if scenario == HardwareSniffScenario::PitHouseZeroX8eTimingCorrelation {
+        checklist.extend([
+            "refresh hardware doctor immediately before capture and use its current USBPcap Moza selector hint",
+            "do not reuse stale USBPcap --devices values from earlier captures",
+            "start the passive capture before opening Pit House for the event-marker sequence",
+            "open Pit House only as an external passive witness lane after capture starts",
+            "record UTC or monotonic elapsed markers for Pit House open, R5 recognition, default-teal observation, red change, default-teal restore, Pit House close, and capture stop",
+            "change only the KS wheel top-left front LED from default teal to red and back to default teal",
+            "do not start SimHub, a simulator, a SimHub output session, or an OpenRacing output command during this capture",
+        ].into_iter().map(str::to_string));
+    }
     if scenario == HardwareSniffScenario::SimhubOpenIdle {
         checklist.extend([
             "refresh hardware doctor immediately before capture and use its current USBPcap Moza selector hint",
@@ -6454,6 +6532,14 @@ fn sniff_operator_notes_required(scenario: HardwareSniffScenario) -> Vec<String>
     if scenario == HardwareSniffScenario::PitHouseSettingChange {
         required.extend(
             PIT_HOUSE_SETTING_CHANGE_OPERATOR_NOTES_REQUIRED
+                .iter()
+                .copied()
+                .map(str::to_string),
+        );
+    }
+    if scenario == HardwareSniffScenario::PitHouseZeroX8eTimingCorrelation {
+        required.extend(
+            PIT_HOUSE_0X8E_TIMING_OPERATOR_NOTES_REQUIRED
                 .iter()
                 .copied()
                 .map(str::to_string),
@@ -9186,6 +9272,43 @@ mod tests {
         }
 
         #[test]
+        fn pit_house_0x8e_timing_sniff_plan_requires_event_marker_notes() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let plan = sample_plan_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseZeroX8eTimingCorrelation,
+            )?;
+            let plan_path = dir.path().join("sniff-plan.json");
+            write_json_file(&plan_path, &plan)?;
+            let stored = read_and_validate_sniff_plan(&plan_path)?;
+            let notes = render_sniff_operator_notes_template(&plan_path, &stored, None);
+
+            assert!(plan.pre_capture_checklist.iter().any(|item| {
+                item == "refresh hardware doctor immediately before capture and use its current USBPcap Moza selector hint"
+            }));
+            assert!(plan.pre_capture_checklist.iter().any(|item| {
+                item == "do not reuse stale USBPcap --devices values from earlier captures"
+            }));
+            assert!(plan.pre_capture_checklist.iter().any(|item| {
+                item == "change only the KS wheel top-left front LED from default teal to red and back to default teal"
+            }));
+            for field in PIT_HOUSE_0X8E_TIMING_OPERATOR_NOTES_REQUIRED {
+                assert!(
+                    plan.operator_notes_required
+                        .iter()
+                        .any(|required| required == field),
+                    "plan missing 0x8E timing operator note: {field}"
+                );
+                assert!(
+                    notes.contains(&format!("- [ ] {field}:")),
+                    "operator notes template missing 0x8E timing field: {field}"
+                );
+            }
+            assert_schema_valid("sniff-plan.schema.json", &serde_json::to_value(&plan)?)?;
+            Ok(())
+        }
+
+        #[test]
         fn simhub_open_idle_sniff_plan_schema_rejects_missing_idle_notes() -> TestResult {
             let dir = tempfile::tempdir()?;
             let plan = sample_plan_for_scenario(dir.path(), HardwareSniffScenario::SimhubOpenIdle)?;
@@ -9205,6 +9328,32 @@ mod tests {
                 return Err(
                     "SimHub open-idle plan without output-session note should fail schema".into(),
                 );
+            }
+            Ok(())
+        }
+
+        #[test]
+        fn pit_house_0x8e_timing_sniff_plan_schema_rejects_missing_event_marker_notes() -> TestResult
+        {
+            let dir = tempfile::tempdir()?;
+            let plan = sample_plan_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseZeroX8eTimingCorrelation,
+            )?;
+            let mut value = serde_json::to_value(&plan)?;
+            let Some(notes) = value
+                .get_mut("operator_notes_required")
+                .and_then(serde_json::Value::as_array_mut)
+            else {
+                return Err("expected operator_notes_required array".into());
+            };
+            notes.retain(|item| item.as_str() != Some("ks_top_left_front_led_changed_to_red_utc"));
+
+            let schema_text = fs::read_to_string(sniff_schema_path("sniff-plan.schema.json"))?;
+            let schema: serde_json::Value = serde_json::from_str(&schema_text)?;
+            let validator = jsonschema::Validator::new(&schema)?;
+            if validator.validate(&value).is_ok() {
+                return Err("0x8E timing plan without red-change marker should fail schema".into());
             }
             Ok(())
         }
@@ -9324,6 +9473,58 @@ mod tests {
             assert!(notes.contains("Active USBPcapCMD processes detected before capture: `1`"));
             assert!(notes.contains("old-probe"));
             assert!(notes.contains("OpenRacing output"));
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_notes_template_uses_long_capture_for_0x8e_timing_handoff() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let plan = sample_plan_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseZeroX8eTimingCorrelation,
+            )?;
+            let plan_path = dir.path().join("sniff-plan.json");
+            write_json_file(&plan_path, &plan)?;
+            let plan = read_and_validate_sniff_plan(&plan_path)?;
+            let doctor_path = dir.path().join("hardware-doctor.json");
+            let doctor = serde_json::json!({
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_output_reports": true,
+                "no_feature_reports": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "tools": {
+                    "usbpcap_descriptor_capture": {
+                        "usbpcap_extcap_path": "C:\\Program Files\\Wireshark\\extcap\\USBPcapCMD.exe",
+                        "usbpcap_moza_device_hints": [
+                            {
+                                "usbpcap_interface": "\\\\.\\USBPcap2",
+                                "capture_devices_value": "4",
+                                "matched_device_displays": [
+                                    "USB Serial Device (COM4)",
+                                    "MOZA Windows Driver"
+                                ],
+                                "suggested_capture_filter": "select \\\\.\\USBPcap2 with USBPcap --devices 4"
+                            }
+                        ]
+                    }
+                }
+            });
+            write_json_file(&doctor_path, &doctor)?;
+
+            let capture_hints = sniff_notes_capture_hints_from_hardware_doctor(Some(&doctor_path))?
+                .ok_or("expected capture hints")?;
+            let notes =
+                render_sniff_operator_notes_template(&plan_path, &plan, Some(&capture_hints));
+
+            assert!(
+                notes.contains("target\\sniff\\pit-house-0x8e-timing-correlation\\capture.pcapng")
+            );
+            assert!(notes.contains("--duration-ms 180000"));
+            assert!(notes.contains("--devices 4"));
+            assert!(notes.contains("--hardware-doctor"));
+            assert!(notes.contains("do not reuse stale USBPcap --devices values"));
             Ok(())
         }
 
@@ -9653,6 +9854,54 @@ mod tests {
             )
         }
 
+        fn completed_0x8e_timing_operator_notes() -> String {
+            format!(
+                "# Operator Notes\n\n{}\n",
+                PIT_HOUSE_0X8E_TIMING_OPERATOR_NOTES_REQUIRED
+                    .iter()
+                    .map(|field| {
+                        let value = match *field {
+                            "capture_start_utc" => "2026-05-29T22:00:00Z",
+                            "hardware_doctor_selector_reviewed_utc" => "2026-05-29T21:59:30Z",
+                            "pit_house_opened_utc" => "2026-05-29T22:00:05Z",
+                            "r5_recognized_in_pit_house_utc" => "2026-05-29T22:00:15Z",
+                            "idle_stable_before_change_utc" => "2026-05-29T22:00:45Z",
+                            "ks_top_left_front_led_default_teal_observed_utc" => {
+                                "2026-05-29T22:01:00Z"
+                            }
+                            "ks_top_left_front_led_changed_to_red_utc" => {
+                                "2026-05-29T22:01:15Z"
+                            }
+                            "ks_top_left_front_led_restored_to_default_teal_utc" => {
+                                "2026-05-29T22:01:35Z"
+                            }
+                            "idle_stable_after_restore_utc" => "2026-05-29T22:01:55Z",
+                            "pit_house_closed_utc" => "2026-05-29T22:02:10Z",
+                            "capture_stop_utc" => "2026-05-29T22:03:00Z",
+                            "fresh hardware doctor path and USBPcap selector used" => {
+                                "target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json; \\\\.\\USBPcap2 --devices 4"
+                            }
+                            "Pit House version/source if known" => "known installed Pit House; version not recorded",
+                            "exact setting changed: KS top-left front LED" => "KS top-left front LED",
+                            "starting setting value: default teal" => "default teal",
+                            "ending setting value: red" => "red",
+                            "restored setting value: default teal" => "default teal",
+                            "firmware/update/DFU pages stayed closed or no prompt/page observed" => {
+                                "yes, no firmware/update/DFU page or prompt observed"
+                            }
+                            "raw pcap kept local only" => "yes",
+                            "OpenRacing sent no HID/output/feature/serial/firmware commands" => {
+                                "yes, none sent"
+                            }
+                            _ => "recorded",
+                        };
+                        format!("- [x] {field}: {value}")
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            )
+        }
+
         fn build_bundle(
             paths: &BundleFixturePaths,
             include_raw: bool,
@@ -9764,6 +10013,83 @@ mod tests {
                 artifact.path == receipt_archive_path
                     && artifact.sha256 == sha256_hex(&receipt_bytes)
             }));
+            assert!(!manifest.openracing_hardware_output);
+            assert!(!manifest.satisfies_native_visible_ready);
+            Ok(())
+        }
+
+        #[test]
+        fn rejects_0x8e_timing_bundle_with_missing_event_marker_notes() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = write_bundle_fixture_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseZeroX8eTimingCorrelation,
+                b"synthetic pcapng bytes",
+                "# Operator Notes\n\n- [x] capture_start_utc: 2026-05-29T22:00:00Z\n",
+            )?;
+
+            let error = match build_bundle(&paths, false) {
+                Ok(_) => {
+                    return Err(
+                        "0x8E timing bundle with missing event markers should be rejected".into(),
+                    );
+                }
+                Err(error) => error.to_string(),
+            };
+
+            assert!(
+                error.contains(
+                    "missing completed required field 'hardware_doctor_selector_reviewed_utc'"
+                ),
+                "{error}"
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn rejects_0x8e_timing_bundle_with_wrong_restore_value() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let notes = completed_0x8e_timing_operator_notes().replace(
+                "restored setting value: default teal: default teal",
+                "restored setting value: default teal: still red",
+            );
+            let paths = write_bundle_fixture_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseZeroX8eTimingCorrelation,
+                b"synthetic pcapng bytes",
+                &notes,
+            )?;
+
+            let error = match build_bundle(&paths, false) {
+                Ok(_) => {
+                    return Err(
+                        "0x8E timing bundle with wrong restore value should be rejected".into(),
+                    );
+                }
+                Err(error) => error.to_string(),
+            };
+
+            assert!(error.contains("must mention 'default teal'"), "{error}");
+            Ok(())
+        }
+
+        #[test]
+        fn accepts_0x8e_timing_bundle_with_completed_event_marker_notes() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let notes = completed_0x8e_timing_operator_notes();
+            let paths = write_bundle_fixture_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseZeroX8eTimingCorrelation,
+                b"synthetic pcapng bytes",
+                &notes,
+            )?;
+
+            let manifest = build_bundle(&paths, false)?;
+            let names = zip_entry_names(&paths.out)?;
+
+            assert!(manifest.success);
+            assert!(names.contains(&sniff_bundle_path("operator-notes.md")));
+            assert!(!manifest.includes_raw_pcapng);
             assert!(!manifest.openracing_hardware_output);
             assert!(!manifest.satisfies_native_visible_ready);
             Ok(())

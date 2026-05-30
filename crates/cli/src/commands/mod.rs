@@ -527,6 +527,8 @@ pub enum HardwareSniffScenario {
     PitHouseOpenIdle,
     PitHouseFullControls,
     PitHouseSettingChange,
+    #[value(name = "pit-house-0x8e-timing-correlation")]
+    PitHouseZeroX8eTimingCorrelation,
     PitHouseFirmwarePageObserved,
     SimhubOpenIdle,
     SimhubDeviceDetect,
@@ -543,6 +545,7 @@ impl HardwareSniffScenario {
             Self::PitHouseOpenIdle => "pit-house-open-idle",
             Self::PitHouseFullControls => "pit-house-full-controls",
             Self::PitHouseSettingChange => "pit-house-setting-change",
+            Self::PitHouseZeroX8eTimingCorrelation => "pit-house-0x8e-timing-correlation",
             Self::PitHouseFirmwarePageObserved => "pit-house-firmware-page-observed",
             Self::SimhubOpenIdle => "simhub-open-idle",
             Self::SimhubDeviceDetect => "simhub-device-detect",

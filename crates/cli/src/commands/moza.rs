@@ -30465,6 +30465,11 @@ fn vendor_status_timing_correlation_plan_receipt(
                 "command": "wheelctl hardware doctor --json-out target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --json"
             },
             {
+                "name": "render_checked_in_operator_notes_template",
+                "output_enabled": false,
+                "command": "wheelctl hardware sniff-notes-template --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json --hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --out target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-notes-template-receipt.json"
+            },
+            {
                 "name": "run_bounded_passive_usbpcap_capture",
                 "output_enabled": false,
                 "openracing_hardware_output": false,
@@ -30552,7 +30557,10 @@ fn vendor_status_timing_correlation_plan_receipt(
         "required_artifacts",
         [
             semantic_review_path.display().to_string(),
+            "ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json".to_string(),
             "target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json"
+                .to_string(),
+            "target/sniff/pit-house-0x8e-timing-correlation/sniff-notes-template-receipt.json"
                 .to_string(),
             "target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng".to_string(),
             "target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json".to_string(),
@@ -49700,6 +49708,16 @@ mod tests {
                     .map(|command| command.contains("--hardware-doctor"))
                     == Some(true)
         }));
+        assert!(capture_command_templates.iter().any(|template| {
+            json_string(template, "name") == Some("render_checked_in_operator_notes_template")
+                && json_string(template, "command")
+                    .map(|command| {
+                        command.contains(
+                            "ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json",
+                        ) && command.contains("--hardware-doctor")
+                    })
+                    == Some(true)
+        }));
         assert!(json_contains_string(
             &receipt,
             "ks_top_left_front_led_changed_to_red_utc"
@@ -55675,10 +55693,23 @@ mod tests {
             command_names,
             vec![
                 "refresh_observe_only_hardware_doctor",
+                "render_checked_in_operator_notes_template",
                 "run_bounded_passive_usbpcap_capture",
                 "summarize_passive_capture",
                 "future_no_output_timing_review"
             ]
+        );
+        assert!(
+            commands.iter().any(|command| {
+                json_string(command, "name") == Some("render_checked_in_operator_notes_template")
+                    && json_bool(command, "output_enabled") == Some(false)
+                    && json_string(command, "command").is_some_and(|text| {
+                        text.contains("wheelctl hardware sniff-notes-template")
+                            && text.contains("ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json")
+                            && text.contains("--hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json")
+                    })
+            }),
+            "0x8E timing-correlation wizard should render checked-in notes template before capture: {commands:?}"
         );
         assert!(
             commands.iter().any(|command| {
