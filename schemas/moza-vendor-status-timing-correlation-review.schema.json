@@ -208,9 +208,38 @@
         "capture_provenance_required_for_candidate",
         "capture_provenance_status"
       ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "capture_provenance_status": { "const": "verified" }
+            },
+            "required": ["capture_provenance_status"]
+          },
+          "then": {
+            "required": [
+              "capture_hardware_doctor_generated_at_utc",
+              "capture_hardware_doctor_age_seconds",
+              "capture_hardware_doctor_freshness_max_age_minutes"
+            ]
+          }
+        }
+      ],
       "properties": {
         "capture_provenance_required_for_candidate": { "const": true },
         "capture_provenance_verified": { "type": "boolean" },
+        "capture_hardware_doctor_generated_at_utc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "capture_hardware_doctor_age_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600
+        },
+        "capture_hardware_doctor_freshness_max_age_minutes": {
+          "const": 10
+        },
         "hardware_output_authorized": { "const": false },
         "native_control_evidence": { "const": false },
         "native_visible_ready": { "const": false },

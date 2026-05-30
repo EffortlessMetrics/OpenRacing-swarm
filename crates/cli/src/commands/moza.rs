@@ -32230,6 +32230,11 @@ fn vendor_status_timing_correlation_capture_provenance(
             sniff_capture_receipt_path.display()
         ));
     }
+    let capture_hardware_doctor_freshness =
+        vendor_status_timing_correlation_capture_hardware_doctor_freshness(
+            sniff_capture_receipt_path,
+            selector_verification,
+        )?;
 
     if json_string(sniff_receipt, "command") != Some("wheelctl hardware sniff-receipt") {
         return Err(anyhow!(
@@ -32311,6 +32316,18 @@ fn vendor_status_timing_correlation_capture_provenance(
         json_string(selector_verification, "requested_devices").unwrap_or("unknown")
     );
     insert_json!(
+        "capture_hardware_doctor_generated_at_utc",
+        capture_hardware_doctor_freshness.generated_at_utc
+    );
+    insert_json!(
+        "capture_hardware_doctor_age_seconds",
+        capture_hardware_doctor_freshness.age_seconds
+    );
+    insert_json!(
+        "capture_hardware_doctor_freshness_max_age_minutes",
+        capture_hardware_doctor_freshness.max_age_minutes
+    );
+    insert_json!(
         "sniff_receipt_scenario",
         json_string(sniff_receipt, "scenario").unwrap_or("unknown")
     );
@@ -32328,6 +32345,77 @@ fn vendor_status_timing_correlation_capture_provenance(
     );
 
     Ok(Value::Object(provenance))
+}
+
+#[derive(Debug)]
+struct VendorStatusTimingCorrelationCaptureHardwareDoctorFreshness {
+    generated_at_utc: String,
+    age_seconds: u64,
+    max_age_minutes: u64,
+}
+
+fn vendor_status_timing_correlation_capture_hardware_doctor_freshness(
+    sniff_capture_receipt_path: &Path,
+    selector_verification: &Value,
+) -> Result<VendorStatusTimingCorrelationCaptureHardwareDoctorFreshness> {
+    let generated_at_utc = json_string(selector_verification, "hardware_doctor_generated_at_utc")
+        .ok_or_else(|| {
+            anyhow!(
+                "timing-correlation capture receipt '{}' must include selector_verification.hardware_doctor_generated_at_utc from a fresh hardware doctor",
+                sniff_capture_receipt_path.display()
+            )
+        })?;
+    chrono::DateTime::parse_from_rfc3339(generated_at_utc).with_context(|| {
+        format!(
+            "timing-correlation capture receipt '{}' has invalid selector_verification.hardware_doctor_generated_at_utc `{generated_at_utc}`",
+            sniff_capture_receipt_path.display()
+        )
+    })?;
+    let age_seconds = json_u64(selector_verification, "hardware_doctor_age_seconds").ok_or_else(
+        || {
+            anyhow!(
+                "timing-correlation capture receipt '{}' must include selector_verification.hardware_doctor_age_seconds from sniff-capture --hardware-doctor freshness validation",
+                sniff_capture_receipt_path.display()
+            )
+        },
+    )?;
+    let max_age_minutes = json_u64(
+        selector_verification,
+        "hardware_doctor_freshness_max_age_minutes",
+    )
+    .ok_or_else(|| {
+        anyhow!(
+            "timing-correlation capture receipt '{}' must include selector_verification.hardware_doctor_freshness_max_age_minutes from sniff-capture --hardware-doctor freshness validation",
+            sniff_capture_receipt_path.display()
+        )
+    })?;
+    let expected_max_age = PIT_HOUSE_0X8E_CAPTURE_PREP_MAX_AGE_MINUTES as u64;
+    if max_age_minutes != expected_max_age {
+        return Err(anyhow!(
+            "timing-correlation capture receipt '{}' must use the {expected_max_age}-minute hardware doctor freshness window; got {max_age_minutes}",
+            sniff_capture_receipt_path.display()
+        ));
+    }
+    let max_age_seconds = max_age_minutes.checked_mul(60).ok_or_else(|| {
+        anyhow!(
+            "timing-correlation capture receipt '{}' has an overflowing hardware doctor freshness window",
+            sniff_capture_receipt_path.display()
+        )
+    })?;
+    if age_seconds > max_age_seconds {
+        return Err(anyhow!(
+            "timing-correlation capture receipt '{}' used a stale hardware doctor aged {age_seconds}s, exceeding {max_age_seconds}s; rerun observe-only hardware doctor before capture",
+            sniff_capture_receipt_path.display()
+        ));
+    }
+
+    Ok(
+        VendorStatusTimingCorrelationCaptureHardwareDoctorFreshness {
+            generated_at_utc: generated_at_utc.to_string(),
+            age_seconds,
+            max_age_minutes,
+        },
+    )
 }
 
 fn validate_vendor_status_timing_correlation_review_summary(
@@ -51985,6 +52073,15 @@ mod tests {
             Some(true)
         );
         assert_eq!(
+            receipt.pointer("/capture_provenance/capture_hardware_doctor_age_seconds"),
+            Some(&serde_json::json!(60))
+        );
+        assert_eq!(
+            receipt
+                .pointer("/capture_provenance/capture_hardware_doctor_freshness_max_age_minutes"),
+            Some(&serde_json::json!(10))
+        );
+        assert_eq!(
             json_bool(&receipt, "timing_correlation_candidate_observed"),
             Some(true)
         );
@@ -52130,6 +52227,103 @@ mod tests {
             error
                 .to_string()
                 .contains("pit-house-0x8e-timing-correlation"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_timing_correlation_review_requires_fresh_capture_hardware_doctor() -> TestResult
+    {
+        let payload_source_candidates: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_PAYLOAD_SOURCE_CANDIDATES_JSON)?;
+        let semantic_review = vendor_status_payload_source_semantic_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-candidates.json",
+            ),
+            &payload_source_candidates,
+        )?;
+        let summary = sample_passive_sniff_summary_with_event_correlated_0x8e_variation(100_492);
+        let mut sniff_capture_receipt = sample_0x8e_sniff_capture_receipt();
+        sniff_capture_receipt
+            .pointer_mut("/selector_verification")
+            .and_then(Value::as_object_mut)
+            .ok_or("missing selector verification")?
+            .remove("hardware_doctor_age_seconds");
+        let sniff_receipt = sample_0x8e_sniff_receipt();
+
+        let result = vendor_status_timing_correlation_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
+            ),
+            &semantic_review,
+            VendorStatusTimingCorrelationCaptureProvenanceInput {
+                sniff_capture_receipt_path: Some(Path::new(
+                    "target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json",
+                )),
+                sniff_capture_receipt: Some(&sniff_capture_receipt),
+                sniff_receipt_path: Some(Path::new(
+                    "target/sniff/pit-house-0x8e-timing-correlation/sniff-receipt.json",
+                )),
+                sniff_receipt: Some(&sniff_receipt),
+            },
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json"),
+            &summary,
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"),
+            &complete_0x8e_timing_operator_notes_near_samples(),
+        );
+        let Err(error) = result else {
+            return Err("timing-correlation review must reject legacy capture receipts without hardware-doctor freshness".into());
+        };
+        assert!(
+            error.to_string().contains("hardware_doctor_age_seconds"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_timing_correlation_review_rejects_stale_capture_hardware_doctor() -> TestResult
+    {
+        let payload_source_candidates: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_PAYLOAD_SOURCE_CANDIDATES_JSON)?;
+        let semantic_review = vendor_status_payload_source_semantic_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-candidates.json",
+            ),
+            &payload_source_candidates,
+        )?;
+        let summary = sample_passive_sniff_summary_with_event_correlated_0x8e_variation(100_492);
+        let mut sniff_capture_receipt = sample_0x8e_sniff_capture_receipt();
+        sniff_capture_receipt["selector_verification"]["hardware_doctor_age_seconds"] =
+            serde_json::json!(601);
+        let sniff_receipt = sample_0x8e_sniff_receipt();
+
+        let result = vendor_status_timing_correlation_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
+            ),
+            &semantic_review,
+            VendorStatusTimingCorrelationCaptureProvenanceInput {
+                sniff_capture_receipt_path: Some(Path::new(
+                    "target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json",
+                )),
+                sniff_capture_receipt: Some(&sniff_capture_receipt),
+                sniff_receipt_path: Some(Path::new(
+                    "target/sniff/pit-house-0x8e-timing-correlation/sniff-receipt.json",
+                )),
+                sniff_receipt: Some(&sniff_receipt),
+            },
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json"),
+            &summary,
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"),
+            &complete_0x8e_timing_operator_notes_near_samples(),
+        );
+        let Err(error) = result else {
+            return Err("timing-correlation review must reject capture receipts with stale hardware-doctor freshness".into());
+        };
+        assert!(
+            error.to_string().contains("stale hardware doctor"),
             "unexpected error: {error}"
         );
         Ok(())
@@ -54871,6 +55065,9 @@ mod tests {
                 "verified_moza_selector": true,
                 "accepted_moza_protocol_evidence": true,
                 "hardware_doctor_path": "target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json",
+                "hardware_doctor_generated_at_utc": "2026-05-30T11:59:00Z",
+                "hardware_doctor_age_seconds": 60,
+                "hardware_doctor_freshness_max_age_minutes": 10,
                 "requested_usbpcap_interface": "\\\\.\\USBPcap2",
                 "requested_devices": "4",
                 "expected_moza_selectors": [],
