@@ -200,6 +200,61 @@
     "capture_provenance_status": {
       "enum": ["not_provided", "verified"]
     },
+    "capture_receipt_window_required_for_candidate": { "const": true },
+    "capture_receipt_window_verified": { "type": "boolean" },
+    "capture_receipt_window_status": {
+      "enum": [
+        "not_applicable_capture_provenance_unverified",
+        "missing_sniff_capture_receipt_window",
+        "missing_event_marker_timestamps",
+        "event_marker_order_invalid",
+        "operator_markers_outside_sniff_capture_window",
+        "verified"
+      ]
+    },
+    "operator_event_markers_inside_capture_receipt_window": {
+      "type": "boolean"
+    },
+    "capture_receipt_window": {
+      "type": "object",
+      "properties": {
+        "capture_receipt_window_required_for_candidate": { "const": true },
+        "capture_receipt_window_verified": { "type": "boolean" },
+        "capture_receipt_window_status": {
+          "enum": [
+            "not_applicable_capture_provenance_unverified",
+            "missing_sniff_capture_receipt_window",
+            "missing_event_marker_timestamps",
+            "event_marker_order_invalid",
+            "operator_markers_outside_sniff_capture_window",
+            "verified"
+          ]
+        },
+        "operator_event_markers_inside_capture_receipt_window": {
+          "type": "boolean"
+        },
+        "operator_event_markers_outside_capture_receipt_window": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "sniff_capture_started_at_utc": {
+          "type": "string"
+        },
+        "sniff_capture_expected_stop_at_utc": {
+          "type": "string"
+        },
+        "sniff_capture_window_start_epoch_seconds": { "type": "number" },
+        "sniff_capture_window_stop_epoch_seconds": { "type": "number" },
+        "sniff_capture_window_tolerance_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "hardware_output_authorized": { "const": false },
+        "native_control_evidence": { "const": false },
+        "native_visible_ready": { "const": false },
+        "output_was_sent": { "const": false }
+      }
+    },
     "capture_provenance": {
       "type": "object",
       "required": [
@@ -220,7 +275,13 @@
             "required": [
               "capture_hardware_doctor_generated_at_utc",
               "capture_hardware_doctor_age_seconds",
-              "capture_hardware_doctor_freshness_max_age_minutes"
+              "capture_hardware_doctor_freshness_max_age_minutes",
+              "sniff_capture_started_at_utc",
+              "sniff_capture_expected_stop_at_utc",
+              "sniff_capture_window_start_epoch_seconds",
+              "sniff_capture_window_stop_epoch_seconds",
+              "sniff_capture_duration_ms",
+              "sniff_capture_window_tolerance_seconds"
             ]
           }
         }
@@ -239,6 +300,22 @@
         },
         "capture_hardware_doctor_freshness_max_age_minutes": {
           "const": 10
+        },
+        "sniff_capture_started_at_utc": {
+          "type": "string"
+        },
+        "sniff_capture_expected_stop_at_utc": {
+          "type": "string"
+        },
+        "sniff_capture_window_start_epoch_seconds": { "type": "number" },
+        "sniff_capture_window_stop_epoch_seconds": { "type": "number" },
+        "sniff_capture_duration_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sniff_capture_window_tolerance_seconds": {
+          "type": "number",
+          "minimum": 0
         },
         "hardware_output_authorized": { "const": false },
         "native_control_evidence": { "const": false },
