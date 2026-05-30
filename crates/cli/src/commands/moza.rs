@@ -256,6 +256,18 @@ const MOZA_VENDOR_STATUS_AUTHORITY_PAYLOAD_RERUN_TARGETED_JSON: &str = include_s
 const MOZA_VENDOR_STATUS_AUTHORITY_PAYLOAD_RERUN_DIAGNOSIS_JSON: &str = include_str!(
     "../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json"
 );
+#[cfg(test)]
+const MOZA_VENDOR_STATUS_EXTENDED_SCAN_DIAGNOSIS_JSON: &str = include_str!(
+    "../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json"
+);
+#[cfg(test)]
+const MOZA_VENDOR_STATUS_TIMING_CORRELATION_PLAN_JSON: &str = include_str!(
+    "../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json"
+);
+#[cfg(test)]
+const MOZA_VENDOR_STATUS_TIMING_CORRELATION_REVIEW_JSON: &str = include_str!(
+    "../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json"
+);
 const SIMULATOR_FFB_PREREQUISITE_ARTIFACTS: [(&str, &str); 6] = [
     ("zero_torque_real_hardware", "zero-torque-proof.json"),
     ("watchdog_zero_output", "watchdog-proof.json"),
@@ -705,6 +717,20 @@ struct VendorStatusTimingCorrelationReviewRequest<'a> {
     overwrite: bool,
 }
 
+struct VendorStatusMovementBlockerAuditRequest<'a> {
+    json: bool,
+    status_probe: &'a Path,
+    demux_probe: &'a Path,
+    framing_diagnosis: &'a Path,
+    extended_scan_diagnosis: &'a Path,
+    authority_endpoint_diagnosis: &'a Path,
+    payload_rerun_diagnosis: &'a Path,
+    timing_correlation_plan: &'a Path,
+    timing_correlation_review: &'a Path,
+    json_out: &'a Path,
+    overwrite: bool,
+}
+
 struct VendorAuthorityAuthorizationRequest<'a> {
     json: bool,
     command_id: &'a str,
@@ -1053,6 +1079,33 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
                 semantic_review,
                 summary,
                 operator_notes,
+                json_out,
+                overwrite: *overwrite,
+            })
+            .await
+        }
+        MozaCommands::VendorStatusMovementBlockerAudit {
+            status_probe,
+            demux_probe,
+            framing_diagnosis,
+            extended_scan_diagnosis,
+            authority_endpoint_diagnosis,
+            payload_rerun_diagnosis,
+            timing_correlation_plan,
+            timing_correlation_review,
+            json_out,
+            overwrite,
+        } => {
+            vendor_status_movement_blocker_audit(VendorStatusMovementBlockerAuditRequest {
+                json,
+                status_probe,
+                demux_probe,
+                framing_diagnosis,
+                extended_scan_diagnosis,
+                authority_endpoint_diagnosis,
+                payload_rerun_diagnosis,
+                timing_correlation_plan,
+                timing_correlation_review,
                 json_out,
                 overwrite: *overwrite,
             })
@@ -7375,6 +7428,33 @@ async fn vendor_status_timing_correlation_review(
     )?;
     write_json_file(request.json_out, &receipt)?;
     print_vendor_status_timing_correlation_review_receipt(request.json, request.json_out, &receipt)
+}
+
+async fn vendor_status_movement_blocker_audit(
+    request: VendorStatusMovementBlockerAuditRequest<'_>,
+) -> Result<()> {
+    ensure_receipt_writable(request.json_out, request.overwrite)?;
+    let status_probe = read_json_path(request.status_probe)?;
+    let demux_probe = read_json_path(request.demux_probe)?;
+    let framing_diagnosis = read_json_path(request.framing_diagnosis)?;
+    let extended_scan_diagnosis = read_json_path(request.extended_scan_diagnosis)?;
+    let authority_endpoint_diagnosis = read_json_path(request.authority_endpoint_diagnosis)?;
+    let payload_rerun_diagnosis = read_json_path(request.payload_rerun_diagnosis)?;
+    let timing_correlation_plan = read_json_path(request.timing_correlation_plan)?;
+    let timing_correlation_review = read_json_path(request.timing_correlation_review)?;
+    let receipt = vendor_status_movement_blocker_audit_receipt(
+        &request,
+        &status_probe,
+        &demux_probe,
+        &framing_diagnosis,
+        &extended_scan_diagnosis,
+        &authority_endpoint_diagnosis,
+        &payload_rerun_diagnosis,
+        &timing_correlation_plan,
+        &timing_correlation_review,
+    )?;
+    write_json_file(request.json_out, &receipt)?;
+    print_vendor_status_movement_blocker_audit_receipt(request.json, request.json_out, &receipt)
 }
 
 async fn authorize_vendor_authority(
@@ -30632,6 +30712,497 @@ fn vendor_status_timing_correlation_required_markers() -> [&'static str; 11] {
     ]
 }
 
+#[allow(clippy::too_many_arguments)]
+fn vendor_status_movement_blocker_audit_receipt(
+    request: &VendorStatusMovementBlockerAuditRequest<'_>,
+    status_probe: &Value,
+    demux_probe: &Value,
+    framing_diagnosis: &Value,
+    extended_scan_diagnosis: &Value,
+    authority_endpoint_diagnosis: &Value,
+    payload_rerun_diagnosis: &Value,
+    timing_correlation_plan: &Value,
+    timing_correlation_review: &Value,
+) -> Result<Value> {
+    validate_vendor_status_movement_blocker_status_probe(request.status_probe, status_probe)?;
+    validate_vendor_status_movement_blocker_demux_probe(request.demux_probe, demux_probe)?;
+    validate_vendor_status_movement_blocker_framing_diagnosis(
+        request.framing_diagnosis,
+        framing_diagnosis,
+    )?;
+    validate_vendor_status_movement_blocker_extended_scan(
+        request.extended_scan_diagnosis,
+        extended_scan_diagnosis,
+    )?;
+    validate_vendor_status_movement_blocker_authority_endpoint(
+        request.authority_endpoint_diagnosis,
+        authority_endpoint_diagnosis,
+    )?;
+    validate_vendor_status_movement_blocker_payload_rerun(
+        request.payload_rerun_diagnosis,
+        payload_rerun_diagnosis,
+    )?;
+    validate_vendor_status_movement_blocker_timing_plan(
+        request.timing_correlation_plan,
+        timing_correlation_plan,
+    )?;
+    validate_vendor_status_movement_blocker_timing_review(
+        request.timing_correlation_review,
+        timing_correlation_review,
+    )?;
+
+    let original_decoded_response_count =
+        json_u64(status_probe, "decoded_response_count").unwrap_or(0);
+    let original_failed_response_count =
+        json_u64(status_probe, "failed_response_count").unwrap_or(0);
+    let demux_decoded_response_count = json_u64(demux_probe, "decoded_response_count").unwrap_or(0);
+    let demux_failed_response_count = json_u64(demux_probe, "failed_response_count").unwrap_or(0);
+    let demux_scanned_response_frame_count =
+        json_u64(demux_probe, "scanned_response_frame_count").unwrap_or(0);
+    let extended_scan_frame_count =
+        json_u64(extended_scan_diagnosis, "scanned_response_frame_count").unwrap_or(0);
+    let broad_serial_transport_blocker_ruled_out = demux_decoded_response_count > 0
+        && json_bool(
+            authority_endpoint_diagnosis,
+            "broad_serial_transport_blocker_ruled_out",
+        ) == Some(true)
+        && json_bool(
+            payload_rerun_diagnosis,
+            "broad_serial_transport_blocker_ruled_out",
+        ) == Some(true);
+    let authority_endpoint_or_command_mismatch = json_bool(
+        authority_endpoint_diagnosis,
+        "endpoint_or_command_correction_required",
+    ) == Some(true)
+        && json_bool(
+            payload_rerun_diagnosis,
+            "endpoint_or_command_correction_required",
+        ) == Some(true);
+    let timing_correlation_missing =
+        json_bool(timing_correlation_review, "timing_correlation_proven") == Some(false)
+            && json_bool(
+                timing_correlation_review,
+                "payload_bearing_authority_state_source_found",
+            ) == Some(false);
+
+    let mut receipt = serde_json::Map::new();
+    macro_rules! insert_json {
+        ($key:literal, $($value:tt)+) => {
+            receipt.insert($key.to_string(), serde_json::json!($($value)+));
+        };
+    }
+
+    insert_json!("success", true);
+    insert_json!("schema_version", 1);
+    insert_json!("artifact_kind", "moza_vendor_status_movement_blocker_audit");
+    insert_json!(
+        "claim_scope",
+        "no_output_vendor_status_movement_blocker_audit"
+    );
+    insert_json!(
+        "command",
+        "wheelctl moza vendor-status-movement-blocker-audit"
+    );
+    insert_json!("generated_at_utc", now_utc());
+    insert_json!(
+        "source_receipts",
+        {
+            "status_probe": request.status_probe.display().to_string(),
+            "demux_probe": request.demux_probe.display().to_string(),
+            "framing_diagnosis": request.framing_diagnosis.display().to_string(),
+            "extended_scan_diagnosis": request.extended_scan_diagnosis.display().to_string(),
+            "authority_endpoint_diagnosis": request.authority_endpoint_diagnosis.display().to_string(),
+            "payload_rerun_diagnosis": request.payload_rerun_diagnosis.display().to_string(),
+            "timing_correlation_plan": request.timing_correlation_plan.display().to_string(),
+            "timing_correlation_review": request.timing_correlation_review.display().to_string()
+        }
+    );
+    insert_json!(
+        "original_status_probe",
+        {
+            "decoded_response_count": original_decoded_response_count,
+            "failed_response_count": original_failed_response_count,
+            "sent_read_only_query_count": json_u64(status_probe, "sent_read_only_query_count").unwrap_or(0),
+            "opened_serial_device": json_bool(status_probe, "opened_serial_device").unwrap_or(false),
+            "sent_output_writes": false,
+            "sent_configuration_writes": false,
+            "sent_firmware_or_dfu_commands": false
+        }
+    );
+    insert_json!(
+        "demux_follow_up",
+        {
+            "decoded_response_count": demux_decoded_response_count,
+            "failed_response_count": demux_failed_response_count,
+            "scanned_response_frame_count": demux_scanned_response_frame_count,
+            "non_authority_status_replies_decoded": demux_decoded_response_count,
+            "authority_state_replies_decoded": 0,
+            "broad_serial_lane_can_decode_payload_status": demux_decoded_response_count > 0
+        }
+    );
+    insert_json!(
+        "failure_mode_classification",
+        [
+            {
+                "failure_mode": "serial_ownership_or_line_settings",
+                "status": if broad_serial_transport_blocker_ruled_out { "not_primary" } else { "unknown" },
+                "evidence": "Demux follow-up decoded payload-bearing non-authority status replies on the same COM4 serial lane."
+            },
+            {
+                "failure_mode": "serial_response_framing_or_demux",
+                "status": "partially_fixed_not_primary",
+                "evidence": "The demuxed read-only probe decoded seven registry status replies after the original zero-response receipt."
+            },
+            {
+                "failure_mode": "scan_window_depth",
+                "status": "not_primary",
+                "evidence": "The targeted extended scan still decoded zero authority-state replies and found ACK/no-payload or diagnostic telemetry instead."
+            },
+            {
+                "failure_mode": "authority_status_endpoint_or_command_mismatch",
+                "status": if authority_endpoint_or_command_mismatch { "active_blocker" } else { "unknown" },
+                "evidence": "Authority-status queries still return ACK/no-payload or diagnostic telemetry while non-authority status reads decode."
+            },
+            {
+                "failure_mode": "timing_correlated_payload_bearing_status_source_missing",
+                "status": if timing_correlation_missing { "active_blocker" } else { "unknown" },
+                "evidence": "The reviewed 0x8E payload-bearing samples are static/single-sample and lack event-marker timing proof."
+            }
+        ]
+    );
+    insert_json!("zero_response_original_probe_diagnosed", true);
+    insert_json!(
+        "broad_serial_transport_blocker_ruled_out",
+        broad_serial_transport_blocker_ruled_out
+    );
+    insert_json!("line_setting_or_ownership_primary_blocker", false);
+    insert_json!("serial_response_framing_primary_blocker", false);
+    insert_json!("scan_window_depth_primary_blocker", false);
+    insert_json!("extended_scan_frame_count", extended_scan_frame_count);
+    insert_json!(
+        "authority_status_endpoint_or_command_mismatch",
+        authority_endpoint_or_command_mismatch
+    );
+    insert_json!(
+        "timing_correlated_payload_source_missing",
+        timing_correlation_missing
+    );
+    insert_json!("payload_bearing_authority_state_source_found", false);
+    insert_json!("corrected_read_only_probe_ready", false);
+    insert_json!("live_read_only_probe_allowed", false);
+    insert_json!("authorization_plan_allowed", false);
+    insert_json!("motion_attempt_allowed", false);
+    insert_json!(
+        "reason_read_only_rerun_not_allowed",
+        "No corrected registry-approved read-only authority/status endpoint or timing-correlated equivalent status source exists yet; rerunning the same read-only query set would repeat the known endpoint mismatch."
+    );
+    insert_json!(
+        "reason_motion_not_allowed",
+        "Mode and safety state remain unknown, no volatile mode/enable candidate is decoded or sendable, and no fresh command-bound bench-clear receipt exists for a tiny closed-loop motion run."
+    );
+    insert_json!(
+        "exact_next_blocker",
+        "Missing reviewed timing-correlated payload-bearing authority/mode status source. The next concrete step is the staged passive Pit House 0x8E event-marker capture and no-output timing review, not a read-only rerun, authorization, PIDFF rerun, or motion."
+    );
+    insert_json!(
+        "next_allowed_action",
+        "Run the capture command templates from vendor-status-timing-correlation-plan.json, then run vendor-status-timing-correlation-review on the derived summary and complete operator notes. If timing proof is still missing, stop with diagnosis; if timing proof exists, create a separate reviewed read-only/status plan."
+    );
+    receipt.insert(
+        "next_concrete_command_templates".to_string(),
+        timing_correlation_plan
+            .get("capture_command_templates")
+            .cloned()
+            .unwrap_or_else(|| Value::Array(Vec::new())),
+    );
+    insert_json!("native_control_evidence", false);
+    insert_json!("hardware_output_authorized", false);
+    insert_json!("native_visible_ready", false);
+    insert_json!("smoke_ready", false);
+    insert_json!("release_ready", false);
+    insert_json!("registry_promotion_claim", false);
+    insert_json!("output_sendability_claim", false);
+    insert_json!("semantic_decode_claim", false);
+    insert_json!("wheel_moved_under_openracing", false);
+    insert_json!("visible_motion_verified", false);
+    insert_json!("output_was_sent", false);
+    insert_json!("authority_state", "blocked");
+    insert_json!("no_hid_device_opened", true);
+    insert_json!("opened_serial_device", false);
+    insert_json!("sent_read_only_query_commands", false);
+    insert_json!("sent_output_writes", false);
+    insert_json!("sent_configuration_writes", false);
+    insert_json!("sent_firmware_or_dfu_commands", false);
+    insert_json!("high_torque_enabled", false);
+    insert_json!("mode_enable_candidates_sendable", false);
+    insert_json!("planned_next_output_allowed", false);
+    insert_json!("unknown_safety_or_mode_state_blocks_authority", true);
+    insert_json!(
+        "blocked_actions",
+        [
+            "live read-only probe",
+            "mode enable write",
+            "authority write",
+            "output write",
+            "configuration write",
+            "PIDFF rerun",
+            "authorization receipt",
+            "hardware writes",
+            "high torque",
+            "native-control claim",
+            "native-visible claim",
+            "smoke-ready claim",
+            "release-ready claim",
+            "firmware or DFU command",
+            "unknown host-to-device command"
+        ]
+    );
+    insert_json!(
+        "required_artifacts",
+        [
+            request.status_probe.display().to_string(),
+            request.demux_probe.display().to_string(),
+            request.framing_diagnosis.display().to_string(),
+            request.extended_scan_diagnosis.display().to_string(),
+            request.authority_endpoint_diagnosis.display().to_string(),
+            request.payload_rerun_diagnosis.display().to_string(),
+            request.timing_correlation_plan.display().to_string(),
+            request.timing_correlation_review.display().to_string(),
+            "schemas/moza-vendor-status-movement-blocker-audit.schema.json".to_string()
+        ]
+    );
+    insert_json!(
+        "notes",
+        [
+            "This audit reads stored receipts only; it opens no HID or serial device and sends no traffic.",
+            "The original zero-response status probe is diagnosed, but the current blocker remains authority/status source identification.",
+            "The next command path is passive timing-correlation evidence, not OpenRacing output.",
+            "Native visible motion remains blocked; no wheel movement is claimed."
+        ]
+    );
+
+    Ok(Value::Object(receipt))
+}
+
+fn validate_vendor_status_movement_blocker_status_probe(
+    path: &Path,
+    receipt: &Value,
+) -> Result<()> {
+    validate_vendor_status_movement_blocker_common_no_output(path, receipt)?;
+    if json_string(receipt, "command") != Some("wheelctl moza vendor-status-probe") {
+        return Err(anyhow!(
+            "status probe '{}' must come from `wheelctl moza vendor-status-probe`",
+            path.display()
+        ));
+    }
+    if json_u64(receipt, "decoded_response_count") != Some(0) {
+        return Err(anyhow!(
+            "status probe '{}' must be the original zero-decoded response receipt",
+            path.display()
+        ));
+    }
+    if json_bool(receipt, "sent_read_only_query_commands") != Some(true) {
+        return Err(anyhow!(
+            "status probe '{}' must record sent_read_only_query_commands=true",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn validate_vendor_status_movement_blocker_demux_probe(path: &Path, receipt: &Value) -> Result<()> {
+    validate_vendor_status_movement_blocker_common_no_output(path, receipt)?;
+    if json_string(receipt, "command") != Some("wheelctl moza vendor-status-probe") {
+        return Err(anyhow!(
+            "demux probe '{}' must come from `wheelctl moza vendor-status-probe`",
+            path.display()
+        ));
+    }
+    if json_u64(receipt, "decoded_response_count").unwrap_or(0) == 0 {
+        return Err(anyhow!(
+            "demux probe '{}' must decode at least one non-authority status reply",
+            path.display()
+        ));
+    }
+    if json_bool(receipt, "unknown_safety_or_mode_state_blocks_authority") != Some(true) {
+        return Err(anyhow!(
+            "demux probe '{}' must keep unknown_safety_or_mode_state_blocks_authority=true",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn validate_vendor_status_movement_blocker_framing_diagnosis(
+    path: &Path,
+    receipt: &Value,
+) -> Result<()> {
+    validate_vendor_status_movement_blocker_common_no_output(path, receipt)?;
+    if json_string(receipt, "command") != Some("wheelctl moza vendor-status-framing-diagnosis") {
+        return Err(anyhow!(
+            "framing diagnosis '{}' must come from `wheelctl moza vendor-status-framing-diagnosis`",
+            path.display()
+        ));
+    }
+    if json_string(receipt, "primary_blocker")
+        != Some("transport_framing_or_serial_stream_demultiplexing")
+    {
+        return Err(anyhow!(
+            "framing diagnosis '{}' must record the original framing/demux blocker",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn validate_vendor_status_movement_blocker_extended_scan(
+    path: &Path,
+    receipt: &Value,
+) -> Result<()> {
+    validate_vendor_status_movement_blocker_common_no_output(path, receipt)?;
+    if json_string(receipt, "command") != Some("wheelctl moza vendor-status-framing-diagnosis") {
+        return Err(anyhow!(
+            "extended-scan diagnosis '{}' must come from `wheelctl moza vendor-status-framing-diagnosis`",
+            path.display()
+        ));
+    }
+    if json_string(receipt, "diagnosis_classification")
+        != Some("authority_status_ack_only_without_payload_after_targeted_read_only_probe")
+    {
+        return Err(anyhow!(
+            "extended-scan diagnosis '{}' must classify the targeted read as ACK-only without payload",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn validate_vendor_status_movement_blocker_authority_endpoint(
+    path: &Path,
+    receipt: &Value,
+) -> Result<()> {
+    validate_vendor_status_movement_blocker_common_no_output(path, receipt)?;
+    if json_bool(receipt, "broad_serial_transport_blocker_ruled_out") != Some(true) {
+        return Err(anyhow!(
+            "authority endpoint diagnosis '{}' must rule out broad serial transport",
+            path.display()
+        ));
+    }
+    if json_bool(receipt, "endpoint_or_command_correction_required") != Some(true) {
+        return Err(anyhow!(
+            "authority endpoint diagnosis '{}' must require endpoint or command correction",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn validate_vendor_status_movement_blocker_payload_rerun(
+    path: &Path,
+    receipt: &Value,
+) -> Result<()> {
+    validate_vendor_status_movement_blocker_common_no_output(path, receipt)?;
+    if json_bool(receipt, "broad_serial_transport_blocker_ruled_out") != Some(true) {
+        return Err(anyhow!(
+            "payload rerun diagnosis '{}' must rule out broad serial transport",
+            path.display()
+        ));
+    }
+    if json_string(receipt, "primary_blocker")
+        != Some("authority_status_endpoint_or_command_mismatch")
+    {
+        return Err(anyhow!(
+            "payload rerun diagnosis '{}' must keep authority_status_endpoint_or_command_mismatch as the blocker",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn validate_vendor_status_movement_blocker_timing_plan(path: &Path, receipt: &Value) -> Result<()> {
+    validate_vendor_status_movement_blocker_common_no_output(path, receipt)?;
+    if json_string(receipt, "command")
+        != Some("wheelctl moza vendor-status-timing-correlation-plan")
+    {
+        return Err(anyhow!(
+            "timing-correlation plan '{}' must come from `wheelctl moza vendor-status-timing-correlation-plan`",
+            path.display()
+        ));
+    }
+    if json_bool(receipt, "capture_recorded") != Some(false) {
+        return Err(anyhow!(
+            "timing-correlation plan '{}' must keep capture_recorded=false",
+            path.display()
+        ));
+    }
+    if receipt
+        .get("capture_command_templates")
+        .and_then(Value::as_array)
+        .map(Vec::is_empty)
+        .unwrap_or(true)
+    {
+        return Err(anyhow!(
+            "timing-correlation plan '{}' must include concrete capture command templates",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn validate_vendor_status_movement_blocker_timing_review(
+    path: &Path,
+    receipt: &Value,
+) -> Result<()> {
+    validate_vendor_status_movement_blocker_common_no_output(path, receipt)?;
+    if json_string(receipt, "command")
+        != Some("wheelctl moza vendor-status-timing-correlation-review")
+    {
+        return Err(anyhow!(
+            "timing-correlation review '{}' must come from `wheelctl moza vendor-status-timing-correlation-review`",
+            path.display()
+        ));
+    }
+    if json_bool(receipt, "timing_correlation_proven") != Some(false) {
+        return Err(anyhow!(
+            "timing-correlation review '{}' must keep timing_correlation_proven=false",
+            path.display()
+        ));
+    }
+    if json_bool(receipt, "live_read_only_probe_allowed") != Some(false) {
+        return Err(anyhow!(
+            "timing-correlation review '{}' must keep live_read_only_probe_allowed=false",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn validate_vendor_status_movement_blocker_common_no_output(
+    path: &Path,
+    receipt: &Value,
+) -> Result<()> {
+    for (field, expected) in [
+        ("native_control_evidence", false),
+        ("hardware_output_authorized", false),
+        ("native_visible_ready", false),
+        ("smoke_ready", false),
+        ("release_ready", false),
+        ("output_sendability_claim", false),
+        ("sent_output_writes", false),
+        ("sent_configuration_writes", false),
+        ("sent_firmware_or_dfu_commands", false),
+        ("high_torque_enabled", false),
+    ] {
+        if json_bool(receipt, field) != Some(expected) {
+            return Err(anyhow!(
+                "receipt '{}' must keep {field}={expected}",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn json_object_key_contains(value: &Value, needle: &str) -> bool {
     match value {
         Value::Array(values) => values
@@ -45240,6 +45811,25 @@ fn print_vendor_status_timing_correlation_review_receipt(
     Ok(())
 }
 
+fn print_vendor_status_movement_blocker_audit_receipt(
+    json: bool,
+    json_out: &Path,
+    receipt: &Value,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(receipt)?);
+    } else {
+        println!(
+            "Moza vendor status movement blocker audit: zero_response_diagnosed={}, live_probe_allowed={}, motion_allowed={}; no traffic was sent.",
+            json_bool(receipt, "zero_response_original_probe_diagnosed").unwrap_or(false),
+            json_bool(receipt, "live_read_only_probe_allowed").unwrap_or(false),
+            json_bool(receipt, "motion_attempt_allowed").unwrap_or(false)
+        );
+        println!("Receipt: {}", json_out.display());
+    }
+    Ok(())
+}
+
 fn print_vendor_authority_authorization_receipt(
     json: bool,
     json_out: &Path,
@@ -48965,6 +49555,301 @@ mod tests {
         );
         assert_eq!(
             json_bool(&receipt, "planned_next_output_allowed"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "native_visible_ready"), Some(false));
+        assert_eq!(
+            json_bool(&receipt, "wheel_moved_under_openracing"),
+            Some(false)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_probe_movement_blocker_audit_names_exact_blocker() -> TestResult {
+        let status_probe: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_MODE_MATRIX_RECEIPT_JSON)?;
+        let demux_probe: Value = serde_json::from_str(MOZA_VENDOR_STATUS_MODE_MATRIX_DEMUX_JSON)?;
+        let framing_diagnosis: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_FRAMING_DIAGNOSIS_JSON)?;
+        let extended_scan_diagnosis: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_EXTENDED_SCAN_DIAGNOSIS_JSON)?;
+        let authority_endpoint_diagnosis: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_AUTHORITY_ENDPOINT_DIAGNOSIS_JSON)?;
+        let payload_rerun_diagnosis: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_AUTHORITY_PAYLOAD_RERUN_DIAGNOSIS_JSON)?;
+        let timing_correlation_plan: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_TIMING_CORRELATION_PLAN_JSON)?;
+        let timing_correlation_review: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_TIMING_CORRELATION_REVIEW_JSON)?;
+        let json_out =
+            Path::new("ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json");
+        let request = VendorStatusMovementBlockerAuditRequest {
+            json: false,
+            status_probe: Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json",
+            ),
+            demux_probe: Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json",
+            ),
+            framing_diagnosis: Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json",
+            ),
+            extended_scan_diagnosis: Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json",
+            ),
+            authority_endpoint_diagnosis: Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json",
+            ),
+            payload_rerun_diagnosis: Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json",
+            ),
+            timing_correlation_plan: Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json",
+            ),
+            timing_correlation_review: Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json",
+            ),
+            json_out,
+            overwrite: false,
+        };
+        let receipt = vendor_status_movement_blocker_audit_receipt(
+            &request,
+            &status_probe,
+            &demux_probe,
+            &framing_diagnosis,
+            &extended_scan_diagnosis,
+            &authority_endpoint_diagnosis,
+            &payload_rerun_diagnosis,
+            &timing_correlation_plan,
+            &timing_correlation_review,
+        )?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-status-movement-blocker-audit.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&receipt).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        assert_eq!(
+            json_string(&receipt, "artifact_kind"),
+            Some("moza_vendor_status_movement_blocker_audit")
+        );
+        assert_eq!(
+            json_bool(&receipt, "zero_response_original_probe_diagnosed"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&receipt, "broad_serial_transport_blocker_ruled_out"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&receipt, "line_setting_or_ownership_primary_blocker"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "scan_window_depth_primary_blocker"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "authority_status_endpoint_or_command_mismatch"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&receipt, "timing_correlated_payload_source_missing"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&receipt, "live_read_only_probe_allowed"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "motion_attempt_allowed"), Some(false));
+        assert_eq!(
+            json_bool(&receipt, "wheel_moved_under_openracing"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "visible_motion_verified"), Some(false));
+        assert_eq!(json_bool(&receipt, "output_was_sent"), Some(false));
+        assert_eq!(json_string(&receipt, "authority_state"), Some("blocked"));
+        let Some(command_templates) = receipt
+            .get("next_concrete_command_templates")
+            .and_then(Value::as_array)
+        else {
+            return Err("missing next_concrete_command_templates".into());
+        };
+        assert!(command_templates.iter().any(|template| {
+            json_string(template, "command")
+                .map(|command| command.contains("wheelctl hardware sniff-capture"))
+                == Some(true)
+        }));
+        assert!(command_templates.iter().any(|template| {
+            json_string(template, "command")
+                .map(|command| command.contains("vendor-status-timing-correlation-review"))
+                == Some(true)
+        }));
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_probe_movement_blocker_audit_rejects_demux_without_payload_status()
+    -> TestResult {
+        let status_probe: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_MODE_MATRIX_RECEIPT_JSON)?;
+        let mut demux_probe: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_MODE_MATRIX_DEMUX_JSON)?;
+        let framing_diagnosis: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_FRAMING_DIAGNOSIS_JSON)?;
+        let extended_scan_diagnosis: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_EXTENDED_SCAN_DIAGNOSIS_JSON)?;
+        let authority_endpoint_diagnosis: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_AUTHORITY_ENDPOINT_DIAGNOSIS_JSON)?;
+        let payload_rerun_diagnosis: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_AUTHORITY_PAYLOAD_RERUN_DIAGNOSIS_JSON)?;
+        let timing_correlation_plan: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_TIMING_CORRELATION_PLAN_JSON)?;
+        let timing_correlation_review: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_TIMING_CORRELATION_REVIEW_JSON)?;
+        demux_probe["decoded_response_count"] = Value::Number(0.into());
+        let request = VendorStatusMovementBlockerAuditRequest {
+            json: false,
+            status_probe: Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json",
+            ),
+            demux_probe: Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json",
+            ),
+            framing_diagnosis: Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json",
+            ),
+            extended_scan_diagnosis: Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json",
+            ),
+            authority_endpoint_diagnosis: Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json",
+            ),
+            payload_rerun_diagnosis: Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json",
+            ),
+            timing_correlation_plan: Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json",
+            ),
+            timing_correlation_review: Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json",
+            ),
+            json_out: Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json",
+            ),
+            overwrite: false,
+        };
+
+        let result = vendor_status_movement_blocker_audit_receipt(
+            &request,
+            &status_probe,
+            &demux_probe,
+            &framing_diagnosis,
+            &extended_scan_diagnosis,
+            &authority_endpoint_diagnosis,
+            &payload_rerun_diagnosis,
+            &timing_correlation_plan,
+            &timing_correlation_review,
+        );
+        let Err(error) = result else {
+            return Err("movement blocker audit must reject demux without decoded status".into());
+        };
+        assert!(
+            error.to_string().contains("decode at least one"),
+            "unexpected error: {error}"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn vendor_status_probe_movement_blocker_audit_command_writes_json_receipt() -> TestResult
+    {
+        let dir = tempfile::tempdir()?;
+        let status_probe = dir.path().join("vendor-status-mode-matrix.json");
+        let demux_probe = dir.path().join("vendor-status-mode-matrix-demux.json");
+        let framing_diagnosis = dir.path().join("vendor-status-framing-diagnosis.json");
+        let extended_scan_diagnosis = dir
+            .path()
+            .join("vendor-status-extended-scan-diagnosis.json");
+        let authority_endpoint_diagnosis = dir
+            .path()
+            .join("vendor-status-authority-endpoint-diagnosis.json");
+        let payload_rerun_diagnosis = dir
+            .path()
+            .join("vendor-status-authority-payload-rerun-diagnosis.json");
+        let timing_correlation_plan = dir
+            .path()
+            .join("vendor-status-timing-correlation-plan.json");
+        let timing_correlation_review = dir
+            .path()
+            .join("vendor-status-timing-correlation-review.json");
+        let json_out = dir.path().join("vendor-status-movement-blocker-audit.json");
+
+        write_test_json_file(
+            &status_probe,
+            &serde_json::from_str::<Value>(MOZA_VENDOR_STATUS_MODE_MATRIX_RECEIPT_JSON)?,
+        )?;
+        write_test_json_file(
+            &demux_probe,
+            &serde_json::from_str::<Value>(MOZA_VENDOR_STATUS_MODE_MATRIX_DEMUX_JSON)?,
+        )?;
+        write_test_json_file(
+            &framing_diagnosis,
+            &serde_json::from_str::<Value>(MOZA_VENDOR_STATUS_FRAMING_DIAGNOSIS_JSON)?,
+        )?;
+        write_test_json_file(
+            &extended_scan_diagnosis,
+            &serde_json::from_str::<Value>(MOZA_VENDOR_STATUS_EXTENDED_SCAN_DIAGNOSIS_JSON)?,
+        )?;
+        write_test_json_file(
+            &authority_endpoint_diagnosis,
+            &serde_json::from_str::<Value>(MOZA_VENDOR_STATUS_AUTHORITY_ENDPOINT_DIAGNOSIS_JSON)?,
+        )?;
+        write_test_json_file(
+            &payload_rerun_diagnosis,
+            &serde_json::from_str::<Value>(
+                MOZA_VENDOR_STATUS_AUTHORITY_PAYLOAD_RERUN_DIAGNOSIS_JSON,
+            )?,
+        )?;
+        write_test_json_file(
+            &timing_correlation_plan,
+            &serde_json::from_str::<Value>(MOZA_VENDOR_STATUS_TIMING_CORRELATION_PLAN_JSON)?,
+        )?;
+        write_test_json_file(
+            &timing_correlation_review,
+            &serde_json::from_str::<Value>(MOZA_VENDOR_STATUS_TIMING_CORRELATION_REVIEW_JSON)?,
+        )?;
+
+        vendor_status_movement_blocker_audit(VendorStatusMovementBlockerAuditRequest {
+            json: false,
+            status_probe: &status_probe,
+            demux_probe: &demux_probe,
+            framing_diagnosis: &framing_diagnosis,
+            extended_scan_diagnosis: &extended_scan_diagnosis,
+            authority_endpoint_diagnosis: &authority_endpoint_diagnosis,
+            payload_rerun_diagnosis: &payload_rerun_diagnosis,
+            timing_correlation_plan: &timing_correlation_plan,
+            timing_correlation_review: &timing_correlation_review,
+            json_out: &json_out,
+            overwrite: false,
+        })
+        .await?;
+
+        let receipt = read_json_path(&json_out)?;
+        assert_eq!(
+            json_string(&receipt, "command"),
+            Some("wheelctl moza vendor-status-movement-blocker-audit")
+        );
+        assert_eq!(
+            json_bool(&receipt, "live_read_only_probe_allowed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "hardware_output_authorized"),
             Some(false)
         );
         assert_eq!(json_bool(&receipt, "native_visible_ready"), Some(false));

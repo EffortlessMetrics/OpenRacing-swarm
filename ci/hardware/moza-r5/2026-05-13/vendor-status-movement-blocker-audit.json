@@ -1,0 +1,158 @@
+{
+  "artifact_kind": "moza_vendor_status_movement_blocker_audit",
+  "authority_state": "blocked",
+  "authority_status_endpoint_or_command_mismatch": true,
+  "authorization_plan_allowed": false,
+  "blocked_actions": [
+    "live read-only probe",
+    "mode enable write",
+    "authority write",
+    "output write",
+    "configuration write",
+    "PIDFF rerun",
+    "authorization receipt",
+    "hardware writes",
+    "high torque",
+    "native-control claim",
+    "native-visible claim",
+    "smoke-ready claim",
+    "release-ready claim",
+    "firmware or DFU command",
+    "unknown host-to-device command"
+  ],
+  "broad_serial_transport_blocker_ruled_out": true,
+  "claim_scope": "no_output_vendor_status_movement_blocker_audit",
+  "command": "wheelctl moza vendor-status-movement-blocker-audit",
+  "corrected_read_only_probe_ready": false,
+  "demux_follow_up": {
+    "authority_state_replies_decoded": 0,
+    "broad_serial_lane_can_decode_payload_status": true,
+    "decoded_response_count": 7,
+    "failed_response_count": 2,
+    "non_authority_status_replies_decoded": 7,
+    "scanned_response_frame_count": 17
+  },
+  "exact_next_blocker": "Missing reviewed timing-correlated payload-bearing authority/mode status source. The next concrete step is the staged passive Pit House 0x8E event-marker capture and no-output timing review, not a read-only rerun, authorization, PIDFF rerun, or motion.",
+  "extended_scan_frame_count": 19,
+  "failure_mode_classification": [
+    {
+      "evidence": "Demux follow-up decoded payload-bearing non-authority status replies on the same COM4 serial lane.",
+      "failure_mode": "serial_ownership_or_line_settings",
+      "status": "not_primary"
+    },
+    {
+      "evidence": "The demuxed read-only probe decoded seven registry status replies after the original zero-response receipt.",
+      "failure_mode": "serial_response_framing_or_demux",
+      "status": "partially_fixed_not_primary"
+    },
+    {
+      "evidence": "The targeted extended scan still decoded zero authority-state replies and found ACK/no-payload or diagnostic telemetry instead.",
+      "failure_mode": "scan_window_depth",
+      "status": "not_primary"
+    },
+    {
+      "evidence": "Authority-status queries still return ACK/no-payload or diagnostic telemetry while non-authority status reads decode.",
+      "failure_mode": "authority_status_endpoint_or_command_mismatch",
+      "status": "active_blocker"
+    },
+    {
+      "evidence": "The reviewed 0x8E payload-bearing samples are static/single-sample and lack event-marker timing proof.",
+      "failure_mode": "timing_correlated_payload_bearing_status_source_missing",
+      "status": "active_blocker"
+    }
+  ],
+  "generated_at_utc": "2026-05-30T00:15:23Z",
+  "hardware_output_authorized": false,
+  "high_torque_enabled": false,
+  "line_setting_or_ownership_primary_blocker": false,
+  "live_read_only_probe_allowed": false,
+  "mode_enable_candidates_sendable": false,
+  "motion_attempt_allowed": false,
+  "native_control_evidence": false,
+  "native_visible_ready": false,
+  "next_allowed_action": "Run the capture command templates from vendor-status-timing-correlation-plan.json, then run vendor-status-timing-correlation-review on the derived summary and complete operator notes. If timing proof is still missing, stop with diagnosis; if timing proof exists, create a separate reviewed read-only/status plan.",
+  "next_concrete_command_templates": [
+    {
+      "command": "wheelctl hardware doctor --json-out target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --json",
+      "name": "refresh_observe_only_hardware_doctor",
+      "output_enabled": false
+    },
+    {
+      "command": "wheelctl hardware sniff-capture --usbpcapcmd '<USBPcapCMD.exe from hardware doctor>' --usbpcap-interface '<USBPcap interface from hardware doctor>' --devices <capture_devices_value> --hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --duration-ms 180000 --out target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --confirm-external-passive-capture --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json",
+      "name": "run_bounded_passive_usbpcap_capture",
+      "openracing_hardware_output": false,
+      "output_enabled": false
+    },
+    {
+      "command": "wheelctl hardware sniff-summary --pcapng target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --vendor 0x346E --product 0x0004 --include-payload-samples --max-samples-per-report 64 --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json --md-out target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.md",
+      "name": "summarize_passive_capture",
+      "output_enabled": false
+    },
+    {
+      "command": "wheelctl moza vendor-status-timing-correlation-review --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json --summary target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json --operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --json-out target/sniff/pit-house-0x8e-timing-correlation/vendor-status-timing-correlation-review.json",
+      "name": "future_no_output_timing_review",
+      "output_enabled": false
+    }
+  ],
+  "no_hid_device_opened": true,
+  "notes": [
+    "This audit reads stored receipts only; it opens no HID or serial device and sends no traffic.",
+    "The original zero-response status probe is diagnosed, but the current blocker remains authority/status source identification.",
+    "The next command path is passive timing-correlation evidence, not OpenRacing output.",
+    "Native visible motion remains blocked; no wheel movement is claimed."
+  ],
+  "opened_serial_device": false,
+  "original_status_probe": {
+    "decoded_response_count": 0,
+    "failed_response_count": 9,
+    "opened_serial_device": true,
+    "sent_configuration_writes": false,
+    "sent_firmware_or_dfu_commands": false,
+    "sent_output_writes": false,
+    "sent_read_only_query_count": 9
+  },
+  "output_sendability_claim": false,
+  "output_was_sent": false,
+  "payload_bearing_authority_state_source_found": false,
+  "planned_next_output_allowed": false,
+  "reason_motion_not_allowed": "Mode and safety state remain unknown, no volatile mode/enable candidate is decoded or sendable, and no fresh command-bound bench-clear receipt exists for a tiny closed-loop motion run.",
+  "reason_read_only_rerun_not_allowed": "No corrected registry-approved read-only authority/status endpoint or timing-correlated equivalent status source exists yet; rerunning the same read-only query set would repeat the known endpoint mismatch.",
+  "registry_promotion_claim": false,
+  "release_ready": false,
+  "required_artifacts": [
+    "ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json",
+    "ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json",
+    "ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json",
+    "ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json",
+    "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json",
+    "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json",
+    "ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json",
+    "ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json",
+    "schemas/moza-vendor-status-movement-blocker-audit.schema.json"
+  ],
+  "scan_window_depth_primary_blocker": false,
+  "schema_version": 1,
+  "semantic_decode_claim": false,
+  "sent_configuration_writes": false,
+  "sent_firmware_or_dfu_commands": false,
+  "sent_output_writes": false,
+  "sent_read_only_query_commands": false,
+  "serial_response_framing_primary_blocker": false,
+  "smoke_ready": false,
+  "source_receipts": {
+    "authority_endpoint_diagnosis": "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json",
+    "demux_probe": "ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json",
+    "extended_scan_diagnosis": "ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json",
+    "framing_diagnosis": "ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json",
+    "payload_rerun_diagnosis": "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json",
+    "status_probe": "ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json",
+    "timing_correlation_plan": "ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json",
+    "timing_correlation_review": "ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json"
+  },
+  "success": true,
+  "timing_correlated_payload_source_missing": true,
+  "unknown_safety_or_mode_state_blocks_authority": true,
+  "visible_motion_verified": false,
+  "wheel_moved_under_openracing": false,
+  "zero_response_original_probe_diagnosed": true
+}

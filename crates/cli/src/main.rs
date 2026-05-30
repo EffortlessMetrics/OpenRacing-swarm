@@ -2689,6 +2689,100 @@ mod tests {
     }
 
     #[test]
+    fn parse_moza_vendor_status_movement_blocker_audit() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "moza",
+            "vendor-status-movement-blocker-audit",
+            "--status-probe",
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json",
+            "--demux-probe",
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json",
+            "--framing-diagnosis",
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json",
+            "--extended-scan-diagnosis",
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json",
+            "--authority-endpoint-diagnosis",
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json",
+            "--payload-rerun-diagnosis",
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json",
+            "--timing-correlation-plan",
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json",
+            "--timing-correlation-review",
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json",
+            "--json-out",
+            "ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json",
+            "--overwrite",
+        ])?;
+        match &cli.command {
+            Commands::Moza(MozaCommands::VendorStatusMovementBlockerAudit {
+                status_probe,
+                demux_probe,
+                framing_diagnosis,
+                extended_scan_diagnosis,
+                authority_endpoint_diagnosis,
+                payload_rerun_diagnosis,
+                timing_correlation_plan,
+                timing_correlation_review,
+                json_out,
+                overwrite,
+            }) => {
+                assert_eq!(
+                    status_probe.to_str(),
+                    Some("ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json")
+                );
+                assert_eq!(
+                    demux_probe.to_str(),
+                    Some("ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json")
+                );
+                assert_eq!(
+                    framing_diagnosis.to_str(),
+                    Some("ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json")
+                );
+                assert_eq!(
+                    extended_scan_diagnosis.to_str(),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json"
+                    )
+                );
+                assert_eq!(
+                    authority_endpoint_diagnosis.to_str(),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json"
+                    )
+                );
+                assert_eq!(
+                    payload_rerun_diagnosis.to_str(),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json"
+                    )
+                );
+                assert_eq!(
+                    timing_correlation_plan.to_str(),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json"
+                    )
+                );
+                assert_eq!(
+                    timing_correlation_review.to_str(),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json"
+                    )
+                );
+                assert_eq!(
+                    json_out.to_str(),
+                    Some(
+                        "ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json"
+                    )
+                );
+                assert!(*overwrite);
+            }
+            _ => return Err("expected Moza VendorStatusMovementBlockerAudit command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_moza_authorize_vendor_authority() -> TestResult {
         let cli = parse_cli([
             "wheelctl",
