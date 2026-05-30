@@ -9864,6 +9864,97 @@ the focused regression assertions, and this source-of-truth work item. Do not
 remove timing-correlation plan/review artifacts, the movement blocker audit, or
 the native-visible promotion block.
 
+## Work item: surface-next-concrete-native-blocker-commands
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: operator confusion about the first runnable command after a blocked native-motion audit
+Blocked by: completed native-motion status surfacing in bench wizard
+
+### Goal
+
+Make `wheelctl moza bench-wizard` expose the next concrete no-output command
+directly instead of requiring operators to dig through the full 0x8E
+timing-correlation handoff.
+
+### Production delta
+
+The bench-wizard receipt now exposes:
+
+- `next_concrete_command`;
+- `next_concrete_command_sequence`;
+- `next_concrete_command_count`; and
+- `next_concrete_command_claim_boundary`.
+
+The generated Markdown also includes a `Next Concrete Command` section
+immediately after the `Native Motion State` section. In the current lane state,
+the first command is:
+
+```powershell
+wheelctl hardware doctor --json-out target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --json
+```
+
+The runnable sequence is limited to no-output pre-capture commands:
+
+```text
+refresh_observe_only_hardware_doctor
+render_checked_in_operator_notes_template
+stamp_hardware_doctor_selector_marker
+```
+
+The exact blocker remains the missing reviewed timing-correlated
+payload-bearing authority/mode status source. This work item does not make the
+wheel move; it only makes the next command concrete.
+
+### Non-goals
+
+No live hardware access, HID open, serial open, read-only query send, live
+capture, raw pcap commit, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, output claim, or wheel movement.
+
+### Acceptance
+
+- The bench-wizard JSON receipt has top-level `next_concrete_command`,
+  `next_concrete_command_sequence`, `next_concrete_command_count`, and
+  `next_concrete_command_claim_boundary` fields.
+- The current blocked lane reports the observe-only hardware doctor as the
+  first concrete command.
+- The command sequence contains only immediately runnable no-output pre-capture
+  commands and excludes placeholder capture templates, capture-runtime markers,
+  post-capture receipt/summary/bundle/review commands, read-only probe reruns,
+  authorization commands, PIDFF commands, and motion commands.
+- The native-motion state remains
+  `wheel_moved_under_openracing=false`,
+  `visible_motion_verified=false`, `output_was_sent=false`, and
+  `authority_state=blocked`.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the bench-wizard next-concrete-command receipt fields, Markdown
+section, focused regression assertions, and this source-of-truth work item. Do
+not remove native-motion status surfacing, timing-correlation plan/review
+artifacts, the movement blocker audit, or the native-visible promotion block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

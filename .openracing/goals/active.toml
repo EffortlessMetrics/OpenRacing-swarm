@@ -2837,6 +2837,26 @@ commands = [
 ]
 
 [[work_item]]
+id = "surface-next-concrete-native-blocker-commands"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-surface-next-concrete-native-blocker-commands"
+current_pointer = "crates/cli/src/commands/moza.rs"
+claim_boundary = "No-output bench-wizard navigation only; surfaces the first immediately runnable next concrete command and the runnable pre-capture command sequence for the current 0x8E native-motion blocker. Opens no HID or serial device, sends no read-only query/output/configuration/firmware/PIDFF command, runs no live capture, creates no authorization, promotes no semantic decode or tuple sendability, and keeps live probe, PIDFF rerun, force escalation, native-control, native-visible, smoke-ready, simulator, coexistence, high-torque, release-ready, output, and wheel-movement claims false."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
