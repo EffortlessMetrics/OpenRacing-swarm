@@ -22,8 +22,13 @@
     "operator_event_marker_timestamps_present",
     "operator_event_marker_timestamps_missing",
     "operator_event_marker_timestamps_complete",
+    "operator_event_marker_order_valid",
+    "operator_event_marker_order_violations",
     "event_correlation_window_seconds",
     "summary_has_packet_timestamp_samples",
+    "target_sample_timestamp_count",
+    "target_samples_within_capture_window",
+    "target_samples_outside_capture_window",
     "any_target_samples_observed",
     "same_tuple_payload_variation_observed",
     "operator_event_marker_correlation_observed",
@@ -145,8 +150,19 @@
       "items": { "type": "string" }
     },
     "operator_event_marker_timestamps_complete": { "type": "boolean" },
+    "operator_event_marker_order_valid": { "type": "boolean" },
+    "operator_event_marker_order_violations": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
     "event_correlation_window_seconds": { "type": "number", "exclusiveMinimum": 0 },
     "summary_has_packet_timestamp_samples": { "type": "boolean" },
+    "target_sample_timestamp_count": { "type": "integer", "minimum": 0 },
+    "target_samples_within_capture_window": { "type": "boolean" },
+    "target_samples_outside_capture_window": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
     "any_target_samples_observed": { "type": "boolean" },
     "same_tuple_payload_variation_observed": { "type": "boolean" },
     "operator_event_marker_correlation_observed": { "type": "boolean" },

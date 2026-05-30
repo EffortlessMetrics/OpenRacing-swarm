@@ -28,7 +28,7 @@
   "device_to_host_serial_frame_shape_decode_gap": false,
   "event_correlation_window_seconds": 5.0,
   "exact_next_blocker": "No reviewed timing-correlation evidence links the 0x8E payload-bearing status-source samples to authority or mode state. Live probe, authorization, PIDFF, force escalation, and motion remain blocked.",
-  "generated_at_utc": "2026-05-30T05:08:33Z",
+  "generated_at_utc": "2026-05-30T08:43:13Z",
   "hardware_output_authorized": false,
   "high_torque_enabled": false,
   "live_read_only_probe_allowed": false,
@@ -48,6 +48,8 @@
   "operator_event_marker_correlation_observed": false,
   "operator_event_marker_count": 0,
   "operator_event_marker_notes_complete": false,
+  "operator_event_marker_order_valid": false,
+  "operator_event_marker_order_violations": [],
   "operator_event_marker_timestamps_complete": false,
   "operator_event_marker_timestamps_missing": [
     "capture_start_utc",
@@ -121,6 +123,9 @@
   "summary_matched_packets": 100492,
   "summary_pcapng_sha256": "39d43f3454648ea9767e3cf88740073eec9f120ca42f36dfa438fd8f2707d3fc",
   "target_group_id": "passive_payload_bearing_status_source_0x8e",
+  "target_sample_timestamp_count": 0,
+  "target_samples_outside_capture_window": [],
+  "target_samples_within_capture_window": false,
   "target_tuple_ids": [
     "0x8E/0x21/0x00",
     "0x8E/0x31/0x00",

@@ -8803,6 +8803,106 @@ handoff, movement-blocker audit, status probe receipts, demux evidence,
 endpoint diagnoses, timing-correlation plan/review, or event-marker capture
 handoff.
 
+## Work item: gate-0x8e-review-capture-window
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: accepting stale or out-of-window 0x8E timing reviews as authority/mode
+status-source candidates
+Blocked by: completed 0x8E event-marker timestamp gate
+
+### Goal
+
+Keep the next native-motion prerequisite tied to real capture timing. A future
+`vendor-status-timing-correlation-review` receipt must not surface a candidate
+payload/timing correlation unless operator event markers are ordered and the
+target 0x8E sample timestamps fall inside the declared capture window.
+
+### Production delta
+
+`wheelctl moza vendor-status-timing-correlation-review` now records:
+
+```text
+operator_event_marker_order_valid
+operator_event_marker_order_violations
+target_sample_timestamp_count
+target_samples_within_capture_window
+target_samples_outside_capture_window
+```
+
+`timing_correlation_candidate_observed` now requires ordered event markers and
+target samples inside `capture_start_utc` through `capture_stop_utc`, in
+addition to the previous event-marker and payload-variation checks. The schema
+requires these fields, and the checked-in timing-correlation review receipt is
+regenerated under the same no-output boundary.
+
+### Non-goals
+
+No live hardware access, HID open, serial open, read-only query send, live
+capture, raw pcap commit, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, or wheel movement.
+
+### Acceptance
+
+- Timing reviews with out-of-order event markers cannot report a timing
+  candidate.
+- Timing reviews with target sample timestamps outside the declared capture
+  window cannot report a timing candidate.
+- Event-correlated payload variation with ordered markers and in-window target
+  samples still records a candidate, but remains non-authorizing and
+  unknown-do-not-send.
+- The current checked-in review remains blocked because the older setting-change
+  notes lack event markers; it does not authorize live probe, PIDFF, output, or
+  motion.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain the operating
+  state.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-review `
+  --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json `
+  --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-summary.json `
+  --operator-notes ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/operator-notes.md `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-movement-blocker-audit `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json `
+  --demux-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json `
+  --framing-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json `
+  --extended-scan-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json `
+  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json `
+  --payload-rerun-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --timing-correlation-plan ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --timing-correlation-review ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json `
+  --overwrite
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_review -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the timing-review capture-window fields, focused timing-review
+tests, schema additions, regenerated review/audit receipts, and this
+source-of-truth work item. Do not remove the timing-correlation plan, sniff
+handoff, event-marker bundle gate, status probe receipts, demux evidence,
+endpoint diagnoses, or native-visible promotion block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
