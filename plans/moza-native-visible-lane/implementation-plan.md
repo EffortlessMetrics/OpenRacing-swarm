@@ -9955,6 +9955,84 @@ section, focused regression assertions, and this source-of-truth work item. Do
 not remove native-motion status surfacing, timing-correlation plan/review
 artifacts, the movement blocker audit, or the native-visible promotion block.
 
+## Work item: surface-sniff-notes-next-capture-command
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: operator confusion after the no-output 0x8E pre-capture staging commands
+Blocked by: completed next concrete native blocker command surfacing
+
+### Goal
+
+Make `wheelctl hardware sniff-notes-template` expose the exact bounded passive
+`sniff-capture` command as structured receipt data when a fresh hardware doctor
+provides verified Moza USBPcap selector hints.
+
+### Production delta
+
+The sniff-notes-template receipt now includes:
+
+- `next_concrete_command`;
+- `next_concrete_command_sequence`;
+- `next_concrete_command_count`; and
+- `next_concrete_command_claim_boundary`.
+
+The command is built from the same helper that renders the operator notes. For
+the current 0x8E timing-correlation handoff, it uses the fresh hardware-doctor
+selector rather than a remembered `--devices` value and keeps the capture
+duration at `180000` ms.
+
+This work item does not run a capture and does not make the wheel move. It only
+turns the already-rendered passive capture handoff into machine-readable
+receipt metadata so agents can advance to the next concrete bench command
+without inventing output or motion.
+
+### Non-goals
+
+No live capture, raw pcap commit, HID open, serial open, read-only query send,
+PIDFF output, feature report, configuration write, firmware/update/DFU path,
+high torque, mode-enable write, authority write, authorization receipt,
+semantic decode claim, registry promotion, tuple sendability, corrected
+read-only probe readiness, native-control claim, native-visible claim,
+smoke-ready claim, simulator claim, coexistence claim, release-ready claim,
+output claim, or wheel movement.
+
+### Acceptance
+
+- The sniff-notes-template JSON receipt has structured next-concrete-command
+  fields whenever hardware-doctor USBPcap Moza selector hints are supplied.
+- The command uses the current selector from hardware doctor and does not
+  hard-code stale `--devices` values.
+- Receipts generated without hardware-doctor hints report zero next concrete
+  commands.
+- The command boundary records external passive capture only and keeps
+  OpenRacing HID, serial, read-only query, output, feature, configuration,
+  firmware/DFU, native-control, native-visible, smoke, release, and wheel
+  movement claims false.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_notes_template -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the sniff-notes-template next-concrete-command receipt fields, the
+helper that derives them from hardware-doctor hints, focused tests, and this
+source-of-truth work item. Do not remove the 0x8E timing-correlation handoff,
+movement-blocker audit, or native-visible promotion block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
