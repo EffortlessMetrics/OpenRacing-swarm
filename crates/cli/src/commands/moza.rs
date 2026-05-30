@@ -30607,6 +30607,16 @@ fn vendor_status_timing_correlation_review_receipt(
         .map(str::to_string)
         .collect::<Vec<_>>();
     let event_marker_notes_complete = missing_markers.is_empty();
+    let marker_times =
+        vendor_status_timing_correlation_marker_times(operator_notes, &required_markers);
+    let marker_times_present = marker_times.keys().cloned().collect::<Vec<_>>();
+    let marker_times_missing = required_markers
+        .iter()
+        .copied()
+        .filter(|marker| !marker_times.contains_key(*marker))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let event_marker_timestamps_complete = marker_times_missing.is_empty();
 
     let target_tuple_ids = vendor_status_timing_correlation_target_tuple_ids();
     let semantic_samples = semantic_review
@@ -30645,8 +30655,17 @@ fn vendor_status_timing_correlation_review_receipt(
             .push(vendor_status_timing_correlation_sample_json(sample));
     }
 
+    let summary_has_packet_timestamp_samples =
+        summary_samples_by_tuple.values().flatten().any(|sample| {
+            sample.get("frame_time_epoch").is_some()
+                || sample.get("frame_time").is_some()
+                || sample.get("packet_time_epoch").is_some()
+                || sample.get("packet_timestamp_epoch").is_some()
+        });
     let mut any_target_samples_observed = false;
     let mut same_tuple_payload_variation_observed = false;
+    let mut operator_event_marker_correlation_observed = false;
+    let mut same_tuple_payload_variation_with_event_markers_observed = false;
     let mut tuple_reviews = Vec::new();
     for tuple_id in &target_tuple_ids {
         let observed_payloads = summary_payloads_by_tuple
@@ -30661,6 +30680,52 @@ fn vendor_status_timing_correlation_review_receipt(
         any_target_samples_observed |= sample_count > 0;
         let tuple_varied = observed_payloads.len() > 1;
         same_tuple_payload_variation_observed |= tuple_varied;
+        let mut correlated_event_markers = BTreeSet::<String>::new();
+        let mut correlated_payloads = BTreeSet::<String>::new();
+        let mut correlated_samples = Vec::new();
+        for sample in &observed_samples {
+            let Some(sample_epoch_seconds) = vendor_status_sample_epoch_seconds(sample) else {
+                continue;
+            };
+            let nearest_marker = marker_times
+                .iter()
+                .map(|(marker, marker_epoch_seconds)| {
+                    let delta_seconds = sample_epoch_seconds - marker_epoch_seconds;
+                    (
+                        marker,
+                        marker_epoch_seconds,
+                        delta_seconds,
+                        delta_seconds.abs(),
+                    )
+                })
+                .min_by(|left, right| left.3.total_cmp(&right.3));
+            if let Some((marker, marker_epoch_seconds, delta_seconds, abs_delta_seconds)) =
+                nearest_marker
+                && abs_delta_seconds <= VENDOR_STATUS_TIMING_CORRELATION_WINDOW_SECONDS
+            {
+                correlated_event_markers.insert(marker.clone());
+                if let Some(payload_hex) = json_string(sample, "payload_hex") {
+                    correlated_payloads.insert(payload_hex.to_string());
+                }
+                correlated_samples.push(serde_json::json!({
+                    "event_marker": marker,
+                    "delta_seconds": delta_seconds,
+                    "abs_delta_seconds": abs_delta_seconds,
+                    "sample_epoch_seconds": sample_epoch_seconds,
+                    "marker_epoch_seconds": marker_epoch_seconds,
+                    "packet_ordinal": json_u64(sample, "packet_ordinal").unwrap_or(0),
+                    "frame_number": sample.get("frame_number").cloned().unwrap_or(Value::Null),
+                    "payload_hex": json_string(sample, "payload_hex").unwrap_or("unknown"),
+                    "hardware_output_authorized": false,
+                    "output_sendability_claim": false,
+                    "read_only_probe_allowed": false
+                }));
+            }
+        }
+        let tuple_event_correlated = !correlated_event_markers.is_empty();
+        operator_event_marker_correlation_observed |= tuple_event_correlated;
+        let tuple_varied_near_event_markers = correlated_payloads.len() > 1;
+        same_tuple_payload_variation_with_event_markers_observed |= tuple_varied_near_event_markers;
         tuple_reviews.push(serde_json::json!({
             "tuple_id": tuple_id,
             "semantic_review_payload_hex": semantic_payload_by_tuple
@@ -30670,9 +30735,18 @@ fn vendor_status_timing_correlation_review_receipt(
             "summary_observed_sample_count": sample_count,
             "summary_observed_payload_hex_values": observed_payloads,
             "same_tuple_payload_variation_observed": tuple_varied,
-            "operator_event_marker_correlation_observed": false,
+            "operator_event_marker_correlation_observed": tuple_event_correlated,
+            "same_tuple_payload_variation_with_event_markers_observed": tuple_varied_near_event_markers,
+            "correlated_sample_count": correlated_samples.len(),
+            "correlated_operator_event_markers": correlated_event_markers.into_iter().collect::<Vec<_>>(),
+            "correlated_payload_hex_values": correlated_payloads.into_iter().collect::<Vec<_>>(),
+            "correlated_samples": correlated_samples,
             "timing_correlation_status": if sample_count == 0 {
                 "missing_from_summary"
+            } else if tuple_varied_near_event_markers {
+                "candidate_payload_variation_near_operator_events"
+            } else if tuple_event_correlated {
+                "event_marker_correlated_static_or_single_payload"
             } else if tuple_varied {
                 "payload_varies_but_timing_not_proven"
             } else {
@@ -30689,22 +30763,28 @@ fn vendor_status_timing_correlation_review_receipt(
         }));
     }
 
-    let summary_has_packet_timestamp_samples =
-        summary_samples_by_tuple.values().flatten().any(|sample| {
-            sample.get("frame_time_epoch").is_some()
-                || sample.get("frame_time").is_some()
-                || sample.get("packet_time_epoch").is_some()
-                || sample.get("packet_timestamp_epoch").is_some()
-        });
+    let timing_correlation_candidate_observed = event_marker_notes_complete
+        && event_marker_timestamps_complete
+        && summary_has_packet_timestamp_samples
+        && same_tuple_payload_variation_with_event_markers_observed;
     let timing_correlation_proven = false;
     let timing_correlation_verdict = if !any_target_samples_observed {
         "insufficient_no_target_0x8e_samples"
+    } else if timing_correlation_candidate_observed {
+        "candidate_payload_variation_correlated_to_operator_events"
+    } else if operator_event_marker_correlation_observed {
+        "insufficient_event_correlated_static_or_single_payload"
     } else if !same_tuple_payload_variation_observed {
         "insufficient_static_or_single_sample_0x8e_payloads"
-    } else if !event_marker_notes_complete || !summary_has_packet_timestamp_samples {
+    } else if !event_marker_notes_complete
+        || !event_marker_timestamps_complete
+        || !summary_has_packet_timestamp_samples
+    {
         "insufficient_missing_event_markers_or_packet_timestamps"
+    } else if same_tuple_payload_variation_observed {
+        "payload_varies_but_event_timing_not_proven"
     } else {
-        "candidate_variation_requires_separate_semantic_review"
+        "insufficient_no_timing_correlation_candidate"
     };
 
     let mut receipt = serde_json::Map::new();
@@ -30795,6 +30875,22 @@ fn vendor_status_timing_correlation_review_receipt(
         event_marker_notes_complete
     );
     insert_json!(
+        "operator_event_marker_timestamps_present",
+        marker_times_present
+    );
+    insert_json!(
+        "operator_event_marker_timestamps_missing",
+        marker_times_missing
+    );
+    insert_json!(
+        "operator_event_marker_timestamps_complete",
+        event_marker_timestamps_complete
+    );
+    insert_json!(
+        "event_correlation_window_seconds",
+        VENDOR_STATUS_TIMING_CORRELATION_WINDOW_SECONDS
+    );
+    insert_json!(
         "summary_has_packet_timestamp_samples",
         summary_has_packet_timestamp_samples
     );
@@ -30802,6 +30898,18 @@ fn vendor_status_timing_correlation_review_receipt(
     insert_json!(
         "same_tuple_payload_variation_observed",
         same_tuple_payload_variation_observed
+    );
+    insert_json!(
+        "operator_event_marker_correlation_observed",
+        operator_event_marker_correlation_observed
+    );
+    insert_json!(
+        "same_tuple_payload_variation_with_event_markers_observed",
+        same_tuple_payload_variation_with_event_markers_observed
+    );
+    insert_json!(
+        "timing_correlation_candidate_observed",
+        timing_correlation_candidate_observed
     );
     insert_json!("timing_correlation_proven", timing_correlation_proven);
     insert_json!("timing_correlation_verdict", timing_correlation_verdict);
@@ -30949,6 +31057,55 @@ fn vendor_status_timing_correlation_required_markers() -> [&'static str; 11] {
         "pit_house_closed_utc",
         "capture_stop_utc",
     ]
+}
+
+const VENDOR_STATUS_TIMING_CORRELATION_WINDOW_SECONDS: f64 = 5.0;
+
+fn vendor_status_timing_correlation_marker_times(
+    operator_notes: &str,
+    required_markers: &[&str],
+) -> BTreeMap<String, f64> {
+    let mut marker_times = BTreeMap::new();
+    for marker in required_markers {
+        if let Some(epoch_seconds) = operator_notes
+            .lines()
+            .filter(|line| line.contains(marker))
+            .filter_map(parse_rfc3339_epoch_seconds_from_text)
+            .next()
+        {
+            marker_times.insert((*marker).to_string(), epoch_seconds);
+        }
+    }
+    marker_times
+}
+
+fn parse_rfc3339_epoch_seconds_from_text(line: &str) -> Option<f64> {
+    line.split_whitespace()
+        .map(|token| {
+            token.trim_matches(|ch: char| {
+                !(ch.is_ascii_alphanumeric() || matches!(ch, '-' | ':' | '.' | '+' | 'T' | 'Z'))
+            })
+        })
+        .find_map(|token| {
+            chrono::DateTime::parse_from_rfc3339(token)
+                .ok()
+                .map(|timestamp| timestamp.with_timezone(&chrono::Utc))
+                .map(|timestamp| {
+                    timestamp.timestamp() as f64
+                        + f64::from(timestamp.timestamp_subsec_nanos()) / 1_000_000_000.0
+                })
+        })
+}
+
+fn vendor_status_sample_epoch_seconds(sample: &Value) -> Option<f64> {
+    [
+        "frame_time_epoch",
+        "packet_time_epoch",
+        "packet_timestamp_epoch",
+    ]
+    .iter()
+    .filter_map(|key| json_string(sample, key))
+    .find_map(|raw| raw.parse::<f64>().ok())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -49931,6 +50088,99 @@ mod tests {
     }
 
     #[test]
+    fn vendor_status_timing_correlation_review_detects_event_correlated_variation() -> TestResult {
+        let payload_source_candidates: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_PAYLOAD_SOURCE_CANDIDATES_JSON)?;
+        let semantic_review = vendor_status_payload_source_semantic_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-candidates.json",
+            ),
+            &payload_source_candidates,
+        )?;
+        let summary = sample_passive_sniff_summary_with_event_correlated_0x8e_variation(100_492);
+
+        let receipt = vendor_status_timing_correlation_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
+            ),
+            &semantic_review,
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json"),
+            &summary,
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"),
+            &complete_0x8e_timing_operator_notes_near_samples(),
+        )?;
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/moza-vendor-status-timing-correlation-review.schema.json"
+        ))?;
+        let validator = Validator::new(&schema)?;
+        let errors: Vec<_> = validator.iter_errors(&receipt).collect();
+        assert!(errors.is_empty(), "schema errors: {errors:?}");
+
+        assert_eq!(
+            json_bool(&receipt, "operator_event_marker_timestamps_complete"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&receipt, "operator_event_marker_correlation_observed"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(
+                &receipt,
+                "same_tuple_payload_variation_with_event_markers_observed"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&receipt, "timing_correlation_candidate_observed"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&receipt, "timing_correlation_proven"),
+            Some(false)
+        );
+        assert_eq!(
+            json_string(&receipt, "timing_correlation_verdict"),
+            Some("candidate_payload_variation_correlated_to_operator_events")
+        );
+        assert_eq!(
+            json_bool(&receipt, "live_read_only_probe_allowed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "authorization_plan_allowed"),
+            Some(false)
+        );
+        assert_eq!(json_bool(&receipt, "motion_attempt_allowed"), Some(false));
+        assert_eq!(json_bool(&receipt, "output_was_sent"), Some(false));
+        assert_eq!(
+            json_bool(&receipt, "wheel_moved_under_openracing"),
+            Some(false)
+        );
+        let first_tuple = receipt
+            .pointer("/target_tuple_reviews/0")
+            .ok_or("missing first target tuple review")?;
+        assert_eq!(
+            json_bool(first_tuple, "operator_event_marker_correlation_observed"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(
+                first_tuple,
+                "same_tuple_payload_variation_with_event_markers_observed"
+            ),
+            Some(true)
+        );
+        assert_eq!(json_u64(first_tuple, "correlated_sample_count"), Some(2));
+        assert!(json_contains_string(
+            first_tuple,
+            "ks_top_left_front_led_changed_to_red_utc"
+        ));
+
+        Ok(())
+    }
+
+    #[test]
     fn vendor_status_timing_correlation_review_rejects_output_summary() -> TestResult {
         let payload_source_candidates: Value =
             serde_json::from_str(MOZA_VENDOR_STATUS_PAYLOAD_SOURCE_CANDIDATES_JSON)?;
@@ -52521,12 +52771,116 @@ mod tests {
         summary
     }
 
+    fn sample_passive_sniff_summary_with_event_correlated_0x8e_variation(
+        matched_packets: u64,
+    ) -> Value {
+        let mut summary = sample_passive_sniff_summary(matched_packets);
+        let first_frame =
+            sample_vendor_status_frame_hex(0x8E, 0x21, 0x00, &[0x01, 0x91, 0x00, 0x00, 0x26, 0x24]);
+        let second_frame =
+            sample_vendor_status_frame_hex(0x8E, 0x21, 0x00, &[0x02, 0x91, 0x00, 0x00, 0x26, 0x24]);
+        if let Some(reports) = summary
+            .get_mut("observed_reports")
+            .and_then(Value::as_array_mut)
+        {
+            reports.push(serde_json::json!({
+                "direction": "device_to_host",
+                "report_id": "0x7E",
+                "classification": {
+                    "category": "input_or_status_report",
+                    "native_control_evidence": false
+                },
+                "count": 2,
+                "payload_sample_count": 2,
+                "payload_hex_samples": [
+                    first_frame.clone(),
+                    second_frame.clone()
+                ],
+                "payload_samples": [
+                    {
+                        "sample_index": 1,
+                        "packet_ordinal": 10,
+                        "frame_number": 42,
+                        "frame_time_epoch": "1770000100.125000000",
+                        "frame_time": "February 2, 2026 02:41:40.125000000 UTC",
+                        "payload_sha256": sha256_hex(&[0x7E, 0x07, 0x8E, 0x21, 0x00, 0x01, 0x91, 0x00, 0x00, 0x26, 0x24, serial_checksum(&[0x7E, 0x07, 0x8E, 0x21, 0x00, 0x01, 0x91, 0x00, 0x00, 0x26, 0x24])]),
+                        "payload_hex": first_frame.clone(),
+                        "hardware_output_authorized": false,
+                        "output_sendability_claim": false
+                    },
+                    {
+                        "sample_index": 2,
+                        "packet_ordinal": 11,
+                        "frame_number": 43,
+                        "frame_time_epoch": "1770000102.250000000",
+                        "frame_time": "February 2, 2026 02:41:42.250000000 UTC",
+                        "payload_sha256": sha256_hex(&[0x7E, 0x07, 0x8E, 0x21, 0x00, 0x02, 0x91, 0x00, 0x00, 0x26, 0x24, serial_checksum(&[0x7E, 0x07, 0x8E, 0x21, 0x00, 0x02, 0x91, 0x00, 0x00, 0x26, 0x24])]),
+                        "payload_hex": second_frame.clone(),
+                        "hardware_output_authorized": false,
+                        "output_sendability_claim": false
+                    }
+                ]
+            }));
+        }
+        summary
+    }
+
+    fn sample_vendor_status_frame_hex(
+        group: u8,
+        device_id: u8,
+        command: u8,
+        payload: &[u8],
+    ) -> String {
+        let declared_len = (payload.len() + 1) as u8;
+        let mut bytes = vec![MESSAGE_START, declared_len, group, device_id, command];
+        bytes.extend_from_slice(payload);
+        let checksum = serial_checksum(&bytes);
+        bytes.push(checksum);
+        bytes
+            .iter()
+            .map(|byte| format!("{byte:02X}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
     fn complete_0x8e_timing_operator_notes() -> String {
         vendor_status_timing_correlation_required_markers()
             .iter()
             .map(|marker| format!("- {marker}: 2026-05-29T12:00:00Z"))
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    fn complete_0x8e_timing_operator_notes_near_samples() -> String {
+        [
+            ("capture_start_utc", "2026-02-02T02:41:30Z"),
+            (
+                "hardware_doctor_selector_reviewed_utc",
+                "2026-02-02T02:41:31Z",
+            ),
+            ("pit_house_opened_utc", "2026-02-02T02:41:32Z"),
+            ("r5_recognized_in_pit_house_utc", "2026-02-02T02:41:34Z"),
+            ("idle_stable_before_change_utc", "2026-02-02T02:41:38Z"),
+            (
+                "ks_top_left_front_led_default_teal_observed_utc",
+                "2026-02-02T02:41:40Z",
+            ),
+            (
+                "ks_top_left_front_led_changed_to_red_utc",
+                "2026-02-02T02:41:42Z",
+            ),
+            (
+                "ks_top_left_front_led_restored_to_default_teal_utc",
+                "2026-02-02T02:41:44Z",
+            ),
+            ("idle_stable_after_restore_utc", "2026-02-02T02:41:46Z"),
+            ("pit_house_closed_utc", "2026-02-02T02:41:48Z"),
+            ("capture_stop_utc", "2026-02-02T02:41:50Z"),
+        ]
+        .into_iter()
+        .map(|(marker, timestamp)| format!("- {marker}: {timestamp}"))
+        .collect::<Vec<_>>()
+        .join("\n")
     }
 
     fn write_sample_sniff_scenario(

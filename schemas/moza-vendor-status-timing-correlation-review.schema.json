@@ -19,9 +19,16 @@
     "operator_event_markers_required",
     "operator_event_markers_missing",
     "operator_event_marker_notes_complete",
+    "operator_event_marker_timestamps_present",
+    "operator_event_marker_timestamps_missing",
+    "operator_event_marker_timestamps_complete",
+    "event_correlation_window_seconds",
     "summary_has_packet_timestamp_samples",
     "any_target_samples_observed",
     "same_tuple_payload_variation_observed",
+    "operator_event_marker_correlation_observed",
+    "same_tuple_payload_variation_with_event_markers_observed",
+    "timing_correlation_candidate_observed",
     "timing_correlation_proven",
     "timing_correlation_verdict",
     "payload_bearing_authority_state_source_found",
@@ -78,6 +85,11 @@
           "summary_observed_payload_hex_values",
           "same_tuple_payload_variation_observed",
           "operator_event_marker_correlation_observed",
+          "same_tuple_payload_variation_with_event_markers_observed",
+          "correlated_sample_count",
+          "correlated_operator_event_markers",
+          "correlated_payload_hex_values",
+          "correlated_samples",
           "timing_correlation_status",
           "risk_class",
           "semantic_decode_claim",
@@ -103,14 +115,45 @@
           "read_only_probe_allowed": { "const": false },
           "hardware_output_authorized": { "const": false },
           "native_control_evidence": { "const": false },
-          "operator_event_marker_correlation_observed": { "const": false }
+          "operator_event_marker_correlation_observed": { "type": "boolean" },
+          "same_tuple_payload_variation_with_event_markers_observed": {
+            "type": "boolean"
+          },
+          "correlated_sample_count": { "type": "integer", "minimum": 0 },
+          "correlated_operator_event_markers": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "correlated_payload_hex_values": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "correlated_samples": {
+            "type": "array",
+            "items": { "type": "object" }
+          }
         }
       }
     },
     "operator_event_marker_notes_complete": { "type": "boolean" },
+    "operator_event_marker_timestamps_present": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "operator_event_marker_timestamps_missing": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "operator_event_marker_timestamps_complete": { "type": "boolean" },
+    "event_correlation_window_seconds": { "type": "number", "exclusiveMinimum": 0 },
     "summary_has_packet_timestamp_samples": { "type": "boolean" },
     "any_target_samples_observed": { "type": "boolean" },
     "same_tuple_payload_variation_observed": { "type": "boolean" },
+    "operator_event_marker_correlation_observed": { "type": "boolean" },
+    "same_tuple_payload_variation_with_event_markers_observed": {
+      "type": "boolean"
+    },
+    "timing_correlation_candidate_observed": { "type": "boolean" },
     "timing_correlation_proven": { "const": false },
     "payload_bearing_authority_state_source_found": { "const": false },
     "reviewed_equivalent_status_source_found": { "const": false },
