@@ -2332,6 +2332,7 @@ fn moza_native_motion_blocker_command_templates(command_templates: &[Value]) -> 
                 "must_not_run_unrendered_template",
                 "concrete_command_source",
                 "selector_source",
+                "requires_operator_notes",
             ] {
                 if let Some(field) = template.get(key)
                     && let Some(object) = value.as_object_mut()
@@ -30511,9 +30512,23 @@ fn vendor_status_timing_correlation_plan_receipt(
                 "command": "wheelctl hardware sniff-capture --usbpcapcmd '<USBPcapCMD.exe from hardware doctor>' --usbpcap-interface '<USBPcap interface from hardware doctor>' --devices <capture_devices_value> --hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --duration-ms 180000 --out target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --confirm-external-passive-capture --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json"
             },
             {
+                "name": "record_passive_sniff_receipt",
+                "output_enabled": false,
+                "requires_operator_notes": true,
+                "raw_pcapng_commit_default": false,
+                "command": "wheelctl hardware sniff-receipt --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json --pcapng target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --operator Steven --app 'MOZA Pit House' --scenario pit-house-0x8e-timing-correlation --evidence 'Pit House 0x8E timing-correlation passive capture with complete operator event markers; raw pcap local only; OpenRacing sent no HID/output/feature/serial/firmware commands' --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-receipt.json"
+            },
+            {
                 "name": "summarize_passive_capture",
                 "output_enabled": false,
                 "command": "wheelctl hardware sniff-summary --pcapng target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --vendor 0x346E --product 0x0004 --include-payload-samples --max-samples-per-report 32 --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json --md-out target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.md"
+            },
+            {
+                "name": "bundle_passive_sniff_evidence",
+                "output_enabled": false,
+                "requires_operator_notes": true,
+                "raw_pcapng_commit_default": false,
+                "command": "wheelctl hardware sniff-bundle --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json --receipt target/sniff/pit-house-0x8e-timing-correlation/sniff-receipt.json --summary target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json --operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --operator-notes-receipt target/sniff/pit-house-0x8e-timing-correlation/sniff-notes-template-receipt.json --out target/sniff/pit-house-0x8e-timing-correlation/openracing-sniff-bundle.zip --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-bundle-manifest.json"
             },
             {
                 "name": "future_no_output_timing_review",
@@ -30527,6 +30542,7 @@ fn vendor_status_timing_correlation_plan_receipt(
         [
             "pcap matches Moza 0x346E:0x0004 packets for the requested selector",
             "operator notes provide explicit event markers for Pit House open, R5 recognized, LED red change, LED default-teal restore, and Pit House close",
+            "sniff receipt and bundle manifest remain non-claiming and exclude raw pcap by default",
             "summary exposes packet timestamps and payload samples for 0x8E device-to-host frames",
             "review can decide whether any 0x8E tuple varies near the named operator events",
             "review keeps candidates unknown_do_not_send until a separate semantic decode exists"
@@ -30599,8 +30615,10 @@ fn vendor_status_timing_correlation_plan_receipt(
                 .to_string(),
             "target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng".to_string(),
             "target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json".to_string(),
+            "target/sniff/pit-house-0x8e-timing-correlation/sniff-receipt.json".to_string(),
             "target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json".to_string(),
             "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md".to_string(),
+            "target/sniff/pit-house-0x8e-timing-correlation/sniff-bundle-manifest.json".to_string(),
             "future no-output timing-correlation review receipt".to_string()
         ]
     );
@@ -50200,6 +50218,26 @@ mod tests {
                     })
                     == Some(true)
         }));
+        assert!(capture_command_templates.iter().any(|template| {
+            json_string(template, "name") == Some("record_passive_sniff_receipt")
+                && json_bool(template, "output_enabled") == Some(false)
+                && json_bool(template, "requires_operator_notes") == Some(true)
+                && json_bool(template, "raw_pcapng_commit_default") == Some(false)
+                && json_string(template, "command").map(|command| {
+                    command.contains("wheelctl hardware sniff-receipt")
+                        && command.contains("sniff-receipt.json")
+                }) == Some(true)
+        }));
+        assert!(capture_command_templates.iter().any(|template| {
+            json_string(template, "name") == Some("bundle_passive_sniff_evidence")
+                && json_bool(template, "output_enabled") == Some(false)
+                && json_bool(template, "requires_operator_notes") == Some(true)
+                && json_bool(template, "raw_pcapng_commit_default") == Some(false)
+                && json_string(template, "command").map(|command| {
+                    command.contains("wheelctl hardware sniff-bundle")
+                        && command.contains("sniff-bundle-manifest.json")
+                }) == Some(true)
+        }));
         assert!(json_contains_string(
             &receipt,
             "ks_top_left_front_led_changed_to_red_utc"
@@ -56697,7 +56735,9 @@ mod tests {
                 "refresh_observe_only_hardware_doctor",
                 "render_checked_in_operator_notes_template",
                 "run_bounded_passive_usbpcap_capture",
+                "record_passive_sniff_receipt",
                 "summarize_passive_capture",
+                "bundle_passive_sniff_evidence",
                 "future_no_output_timing_review"
             ]
         );
@@ -56738,6 +56778,38 @@ mod tests {
                     })
             }),
             "0x8E timing-correlation capture command should use fresh selector verification: {commands:?}"
+        );
+        assert!(
+            commands.iter().any(|command| {
+                json_string(command, "name") == Some("record_passive_sniff_receipt")
+                    && json_bool(command, "output_enabled") == Some(false)
+                    && json_bool(command, "requires_operator_notes") == Some(true)
+                    && json_bool(command, "raw_pcapng_commit_default") == Some(false)
+                    && json_string(command, "command").is_some_and(|text| {
+                        text.contains("wheelctl hardware sniff-receipt")
+                            && text.contains("--scenario pit-house-0x8e-timing-correlation")
+                            && text.contains("sniff-receipt.json")
+                            && text.contains(
+                                "OpenRacing sent no HID/output/feature/serial/firmware commands",
+                            )
+                    })
+            }),
+            "0x8E timing-correlation handoff should include the non-claiming sniff receipt command: {commands:?}"
+        );
+        assert!(
+            commands.iter().any(|command| {
+                json_string(command, "name") == Some("bundle_passive_sniff_evidence")
+                    && json_bool(command, "output_enabled") == Some(false)
+                    && json_bool(command, "requires_operator_notes") == Some(true)
+                    && json_bool(command, "raw_pcapng_commit_default") == Some(false)
+                    && json_string(command, "command").is_some_and(|text| {
+                        text.contains("wheelctl hardware sniff-bundle")
+                            && text.contains("--operator-notes-receipt")
+                            && text.contains("sniff-notes-template-receipt.json")
+                            && text.contains("sniff-bundle-manifest.json")
+                    })
+            }),
+            "0x8E timing-correlation handoff should include the non-claiming bundle command: {commands:?}"
         );
         assert!(
             commands.iter().any(|command| {

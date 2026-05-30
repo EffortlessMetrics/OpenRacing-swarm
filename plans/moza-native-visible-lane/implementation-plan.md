@@ -9196,6 +9196,98 @@ item. Do not remove the timing-correlation plan, marker helper, strict
 event-marker validation, movement blocker audit, status probe receipts, demux
 evidence, endpoint diagnoses, or native-visible promotion block.
 
+## Work item: surface-0x8e-postcapture-receipts
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: incomplete post-capture artifact handoff for the passive 0x8E timing
+capture
+Blocked by: staged 0x8E timing-correlation capture plan
+
+### Goal
+
+Make the next passive 0x8E operator capture reviewable end-to-end. The staged
+handoff already routes to fresh hardware doctor, selector-bound notes, passive
+capture, summary, and timing review. It should also surface the non-claiming
+`sniff-receipt` and `sniff-bundle` commands required before treating the capture
+as lane evidence, while keeping raw pcap local by default.
+
+### Production delta
+
+`wheelctl moza vendor-status-timing-correlation-plan` now includes two
+post-capture command templates:
+
+- `record_passive_sniff_receipt`, which records the passive capture receipt
+  with `raw_pcapng_commit_default=false` and no OpenRacing output claim;
+- `bundle_passive_sniff_evidence`, which builds the local evidence bundle and
+  manifest from the plan, receipt, summary, operator notes, and notes-template
+  receipt without including the raw pcap by default.
+
+The checked-in timing-correlation plan and movement-blocker audit are
+regenerated so bench-wizard and artifact-index navigation inherit the complete
+post-capture path. The state remains blocked on timing-correlated payload
+evidence.
+
+### Non-goals
+
+No live hardware access, HID open, serial open, read-only query send, live
+capture, raw pcap commit, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, output claim, or wheel movement.
+
+### Acceptance
+
+- The 0x8E capture plan surfaces `record_passive_sniff_receipt`.
+- The 0x8E capture plan surfaces `bundle_passive_sniff_evidence`.
+- Generated bench-wizard commands parse and keep `output_enabled=false`.
+- Raw pcap remains local-only by default.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain the operating
+  state.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-plan `
+  --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-movement-blocker-audit `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json `
+  --demux-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json `
+  --framing-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json `
+  --extended-scan-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json `
+  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json `
+  --payload-rerun-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --timing-correlation-plan ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --timing-correlation-review ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json `
+  --overwrite
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_plan -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the post-capture receipt and bundle command templates, focused test
+assertions, regenerated plan/audit receipts, and this source-of-truth work item.
+Do not remove the timing-correlation plan, marker helper, strict event-marker
+validation, movement blocker audit, status probe receipts, demux evidence,
+endpoint diagnoses, or native-visible promotion block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
