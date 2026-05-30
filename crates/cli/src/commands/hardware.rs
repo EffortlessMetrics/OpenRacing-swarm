@@ -304,7 +304,8 @@ async fn sniff_notes_template(
 ) -> Result<()> {
     let stored_plan = read_and_validate_sniff_plan(plan)?;
     let capture_hints = sniff_notes_capture_hints_from_hardware_doctor(hardware_doctor)?;
-    let template = render_sniff_operator_notes_template(plan, &stored_plan, capture_hints.as_ref());
+    let template =
+        render_sniff_operator_notes_template(plan, &stored_plan, capture_hints.as_ref(), Some(out));
     write_text_file(out, &template)?;
     let receipt = HardwareSniffNotesTemplateReceipt {
         schema_version: 1,
@@ -2835,6 +2836,7 @@ fn render_sniff_operator_notes_template(
     plan_path: &Path,
     plan: &StoredHardwareSniffPlan,
     capture_hints: Option<&HardwareSniffNotesCaptureHints>,
+    operator_notes_path: Option<&Path>,
 ) -> String {
     let mut out = String::new();
     out.push_str("# Passive USB Sniff Operator Notes\n\n");
@@ -2849,6 +2851,13 @@ fn render_sniff_operator_notes_template(
     out.push_str("## Required Notes\n\n");
     for field in &plan.operator_notes_required {
         out.push_str(&format!("- [ ] {field}:\n"));
+    }
+
+    if plan.scenario == "pit-house-0x8e-timing-correlation" {
+        out.push_str(&render_0x8e_event_marker_timestamp_helper(
+            plan,
+            operator_notes_path,
+        ));
     }
 
     if let Some(capture_hints) = capture_hints {
@@ -2947,6 +2956,50 @@ fn render_sniff_operator_notes_template(
     out.push_str("- [ ] OpenRacing sent no output, feature, serial, firmware, or DFU commands.\n");
     out.push_str("- [ ] This note does not claim native response, native visible, smoke, or release readiness.\n");
     out
+}
+
+fn render_0x8e_event_marker_timestamp_helper(
+    plan: &StoredHardwareSniffPlan,
+    operator_notes_path: Option<&Path>,
+) -> String {
+    let notes_path = operator_notes_path
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| sniff_notes_local_operator_notes_path(plan));
+    let mut out = String::new();
+    out.push_str("\n## 0x8E Event Marker Timestamp Helper\n\n");
+    out.push_str(
+        "Use these commands while the passive capture is running to stamp UTC event markers into this notes file. They only edit `operator-notes.md`; they do not open HID or serial devices and do not send OpenRacing hardware commands.\n\n",
+    );
+    out.push_str("```powershell\n");
+    out.push_str(&format!(
+        "$notes = {}\n",
+        powershell_double_quoted_arg(&notes_path)
+    ));
+    out.push_str(
+        "function Set-OpenRacingMarker {\n\
+  param([Parameter(Mandatory=$true)][string]$Name)\n\
+  $timestamp = (Get-Date).ToUniversalTime().ToString(\"o\")\n\
+  $content = Get-Content -LiteralPath $notes -Raw\n\
+  $pattern = '(?m)^- \\[ \\] ' + [regex]::Escape($Name) + ':\\s*$'\n\
+  $replacement = '- [x] ' + $Name + ': ' + $timestamp\n\
+  if ($content -notmatch $pattern) { throw \"marker field not found or already set: $Name\" }\n\
+  Set-Content -LiteralPath $notes -Value ([regex]::Replace($content, $pattern, $replacement, 1)) -NoNewline\n\
+}\n\n",
+    );
+    out.push_str(
+        "# After reviewing the fresh hardware doctor selector and before starting capture:\n",
+    );
+    out.push_str("Set-OpenRacingMarker \"hardware_doctor_selector_reviewed_utc\"\n\n");
+    out.push_str("# Run each marker when the named event happens:\n");
+    for marker in PIT_HOUSE_0X8E_TIMING_EVENT_ORDER {
+        out.push_str(&format!("Set-OpenRacingMarker \"{marker}\"\n"));
+    }
+    out.push_str("```\n");
+    out
+}
+
+fn sniff_notes_local_operator_notes_path(plan: &StoredHardwareSniffPlan) -> String {
+    format!("target\\sniff\\{}\\operator-notes.md", plan.scenario)
 }
 
 fn render_sniff_summary_markdown(summary: &HardwareSniffSummaryArtifact) -> String {
@@ -9291,7 +9344,7 @@ mod tests {
             let plan_path = dir.path().join("sniff-plan.json");
             write_json_file(&plan_path, &plan)?;
             let stored = read_and_validate_sniff_plan(&plan_path)?;
-            let notes = render_sniff_operator_notes_template(&plan_path, &stored, None);
+            let notes = render_sniff_operator_notes_template(&plan_path, &stored, None, None);
 
             for field in PIT_HOUSE_SETTING_CHANGE_OPERATOR_NOTES_REQUIRED {
                 assert!(
@@ -9316,7 +9369,7 @@ mod tests {
             let plan_path = dir.path().join("sniff-plan.json");
             write_json_file(&plan_path, &plan)?;
             let stored = read_and_validate_sniff_plan(&plan_path)?;
-            let notes = render_sniff_operator_notes_template(&plan_path, &stored, None);
+            let notes = render_sniff_operator_notes_template(&plan_path, &stored, None, None);
 
             assert!(
                 plan.pre_capture_checklist.iter().any(|item| {
@@ -9356,7 +9409,7 @@ mod tests {
             let plan_path = dir.path().join("sniff-plan.json");
             write_json_file(&plan_path, &plan)?;
             let stored = read_and_validate_sniff_plan(&plan_path)?;
-            let notes = render_sniff_operator_notes_template(&plan_path, &stored, None);
+            let notes = render_sniff_operator_notes_template(&plan_path, &stored, None, None);
 
             assert!(plan.pre_capture_checklist.iter().any(|item| {
                 item == "refresh hardware doctor immediately before capture and use its current USBPcap Moza selector hint"
@@ -9377,6 +9430,16 @@ mod tests {
                 assert!(
                     notes.contains(&format!("- [ ] {field}:")),
                     "operator notes template missing 0x8E timing field: {field}"
+                );
+            }
+            assert!(notes.contains("## 0x8E Event Marker Timestamp Helper"));
+            assert!(
+                notes.contains("Set-OpenRacingMarker \"hardware_doctor_selector_reviewed_utc\"")
+            );
+            for marker in PIT_HOUSE_0X8E_TIMING_EVENT_ORDER {
+                assert!(
+                    notes.contains(&format!("Set-OpenRacingMarker \"{marker}\"")),
+                    "operator notes template missing marker helper command: {marker}"
                 );
             }
             assert_schema_valid("sniff-plan.schema.json", &serde_json::to_value(&plan)?)?;
@@ -9461,7 +9524,7 @@ mod tests {
             let dir = tempfile::tempdir()?;
             let plan_path = write_sample_plan(dir.path())?;
             let plan = read_and_validate_sniff_plan(&plan_path)?;
-            let notes = render_sniff_operator_notes_template(&plan_path, &plan, None);
+            let notes = render_sniff_operator_notes_template(&plan_path, &plan, None, None);
 
             assert!(notes.contains("# Passive USB Sniff Operator Notes"));
             assert!(notes.contains("- [ ] scenario performed:"));
@@ -9521,7 +9584,7 @@ mod tests {
             let capture_hints = sniff_notes_capture_hints_from_hardware_doctor(Some(&doctor_path))?
                 .ok_or("expected capture hints")?;
             let notes =
-                render_sniff_operator_notes_template(&plan_path, &plan, Some(&capture_hints));
+                render_sniff_operator_notes_template(&plan_path, &plan, Some(&capture_hints), None);
 
             assert!(capture_hints.receipt_flags.all_no_output_flags_true());
             assert_eq!(
@@ -9591,7 +9654,7 @@ mod tests {
             let capture_hints = sniff_notes_capture_hints_from_hardware_doctor(Some(&doctor_path))?
                 .ok_or("expected capture hints")?;
             let notes =
-                render_sniff_operator_notes_template(&plan_path, &plan, Some(&capture_hints));
+                render_sniff_operator_notes_template(&plan_path, &plan, Some(&capture_hints), None);
 
             assert!(
                 notes.contains("target\\sniff\\pit-house-0x8e-timing-correlation\\capture.pcapng")
@@ -9600,6 +9663,12 @@ mod tests {
             assert!(notes.contains("--devices 4"));
             assert!(notes.contains("--hardware-doctor"));
             assert!(notes.contains("do not reuse stale USBPcap --devices values"));
+            assert!(notes.contains(
+                "$notes = \"target\\sniff\\pit-house-0x8e-timing-correlation\\operator-notes.md\""
+            ));
+            assert!(
+                notes.contains("Set-OpenRacingMarker \"ks_top_left_front_led_changed_to_red_utc\"")
+            );
             Ok(())
         }
 
@@ -9636,6 +9705,35 @@ mod tests {
             assert_eq!(
                 value.get("scenario").and_then(serde_json::Value::as_str),
                 Some("pit-house-setting-change")
+            );
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn sniff_notes_template_uses_requested_output_path_for_0x8e_marker_helper()
+        -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let plan = sample_plan_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseZeroX8eTimingCorrelation,
+            )?;
+            let plan_path = dir.path().join("sniff-plan.json");
+            write_json_file(&plan_path, &plan)?;
+            let notes_path = dir.path().join("operator-notes.md");
+
+            sniff_notes_template(false, &plan_path, None, &notes_path, None).await?;
+
+            let notes = fs::read_to_string(&notes_path)?;
+            assert!(notes.contains(&format!(
+                "$notes = {}",
+                powershell_double_quoted_arg(&notes_path.display().to_string())
+            )));
+            assert!(notes.contains(
+                "They only edit `operator-notes.md`; they do not open HID or serial devices"
+            ));
+            assert!(
+                notes.contains("Set-OpenRacingMarker \"capture_start_utc\"")
+                    && notes.contains("Set-OpenRacingMarker \"capture_stop_utc\"")
             );
             Ok(())
         }
