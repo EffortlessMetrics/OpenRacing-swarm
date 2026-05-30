@@ -10186,6 +10186,84 @@ focused test, and this source-of-truth work item. Do not remove the valid
 materialized capture command consumption, timing-correlation plan/review
 artifacts, movement-blocker audit, or native-visible promotion block.
 
+## Work item: surface-status-probe-diagnosis-in-native-motion-status
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: stale operator focus on the original zero-response read-only probe
+Blocked by: completed vendor-status movement-blocker audit
+
+### Goal
+
+Make `wheelctl moza bench-wizard` show the current native-motion diagnosis at
+the top-level `native_motion_status`, not just the historical zero-response
+probe result.
+
+### Production delta
+
+Bench-wizard now surfaces the stored movement-blocker audit fields that explain
+why the first read-only probe no longer defines the active blocker:
+
+- `zero_response_original_probe_diagnosed=true`
+- `broad_serial_transport_blocker_ruled_out=true`
+- `authority_status_endpoint_or_command_mismatch=true`
+- `timing_correlated_payload_source_missing=true`
+- `corrected_read_only_probe_ready=false`
+- `fresh_command_bound_bench_clear_present=false`
+
+The rendered native-motion Markdown now also names the read-only rerun blocker
+and motion blocker before the exact next action. That keeps the shortest path
+pointed at the passive 0x8E timing-correlation evidence and prevents treating a
+clean hardware doctor as permission for a live read-only rerun or motion.
+
+This work item does not run a live read-only probe, capture, authorization, or
+motion attempt. It only makes the current no-output diagnosis visible at the
+operator navigation layer.
+
+### Non-goals
+
+No live capture, raw pcap commit, HID open, serial open, read-only query send,
+PIDFF output, feature report, configuration write, firmware/update/DFU path,
+high torque, mode-enable write, authority write, authorization receipt,
+semantic decode claim, registry promotion, tuple sendability, corrected
+read-only probe readiness, native-control claim, native-visible claim,
+smoke-ready claim, simulator claim, coexistence claim, release-ready claim,
+output claim, or wheel movement.
+
+### Acceptance
+
+- Native-motion status states that the original zero-response read-only probe is
+  diagnosed.
+- Native-motion status preserves the active blocker as missing
+  timing-correlated payload-bearing 0x8E authority/mode status-source evidence.
+- Native-motion status keeps read-only rerun, authorization, motion, output, and
+  bench-clear gates false.
+- The rendered wizard Markdown names the read-only rerun blocker and motion
+  blocker alongside the next concrete action.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the native-motion status field surfacing, focused assertions, and
+this source-of-truth work item. Do not remove the movement-blocker audit,
+timing-correlation plan/review artifacts, materialized capture command
+consumption, or native-visible promotion block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

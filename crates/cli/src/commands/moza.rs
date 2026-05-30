@@ -2198,6 +2198,11 @@ fn moza_bench_wizard_native_motion_status(readiness: &Value, next_operator_step:
                 "continue no-output diagnosis before any motion attempt"
             }
         });
+    let reason_read_only_rerun_not_allowed =
+        json_string(next_operator_step, "reason_read_only_rerun_not_allowed")
+            .unwrap_or("read-only rerun remains blocked");
+    let reason_motion_not_allowed = json_string(next_operator_step, "reason_motion_not_allowed")
+        .unwrap_or("motion remains blocked");
 
     serde_json::json!({
         "wheel_moved_under_openracing": wheel_moved_under_openracing,
@@ -2211,6 +2216,33 @@ fn moza_bench_wizard_native_motion_status(readiness: &Value, next_operator_step:
         "hardware_output_allowed_now": json_bool(next_operator_step, "hardware_output_allowed_now").unwrap_or(false),
         "exact_blocker": exact_blocker,
         "next_action": next_action,
+        "reason_read_only_rerun_not_allowed": reason_read_only_rerun_not_allowed,
+        "reason_motion_not_allowed": reason_motion_not_allowed,
+        "zero_response_original_probe_diagnosed": json_bool(next_operator_step, "zero_response_original_probe_diagnosed").unwrap_or(false),
+        "broad_serial_transport_blocker_ruled_out": json_bool(next_operator_step, "broad_serial_transport_blocker_ruled_out").unwrap_or(false),
+        "serial_response_framing_primary_blocker": json_bool(next_operator_step, "serial_response_framing_primary_blocker").unwrap_or(false),
+        "line_setting_or_ownership_primary_blocker": json_bool(next_operator_step, "line_setting_or_ownership_primary_blocker").unwrap_or(false),
+        "scan_window_depth_primary_blocker": json_bool(next_operator_step, "scan_window_depth_primary_blocker").unwrap_or(false),
+        "authority_status_endpoint_or_command_mismatch": json_bool(next_operator_step, "authority_status_endpoint_or_command_mismatch").unwrap_or(false),
+        "timing_correlated_payload_source_missing": json_bool(next_operator_step, "timing_correlated_payload_source_missing").unwrap_or(false),
+        "timing_source_same_tuple_payload_variation_observed": json_bool(next_operator_step, "timing_source_same_tuple_payload_variation_observed").unwrap_or(false),
+        "timing_source_event_marker_notes_complete": json_bool(next_operator_step, "timing_source_event_marker_notes_complete").unwrap_or(false),
+        "timing_source_event_marker_timestamps_complete": json_bool(next_operator_step, "timing_source_event_marker_timestamps_complete").unwrap_or(false),
+        "corrected_read_only_probe_ready": json_bool(next_operator_step, "corrected_read_only_probe_ready").unwrap_or(false),
+        "fresh_command_bound_bench_clear_present": json_bool(next_operator_step, "fresh_command_bound_bench_clear_present").unwrap_or(false),
+        "unknown_safety_or_mode_state_blocks_authority": json_bool(next_operator_step, "unknown_safety_or_mode_state_blocks_authority").unwrap_or(true),
+        "failure_mode_classification": next_operator_step
+            .get("failure_mode_classification")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "demux_follow_up": next_operator_step
+            .get("demux_follow_up")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "original_status_probe": next_operator_step
+            .get("original_status_probe")
+            .cloned()
+            .unwrap_or(Value::Null),
         "source_audit": json_string(next_operator_step, "source_audit"),
         "source_reason": json_string(next_operator_step, "source_reason").unwrap_or("bench_wizard_next_operator_step"),
         "notes": [
@@ -2402,6 +2434,15 @@ fn moza_native_motion_blocker_next_operator_step(
             .unwrap_or("read-only rerun remains blocked until a corrected status source exists");
     let reason_motion_not_allowed = json_string(&audit, "reason_motion_not_allowed")
         .unwrap_or("motion remains blocked until authority/mode status evidence is reviewed");
+    let failure_mode_classification = audit
+        .get("failure_mode_classification")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let demux_follow_up = audit.get("demux_follow_up").cloned().unwrap_or(Value::Null);
+    let original_status_probe = audit
+        .get("original_status_probe")
+        .cloned()
+        .unwrap_or(Value::Null);
     let external_capture_checklist = serde_json::json!({
         "owner": "operator_external_capture_tool",
         "scenario": scenario,
@@ -2440,7 +2481,7 @@ fn moza_native_motion_blocker_next_operator_step(
         ]
     });
 
-    Some(serde_json::json!({
+    let mut step = serde_json::json!({
         "kind": "capture_0x8e_timing_correlation",
         "summary": exact_next_blocker,
         "scenario": scenario,
@@ -2485,7 +2526,36 @@ fn moza_native_motion_blocker_next_operator_step(
             "Raw pcap remains local by default; only derived summaries and reviews may become lane evidence after validation.",
             "Native visible motion remains blocked until a reviewed timing-correlated status source exists and a separate plan authorizes any later step."
         ]
-    }))
+    });
+    if let Some(object) = step.as_object_mut() {
+        for (field, default_value) in [
+            ("zero_response_original_probe_diagnosed", false),
+            ("broad_serial_transport_blocker_ruled_out", false),
+            ("serial_response_framing_primary_blocker", false),
+            ("line_setting_or_ownership_primary_blocker", false),
+            ("scan_window_depth_primary_blocker", false),
+            ("authority_status_endpoint_or_command_mismatch", false),
+            ("timing_correlated_payload_source_missing", false),
+            ("timing_source_same_tuple_payload_variation_observed", false),
+            ("timing_source_event_marker_notes_complete", false),
+            ("timing_source_event_marker_timestamps_complete", false),
+            ("corrected_read_only_probe_ready", false),
+            ("fresh_command_bound_bench_clear_present", false),
+            ("unknown_safety_or_mode_state_blocks_authority", true),
+        ] {
+            object.insert(
+                field.to_string(),
+                serde_json::json!(json_bool(&audit, field).unwrap_or(default_value)),
+            );
+        }
+        object.insert(
+            "failure_mode_classification".to_string(),
+            failure_mode_classification,
+        );
+        object.insert("demux_follow_up".to_string(), demux_follow_up);
+        object.insert("original_status_probe".to_string(), original_status_probe);
+    }
+    Some(step)
 }
 
 fn moza_native_motion_blocker_command_templates(command_templates: &[Value]) -> Vec<Value> {
@@ -45885,10 +45955,24 @@ fn push_native_motion_status_markdown(out: &mut String, receipt: &Value) {
     let authority_state = json_string(status, "authority_state").unwrap_or("blocked");
     let motion_allowed = json_bool(status, "motion_attempt_allowed").unwrap_or(false);
     let read_only_allowed = json_bool(status, "live_read_only_probe_allowed").unwrap_or(false);
+    let zero_response_diagnosed =
+        json_bool(status, "zero_response_original_probe_diagnosed").unwrap_or(false);
+    let timing_source_missing =
+        json_bool(status, "timing_correlated_payload_source_missing").unwrap_or(false);
+    let endpoint_mismatch =
+        json_bool(status, "authority_status_endpoint_or_command_mismatch").unwrap_or(false);
+    let corrected_probe_ready =
+        json_bool(status, "corrected_read_only_probe_ready").unwrap_or(false);
+    let fresh_bench_clear =
+        json_bool(status, "fresh_command_bound_bench_clear_present").unwrap_or(false);
     let exact_blocker =
         json_string(status, "exact_blocker").unwrap_or("native visible motion remains blocked");
     let next_action =
         json_string(status, "next_action").unwrap_or("continue no-output diagnosis before motion");
+    let read_only_reason = json_string(status, "reason_read_only_rerun_not_allowed")
+        .unwrap_or("read-only rerun remains blocked");
+    let motion_reason =
+        json_string(status, "reason_motion_not_allowed").unwrap_or("motion remains blocked");
 
     out.push_str("## Native Motion State\n\n");
     out.push_str("This is the current native OpenRacing movement state, not a prerequisite-completion summary.\n\n");
@@ -45904,6 +45988,29 @@ fn push_native_motion_status_markdown(out: &mut String, receipt: &Value) {
     out.push_str(&format!("- motion_attempt_allowed: `{motion_allowed}`\n"));
     out.push_str(&format!(
         "- live_read_only_probe_allowed: `{read_only_allowed}`\n"
+    ));
+    out.push_str(&format!(
+        "- zero_response_original_probe_diagnosed: `{zero_response_diagnosed}`\n"
+    ));
+    out.push_str(&format!(
+        "- authority_status_endpoint_or_command_mismatch: `{endpoint_mismatch}`\n"
+    ));
+    out.push_str(&format!(
+        "- timing_correlated_payload_source_missing: `{timing_source_missing}`\n"
+    ));
+    out.push_str(&format!(
+        "- corrected_read_only_probe_ready: `{corrected_probe_ready}`\n"
+    ));
+    out.push_str(&format!(
+        "- fresh_command_bound_bench_clear_present: `{fresh_bench_clear}`\n"
+    ));
+    out.push_str(&format!(
+        "- Read-only rerun blocker: {}\n",
+        markdown_escape(read_only_reason)
+    ));
+    out.push_str(&format!(
+        "- Motion blocker: {}\n",
+        markdown_escape(motion_reason)
     ));
     out.push_str(&format!(
         "- Exact blocker: {}\n",
@@ -58160,6 +58267,80 @@ mod tests {
             json_string(native_motion_status, "source_audit"),
             Some(VENDOR_STATUS_MOVEMENT_BLOCKER_AUDIT_FILE)
         );
+        assert_eq!(
+            json_bool(
+                native_motion_status,
+                "zero_response_original_probe_diagnosed"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(
+                native_motion_status,
+                "broad_serial_transport_blocker_ruled_out"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(
+                native_motion_status,
+                "serial_response_framing_primary_blocker"
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(
+                native_motion_status,
+                "authority_status_endpoint_or_command_mismatch"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(
+                native_motion_status,
+                "timing_correlated_payload_source_missing"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(native_motion_status, "corrected_read_only_probe_ready"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(
+                native_motion_status,
+                "fresh_command_bound_bench_clear_present"
+            ),
+            Some(false)
+        );
+        assert!(
+            json_string(native_motion_status, "reason_read_only_rerun_not_allowed")
+                .is_some_and(|text| text.contains("No corrected registry-approved read-only"))
+        );
+        assert!(
+            json_string(native_motion_status, "reason_motion_not_allowed")
+                .is_some_and(|text| text.contains("no volatile mode/enable candidate"))
+        );
+        let failure_modes = native_motion_status
+            .get("failure_mode_classification")
+            .and_then(Value::as_array)
+            .ok_or("expected failure mode classification")?;
+        assert!(
+            failure_modes.iter().any(|mode| {
+                json_string(mode, "failure_mode")
+                    == Some("timing_correlated_payload_bearing_status_source_missing")
+                    && json_string(mode, "status") == Some("active_blocker")
+            }),
+            "native motion status should preserve the active timing-correlation blocker: {failure_modes:?}"
+        );
+        assert!(
+            native_motion_status
+                .get("demux_follow_up")
+                .and_then(|value| value.get("decoded_response_count"))
+                .and_then(Value::as_u64)
+                .is_some_and(|count| count > 0),
+            "native motion status should preserve demux evidence that broad serial decoding works: {native_motion_status}"
+        );
         let next_concrete_command = wizard_receipt
             .get("next_concrete_command")
             .ok_or("expected top-level next concrete command")?;
@@ -58540,6 +58721,12 @@ mod tests {
         assert!(wizard_markdown.contains("visible_motion_verified: `false`"));
         assert!(wizard_markdown.contains("output_was_sent: `false`"));
         assert!(wizard_markdown.contains("authority_state: `blocked`"));
+        assert!(wizard_markdown.contains("zero_response_original_probe_diagnosed: `true`"));
+        assert!(wizard_markdown.contains("timing_correlated_payload_source_missing: `true`"));
+        assert!(wizard_markdown.contains("corrected_read_only_probe_ready: `false`"));
+        assert!(wizard_markdown.contains("fresh_command_bound_bench_clear_present: `false`"));
+        assert!(wizard_markdown.contains("Read-only rerun blocker:"));
+        assert!(wizard_markdown.contains("Motion blocker:"));
         assert!(wizard_markdown.contains("Next concrete action:"));
         assert!(wizard_markdown.contains("## Next Concrete Command"));
         let next_concrete_section = wizard_markdown
