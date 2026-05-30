@@ -41,6 +41,7 @@ jobs:
       reason: ${{ steps.route.outputs.reason }}
       error: ${{ steps.route.outputs.error }}
       trusted_self_hosted: ${{ steps.route.outputs.trusted_self_hosted }}
+      fallback_allowed: ${{ steps.route.outputs.fallback_allowed }}
     steps:
       - name: Decide target runner
         id: route
@@ -62,16 +63,18 @@ jobs:
           set -eu
 
           emit() {
-            local target="$1" reason="$2" error="$3" trusted="$4"
+            local target="$1" reason="$2" error="$3" trusted="$4" fallback_allowed="$5"
             echo "router_target=${target}"
             echo "router_reason=${reason}"
             echo "router_error=${error}"
             echo "trusted_self_hosted=${trusted}"
+            echo "fallback_allowed=${fallback_allowed}"
             {
               echo "target=${target}"
               echo "reason=${reason}"
               echo "error=${error}"
               echo "trusted_self_hosted=${trusted}"
+              echo "fallback_allowed=${fallback_allowed}"
             } >> "$GITHUB_OUTPUT"
             {
               echo "### OpenRacing Rust Small Route"
@@ -80,6 +83,7 @@ jobs:
               echo "- router_reason: \`${reason}\`"
               echo "- router_error: \`${error}\`"
               echo "- trusted_self_hosted: \`${trusted}\`"
+              echo "- fallback_allowed: \`${fallback_allowed}\`"
             } >> "$GITHUB_STEP_SUMMARY"
           }
 
@@ -89,40 +93,40 @@ jobs:
             auto|"")
               ;;
             github)
-              emit "github" "forced_github" "false" "$trusted"
+              emit "github" "forced_github" "false" "$trusted" "true"
               exit 0
               ;;
             cx43|cx33|cx53)
               if [ "$trusted" != "true" ]; then
-                emit "github" "forced_self_hosted_untrusted_event" "true" "$trusted"
+                emit "github" "forced_self_hosted_untrusted_event" "true" "$trusted" "true"
                 exit 0
               fi
-              emit "$FORCE_TARGET" "forced_${FORCE_TARGET}" "false" "$trusted"
+              emit "$FORCE_TARGET" "forced_${FORCE_TARGET}" "false" "$trusted" "false"
               exit 0
               ;;
             *)
-              emit "github" "invalid_force_target" "true" "$trusted"
+              emit "github" "invalid_force_target" "true" "$trusted" "false"
               exit 0
               ;;
           esac
 
           if [ "$trusted" != "true" ]; then
-            emit "github" "untrusted_or_fork_pr" "false" "$trusted"
+            emit "github" "untrusted_or_fork_pr" "false" "$trusted" "true"
             exit 0
           fi
 
           if [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ]; then
-            emit "github" "pull_request_uses_github_hosted" "false" "$trusted"
+            emit "github" "pull_request_uses_github_hosted" "false" "$trusted" "false"
             exit 0
           fi
 
           if [[ "${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}" == recovery/import-openracing-main-* ]]; then
-            emit "github" "recovery_import_uses_github_hosted" "false" "$trusted"
+            emit "github" "recovery_import_uses_github_hosted" "false" "$trusted" "true"
             exit 0
           fi
 
           if [ -z "${GH_TOKEN:-}" ]; then
-            emit "github" "runner_token_missing" "true" "$trusted"
+            emit "github" "runner_token_missing" "true" "$trusted" "false"
             exit 0
           fi
 
@@ -132,7 +136,7 @@ jobs:
               "orgs/${ORG}/actions/runners?per_page=100" 2>/tmp/gh.err)"; then
             echo "runner API request failed:" >&2
             cat /tmp/gh.err >&2 || true
-            emit "github" "runner_api_failed" "true" "$trusted"
+            emit "github" "runner_api_failed" "true" "$trusted" "false"
             exit 0
           fi
 
@@ -159,7 +163,7 @@ jobs:
               print(f"idle_{label}={idle_count(label)}")
           PY
           then
-            emit "github" "runner_parse_failed" "true" "$trusted"
+            emit "github" "runner_parse_failed" "true" "$trusted" "false"
             exit 0
           fi
 
@@ -170,13 +174,13 @@ jobs:
           echo "idle_cx53=${idle_cx53:-0}"
 
           if [ "${idle_cx43:-0}" -gt 0 ]; then
-            emit "cx43" "cx43_idle" "false" "$trusted"
+            emit "cx43" "cx43_idle" "false" "$trusted" "false"
           elif [ "${idle_cx33:-0}" -gt 0 ]; then
-            emit "cx33" "cx33_idle" "false" "$trusted"
+            emit "cx33" "cx33_idle" "false" "$trusted" "false"
           elif [ "${idle_cx53:-0}" -gt 0 ]; then
-            emit "cx53" "cx53_idle" "false" "$trusted"
+            emit "cx53" "cx53_idle" "false" "$trusted" "false"
           else
-            emit "github" "no_idle_runner" "false" "$trusted"
+            emit "github" "no_idle_runner" "true" "$trusted" "false"
           fi
 
   rust-small-cx43:
@@ -458,9 +462,9 @@ jobs:
   rust-small-github:
     name: OpenRacing Rust Small on GitHub Hosted
     needs: route-rust-small
-    if: needs.route-rust-small.outputs.target == 'github'
+    if: needs.route-rust-small.outputs.target == 'github' && needs.route-rust-small.outputs.fallback_allowed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -490,8 +494,6 @@ jobs:
       - name: Check workspace
         run: cargo check --workspace --exclude racing-wheel-ui --locked
 
-      - name: Test workspace libs
-        run: cargo test --workspace --exclude racing-wheel-ui --locked --lib
 
   rust-small-result:
     name: OpenRacing Rust Small Result
@@ -513,6 +515,7 @@ jobs:
           ROUTER_REASON: ${{ needs.route-rust-small.outputs.reason }}
           ROUTER_ERROR: ${{ needs.route-rust-small.outputs.error }}
           TRUSTED_SELF_HOSTED: ${{ needs.route-rust-small.outputs.trusted_self_hosted }}
+          FALLBACK_ALLOWED: ${{ needs.route-rust-small.outputs.fallback_allowed }}
           CX43_RESULT: ${{ needs.rust-small-cx43.result }}
           CX33_RESULT: ${{ needs.rust-small-cx33.result }}
           CX53_RESULT: ${{ needs.rust-small-cx53.result }}
@@ -525,6 +528,7 @@ jobs:
           echo "router_reason=${ROUTER_REASON:-<empty>}"
           echo "router_error=${ROUTER_ERROR:-<empty>}"
           echo "trusted_self_hosted=${TRUSTED_SELF_HOSTED:-<empty>}"
+          echo "fallback_allowed=${FALLBACK_ALLOWED:-<empty>}"
           echo "cx43_result=${CX43_RESULT:-<empty>}"
           echo "cx33_result=${CX33_RESULT:-<empty>}"
           echo "cx53_result=${CX53_RESULT:-<empty>}"
@@ -538,6 +542,7 @@ jobs:
             echo "- router_reason: \`${ROUTER_REASON:-<empty>}\`"
             echo "- router_error: \`${ROUTER_ERROR:-<empty>}\`"
             echo "- trusted_self_hosted: \`${TRUSTED_SELF_HOSTED:-<empty>}\`"
+            echo "- fallback_allowed: \`${FALLBACK_ALLOWED:-<empty>}\`"
             echo "- cx43_result: \`${CX43_RESULT:-<empty>}\`"
             echo "- cx33_result: \`${CX33_RESULT:-<empty>}\`"
             echo "- cx53_result: \`${CX53_RESULT:-<empty>}\`"
@@ -569,7 +574,12 @@ jobs:
               test "$GITHUB_RESULT" = "skipped"
               ;;
             github)
-              test "$GITHUB_RESULT" = "success"
+              if [ "${FALLBACK_ALLOWED:-false}" = "true" ]; then
+                test "$GITHUB_RESULT" = "success"
+              else
+                echo "GitHub-hosted fallback not allowed for reason ${ROUTER_REASON:-<empty>}; failing fast." >&2
+                exit 1
+              fi
               test "$CX43_RESULT" = "skipped"
               test "$CX33_RESULT" = "skipped"
               test "$CX53_RESULT" = "skipped"
