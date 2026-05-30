@@ -8215,6 +8215,109 @@ timing-correlation handoff, movement-blocker audit, status probe receipts,
 demux evidence, endpoint diagnoses, payload-source reviews, consumed authority
 attempt, or post-authority PIDFF regression evidence.
 
+## Work item: correlate-0x8e-timing-review-events
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: future reviewed read-only/status plan from event-correlated 0x8E evidence
+Blocked by: completed 0x8E timing-correlation review command and sniff-summary packet timestamp samples
+
+### Goal
+
+Make the no-output 0x8E timing review capable of evaluating the next passive
+event-marker capture. The review should not merely preserve packet timestamps;
+it should parse operator event-marker timestamps, compare them to timestamped
+0x8E packet samples, and classify whether same-tuple payload variation occurs
+near named Pit House events.
+
+### Production delta
+
+`wheelctl moza vendor-status-timing-correlation-review` now parses RFC3339
+timestamps from the required operator-note event markers and compares
+timestamped target tuple samples against a bounded event-correlation window.
+The receipt records:
+
+```text
+operator_event_marker_timestamps_complete
+operator_event_marker_correlation_observed
+same_tuple_payload_variation_with_event_markers_observed
+timing_correlation_candidate_observed
+```
+
+Per-tuple reviews also record correlated event markers, correlated payloads,
+and correlated sample counts. A positive candidate still does not authorize
+output; it only routes to a separate reviewed read-only/status plan.
+
+### Non-goals
+
+No live hardware access, HID open, serial open, read-only query send, live
+capture, raw pcap commit, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, or wheel movement.
+
+### Acceptance
+
+- Timestamped 0x8E samples with complete operator event markers can be
+  classified as event-correlated.
+- Same-tuple payload variation near event markers is recorded as candidate
+  timing evidence.
+- Existing static/single-sample checked-in evidence remains insufficient and
+  non-claiming.
+- `timing_correlation_proven=false`,
+  `live_read_only_probe_allowed=false`, `authorization_plan_allowed=false`,
+  `motion_attempt_allowed=false`, `output_was_sent=false`,
+  `wheel_moved_under_openracing=false`, and `authority_state=blocked` remain
+  pinned.
+
+### Proof Commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-review `
+  --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json `
+  --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-summary.json `
+  --operator-notes ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/operator-notes.md `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-movement-blocker-audit `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json `
+  --demux-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json `
+  --framing-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json `
+  --extended-scan-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json `
+  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json `
+  --payload-rerun-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --timing-correlation-plan ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --timing-correlation-review ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza artifact-index `
+  --lane ci/hardware/moza-r5/2026-05-13 `
+  --json-out target/moza-current/artifact-index-0x8e-event-review.json `
+  --md-out ci/hardware/moza-r5/2026-05-13/index.md
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_review -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only event-marker timestamp parsing, event-correlation receipt fields,
+schema requirements, tests, refreshed no-output receipts, and this
+source-of-truth work item. Do not remove the timing-correlation handoff,
+movement-blocker audit, status probe receipts, demux evidence, endpoint
+diagnoses, payload-source reviews, consumed authority attempt, or
+post-authority PIDFF regression evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

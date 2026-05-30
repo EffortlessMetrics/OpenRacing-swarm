@@ -26,8 +26,9 @@
   "device_to_host_serial_frame_checksum_valid_count": 9,
   "device_to_host_serial_frame_count": 9,
   "device_to_host_serial_frame_shape_decode_gap": false,
+  "event_correlation_window_seconds": 5.0,
   "exact_next_blocker": "No reviewed timing-correlation evidence links the 0x8E payload-bearing status-source samples to authority or mode state. Live probe, authorization, PIDFF, force escalation, and motion remain blocked.",
-  "generated_at_utc": "2026-05-29T23:22:16Z",
+  "generated_at_utc": "2026-05-30T04:21:32Z",
   "hardware_output_authorized": false,
   "high_torque_enabled": false,
   "live_read_only_probe_allowed": false,
@@ -44,8 +45,24 @@
     "Native visible motion remains blocked; no wheel movement is claimed."
   ],
   "opened_serial_device": false,
+  "operator_event_marker_correlation_observed": false,
   "operator_event_marker_count": 0,
   "operator_event_marker_notes_complete": false,
+  "operator_event_marker_timestamps_complete": false,
+  "operator_event_marker_timestamps_missing": [
+    "capture_start_utc",
+    "hardware_doctor_selector_reviewed_utc",
+    "pit_house_opened_utc",
+    "r5_recognized_in_pit_house_utc",
+    "idle_stable_before_change_utc",
+    "ks_top_left_front_led_default_teal_observed_utc",
+    "ks_top_left_front_led_changed_to_red_utc",
+    "ks_top_left_front_led_restored_to_default_teal_utc",
+    "idle_stable_after_restore_utc",
+    "pit_house_closed_utc",
+    "capture_stop_utc"
+  ],
+  "operator_event_marker_timestamps_present": [],
   "operator_event_markers_missing": [
     "capture_start_utc",
     "hardware_doctor_selector_reviewed_utc",
@@ -88,6 +105,7 @@
   ],
   "reviewed_equivalent_status_source_found": false,
   "same_tuple_payload_variation_observed": false,
+  "same_tuple_payload_variation_with_event_markers_observed": false,
   "schema_version": 1,
   "semantic_decode_claim": false,
   "semantic_review_receipt": "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
@@ -111,6 +129,10 @@
   ],
   "target_tuple_reviews": [
     {
+      "correlated_operator_event_markers": [],
+      "correlated_payload_hex_values": [],
+      "correlated_sample_count": 0,
+      "correlated_samples": [],
       "hardware_output_authorized": false,
       "native_control_evidence": false,
       "operator_event_marker_correlation_observed": false,
@@ -119,6 +141,7 @@
       "registry_promotion_claim": false,
       "risk_class": "unknown_do_not_send",
       "same_tuple_payload_variation_observed": false,
+      "same_tuple_payload_variation_with_event_markers_observed": false,
       "semantic_decode_claim": false,
       "semantic_review_payload_hex": "019100002624",
       "summary_observed_payload_hex_values": [
@@ -141,6 +164,10 @@
       "tuple_id": "0x8E/0x21/0x00"
     },
     {
+      "correlated_operator_event_markers": [],
+      "correlated_payload_hex_values": [],
+      "correlated_sample_count": 0,
+      "correlated_samples": [],
       "hardware_output_authorized": false,
       "native_control_evidence": false,
       "operator_event_marker_correlation_observed": false,
@@ -149,6 +176,7 @@
       "registry_promotion_claim": false,
       "risk_class": "unknown_do_not_send",
       "same_tuple_payload_variation_observed": false,
+      "same_tuple_payload_variation_with_event_markers_observed": false,
       "semantic_decode_claim": false,
       "semantic_review_payload_hex": "019100002624",
       "summary_observed_payload_hex_values": [
@@ -171,6 +199,10 @@
       "tuple_id": "0x8E/0x31/0x00"
     },
     {
+      "correlated_operator_event_markers": [],
+      "correlated_payload_hex_values": [],
+      "correlated_sample_count": 0,
+      "correlated_samples": [],
       "hardware_output_authorized": false,
       "native_control_evidence": false,
       "operator_event_marker_correlation_observed": false,
@@ -179,6 +211,7 @@
       "registry_promotion_claim": false,
       "risk_class": "unknown_do_not_send",
       "same_tuple_payload_variation_observed": false,
+      "same_tuple_payload_variation_with_event_markers_observed": false,
       "semantic_decode_claim": false,
       "semantic_review_payload_hex": "0FB300000001",
       "summary_observed_payload_hex_values": [
@@ -201,6 +234,10 @@
       "tuple_id": "0x8E/0x71/0x00"
     },
     {
+      "correlated_operator_event_markers": [],
+      "correlated_payload_hex_values": [],
+      "correlated_sample_count": 0,
+      "correlated_samples": [],
       "hardware_output_authorized": false,
       "native_control_evidence": false,
       "operator_event_marker_correlation_observed": false,
@@ -209,6 +246,7 @@
       "registry_promotion_claim": false,
       "risk_class": "unknown_do_not_send",
       "same_tuple_payload_variation_observed": false,
+      "same_tuple_payload_variation_with_event_markers_observed": false,
       "semantic_decode_claim": false,
       "semantic_review_payload_hex": "013E000000E6",
       "summary_observed_payload_hex_values": [
@@ -232,6 +270,7 @@
     }
   ],
   "target_tuple_sample_count": 4,
+  "timing_correlation_candidate_observed": false,
   "timing_correlation_proven": false,
   "timing_correlation_verdict": "insufficient_static_or_single_sample_0x8e_payloads",
   "unknown_safety_or_mode_state_blocks_authority": true,
