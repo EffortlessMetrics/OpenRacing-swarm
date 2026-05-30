@@ -122,6 +122,16 @@ fn format_capabilities(caps: &ClientDeviceCapabilities) -> String {
 /// Print device status
 pub fn print_device_status(status: &DeviceStatus, json: bool) {
     if json {
+        device_status_output::print_json(status);
+    } else {
+        device_status_output::print_human(status);
+    }
+}
+
+mod device_status_output {
+    use super::*;
+
+    pub(super) fn print_json(status: &DeviceStatus) {
         let output = json!({
             "success": true,
             "status": status
@@ -130,7 +140,16 @@ pub fn print_device_status(status: &DeviceStatus, json: bool) {
             Ok(s) => println!("{}", s),
             Err(e) => eprintln!("Failed to format device status as JSON: {}", e),
         }
-    } else {
+    }
+
+    pub(super) fn print_human(status: &DeviceStatus) {
+        print_device_heading(status);
+        print_active_faults(status);
+        print_moza_readiness(status);
+        print_telemetry(status);
+    }
+
+    fn print_device_heading(status: &DeviceStatus) {
         println!("{} {}", "Device:".bold(), status.device.name);
         println!("  ID: {}", status.device.id);
         println!("  State: {:?}", status.device.state);
@@ -138,20 +157,25 @@ pub fn print_device_status(status: &DeviceStatus, json: bool) {
             "  Last Seen: {}",
             status.last_seen.format("%Y-%m-%d %H:%M:%S UTC")
         );
+    }
 
-        if !status.active_faults.is_empty() {
-            println!(
-                "  {} {}",
-                "Active Faults:".red().bold(),
-                status.active_faults.len()
-            );
-            for fault in &status.active_faults {
-                println!("    • {}", fault.red());
-            }
-        } else {
+    fn print_active_faults(status: &DeviceStatus) {
+        if status.active_faults.is_empty() {
             println!("  {}", "No Active Faults".green());
+            return;
         }
 
+        println!(
+            "  {} {}",
+            "Active Faults:".red().bold(),
+            status.active_faults.len()
+        );
+        for fault in &status.active_faults {
+            println!("    • {}", fault.red());
+        }
+    }
+
+    fn print_moza_readiness(status: &DeviceStatus) {
         if let Some(moza) = &status.moza {
             println!("  {}:", "Moza Readiness".bold());
             println!("    Model: {}", moza.model);
@@ -167,7 +191,9 @@ pub fn print_device_status(status: &DeviceStatus, json: bool) {
             println!("    Safety State: {}", moza.safety_state);
             println!("    Safety Reason: {}", moza.safety_reason);
         }
+    }
 
+    fn print_telemetry(status: &DeviceStatus) {
         println!("  {}:", "Telemetry".bold());
         let tel = &status.telemetry;
         println!("    Wheel Angle: {:.1}°", tel.wheel_angle_deg);
