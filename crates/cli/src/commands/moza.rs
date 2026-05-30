@@ -2291,6 +2291,14 @@ fn moza_native_motion_blocker_command_templates(command_templates: &[Value]) -> 
         .filter_map(|template| {
             let name = json_string(template, "name")?;
             let command = json_string(template, "command")?;
+            let placeholder_capture_template = template
+                .get("must_not_run_unrendered_template")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+                || template
+                    .get("command_has_selector_placeholders")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
             let mut value = serde_json::json!({
                 "name": name,
                 "owner": if command.contains("sniff-capture") {
@@ -2308,6 +2316,12 @@ fn moza_native_motion_blocker_command_templates(command_templates: &[Value]) -> 
                 "external_capture_tool_invoked": command.contains("sniff-capture"),
                 "requires_hardware_doctor_hint": command.contains("sniff-capture"),
                 "raw_pcapng_commit_default": false,
+                "runnable_next_operator_command": !placeholder_capture_template,
+                "next_operator_command_status": if placeholder_capture_template {
+                    "placeholder_template_not_runnable"
+                } else {
+                    "runnable_as_written"
+                },
                 "command_template": command,
                 "command": command
             });
@@ -45651,14 +45665,21 @@ fn push_next_operator_step_commands_markdown(out: &mut String, step: &Value) {
     let Some(commands) = step.get("commands").and_then(Value::as_array) else {
         return;
     };
-    if commands.is_empty() {
+    let runnable_commands = commands
+        .iter()
+        .filter(|command| json_bool(command, "runnable_next_operator_command") != Some(false))
+        .collect::<Vec<_>>();
+    if runnable_commands.is_empty() {
         return;
     }
 
     out.push_str("### Next Operator Commands\n\n");
+    if commands.len() != runnable_commands.len() {
+        out.push_str("This table omits placeholder capture templates that must be materialized by `sniff-notes-template` before they are runnable.\n\n");
+    }
     out.push_str("| Name | Command |\n");
     out.push_str("| --- | --- |\n");
-    for command in commands {
+    for command in runnable_commands {
         let name = json_string(command, "name").unwrap_or("unknown");
         let command_text = json_string(command, "command").unwrap_or("");
         out.push_str(&format!(
@@ -56244,6 +56265,9 @@ mod tests {
                     && json_bool(command, "requires_hardware_doctor_hint") == Some(true)
                     && json_bool(command, "command_has_selector_placeholders") == Some(true)
                     && json_bool(command, "must_not_run_unrendered_template") == Some(true)
+                    && json_bool(command, "runnable_next_operator_command") == Some(false)
+                    && json_string(command, "next_operator_command_status")
+                        == Some("placeholder_template_not_runnable")
                     && json_string(command, "concrete_command_source")
                         == Some("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md")
                     && json_u64(command, "duration_ms") == Some(180_000)
@@ -56313,7 +56337,21 @@ mod tests {
         assert!(wizard_markdown.contains("wheelctl hardware sniff-capture"));
         assert!(wizard_markdown.contains("--duration-ms 180000"));
         assert!(wizard_markdown.contains("Do not run placeholder capture templates directly"));
+        assert!(wizard_markdown.contains("omits placeholder capture templates"));
         assert!(wizard_markdown.contains("operator-notes.md"));
+        let next_operator_commands = wizard_markdown
+            .split("### Next Operator Commands")
+            .nth(1)
+            .ok_or("expected Next Operator Commands section")?;
+        assert!(
+            !next_operator_commands.contains("<USBPcapCMD.exe from hardware doctor>")
+                && !next_operator_commands.contains("<capture_devices_value>"),
+            "Next Operator Commands must not present the unrendered USBPcap placeholder as runnable: {next_operator_commands}"
+        );
+        assert!(
+            next_operator_commands.contains("wheelctl hardware sniff-notes-template"),
+            "Next Operator Commands should still surface the concrete materialization step: {next_operator_commands}"
+        );
         assert!(wizard_markdown.contains("Native Motion Blocker"));
         assert!(wizard_markdown.contains("wheel_moved_under_openracing: `false`"));
         Ok(())
