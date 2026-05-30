@@ -10348,6 +10348,81 @@ source-of-truth work item. Do not remove the materialized capture command
 consumption, selector guard, movement-blocker audit, timing-correlation
 plan/review artifacts, or native-visible promotion block.
 
+## Work item: reject-stale-sniff-capture-hardware-doctor
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: stale copied `sniff-capture --hardware-doctor` commands launching with
+old selector evidence
+Blocked by: completed local 0x8E capture-prep freshness gate
+
+### Goal
+
+Make the bounded passive capture helper enforce the same freshness boundary as
+the bench-wizard handoff. A copied materialized `sniff-capture` command must
+not be able to reuse an old hardware-doctor receipt after the current Moza
+USBPcap selector has moved.
+
+### Production delta
+
+`wheelctl hardware sniff-capture --hardware-doctor` now validates the
+hardware-doctor receipt's `generated_at` or `generated_at_utc` timestamp before
+selector verification or external `USBPcapCMD` launch. The receipt must be
+parseable, no more than 10 minutes old, and no more than 30 seconds in the
+future. Fresh selector verification records the hardware-doctor timestamp, age
+in seconds, and freshness window in the local capture receipt.
+
+This closes the command-layer gap left after the wizard stopped surfacing stale
+local 0x8E capture-prep receipts. The next physical step remains the passive
+0x8E event-marker timing-correlation capture with a fresh observe-only hardware
+doctor, not a read-only rerun, authorization, PIDFF rerun, or motion attempt.
+
+### Non-goals
+
+No live capture, raw pcap commit, HID open, serial open, read-only query send,
+PIDFF output, feature report, configuration write, firmware/update/DFU path,
+high torque, mode-enable write, authority write, authorization receipt,
+semantic decode claim, registry promotion, tuple sendability, corrected
+read-only probe readiness, native-control claim, native-visible claim,
+smoke-ready claim, simulator claim, coexistence claim, release-ready claim,
+output claim, or wheel movement.
+
+### Acceptance
+
+- Fresh hardware-doctor selector verification still accepts the current Moza
+  USBPcap hint and records the doctor timestamp/age metadata.
+- Stale hardware-doctor receipts fail before selector acceptance or capture
+  launch, with instructions to rerun observe-only hardware doctor.
+- The existing stale-selector and hub/non-Moza selector guards remain
+  fail-closed.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain the operating
+  state.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the sniff-capture hardware-doctor freshness check, selector
+verification freshness fields, focused assertions, and this source-of-truth
+work item. Do not remove the selector guard, finalization retry, local
+capture-prep freshness gate, movement-blocker audit, timing-correlation
+plan/review artifacts, or native-visible promotion block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
