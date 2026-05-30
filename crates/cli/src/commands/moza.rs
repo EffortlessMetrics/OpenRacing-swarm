@@ -20375,19 +20375,37 @@ fn passive_capture_requirements_for_lane(lane: &Path) -> Vec<&'static PassiveCap
     let required_paths = read_json_value(lane, "manifest.json")
         .ok()
         .and_then(|manifest| manifest_topology_required_capture_paths(&manifest));
+    let selected = collect_lane_passive_requirements(required_paths.as_ref());
+    fallback_to_default_passive_requirements(selected)
+}
+
+fn collect_lane_passive_requirements(
+    required_paths: Option<&BTreeSet<String>>,
+) -> Vec<&'static PassiveCaptureRequirement> {
     let mut selected = Vec::new();
     let mut seen = BTreeSet::new();
-
     for requirement in passive_capture_requirements() {
-        let required = required_paths
-            .as_ref()
-            .map(|paths| requirement.always_required || paths.contains(requirement.relative_path))
-            .unwrap_or(requirement.default_required);
-        if required && seen.insert(requirement.relative_path) {
+        if passive_requirement_is_selected(requirement, required_paths)
+            && seen.insert(requirement.relative_path)
+        {
             selected.push(requirement);
         }
     }
+    selected
+}
 
+fn passive_requirement_is_selected(
+    requirement: &PassiveCaptureRequirement,
+    required_paths: Option<&BTreeSet<String>>,
+) -> bool {
+    required_paths
+        .map(|paths| requirement.always_required || paths.contains(requirement.relative_path))
+        .unwrap_or(requirement.default_required)
+}
+
+fn fallback_to_default_passive_requirements(
+    selected: Vec<&'static PassiveCaptureRequirement>,
+) -> Vec<&'static PassiveCaptureRequirement> {
     if selected.is_empty() {
         default_passive_capture_requirements()
     } else {
