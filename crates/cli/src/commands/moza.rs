@@ -31653,6 +31653,15 @@ fn vendor_status_timing_correlation_review_receipt(
         vendor_status_timing_correlation_event_marker_order_violations(&marker_times);
     let operator_event_marker_order_valid =
         event_marker_timestamps_complete && event_marker_order_violations.is_empty();
+    let capture_receipt_window =
+        vendor_status_timing_correlation_capture_receipt_window_marker_status(
+            &capture_provenance,
+            &marker_times,
+            event_marker_timestamps_complete,
+            operator_event_marker_order_valid,
+        );
+    let capture_receipt_window_verified =
+        json_bool(&capture_receipt_window, "capture_receipt_window_verified") == Some(true);
     let correlation_marker_ids = vendor_status_timing_correlation_semantic_event_markers();
     let administrative_marker_ids = vendor_status_timing_correlation_administrative_event_markers();
     let correlation_marker_times = marker_times
@@ -31822,7 +31831,9 @@ fn vendor_status_timing_correlation_review_receipt(
         && target_samples_within_capture_window
         && same_tuple_payload_variation_with_event_markers_observed;
     let timing_correlation_candidate_observed =
-        timing_correlation_candidate_without_capture_provenance && capture_provenance_verified;
+        timing_correlation_candidate_without_capture_provenance
+            && capture_provenance_verified
+            && capture_receipt_window_verified;
     let timing_correlation_proven = false;
     let timing_correlation_verdict = if !any_target_samples_observed {
         "insufficient_no_target_0x8e_samples"
@@ -31832,6 +31843,11 @@ fn vendor_status_timing_correlation_review_receipt(
         && !capture_provenance_verified
     {
         "insufficient_capture_provenance_missing_or_unverified"
+    } else if timing_correlation_candidate_without_capture_provenance
+        && capture_provenance_verified
+        && !capture_receipt_window_verified
+    {
+        "insufficient_capture_receipt_window_mismatch"
     } else if !summary_has_packet_timestamp_samples || target_sample_timestamp_count == 0 {
         "insufficient_missing_packet_timestamps"
     } else if !event_marker_notes_complete || !event_marker_timestamps_complete {
@@ -31886,6 +31902,27 @@ fn vendor_status_timing_correlation_review_receipt(
         json_string(&capture_provenance, "capture_provenance_status").unwrap_or("unknown")
     );
     receipt.insert("capture_provenance".to_string(), capture_provenance.clone());
+    insert_json!("capture_receipt_window_required_for_candidate", true);
+    insert_json!(
+        "capture_receipt_window_verified",
+        capture_receipt_window_verified
+    );
+    insert_json!(
+        "capture_receipt_window_status",
+        json_string(&capture_receipt_window, "capture_receipt_window_status").unwrap_or("unknown")
+    );
+    insert_json!(
+        "operator_event_markers_inside_capture_receipt_window",
+        json_bool(
+            &capture_receipt_window,
+            "operator_event_markers_inside_capture_receipt_window"
+        )
+        .unwrap_or(false)
+    );
+    receipt.insert(
+        "capture_receipt_window".to_string(),
+        capture_receipt_window.clone(),
+    );
     insert_json!(
         "summary_command",
         json_string(summary, "command").unwrap_or("unknown")
@@ -32235,6 +32272,10 @@ fn vendor_status_timing_correlation_capture_provenance(
             sniff_capture_receipt_path,
             selector_verification,
         )?;
+    let capture_receipt_window = vendor_status_timing_correlation_capture_receipt_window(
+        sniff_capture_receipt_path,
+        sniff_capture_receipt,
+    )?;
 
     if json_string(sniff_receipt, "command") != Some("wheelctl hardware sniff-receipt") {
         return Err(anyhow!(
@@ -32328,6 +32369,30 @@ fn vendor_status_timing_correlation_capture_provenance(
         capture_hardware_doctor_freshness.max_age_minutes
     );
     insert_json!(
+        "sniff_capture_started_at_utc",
+        capture_receipt_window.started_at_utc
+    );
+    insert_json!(
+        "sniff_capture_expected_stop_at_utc",
+        capture_receipt_window.expected_stop_at_utc
+    );
+    insert_json!(
+        "sniff_capture_window_start_epoch_seconds",
+        capture_receipt_window.start_epoch_seconds
+    );
+    insert_json!(
+        "sniff_capture_window_stop_epoch_seconds",
+        capture_receipt_window.stop_epoch_seconds
+    );
+    insert_json!(
+        "sniff_capture_duration_ms",
+        capture_receipt_window.duration_ms
+    );
+    insert_json!(
+        "sniff_capture_window_tolerance_seconds",
+        capture_receipt_window.tolerance_seconds
+    );
+    insert_json!(
         "sniff_receipt_scenario",
         json_string(sniff_receipt, "scenario").unwrap_or("unknown")
     );
@@ -32352,6 +32417,16 @@ struct VendorStatusTimingCorrelationCaptureHardwareDoctorFreshness {
     generated_at_utc: String,
     age_seconds: u64,
     max_age_minutes: u64,
+}
+
+#[derive(Debug)]
+struct VendorStatusTimingCorrelationCaptureReceiptWindow {
+    started_at_utc: String,
+    expected_stop_at_utc: String,
+    start_epoch_seconds: f64,
+    stop_epoch_seconds: f64,
+    duration_ms: u64,
+    tolerance_seconds: f64,
 }
 
 fn vendor_status_timing_correlation_capture_hardware_doctor_freshness(
@@ -32416,6 +32491,176 @@ fn vendor_status_timing_correlation_capture_hardware_doctor_freshness(
             max_age_minutes,
         },
     )
+}
+
+fn vendor_status_timing_correlation_capture_receipt_window(
+    sniff_capture_receipt_path: &Path,
+    sniff_capture_receipt: &Value,
+) -> Result<VendorStatusTimingCorrelationCaptureReceiptWindow> {
+    let started_at_utc = json_string(sniff_capture_receipt, "started_at_utc").ok_or_else(|| {
+        anyhow!(
+            "timing-correlation capture receipt '{}' must include started_at_utc so review markers can be bound to the bounded capture window",
+            sniff_capture_receipt_path.display()
+        )
+    })?;
+    let started_at = chrono::DateTime::parse_from_rfc3339(started_at_utc).with_context(|| {
+        format!(
+            "timing-correlation capture receipt '{}' has invalid started_at_utc `{started_at_utc}`",
+            sniff_capture_receipt_path.display()
+        )
+    })?;
+    let started_at = started_at.with_timezone(&chrono::Utc);
+    let duration_ms = json_u64(sniff_capture_receipt, "duration_ms").ok_or_else(|| {
+        anyhow!(
+            "timing-correlation capture receipt '{}' must include duration_ms so review markers can be bound to the bounded capture window",
+            sniff_capture_receipt_path.display()
+        )
+    })?;
+    if duration_ms == 0 {
+        return Err(anyhow!(
+            "timing-correlation capture receipt '{}' must have nonzero duration_ms",
+            sniff_capture_receipt_path.display()
+        ));
+    }
+    let duration_i64 = i64::try_from(duration_ms).with_context(|| {
+        format!(
+            "timing-correlation capture receipt '{}' duration_ms does not fit in a bounded signed duration",
+            sniff_capture_receipt_path.display()
+        )
+    })?;
+    if json_bool(sniff_capture_receipt, "terminated_after_duration") != Some(true) {
+        return Err(anyhow!(
+            "timing-correlation capture receipt '{}' must have terminated_after_duration=true so the capture window is bounded",
+            sniff_capture_receipt_path.display()
+        ));
+    }
+
+    let expected_stop_at = started_at + chrono::Duration::milliseconds(duration_i64);
+    let start_epoch_seconds = started_at.timestamp() as f64
+        + f64::from(started_at.timestamp_subsec_nanos()) / 1_000_000_000.0;
+    let stop_epoch_seconds = expected_stop_at.timestamp() as f64
+        + f64::from(expected_stop_at.timestamp_subsec_nanos()) / 1_000_000_000.0;
+
+    Ok(VendorStatusTimingCorrelationCaptureReceiptWindow {
+        started_at_utc: started_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        expected_stop_at_utc: expected_stop_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        start_epoch_seconds,
+        stop_epoch_seconds,
+        duration_ms,
+        tolerance_seconds: VENDOR_STATUS_TIMING_CORRELATION_CAPTURE_WINDOW_TOLERANCE_SECONDS,
+    })
+}
+
+fn vendor_status_timing_correlation_capture_receipt_window_marker_status(
+    capture_provenance: &Value,
+    marker_times: &BTreeMap<String, f64>,
+    event_marker_timestamps_complete: bool,
+    operator_event_marker_order_valid: bool,
+) -> Value {
+    let capture_provenance_verified =
+        json_bool(capture_provenance, "capture_provenance_verified") == Some(true);
+    let mut status = serde_json::json!({
+        "capture_receipt_window_required_for_candidate": true,
+        "capture_receipt_window_verified": false,
+        "capture_receipt_window_status": "not_applicable_capture_provenance_unverified",
+        "operator_event_markers_inside_capture_receipt_window": false,
+        "operator_event_markers_outside_capture_receipt_window": [],
+        "hardware_output_authorized": false,
+        "native_control_evidence": false,
+        "native_visible_ready": false,
+        "output_was_sent": false
+    });
+
+    if !capture_provenance_verified {
+        return status;
+    }
+
+    let Some(start_epoch_seconds) = json_f64(
+        capture_provenance,
+        "sniff_capture_window_start_epoch_seconds",
+    ) else {
+        status["capture_receipt_window_status"] =
+            Value::String("missing_sniff_capture_receipt_window".to_string());
+        return status;
+    };
+    let Some(stop_epoch_seconds) = json_f64(
+        capture_provenance,
+        "sniff_capture_window_stop_epoch_seconds",
+    ) else {
+        status["capture_receipt_window_status"] =
+            Value::String("missing_sniff_capture_receipt_window".to_string());
+        return status;
+    };
+    let Some(tolerance_seconds) =
+        json_f64(capture_provenance, "sniff_capture_window_tolerance_seconds")
+    else {
+        status["capture_receipt_window_status"] =
+            Value::String("missing_sniff_capture_receipt_window".to_string());
+        return status;
+    };
+
+    status["sniff_capture_started_at_utc"] = serde_json::json!(
+        json_string(capture_provenance, "sniff_capture_started_at_utc").unwrap_or("unknown")
+    );
+    status["sniff_capture_expected_stop_at_utc"] = serde_json::json!(
+        json_string(capture_provenance, "sniff_capture_expected_stop_at_utc").unwrap_or("unknown")
+    );
+    status["sniff_capture_window_start_epoch_seconds"] = serde_json::json!(start_epoch_seconds);
+    status["sniff_capture_window_stop_epoch_seconds"] = serde_json::json!(stop_epoch_seconds);
+    status["sniff_capture_window_tolerance_seconds"] = serde_json::json!(tolerance_seconds);
+
+    if !event_marker_timestamps_complete {
+        status["capture_receipt_window_status"] =
+            Value::String("missing_event_marker_timestamps".to_string());
+        return status;
+    }
+
+    if !operator_event_marker_order_valid {
+        status["capture_receipt_window_status"] =
+            Value::String("event_marker_order_invalid".to_string());
+        return status;
+    }
+
+    let allowed_start = start_epoch_seconds - tolerance_seconds;
+    let allowed_stop = stop_epoch_seconds + tolerance_seconds;
+    let mut outside_window = Vec::new();
+    for marker in vendor_status_timing_correlation_event_marker_order() {
+        let Some(marker_epoch_seconds) = marker_times.get(marker).copied() else {
+            continue;
+        };
+        if marker_epoch_seconds < allowed_start || marker_epoch_seconds > allowed_stop {
+            outside_window.push(serde_json::json!({
+                "marker": marker,
+                "marker_epoch_seconds": marker_epoch_seconds,
+                "sniff_capture_window_start_epoch_seconds": start_epoch_seconds,
+                "sniff_capture_window_stop_epoch_seconds": stop_epoch_seconds,
+                "sniff_capture_window_tolerance_seconds": tolerance_seconds,
+                "allowed_start_epoch_seconds": allowed_start,
+                "allowed_stop_epoch_seconds": allowed_stop,
+                "hardware_output_authorized": false,
+                "native_control_evidence": false,
+                "output_sendability_claim": false,
+                "read_only_probe_allowed": false
+            }));
+        }
+    }
+
+    status["operator_event_markers_outside_capture_receipt_window"] =
+        serde_json::json!(outside_window);
+    if status
+        .get("operator_event_markers_outside_capture_receipt_window")
+        .and_then(Value::as_array)
+        .is_some_and(Vec::is_empty)
+    {
+        status["capture_receipt_window_verified"] = Value::Bool(true);
+        status["capture_receipt_window_status"] = Value::String("verified".to_string());
+        status["operator_event_markers_inside_capture_receipt_window"] = Value::Bool(true);
+    } else {
+        status["capture_receipt_window_status"] =
+            Value::String("operator_markers_outside_sniff_capture_window".to_string());
+    }
+
+    status
 }
 
 fn validate_vendor_status_timing_correlation_review_summary(
@@ -32487,6 +32732,7 @@ fn vendor_status_timing_correlation_required_markers() -> [&'static str; 11] {
 }
 
 const VENDOR_STATUS_TIMING_CORRELATION_WINDOW_SECONDS: f64 = 5.0;
+const VENDOR_STATUS_TIMING_CORRELATION_CAPTURE_WINDOW_TOLERANCE_SECONDS: f64 = 30.0;
 
 fn vendor_status_timing_correlation_marker_times(
     operator_notes: &str,
@@ -32639,6 +32885,9 @@ fn vendor_status_timing_correlation_exact_next_blocker(verdict: &str) -> &'stati
         }
         "insufficient_capture_provenance_missing_or_unverified" => {
             "The 0x8E samples vary near operator events, but the review lacks matching sniff-capture and sniff-receipt provenance. Re-run the no-output review with validated capture provenance before any read-only plan, authorization, PIDFF rerun, or motion."
+        }
+        "insufficient_capture_receipt_window_mismatch" => {
+            "The 0x8E samples vary near operator events, but those event markers do not fit the bounded sniff-capture receipt window. Repeat the staged passive capture with fresh hardware doctor and complete markers before any read-only plan, authorization, PIDFF rerun, or motion."
         }
         _ => {
             "No reviewed timing-correlation evidence links the 0x8E payload-bearing status-source samples to authority or mode state. Live probe, authorization, PIDFF, force escalation, and motion remain blocked."
@@ -52082,6 +52331,34 @@ mod tests {
             Some(&serde_json::json!(10))
         );
         assert_eq!(
+            receipt.pointer("/capture_provenance/sniff_capture_duration_ms"),
+            Some(&serde_json::json!(180000))
+        );
+        assert_eq!(
+            json_bool(&receipt, "capture_receipt_window_verified"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(
+                &receipt,
+                "operator_event_markers_inside_capture_receipt_window"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            json_string(&receipt, "capture_receipt_window_status"),
+            Some("verified")
+        );
+        assert_eq!(
+            receipt
+                .pointer(
+                    "/capture_receipt_window/operator_event_markers_outside_capture_receipt_window"
+                )
+                .and_then(Value::as_array)
+                .map(Vec::is_empty),
+            Some(true)
+        );
+        assert_eq!(
             json_bool(&receipt, "timing_correlation_candidate_observed"),
             Some(true)
         );
@@ -52278,6 +52555,133 @@ mod tests {
         assert!(
             error.to_string().contains("hardware_doctor_age_seconds"),
             "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_timing_correlation_review_requires_capture_receipt_window() -> TestResult {
+        let payload_source_candidates: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_PAYLOAD_SOURCE_CANDIDATES_JSON)?;
+        let semantic_review = vendor_status_payload_source_semantic_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-candidates.json",
+            ),
+            &payload_source_candidates,
+        )?;
+        let summary = sample_passive_sniff_summary_with_event_correlated_0x8e_variation(100_492);
+        let mut sniff_capture_receipt = sample_0x8e_sniff_capture_receipt();
+        sniff_capture_receipt
+            .as_object_mut()
+            .ok_or("sample sniff-capture receipt must be an object")?
+            .remove("started_at_utc");
+        let sniff_receipt = sample_0x8e_sniff_receipt();
+
+        let result = vendor_status_timing_correlation_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
+            ),
+            &semantic_review,
+            VendorStatusTimingCorrelationCaptureProvenanceInput {
+                sniff_capture_receipt_path: Some(Path::new(
+                    "target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json",
+                )),
+                sniff_capture_receipt: Some(&sniff_capture_receipt),
+                sniff_receipt_path: Some(Path::new(
+                    "target/sniff/pit-house-0x8e-timing-correlation/sniff-receipt.json",
+                )),
+                sniff_receipt: Some(&sniff_receipt),
+            },
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json"),
+            &summary,
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"),
+            &complete_0x8e_timing_operator_notes_near_samples(),
+        );
+        let Err(error) = result else {
+            return Err("timing-correlation review must reject capture receipts without a bounded started_at_utc window".into());
+        };
+        assert!(
+            error.to_string().contains("started_at_utc"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_timing_correlation_review_blocks_markers_outside_capture_receipt_window()
+    -> TestResult {
+        let payload_source_candidates: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_PAYLOAD_SOURCE_CANDIDATES_JSON)?;
+        let semantic_review = vendor_status_payload_source_semantic_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-candidates.json",
+            ),
+            &payload_source_candidates,
+        )?;
+        let summary = sample_passive_sniff_summary_with_event_correlated_0x8e_variation(100_492);
+        let mut sniff_capture_receipt = sample_0x8e_sniff_capture_receipt();
+        sniff_capture_receipt["started_at_utc"] = Value::String("2026-02-02T03:00:00Z".to_string());
+        let sniff_receipt = sample_0x8e_sniff_receipt();
+
+        let receipt = vendor_status_timing_correlation_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
+            ),
+            &semantic_review,
+            VendorStatusTimingCorrelationCaptureProvenanceInput {
+                sniff_capture_receipt_path: Some(Path::new(
+                    "target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json",
+                )),
+                sniff_capture_receipt: Some(&sniff_capture_receipt),
+                sniff_receipt_path: Some(Path::new(
+                    "target/sniff/pit-house-0x8e-timing-correlation/sniff-receipt.json",
+                )),
+                sniff_receipt: Some(&sniff_receipt),
+            },
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json"),
+            &summary,
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"),
+            &complete_0x8e_timing_operator_notes_near_samples(),
+        )?;
+
+        assert_eq!(
+            json_bool(
+                &receipt,
+                "timing_correlation_candidate_without_capture_provenance"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&receipt, "capture_provenance_verified"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&receipt, "capture_receipt_window_verified"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(
+                &receipt,
+                "operator_event_markers_inside_capture_receipt_window"
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            json_string(&receipt, "capture_receipt_window_status"),
+            Some("operator_markers_outside_sniff_capture_window")
+        );
+        assert_eq!(
+            json_bool(&receipt, "timing_correlation_candidate_observed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_string(&receipt, "timing_correlation_verdict"),
+            Some("insufficient_capture_receipt_window_mismatch")
+        );
+        assert_eq!(json_bool(&receipt, "motion_attempt_allowed"), Some(false));
+        assert_eq!(
+            json_bool(&receipt, "wheel_moved_under_openracing"),
+            Some(false)
         );
         Ok(())
     }
@@ -55055,6 +55459,7 @@ mod tests {
             "success": true,
             "command": "wheelctl hardware sniff-capture",
             "generated_at_utc": "2026-05-30T12:00:00Z",
+            "started_at_utc": "2026-02-02T02:41:25Z",
             "capture_tool": "USBPcapCMD",
             "usbpcapcmd_path": "C:/Program Files/Wireshark/extcap/USBPcapCMD.exe",
             "usbpcap_interface": "\\\\.\\USBPcap2",

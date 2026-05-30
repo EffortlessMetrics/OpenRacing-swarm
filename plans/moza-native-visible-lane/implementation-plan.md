@@ -10508,6 +10508,91 @@ sniff-capture hardware-doctor freshness check, selector guard, local
 capture-prep freshness gate, movement-blocker audit, timing-correlation
 plan/review artifacts, or native-visible promotion block.
 
+## Work item: bind-0x8e-review-to-sniff-capture-window
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: event markers from outside the actual bounded USBPcap capture window
+being accepted as future 0x8E timing-correlation candidate evidence
+Blocked by: completed `vendor-status-timing-correlation-review` capture
+provenance gate
+
+### Goal
+
+Bind the no-output 0x8E timing-correlation review to the actual
+`wheelctl hardware sniff-capture` receipt window, not only the
+operator-declared capture markers in notes.
+
+### Production delta
+
+`wheelctl moza vendor-status-timing-correlation-review` now requires verified
+timing-correlation capture provenance to include:
+
+```text
+sniff_capture.started_at_utc
+sniff_capture.duration_ms
+sniff_capture.terminated_after_duration=true
+```
+
+The review derives the bounded capture stop time from that receipt, records the
+window in `capture_provenance`, and emits a `capture_receipt_window` verdict.
+Future timing candidates can only surface when all semantic operator markers
+fit inside the sniff-capture receipt window with a small bounded tolerance.
+Markers outside that receipt window produce
+`insufficient_capture_receipt_window_mismatch` and keep the lane blocked.
+
+This is bench plumbing for the current blocker: missing reviewed
+timing-correlated payload-bearing authority/mode status evidence. It still
+does not authorize a read-only probe, PIDFF rerun, output, or motion.
+
+### Non-goals
+
+No live capture, raw pcap commit, HID open, serial open, read-only query send,
+PIDFF output, feature report, configuration write, firmware/update/DFU path,
+high torque, mode-enable write, authority write, authorization receipt,
+semantic decode claim, registry promotion, tuple sendability, corrected
+read-only probe readiness, native-control claim, native-visible claim,
+smoke-ready claim, simulator claim, coexistence claim, release-ready claim,
+output claim, or wheel movement.
+
+### Acceptance
+
+- Verified capture provenance records the sniff-capture start, derived stop,
+  duration, and tolerance.
+- Candidate timing evidence remains possible only when semantic operator event
+  markers fit inside that bounded receipt window.
+- Missing legacy capture window fields are rejected.
+- Markers outside the sniff-capture receipt window produce a blocked
+  mismatch verdict instead of candidate evidence.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain the operating
+  state.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_review -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the sniff-capture receipt-window requirement, schema fields,
+focused assertions, and this source-of-truth work item. Do not remove the
+sniff-capture hardware-doctor freshness check, selector guard, local
+capture-prep freshness gate, movement-blocker audit, timing-correlation
+plan/review artifacts, or native-visible promotion block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
