@@ -33,6 +33,20 @@
   "capture_provenance_required_for_candidate": true,
   "capture_provenance_status": "not_provided",
   "capture_provenance_verified": false,
+  "capture_receipt_window": {
+    "capture_receipt_window_required_for_candidate": true,
+    "capture_receipt_window_status": "not_applicable_capture_provenance_unverified",
+    "capture_receipt_window_verified": false,
+    "hardware_output_authorized": false,
+    "native_control_evidence": false,
+    "native_visible_ready": false,
+    "operator_event_markers_inside_capture_receipt_window": false,
+    "operator_event_markers_outside_capture_receipt_window": [],
+    "output_was_sent": false
+  },
+  "capture_receipt_window_required_for_candidate": true,
+  "capture_receipt_window_status": "not_applicable_capture_provenance_unverified",
+  "capture_receipt_window_verified": false,
   "claim_scope": "no_output_0x8e_timing_correlation_review",
   "command": "wheelctl moza vendor-status-timing-correlation-review",
   "corrected_read_only_probe_ready": false,
@@ -41,7 +55,7 @@
   "device_to_host_serial_frame_shape_decode_gap": false,
   "event_correlation_window_seconds": 5.0,
   "exact_next_blocker": "The stored 0x8E samples include packet timestamps and same-tuple payload variation, but the operator notes lack complete event-marker timing. Run the staged passive Pit House 0x8E event-marker capture and no-output timing review; do not rerun read-only status, authorize output, rerun PIDFF, or attempt motion.",
-  "generated_at_utc": "2026-05-30T15:17:29Z",
+  "generated_at_utc": "2026-05-30T22:09:52Z",
   "hardware_output_authorized": false,
   "high_torque_enabled": false,
   "live_read_only_probe_allowed": false,
@@ -94,6 +108,7 @@
     "capture_stop_utc"
   ],
   "operator_event_marker_timestamps_present": [],
+  "operator_event_markers_inside_capture_receipt_window": false,
   "operator_event_markers_missing": [
     "hardware_doctor_selector_reviewed_utc",
     "capture_start_utc",
