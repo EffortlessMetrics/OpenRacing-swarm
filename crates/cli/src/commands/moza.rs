@@ -2215,7 +2215,7 @@ fn moza_native_motion_blocker_next_operator_step(lane: &Path) -> Option<Value> {
         "raw_pcap_commit_default": false,
         "steps": [
             "Refresh observe-only hardware doctor and select the current Moza USBPcap hint; do not reuse stale --devices values.",
-            "Run the bounded passive sniff-capture helper with --hardware-doctor and duration 180000 ms.",
+            "Run the rendered bounded passive sniff-capture helper from operator-notes.md; do not run the placeholder template before sniff-notes-template materializes the current selector.",
             "Open Pit House only as a witness lane and keep firmware/update/DFU pages closed.",
             "Record explicit event markers for Pit House open, R5 recognized, idle/stable, KS top-left front LED default teal, red, restored default teal, Pit House close, and capture stop.",
             "Run the no-output sniff-summary and vendor-status-timing-correlation-review commands on derived artifacts only.",
@@ -2311,6 +2311,20 @@ fn moza_native_motion_blocker_command_templates(command_templates: &[Value]) -> 
                 "command_template": command,
                 "command": command
             });
+            for key in [
+                "materializes_capture_command",
+                "materialized_command_in",
+                "command_has_selector_placeholders",
+                "must_not_run_unrendered_template",
+                "concrete_command_source",
+                "selector_source",
+            ] {
+                if let Some(field) = template.get(key)
+                    && let Some(object) = value.as_object_mut()
+                {
+                    object.insert(key.to_string(), field.clone());
+                }
+            }
             if command.contains("--duration-ms 180000")
                 && let Some(object) = value.as_object_mut()
             {
@@ -30467,12 +30481,19 @@ fn vendor_status_timing_correlation_plan_receipt(
             {
                 "name": "render_checked_in_operator_notes_template",
                 "output_enabled": false,
+                "materializes_capture_command": true,
+                "materialized_command_in": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
+                "selector_source": "fresh hardware doctor Moza USBPcap hint",
                 "command": "wheelctl hardware sniff-notes-template --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json --hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --out target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-notes-template-receipt.json"
             },
             {
                 "name": "run_bounded_passive_usbpcap_capture",
                 "output_enabled": false,
                 "openracing_hardware_output": false,
+                "command_has_selector_placeholders": true,
+                "must_not_run_unrendered_template": true,
+                "concrete_command_source": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
+                "selector_source": "fresh hardware doctor Moza USBPcap hint rendered by sniff-notes-template",
                 "command": "wheelctl hardware sniff-capture --usbpcapcmd '<USBPcapCMD.exe from hardware doctor>' --usbpcap-interface '<USBPcap interface from hardware doctor>' --devices <capture_devices_value> --hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --duration-ms 180000 --out target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --confirm-external-passive-capture --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json"
             },
             {
@@ -45605,7 +45626,7 @@ fn push_next_operator_step_external_capture_commands_markdown(out: &mut String, 
     }
 
     out.push_str("### External Capture Commands\n\n");
-    out.push_str("These command templates are for passive USB capture, not for OpenRacing hardware output. Replace placeholders with values from the fresh hardware doctor receipt before running them.\n\n");
+    out.push_str("These command templates are for passive USB capture, not for OpenRacing hardware output. Run the notes-template command first; it renders the concrete USBPcap selector-bound capture command from the fresh hardware doctor receipt.\n\n");
     out.push_str("| Name | Command Template |\n");
     out.push_str("| --- | --- |\n");
     for command in commands {
@@ -45618,6 +45639,12 @@ fn push_next_operator_step_external_capture_commands_markdown(out: &mut String, 
         ));
     }
     out.push('\n');
+    if commands.iter().any(|command| {
+        json_bool(command, "must_not_run_unrendered_template") == Some(true)
+            || json_bool(command, "command_has_selector_placeholders") == Some(true)
+    }) {
+        out.push_str("Do not run placeholder capture templates directly. Use the rendered command in `operator-notes.md` after `wheelctl hardware sniff-notes-template` reads the fresh hardware doctor selector.\n\n");
+    }
 }
 
 fn push_next_operator_step_commands_markdown(out: &mut String, step: &Value) {
@@ -49929,12 +49956,19 @@ mod tests {
         };
         assert!(capture_command_templates.iter().any(|template| {
             json_string(template, "name") == Some("run_bounded_passive_usbpcap_capture")
+                && json_bool(template, "command_has_selector_placeholders") == Some(true)
+                && json_bool(template, "must_not_run_unrendered_template") == Some(true)
+                && json_string(template, "concrete_command_source")
+                    == Some("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md")
                 && json_string(template, "command")
                     .map(|command| command.contains("--hardware-doctor"))
                     == Some(true)
         }));
         assert!(capture_command_templates.iter().any(|template| {
             json_string(template, "name") == Some("render_checked_in_operator_notes_template")
+                && json_bool(template, "materializes_capture_command") == Some(true)
+                && json_string(template, "materialized_command_in")
+                    == Some("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md")
                 && json_string(template, "command")
                     .map(|command| {
                         command.contains(
@@ -56191,6 +56225,9 @@ mod tests {
             commands.iter().any(|command| {
                 json_string(command, "name") == Some("render_checked_in_operator_notes_template")
                     && json_bool(command, "output_enabled") == Some(false)
+                    && json_bool(command, "materializes_capture_command") == Some(true)
+                    && json_string(command, "materialized_command_in")
+                        == Some("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md")
                     && json_string(command, "command").is_some_and(|text| {
                         text.contains("wheelctl hardware sniff-notes-template")
                             && text.contains("ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json")
@@ -56205,6 +56242,10 @@ mod tests {
                     && json_bool(command, "output_enabled") == Some(false)
                     && json_bool(command, "openracing_hardware_output") == Some(false)
                     && json_bool(command, "requires_hardware_doctor_hint") == Some(true)
+                    && json_bool(command, "command_has_selector_placeholders") == Some(true)
+                    && json_bool(command, "must_not_run_unrendered_template") == Some(true)
+                    && json_string(command, "concrete_command_source")
+                        == Some("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md")
                     && json_u64(command, "duration_ms") == Some(180_000)
                     && json_string(command, "command").is_some_and(|text| {
                         text.contains("wheelctl hardware sniff-capture")
@@ -56271,6 +56312,8 @@ mod tests {
         assert!(wizard_markdown.contains("pit-house-0x8e-timing-correlation"));
         assert!(wizard_markdown.contains("wheelctl hardware sniff-capture"));
         assert!(wizard_markdown.contains("--duration-ms 180000"));
+        assert!(wizard_markdown.contains("Do not run placeholder capture templates directly"));
+        assert!(wizard_markdown.contains("operator-notes.md"));
         assert!(wizard_markdown.contains("Native Motion Blocker"));
         assert!(wizard_markdown.contains("wheel_moved_under_openracing: `false`"));
         Ok(())

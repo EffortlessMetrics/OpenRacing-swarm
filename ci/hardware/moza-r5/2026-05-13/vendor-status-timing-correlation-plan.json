@@ -34,14 +34,21 @@
     },
     {
       "command": "wheelctl hardware sniff-notes-template --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json --hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --out target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-notes-template-receipt.json",
+      "materialized_command_in": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
+      "materializes_capture_command": true,
       "name": "render_checked_in_operator_notes_template",
-      "output_enabled": false
+      "output_enabled": false,
+      "selector_source": "fresh hardware doctor Moza USBPcap hint"
     },
     {
       "command": "wheelctl hardware sniff-capture --usbpcapcmd '<USBPcapCMD.exe from hardware doctor>' --usbpcap-interface '<USBPcap interface from hardware doctor>' --devices <capture_devices_value> --hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --duration-ms 180000 --out target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --confirm-external-passive-capture --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json",
+      "command_has_selector_placeholders": true,
+      "concrete_command_source": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
+      "must_not_run_unrendered_template": true,
       "name": "run_bounded_passive_usbpcap_capture",
       "openracing_hardware_output": false,
-      "output_enabled": false
+      "output_enabled": false,
+      "selector_source": "fresh hardware doctor Moza USBPcap hint rendered by sniff-notes-template"
     },
     {
       "command": "wheelctl hardware sniff-summary --pcapng target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --vendor 0x346E --product 0x0004 --include-payload-samples --max-samples-per-report 32 --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json --md-out target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.md",
@@ -59,7 +66,7 @@
   "command": "wheelctl moza vendor-status-timing-correlation-plan",
   "corrected_read_only_probe_ready": false,
   "exact_next_blocker": "No checked-in artifact currently timing-correlates the 0x8E payload-bearing status-source samples to authority or mode state. This plan makes the next passive capture concrete, but it does not itself record timing evidence or allow live probing, authorization, PIDFF, force escalation, or motion.",
-  "generated_at_utc": "2026-05-30T05:12:21Z",
+  "generated_at_utc": "2026-05-30T06:12:16Z",
   "hardware_output_authorized": false,
   "high_torque_enabled": false,
   "live_read_only_probe_allowed": false,
