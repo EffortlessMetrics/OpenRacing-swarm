@@ -501,48 +501,65 @@ mod mock {
     }
 
     pub(super) fn get_device_status(device_id: &str) -> Result<DeviceStatus> {
+        ensure_mock_device_exists(device_id)?;
+        Ok(build_mock_device_status(device_id))
+    }
+
+    fn ensure_mock_device_exists(device_id: &str) -> Result<()> {
         let devices = list_devices();
-        if !devices.iter().any(|d| d.id == device_id) {
-            return Err(CliError::DeviceNotFound(device_id.to_string()).into());
+        if devices.iter().any(|d| d.id == device_id) {
+            return Ok(());
         }
 
-        Ok(DeviceStatus {
-            device: DeviceInfo {
-                id: device_id.to_string(),
-                name: "Mock Device".to_string(),
-                source: Some("mock".to_string()),
-                vendor_id: None,
-                product_id: None,
-                manufacturer: None,
-                product_string: None,
-                serial_number_present: None,
-                interface_number: None,
-                usage_page: None,
-                usage: None,
-                hid_path_present: None,
-                device_type: DeviceType::WheelBase,
-                state: DeviceState::Connected,
-                capabilities: DeviceCapabilities {
-                    supports_pid: true,
-                    supports_raw_torque_1khz: true,
-                    supports_health_stream: true,
-                    supports_led_bus: true,
-                    max_torque_nm: 8.0,
-                    encoder_cpr: 2048,
-                    min_report_period_us: 1000,
-                },
-            },
+        Err(CliError::DeviceNotFound(device_id.to_string()).into())
+    }
+
+    fn build_mock_device_status(device_id: &str) -> DeviceStatus {
+        DeviceStatus {
+            device: build_mock_wheelbase_device(device_id),
             last_seen: chrono::Utc::now(),
             active_faults: vec![],
-            telemetry: TelemetryData {
-                wheel_angle_deg: 0.0,
-                wheel_speed_rad_s: 0.0,
-                temperature_c: 45,
-                fault_flags: 0,
-                hands_on: true,
-            },
+            telemetry: build_mock_telemetry_data(),
             moza: None,
-        })
+        }
+    }
+
+    fn build_mock_wheelbase_device(device_id: &str) -> DeviceInfo {
+        DeviceInfo {
+            id: device_id.to_string(),
+            name: "Mock Device".to_string(),
+            source: Some("mock".to_string()),
+            vendor_id: None,
+            product_id: None,
+            manufacturer: None,
+            product_string: None,
+            serial_number_present: None,
+            interface_number: None,
+            usage_page: None,
+            usage: None,
+            hid_path_present: None,
+            device_type: DeviceType::WheelBase,
+            state: DeviceState::Connected,
+            capabilities: DeviceCapabilities {
+                supports_pid: true,
+                supports_raw_torque_1khz: true,
+                supports_health_stream: true,
+                supports_led_bus: true,
+                max_torque_nm: 8.0,
+                encoder_cpr: 2048,
+                min_report_period_us: 1000,
+            },
+        }
+    }
+
+    fn build_mock_telemetry_data() -> TelemetryData {
+        TelemetryData {
+            wheel_angle_deg: 0.0,
+            wheel_speed_rad_s: 0.0,
+            temperature_c: 45,
+            fault_flags: 0,
+            hands_on: true,
+        }
     }
 
     pub(super) fn get_active_profile() -> racing_wheel_schemas::config::ProfileSchema {
