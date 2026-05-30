@@ -1700,7 +1700,70 @@ fn validate_0x8e_timing_operator_notes(path: &Path, notes: &str) -> Result<()> {
         }
     }
 
+    validate_0x8e_timing_operator_note_timestamps(path, notes)?;
+
     Ok(())
+}
+
+fn validate_0x8e_timing_operator_note_timestamps(path: &Path, notes: &str) -> Result<()> {
+    let hardware_doctor_field = "hardware_doctor_selector_reviewed_utc";
+    let hardware_doctor = parse_0x8e_operator_note_timestamp(path, notes, hardware_doctor_field)?;
+    let capture_start = parse_0x8e_operator_note_timestamp(path, notes, "capture_start_utc")?;
+
+    if hardware_doctor > capture_start {
+        anyhow::bail!(
+            "operator notes '{}' field '{}' timestamp '{}' must be at or before capture_start_utc timestamp '{}'",
+            path.display(),
+            hardware_doctor_field,
+            hardware_doctor.to_rfc3339_opts(SecondsFormat::Secs, true),
+            capture_start.to_rfc3339_opts(SecondsFormat::Secs, true)
+        );
+    }
+
+    let mut previous = None;
+    for field in PIT_HOUSE_0X8E_TIMING_EVENT_ORDER {
+        let timestamp = parse_0x8e_operator_note_timestamp(path, notes, field)?;
+        if let Some((previous_field, previous_timestamp)) = previous
+            && timestamp < previous_timestamp
+        {
+            anyhow::bail!(
+                "operator notes '{}' field '{}' timestamp '{}' must be at or after field '{}' timestamp '{}'",
+                path.display(),
+                field,
+                timestamp.to_rfc3339_opts(SecondsFormat::Secs, true),
+                previous_field,
+                previous_timestamp.to_rfc3339_opts(SecondsFormat::Secs, true)
+            );
+        }
+        previous = Some((*field, timestamp));
+    }
+
+    Ok(())
+}
+
+fn parse_0x8e_operator_note_timestamp(
+    path: &Path,
+    notes: &str,
+    field: &str,
+) -> Result<chrono::DateTime<chrono::Utc>> {
+    let Some(value) = operator_note_field_value(notes, field) else {
+        anyhow::bail!(
+            "operator notes '{}' are missing completed required timestamp field '{}' for pit-house-0x8e-timing-correlation evidence",
+            path.display(),
+            field
+        );
+    };
+
+    chrono::DateTime::parse_from_rfc3339(value.trim())
+        .map(|timestamp| timestamp.with_timezone(&chrono::Utc))
+        .with_context(|| {
+            format!(
+                "operator notes '{}' field '{}' must be an RFC3339 UTC timestamp for pit-house-0x8e-timing-correlation evidence; got '{}'",
+                path.display(),
+                field,
+                value
+            )
+        })
 }
 
 fn setting_change_restore_status_is_affirmative(value: &str) -> bool {
@@ -6484,6 +6547,18 @@ const PIT_HOUSE_0X8E_TIMING_OPERATOR_NOTES_REQUIRED: &[&str] = &[
     "raw pcap kept local only",
     "OpenRacing sent no HID/output/feature/serial/firmware commands",
 ];
+const PIT_HOUSE_0X8E_TIMING_EVENT_ORDER: &[&str] = &[
+    "capture_start_utc",
+    "pit_house_opened_utc",
+    "r5_recognized_in_pit_house_utc",
+    "idle_stable_before_change_utc",
+    "ks_top_left_front_led_default_teal_observed_utc",
+    "ks_top_left_front_led_changed_to_red_utc",
+    "ks_top_left_front_led_restored_to_default_teal_utc",
+    "idle_stable_after_restore_utc",
+    "pit_house_closed_utc",
+    "capture_stop_utc",
+];
 const SIMHUB_OPEN_IDLE_OPERATOR_NOTES_REQUIRED: &[&str] = &[
     "SimHub version/source if known",
     "SimHub launch/open time",
@@ -10070,6 +10145,97 @@ mod tests {
             };
 
             assert!(error.contains("must mention 'default teal'"), "{error}");
+            Ok(())
+        }
+
+        #[test]
+        fn rejects_0x8e_timing_bundle_with_malformed_event_timestamp() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let notes = completed_0x8e_timing_operator_notes().replace(
+                "ks_top_left_front_led_changed_to_red_utc: 2026-05-29T22:01:15Z",
+                "ks_top_left_front_led_changed_to_red_utc: not-a-timestamp",
+            );
+            let paths = write_bundle_fixture_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseZeroX8eTimingCorrelation,
+                b"synthetic pcapng bytes",
+                &notes,
+            )?;
+
+            let error = match build_bundle(&paths, false) {
+                Ok(_) => {
+                    return Err(
+                        "0x8E timing bundle with malformed event timestamp should be rejected"
+                            .into(),
+                    );
+                }
+                Err(error) => error.to_string(),
+            };
+
+            assert!(
+                error.contains("must be an RFC3339 UTC timestamp"),
+                "{error}"
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn rejects_0x8e_timing_bundle_with_out_of_order_event_timestamps() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let notes = completed_0x8e_timing_operator_notes().replace(
+                "ks_top_left_front_led_changed_to_red_utc: 2026-05-29T22:01:15Z",
+                "ks_top_left_front_led_changed_to_red_utc: 2026-05-29T22:00:30Z",
+            );
+            let paths = write_bundle_fixture_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseZeroX8eTimingCorrelation,
+                b"synthetic pcapng bytes",
+                &notes,
+            )?;
+
+            let error = match build_bundle(&paths, false) {
+                Ok(_) => {
+                    return Err(
+                        "0x8E timing bundle with out-of-order event timestamps should be rejected"
+                            .into(),
+                    );
+                }
+                Err(error) => error.to_string(),
+            };
+
+            assert!(error.contains("must be at or after field"), "{error}");
+            Ok(())
+        }
+
+        #[test]
+        fn rejects_0x8e_timing_bundle_when_hardware_doctor_time_follows_capture_start() -> TestResult
+        {
+            let dir = tempfile::tempdir()?;
+            let notes = completed_0x8e_timing_operator_notes().replace(
+                "hardware_doctor_selector_reviewed_utc: 2026-05-29T21:59:30Z",
+                "hardware_doctor_selector_reviewed_utc: 2026-05-29T22:00:30Z",
+            );
+            let paths = write_bundle_fixture_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseZeroX8eTimingCorrelation,
+                b"synthetic pcapng bytes",
+                &notes,
+            )?;
+
+            let error = match build_bundle(&paths, false) {
+                Ok(_) => {
+                    return Err(
+                        "0x8E timing bundle with late hardware doctor timestamp should be rejected"
+                            .into(),
+                    );
+                }
+                Err(error) => error.to_string(),
+            };
+
+            assert!(
+                error.contains("must be at or before capture_start_utc"),
+                "{error}"
+            );
             Ok(())
         }
 
