@@ -1986,6 +1986,15 @@ fn moza_bench_wizard_receipt(
     json_out: Option<&Path>,
     md_out: Option<&Path>,
 ) -> Result<Value> {
+    moza_bench_wizard_receipt_with_sniff_notes_receipt(lane, json_out, md_out, None)
+}
+
+fn moza_bench_wizard_receipt_with_sniff_notes_receipt(
+    lane: &Path,
+    json_out: Option<&Path>,
+    md_out: Option<&Path>,
+    local_sniff_notes_receipt: Option<&Path>,
+) -> Result<Value> {
     if !lane.is_dir() {
         return Err(anyhow!(
             "--lane must point at an existing Moza lane directory: {}",
@@ -1996,7 +2005,12 @@ fn moza_bench_wizard_receipt(
     let support_status = artifact_navigation_status(lane);
     let readiness = artifact_index_readiness_summary(lane, &support_status);
     let frontier = moza_lane_frontier_label(lane, &support_status);
-    let next_operator_step = moza_bench_wizard_next_operator_step(lane, &readiness, &frontier);
+    let next_operator_step = moza_bench_wizard_next_operator_step(
+        lane,
+        &readiness,
+        &frontier,
+        local_sniff_notes_receipt,
+    );
     let native_motion_status =
         moza_bench_wizard_native_motion_status(&readiness, &next_operator_step);
     let next_concrete_command_sequence =
@@ -2070,7 +2084,7 @@ fn moza_bench_wizard_receipt(
         "sends_firmware_or_dfu": false,
         "creates_authorization": false,
         "moves_wheel": false,
-        "reason": "These commands are the immediately runnable no-output pre-capture commands from the current movement blocker; they are not authorization and do not prove or perform motion."
+        "reason": "These commands are immediately runnable non-authorization commands from the current movement blocker. They may include the materialized external passive capture command after valid no-output pre-capture receipts exist; they do not prove or perform motion."
     });
 
     let mut receipt = serde_json::json!({
@@ -2206,7 +2220,12 @@ fn moza_bench_wizard_native_motion_status(readiness: &Value, next_operator_step:
     })
 }
 
-fn moza_bench_wizard_next_operator_step(lane: &Path, readiness: &Value, frontier: &str) -> Value {
+fn moza_bench_wizard_next_operator_step(
+    lane: &Path,
+    readiness: &Value,
+    frontier: &str,
+    local_sniff_notes_receipt: Option<&Path>,
+) -> Value {
     let native_visible = readiness
         .get("native_visible_motion_proven")
         .and_then(Value::as_bool)
@@ -2224,7 +2243,9 @@ fn moza_bench_wizard_next_operator_step(lane: &Path, readiness: &Value, frontier
         });
     }
 
-    if let Some(step) = moza_native_motion_blocker_next_operator_step(lane) {
+    if let Some(step) =
+        moza_native_motion_blocker_next_operator_step(lane, local_sniff_notes_receipt)
+    {
         return step;
     }
 
@@ -2308,7 +2329,10 @@ fn moza_bench_wizard_next_operator_step(lane: &Path, readiness: &Value, frontier
     })
 }
 
-fn moza_native_motion_blocker_next_operator_step(lane: &Path) -> Option<Value> {
+fn moza_native_motion_blocker_next_operator_step(
+    lane: &Path,
+    local_sniff_notes_receipt: Option<&Path>,
+) -> Option<Value> {
     let audit = read_json_value(lane, VENDOR_STATUS_MOVEMENT_BLOCKER_AUDIT_FILE).ok()?;
     if json_bool(&audit, "success") != Some(true)
         || json_string(&audit, "authority_state") != Some("blocked")
@@ -2319,6 +2343,10 @@ fn moza_native_motion_blocker_next_operator_step(lane: &Path) -> Option<Value> {
     }
 
     let plan = read_json_value(lane, VENDOR_STATUS_TIMING_CORRELATION_PLAN_FILE).ok();
+    let scenario = plan
+        .as_ref()
+        .and_then(|plan| json_string(plan, "planned_capture_scenario"))
+        .unwrap_or("pit-house-0x8e-timing-correlation");
     let command_templates = audit
         .get("next_concrete_command_templates")
         .and_then(Value::as_array)
@@ -2327,15 +2355,22 @@ fn moza_native_motion_blocker_next_operator_step(lane: &Path) -> Option<Value> {
                 .and_then(|plan| plan.get("capture_command_templates"))
                 .and_then(Value::as_array)
         })?;
-    let commands = moza_native_motion_blocker_command_templates(command_templates);
+    let mut commands = moza_native_motion_blocker_command_templates(command_templates);
     if commands.is_empty() {
         return None;
     }
-
-    let scenario = plan
-        .as_ref()
-        .and_then(|plan| json_string(plan, "planned_capture_scenario"))
-        .unwrap_or("pit-house-0x8e-timing-correlation");
+    let (sniff_notes_template_receipt, materialized_capture_command) =
+        moza_native_motion_blocker_sniff_notes_template_receipt(
+            scenario,
+            local_sniff_notes_receipt,
+        );
+    if let Some(materialized_capture_command) = &materialized_capture_command {
+        moza_native_motion_blocker_apply_materialized_capture_command(
+            &mut commands,
+            materialized_capture_command,
+            &sniff_notes_template_receipt,
+        );
+    }
     let target_tuple_ids = plan
         .as_ref()
         .and_then(|plan| plan.get("target_tuple_ids"))
@@ -2440,6 +2475,7 @@ fn moza_native_motion_blocker_next_operator_step(lane: &Path) -> Option<Value> {
         "reason_read_only_rerun_not_allowed": reason_read_only_rerun_not_allowed,
         "reason_motion_not_allowed": reason_motion_not_allowed,
         "external_capture_checklist": external_capture_checklist,
+        "sniff_notes_template_receipt": sniff_notes_template_receipt,
         "external_capture_commands": commands.clone(),
         "commands": commands,
         "blocked_actions": vendor_authority_handoff_blocked_actions(),
@@ -2568,8 +2604,436 @@ fn moza_native_motion_blocker_command_templates(command_templates: &[Value]) -> 
         .collect()
 }
 
+fn moza_native_motion_blocker_sniff_notes_template_receipt(
+    scenario: &str,
+    local_sniff_notes_receipt: Option<&Path>,
+) -> (Value, Option<Value>) {
+    let receipt_path = local_sniff_notes_receipt
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| {
+            PathBuf::from("target")
+                .join("sniff")
+                .join(scenario)
+                .join("sniff-notes-template-receipt.json")
+        });
+    let marker_path = receipt_path
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .join("marker-hardware_doctor_selector_reviewed_utc.json");
+
+    if !receipt_path.is_file() {
+        return (
+            serde_json::json!({
+                "status": "missing",
+                "path": receipt_path.display().to_string(),
+                "selector_marker_status": "not_checked",
+                "selector_marker_receipt": marker_path.display().to_string(),
+                "materialized_capture_command_available": false,
+                "materialized_capture_command_runnable": false,
+                "next_operator_action": "run refresh_observe_only_hardware_doctor, render_checked_in_operator_notes_template, and stamp_hardware_doctor_selector_marker before capture"
+            }),
+            None,
+        );
+    }
+
+    let receipt = match read_json_path(&receipt_path) {
+        Ok(receipt) => receipt,
+        Err(error) => {
+            return (
+                serde_json::json!({
+                    "status": "invalid",
+                    "path": receipt_path.display().to_string(),
+                    "selector_marker_status": "not_checked",
+                    "selector_marker_receipt": marker_path.display().to_string(),
+                    "materialized_capture_command_available": false,
+                    "materialized_capture_command_runnable": false,
+                    "error": error.to_string(),
+                    "next_operator_action": "regenerate sniff-notes-template from a fresh observe-only hardware doctor before capture"
+                }),
+                None,
+            );
+        }
+    };
+
+    let materialized = match moza_native_motion_blocker_validate_sniff_notes_capture_receipt(
+        scenario,
+        &receipt_path,
+        &receipt,
+    ) {
+        Ok(command) => command,
+        Err(error) => {
+            return (
+                serde_json::json!({
+                    "status": "invalid",
+                    "path": receipt_path.display().to_string(),
+                    "selector_marker_status": "not_checked",
+                    "selector_marker_receipt": marker_path.display().to_string(),
+                    "materialized_capture_command_available": false,
+                    "materialized_capture_command_runnable": false,
+                    "error": error.to_string(),
+                    "next_operator_action": "regenerate sniff-notes-template from a fresh observe-only hardware doctor before capture"
+                }),
+                None,
+            );
+        }
+    };
+
+    let (selector_marker_status, selector_marker_recorded, selector_marker_error) =
+        moza_native_motion_blocker_selector_marker_status(&marker_path);
+    let materialized_capture_command_runnable = selector_marker_recorded;
+    let mut status = serde_json::json!({
+        "status": "valid",
+        "path": receipt_path.display().to_string(),
+        "selector_marker_status": selector_marker_status,
+        "selector_marker_receipt": marker_path.display().to_string(),
+        "selector_marker_recorded": selector_marker_recorded,
+        "materialized_capture_command_available": true,
+        "materialized_capture_command_runnable": materialized_capture_command_runnable,
+        "materialized_capture_command_source": receipt_path.display().to_string(),
+        "next_operator_action": if materialized_capture_command_runnable {
+            "run the materialized bounded passive sniff-capture command from sniff-notes-template receipt"
+        } else {
+            "stamp hardware_doctor_selector_reviewed_utc before running the materialized passive sniff-capture command"
+        }
+    });
+    if let Some(error) = selector_marker_error
+        && let Some(object) = status.as_object_mut()
+    {
+        object.insert(
+            "selector_marker_error".to_string(),
+            serde_json::json!(error),
+        );
+    }
+    (status, Some(materialized))
+}
+
+fn moza_native_motion_blocker_validate_sniff_notes_capture_receipt(
+    scenario: &str,
+    receipt_path: &Path,
+    receipt: &Value,
+) -> Result<Value> {
+    if json_bool(receipt, "success") != Some(true) {
+        return Err(anyhow!("sniff-notes-template receipt success must be true"));
+    }
+    if json_string(receipt, "command") != Some("wheelctl hardware sniff-notes-template") {
+        return Err(anyhow!(
+            "sniff-notes-template receipt command must be wheelctl hardware sniff-notes-template"
+        ));
+    }
+    if json_string(receipt, "scenario") != Some(scenario) {
+        return Err(anyhow!(
+            "sniff-notes-template receipt scenario must match {scenario}"
+        ));
+    }
+    for (field, expected) in [
+        ("native_control_evidence", false),
+        ("openracing_hardware_output", false),
+        ("satisfies_native_response_ready", false),
+        ("satisfies_native_visible_ready", false),
+        ("satisfies_smoke_ready", false),
+        ("satisfies_release_ready", false),
+    ] {
+        if json_bool(receipt, field) != Some(expected) {
+            return Err(anyhow!(
+                "sniff-notes-template receipt '{}' must keep {field}={expected}",
+                receipt_path.display()
+            ));
+        }
+    }
+
+    let boundary = receipt
+        .get("next_concrete_command_claim_boundary")
+        .ok_or_else(|| anyhow!("sniff-notes-template receipt lacks next command claim boundary"))?;
+    if json_bool(boundary, "external_passive_capture_only") != Some(true)
+        || json_bool(boundary, "requires_operator_action") != Some(true)
+        || json_bool(boundary, "raw_pcapng_commit_default") != Some(false)
+    {
+        return Err(anyhow!(
+            "sniff-notes-template next command boundary must be external passive capture only"
+        ));
+    }
+    for field in [
+        "openracing_hardware_output",
+        "opened_hid_device",
+        "opened_serial_device",
+        "sent_read_only_query_commands",
+        "sent_output_writes",
+        "sent_feature_reports",
+        "sent_configuration_writes",
+        "sent_firmware_or_dfu_commands",
+        "native_control_evidence",
+        "visible_motion_verified",
+        "smoke_ready",
+        "release_ready",
+        "wheel_moved_under_openracing",
+    ] {
+        if json_bool(boundary, field) != Some(false) {
+            return Err(anyhow!(
+                "sniff-notes-template next command boundary must keep {field}=false"
+            ));
+        }
+    }
+
+    let sequence = receipt
+        .get("next_concrete_command_sequence")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("sniff-notes-template receipt lacks command sequence"))?;
+    if json_u64(receipt, "next_concrete_command_count") != Some(sequence.len() as u64) {
+        return Err(anyhow!(
+            "sniff-notes-template receipt command count does not match sequence length"
+        ));
+    }
+    let entry = sequence
+        .iter()
+        .find(|entry| {
+            json_string(entry, "command")
+                .is_some_and(|command| command.contains("wheelctl hardware sniff-capture"))
+        })
+        .ok_or_else(|| {
+            anyhow!("sniff-notes-template receipt lacks materialized sniff-capture command")
+        })?;
+    let command = json_string(entry, "command")
+        .ok_or_else(|| anyhow!("materialized sniff-capture command is missing text"))?;
+    for required in [
+        "wheelctl hardware sniff-capture",
+        "--hardware-doctor",
+        "--duration-ms 180000",
+        "--confirm-external-passive-capture",
+        "pit-house-0x8e-timing-correlation",
+        "capture.pcapng",
+        "sniff-capture-receipt.json",
+    ] {
+        if !command.contains(required) {
+            return Err(anyhow!(
+                "materialized sniff-capture command must contain `{required}`"
+            ));
+        }
+    }
+    for forbidden in [
+        "<USBPcapCMD.exe from hardware doctor>",
+        "<USBPcap interface from hardware doctor>",
+        "<capture_devices_value>",
+        "vendor-authority-attempt",
+        "controlled-angle-smoke",
+        "vendor-status-probe",
+        "pidff",
+        "authorize",
+    ] {
+        if command.contains(forbidden) {
+            return Err(anyhow!(
+                "materialized sniff-capture command must not contain `{forbidden}`"
+            ));
+        }
+    }
+    if json_string(entry, "scenario") != Some(scenario) {
+        return Err(anyhow!("materialized sniff-capture scenario must match"));
+    }
+    if json_u64(entry, "duration_ms") != Some(180_000) {
+        return Err(anyhow!(
+            "materialized sniff-capture duration must stay 180000 ms"
+        ));
+    }
+    if json_string(entry, "usbpcap_interface").is_none()
+        || json_string(entry, "capture_devices_value").is_none()
+        || json_string(entry, "hardware_doctor_path").is_none()
+    {
+        return Err(anyhow!(
+            "materialized sniff-capture command must preserve selector and hardware-doctor metadata"
+        ));
+    }
+    for (field, expected) in [
+        ("requires_operator_action", true),
+        ("external_passive_capture", true),
+        ("raw_pcapng_commit_default", false),
+        ("openracing_hardware_output", false),
+        ("opened_hid_device", false),
+        ("opened_serial_device", false),
+        ("sent_read_only_query_commands", false),
+        ("sent_output_writes", false),
+        ("sent_feature_reports", false),
+        ("sent_configuration_writes", false),
+        ("sent_firmware_or_dfu_commands", false),
+        ("native_control_evidence", false),
+        ("visible_motion_verified", false),
+        ("smoke_ready", false),
+        ("release_ready", false),
+    ] {
+        if json_bool(entry, field) != Some(expected) {
+            return Err(anyhow!(
+                "materialized sniff-capture command must keep {field}={expected}"
+            ));
+        }
+    }
+
+    Ok(entry.clone())
+}
+
+fn moza_native_motion_blocker_selector_marker_status(
+    marker_path: &Path,
+) -> (&'static str, bool, Option<String>) {
+    if !marker_path.is_file() {
+        return ("missing", false, None);
+    }
+    let marker = match read_json_path(marker_path) {
+        Ok(marker) => marker,
+        Err(error) => return ("invalid", false, Some(error.to_string())),
+    };
+    if json_bool(&marker, "success") != Some(true)
+        || json_string(&marker, "command") != Some("wheelctl hardware sniff-marker")
+        || json_string(&marker, "marker") != Some("hardware_doctor_selector_reviewed_utc")
+        || json_bool(&marker, "native_control_evidence") != Some(false)
+        || json_bool(&marker, "openracing_hardware_output") != Some(false)
+        || json_bool(&marker, "no_hid_device_opened") != Some(true)
+        || json_bool(&marker, "opened_serial_device") != Some(false)
+        || json_bool(&marker, "sent_read_only_query_commands") != Some(false)
+        || json_bool(&marker, "sent_output_writes") != Some(false)
+        || json_bool(&marker, "sent_configuration_writes") != Some(false)
+        || json_bool(&marker, "sent_firmware_or_dfu_commands") != Some(false)
+        || json_bool(&marker, "satisfies_native_visible_ready") != Some(false)
+        || json_bool(&marker, "satisfies_smoke_ready") != Some(false)
+        || json_bool(&marker, "satisfies_release_ready") != Some(false)
+    {
+        return (
+            "invalid",
+            false,
+            Some("selector marker receipt does not preserve the no-output boundary".to_string()),
+        );
+    }
+    ("recorded", true, None)
+}
+
+fn moza_native_motion_blocker_apply_materialized_capture_command(
+    commands: &mut [Value],
+    materialized_capture_command: &Value,
+    sniff_notes_template_receipt: &Value,
+) {
+    let selector_marker_recorded =
+        json_bool(sniff_notes_template_receipt, "selector_marker_recorded") == Some(true);
+    for command in commands {
+        let Some(name) = json_string(command, "name") else {
+            continue;
+        };
+        let name = name.to_string();
+        match name.as_str() {
+            "refresh_observe_only_hardware_doctor"
+            | "render_checked_in_operator_notes_template" => {
+                if let Some(object) = command.as_object_mut() {
+                    object.insert(
+                        "runnable_next_operator_command".to_string(),
+                        serde_json::json!(false),
+                    );
+                    object.insert(
+                        "next_operator_command_status".to_string(),
+                        serde_json::json!("completed_by_sniff_notes_template_receipt"),
+                    );
+                    object.insert(
+                        "completed_receipt".to_string(),
+                        sniff_notes_template_receipt
+                            .get("path")
+                            .cloned()
+                            .unwrap_or(Value::Null),
+                    );
+                }
+            }
+            "stamp_hardware_doctor_selector_marker" => {
+                if selector_marker_recorded && let Some(object) = command.as_object_mut() {
+                    object.insert(
+                        "runnable_next_operator_command".to_string(),
+                        serde_json::json!(false),
+                    );
+                    object.insert(
+                        "next_operator_command_status".to_string(),
+                        serde_json::json!("completed_by_selector_marker_receipt"),
+                    );
+                    object.insert(
+                        "completed_receipt".to_string(),
+                        sniff_notes_template_receipt
+                            .get("selector_marker_receipt")
+                            .cloned()
+                            .unwrap_or(Value::Null),
+                    );
+                }
+            }
+            "run_bounded_passive_usbpcap_capture" => {
+                let mut value = moza_native_motion_blocker_materialized_capture_command_value(
+                    materialized_capture_command,
+                    sniff_notes_template_receipt,
+                    selector_marker_recorded,
+                );
+                if let Some(object) = value.as_object_mut() {
+                    object.insert("name".to_string(), serde_json::json!(name));
+                }
+                *command = value;
+            }
+            _ => {}
+        }
+    }
+}
+
+fn moza_native_motion_blocker_materialized_capture_command_value(
+    materialized_capture_command: &Value,
+    sniff_notes_template_receipt: &Value,
+    selector_marker_recorded: bool,
+) -> Value {
+    let command = json_string(materialized_capture_command, "command").unwrap_or_default();
+    let duration_ms = json_u64(materialized_capture_command, "duration_ms").unwrap_or(180_000);
+    serde_json::json!({
+        "name": json_string(materialized_capture_command, "name").unwrap_or("run_bounded_external_passive_sniff_capture"),
+        "owner": "operator_external_capture_tool",
+        "openracing_command": true,
+        "output_enabled": false,
+        "openracing_hardware_output": false,
+        "openracing_hid_open": false,
+        "opened_hid_device": false,
+        "opened_serial_device": false,
+        "openracing_feature_reports": false,
+        "openracing_serial_config_commands": false,
+        "openracing_firmware_or_dfu_commands": false,
+        "sent_read_only_query_commands": false,
+        "sent_output_writes": false,
+        "sent_feature_reports": false,
+        "sent_configuration_writes": false,
+        "sent_firmware_or_dfu_commands": false,
+        "native_control_evidence": false,
+        "visible_motion_verified": false,
+        "smoke_ready": false,
+        "release_ready": false,
+        "external_capture_tool_invoked": true,
+        "external_passive_capture": true,
+        "requires_operator_action": true,
+        "requires_hardware_doctor_hint": true,
+        "raw_pcapng_commit_default": false,
+        "runnable_next_operator_command": selector_marker_recorded,
+        "runnable_during_capture": false,
+        "runnable_after_capture": false,
+        "next_operator_command_status": if selector_marker_recorded {
+            "runnable_materialized_capture_command"
+        } else {
+            "requires_selector_review_marker"
+        },
+        "materialized_from_sniff_notes_template_receipt": true,
+        "materialized_capture_command_source": sniff_notes_template_receipt
+            .get("path")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "selector_marker_receipt": sniff_notes_template_receipt
+            .get("selector_marker_receipt")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "scenario": json_string(materialized_capture_command, "scenario").unwrap_or("pit-house-0x8e-timing-correlation"),
+        "usbpcap_interface": json_string(materialized_capture_command, "usbpcap_interface").unwrap_or("unknown"),
+        "capture_devices_value": json_string(materialized_capture_command, "capture_devices_value").unwrap_or("unknown"),
+        "hardware_doctor_path": json_string(materialized_capture_command, "hardware_doctor_path").unwrap_or("unknown"),
+        "duration_ms": duration_ms,
+        "out_path": json_string(materialized_capture_command, "out_path").unwrap_or("target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng"),
+        "json_out_path": json_string(materialized_capture_command, "json_out_path").unwrap_or("target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json"),
+        "command_template": command,
+        "command": command
+    })
+}
+
 fn moza_native_motion_blocker_navigation(lane: &Path) -> Value {
-    let Some(step) = moza_native_motion_blocker_next_operator_step(lane) else {
+    let Some(step) = moza_native_motion_blocker_next_operator_step(lane, None) else {
         return Value::Null;
     };
     serde_json::json!({
@@ -58064,6 +58528,344 @@ mod tests {
                 && !next_concrete_section.contains("pidff"),
             "Next Concrete Command must not surface output, authorization, or read-only rerun commands: {next_concrete_section}"
         );
+        Ok(())
+    }
+
+    fn write_0x8e_timing_blocker_test_lane(lane: &Path) -> TestResult {
+        fs::create_dir_all(lane)?;
+        write_passive_sniff_artifacts(lane, "pit-house-open-idle")?;
+        write_passive_sniff_artifacts(lane, "pit-house-full-controls")?;
+        write_passive_sniff_artifacts(lane, "pit-house-setting-change")?;
+        write_passive_sniff_plan_artifact(lane, "simhub-open-idle")?;
+        write_test_json_file(
+            &lane.join(VENDOR_AUTHORITY_ATTEMPT_FILE),
+            &serde_json::json!({
+                "success": true,
+                "hardware_output_authorized": false,
+                "native_control_evidence": false,
+                "native_visible_ready": false,
+                "smoke_ready": false
+            }),
+        )?;
+        write_test_json_file(
+            &lane.join(VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE),
+            &serde_json::json!({
+                "success": true,
+                "planned_next_output": { "allowed": false },
+                "hardware_output_authorized": false,
+                "native_control_evidence": false,
+                "native_visible_ready": false,
+                "smoke_ready": false
+            }),
+        )?;
+        write_test_json_file(
+            &lane.join(VENDOR_STATUS_TIMING_CORRELATION_PLAN_FILE),
+            &serde_json::from_str::<Value>(MOZA_VENDOR_STATUS_TIMING_CORRELATION_PLAN_JSON)?,
+        )?;
+        write_test_json_file(
+            &lane.join(VENDOR_STATUS_MOVEMENT_BLOCKER_AUDIT_FILE),
+            &serde_json::from_str::<Value>(MOZA_VENDOR_STATUS_MOVEMENT_BLOCKER_AUDIT_JSON)?,
+        )?;
+        Ok(())
+    }
+
+    fn materialized_0x8e_sniff_notes_receipt(openracing_output: bool) -> Value {
+        let command = "wheelctl hardware sniff-capture --usbpcapcmd C:\\USBPcapCMD.exe --usbpcap-interface \\\\.\\USBPcap2 --devices 3 --hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --duration-ms 180000 --out target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --confirm-external-passive-capture --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json";
+        serde_json::json!({
+            "schema_version": 1,
+            "success": true,
+            "command": "wheelctl hardware sniff-notes-template",
+            "scenario": "pit-house-0x8e-timing-correlation",
+            "next_concrete_command": command,
+            "next_concrete_command_count": 1,
+            "next_concrete_command_sequence": [
+                {
+                    "name": "run_bounded_external_passive_sniff_capture",
+                    "command": command,
+                    "scenario": "pit-house-0x8e-timing-correlation",
+                    "usbpcap_interface": "\\\\.\\USBPcap2",
+                    "capture_devices_value": "3",
+                    "hardware_doctor_path": "target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json",
+                    "duration_ms": 180000,
+                    "out_path": "target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng",
+                    "json_out_path": "target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json",
+                    "requires_operator_action": true,
+                    "external_passive_capture": true,
+                    "raw_pcapng_commit_default": false,
+                    "openracing_hardware_output": false,
+                    "opened_hid_device": false,
+                    "opened_serial_device": false,
+                    "sent_read_only_query_commands": false,
+                    "sent_output_writes": false,
+                    "sent_feature_reports": false,
+                    "sent_configuration_writes": false,
+                    "sent_firmware_or_dfu_commands": false,
+                    "native_control_evidence": false,
+                    "visible_motion_verified": false,
+                    "smoke_ready": false,
+                    "release_ready": false
+                }
+            ],
+            "next_concrete_command_claim_boundary": {
+                "external_passive_capture_only": true,
+                "requires_operator_action": true,
+                "raw_pcapng_commit_default": false,
+                "openracing_hardware_output": false,
+                "opened_hid_device": false,
+                "opened_serial_device": false,
+                "sent_read_only_query_commands": false,
+                "sent_output_writes": false,
+                "sent_feature_reports": false,
+                "sent_configuration_writes": false,
+                "sent_firmware_or_dfu_commands": false,
+                "native_control_evidence": false,
+                "visible_motion_verified": false,
+                "smoke_ready": false,
+                "release_ready": false,
+                "wheel_moved_under_openracing": false
+            },
+            "native_control_evidence": false,
+            "openracing_hardware_output": openracing_output,
+            "satisfies_native_response_ready": false,
+            "satisfies_native_visible_ready": false,
+            "satisfies_smoke_ready": false,
+            "satisfies_release_ready": false
+        })
+    }
+
+    fn write_selector_review_marker_receipt(path: &Path) -> TestResult {
+        write_test_json_file(
+            path,
+            &serde_json::json!({
+                "schema_version": 1,
+                "success": true,
+                "command": "wheelctl hardware sniff-marker",
+                "operator_notes_path": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
+                "marker": "hardware_doctor_selector_reviewed_utc",
+                "marker_timestamp_utc": "2026-05-30T00:00:00Z",
+                "native_control_evidence": false,
+                "openracing_hardware_output": false,
+                "no_hid_device_opened": true,
+                "opened_serial_device": false,
+                "sent_read_only_query_commands": false,
+                "sent_output_writes": false,
+                "sent_configuration_writes": false,
+                "sent_firmware_or_dfu_commands": false,
+                "satisfies_native_response_ready": false,
+                "satisfies_native_visible_ready": false,
+                "satisfies_smoke_ready": false,
+                "satisfies_release_ready": false
+            }),
+        )
+    }
+
+    #[test]
+    fn bench_wizard_uses_materialized_sniff_notes_capture_command_after_selector_marker()
+    -> TestResult {
+        let lane = tempfile::tempdir()?;
+        write_0x8e_timing_blocker_test_lane(lane.path())?;
+        let local = tempfile::tempdir()?;
+        let receipt_path = local.path().join("sniff-notes-template-receipt.json");
+        let marker_path = local
+            .path()
+            .join("marker-hardware_doctor_selector_reviewed_utc.json");
+        write_test_json_file(&receipt_path, &materialized_0x8e_sniff_notes_receipt(false))?;
+        write_selector_review_marker_receipt(&marker_path)?;
+
+        let wizard_receipt = moza_bench_wizard_receipt_with_sniff_notes_receipt(
+            lane.path(),
+            None,
+            None,
+            Some(&receipt_path),
+        )?;
+        let step = wizard_receipt
+            .get("next_operator_step")
+            .ok_or("expected next operator step")?;
+        let receipt_status = step
+            .get("sniff_notes_template_receipt")
+            .ok_or("expected sniff notes template receipt status")?;
+        assert_eq!(json_string(receipt_status, "status"), Some("valid"));
+        assert_eq!(
+            json_string(receipt_status, "selector_marker_status"),
+            Some("recorded")
+        );
+        assert_eq!(
+            json_bool(receipt_status, "materialized_capture_command_runnable"),
+            Some(true)
+        );
+
+        let next_concrete_command = wizard_receipt
+            .get("next_concrete_command")
+            .ok_or("expected materialized next concrete command")?;
+        assert_eq!(
+            json_string(next_concrete_command, "name"),
+            Some("run_bounded_passive_usbpcap_capture")
+        );
+        assert_eq!(
+            json_bool(next_concrete_command, "runnable_next_operator_command"),
+            Some(true)
+        );
+        assert_eq!(
+            json_string(next_concrete_command, "next_operator_command_status"),
+            Some("runnable_materialized_capture_command")
+        );
+        assert_eq!(
+            json_bool(
+                next_concrete_command,
+                "materialized_from_sniff_notes_template_receipt"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(next_concrete_command, "openracing_hardware_output"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(next_concrete_command, "openracing_hid_open"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(next_concrete_command, "opened_serial_device"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(next_concrete_command, "sent_read_only_query_commands"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(next_concrete_command, "sent_output_writes"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(next_concrete_command, "visible_motion_verified"),
+            Some(false)
+        );
+        assert_eq!(
+            json_u64(next_concrete_command, "duration_ms"),
+            Some(180_000)
+        );
+        assert_eq!(
+            json_string(next_concrete_command, "capture_devices_value"),
+            Some("3")
+        );
+        let command_text =
+            json_string(next_concrete_command, "command").ok_or("missing command text")?;
+        assert!(
+            command_text.contains("wheelctl hardware sniff-capture")
+                && command_text.contains("--devices 3")
+                && command_text.contains("--hardware-doctor")
+                && command_text.contains("--duration-ms 180000")
+                && command_text.contains("--confirm-external-passive-capture")
+                && command_text.contains("sniff-capture-receipt.json"),
+            "materialized capture command should be ready to run: {command_text}"
+        );
+        assert!(
+            !command_text.contains("<capture_devices_value>")
+                && !command_text.contains("<USBPcapCMD.exe")
+                && !command_text.contains("vendor-status-probe")
+                && !command_text.contains("vendor-authority-attempt")
+                && !command_text.contains("controlled-angle-smoke")
+                && !command_text.contains("pidff")
+                && !command_text.contains("authorize"),
+            "materialized capture command must not be placeholder, output, authorization, or read-only probe: {command_text}"
+        );
+        parse_cli(split_generated_command(command_text)?).map_err(|error| {
+            format!("materialized capture command failed to parse: {command_text}\n{error}")
+        })?;
+
+        let sequence = wizard_receipt
+            .get("next_concrete_command_sequence")
+            .and_then(Value::as_array)
+            .ok_or("expected next concrete command sequence")?;
+        assert_eq!(
+            json_u64(&wizard_receipt, "next_concrete_command_count"),
+            Some(1)
+        );
+        assert_eq!(sequence.len(), 1);
+        let commands = step
+            .get("commands")
+            .and_then(Value::as_array)
+            .ok_or("expected 0x8E command list")?;
+        assert!(
+            commands.iter().any(|command| {
+                json_string(command, "name") == Some("refresh_observe_only_hardware_doctor")
+                    && json_string(command, "next_operator_command_status")
+                        == Some("completed_by_sniff_notes_template_receipt")
+                    && json_bool(command, "runnable_next_operator_command") == Some(false)
+            }),
+            "hardware doctor command should be marked completed once receipt materializes capture command: {commands:?}"
+        );
+        assert!(
+            commands.iter().any(|command| {
+                json_string(command, "name") == Some("stamp_hardware_doctor_selector_marker")
+                    && json_string(command, "next_operator_command_status")
+                        == Some("completed_by_selector_marker_receipt")
+                    && json_bool(command, "runnable_next_operator_command") == Some(false)
+            }),
+            "selector marker command should be marked completed before capture is runnable: {commands:?}"
+        );
+        let markdown = render_moza_bench_wizard_markdown(&wizard_receipt);
+        let next_concrete_section = markdown
+            .split("## Next Concrete Command")
+            .nth(1)
+            .and_then(|section| section.split("## ").next())
+            .ok_or("expected Next Concrete Command section")?;
+        assert!(next_concrete_section.contains("wheelctl hardware sniff-capture"));
+        assert!(next_concrete_section.contains("--devices 3"));
+        assert!(!next_concrete_section.contains("<capture_devices_value>"));
+        assert!(!next_concrete_section.contains("vendor-authority-attempt"));
+        Ok(())
+    }
+
+    #[test]
+    fn bench_wizard_rejects_claiming_sniff_notes_capture_receipt() -> TestResult {
+        let lane = tempfile::tempdir()?;
+        write_0x8e_timing_blocker_test_lane(lane.path())?;
+        let local = tempfile::tempdir()?;
+        let receipt_path = local.path().join("sniff-notes-template-receipt.json");
+        write_test_json_file(&receipt_path, &materialized_0x8e_sniff_notes_receipt(true))?;
+
+        let wizard_receipt = moza_bench_wizard_receipt_with_sniff_notes_receipt(
+            lane.path(),
+            None,
+            None,
+            Some(&receipt_path),
+        )?;
+        let step = wizard_receipt
+            .get("next_operator_step")
+            .ok_or("expected next operator step")?;
+        let receipt_status = step
+            .get("sniff_notes_template_receipt")
+            .ok_or("expected sniff notes template receipt status")?;
+        assert_eq!(json_string(receipt_status, "status"), Some("invalid"));
+        assert_eq!(
+            json_bool(receipt_status, "materialized_capture_command_available"),
+            Some(false)
+        );
+
+        let next_concrete_command = wizard_receipt
+            .get("next_concrete_command")
+            .ok_or("expected safe fallback next concrete command")?;
+        assert_eq!(
+            json_string(next_concrete_command, "name"),
+            Some("refresh_observe_only_hardware_doctor")
+        );
+        let command_text =
+            json_string(next_concrete_command, "command").ok_or("missing command text")?;
+        assert!(
+            command_text.contains("wheelctl hardware doctor")
+                && !command_text.contains("wheelctl hardware sniff-capture"),
+            "claiming receipt must not surface capture command: {command_text}"
+        );
+        let sequence = wizard_receipt
+            .get("next_concrete_command_sequence")
+            .and_then(Value::as_array)
+            .ok_or("expected safe fallback sequence")?;
+        assert_eq!(
+            json_u64(&wizard_receipt, "next_concrete_command_count"),
+            Some(3)
+        );
+        assert_eq!(sequence.len(), 3);
         Ok(())
     }
 

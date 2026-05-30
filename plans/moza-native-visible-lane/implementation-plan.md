@@ -10033,6 +10033,85 @@ helper that derives them from hardware-doctor hints, focused tests, and this
 source-of-truth work item. Do not remove the 0x8E timing-correlation handoff,
 movement-blocker audit, or native-visible promotion block.
 
+## Work item: consume-sniff-notes-next-capture-command
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: operator confusion after sniff-notes-template materializes the current-selector capture command
+Blocked by: completed sniff-notes-template next concrete capture command receipt surfacing
+
+### Goal
+
+Make `wheelctl moza bench-wizard` consume a valid local
+`target/sniff/pit-house-0x8e-timing-correlation/sniff-notes-template-receipt.json`
+when it exists, so the wizard can advance from no-output pre-capture setup to
+the already materialized bounded passive `sniff-capture` command.
+
+### Production delta
+
+Bench-wizard now validates the local sniff-notes-template receipt before using
+it. The receipt must be successful, match the
+`pit-house-0x8e-timing-correlation` scenario, carry a concrete
+`wheelctl hardware sniff-capture` command with `--hardware-doctor`,
+`--duration-ms 180000`, and `--confirm-external-passive-capture`, contain no
+selector placeholders, and preserve the no-output/non-claiming boundary.
+
+When the matching `hardware_doctor_selector_reviewed_utc` marker receipt is
+also present and non-claiming, bench-wizard marks the earlier hardware-doctor,
+notes-template, and selector-marker steps as completed and surfaces the
+materialized passive capture command as the single next concrete operator
+command. If the receipt is missing or invalid, the wizard stays on the previous
+safe pre-capture command sequence.
+
+This work item does not run a capture and does not make the wheel move. It only
+routes the operator to the next passive witness-capture command after the
+no-output materialization steps have already produced valid receipts.
+
+### Non-goals
+
+No live capture, raw pcap commit, HID open, serial open, read-only query send,
+PIDFF output, feature report, configuration write, firmware/update/DFU path,
+high torque, mode-enable write, authority write, authorization receipt,
+semantic decode claim, registry promotion, tuple sendability, corrected
+read-only probe readiness, native-control claim, native-visible claim,
+smoke-ready claim, simulator claim, coexistence claim, release-ready claim,
+output claim, or wheel movement.
+
+### Acceptance
+
+- Missing sniff-notes-template receipts keep the existing pre-capture command
+  sequence: hardware doctor, notes-template rendering, and selector marker.
+- Valid sniff-notes-template receipts with a valid selector-marker receipt make
+  the materialized passive `sniff-capture` command the next concrete command.
+- Invalid or claiming sniff-notes-template receipts are not surfaced as
+  runnable capture commands.
+- The next concrete command boundary keeps OpenRacing HID, serial, read-only
+  query, output, feature, configuration, firmware/DFU, native-control,
+  native-visible, smoke, release, and wheel-movement claims false.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the bench-wizard local sniff-notes-template receipt consumption
+helper, focused tests, and this source-of-truth work item. Do not remove the
+sniff-notes-template receipt fields, timing-correlation plan/review artifacts,
+movement-blocker audit, or native-visible promotion block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
