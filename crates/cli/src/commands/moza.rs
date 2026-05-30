@@ -2327,7 +2327,13 @@ fn moza_native_motion_blocker_command_templates(command_templates: &[Value]) -> 
             });
             for key in [
                 "materializes_capture_command",
+                "materializes_event_marker_commands",
                 "materialized_command_in",
+                "edits_operator_notes_only",
+                "requires_capture_running",
+                "command_example_marker",
+                "all_marker_commands_materialized_in",
+                "marker_command_source",
                 "command_has_selector_placeholders",
                 "must_not_run_unrendered_template",
                 "concrete_command_source",
@@ -30497,9 +30503,20 @@ fn vendor_status_timing_correlation_plan_receipt(
                 "name": "render_checked_in_operator_notes_template",
                 "output_enabled": false,
                 "materializes_capture_command": true,
+                "materializes_event_marker_commands": true,
                 "materialized_command_in": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
                 "selector_source": "fresh hardware doctor Moza USBPcap hint",
                 "command": "wheelctl hardware sniff-notes-template --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json --hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --out target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-notes-template-receipt.json"
+            },
+            {
+                "name": "stamp_operator_event_markers",
+                "output_enabled": false,
+                "edits_operator_notes_only": true,
+                "requires_capture_running": true,
+                "command_example_marker": "capture_start_utc",
+                "all_marker_commands_materialized_in": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
+                "marker_command_source": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
+                "command": "wheelctl hardware sniff-marker --operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --marker capture_start_utc --json-out target/sniff/pit-house-0x8e-timing-correlation/marker-capture_start_utc.json"
             },
             {
                 "name": "run_bounded_passive_usbpcap_capture",
@@ -50208,6 +50225,7 @@ mod tests {
         assert!(capture_command_templates.iter().any(|template| {
             json_string(template, "name") == Some("render_checked_in_operator_notes_template")
                 && json_bool(template, "materializes_capture_command") == Some(true)
+                && json_bool(template, "materializes_event_marker_commands") == Some(true)
                 && json_string(template, "materialized_command_in")
                     == Some("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md")
                 && json_string(template, "command")
@@ -50217,6 +50235,20 @@ mod tests {
                         ) && command.contains("--hardware-doctor")
                     })
                     == Some(true)
+        }));
+        assert!(capture_command_templates.iter().any(|template| {
+            json_string(template, "name") == Some("stamp_operator_event_markers")
+                && json_bool(template, "output_enabled") == Some(false)
+                && json_bool(template, "edits_operator_notes_only") == Some(true)
+                && json_bool(template, "requires_capture_running") == Some(true)
+                && json_string(template, "command_example_marker") == Some("capture_start_utc")
+                && json_string(template, "all_marker_commands_materialized_in")
+                    == Some("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md")
+                && json_string(template, "command").map(|command| {
+                    command.contains("wheelctl hardware sniff-marker")
+                        && command.contains("--marker capture_start_utc")
+                        && command.contains("marker-capture_start_utc.json")
+                }) == Some(true)
         }));
         assert!(capture_command_templates.iter().any(|template| {
             json_string(template, "name") == Some("record_passive_sniff_receipt")
@@ -56734,6 +56766,7 @@ mod tests {
             vec![
                 "refresh_observe_only_hardware_doctor",
                 "render_checked_in_operator_notes_template",
+                "stamp_operator_event_markers",
                 "run_bounded_passive_usbpcap_capture",
                 "record_passive_sniff_receipt",
                 "summarize_passive_capture",
@@ -56746,6 +56779,7 @@ mod tests {
                 json_string(command, "name") == Some("render_checked_in_operator_notes_template")
                     && json_bool(command, "output_enabled") == Some(false)
                     && json_bool(command, "materializes_capture_command") == Some(true)
+                    && json_bool(command, "materializes_event_marker_commands") == Some(true)
                     && json_string(command, "materialized_command_in")
                         == Some("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md")
                     && json_string(command, "command").is_some_and(|text| {
@@ -56755,6 +56789,23 @@ mod tests {
                     })
             }),
             "0x8E timing-correlation wizard should render checked-in notes template before capture: {commands:?}"
+        );
+        assert!(
+            commands.iter().any(|command| {
+                json_string(command, "name") == Some("stamp_operator_event_markers")
+                    && json_bool(command, "output_enabled") == Some(false)
+                    && json_bool(command, "edits_operator_notes_only") == Some(true)
+                    && json_bool(command, "requires_capture_running") == Some(true)
+                    && json_string(command, "command_example_marker") == Some("capture_start_utc")
+                    && json_string(command, "all_marker_commands_materialized_in")
+                        == Some("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md")
+                    && json_string(command, "command").is_some_and(|text| {
+                        text.contains("wheelctl hardware sniff-marker")
+                            && text.contains("--operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md")
+                            && text.contains("--marker capture_start_utc")
+                    })
+            }),
+            "0x8E timing-correlation handoff should include the notes marker command: {commands:?}"
         );
         assert!(
             commands.iter().any(|command| {

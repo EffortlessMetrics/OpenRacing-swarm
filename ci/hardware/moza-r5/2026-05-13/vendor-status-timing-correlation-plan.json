@@ -37,9 +37,20 @@
       "command": "wheelctl hardware sniff-notes-template --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json --hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --out target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-notes-template-receipt.json",
       "materialized_command_in": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
       "materializes_capture_command": true,
+      "materializes_event_marker_commands": true,
       "name": "render_checked_in_operator_notes_template",
       "output_enabled": false,
       "selector_source": "fresh hardware doctor Moza USBPcap hint"
+    },
+    {
+      "all_marker_commands_materialized_in": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
+      "command": "wheelctl hardware sniff-marker --operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --marker capture_start_utc --json-out target/sniff/pit-house-0x8e-timing-correlation/marker-capture_start_utc.json",
+      "command_example_marker": "capture_start_utc",
+      "edits_operator_notes_only": true,
+      "marker_command_source": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
+      "name": "stamp_operator_event_markers",
+      "output_enabled": false,
+      "requires_capture_running": true
     },
     {
       "command": "wheelctl hardware sniff-capture --usbpcapcmd '<USBPcapCMD.exe from hardware doctor>' --usbpcap-interface '<USBPcap interface from hardware doctor>' --devices <capture_devices_value> --hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --duration-ms 180000 --out target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --confirm-external-passive-capture --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json",
@@ -81,7 +92,7 @@
   "command": "wheelctl moza vendor-status-timing-correlation-plan",
   "corrected_read_only_probe_ready": false,
   "exact_next_blocker": "No checked-in artifact currently timing-correlates the 0x8E payload-bearing status-source samples to authority or mode state. This plan makes the next passive capture concrete, but it does not itself record timing evidence or allow live probing, authorization, PIDFF, force escalation, or motion.",
-  "generated_at_utc": "2026-05-30T11:13:12Z",
+  "generated_at_utc": "2026-05-30T12:09:26Z",
   "hardware_output_authorized": false,
   "high_torque_enabled": false,
   "live_read_only_probe_allowed": false,

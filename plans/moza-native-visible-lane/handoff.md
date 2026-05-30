@@ -611,6 +611,13 @@ fresh hardware-doctor selector review and each required capture event as it
 happens. The helper only edits notes; it does not open HID or serial devices,
 send read-only queries, authorize output, or move the wheel.
 
+The preferred marker path is now `wheelctl hardware sniff-marker`, which is
+rendered into the same operator notes template for the hardware-doctor selector
+review marker and every required 0x8E capture event. The command only edits the
+local notes file and writes a non-claiming marker receipt; it opens no HID or
+serial device, sends no read-only query, capture, output, configuration,
+firmware, or PIDFF command, and does not change the blocked movement state.
+
 `vendor-status-timing-correlation-review` now treats the hardware-doctor marker
 and capture start/stop markers as administrative chronology only. A candidate
 0x8E timing correlation requires payload variation near semantic operator
