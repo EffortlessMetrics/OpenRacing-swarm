@@ -3193,6 +3193,7 @@ fn moza_native_motion_blocker_apply_materialized_capture_command(
             }
             "stamp_capture_event_markers" => {
                 if selector_marker_recorded && let Some(object) = command.as_object_mut() {
+                    let markers = vendor_status_timing_correlation_event_marker_order();
                     object.insert(
                         "runnable_next_operator_command".to_string(),
                         serde_json::json!(true),
@@ -3218,6 +3219,18 @@ fn moza_native_motion_blocker_apply_materialized_capture_command(
                     object.insert(
                         "capture_marker_handoff_required".to_string(),
                         serde_json::json!(true),
+                    );
+                    object.insert(
+                        "required_capture_event_markers".to_string(),
+                        serde_json::json!(markers),
+                    );
+                    object.insert(
+                        "required_capture_event_marker_count".to_string(),
+                        serde_json::json!(markers.len()),
+                    );
+                    object.insert(
+                        "marker_commands".to_string(),
+                        Value::Array(vendor_status_timing_correlation_marker_commands(&markers)),
                     );
                 }
             }
@@ -31498,6 +31511,9 @@ fn vendor_status_timing_correlation_plan_receipt(
                 "requires_capture_not_started": false,
                 "marker_phase": "capture_runtime_events",
                 "command_example_marker": "capture_start_utc",
+                "required_capture_event_markers": vendor_status_timing_correlation_event_marker_order(),
+                "required_capture_event_marker_count": vendor_status_timing_correlation_event_marker_order().len(),
+                "marker_commands": vendor_status_timing_correlation_marker_commands(&vendor_status_timing_correlation_event_marker_order()),
                 "all_marker_commands_materialized_in": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
                 "marker_command_source": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
                 "sequencing_note": "stamp capture_start_utc and semantic Pit House/LED event markers while USBPcap capture is running",
@@ -32759,6 +32775,35 @@ fn vendor_status_timing_correlation_required_markers() -> [&'static str; 11] {
         "pit_house_closed_utc",
         "capture_stop_utc",
     ]
+}
+
+fn vendor_status_timing_correlation_marker_commands(markers: &[&str]) -> Vec<Value> {
+    markers
+        .iter()
+        .map(|marker| {
+            serde_json::json!({
+                "marker": marker,
+                "command": vendor_status_timing_correlation_marker_command(marker),
+                "edits_operator_notes_only": true,
+                "openracing_hardware_output": false,
+                "openracing_hid_open": false,
+                "opened_serial_device": false,
+                "sent_read_only_query_commands": false,
+                "sent_output_writes": false,
+                "sent_configuration_writes": false,
+                "sent_firmware_or_dfu_commands": false,
+                "native_control_evidence": false,
+                "visible_motion_verified": false,
+                "wheel_moved_under_openracing": false
+            })
+        })
+        .collect()
+}
+
+fn vendor_status_timing_correlation_marker_command(marker: &str) -> String {
+    format!(
+        "wheelctl hardware sniff-marker --operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --marker {marker} --json-out target/sniff/pit-house-0x8e-timing-correlation/marker-{marker}.json"
+    )
 }
 
 const VENDOR_STATUS_TIMING_CORRELATION_WINDOW_SECONDS: f64 = 5.0;
@@ -51982,22 +52027,88 @@ mod tests {
                         && command.contains("marker-hardware_doctor_selector_reviewed_utc.json")
                 }) == Some(true)
         }));
-        assert!(capture_command_templates.iter().any(|template| {
-            json_string(template, "name") == Some("stamp_capture_event_markers")
-                && json_bool(template, "output_enabled") == Some(false)
-                && json_bool(template, "edits_operator_notes_only") == Some(true)
-                && json_bool(template, "requires_capture_running") == Some(true)
-                && json_bool(template, "requires_capture_not_started") == Some(false)
-                && json_string(template, "marker_phase") == Some("capture_runtime_events")
-                && json_string(template, "command_example_marker") == Some("capture_start_utc")
-                && json_string(template, "all_marker_commands_materialized_in")
-                    == Some("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md")
-                && json_string(template, "command").map(|command| {
-                    command.contains("wheelctl hardware sniff-marker")
-                        && command.contains("--marker capture_start_utc")
-                        && command.contains("marker-capture_start_utc.json")
-                }) == Some(true)
-        }));
+        let capture_marker_template = capture_command_templates
+            .iter()
+            .find(|template| json_string(template, "name") == Some("stamp_capture_event_markers"))
+            .ok_or("missing capture event marker template")?;
+        assert_eq!(
+            json_bool(capture_marker_template, "output_enabled"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(capture_marker_template, "edits_operator_notes_only"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(capture_marker_template, "requires_capture_running"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(capture_marker_template, "requires_capture_not_started"),
+            Some(false)
+        );
+        assert_eq!(
+            json_string(capture_marker_template, "marker_phase"),
+            Some("capture_runtime_events")
+        );
+        assert_eq!(
+            json_string(capture_marker_template, "command_example_marker"),
+            Some("capture_start_utc")
+        );
+        assert_eq!(
+            json_string(
+                capture_marker_template,
+                "all_marker_commands_materialized_in"
+            ),
+            Some("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md")
+        );
+        assert_eq!(
+            json_string(capture_marker_template, "command").map(|command| {
+                command.contains("wheelctl hardware sniff-marker")
+                    && command.contains("--marker capture_start_utc")
+                    && command.contains("marker-capture_start_utc.json")
+            }),
+            Some(true)
+        );
+        assert_eq!(
+            json_u64(
+                capture_marker_template,
+                "required_capture_event_marker_count"
+            ),
+            Some(10)
+        );
+        let marker_commands = capture_marker_template
+            .get("marker_commands")
+            .and_then(Value::as_array)
+            .ok_or("missing full capture marker command list")?;
+        assert_eq!(marker_commands.len(), 10);
+        for marker in vendor_status_timing_correlation_event_marker_order() {
+            let marker_command = marker_commands
+                .iter()
+                .find(|command| json_string(command, "marker") == Some(marker))
+                .ok_or_else(|| format!("missing timing marker command for {marker}"))?;
+            assert_eq!(
+                json_bool(marker_command, "openracing_hardware_output"),
+                Some(false)
+            );
+            assert_eq!(
+                json_bool(marker_command, "sent_read_only_query_commands"),
+                Some(false)
+            );
+            assert_eq!(json_bool(marker_command, "sent_output_writes"), Some(false));
+            assert_eq!(
+                json_bool(marker_command, "wheel_moved_under_openracing"),
+                Some(false)
+            );
+            let command = json_string(marker_command, "command")
+                .ok_or("missing concrete timing marker command")?;
+            assert!(
+                command.contains("wheelctl hardware sniff-marker")
+                    && command.contains(&format!("--marker {marker}"))
+                    && command.contains(&format!("marker-{marker}.json")),
+                "timing marker command should be concrete for {marker}: {command}"
+            );
+        }
         assert!(capture_command_templates.iter().any(|template| {
             json_string(template, "name") == Some("record_passive_sniff_receipt")
                 && json_bool(template, "output_enabled") == Some(false)
@@ -59813,6 +59924,42 @@ mod tests {
             json_bool(marker_command, "capture_marker_handoff_required"),
             Some(true)
         );
+        assert_eq!(
+            json_u64(marker_command, "required_capture_event_marker_count"),
+            Some(10)
+        );
+        let marker_commands = marker_command
+            .get("marker_commands")
+            .and_then(Value::as_array)
+            .ok_or("expected full capture event marker command list")?;
+        assert_eq!(marker_commands.len(), 10);
+        for marker in vendor_status_timing_correlation_event_marker_order() {
+            let marker_entry = marker_commands
+                .iter()
+                .find(|command| json_string(command, "marker") == Some(marker))
+                .ok_or_else(|| format!("missing marker command for {marker}"))?;
+            assert_eq!(
+                json_bool(marker_entry, "openracing_hardware_output"),
+                Some(false)
+            );
+            assert_eq!(json_bool(marker_entry, "openracing_hid_open"), Some(false));
+            assert_eq!(
+                json_bool(marker_entry, "sent_read_only_query_commands"),
+                Some(false)
+            );
+            assert_eq!(json_bool(marker_entry, "sent_output_writes"), Some(false));
+            let marker_entry_text =
+                json_string(marker_entry, "command").ok_or("missing marker entry command")?;
+            assert!(
+                marker_entry_text.contains("wheelctl hardware sniff-marker")
+                    && marker_entry_text.contains(&format!("--marker {marker}"))
+                    && marker_entry_text.contains(&format!("marker-{marker}.json")),
+                "marker command should be concrete for {marker}: {marker_entry_text}"
+            );
+            parse_cli(split_generated_command(marker_entry_text)?).map_err(|error| {
+                format!("marker command failed to parse: {marker_entry_text}\n{error}")
+            })?;
+        }
         let marker_command_text =
             json_string(marker_command, "command").ok_or("missing marker command text")?;
         assert!(

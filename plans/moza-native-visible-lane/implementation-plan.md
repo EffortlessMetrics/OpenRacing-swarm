@@ -10769,6 +10769,110 @@ source-of-truth work item. Do not remove the 0x8E capture prep gates,
 sniff-marker helper, timing-correlation plan/review artifacts, movement-blocker
 audit, or native-visible promotion block.
 
+## Work item: expand-0x8e-capture-marker-command-list
+
+Status: completed
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: relying on chat history or a single example marker for the 0x8E
+capture-runtime event list
+Blocked by: completed materialized 0x8E capture-marker handoff
+
+### Goal
+
+Make the 0x8E event-marker handoff executable from the machine-readable wizard
+and plan receipts by listing every required runtime marker command, not only the
+`capture_start_utc` example.
+
+### Production delta
+
+`wheelctl moza vendor-status-timing-correlation-plan` and the bench-wizard
+materialized capture handoff now include:
+
+- `required_capture_event_markers`
+- `required_capture_event_marker_count=10`
+- `marker_commands` for every capture-runtime event marker
+
+The concrete runtime marker commands are:
+
+```text
+capture_start_utc
+pit_house_opened_utc
+r5_recognized_in_pit_house_utc
+idle_stable_before_change_utc
+ks_top_left_front_led_default_teal_observed_utc
+ks_top_left_front_led_changed_to_red_utc
+ks_top_left_front_led_restored_to_default_teal_utc
+idle_stable_after_restore_utc
+pit_house_closed_utc
+capture_stop_utc
+```
+
+Each generated command is a `wheelctl hardware sniff-marker` operator-notes edit
+only. It opens no HID or serial path and sends no OpenRacing read-only, output,
+configuration, firmware, DFU, PIDFF, or vendor command.
+
+### Non-goals
+
+No live capture, raw pcap commit, HID open, serial open, read-only query rerun,
+PIDFF command, feature report, configuration write, firmware/DFU interaction,
+high torque, mode write, authority write, authorization, semantic decode,
+tuple sendability, native-control claim, native-visible claim, smoke-ready
+claim, release-ready claim, or wheel-movement claim.
+
+### Acceptance
+
+- `stamp_capture_event_markers` carries the full ordered runtime marker list and
+  `required_capture_event_marker_count=10`.
+- Every marker entry includes a concrete parseable `wheelctl hardware
+  sniff-marker` command and keeps all OpenRacing hardware-output, HID, serial,
+  read-only query, and write flags false.
+- `vendor-status-timing-correlation-plan.json` and
+  `vendor-status-movement-blocker-audit.json` preserve the full marker command
+  list for the next passive Pit House 0x8E capture.
+- The exact blocker remains the missing reviewed timing-correlated
+  payload-bearing authority/mode status source.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain explicit.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-plan `
+  --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-movement-blocker-audit `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json `
+  --demux-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json `
+  --framing-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json `
+  --extended-scan-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json `
+  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json `
+  --payload-rerun-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --timing-correlation-plan ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --timing-correlation-review ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json `
+  --overwrite
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_plan -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_uses_materialized_sniff_notes_capture_command_after_selector_marker -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the full marker command-list fields, focused assertions, regenerated
+plan/audit receipts, and this source-of-truth work item. Do not remove the
+timing-correlation capture plan, marker helper, event-marker validators,
+movement-blocker audit, or native-visible promotion block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
