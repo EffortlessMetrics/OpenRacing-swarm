@@ -1,7 +1,7 @@
 {
   "success": true,
   "command": "wheelctl hardware doctor",
-  "generated_at": "2026-05-29T04:41:50Z",
+  "generated_at": "2026-05-30T06:56:12Z",
   "no_hid_device_opened": true,
   "no_ffb_writes": true,
   "no_output_reports": true,

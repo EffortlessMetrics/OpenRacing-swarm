@@ -2515,6 +2515,32 @@ commands = [
 ]
 
 [[work_item]]
+id = "refresh-read-only-status-demux-rerun-blocker"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-refresh-read-only-status-demux-rerun-blocker"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json"
+claim_boundary = "Read-only hardware status rerun evidence only; after a fresh observe-only hardware doctor, the COM4 probe sent registry-approved read-only queries with a 64-frame scan cap, decoded seven non-authority status replies, failed the two authority/status replies closed, and kept mode/safety unknown. Opens no HID output path, sends no PIDFF/output/configuration/firmware/DFU/high-torque command, creates no authorization, promotes no tuple sendability, runs no motion, and keeps wheel_moved_under_openracing=false, visible_motion_verified=false, output_was_sent=false, and authority_state=blocked."
+commands = [
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json hardware doctor --json-out target/moza-current/vendor-status-mode-matrix-demux-hardware-doctor.json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-probe --serial-port COM4 --baud-rate 115200 --timeout-ms 250 --max-response-frames-per-query 64 --confirm-read-only-query --json-out target/moza-current/vendor-status-mode-matrix-rerun.json",
+  "copy target/moza-current/vendor-status-mode-matrix-rerun.json ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json",
+  "copy target/moza-current/vendor-status-mode-matrix-demux-hardware-doctor.json ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux-hardware-doctor.json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-movement-blocker-audit --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json --demux-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json --framing-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json --extended-scan-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json --payload-rerun-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json --timing-correlation-plan ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json --timing-correlation-review ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json --overwrite",
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-read-only-rerun-blocker.json --md-out ci/hardware/moza-r5/2026-05-13/index.md",
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-read-only-rerun-blocker.json --md-out target/moza-current/bench-wizard-read-only-rerun-blocker.md",
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
