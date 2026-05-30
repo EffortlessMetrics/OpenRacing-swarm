@@ -1027,6 +1027,40 @@ pub enum MozaCommands {
         overwrite: bool,
     },
 
+    /// Audit the current vendor-status blocker chain without sending traffic
+    VendorStatusMovementBlockerAudit {
+        /// Original read-only status probe receipt that decoded zero responses
+        #[arg(long)]
+        status_probe: std::path::PathBuf,
+        /// Demuxed read-only status probe receipt used as the serial-lane baseline
+        #[arg(long)]
+        demux_probe: std::path::PathBuf,
+        /// Initial framing diagnosis for the zero-response probe
+        #[arg(long)]
+        framing_diagnosis: std::path::PathBuf,
+        /// Extended-scan diagnosis for targeted authority-status reads
+        #[arg(long)]
+        extended_scan_diagnosis: std::path::PathBuf,
+        /// Diagnosis proving the current authority endpoint is endpoint-specific
+        #[arg(long)]
+        authority_endpoint_diagnosis: std::path::PathBuf,
+        /// Diagnosis for the latest authority payload rerun
+        #[arg(long)]
+        payload_rerun_diagnosis: std::path::PathBuf,
+        /// Staged passive 0x8E timing-correlation plan
+        #[arg(long)]
+        timing_correlation_plan: std::path::PathBuf,
+        /// Latest passive 0x8E timing-correlation review
+        #[arg(long)]
+        timing_correlation_review: std::path::PathBuf,
+        /// Write the non-claiming movement blocker audit to this JSON file
+        #[arg(long)]
+        json_out: std::path::PathBuf,
+        /// Replace an existing movement blocker audit receipt
+        #[arg(long)]
+        overwrite: bool,
+    },
+
     /// Create a single-use exact Moza vendor-authority authorization receipt without sending traffic
     AuthorizeVendorAuthority {
         /// Registry command id being authorized for the later exact frame

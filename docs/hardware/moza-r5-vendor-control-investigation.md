@@ -288,6 +288,19 @@ by the timing-correlation plan. The verdict is
 authorization planning, PIDFF rerun, force escalation, and motion remain
 blocked.
 
+`vendor-status-movement-blocker-audit.json` now consolidates the read-only
+zero-response path into one current blocker statement. The original
+`vendor-status-mode-matrix.json` decoded zero responses, but
+`vendor-status-mode-matrix-demux.json` decoded seven non-authority status
+replies on the same COM4 serial lane. The audit records that broad serial
+ownership, line-setting, framing, and scan-window depth are not the current
+primary blockers. The active blockers are authority endpoint/command mismatch
+and missing timing-correlated payload-bearing status-source evidence. It keeps
+`wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+`output_was_sent=false`, and `authority_state=blocked`, and it routes the next
+concrete action to the staged passive Pit House 0x8E event-marker capture and
+no-output timing review, not a read-only rerun or motion attempt.
+
 The plan is not capture evidence. It records `capture_recorded=false`,
 `timing_correlation_proven=false`, `live_read_only_probe_allowed=false`,
 `authorization_plan_allowed=false`, `motion_attempt_allowed=false`,
