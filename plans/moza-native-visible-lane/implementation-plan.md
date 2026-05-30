@@ -8523,6 +8523,109 @@ tests, and this source-of-truth work item. Do not remove the event-marker
 capture handoff, reprocessed 0x8E timing evidence, movement blocker audit,
 status probe receipts, or earlier non-claiming protocol evidence.
 
+## Work item: refresh-read-only-status-demux-rerun-blocker
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: future reviewed read-only/status plan after timing-correlated 0x8E evidence
+Blocked by: completed movement blocker audit and fresh observe-only bench preflight
+
+### Goal
+
+Refresh the checked-in read-only status demux receipt after the latest movement
+blocker audit and selector handoff, without treating a clean bench as authority
+or motion permission.
+
+### Result
+
+A fresh observe-only `hardware doctor` showed the R5 visible as `0x346E:0x0004`
+with COM4 present, Pit House not running, and no HID/output/feature/serial
+configuration/firmware activity. The follow-up `vendor-status-probe` rerun used
+only registry-approved read-only status queries on COM4 with
+`--max-response-frames-per-query 64`.
+
+The rerun still failed closed:
+
+```text
+decoded_response_count=7
+failed_response_count=2
+authority_state_replies_decoded=0
+unknown_safety_or_mode_state_blocks_authority=true
+```
+
+The decoded replies are non-authority status replies. The two authority/status
+paths still do not return payload-bearing authority or mode state, so the
+movement blocker remains:
+
+```text
+Missing reviewed timing-correlated payload-bearing authority/mode status source.
+```
+
+### Non-goals
+
+No HID output path, PIDFF command, feature report, vendor write, mode-enable
+write, authority write, configuration write, firmware/update/DFU command, high
+torque, authorization receipt, tuple sendability, semantic decode promotion,
+native-control claim, native-visible claim, smoke-ready claim, release-ready
+claim, or motion attempt.
+
+### Acceptance
+
+- The refreshed demux receipt records a clean COM4 read-only rerun and keeps
+  `sent_output_writes=false`, `sent_configuration_writes=false`, and
+  `sent_firmware_or_dfu_commands=false`.
+- The movement blocker audit consumes the refreshed demux receipt and keeps
+  `live_read_only_probe_allowed=false`, `authorization_plan_allowed=false`,
+  `motion_attempt_allowed=false`, `wheel_moved_under_openracing=false`,
+  `visible_motion_verified=false`, `output_was_sent=false`, and
+  `authority_state=blocked`.
+- The exact next step remains the staged passive Pit House 0x8E event-marker
+  capture and no-output timing review, not another read-only rerun, output
+  authorization, PIDFF rerun, force escalation, or motion.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json hardware doctor `
+  --json-out target/moza-current/vendor-status-mode-matrix-demux-hardware-doctor.json
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-probe `
+  --serial-port COM4 `
+  --baud-rate 115200 `
+  --timeout-ms 250 `
+  --max-response-frames-per-query 64 `
+  --confirm-read-only-query `
+  --json-out target/moza-current/vendor-status-mode-matrix-rerun.json
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-movement-blocker-audit `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json `
+  --demux-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json `
+  --framing-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json `
+  --extended-scan-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json `
+  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json `
+  --payload-rerun-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --timing-correlation-plan ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --timing-correlation-review ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza artifact-index `
+  --lane ci/hardware/moza-r5/2026-05-13 `
+  --json-out target/moza-current/artifact-index-read-only-rerun-blocker.json `
+  --md-out ci/hardware/moza-r5/2026-05-13/index.md
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza bench-wizard `
+  --lane ci/hardware/moza-r5/2026-05-13 `
+  --json-out target/moza-current/bench-wizard-read-only-rerun-blocker.json `
+  --md-out target/moza-current/bench-wizard-read-only-rerun-blocker.md
+```
+
+### Rollback
+
+Restore only the refreshed demux hardware-doctor receipt,
+`vendor-status-mode-matrix-demux.json`, regenerated movement blocker audit,
+generated index, tests if any, and this source-of-truth work item. Do not remove
+the original zero-response receipt, framing diagnosis, authority endpoint
+diagnoses, timing-correlation plan/review, or event-marker capture handoff.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

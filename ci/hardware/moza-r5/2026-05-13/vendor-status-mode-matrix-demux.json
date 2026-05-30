@@ -4,7 +4,7 @@
   "artifact_kind": "moza_vendor_status_probe",
   "claim_scope": "read_only_hardware",
   "command": "wheelctl moza vendor-status-probe",
-  "generated_at_utc": "2026-05-29T04:44:14Z",
+  "generated_at_utc": "2026-05-30T06:54:12Z",
   "native_control_evidence": false,
   "hardware_output_authorized": false,
   "native_visible_ready": false,
@@ -78,10 +78,10 @@
   "codec_status": "round_trip_verified",
   "hardware_write_eligible": false,
   "response_scan_strategy": "bounded_stream_demux",
-  "response_scan_max_frames_per_query": 12,
-  "scanned_response_frame_count": 17,
-  "skipped_response_frame_count": 10,
-  "skipped_diagnostic_frame_count": 9,
+  "response_scan_max_frames_per_query": 64,
+  "scanned_response_frame_count": 32,
+  "skipped_response_frame_count": 25,
+  "skipped_diagnostic_frame_count": 24,
   "skipped_malformed_or_desynchronized_frame_count": 0,
   "skipped_non_matching_registry_frame_count": 0,
   "skipped_unknown_non_registry_frame_count": 1,
@@ -97,17 +97,17 @@
       "command": 1,
       "risk_class": "vendor_status",
       "query_frame_hex": "7E01461C01EF",
-      "response_frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+      "response_frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39373130306D735D0AEB",
       "response_scan_stop_reason": "read_error_before_matching_response",
-      "scanned_response_frame_count": 9,
-      "skipped_response_frame_count": 9,
-      "skipped_diagnostic_frame_count": 9,
+      "scanned_response_frame_count": 24,
+      "skipped_response_frame_count": 24,
+      "skipped_diagnostic_frame_count": 24,
       "skipped_malformed_or_desynchronized_frame_count": 0,
       "skipped_non_matching_registry_frame_count": 0,
       "skipped_unknown_non_registry_frame_count": 0,
       "scanned_response_frames": [
         {
-          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363730306D735D0AF0",
           "disposition": "skippable_diagnostic_frame",
           "response_classification": "framed_ascii_telemetry_log",
           "observed_tuple_id": "0x0E/0x71/0x05",
@@ -115,7 +115,7 @@
           "checksum_valid": true
         },
         {
-          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39373130306D735D0AEB",
           "disposition": "skippable_diagnostic_frame",
           "response_classification": "framed_ascii_telemetry_log",
           "observed_tuple_id": "0x0E/0x71/0x05",
@@ -123,7 +123,87 @@
           "checksum_valid": true
         },
         {
-          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "frame_hex": "7E1F0E21052020204D65616E52656376476170203A20332E393731303520286D73290AA3",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x21/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E250E2105202020496E74657276616C4D6178436E74203A20323231382E303030303020286D73290A94",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x21/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E1D0E210564657669636520636F6E6E65637465643A20706564616C5F6164630A10",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x21/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E1D0E210564657669636520636F6E6E65637465643A2068616E646272616B650A23",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x21/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E1C0E21052020204D65616E4C6F7373526174653A20302E303030303020250AE0",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x21/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E1F0E21052020204D65616E526563764761703A2031302E383737343920286D73290ABE",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x21/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E1E0E21052020204D6178526563764761703A2033332E303030303020286D73290A44",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x21/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E1B0E21054D43552074656D70203A2033382E30303030302028C2B043290AC8",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x21/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E1B0E21054D4F532074656D70203A2033322E33393132352028C2B043290AE0",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x21/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E1B0E21054D4F542074656D70203A2032342E37333135392028C2B043290AE7",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x21/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39373130306D735D0AEB",
           "disposition": "skippable_diagnostic_frame",
           "response_classification": "framed_ascii_telemetry_log",
           "observed_tuple_id": "0x0E/0x71/0x05",
@@ -131,7 +211,7 @@
           "checksum_valid": true
         },
         {
-          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39373130306D735D0AEB",
           "disposition": "skippable_diagnostic_frame",
           "response_classification": "framed_ascii_telemetry_log",
           "observed_tuple_id": "0x0E/0x71/0x05",
@@ -139,7 +219,7 @@
           "checksum_valid": true
         },
         {
-          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39373130306D735D0AEB",
           "disposition": "skippable_diagnostic_frame",
           "response_classification": "framed_ascii_telemetry_log",
           "observed_tuple_id": "0x0E/0x71/0x05",
@@ -147,7 +227,7 @@
           "checksum_valid": true
         },
         {
-          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39373130306D735D0AEB",
           "disposition": "skippable_diagnostic_frame",
           "response_classification": "framed_ascii_telemetry_log",
           "observed_tuple_id": "0x0E/0x71/0x05",
@@ -155,7 +235,7 @@
           "checksum_valid": true
         },
         {
-          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39373130306D735D0AEB",
           "disposition": "skippable_diagnostic_frame",
           "response_classification": "framed_ascii_telemetry_log",
           "observed_tuple_id": "0x0E/0x71/0x05",
@@ -163,7 +243,7 @@
           "checksum_valid": true
         },
         {
-          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39373130306D735D0AEB",
           "disposition": "skippable_diagnostic_frame",
           "response_classification": "framed_ascii_telemetry_log",
           "observed_tuple_id": "0x0E/0x71/0x05",
@@ -171,7 +251,47 @@
           "checksum_valid": true
         },
         {
-          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39363630306D735D0AEF",
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39373130306D735D0AEB",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39373130306D735D0AEB",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39373130306D735D0AEB",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39373130306D735D0AEB",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39373130306D735D0AEB",
+          "disposition": "skippable_diagnostic_frame",
+          "response_classification": "framed_ascii_telemetry_log",
+          "observed_tuple_id": "0x0E/0x71/0x05",
+          "matched_expected_command": false,
+          "checksum_valid": true
+        },
+        {
+          "frame_hex": "7E2E0E71054E52466C6F73735B6176673A302E3030303030255D20726563764761705B6176673A332E39373130306D735D0AEB",
           "disposition": "skippable_diagnostic_frame",
           "response_classification": "framed_ascii_telemetry_log",
           "observed_tuple_id": "0x0E/0x71/0x05",
@@ -202,9 +322,10 @@
         {
           "frame_hex": "7E00A1214D",
           "disposition": "unknown_non_registry_frame",
-          "response_classification": "unknown_non_registry_frame",
-          "observed_tuple_id": "0xA1/0x21/0x4D",
-          "matched_expected_command": false
+          "response_classification": "zero_length_response_or_ack_frame",
+          "observed_tuple_id": "0xA1/0x21/no_command",
+          "matched_expected_command": false,
+          "checksum_valid": true
         }
       ],
       "decoded": false,
@@ -338,8 +459,8 @@
       "command": 5,
       "risk_class": "vendor_status",
       "query_frame_hex": "7E012B1305CF",
-      "response_frame_hex": "7E03AB31050CB631",
-      "response_payload_hex": "0CB6",
+      "response_frame_hex": "7E03AB31050CA621",
+      "response_payload_hex": "0CA6",
       "response_payload_len": 2,
       "response_scan_stop_reason": "matched_registry_status_response",
       "scanned_response_frame_count": 1,
@@ -350,7 +471,7 @@
       "skipped_unknown_non_registry_frame_count": 0,
       "scanned_response_frames": [
         {
-          "frame_hex": "7E03AB31050CB631",
+          "frame_hex": "7E03AB31050CA621",
           "disposition": "matching_registry_status_response",
           "response_classification": "registry_status_response",
           "observed_tuple_id": "0xAB/0x31/0x05",
@@ -368,8 +489,8 @@
       "command": 6,
       "risk_class": "vendor_status",
       "query_frame_hex": "7E012B1306D0",
-      "response_frame_hex": "7E03AB310609BD36",
-      "response_payload_hex": "09BD",
+      "response_frame_hex": "7E03AB310609AD26",
+      "response_payload_hex": "09AD",
       "response_payload_len": 2,
       "response_scan_stop_reason": "matched_registry_status_response",
       "scanned_response_frame_count": 1,
@@ -380,7 +501,7 @@
       "skipped_unknown_non_registry_frame_count": 0,
       "scanned_response_frames": [
         {
-          "frame_hex": "7E03AB310609BD36",
+          "frame_hex": "7E03AB310609AD26",
           "disposition": "matching_registry_status_response",
           "response_classification": "registry_status_response",
           "observed_tuple_id": "0xAB/0x31/0x06",
@@ -423,6 +544,8 @@
   ],
   "notes": [
     "This command sends only registry-allowed read-only vendor status queries.",
+    "Response scanning is bounded and skips diagnostic stream frames before accepting a matching registry status response.",
+    "The observed response-side group/device tuple transform is accepted only for read-only status replies.",
     "It never sends output, configuration, firmware, DFU, or unknown commands.",
     "Unknown mode/enable candidate tuples remain non-sendable and cannot enter this read-only command path.",
     "The status/mode matrix is a prerequisite for a later reviewed plan; it is not authorization.",

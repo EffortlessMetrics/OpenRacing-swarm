@@ -35,7 +35,7 @@
     "decoded_response_count": 7,
     "failed_response_count": 2,
     "non_authority_status_replies_decoded": 7,
-    "scanned_response_frame_count": 17
+    "scanned_response_frame_count": 32
   },
   "exact_next_blocker": "Missing reviewed timing-correlated payload-bearing authority/mode status source. The next concrete step is the staged passive Pit House 0x8E event-marker capture and no-output timing review, not a read-only rerun, authorization, PIDFF rerun, or motion.",
   "extended_scan_frame_count": 19,
@@ -69,7 +69,7 @@
   "fresh_command_bound_bench_clear_present": false,
   "fresh_command_bound_bench_clear_required_for_motion": true,
   "fresh_exact_authorization_present": false,
-  "generated_at_utc": "2026-05-30T06:12:32Z",
+  "generated_at_utc": "2026-05-30T06:56:31Z",
   "hardware_output_authorized": false,
   "high_torque_enabled": false,
   "line_setting_or_ownership_primary_blocker": false,
