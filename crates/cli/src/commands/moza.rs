@@ -2520,35 +2520,55 @@ fn moza_vendor_authority_serial_interface_hints(lane: &Path) -> Vec<String> {
 }
 
 fn moza_vendor_authority_serial_hints(lane: &Path, ports_only: bool) -> Vec<String> {
-    let Ok(receipt) = read_json_value(lane, "hardware-doctor.json") else {
+    let Some(devices) = moza_vendor_authority_windows_devices(lane) else {
         return Vec::new();
     };
-    let mut hints = BTreeSet::new();
-    let Some(devices) = receipt
+    moza_vendor_authority_collect_serial_hints(devices, ports_only)
+}
+
+fn moza_vendor_authority_windows_devices(lane: &Path) -> Option<Vec<Value>> {
+    let receipt = read_json_value(lane, "hardware-doctor.json").ok()?;
+    receipt
         .pointer("/windows_pnp/devices")
         .and_then(Value::as_array)
-    else {
-        return Vec::new();
-    };
+        .cloned()
+}
+
+fn moza_vendor_authority_collect_serial_hints(
+    devices: Vec<Value>,
+    ports_only: bool,
+) -> Vec<String> {
+    let mut hints = BTreeSet::new();
     for device in devices {
-        if json_string(device, "class") != Some("Ports")
-            || json_string(device, "vendor_id") != Some(MOZA_VENDOR_HEX)
-            || json_string(device, "product_id") != Some(VENDOR_AUTHORITY_HANDOFF_PRODUCT_ID)
-        {
+        if !moza_vendor_authority_is_matching_serial_device(&device) {
             continue;
         }
-        let Some(friendly_name) = json_string(device, "friendly_name") else {
+        let Some(friendly_name) = json_string(&device, "friendly_name") else {
             continue;
         };
-        if ports_only {
-            if let Some(port) = windows_com_port_from_friendly_name(friendly_name) {
-                hints.insert(port);
-            }
-        } else {
-            hints.insert(friendly_name.to_string());
-        }
+        moza_vendor_authority_insert_hint(&mut hints, friendly_name, ports_only);
     }
     hints.into_iter().collect()
+}
+
+fn moza_vendor_authority_is_matching_serial_device(device: &Value) -> bool {
+    json_string(device, "class") == Some("Ports")
+        && json_string(device, "vendor_id") == Some(MOZA_VENDOR_HEX)
+        && json_string(device, "product_id") == Some(VENDOR_AUTHORITY_HANDOFF_PRODUCT_ID)
+}
+
+fn moza_vendor_authority_insert_hint(
+    hints: &mut BTreeSet<String>,
+    friendly_name: &str,
+    ports_only: bool,
+) {
+    if ports_only {
+        if let Some(port) = windows_com_port_from_friendly_name(friendly_name) {
+            hints.insert(port);
+        }
+    } else {
+        hints.insert(friendly_name.to_string());
+    }
 }
 
 fn windows_com_port_from_friendly_name(friendly_name: &str) -> Option<String> {
