@@ -2640,16 +2640,13 @@ fn moza_native_motion_blocker_sniff_notes_template_receipt(
         Ok(receipt) => receipt,
         Err(error) => {
             return (
-                serde_json::json!({
-                    "status": "invalid",
-                    "path": receipt_path.display().to_string(),
-                    "selector_marker_status": "not_checked",
-                    "selector_marker_receipt": marker_path.display().to_string(),
-                    "materialized_capture_command_available": false,
-                    "materialized_capture_command_runnable": false,
-                    "error": error.to_string(),
-                    "next_operator_action": "regenerate sniff-notes-template from a fresh observe-only hardware doctor before capture"
-                }),
+                moza_native_motion_blocker_invalid_sniff_notes_template_receipt(
+                    &receipt_path,
+                    &marker_path,
+                    "unreadable_or_malformed_json",
+                    false,
+                    &error.to_string(),
+                ),
                 None,
             );
         }
@@ -2662,17 +2659,17 @@ fn moza_native_motion_blocker_sniff_notes_template_receipt(
     ) {
         Ok(command) => command,
         Err(error) => {
+            let error = error.to_string();
+            let (invalid_reason, stale_legacy_receipt) =
+                moza_native_motion_blocker_sniff_notes_invalid_reason(&error);
             return (
-                serde_json::json!({
-                    "status": "invalid",
-                    "path": receipt_path.display().to_string(),
-                    "selector_marker_status": "not_checked",
-                    "selector_marker_receipt": marker_path.display().to_string(),
-                    "materialized_capture_command_available": false,
-                    "materialized_capture_command_runnable": false,
-                    "error": error.to_string(),
-                    "next_operator_action": "regenerate sniff-notes-template from a fresh observe-only hardware doctor before capture"
-                }),
+                moza_native_motion_blocker_invalid_sniff_notes_template_receipt(
+                    &receipt_path,
+                    &marker_path,
+                    invalid_reason,
+                    stale_legacy_receipt,
+                    &error,
+                ),
                 None,
             );
         }
@@ -2705,6 +2702,45 @@ fn moza_native_motion_blocker_sniff_notes_template_receipt(
         );
     }
     (status, Some(materialized))
+}
+
+fn moza_native_motion_blocker_invalid_sniff_notes_template_receipt(
+    receipt_path: &Path,
+    marker_path: &Path,
+    invalid_reason: &str,
+    stale_legacy_receipt: bool,
+    error: &str,
+) -> Value {
+    serde_json::json!({
+        "status": "invalid",
+        "invalid_reason": invalid_reason,
+        "stale_legacy_receipt": stale_legacy_receipt,
+        "path": receipt_path.display().to_string(),
+        "selector_marker_status": "not_checked",
+        "selector_marker_receipt": marker_path.display().to_string(),
+        "materialized_capture_command_available": false,
+        "materialized_capture_command_runnable": false,
+        "error": error,
+        "next_operator_action": "regenerate sniff-notes-template from a fresh observe-only hardware doctor before capture"
+    })
+}
+
+fn moza_native_motion_blocker_sniff_notes_invalid_reason(error: &str) -> (&'static str, bool) {
+    if error.contains("lacks next command claim boundary") {
+        ("stale_missing_next_concrete_command_boundary", true)
+    } else if error.contains("lacks command sequence")
+        || error.contains("lacks materialized sniff-capture command")
+        || error.contains("materialized sniff-capture command is missing text")
+    {
+        ("stale_missing_materialized_capture_command", true)
+    } else if error.contains("must keep")
+        || error.contains("external passive capture only")
+        || error.contains("must not contain")
+    {
+        ("claiming_or_unsafe_sniff_notes_receipt", false)
+    } else {
+        ("invalid_sniff_notes_template_receipt", false)
+    }
 }
 
 fn moza_native_motion_blocker_validate_sniff_notes_capture_receipt(
@@ -58866,6 +58902,75 @@ mod tests {
             Some(3)
         );
         assert_eq!(sequence.len(), 3);
+        Ok(())
+    }
+
+    #[test]
+    fn bench_wizard_classifies_legacy_sniff_notes_capture_receipt_as_stale() -> TestResult {
+        let lane = tempfile::tempdir()?;
+        write_0x8e_timing_blocker_test_lane(lane.path())?;
+        let local = tempfile::tempdir()?;
+        let receipt_path = local.path().join("sniff-notes-template-receipt.json");
+        let mut legacy_receipt = materialized_0x8e_sniff_notes_receipt(false);
+        legacy_receipt
+            .as_object_mut()
+            .ok_or("expected object receipt")?
+            .remove("next_concrete_command_claim_boundary");
+        write_test_json_file(&receipt_path, &legacy_receipt)?;
+
+        let wizard_receipt = moza_bench_wizard_receipt_with_sniff_notes_receipt(
+            lane.path(),
+            None,
+            None,
+            Some(&receipt_path),
+        )?;
+        let step = wizard_receipt
+            .get("next_operator_step")
+            .ok_or("expected next operator step")?;
+        let receipt_status = step
+            .get("sniff_notes_template_receipt")
+            .ok_or("expected sniff notes template receipt status")?;
+        assert_eq!(json_string(receipt_status, "status"), Some("invalid"));
+        assert_eq!(
+            json_string(receipt_status, "invalid_reason"),
+            Some("stale_missing_next_concrete_command_boundary")
+        );
+        assert_eq!(
+            json_bool(receipt_status, "stale_legacy_receipt"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(receipt_status, "materialized_capture_command_available"),
+            Some(false)
+        );
+        assert!(
+            json_string(receipt_status, "next_operator_action")
+                .is_some_and(|action| action.contains("fresh observe-only hardware doctor")),
+            "stale receipt should route to fresh no-output pre-capture setup: {receipt_status}"
+        );
+
+        let next_concrete_command = wizard_receipt
+            .get("next_concrete_command")
+            .ok_or("expected safe fallback next concrete command")?;
+        assert_eq!(
+            json_string(next_concrete_command, "name"),
+            Some("refresh_observe_only_hardware_doctor")
+        );
+        assert_eq!(
+            json_bool(next_concrete_command, "openracing_hardware_output"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(next_concrete_command, "openracing_hid_open"),
+            Some(false)
+        );
+        let command_text =
+            json_string(next_concrete_command, "command").ok_or("missing command text")?;
+        assert!(
+            command_text.contains("wheelctl hardware doctor")
+                && !command_text.contains("wheelctl hardware sniff-capture"),
+            "stale legacy receipt must not surface capture command: {command_text}"
+        );
         Ok(())
     }
 

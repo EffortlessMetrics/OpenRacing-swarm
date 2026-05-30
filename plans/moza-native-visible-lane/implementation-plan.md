@@ -10112,6 +10112,80 @@ helper, focused tests, and this source-of-truth work item. Do not remove the
 sniff-notes-template receipt fields, timing-correlation plan/review artifacts,
 movement-blocker audit, or native-visible promotion block.
 
+## Work item: classify-stale-0x8e-sniff-notes-receipts
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: operator confusion when old local 0x8E pre-capture receipts remain in `target/`
+Blocked by: completed bench-wizard consumption of materialized sniff-notes capture commands
+
+### Goal
+
+Make `wheelctl moza bench-wizard` explain stale local
+`pit-house-0x8e-timing-correlation` sniff-notes-template receipts that were
+created before the next-command claim boundary existed, instead of reporting
+only a generic invalid receipt.
+
+### Production delta
+
+Bench-wizard now classifies legacy sniff-notes-template receipts that lack
+`next_concrete_command_claim_boundary` as
+`stale_missing_next_concrete_command_boundary` with
+`stale_legacy_receipt=true`. The wizard still refuses to surface any
+materialized capture command from that receipt and routes the operator back to
+the fresh no-output hardware-doctor / sniff-notes-template / selector-marker
+pre-capture sequence.
+
+This work item does not run a capture and does not make the wheel move. It only
+makes stale local `target/` evidence diagnostically clear before the operator
+performs the passive 0x8E timing-correlation capture.
+
+### Non-goals
+
+No live capture, raw pcap commit, HID open, serial open, read-only query send,
+PIDFF output, feature report, configuration write, firmware/update/DFU path,
+high torque, mode-enable write, authority write, authorization receipt,
+semantic decode claim, registry promotion, tuple sendability, corrected
+read-only probe readiness, native-control claim, native-visible claim,
+smoke-ready claim, simulator claim, coexistence claim, release-ready claim,
+output claim, or wheel movement.
+
+### Acceptance
+
+- Legacy sniff-notes-template receipts that lack the next-command claim boundary
+  are classified as stale and non-runnable.
+- Claiming or unsafe sniff-notes-template receipts remain invalid and
+  non-runnable.
+- Stale or invalid receipts keep the next concrete command on the safe
+  observe-only hardware-doctor refresh path, not `sniff-capture`.
+- The next concrete command boundary keeps OpenRacing HID, serial, read-only
+  query, output, feature, configuration, firmware/DFU, native-control,
+  native-visible, smoke, release, and wheel-movement claims false.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_classifies_legacy_sniff_notes_capture_receipt_as_stale -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the stale sniff-notes-template receipt classification helper,
+focused test, and this source-of-truth work item. Do not remove the valid
+materialized capture command consumption, timing-correlation plan/review
+artifacts, movement-blocker audit, or native-visible promotion block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
