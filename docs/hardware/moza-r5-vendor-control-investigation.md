@@ -284,10 +284,11 @@ Pit House setting-change derived summary and notes with that future review
 shape. The reprocessed derived summary contains timestamped samples and records
 same-tuple payload variation for all four target `0x8E` tuples, but the notes do
 not contain the explicit event-marker fields required by the timing-correlation
-plan. The verdict is
-`insufficient_missing_event_markers_or_packet_timestamps`; live read-only probe,
+plan. The verdict is `insufficient_missing_event_markers`; live read-only probe,
 authorization planning, PIDFF rerun, force escalation, and motion remain
-blocked.
+blocked. Administrative markers such as hardware-doctor selector review and
+capture start/stop are chronology only; a candidate timing correlation requires
+payload variation near semantic operator events.
 
 `vendor-status-movement-blocker-audit.json` now consolidates the read-only
 zero-response path into one current blocker statement. The original
