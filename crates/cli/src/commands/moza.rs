@@ -145,6 +145,11 @@ const VENDOR_AUTHORITY_ATTEMPT_BLOCKED_FILE: &str = "vendor-authority-attempt-bl
 const VENDOR_AUTHORITY_POST_PIDFF_SMOKE_FILE: &str = "vendor-post-authority-pidff-smoke.json";
 const VENDOR_AUTHORITY_POST_PIDFF_RESPONSE_FILE: &str = "vendor-post-authority-pidff-response.json";
 const VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE: &str = "vendor-protocol-evidence-review.json";
+const VENDOR_STATUS_TIMING_CORRELATION_PLAN_FILE: &str =
+    "vendor-status-timing-correlation-plan.json";
+const VENDOR_STATUS_TIMING_CORRELATION_REVIEW_FILE: &str =
+    "vendor-status-timing-correlation-review.json";
+const VENDOR_STATUS_MOVEMENT_BLOCKER_AUDIT_FILE: &str = "vendor-status-movement-blocker-audit.json";
 const VENDOR_AUTHORITY_HANDOFF_COMMAND_ID: &str = "estop_set_ffb";
 const VENDOR_AUTHORITY_HANDOFF_FRAME_HEX: &str = "7E02461C0001F0";
 const VENDOR_AUTHORITY_HANDOFF_PAYLOAD_HEX: &str = "01";
@@ -267,6 +272,10 @@ const MOZA_VENDOR_STATUS_TIMING_CORRELATION_PLAN_JSON: &str = include_str!(
 #[cfg(test)]
 const MOZA_VENDOR_STATUS_TIMING_CORRELATION_REVIEW_JSON: &str = include_str!(
     "../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json"
+);
+#[cfg(test)]
+const MOZA_VENDOR_STATUS_MOVEMENT_BLOCKER_AUDIT_JSON: &str = include_str!(
+    "../../../../ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json"
 );
 const SIMULATOR_FFB_PREREQUISITE_ARTIFACTS: [(&str, &str); 6] = [
     ("zero_torque_real_hardware", "zero-torque-proof.json"),
@@ -2049,6 +2058,10 @@ fn moza_bench_wizard_next_operator_step(lane: &Path, readiness: &Value, frontier
         });
     }
 
+    if let Some(step) = moza_native_motion_blocker_next_operator_step(lane) {
+        return step;
+    }
+
     if lane.join(VENDOR_AUTHORITY_ATTEMPT_FILE).is_file() {
         return moza_post_authority_pidff_response_next_operator_step(lane);
     }
@@ -2126,6 +2139,217 @@ fn moza_bench_wizard_next_operator_step(lane: &Path, readiness: &Value, frontier
         "kind": "refresh_readiness",
         "summary": "refresh no-output readiness and verifier receipts before selecting the next lane action",
         "hardware_output_allowed_now": false
+    })
+}
+
+fn moza_native_motion_blocker_next_operator_step(lane: &Path) -> Option<Value> {
+    let audit = read_json_value(lane, VENDOR_STATUS_MOVEMENT_BLOCKER_AUDIT_FILE).ok()?;
+    if json_bool(&audit, "success") != Some(true)
+        || json_string(&audit, "authority_state") != Some("blocked")
+        || json_bool(&audit, "motion_attempt_allowed") != Some(false)
+        || json_bool(&audit, "timing_correlated_payload_source_missing") != Some(true)
+    {
+        return None;
+    }
+
+    let plan = read_json_value(lane, VENDOR_STATUS_TIMING_CORRELATION_PLAN_FILE).ok();
+    let command_templates = audit
+        .get("next_concrete_command_templates")
+        .and_then(Value::as_array)
+        .or_else(|| {
+            plan.as_ref()
+                .and_then(|plan| plan.get("capture_command_templates"))
+                .and_then(Value::as_array)
+        })?;
+    let commands = moza_native_motion_blocker_command_templates(command_templates);
+    if commands.is_empty() {
+        return None;
+    }
+
+    let scenario = plan
+        .as_ref()
+        .and_then(|plan| json_string(plan, "planned_capture_scenario"))
+        .unwrap_or("pit-house-0x8e-timing-correlation");
+    let target_tuple_ids = plan
+        .as_ref()
+        .and_then(|plan| plan.get("target_tuple_ids"))
+        .cloned()
+        .unwrap_or_else(|| {
+            serde_json::json!([
+                "0x8E/0x21/0x00",
+                "0x8E/0x31/0x00",
+                "0x8E/0x71/0x00",
+                "0x8E/0x91/0x00"
+            ])
+        });
+    let required_event_markers = plan
+        .as_ref()
+        .and_then(|plan| plan.get("required_operator_event_markers"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let operator_notes_required = plan
+        .as_ref()
+        .and_then(|plan| plan.get("operator_notes_required"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let exact_next_blocker = json_string(&audit, "exact_next_blocker")
+        .unwrap_or("native visible motion remains blocked");
+    let next_allowed_action = json_string(&audit, "next_allowed_action")
+        .unwrap_or("run the staged passive 0x8E timing-correlation capture and no-output review");
+    let reason_read_only_rerun_not_allowed =
+        json_string(&audit, "reason_read_only_rerun_not_allowed")
+            .unwrap_or("read-only rerun remains blocked until a corrected status source exists");
+    let reason_motion_not_allowed = json_string(&audit, "reason_motion_not_allowed")
+        .unwrap_or("motion remains blocked until authority/mode status evidence is reviewed");
+    let external_capture_checklist = serde_json::json!({
+        "owner": "operator_external_capture_tool",
+        "scenario": scenario,
+        "label": "Pit House 0x8E event-marker timing correlation",
+        "local_directory": "target/sniff/pit-house-0x8e-timing-correlation",
+        "local_pcapng": "target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng",
+        "capture_tools": ["USBPcap", "Wireshark", "tshark"],
+        "openracing_output": false,
+        "openracing_hid_open": false,
+        "openracing_feature_reports": false,
+        "external_app_may_send_output": true,
+        "raw_pcap_commit_default": false,
+        "steps": [
+            "Refresh observe-only hardware doctor and select the current Moza USBPcap hint; do not reuse stale --devices values.",
+            "Run the bounded passive sniff-capture helper with --hardware-doctor and duration 180000 ms.",
+            "Open Pit House only as a witness lane and keep firmware/update/DFU pages closed.",
+            "Record explicit event markers for Pit House open, R5 recognized, idle/stable, KS top-left front LED default teal, red, restored default teal, Pit House close, and capture stop.",
+            "Run the no-output sniff-summary and vendor-status-timing-correlation-review commands on derived artifacts only.",
+            "Do not run a live read-only rerun, authorization, PIDFF, force escalation, or motion attempt from this handoff."
+        ],
+        "operator_notes_required": operator_notes_required,
+        "required_operator_event_markers": required_event_markers,
+        "forbidden_actions": [
+            "OpenRacing output commands",
+            "OpenRacing HID output reports",
+            "OpenRacing HID feature reports",
+            "OpenRacing serial writes",
+            "OpenRacing read-only status rerun from this handoff",
+            "authorization receipt",
+            "PIDFF rerun",
+            "force escalation",
+            "motion attempt",
+            "firmware update",
+            "DFU"
+        ]
+    });
+
+    Some(serde_json::json!({
+        "kind": "capture_0x8e_timing_correlation",
+        "summary": exact_next_blocker,
+        "scenario": scenario,
+        "label": "Pit House 0x8E event-marker timing correlation",
+        "native_motion_path": true,
+        "witness_lane_only": true,
+        "pit_house_dependency": false,
+        "simhub_dependency": false,
+        "hardware_output_allowed_now": false,
+        "authorization_created_by_wizard": false,
+        "authorization_plan_allowed": false,
+        "live_read_only_probe_allowed": false,
+        "motion_attempt_allowed": false,
+        "no_openracing_output": true,
+        "no_hid_device_opened_by_openracing": true,
+        "openracing_hid_open": false,
+        "opens_serial": false,
+        "sends_read_only_query": false,
+        "sends_output": false,
+        "hardware_attempt_command_emitted": false,
+        "wheel_moved_under_openracing": false,
+        "visible_motion_verified": false,
+        "output_was_sent": false,
+        "authority_state": "blocked",
+        "source_reason": "vendor_status_movement_blocker_audit",
+        "source_audit": VENDOR_STATUS_MOVEMENT_BLOCKER_AUDIT_FILE,
+        "timing_correlation_plan": VENDOR_STATUS_TIMING_CORRELATION_PLAN_FILE,
+        "timing_correlation_review": VENDOR_STATUS_TIMING_CORRELATION_REVIEW_FILE,
+        "target_tuple_ids": target_tuple_ids,
+        "exact_next_blocker": exact_next_blocker,
+        "next_allowed_action": next_allowed_action,
+        "reason_read_only_rerun_not_allowed": reason_read_only_rerun_not_allowed,
+        "reason_motion_not_allowed": reason_motion_not_allowed,
+        "external_capture_checklist": external_capture_checklist,
+        "external_capture_commands": commands.clone(),
+        "commands": commands,
+        "blocked_actions": vendor_authority_handoff_blocked_actions(),
+        "notes": [
+            "This handoff surfaces existing no-output blocker receipts only; it does not open HID or serial and sends no traffic.",
+            "The Pit House action is passive witness correlation, not a native-control dependency.",
+            "Raw pcap remains local by default; only derived summaries and reviews may become lane evidence after validation.",
+            "Native visible motion remains blocked until a reviewed timing-correlated status source exists and a separate plan authorizes any later step."
+        ]
+    }))
+}
+
+fn moza_native_motion_blocker_command_templates(command_templates: &[Value]) -> Vec<Value> {
+    command_templates
+        .iter()
+        .filter_map(|template| {
+            let name = json_string(template, "name")?;
+            let command = json_string(template, "command")?;
+            let mut value = serde_json::json!({
+                "name": name,
+                "owner": if command.contains("sniff-capture") {
+                    "operator_external_capture_tool"
+                } else {
+                    "openracing_no_output_tooling"
+                },
+                "openracing_command": command.starts_with("wheelctl "),
+                "output_enabled": false,
+                "openracing_hardware_output": false,
+                "openracing_hid_open": false,
+                "openracing_feature_reports": false,
+                "openracing_serial_config_commands": false,
+                "openracing_firmware_or_dfu_commands": false,
+                "external_capture_tool_invoked": command.contains("sniff-capture"),
+                "requires_hardware_doctor_hint": command.contains("sniff-capture"),
+                "raw_pcapng_commit_default": false,
+                "command_template": command,
+                "command": command
+            });
+            if command.contains("--duration-ms 180000")
+                && let Some(object) = value.as_object_mut()
+            {
+                object.insert("duration_ms".to_string(), serde_json::json!(180_000));
+            }
+            Some(value)
+        })
+        .collect()
+}
+
+fn moza_native_motion_blocker_navigation(lane: &Path) -> Value {
+    let Some(step) = moza_native_motion_blocker_next_operator_step(lane) else {
+        return Value::Null;
+    };
+    serde_json::json!({
+        "artifact_kind": "moza_native_motion_blocker_navigation",
+        "claim_scope": "native_motion_blocker_navigation_only",
+        "state": "timing_correlation_required",
+        "source_audit": VENDOR_STATUS_MOVEMENT_BLOCKER_AUDIT_FILE,
+        "timing_correlation_plan": VENDOR_STATUS_TIMING_CORRELATION_PLAN_FILE,
+        "timing_correlation_review": VENDOR_STATUS_TIMING_CORRELATION_REVIEW_FILE,
+        "scenario": json_string(&step, "scenario").unwrap_or("pit-house-0x8e-timing-correlation"),
+        "exact_next_blocker": json_string(&step, "exact_next_blocker").unwrap_or("native visible motion remains blocked"),
+        "next_allowed_action": json_string(&step, "next_allowed_action").unwrap_or("run passive timing-correlation evidence before any output plan"),
+        "reason_read_only_rerun_not_allowed": json_string(&step, "reason_read_only_rerun_not_allowed").unwrap_or("read-only rerun remains blocked"),
+        "reason_motion_not_allowed": json_string(&step, "reason_motion_not_allowed").unwrap_or("motion remains blocked"),
+        "target_tuple_ids": step.get("target_tuple_ids").cloned().unwrap_or(Value::Null),
+        "hardware_output_authorized": false,
+        "native_control_evidence": false,
+        "native_visible_ready": false,
+        "smoke_ready": false,
+        "release_ready": false,
+        "live_read_only_probe_allowed": false,
+        "authorization_plan_allowed": false,
+        "motion_attempt_allowed": false,
+        "wheel_moved_under_openracing": false,
+        "visible_motion_verified": false,
+        "output_was_sent": false,
+        "authority_state": "blocked"
     })
 }
 
@@ -2485,7 +2709,11 @@ fn moza_vendor_authority_navigation_summary(lane: &Path) -> Value {
         .join(NATIVE_PIDFF_STANDARD_PATH_DIAGNOSIS_FILE)
         .is_file();
     let vendor_protocol_decode_priority = moza_vendor_protocol_decode_priority(lane);
-    let state = if protocol_evidence_review_recorded {
+    let native_motion_blocker = moza_native_motion_blocker_navigation(lane);
+    let native_motion_blocker_active = !native_motion_blocker.is_null();
+    let state = if native_motion_blocker_active {
+        "native_motion_timing_source_blocked"
+    } else if protocol_evidence_review_recorded {
         "protocol_evidence_review_recorded"
     } else if post_pidff_comparison_recorded {
         "post_authority_pidff_response_recorded"
@@ -2501,6 +2729,28 @@ fn moza_vendor_authority_navigation_summary(lane: &Path) -> Value {
         "ready_for_exact_authority_handoff"
     } else {
         "awaiting_closed_loop_undertravel_evidence"
+    };
+    let next_allowed_action = if native_motion_blocker_active {
+        json_string(&native_motion_blocker, "next_allowed_action")
+            .unwrap_or("Run the staged passive Pit House 0x8E event-marker capture and no-output timing review before any live probe, authorization, PIDFF rerun, or motion.")
+            .to_string()
+    } else if protocol_evidence_review_recorded {
+        "Continue no-output vendor protocol investigation; finish remaining passive sniff scenarios or decode reviewed protocol candidates before any future output plan.".to_string()
+    } else if post_pidff_comparison_recorded {
+        "Review post-authority PIDFF response comparison and run strict verifier before any motion claim.".to_string()
+    } else if attempt_recorded {
+        "Record post-authority PIDFF response comparison before any motion claim.".to_string()
+    } else if blocked_attempt_recorded {
+        "Release the serial-port owner, then create fresh bench-clear, authorization, smoke dry-run, and attempt receipts before retry.".to_string()
+    } else if authorization_recorded && smoke_dry_run_recorded {
+        "A separately requested bounded hardware attempt may consume the exact receipts; this navigation does not emit the serial write command.".to_string()
+    } else if authorization_recorded {
+        "Run the no-output vendor-authority smoke dry-run before any separate bounded attempt."
+            .to_string()
+    } else if closed_loop_undertravel_recorded && standard_pidff_diagnosis_recorded {
+        "Create an exact authorization receipt after fresh command-bound bench-clear, then run a no-output smoke dry-run.".to_string()
+    } else {
+        "Preserve undertravel evidence and finish the vendor-authority prerequisites before any hardware attempt.".to_string()
     };
 
     serde_json::json!({
@@ -2529,24 +2779,9 @@ fn moza_vendor_authority_navigation_summary(lane: &Path) -> Value {
         "post_authority_pidff_response_recorded": post_pidff_comparison_recorded,
         "vendor_protocol_evidence_review_recorded": protocol_evidence_review_recorded,
         "vendor_protocol_decode_priority": vendor_protocol_decode_priority,
+        "native_motion_blocker": native_motion_blocker,
         "hardware_attempt_command_emitted": false,
-        "next_allowed_action": if protocol_evidence_review_recorded {
-            "Continue no-output vendor protocol investigation; finish remaining passive sniff scenarios or decode reviewed protocol candidates before any future output plan."
-        } else if post_pidff_comparison_recorded {
-            "Review post-authority PIDFF response comparison and run strict verifier before any motion claim."
-        } else if attempt_recorded {
-            "Record post-authority PIDFF response comparison before any motion claim."
-        } else if blocked_attempt_recorded {
-            "Release the serial-port owner, then create fresh bench-clear, authorization, smoke dry-run, and attempt receipts before retry."
-        } else if authorization_recorded && smoke_dry_run_recorded {
-            "A separately requested bounded hardware attempt may consume the exact receipts; this navigation does not emit the serial write command."
-        } else if authorization_recorded {
-            "Run the no-output vendor-authority smoke dry-run before any separate bounded attempt."
-        } else if closed_loop_undertravel_recorded && standard_pidff_diagnosis_recorded {
-            "Create an exact authorization receipt after fresh command-bound bench-clear, then run a no-output smoke dry-run."
-        } else {
-            "Preserve undertravel evidence and finish the vendor-authority prerequisites before any hardware attempt."
-        },
+        "next_allowed_action": next_allowed_action,
         "exact_command": {
             "command_id": VENDOR_AUTHORITY_HANDOFF_COMMAND_ID,
             "frame_hex": VENDOR_AUTHORITY_HANDOFF_FRAME_HEX,
@@ -44191,6 +44426,62 @@ fn push_vendor_authority_navigation_markdown(out: &mut String, receipt: &Value) 
         markdown_escape(payload_hex),
         markdown_escape(risk_class)
     ));
+    if let Some(blocker) = summary
+        .get("native_motion_blocker")
+        .filter(|blocker| !blocker.is_null())
+    {
+        let exact_next_blocker =
+            json_string(blocker, "exact_next_blocker").unwrap_or("not recorded");
+        let scenario = json_string(blocker, "scenario").unwrap_or("unknown");
+        let live_read_only_probe_allowed =
+            json_bool(blocker, "live_read_only_probe_allowed").unwrap_or(false);
+        let authorization_plan_allowed =
+            json_bool(blocker, "authorization_plan_allowed").unwrap_or(false);
+        let motion_attempt_allowed = json_bool(blocker, "motion_attempt_allowed").unwrap_or(false);
+        let wheel_moved = json_bool(blocker, "wheel_moved_under_openracing").unwrap_or(false);
+        let visible_motion = json_bool(blocker, "visible_motion_verified").unwrap_or(false);
+        let output_was_sent = json_bool(blocker, "output_was_sent").unwrap_or(false);
+        let authority_state = json_string(blocker, "authority_state").unwrap_or("unknown");
+        out.push_str("\n### Native Motion Blocker\n\n");
+        out.push_str(&format!(
+            "- Exact blocker: {}\n",
+            markdown_escape(exact_next_blocker)
+        ));
+        out.push_str(&format!(
+            "- Required passive scenario: `{}`\n",
+            markdown_escape(scenario)
+        ));
+        out.push_str(&format!(
+            "- Live read-only probe allowed: `{live_read_only_probe_allowed}`\n"
+        ));
+        out.push_str(&format!(
+            "- Authorization plan allowed: `{authorization_plan_allowed}`\n"
+        ));
+        out.push_str(&format!(
+            "- Motion attempt allowed: `{motion_attempt_allowed}`\n"
+        ));
+        out.push_str(&format!(
+            "- wheel_moved_under_openracing: `{wheel_moved}`\n"
+        ));
+        out.push_str(&format!("- visible_motion_verified: `{visible_motion}`\n"));
+        out.push_str(&format!("- output_was_sent: `{output_was_sent}`\n"));
+        out.push_str(&format!(
+            "- authority_state: `{}`\n",
+            markdown_escape(authority_state)
+        ));
+        if let Some(tuples) = blocker.get("target_tuple_ids").and_then(Value::as_array)
+            && !tuples.is_empty()
+        {
+            let rendered_tuples = tuples
+                .iter()
+                .filter_map(Value::as_str)
+                .map(markdown_escape)
+                .collect::<Vec<_>>()
+                .join("`, `");
+            out.push_str(&format!("- Target 0x8E tuples: `{rendered_tuples}`\n"));
+        }
+        out.push('\n');
+    }
     if let Some(evidence) = summary
         .get("required_bench_clear_evidence")
         .and_then(Value::as_str)
@@ -55104,6 +55395,164 @@ mod tests {
         assert!(wizard_markdown.contains("wheelctl hardware sniff-capture"));
         assert!(wizard_markdown.contains("--hardware-doctor"));
         assert!(wizard_markdown.contains("do not authorize output"));
+        Ok(())
+    }
+
+    #[test]
+    fn bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir_all(dir.path())?;
+        write_passive_sniff_artifacts(dir.path(), "pit-house-open-idle")?;
+        write_passive_sniff_artifacts(dir.path(), "pit-house-full-controls")?;
+        write_passive_sniff_artifacts(dir.path(), "pit-house-setting-change")?;
+        write_passive_sniff_plan_artifact(dir.path(), "simhub-open-idle")?;
+        write_test_json_file(
+            &dir.path().join(VENDOR_AUTHORITY_ATTEMPT_FILE),
+            &serde_json::json!({
+                "success": true,
+                "hardware_output_authorized": false,
+                "native_control_evidence": false,
+                "native_visible_ready": false,
+                "smoke_ready": false
+            }),
+        )?;
+        write_test_json_file(
+            &dir.path().join(VENDOR_PROTOCOL_EVIDENCE_REVIEW_FILE),
+            &serde_json::json!({
+                "success": true,
+                "planned_next_output": { "allowed": false },
+                "hardware_output_authorized": false,
+                "native_control_evidence": false,
+                "native_visible_ready": false,
+                "smoke_ready": false
+            }),
+        )?;
+        write_test_json_file(
+            &dir.path().join(VENDOR_STATUS_TIMING_CORRELATION_PLAN_FILE),
+            &serde_json::from_str::<Value>(MOZA_VENDOR_STATUS_TIMING_CORRELATION_PLAN_JSON)?,
+        )?;
+        write_test_json_file(
+            &dir.path().join(VENDOR_STATUS_MOVEMENT_BLOCKER_AUDIT_FILE),
+            &serde_json::from_str::<Value>(MOZA_VENDOR_STATUS_MOVEMENT_BLOCKER_AUDIT_JSON)?,
+        )?;
+
+        let wizard_receipt = moza_bench_wizard_receipt(dir.path(), None, None)?;
+        let step = wizard_receipt
+            .get("next_operator_step")
+            .ok_or("expected next operator step")?;
+        assert_eq!(
+            json_string(step, "kind"),
+            Some("capture_0x8e_timing_correlation")
+        );
+        assert_eq!(
+            json_string(step, "scenario"),
+            Some("pit-house-0x8e-timing-correlation")
+        );
+        assert_eq!(json_bool(step, "hardware_output_allowed_now"), Some(false));
+        assert_eq!(json_bool(step, "no_openracing_output"), Some(true));
+        assert_eq!(json_bool(step, "live_read_only_probe_allowed"), Some(false));
+        assert_eq!(json_bool(step, "authorization_plan_allowed"), Some(false));
+        assert_eq!(json_bool(step, "motion_attempt_allowed"), Some(false));
+        assert_eq!(json_bool(step, "wheel_moved_under_openracing"), Some(false));
+        assert_eq!(json_bool(step, "visible_motion_verified"), Some(false));
+        assert_eq!(json_bool(step, "output_was_sent"), Some(false));
+        assert_eq!(json_string(step, "authority_state"), Some("blocked"));
+        assert!(
+            json_string(step, "exact_next_blocker")
+                .is_some_and(|text| text.contains("Missing reviewed timing-correlated"))
+        );
+
+        let commands = step
+            .get("commands")
+            .and_then(Value::as_array)
+            .ok_or("expected 0x8E timing-correlation commands")?;
+        let command_names = commands
+            .iter()
+            .filter_map(|command| json_string(command, "name"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            command_names,
+            vec![
+                "refresh_observe_only_hardware_doctor",
+                "run_bounded_passive_usbpcap_capture",
+                "summarize_passive_capture",
+                "future_no_output_timing_review"
+            ]
+        );
+        assert!(
+            commands.iter().any(|command| {
+                json_string(command, "name") == Some("run_bounded_passive_usbpcap_capture")
+                    && json_bool(command, "output_enabled") == Some(false)
+                    && json_bool(command, "openracing_hardware_output") == Some(false)
+                    && json_bool(command, "requires_hardware_doctor_hint") == Some(true)
+                    && json_u64(command, "duration_ms") == Some(180_000)
+                    && json_string(command, "command").is_some_and(|text| {
+                        text.contains("wheelctl hardware sniff-capture")
+                            && text.contains("--hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json")
+                            && text.contains("--duration-ms 180000")
+                            && text.contains("pit-house-0x8e-timing-correlation")
+                    })
+            }),
+            "0x8E timing-correlation capture command should use fresh selector verification: {commands:?}"
+        );
+        assert!(
+            commands.iter().any(|command| {
+                json_string(command, "name") == Some("future_no_output_timing_review")
+                    && json_bool(command, "output_enabled") == Some(false)
+                    && json_string(command, "command").is_some_and(|text| {
+                        text.contains("wheelctl moza vendor-status-timing-correlation-review")
+                            && text.contains("vendor-status-payload-source-semantic-review.json")
+                    })
+            }),
+            "0x8E timing-correlation handoff should include the no-output review command: {commands:?}"
+        );
+        for command in commands {
+            let command_text = json_string(command, "command").ok_or("missing command text")?;
+            assert_eq!(json_bool(command, "output_enabled"), Some(false));
+            assert!(
+                !command_text.contains("authorize")
+                    && !command_text.contains("controlled-angle-smoke")
+                    && !command_text.contains("vendor-authority-attempt"),
+                "movement-blocker navigation must not emit authorization or output commands: {command_text}"
+            );
+            parse_cli(split_generated_command(command_text)?).map_err(|error| {
+                format!(
+                    "generated 0x8E timing-correlation command failed to parse: {command_text}\n{error}"
+                )
+            })?;
+        }
+
+        let artifact_receipt = moza_artifact_index_receipt(dir.path(), None, None)?;
+        let vendor_navigation = artifact_receipt
+            .get("vendor_authority_navigation")
+            .ok_or("expected vendor authority navigation")?;
+        assert_eq!(
+            json_string(vendor_navigation, "state"),
+            Some("native_motion_timing_source_blocked")
+        );
+        let blocker = vendor_navigation
+            .get("native_motion_blocker")
+            .ok_or("expected native motion blocker navigation")?;
+        assert_eq!(
+            json_string(blocker, "state"),
+            Some("timing_correlation_required")
+        );
+        assert_eq!(
+            json_bool(blocker, "wheel_moved_under_openracing"),
+            Some(false)
+        );
+        assert_eq!(json_bool(blocker, "visible_motion_verified"), Some(false));
+        assert_eq!(json_bool(blocker, "output_was_sent"), Some(false));
+        assert_eq!(json_string(blocker, "authority_state"), Some("blocked"));
+
+        let wizard_markdown = render_moza_bench_wizard_markdown(&wizard_receipt);
+        assert!(wizard_markdown.contains("capture_0x8e_timing_correlation"));
+        assert!(wizard_markdown.contains("Missing reviewed timing-correlated"));
+        assert!(wizard_markdown.contains("pit-house-0x8e-timing-correlation"));
+        assert!(wizard_markdown.contains("wheelctl hardware sniff-capture"));
+        assert!(wizard_markdown.contains("--duration-ms 180000"));
+        assert!(wizard_markdown.contains("Native Motion Blocker"));
+        assert!(wizard_markdown.contains("wheel_moved_under_openracing: `false`"));
         Ok(())
     }
 
