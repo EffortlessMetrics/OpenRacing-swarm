@@ -2464,6 +2464,31 @@ commands = [
 ]
 
 [[work_item]]
+id = "reprocess-setting-change-0x8e-timestamps"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-reprocess-setting-change-0x8e-timestamps"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json"
+claim_boundary = "No-output derived-evidence reprocessing only; reprocesses the existing local Pit House setting-change pcap into checked-in derived summary and manifest artifacts, teaches timing review to parse RFC3339 packet timestamps, records same-tuple 0x8E payload variation, and keeps missing event-marker timing proof as the active blocker without opening HID or serial, sending read-only queries, running a live capture, sending output/configuration/firmware/PIDFF commands, creating authorization, promoting semantic decode or tuple sendability, or claiming native-control, native-visible, smoke-ready, simulator, coexistence, high-torque, release-ready, or wheel movement."
+commands = [
+  "cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-summary --pcapng H:/Code/Rust/OpenRacing-swarm/target/sniff/pit-house-setting-change-repeat-02/capture.pcapng --vendor 0x346E --product 0x0004 --include-payload-samples --max-samples-per-report 32 --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-summary.json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- hardware sniff-bundle --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-plan.json --receipt ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-receipt.json --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-summary.json --operator-notes ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/operator-notes.md --out target/sniff/pit-house-setting-change-reprocessed/openracing-sniff-bundle.zip --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-bundle-manifest.json",
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-plan --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json --overwrite",
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-review --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-summary.json --operator-notes ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/operator-notes.md --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json --overwrite",
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-movement-blocker-audit --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json --demux-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json --framing-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json --extended-scan-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json --payload-rerun-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json --timing-correlation-plan ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json --timing-correlation-review ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json --overwrite",
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_review -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
