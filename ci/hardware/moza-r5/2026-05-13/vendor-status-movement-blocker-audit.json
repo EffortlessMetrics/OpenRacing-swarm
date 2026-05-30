@@ -69,7 +69,7 @@
   "fresh_command_bound_bench_clear_present": false,
   "fresh_command_bound_bench_clear_required_for_motion": true,
   "fresh_exact_authorization_present": false,
-  "generated_at_utc": "2026-05-30T05:12:21Z",
+  "generated_at_utc": "2026-05-30T06:12:32Z",
   "hardware_output_authorized": false,
   "high_torque_enabled": false,
   "line_setting_or_ownership_primary_blocker": false,
@@ -87,14 +87,21 @@
     },
     {
       "command": "wheelctl hardware sniff-notes-template --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json --hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --out target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-notes-template-receipt.json",
+      "materialized_command_in": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
+      "materializes_capture_command": true,
       "name": "render_checked_in_operator_notes_template",
-      "output_enabled": false
+      "output_enabled": false,
+      "selector_source": "fresh hardware doctor Moza USBPcap hint"
     },
     {
       "command": "wheelctl hardware sniff-capture --usbpcapcmd '<USBPcapCMD.exe from hardware doctor>' --usbpcap-interface '<USBPcap interface from hardware doctor>' --devices <capture_devices_value> --hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --duration-ms 180000 --out target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --confirm-external-passive-capture --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json",
+      "command_has_selector_placeholders": true,
+      "concrete_command_source": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
+      "must_not_run_unrendered_template": true,
       "name": "run_bounded_passive_usbpcap_capture",
       "openracing_hardware_output": false,
-      "output_enabled": false
+      "output_enabled": false,
+      "selector_source": "fresh hardware doctor Moza USBPcap hint rendered by sniff-notes-template"
     },
     {
       "command": "wheelctl hardware sniff-summary --pcapng target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --vendor 0x346E --product 0x0004 --include-payload-samples --max-samples-per-report 32 --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json --md-out target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.md",

@@ -8428,6 +8428,101 @@ blocker audit fields, schema additions, tests, and this source-of-truth work
 item. Do not remove the staged event-marker capture handoff or earlier
 non-claiming protocol evidence.
 
+## Work item: materialize-0x8e-capture-selector-handoff
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: future passive 0x8E event-marker timing-correlation capture
+Blocked by: completed reprocessed 0x8E timing review and movement blocker audit
+
+### Goal
+
+Prevent the next 0x8E event-marker capture from accidentally reusing a stale
+USBPcap `--devices` value or running the placeholder capture template directly.
+The checked-in timing-correlation plan should make the sequence explicit:
+
+```text
+hardware doctor
+-> sniff-notes-template
+-> rendered operator-notes.md capture command
+-> passive capture
+-> sniff-summary
+-> timing-correlation review
+```
+
+### Production delta
+
+`wheelctl moza vendor-status-timing-correlation-plan` now marks the
+`sniff-capture` command template as selector-placeholder-bearing and
+non-runnable until `wheelctl hardware sniff-notes-template` renders
+`operator-notes.md` from a fresh hardware-doctor Moza USBPcap hint. The
+bench-wizard/artifact-index navigation preserves that metadata and the
+Markdown handoff tells operators not to run the placeholder capture template
+directly.
+
+### Non-goals
+
+No live hardware access, HID open, serial open, read-only query send, live
+capture, raw pcap commit, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, or wheel movement.
+
+### Acceptance
+
+- The timing-correlation plan identifies `sniff-notes-template` as the source
+  that materializes the concrete capture command.
+- The placeholder `sniff-capture` template records
+  `must_not_run_unrendered_template=true`.
+- Wizard and artifact-index navigation preserve the placeholder/rendered-command
+  metadata from the timing-correlation plan.
+- Wizard Markdown tells the operator to use the rendered `operator-notes.md`
+  command after a fresh hardware doctor, not the placeholder template.
+- `live_read_only_probe_allowed=false`, `authorization_plan_allowed=false`,
+  `motion_attempt_allowed=false`, `output_was_sent=false`,
+  `wheel_moved_under_openracing=false`, and `authority_state=blocked` remain
+  pinned.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-plan `
+  --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-movement-blocker-audit `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json `
+  --demux-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json `
+  --framing-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json `
+  --extended-scan-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json `
+  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json `
+  --payload-rerun-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --timing-correlation-plan ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --timing-correlation-review ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza artifact-index `
+  --lane ci/hardware/moza-r5/2026-05-13 `
+  --json-out target/moza-current/artifact-index-0x8e-selector-handoff.json `
+  --md-out ci/hardware/moza-r5/2026-05-13/index.md
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza bench-wizard `
+  --lane ci/hardware/moza-r5/2026-05-13 `
+  --json-out target/moza-current/bench-wizard-0x8e-selector-handoff.json `
+  --md-out target/moza-current/bench-wizard-0x8e-selector-handoff.md
+```
+
+### Rollback
+
+Remove only the selector-materialization fields, schema assertions, wizard
+Markdown warning, refreshed timing-correlation plan/audit/index artifacts,
+tests, and this source-of-truth work item. Do not remove the event-marker
+capture handoff, reprocessed 0x8E timing evidence, movement blocker audit,
+status probe receipts, or earlier non-claiming protocol evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

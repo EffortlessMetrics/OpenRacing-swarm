@@ -15,6 +15,7 @@
     "target_tuple_ids",
     "target_samples",
     "planned_capture_scenario",
+    "capture_command_templates",
     "capture_recorded",
     "timing_correlation_proven",
     "payload_bearing_authority_state_source_found",
@@ -105,6 +106,59 @@
     },
     "planned_capture_kind": {
       "const": "passive_external_usb_observation"
+    },
+    "capture_command_templates": {
+      "type": "array",
+      "minItems": 5,
+      "allOf": [
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "name",
+              "materializes_capture_command",
+              "materialized_command_in",
+              "selector_source"
+            ],
+            "properties": {
+              "name": { "const": "render_checked_in_operator_notes_template" },
+              "output_enabled": { "const": false },
+              "materializes_capture_command": { "const": true },
+              "materialized_command_in": {
+                "const": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"
+              },
+              "selector_source": {
+                "const": "fresh hardware doctor Moza USBPcap hint"
+              }
+            }
+          }
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "name",
+              "command_has_selector_placeholders",
+              "must_not_run_unrendered_template",
+              "concrete_command_source",
+              "selector_source"
+            ],
+            "properties": {
+              "name": { "const": "run_bounded_passive_usbpcap_capture" },
+              "output_enabled": { "const": false },
+              "openracing_hardware_output": { "const": false },
+              "command_has_selector_placeholders": { "const": true },
+              "must_not_run_unrendered_template": { "const": true },
+              "concrete_command_source": {
+                "const": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"
+              },
+              "selector_source": {
+                "const": "fresh hardware doctor Moza USBPcap hint rendered by sniff-notes-template"
+              }
+            }
+          }
+        }
+      ]
     },
     "planned_capture_duration_ms": {
       "type": "integer",
