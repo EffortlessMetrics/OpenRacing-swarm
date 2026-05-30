@@ -30458,8 +30458,8 @@ fn vendor_status_timing_correlation_plan_receipt(
     insert_json!(
         "required_operator_event_markers",
         [
-            "capture_start_utc",
             "hardware_doctor_selector_reviewed_utc",
+            "capture_start_utc",
             "pit_house_opened_utc",
             "r5_recognized_in_pit_house_utc",
             "idle_stable_before_change_utc",
@@ -31180,8 +31180,8 @@ fn vendor_status_timing_correlation_target_tuple_ids() -> [&'static str; 4] {
 
 fn vendor_status_timing_correlation_required_markers() -> [&'static str; 11] {
     [
-        "capture_start_utc",
         "hardware_doctor_selector_reviewed_utc",
+        "capture_start_utc",
         "pit_house_opened_utc",
         "r5_recognized_in_pit_house_utc",
         "idle_stable_before_change_utc",
@@ -31244,8 +31244,8 @@ fn vendor_status_timing_correlation_semantic_event_markers() -> [&'static str; 8
 
 fn vendor_status_timing_correlation_administrative_event_markers() -> [&'static str; 3] {
     [
-        "capture_start_utc",
         "hardware_doctor_selector_reviewed_utc",
+        "capture_start_utc",
         "capture_stop_utc",
     ]
 }
@@ -50181,6 +50181,24 @@ mod tests {
             json_string(&receipt, "planned_capture_scenario"),
             Some("pit-house-0x8e-timing-correlation")
         );
+        let Some(required_operator_event_markers) = receipt
+            .get("required_operator_event_markers")
+            .and_then(Value::as_array)
+        else {
+            return Err("missing required operator event markers".into());
+        };
+        let hardware_doctor_marker = required_operator_event_markers
+            .iter()
+            .position(|marker| marker.as_str() == Some("hardware_doctor_selector_reviewed_utc"))
+            .ok_or("missing hardware doctor selector marker")?;
+        let capture_start_marker = required_operator_event_markers
+            .iter()
+            .position(|marker| marker.as_str() == Some("capture_start_utc"))
+            .ok_or("missing capture start marker")?;
+        assert!(
+            hardware_doctor_marker < capture_start_marker,
+            "timing-correlation plan should list hardware doctor selector review before capture start"
+        );
         assert_eq!(json_bool(&receipt, "capture_recorded"), Some(false));
         assert_eq!(
             json_bool(&receipt, "timing_correlation_proven"),
@@ -50684,6 +50702,22 @@ mod tests {
                 .ok_or("missing ignored correlation marker list")?,
             "hardware_doctor_selector_reviewed_utc"
         ));
+        let ignored = receipt
+            .get("operator_event_marker_correlation_markers_ignored")
+            .and_then(Value::as_array)
+            .ok_or("missing ignored correlation marker array")?;
+        let hardware_doctor_marker = ignored
+            .iter()
+            .position(|marker| marker.as_str() == Some("hardware_doctor_selector_reviewed_utc"))
+            .ok_or("missing hardware doctor selector marker")?;
+        let capture_start_marker = ignored
+            .iter()
+            .position(|marker| marker.as_str() == Some("capture_start_utc"))
+            .ok_or("missing capture start marker")?;
+        assert!(
+            hardware_doctor_marker < capture_start_marker,
+            "ignored administrative markers should still present hardware doctor selector review before capture start"
+        );
         assert!(json_contains_string(
             receipt
                 .get("operator_event_marker_correlation_markers_allowed")

@@ -611,6 +611,12 @@ fresh hardware-doctor selector review and each required capture event as it
 happens. The helper only edits notes; it does not open HID or serial devices,
 send read-only queries, authorize output, or move the wheel.
 
+The required marker lists now present
+`hardware_doctor_selector_reviewed_utc` before `capture_start_utc`, matching
+the bundle and timing-review validators. Operators should stamp the selector
+review after reading the fresh hardware doctor receipt and before starting the
+passive USBPcap capture.
+
 The preferred marker path is now `wheelctl hardware sniff-marker`, which is
 rendered into the same operator notes template for the hardware-doctor selector
 review marker and every required 0x8E capture event. The command only edits the

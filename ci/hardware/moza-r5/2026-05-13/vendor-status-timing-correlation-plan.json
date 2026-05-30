@@ -92,7 +92,7 @@
   "command": "wheelctl moza vendor-status-timing-correlation-plan",
   "corrected_read_only_probe_ready": false,
   "exact_next_blocker": "No checked-in artifact currently timing-correlates the 0x8E payload-bearing status-source samples to authority or mode state. This plan makes the next passive capture concrete, but it does not itself record timing evidence or allow live probing, authorization, PIDFF, force escalation, or motion.",
-  "generated_at_utc": "2026-05-30T12:09:26Z",
+  "generated_at_utc": "2026-05-30T13:02:42Z",
   "hardware_output_authorized": false,
   "high_torque_enabled": false,
   "live_read_only_probe_allowed": false,
@@ -151,8 +151,8 @@
     "future no-output timing-correlation review receipt"
   ],
   "required_operator_event_markers": [
-    "capture_start_utc",
     "hardware_doctor_selector_reviewed_utc",
+    "capture_start_utc",
     "pit_house_opened_utc",
     "r5_recognized_in_pit_house_utc",
     "idle_stable_before_change_utc",
