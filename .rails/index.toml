@@ -1,0 +1,18 @@
+schema_version = "1.0"
+
+[project]
+repo = "openracing"
+framework = "rails"
+root = ".rails"
+
+[conventions]
+proposal_prefix = "OR-PROP"
+spec_prefix = "OR-SPEC"
+adr_prefix = "OR-ADR"
+lane_prefix = "OR-LANE"
+
+[external_namespaces]
+codex = ".codex"
+speckit = ".spec"
+claude = ".claude"
+jules = ".jules"
