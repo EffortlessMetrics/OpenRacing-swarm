@@ -30652,6 +30652,10 @@ fn vendor_status_timing_correlation_review_receipt(
         .map(str::to_string)
         .collect::<Vec<_>>();
     let event_marker_timestamps_complete = marker_times_missing.is_empty();
+    let event_marker_order_violations =
+        vendor_status_timing_correlation_event_marker_order_violations(&marker_times);
+    let operator_event_marker_order_valid =
+        event_marker_timestamps_complete && event_marker_order_violations.is_empty();
 
     let target_tuple_ids = vendor_status_timing_correlation_target_tuple_ids();
     let semantic_samples = semantic_review
@@ -30697,6 +30701,15 @@ fn vendor_status_timing_correlation_review_receipt(
                 || sample.get("packet_time_epoch").is_some()
                 || sample.get("packet_timestamp_epoch").is_some()
         });
+    let (
+        target_sample_timestamp_count,
+        target_samples_outside_capture_window,
+        target_samples_within_capture_window,
+    ) = vendor_status_timing_correlation_capture_window_sample_status(
+        &summary_samples_by_tuple,
+        &marker_times,
+        operator_event_marker_order_valid,
+    );
     let mut any_target_samples_observed = false;
     let mut same_tuple_payload_variation_observed = false;
     let mut operator_event_marker_correlation_observed = false;
@@ -30800,22 +30813,28 @@ fn vendor_status_timing_correlation_review_receipt(
 
     let timing_correlation_candidate_observed = event_marker_notes_complete
         && event_marker_timestamps_complete
+        && operator_event_marker_order_valid
         && summary_has_packet_timestamp_samples
+        && target_samples_within_capture_window
         && same_tuple_payload_variation_with_event_markers_observed;
     let timing_correlation_proven = false;
     let timing_correlation_verdict = if !any_target_samples_observed {
         "insufficient_no_target_0x8e_samples"
     } else if timing_correlation_candidate_observed {
         "candidate_payload_variation_correlated_to_operator_events"
-    } else if operator_event_marker_correlation_observed {
-        "insufficient_event_correlated_static_or_single_payload"
-    } else if !same_tuple_payload_variation_observed {
-        "insufficient_static_or_single_sample_0x8e_payloads"
     } else if !event_marker_notes_complete
         || !event_marker_timestamps_complete
         || !summary_has_packet_timestamp_samples
     {
         "insufficient_missing_event_markers_or_packet_timestamps"
+    } else if event_marker_timestamps_complete && !operator_event_marker_order_valid {
+        "insufficient_event_marker_order_invalid"
+    } else if summary_has_packet_timestamp_samples && !target_samples_within_capture_window {
+        "insufficient_target_samples_outside_capture_window"
+    } else if operator_event_marker_correlation_observed {
+        "insufficient_event_correlated_static_or_single_payload"
+    } else if !same_tuple_payload_variation_observed {
+        "insufficient_static_or_single_sample_0x8e_payloads"
     } else if same_tuple_payload_variation_observed {
         "payload_varies_but_event_timing_not_proven"
     } else {
@@ -30922,12 +30941,32 @@ fn vendor_status_timing_correlation_review_receipt(
         event_marker_timestamps_complete
     );
     insert_json!(
+        "operator_event_marker_order_valid",
+        operator_event_marker_order_valid
+    );
+    receipt.insert(
+        "operator_event_marker_order_violations".to_string(),
+        Value::Array(event_marker_order_violations),
+    );
+    insert_json!(
         "event_correlation_window_seconds",
         VENDOR_STATUS_TIMING_CORRELATION_WINDOW_SECONDS
     );
     insert_json!(
         "summary_has_packet_timestamp_samples",
         summary_has_packet_timestamp_samples
+    );
+    insert_json!(
+        "target_sample_timestamp_count",
+        target_sample_timestamp_count
+    );
+    insert_json!(
+        "target_samples_within_capture_window",
+        target_samples_within_capture_window
+    );
+    receipt.insert(
+        "target_samples_outside_capture_window".to_string(),
+        Value::Array(target_samples_outside_capture_window),
     );
     insert_json!("any_target_samples_observed", any_target_samples_observed);
     insert_json!(
@@ -31112,6 +31151,101 @@ fn vendor_status_timing_correlation_marker_times(
         }
     }
     marker_times
+}
+
+fn vendor_status_timing_correlation_event_marker_order() -> [&'static str; 10] {
+    [
+        "capture_start_utc",
+        "pit_house_opened_utc",
+        "r5_recognized_in_pit_house_utc",
+        "idle_stable_before_change_utc",
+        "ks_top_left_front_led_default_teal_observed_utc",
+        "ks_top_left_front_led_changed_to_red_utc",
+        "ks_top_left_front_led_restored_to_default_teal_utc",
+        "idle_stable_after_restore_utc",
+        "pit_house_closed_utc",
+        "capture_stop_utc",
+    ]
+}
+
+fn vendor_status_timing_correlation_event_marker_order_violations(
+    marker_times: &BTreeMap<String, f64>,
+) -> Vec<Value> {
+    let mut violations = Vec::new();
+    if let (Some(hardware_doctor), Some(capture_start)) = (
+        marker_times.get("hardware_doctor_selector_reviewed_utc"),
+        marker_times.get("capture_start_utc"),
+    ) && hardware_doctor > capture_start
+    {
+        violations.push(serde_json::json!({
+            "field": "hardware_doctor_selector_reviewed_utc",
+            "timestamp_epoch_seconds": hardware_doctor,
+            "must_be_at_or_before": "capture_start_utc",
+            "boundary_epoch_seconds": capture_start
+        }));
+    }
+
+    let mut previous = None;
+    for marker in vendor_status_timing_correlation_event_marker_order() {
+        let Some(timestamp) = marker_times.get(marker).copied() else {
+            continue;
+        };
+        if let Some((previous_marker, previous_timestamp)) = previous
+            && timestamp < previous_timestamp
+        {
+            violations.push(serde_json::json!({
+                "field": marker,
+                "timestamp_epoch_seconds": timestamp,
+                "must_be_at_or_after": previous_marker,
+                "boundary_epoch_seconds": previous_timestamp
+            }));
+        }
+        previous = Some((marker, timestamp));
+    }
+
+    violations
+}
+
+fn vendor_status_timing_correlation_capture_window_sample_status(
+    summary_samples_by_tuple: &BTreeMap<String, Vec<Value>>,
+    marker_times: &BTreeMap<String, f64>,
+    operator_event_marker_order_valid: bool,
+) -> (u64, Vec<Value>, bool) {
+    let Some(capture_start) = marker_times.get("capture_start_utc").copied() else {
+        return (0, Vec::new(), false);
+    };
+    let Some(capture_stop) = marker_times.get("capture_stop_utc").copied() else {
+        return (0, Vec::new(), false);
+    };
+
+    let mut timestamp_count = 0_u64;
+    let mut outside_window = Vec::new();
+    for (tuple_id, samples) in summary_samples_by_tuple {
+        for sample in samples {
+            let Some(sample_epoch_seconds) = vendor_status_sample_epoch_seconds(sample) else {
+                continue;
+            };
+            timestamp_count = timestamp_count.saturating_add(1);
+            if sample_epoch_seconds < capture_start || sample_epoch_seconds > capture_stop {
+                outside_window.push(serde_json::json!({
+                    "tuple_id": tuple_id,
+                    "packet_ordinal": json_u64(sample, "packet_ordinal").unwrap_or(0),
+                    "frame_number": sample.get("frame_number").cloned().unwrap_or(Value::Null),
+                    "sample_epoch_seconds": sample_epoch_seconds,
+                    "capture_start_epoch_seconds": capture_start,
+                    "capture_stop_epoch_seconds": capture_stop,
+                    "payload_hex": json_string(sample, "payload_hex").unwrap_or("unknown"),
+                    "hardware_output_authorized": false,
+                    "output_sendability_claim": false,
+                    "read_only_probe_allowed": false
+                }));
+            }
+        }
+    }
+
+    let samples_within_window =
+        operator_event_marker_order_valid && timestamp_count > 0 && outside_window.is_empty();
+    (timestamp_count, outside_window, samples_within_window)
 }
 
 fn parse_rfc3339_epoch_seconds_from_text(line: &str) -> Option<f64> {
@@ -50116,7 +50250,7 @@ mod tests {
         );
         assert_eq!(
             json_string(&receipt, "timing_correlation_verdict"),
-            Some("insufficient_static_or_single_sample_0x8e_payloads")
+            Some("insufficient_missing_event_markers_or_packet_timestamps")
         );
         assert_eq!(
             json_bool(&receipt, "timing_correlation_proven"),
@@ -50230,6 +50364,14 @@ mod tests {
             Some(true)
         );
         assert_eq!(
+            json_bool(&receipt, "operator_event_marker_order_valid"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&receipt, "target_samples_within_capture_window"),
+            Some(true)
+        );
+        assert_eq!(
             json_bool(&receipt, "operator_event_marker_correlation_observed"),
             Some(true)
         );
@@ -50284,6 +50426,62 @@ mod tests {
         assert!(json_contains_string(
             first_tuple,
             "ks_top_left_front_led_changed_to_red_utc"
+        ));
+
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_timing_correlation_review_blocks_out_of_order_event_markers() -> TestResult {
+        let payload_source_candidates: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_PAYLOAD_SOURCE_CANDIDATES_JSON)?;
+        let semantic_review = vendor_status_payload_source_semantic_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-candidates.json",
+            ),
+            &payload_source_candidates,
+        )?;
+        let summary = sample_passive_sniff_summary_with_event_correlated_0x8e_variation(100_492);
+        let operator_notes = complete_0x8e_timing_operator_notes_near_samples().replace(
+            "hardware_doctor_selector_reviewed_utc: 2026-02-02T02:41:29Z",
+            "hardware_doctor_selector_reviewed_utc: 2026-02-02T02:41:31Z",
+        );
+
+        let receipt = vendor_status_timing_correlation_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
+            ),
+            &semantic_review,
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json"),
+            &summary,
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"),
+            &operator_notes,
+        )?;
+
+        assert_eq!(
+            json_bool(&receipt, "operator_event_marker_timestamps_complete"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&receipt, "operator_event_marker_order_valid"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "timing_correlation_candidate_observed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_string(&receipt, "timing_correlation_verdict"),
+            Some("insufficient_event_marker_order_invalid")
+        );
+        assert_eq!(json_bool(&receipt, "motion_attempt_allowed"), Some(false));
+        assert_eq!(
+            json_bool(&receipt, "wheel_moved_under_openracing"),
+            Some(false)
+        );
+        assert!(json_contains_string(
+            &receipt,
+            "hardware_doctor_selector_reviewed_utc"
         ));
 
         Ok(())
@@ -52992,7 +53190,7 @@ mod tests {
             ("capture_start_utc", "2026-02-02T02:41:30Z"),
             (
                 "hardware_doctor_selector_reviewed_utc",
-                "2026-02-02T02:41:31Z",
+                "2026-02-02T02:41:29Z",
             ),
             ("pit_house_opened_utc", "2026-02-02T02:41:32Z"),
             ("r5_recognized_in_pit_house_utc", "2026-02-02T02:41:34Z"),

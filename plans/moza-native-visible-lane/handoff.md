@@ -587,6 +587,14 @@ stop. Malformed, vague, or out-of-order event notes must fail before bundling;
 the lane still needs timing-correlated payload-bearing authority/mode status
 evidence before any live probe, authorization, PIDFF rerun, or motion attempt.
 
+The no-output `vendor-status-timing-correlation-review` receipt now applies the
+same timing discipline before it can surface a candidate timing correlation:
+event markers must be ordered and target 0x8E sample timestamps must fall inside
+the declared `capture_start_utc` to `capture_stop_utc` window. The current
+checked-in review remains blocked because the older setting-change notes lack
+event markers; no live probe, authorization, PIDFF rerun, output, or motion is
+allowed from that receipt.
+
 ## Do Not Do
 
 - Do not create another authorization receipt from this handoff.
