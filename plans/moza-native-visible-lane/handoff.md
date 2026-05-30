@@ -184,7 +184,7 @@ The broader Moza objective remains incomplete:
 | Payload-source semantic review | `vendor-status-payload-source-semantic-review.json` | Fixture decoder coverage now recognizes the four `0x8E` samples as payload-bearing status-source questions, but the review records no same-tuple payload variation, no timing correlation, no authority-state source, and no live probe/output/motion eligibility |
 | 0x8E timing-correlation plan | `vendor-status-timing-correlation-plan.json` | Stages a passive Pit House event-marker capture for the same four `0x8E` samples with fresh hardware-doctor selector verification and complete LED default-teal/red/default-teal notes; no capture, timing proof, live probe, authorization, output, or motion claim |
 | 0x8E timing-correlation sniff plan | `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json` | Checked-in passive handoff that requires fresh USBPcap selector review, explicit event markers, KS top-left front LED default-teal/red/default-teal notes, and 180000 ms `sniff-capture --hardware-doctor`; still no capture, semantic decode, output, or motion claim |
-| Existing 0x8E timing-correlation review | `vendor-status-timing-correlation-review.json` | Reviews the accepted Pit House setting-change derived summary and finds the four target `0x8E` samples, but classifies them as static/single-sample with missing event-marker timing proof; live probe, authorization, output, and motion remain blocked |
+| Existing 0x8E timing-correlation review | `vendor-status-timing-correlation-review.json` | Reviews the accepted Pit House setting-change derived summary and now records same-tuple payload variation for all four target `0x8E` tuples, but the old notes lack complete event-marker timing proof; live probe, authorization, output, and motion remain blocked |
 | Vendor status movement blocker audit | `vendor-status-movement-blocker-audit.json` | Consolidates the zero-response probe thread: broad serial ownership/line-setting/framing/scan-window depth are not the current blocker; authority endpoint/command mismatch and missing timing-correlated payload-bearing status-source evidence still block live probe, authorization, output, and motion |
 | Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls`, and `pit-house-setting-change` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence; setting-change keeps the earlier low-yield classification as historical failed evidence |
 | Remaining passive sniff plans | `simhub-open-idle`, `simhub-output-session`, `simulator-session-start-stop` sniff plans | Plan-only |
@@ -241,9 +241,9 @@ planned `pit-house-0x8e-timing-correlation` capture, which requires fresh
 hardware-doctor selector verification, a passive `sniff-capture
 --hardware-doctor` command, explicit LED event markers, and no OpenRacing
 hardware output. The existing setting-change capture was reviewed and found
-insufficient for this purpose because it exposes only static/single-sample
-`0x8E` payloads and lacks the event-marker fields required to prove timing
-correlation.
+insufficient for this purpose because the reprocessed derived summary now shows
+varying same-tuple `0x8E` payloads, but the notes still lack the event-marker
+fields required to prove timing correlation.
 
 The read-only hardware status/mode matrix is now recorded at
 `vendor-status-mode-matrix.json` with its fresh precondition doctor at
@@ -507,11 +507,12 @@ of the derived summary. The plan records
 escalation, or motion attempt.
 
 `vendor-status-timing-correlation-review.json` now applies the no-output review
-shape to the existing accepted Pit House setting-change summary and notes. It
-finds all four target `0x8E` samples, but only as static/single-sample payloads;
-the existing notes also lack the explicit event-marker fields from the staged
-plan. The review records `timing_correlation_proven=false`,
-`same_tuple_payload_variation_observed=false`,
+shape to the existing accepted Pit House setting-change summary and notes. The
+reprocessed derived summary carries timestamped samples and records same-tuple
+payload variation for all four target `0x8E` tuples, but the existing notes
+still lack the explicit event-marker fields from the staged plan. The review
+records `timing_correlation_proven=false`,
+`same_tuple_payload_variation_observed=true`,
 `payload_bearing_authority_state_source_found=false`,
 `live_read_only_probe_allowed=false`, `authorization_plan_allowed=false`,
 `motion_attempt_allowed=false`, `wheel_moved_under_openracing=false`,

@@ -7678,13 +7678,13 @@ summary and notes. It finds the four target samples:
 ```
 
 but classifies the evidence as
-`insufficient_static_or_single_sample_0x8e_payloads` because the existing
-derived summary provides only one observed payload per target tuple and the
-operator notes do not contain the new event-marker fields required by the
+`insufficient_missing_event_markers_or_packet_timestamps` because the
+reprocessed derived summary provides varying same-tuple payload samples while
+the operator notes do not contain the new event-marker fields required by the
 timing-correlation plan.
 
 The receipt records `timing_correlation_proven=false`,
-`same_tuple_payload_variation_observed=false`,
+`same_tuple_payload_variation_observed=true`,
 `payload_bearing_authority_state_source_found=false`,
 `live_read_only_probe_allowed=false`, `authorization_plan_allowed=false`,
 `motion_attempt_allowed=false`, `wheel_moved_under_openracing=false`,
@@ -8266,8 +8266,9 @@ release-ready claim, or wheel movement.
   classified as event-correlated.
 - Same-tuple payload variation near event markers is recorded as candidate
   timing evidence.
-- Existing static/single-sample checked-in evidence remains insufficient and
-  non-claiming.
+- Existing checked-in evidence without complete operator event markers remains
+  insufficient and non-claiming, even when derived summaries contain timestamped
+  0x8E payload samples.
 - `timing_correlation_proven=false`,
   `live_read_only_probe_allowed=false`, `authorization_plan_allowed=false`,
   `motion_attempt_allowed=false`, `output_was_sent=false`,
@@ -8317,6 +8318,115 @@ source-of-truth work item. Do not remove the timing-correlation handoff,
 movement-blocker audit, status probe receipts, demux evidence, endpoint
 diagnoses, payload-source reviews, consumed authority attempt, or
 post-authority PIDFF regression evidence.
+
+## Work item: reprocess-setting-change-0x8e-timestamps
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: future reviewed read-only/status plan from event-correlated 0x8E evidence
+Blocked by: completed packet timestamp plumbing and existing local setting-change pcap
+
+### Goal
+
+Reprocess the existing accepted Pit House setting-change pcap into derived
+evidence that the timing review can actually inspect. This narrows the blocker
+from "no varying 0x8E payload samples" to "varying 0x8E payload samples exist,
+but event-marker timing proof is still missing."
+
+### Production delta
+
+`wheelctl moza vendor-status-timing-correlation-review` now accepts RFC3339
+packet timestamp strings from `wheelctl hardware sniff-summary` sample metadata.
+The checked-in `pit-house-setting-change/sniff-summary.json` was regenerated
+from the existing local pcap with `--include-payload-samples
+--max-samples-per-report 32`; only derived summary/manifest evidence is checked
+in. The raw pcap remains local.
+
+The refreshed `vendor-status-timing-correlation-review.json` now records:
+
+```text
+summary_has_packet_timestamp_samples=true
+same_tuple_payload_variation_observed=true
+operator_event_marker_notes_complete=false
+operator_event_marker_timestamps_complete=false
+timing_correlation_verdict=insufficient_missing_event_markers_or_packet_timestamps
+```
+
+`vendor-status-movement-blocker-audit.json` records that same-tuple 0x8E
+payload variation is present, while live read-only probing, authorization,
+PIDFF rerun, force escalation, and motion remain blocked until event-marker
+timing proof or an equivalent reviewed authority/mode status source exists.
+
+### Non-goals
+
+No live hardware access, HID open, serial open, read-only query send, live
+capture, raw pcap commit, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, or wheel movement.
+
+### Acceptance
+
+- The checked-in summary contains timestamped payload samples for the four 0x8E
+  target tuples.
+- The timing review records same-tuple payload variation for those 0x8E tuples.
+- The timing review still rejects the evidence because the existing operator
+  notes lack the required event-marker timestamps.
+- The movement blocker audit names missing event-marker timing proof as the
+  active blocker rather than static/single-sample 0x8E evidence.
+- `timing_correlation_proven=false`,
+  `live_read_only_probe_allowed=false`, `authorization_plan_allowed=false`,
+  `motion_attempt_allowed=false`, `output_was_sent=false`,
+  `wheel_moved_under_openracing=false`, and `authority_state=blocked` remain
+  pinned.
+
+### Proof commands
+
+```powershell
+wheelctl hardware sniff-summary `
+  --pcapng H:\Code\Rust\OpenRacing-swarm\target\sniff\pit-house-setting-change-repeat-02\capture.pcapng `
+  --vendor 0x346E `
+  --product 0x0004 `
+  --include-payload-samples `
+  --max-samples-per-report 32 `
+  --json-out ci\hardware\sniff\moza-r5\2026-05-13\pit-house-setting-change\sniff-summary.json
+wheelctl hardware sniff-bundle `
+  --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-plan.json `
+  --receipt ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-receipt.json `
+  --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-summary.json `
+  --operator-notes ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/operator-notes.md `
+  --out target/sniff/pit-house-setting-change-reprocessed/openracing-sniff-bundle.zip `
+  --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-bundle-manifest.json
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-review `
+  --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json `
+  --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-summary.json `
+  --operator-notes ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/operator-notes.md `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-movement-blocker-audit `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json `
+  --demux-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json `
+  --framing-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json `
+  --extended-scan-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json `
+  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json `
+  --payload-rerun-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --timing-correlation-plan ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --timing-correlation-review ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json `
+  --overwrite
+```
+
+### Rollback
+
+Remove only the RFC3339 packet timestamp parsing update, reprocessed derived
+setting-change summary/manifest, refreshed timing review, refreshed movement
+blocker audit fields, schema additions, tests, and this source-of-truth work
+item. Do not remove the staged event-marker capture handoff or earlier
+non-claiming protocol evidence.
 
 ## Work item: native-visible-promotion
 

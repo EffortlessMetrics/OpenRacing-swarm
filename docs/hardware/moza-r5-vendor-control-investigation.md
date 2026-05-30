@@ -281,10 +281,11 @@ future no-output timing-correlation review
 
 `vendor-status-timing-correlation-review.json` now reviews the existing accepted
 Pit House setting-change derived summary and notes with that future review
-shape. It finds all four target `0x8E` samples, but only as static/single-sample
-payloads, and the notes do not contain the explicit event-marker fields required
-by the timing-correlation plan. The verdict is
-`insufficient_static_or_single_sample_0x8e_payloads`; live read-only probe,
+shape. The reprocessed derived summary contains timestamped samples and records
+same-tuple payload variation for all four target `0x8E` tuples, but the notes do
+not contain the explicit event-marker fields required by the timing-correlation
+plan. The verdict is
+`insufficient_missing_event_markers_or_packet_timestamps`; live read-only probe,
 authorization planning, PIDFF rerun, force escalation, and motion remain
 blocked.
 

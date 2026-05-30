@@ -30478,7 +30478,7 @@ fn vendor_status_timing_correlation_plan_receipt(
             {
                 "name": "summarize_passive_capture",
                 "output_enabled": false,
-                "command": "wheelctl hardware sniff-summary --pcapng target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --vendor 0x346E --product 0x0004 --include-payload-samples --max-samples-per-report 64 --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json --md-out target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.md"
+                "command": "wheelctl hardware sniff-summary --pcapng target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --vendor 0x346E --product 0x0004 --include-payload-samples --max-samples-per-report 32 --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json --md-out target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.md"
             },
             {
                 "name": "future_no_output_timing_review",
@@ -31099,13 +31099,24 @@ fn parse_rfc3339_epoch_seconds_from_text(line: &str) -> Option<f64> {
 
 fn vendor_status_sample_epoch_seconds(sample: &Value) -> Option<f64> {
     [
+        "frame_time",
         "frame_time_epoch",
+        "packet_time",
         "packet_time_epoch",
+        "packet_timestamp",
         "packet_timestamp_epoch",
     ]
     .iter()
-    .filter_map(|key| json_string(sample, key))
-    .find_map(|raw| raw.parse::<f64>().ok())
+    .filter_map(|key| sample.get(*key))
+    .find_map(|value| {
+        value.as_f64().or_else(|| {
+            value.as_str().and_then(|raw| {
+                raw.parse::<f64>()
+                    .ok()
+                    .or_else(|| parse_rfc3339_epoch_seconds_from_text(raw))
+            })
+        })
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -31180,6 +31191,29 @@ fn vendor_status_movement_blocker_audit_receipt(
                 timing_correlation_review,
                 "payload_bearing_authority_state_source_found",
             ) == Some(false);
+    let timing_same_tuple_payload_variation_observed = json_bool(
+        timing_correlation_review,
+        "same_tuple_payload_variation_observed",
+    ) == Some(true);
+    let timing_summary_has_packet_timestamps = json_bool(
+        timing_correlation_review,
+        "summary_has_packet_timestamp_samples",
+    ) == Some(true);
+    let timing_event_marker_notes_complete = json_bool(
+        timing_correlation_review,
+        "operator_event_marker_notes_complete",
+    ) == Some(true);
+    let timing_event_marker_timestamps_complete = json_bool(
+        timing_correlation_review,
+        "operator_event_marker_timestamps_complete",
+    ) == Some(true);
+    let timing_correlation_verdict =
+        json_string(timing_correlation_review, "timing_correlation_verdict").unwrap_or("unknown");
+    let timing_source_evidence = if timing_same_tuple_payload_variation_observed {
+        "The reviewed 0x8E payload-bearing samples now show same-tuple payload variation, but the existing notes lack complete event-marker timing proof."
+    } else {
+        "The reviewed 0x8E payload-bearing samples are static/single-sample and lack event-marker timing proof."
+    };
 
     let mut receipt = serde_json::Map::new();
     macro_rules! insert_json {
@@ -31262,7 +31296,7 @@ fn vendor_status_movement_blocker_audit_receipt(
             {
                 "failure_mode": "timing_correlated_payload_bearing_status_source_missing",
                 "status": if timing_correlation_missing { "active_blocker" } else { "unknown" },
-                "evidence": "The reviewed 0x8E payload-bearing samples are static/single-sample and lack event-marker timing proof."
+                "evidence": timing_source_evidence
             }
         ]
     );
@@ -31282,6 +31316,26 @@ fn vendor_status_movement_blocker_audit_receipt(
     insert_json!(
         "timing_correlated_payload_source_missing",
         timing_correlation_missing
+    );
+    insert_json!(
+        "timing_source_same_tuple_payload_variation_observed",
+        timing_same_tuple_payload_variation_observed
+    );
+    insert_json!(
+        "timing_source_summary_has_packet_timestamp_samples",
+        timing_summary_has_packet_timestamps
+    );
+    insert_json!(
+        "timing_source_event_marker_notes_complete",
+        timing_event_marker_notes_complete
+    );
+    insert_json!(
+        "timing_source_event_marker_timestamps_complete",
+        timing_event_marker_timestamps_complete
+    );
+    insert_json!(
+        "timing_source_correlation_verdict",
+        timing_correlation_verdict
     );
     insert_json!("payload_bearing_authority_state_source_found", false);
     insert_json!("corrected_read_only_probe_ready", false);
@@ -50362,6 +50416,28 @@ mod tests {
             Some(true)
         );
         assert_eq!(
+            json_bool(
+                &receipt,
+                "timing_source_same_tuple_payload_variation_observed"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(
+                &receipt,
+                "timing_source_summary_has_packet_timestamp_samples"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&receipt, "timing_source_event_marker_notes_complete"),
+            Some(false)
+        );
+        assert_eq!(
+            json_string(&receipt, "timing_source_correlation_verdict"),
+            Some("insufficient_missing_event_markers_or_packet_timestamps")
+        );
+        assert_eq!(
             json_bool(&receipt, "live_read_only_probe_allowed"),
             Some(false)
         );
@@ -50417,6 +50493,11 @@ mod tests {
         assert!(command_templates.iter().any(|template| {
             json_string(template, "command")
                 .map(|command| command.contains("wheelctl hardware sniff-capture"))
+                == Some(true)
+        }));
+        assert!(command_templates.iter().any(|template| {
+            json_string(template, "command")
+                .map(|command| command.contains("--max-samples-per-report 32"))
                 == Some(true)
         }));
         assert!(command_templates.iter().any(|template| {
@@ -52801,8 +52882,8 @@ mod tests {
                         "sample_index": 1,
                         "packet_ordinal": 10,
                         "frame_number": 42,
-                        "frame_time_epoch": "1770000100.125000000",
-                        "frame_time": "February 2, 2026 02:41:40.125000000 UTC",
+                        "frame_time_epoch": "2026-02-02T02:41:40.125000000Z",
+                        "frame_time": "2026-02-02T02:41:40.125000000Z",
                         "payload_sha256": sha256_hex(&[0x7E, 0x07, 0x8E, 0x21, 0x00, 0x01, 0x91, 0x00, 0x00, 0x26, 0x24, serial_checksum(&[0x7E, 0x07, 0x8E, 0x21, 0x00, 0x01, 0x91, 0x00, 0x00, 0x26, 0x24])]),
                         "payload_hex": first_frame.clone(),
                         "hardware_output_authorized": false,
@@ -52812,8 +52893,8 @@ mod tests {
                         "sample_index": 2,
                         "packet_ordinal": 11,
                         "frame_number": 43,
-                        "frame_time_epoch": "1770000102.250000000",
-                        "frame_time": "February 2, 2026 02:41:42.250000000 UTC",
+                        "frame_time_epoch": "2026-02-02T02:41:42.250000000Z",
+                        "frame_time": "2026-02-02T02:41:42.250000000Z",
                         "payload_sha256": sha256_hex(&[0x7E, 0x07, 0x8E, 0x21, 0x00, 0x02, 0x91, 0x00, 0x00, 0x26, 0x24, serial_checksum(&[0x7E, 0x07, 0x8E, 0x21, 0x00, 0x02, 0x91, 0x00, 0x00, 0x26, 0x24])]),
                         "payload_hex": second_frame.clone(),
                         "hardware_output_authorized": false,
