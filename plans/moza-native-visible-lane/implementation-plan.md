@@ -8494,6 +8494,12 @@ cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timin
   --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json `
   --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
   --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-review `
+  --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json `
+  --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-summary.json `
+  --operator-notes ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/operator-notes.md `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --overwrite
 cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-movement-blocker-audit `
   --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json `
   --demux-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json `
@@ -9382,6 +9388,104 @@ source-of-truth work item. Do not remove the timing-correlation plan, strict
 event-marker validation, movement blocker audit, status probe receipts, demux
 evidence, endpoint diagnoses, post-capture command handoff, or native-visible
 promotion block.
+
+## Work item: align-0x8e-marker-order
+
+Status: completed
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: accepting misleading 0x8E timing-correlation operator handoff order
+Blocked by: completed 0x8E sniff marker command
+
+### Goal
+
+Make every generated 0x8E timing-correlation marker list match the enforced
+chronology: review the fresh hardware-doctor USBPcap selector first, then start
+the passive capture, then stamp the Pit House/KS LED semantic events and capture
+stop. This avoids an operator following a generated list that would later fail
+the bundle or timing-review validators.
+
+### Production delta
+
+`wheelctl hardware sniff-plan`, `wheelctl hardware sniff-notes-template`, and
+`wheelctl moza vendor-status-timing-correlation-plan` now list
+`hardware_doctor_selector_reviewed_utc` before `capture_start_utc`. The existing
+validators already required that ordering; this work aligns the source-of-truth
+handoff, checked-in sniff plan, schema readability, and regenerated plan/audit
+receipts with the same chronology.
+
+### Non-goals
+
+No live hardware access, HID open, serial open, read-only query send, live
+capture, raw pcap commit, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, output claim, or wheel movement.
+
+### Acceptance
+
+- Required 0x8E marker lists present `hardware_doctor_selector_reviewed_utc`
+  before `capture_start_utc`.
+- The rendered operator notes template presents the selector review field before
+  the capture-start field while still rendering marker commands for every
+  required event.
+- Existing bundle and timing-correlation review validation still rejects
+  missing, malformed, or out-of-order markers.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain the operating
+  state.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json hardware sniff-plan `
+  --family moza-r5 `
+  --scenario pit-house-0x8e-timing-correlation `
+  --lane ci/hardware/moza-r5/2026-05-13 `
+  --operator Steven `
+  --device-note "Moza R5 PID 0x0004 with KS/ES wheels, SR-P pedals, and HBP handbrake attached through the R5 hub" `
+  --capture-tool usbpcap `
+  --capture-tool wireshark `
+  --capture-tool tshark `
+  --platform-hint windows `
+  --json-out ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-plan `
+  --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-movement-blocker-audit `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json `
+  --demux-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json `
+  --framing-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json `
+  --extended-scan-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json `
+  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json `
+  --payload-rerun-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --timing-correlation-plan ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --timing-correlation-review ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json `
+  --overwrite
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_notes_template -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl sniff_bundle -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_plan -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_review -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Restore the previous generated marker ordering only if a future operator tooling
+change makes the validator chronology obsolete. Do not remove the strict
+timestamp validators or treat the previous order as capture evidence.
 
 ## Work item: native-visible-promotion
 

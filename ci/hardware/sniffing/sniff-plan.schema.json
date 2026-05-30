@@ -324,12 +324,12 @@
             "allOf": [
               {
                 "contains": {
-                  "const": "capture_start_utc"
+                  "const": "hardware_doctor_selector_reviewed_utc"
                 }
               },
               {
                 "contains": {
-                  "const": "hardware_doctor_selector_reviewed_utc"
+                  "const": "capture_start_utc"
                 }
               },
               {

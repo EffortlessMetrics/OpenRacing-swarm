@@ -6749,8 +6749,8 @@ const PIT_HOUSE_SETTING_CHANGE_OPERATOR_NOTES_REQUIRED: &[&str] = &[
     "whether the setting value was restored",
 ];
 const PIT_HOUSE_0X8E_TIMING_OPERATOR_NOTES_REQUIRED: &[&str] = &[
-    "capture_start_utc",
     "hardware_doctor_selector_reviewed_utc",
+    "capture_start_utc",
     "pit_house_opened_utc",
     "r5_recognized_in_pit_house_utc",
     "idle_stable_before_change_utc",
@@ -9628,6 +9628,30 @@ mod tests {
                     "operator notes template missing 0x8E timing field: {field}"
                 );
             }
+            let hardware_doctor_required = plan
+                .operator_notes_required
+                .iter()
+                .position(|field| field == "hardware_doctor_selector_reviewed_utc")
+                .ok_or("missing hardware doctor selector marker in sniff plan")?;
+            let capture_start_required = plan
+                .operator_notes_required
+                .iter()
+                .position(|field| field == "capture_start_utc")
+                .ok_or("missing capture start marker in sniff plan")?;
+            assert!(
+                hardware_doctor_required < capture_start_required,
+                "sniff plan should list hardware doctor selector review before capture start"
+            );
+            let hardware_doctor_notes = notes
+                .find("- [ ] hardware_doctor_selector_reviewed_utc:")
+                .ok_or("missing hardware doctor selector marker in rendered notes")?;
+            let capture_start_notes = notes
+                .find("- [ ] capture_start_utc:")
+                .ok_or("missing capture start marker in rendered notes")?;
+            assert!(
+                hardware_doctor_notes < capture_start_notes,
+                "operator notes should list hardware doctor selector review before capture start"
+            );
             assert!(notes.contains("## 0x8E Event Marker Timestamp Helper"));
             assert!(
                 notes.contains("Set-OpenRacingMarker \"hardware_doctor_selector_reviewed_utc\"")
