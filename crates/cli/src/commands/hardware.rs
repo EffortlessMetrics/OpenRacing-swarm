@@ -309,6 +309,18 @@ async fn sniff_notes_template(
 ) -> Result<()> {
     let stored_plan = read_and_validate_sniff_plan(plan)?;
     let capture_hints = sniff_notes_capture_hints_from_hardware_doctor(hardware_doctor)?;
+    let hardware_doctor_path = hardware_doctor
+        .map(|path| required_path_display(path, "hardware-doctor"))
+        .transpose()?;
+    let next_concrete_command_sequence = sniff_notes_next_concrete_capture_commands(
+        &stored_plan,
+        capture_hints.as_ref(),
+        hardware_doctor_path.as_deref(),
+    );
+    let next_concrete_command = next_concrete_command_sequence
+        .first()
+        .map(|command| command.command.clone());
+    let next_concrete_command_count = next_concrete_command_sequence.len();
     let template =
         render_sniff_operator_notes_template(plan, &stored_plan, capture_hints.as_ref(), Some(out));
     write_text_file(out, &template)?;
@@ -318,14 +330,17 @@ async fn sniff_notes_template(
         command: "wheelctl hardware sniff-notes-template",
         generated_at_utc: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
         plan_path: required_path_display(plan, "plan")?,
-        hardware_doctor_path: hardware_doctor
-            .map(|path| required_path_display(path, "hardware-doctor"))
-            .transpose()?,
+        hardware_doctor_path,
         out_path: required_path_display(out, "out")?,
         scenario: stored_plan.scenario,
         operator: stored_plan.operator,
         device_note: stored_plan.device_note,
         capture_hints,
+        next_concrete_command,
+        next_concrete_command_sequence,
+        next_concrete_command_count,
+        next_concrete_command_claim_boundary:
+            HardwareSniffNotesNextConcreteCommandClaimBoundary::no_output(),
         evidence_status: SNIFF_EVIDENCE_STATUS,
         native_control_evidence: false,
         openracing_hardware_output: false,
@@ -2521,6 +2536,50 @@ fn read_and_validate_sniff_notes_template_receipt(
     })?;
     required_text(&receipt.operator, "notes-template operator")?;
     required_text(&receipt.device_note, "notes-template device-note")?;
+    if receipt.next_concrete_command_count != receipt.next_concrete_command_sequence.len() {
+        anyhow::bail!(
+            "sniff notes template receipt '{}' has next_concrete_command_count {} but {} sequence entries",
+            path.display(),
+            receipt.next_concrete_command_count,
+            receipt.next_concrete_command_sequence.len()
+        );
+    }
+    if receipt.next_concrete_command.is_some() && receipt.next_concrete_command_sequence.is_empty()
+    {
+        anyhow::bail!(
+            "sniff notes template receipt '{}' has next_concrete_command but no command sequence",
+            path.display()
+        );
+    }
+    for command in &receipt.next_concrete_command_sequence {
+        required_text(&command.command, "notes-template next-concrete-command")?;
+        if command.openracing_hardware_output
+            || command.opened_hid_device
+            || command.opened_serial_device
+            || command.sent_read_only_query_commands
+            || command.sent_output_writes
+            || command.sent_feature_reports
+            || command.sent_configuration_writes
+            || command.sent_firmware_or_dfu_commands
+            || command.native_control_evidence
+            || command.visible_motion_verified
+            || command.smoke_ready
+            || command.release_ready
+        {
+            anyhow::bail!(
+                "sniff notes template receipt '{}' has claiming or output-capable next concrete command; passive operator notes receipts must remain no-output",
+                path.display()
+            );
+        }
+    }
+    if let Some(boundary) = &receipt.next_concrete_command_claim_boundary
+        && !boundary.all_output_and_claim_flags_false()
+    {
+        anyhow::bail!(
+            "sniff notes template receipt '{}' has claiming next concrete command boundary; passive operator notes receipts must remain no-output",
+            path.display()
+        );
+    }
     if receipt.native_control_evidence
         || receipt.openracing_hardware_output
         || receipt.satisfies_native_response_ready
@@ -2876,6 +2935,64 @@ fn wheelctl_sniff_capture_command(
         powershell_double_quoted_arg(capture_path),
         powershell_double_quoted_arg(&sniff_capture_receipt_path(capture_path))
     )
+}
+
+fn sniff_notes_next_concrete_capture_commands(
+    plan: &StoredHardwareSniffPlan,
+    capture_hints: Option<&HardwareSniffNotesCaptureHints>,
+    hardware_doctor_path: Option<&str>,
+) -> Vec<HardwareSniffNotesNextConcreteCommand> {
+    let Some(capture_hints) = capture_hints else {
+        return Vec::new();
+    };
+    let Some(extcap_path) = capture_hints.usbpcap_extcap_path.as_deref() else {
+        return Vec::new();
+    };
+    let Some(hardware_doctor_path) = hardware_doctor_path else {
+        return Vec::new();
+    };
+    let capture_path = sniff_notes_local_capture_path(plan);
+    let duration_ms = sniff_notes_capture_duration_ms(plan);
+    let json_out_path = sniff_capture_receipt_path(&capture_path);
+    capture_hints
+        .hints
+        .iter()
+        .map(|hint| {
+            let command = wheelctl_sniff_capture_command(
+                extcap_path,
+                hint,
+                hardware_doctor_path,
+                &capture_path,
+                duration_ms,
+            );
+            HardwareSniffNotesNextConcreteCommand {
+                name: "run_bounded_external_passive_sniff_capture".to_string(),
+                command,
+                scenario: plan.scenario.clone(),
+                usbpcap_interface: hint.usbpcap_interface.clone(),
+                capture_devices_value: hint.capture_devices_value.clone(),
+                hardware_doctor_path: hardware_doctor_path.to_string(),
+                duration_ms,
+                out_path: capture_path.clone(),
+                json_out_path: json_out_path.clone(),
+                requires_operator_action: true,
+                external_passive_capture: true,
+                raw_pcapng_commit_default: false,
+                openracing_hardware_output: false,
+                opened_hid_device: false,
+                opened_serial_device: false,
+                sent_read_only_query_commands: false,
+                sent_output_writes: false,
+                sent_feature_reports: false,
+                sent_configuration_writes: false,
+                sent_firmware_or_dfu_commands: false,
+                native_control_evidence: false,
+                visible_motion_verified: false,
+                smoke_ready: false,
+                release_ready: false,
+            }
+        })
+        .collect()
 }
 
 fn sniff_capture_receipt_path(capture_path: &str) -> String {
@@ -6996,6 +7113,11 @@ struct HardwareSniffNotesTemplateReceipt {
     device_note: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     capture_hints: Option<HardwareSniffNotesCaptureHints>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_concrete_command: Option<String>,
+    next_concrete_command_sequence: Vec<HardwareSniffNotesNextConcreteCommand>,
+    next_concrete_command_count: usize,
+    next_concrete_command_claim_boundary: HardwareSniffNotesNextConcreteCommandClaimBoundary,
     evidence_status: &'static str,
     native_control_evidence: bool,
     openracing_hardware_output: bool,
@@ -7004,6 +7126,96 @@ struct HardwareSniffNotesTemplateReceipt {
     satisfies_smoke_ready: bool,
     satisfies_release_ready: bool,
     readiness_claims: HardwareSniffReadinessClaims,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HardwareSniffNotesNextConcreteCommand {
+    name: String,
+    command: String,
+    scenario: String,
+    usbpcap_interface: String,
+    capture_devices_value: String,
+    hardware_doctor_path: String,
+    duration_ms: u64,
+    out_path: String,
+    json_out_path: String,
+    requires_operator_action: bool,
+    external_passive_capture: bool,
+    raw_pcapng_commit_default: bool,
+    openracing_hardware_output: bool,
+    opened_hid_device: bool,
+    opened_serial_device: bool,
+    sent_read_only_query_commands: bool,
+    sent_output_writes: bool,
+    sent_feature_reports: bool,
+    sent_configuration_writes: bool,
+    sent_firmware_or_dfu_commands: bool,
+    native_control_evidence: bool,
+    visible_motion_verified: bool,
+    smoke_ready: bool,
+    release_ready: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HardwareSniffNotesNextConcreteCommandClaimBoundary {
+    external_passive_capture_only: bool,
+    requires_operator_action: bool,
+    raw_pcapng_commit_default: bool,
+    openracing_hardware_output: bool,
+    opened_hid_device: bool,
+    opened_serial_device: bool,
+    sent_read_only_query_commands: bool,
+    sent_output_writes: bool,
+    sent_feature_reports: bool,
+    sent_configuration_writes: bool,
+    sent_firmware_or_dfu_commands: bool,
+    native_control_evidence: bool,
+    visible_motion_verified: bool,
+    smoke_ready: bool,
+    release_ready: bool,
+    wheel_moved_under_openracing: bool,
+}
+
+impl HardwareSniffNotesNextConcreteCommandClaimBoundary {
+    fn no_output() -> Self {
+        Self {
+            external_passive_capture_only: true,
+            requires_operator_action: true,
+            raw_pcapng_commit_default: false,
+            openracing_hardware_output: false,
+            opened_hid_device: false,
+            opened_serial_device: false,
+            sent_read_only_query_commands: false,
+            sent_output_writes: false,
+            sent_feature_reports: false,
+            sent_configuration_writes: false,
+            sent_firmware_or_dfu_commands: false,
+            native_control_evidence: false,
+            visible_motion_verified: false,
+            smoke_ready: false,
+            release_ready: false,
+            wheel_moved_under_openracing: false,
+        }
+    }
+
+    fn all_output_and_claim_flags_false(&self) -> bool {
+        self.external_passive_capture_only
+            && self.requires_operator_action
+            && !self.raw_pcapng_commit_default
+            && !self.openracing_hardware_output
+            && !self.opened_hid_device
+            && !self.opened_serial_device
+            && !self.sent_read_only_query_commands
+            && !self.sent_output_writes
+            && !self.sent_feature_reports
+            && !self.sent_configuration_writes
+            && !self.sent_firmware_or_dfu_commands
+            && !self.native_control_evidence
+            && !self.visible_motion_verified
+            && !self.smoke_ready
+            && !self.release_ready
+            && !self.wheel_moved_under_openracing
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -8128,6 +8340,15 @@ struct StoredHardwareSniffNotesTemplateReceipt {
     scenario: String,
     operator: String,
     device_note: String,
+    #[serde(default)]
+    next_concrete_command: Option<String>,
+    #[serde(default)]
+    next_concrete_command_sequence: Vec<HardwareSniffNotesNextConcreteCommand>,
+    #[serde(default)]
+    next_concrete_command_count: usize,
+    #[serde(default)]
+    next_concrete_command_claim_boundary:
+        Option<HardwareSniffNotesNextConcreteCommandClaimBoundary>,
     evidence_status: String,
     native_control_evidence: bool,
     openracing_hardware_output: bool,
@@ -9938,6 +10159,158 @@ mod tests {
                 value.get("scenario").and_then(serde_json::Value::as_str),
                 Some("pit-house-setting-change")
             );
+            assert_eq!(
+                value
+                    .get("next_concrete_command_count")
+                    .and_then(serde_json::Value::as_u64),
+                Some(0)
+            );
+            let Some(sequence) = value
+                .get("next_concrete_command_sequence")
+                .and_then(serde_json::Value::as_array)
+            else {
+                return Err("expected next_concrete_command_sequence array".into());
+            };
+            assert!(sequence.is_empty());
+            assert!(value.get("next_concrete_command").is_none());
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn sniff_notes_template_receipt_surfaces_current_selector_capture_command()
+        -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let plan = sample_plan_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseZeroX8eTimingCorrelation,
+            )?;
+            let plan_path = dir.path().join("sniff-plan.json");
+            write_json_file(&plan_path, &plan)?;
+            let doctor_path = dir.path().join("hardware-doctor.json");
+            let doctor = serde_json::json!({
+                "no_hid_device_opened": true,
+                "no_ffb_writes": true,
+                "no_output_reports": true,
+                "no_feature_reports": true,
+                "no_serial_config_commands": true,
+                "no_firmware_or_dfu_commands": true,
+                "tools": {
+                    "usbpcap_descriptor_capture": {
+                        "usbpcap_extcap_path": "C:\\Program Files\\Wireshark\\extcap\\USBPcapCMD.exe",
+                        "usbpcap_moza_device_hints": [
+                            {
+                                "usbpcap_interface": "\\\\.\\USBPcap2",
+                                "capture_devices_value": "3",
+                                "matched_device_displays": [
+                                    "USB Serial Device (COM4)",
+                                    "MOZA Windows Driver"
+                                ],
+                                "suggested_capture_filter": "select \\\\.\\USBPcap2 with USBPcap --devices 3"
+                            }
+                        ]
+                    }
+                }
+            });
+            write_json_file(&doctor_path, &doctor)?;
+            let notes_path = dir.path().join("operator-notes.md");
+            let json_out = dir.path().join("sniff-notes-template-receipt.json");
+
+            sniff_notes_template(
+                false,
+                &plan_path,
+                Some(&doctor_path),
+                &notes_path,
+                Some(&json_out),
+            )
+            .await?;
+
+            let value: serde_json::Value = read_json_file(&json_out)?;
+            let Some(command) = value
+                .get("next_concrete_command")
+                .and_then(serde_json::Value::as_str)
+            else {
+                return Err("expected next_concrete_command".into());
+            };
+            assert!(command.contains("wheelctl hardware sniff-capture"));
+            assert!(command.contains("--hardware-doctor"));
+            assert!(command.contains("--duration-ms 180000"));
+            assert!(command.contains("--devices 3"));
+            assert!(!command.contains("--devices 4"));
+            assert!(!command.contains("<USBPcapCMD.exe"));
+            assert!(!command.contains("<capture_devices_value>"));
+            assert_eq!(
+                value
+                    .get("next_concrete_command_count")
+                    .and_then(serde_json::Value::as_u64),
+                Some(1)
+            );
+
+            let Some(sequence) = value
+                .get("next_concrete_command_sequence")
+                .and_then(serde_json::Value::as_array)
+            else {
+                return Err("expected next_concrete_command_sequence array".into());
+            };
+            assert_eq!(sequence.len(), 1);
+            let Some(entry) = sequence.first() else {
+                return Err("expected one next concrete command entry".into());
+            };
+            assert_eq!(
+                entry
+                    .get("capture_devices_value")
+                    .and_then(serde_json::Value::as_str),
+                Some("3")
+            );
+            assert_eq!(
+                entry
+                    .get("requires_operator_action")
+                    .and_then(serde_json::Value::as_bool),
+                Some(true)
+            );
+            assert_eq!(
+                entry
+                    .get("external_passive_capture")
+                    .and_then(serde_json::Value::as_bool),
+                Some(true)
+            );
+            for field in [
+                "openracing_hardware_output",
+                "opened_hid_device",
+                "opened_serial_device",
+                "sent_read_only_query_commands",
+                "sent_output_writes",
+                "sent_feature_reports",
+                "sent_configuration_writes",
+                "sent_firmware_or_dfu_commands",
+                "native_control_evidence",
+                "visible_motion_verified",
+                "smoke_ready",
+                "release_ready",
+            ] {
+                assert_eq!(
+                    entry.get(field).and_then(serde_json::Value::as_bool),
+                    Some(false),
+                    "{field} should remain false"
+                );
+            }
+            let Some(boundary) = value
+                .get("next_concrete_command_claim_boundary")
+                .and_then(serde_json::Value::as_object)
+            else {
+                return Err("expected next_concrete_command_claim_boundary".into());
+            };
+            assert_eq!(
+                boundary
+                    .get("external_passive_capture_only")
+                    .and_then(serde_json::Value::as_bool),
+                Some(true)
+            );
+            assert_eq!(
+                boundary
+                    .get("wheel_moved_under_openracing")
+                    .and_then(serde_json::Value::as_bool),
+                Some(false)
+            );
             Ok(())
         }
 
@@ -10414,6 +10787,11 @@ mod tests {
                 operator: plan.operator,
                 device_note: plan.device_note,
                 capture_hints: None,
+                next_concrete_command: None,
+                next_concrete_command_sequence: Vec::new(),
+                next_concrete_command_count: 0,
+                next_concrete_command_claim_boundary:
+                    HardwareSniffNotesNextConcreteCommandClaimBoundary::no_output(),
                 evidence_status: SNIFF_EVIDENCE_STATUS,
                 native_control_evidence: false,
                 openracing_hardware_output: false,
