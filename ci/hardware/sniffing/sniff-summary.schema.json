@@ -241,6 +241,56 @@
               "type": "string",
               "pattern": "^([0-9A-Fa-f]{2})( [0-9A-Fa-f]{2})*$"
             }
+          },
+          "payload_samples": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "sample_index",
+                "packet_ordinal",
+                "payload_sha256",
+                "payload_hex",
+                "hardware_output_authorized",
+                "output_sendability_claim"
+              ],
+              "properties": {
+                "sample_index": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "packet_ordinal": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "frame_number": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "frame_time_epoch": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "frame_time": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "payload_sha256": {
+                  "$ref": "#/$defs/sha256"
+                },
+                "payload_hex": {
+                  "type": "string",
+                  "pattern": "^([0-9A-Fa-f]{2})( [0-9A-Fa-f]{2})*$"
+                },
+                "hardware_output_authorized": {
+                  "const": false
+                },
+                "output_sendability_claim": {
+                  "const": false
+                }
+              }
+            }
           }
         }
       }

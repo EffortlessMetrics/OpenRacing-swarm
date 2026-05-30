@@ -1240,17 +1240,30 @@ fn build_hardware_sniff_summary_from_tshark_json(
                     count: 0,
                     payload_sha256_examples: Vec::new(),
                     payload_hex_samples: Vec::new(),
+                    payload_samples: Vec::new(),
                 }
             });
             report.count += 1;
             if let Some(payload) = &packet.payload
                 && report.payload_sha256_examples.len() < config.max_samples_per_report
             {
-                report.payload_sha256_examples.push(sha256_hex(payload));
+                let sample_index = report.payload_sha256_examples.len().saturating_add(1);
+                let payload_sha256 = sha256_hex(payload);
+                report.payload_sha256_examples.push(payload_sha256.clone());
                 if config.include_payload_samples {
-                    report
-                        .payload_hex_samples
-                        .push(bytes_to_hex_sample(payload));
+                    let payload_hex = bytes_to_hex_sample(payload);
+                    report.payload_hex_samples.push(payload_hex.clone());
+                    report.payload_samples.push(HardwareSniffPayloadSample {
+                        sample_index,
+                        packet_ordinal: packet.packet_ordinal,
+                        frame_number: packet.frame_number,
+                        frame_time_epoch: packet.frame_time_epoch.clone(),
+                        frame_time: packet.frame_time.clone(),
+                        payload_sha256,
+                        payload_hex,
+                        hardware_output_authorized: false,
+                        output_sendability_claim: false,
+                    });
                 }
             }
         }
@@ -1738,6 +1751,8 @@ fn parse_tshark_usb_packet(
     Ok(TsharkUsbPacket {
         packet_ordinal,
         frame_number: first_u64_field(&fields, &["frame.number"]),
+        frame_time_epoch: first_field_value(&fields, &["frame.time_epoch"]),
+        frame_time: first_field_value(&fields, &["frame.time"]),
         device_key: packet_device_key(&fields),
         vendor_id: first_hex16_field(
             &fields,
@@ -6959,6 +6974,24 @@ struct HardwareSniffObservedReport {
     payload_sha256_examples: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     payload_hex_samples: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    payload_samples: Option<Vec<HardwareSniffPayloadSample>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HardwareSniffPayloadSample {
+    sample_index: usize,
+    packet_ordinal: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    frame_number: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    frame_time_epoch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    frame_time: Option<String>,
+    payload_sha256: String,
+    payload_hex: String,
+    hardware_output_authorized: bool,
+    output_sendability_claim: bool,
 }
 
 #[derive(Debug)]
@@ -6968,12 +7001,14 @@ struct HardwareSniffObservedReportBuilder {
     count: usize,
     payload_sha256_examples: Vec<String>,
     payload_hex_samples: Vec<String>,
+    payload_samples: Vec<HardwareSniffPayloadSample>,
 }
 
 impl HardwareSniffObservedReportBuilder {
     fn build(self, include_payload_samples: bool) -> HardwareSniffObservedReport {
         let classification = classify_sniff_observed_report(self.direction, self.report_id);
         let payload_hex_samples = include_payload_samples.then_some(self.payload_hex_samples);
+        let payload_samples = include_payload_samples.then_some(self.payload_samples);
         HardwareSniffObservedReport {
             direction: self.direction.as_str().to_string(),
             report_id: hex_u8(self.report_id),
@@ -6982,6 +7017,7 @@ impl HardwareSniffObservedReportBuilder {
             payload_sample_count: self.payload_sha256_examples.len(),
             payload_sha256_examples: self.payload_sha256_examples,
             payload_hex_samples,
+            payload_samples,
         }
     }
 }
@@ -7520,6 +7556,8 @@ struct HardwareSniffDescriptorCandidate {
 struct TsharkUsbPacket {
     packet_ordinal: usize,
     frame_number: Option<u64>,
+    frame_time_epoch: Option<String>,
+    frame_time: Option<String>,
     device_key: Option<String>,
     vendor_id: Option<String>,
     product_id: Option<String>,
@@ -9508,6 +9546,7 @@ mod tests {
                 payload_sample_count: 1,
                 payload_sha256_examples: vec![sha256_hex(b"synthetic report payload")],
                 payload_hex_samples: None,
+                payload_samples: None,
             }];
             let report_classification_summary = summarize_sniff_report_classifications(
                 &observed_reports,
@@ -10154,7 +10193,11 @@ mod tests {
           {
             "_source": {
               "layers": {
-                "frame": { "frame.number": "1" },
+                "frame": {
+                  "frame.number": "1",
+                  "frame.time_epoch": "1770000000.125000000",
+                  "frame.time": "May 30, 2026 01:00:00.125000000 UTC"
+                },
                 "usb": {
                   "usb.bus_id": "1",
                   "usb.device_address": "12",
@@ -10175,7 +10218,11 @@ mod tests {
           {
             "_source": {
               "layers": {
-                "frame": { "frame.number": "2" },
+                "frame": {
+                  "frame.number": "2",
+                  "frame.time_epoch": "1770000001.250000000",
+                  "frame.time": "May 30, 2026 01:00:01.250000000 UTC"
+                },
                 "usb": {
                   "usb.bus_id": "1",
                   "usb.device_address": "12",
@@ -10196,7 +10243,11 @@ mod tests {
           {
             "_source": {
               "layers": {
-                "frame": { "frame.number": "3" },
+                "frame": {
+                  "frame.number": "3",
+                  "frame.time_epoch": "1770000002.375000000",
+                  "frame.time": "May 30, 2026 01:00:02.375000000 UTC"
+                },
                 "usb": {
                   "usb.bus_id": "1",
                   "usb.device_address": "12",
@@ -10457,10 +10508,15 @@ mod tests {
                 vec![sha256_hex(&[0x05, 0x10, 0x20, 0x30])]
             );
             assert!(report.payload_hex_samples.is_none());
+            assert!(report.payload_samples.is_none());
             assert!(value.get("observed_reports").is_some());
             assert!(
                 !serde_json::to_string(&value)?.contains("payload_hex_samples"),
                 "raw payload samples must not serialize by default"
+            );
+            assert!(
+                !serde_json::to_string(&value)?.contains("payload_samples"),
+                "structured payload samples must not serialize by default"
             );
             Ok(())
         }
@@ -10485,6 +10541,21 @@ mod tests {
                 report.payload_hex_samples.as_ref(),
                 Some(&vec!["20 00 01 02 03 04 05 06".to_string()])
             );
+            let samples = report
+                .payload_samples
+                .as_ref()
+                .ok_or("expected structured payload samples")?;
+            let sample = samples.first().ok_or("expected first payload sample")?;
+            assert_eq!(sample.sample_index, 1);
+            assert_eq!(sample.packet_ordinal, 2);
+            assert_eq!(sample.frame_number, Some(2));
+            assert_eq!(
+                sample.frame_time_epoch.as_deref(),
+                Some("1770000001.250000000")
+            );
+            assert_eq!(sample.payload_hex, "20 00 01 02 03 04 05 06");
+            assert!(!sample.hardware_output_authorized);
+            assert!(!sample.output_sendability_claim);
             Ok(())
         }
 

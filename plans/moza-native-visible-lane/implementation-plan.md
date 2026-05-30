@@ -7942,6 +7942,83 @@ movement-blocker audit, status probe receipts, demux evidence, endpoint
 diagnoses, payload-source reviews, consumed authority attempt, or
 post-authority PIDFF regression evidence.
 
+## Work item: sniff-summary-packet-timestamp-samples
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: future 0x8E event-marker timing-correlation review
+Blocked by: completed native-motion blocker navigation
+
+### Goal
+
+Equip future passive `0x8E` event-marker captures with packet/frame timestamp
+metadata in derived `sniff-summary` payload samples, so the timing-correlation
+review can distinguish timestamped candidate evidence from the current
+static/single-sample review.
+
+### Production delta
+
+`wheelctl hardware sniff-summary --include-payload-samples` now emits optional
+structured `payload_samples` beside the legacy `payload_hex_samples`. Each
+sample records the sample index, packet ordinal, optional frame number,
+optional frame timestamp fields from TShark, payload SHA-256, payload hex, and
+explicit false output/sendability flags.
+
+`wheelctl moza vendor-status-timing-correlation-review` consumes those
+structured samples when present, preserves packet/frame timing fields in target
+tuple review samples, and only reports timestamped samples when the target
+`0x8E` tuple samples actually carry per-packet time metadata.
+
+### Non-goals
+
+No live hardware access, HID open, serial open, read-only query send, live
+capture, raw pcap commit, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, or wheel movement.
+
+### Acceptance
+
+- Default sniff summaries still avoid raw payload sample export.
+- Explicit payload-sample summaries preserve packet ordinal and frame timestamp
+  metadata when TShark provides it.
+- The sniff-summary schema requires false output/sendability flags on
+  structured payload samples.
+- The timing-correlation review keeps legacy summaries classified as missing
+  packet timestamp samples.
+- The timing-correlation review preserves timestamp fields from structured
+  target tuple samples without unlocking live probes, authorization planning,
+  PIDFF reruns, force escalation, or motion.
+
+### Proof Commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl hardware_sniff_summary -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_review -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the structured payload-sample timestamp fields, timing-correlation
+review timestamp propagation, schema extension, tests, and this source-of-truth
+work item. Do not remove the timing-correlation plan/review,
+movement-blocker audit, status probe receipts, demux evidence, endpoint
+diagnoses, payload-source reviews, consumed authority attempt, or
+post-authority PIDFF regression evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

@@ -30634,16 +30634,7 @@ fn vendor_status_timing_correlation_review_receipt(
         summary_samples_by_tuple
             .entry(sample.tuple_id.clone())
             .or_default()
-            .push(serde_json::json!({
-                "tuple_id": sample.tuple_id,
-                "frame_hex": sample.frame_hex,
-                "packet_ordinal": sample.packet_ordinal,
-                "frame_ordinal_in_packet": sample.frame_ordinal_in_packet,
-                "payload_hex": sample.payload_hex,
-                "checksum_valid": sample.checksum_valid,
-                "hardware_output_authorized": false,
-                "output_sendability_claim": false
-            }));
+            .push(vendor_status_timing_correlation_sample_json(sample));
     }
 
     let mut any_target_samples_observed = false;
@@ -30690,8 +30681,13 @@ fn vendor_status_timing_correlation_review_receipt(
         }));
     }
 
-    let summary_has_packet_timestamp_samples = json_object_key_contains(summary, "timestamp")
-        || json_object_key_contains(summary, "time_utc");
+    let summary_has_packet_timestamp_samples =
+        summary_samples_by_tuple.values().flatten().any(|sample| {
+            sample.get("frame_time_epoch").is_some()
+                || sample.get("frame_time").is_some()
+                || sample.get("packet_time_epoch").is_some()
+                || sample.get("packet_timestamp_epoch").is_some()
+        });
     let timing_correlation_proven = false;
     let timing_correlation_verdict = if !any_target_samples_observed {
         "insufficient_no_target_0x8e_samples"
@@ -31436,18 +31432,6 @@ fn validate_vendor_status_movement_blocker_common_no_output(
         }
     }
     Ok(())
-}
-
-fn json_object_key_contains(value: &Value, needle: &str) -> bool {
-    match value {
-        Value::Array(values) => values
-            .iter()
-            .any(|value| json_object_key_contains(value, needle)),
-        Value::Object(values) => values
-            .iter()
-            .any(|(key, value)| key.contains(needle) || json_object_key_contains(value, needle)),
-        _ => false,
-    }
 }
 
 fn payload_hex_has_nonzero(payload_hex: &str) -> bool {
@@ -34684,6 +34668,10 @@ fn usbcom_serial_frame_tuple_samples(
                                     .get("frame_ordinal_in_packet")
                                     .and_then(Value::as_u64)
                                     .unwrap_or(0),
+                                frame_number: sample.get("frame_number").and_then(Value::as_u64),
+                                frame_time_epoch: json_string(sample, "frame_time_epoch")
+                                    .map(str::to_string),
+                                frame_time: json_string(sample, "frame_time").map(str::to_string),
                                 frame_hex: json_string(sample, "frame_hex")
                                     .unwrap_or_default()
                                     .to_string(),
@@ -34740,6 +34728,15 @@ struct PassiveSerialFrameSample {
     checksum_valid: bool,
 }
 
+struct PassiveObservedReportPayloadSample {
+    sample_index: u64,
+    packet_ordinal: u64,
+    frame_number: Option<u64>,
+    frame_time_epoch: Option<String>,
+    frame_time: Option<String>,
+    payload_hex: String,
+}
+
 fn device_to_host_serial_frame_summary_from_observed_reports(
     summary: &Value,
     scenario: &str,
@@ -34765,14 +34762,9 @@ fn device_to_host_serial_frame_summary_from_observed_reports(
 
     for report in reports {
         packet_count = packet_count.saturating_add(json_u64(report, "count").unwrap_or(0));
-        let Some(samples) = report.get("payload_hex_samples").and_then(Value::as_array) else {
-            continue;
-        };
-        for (sample_index, sample) in samples.iter().enumerate() {
-            let Some(sample_hex) = sample.as_str() else {
-                frame_shape_decode_gap = true;
-                continue;
-            };
+        let samples = observed_report_payload_samples(report);
+        for sample in samples {
+            let sample_hex = sample.payload_hex.as_str();
             let sample_bytes = match parse_hex_bytes(sample_hex) {
                 Ok(bytes) => bytes,
                 Err(_) => {
@@ -34822,9 +34814,12 @@ fn device_to_host_serial_frame_summary_from_observed_reports(
                     group: frame.group,
                     device_id: frame.device_id,
                     command: frame.command,
-                    sample_index: u64::try_from(sample_index + 1).unwrap_or(u64::MAX),
-                    packet_ordinal: u64::try_from(sample_index + 1).unwrap_or(u64::MAX),
+                    sample_index: sample.sample_index,
+                    packet_ordinal: sample.packet_ordinal,
                     frame_ordinal_in_packet: u64::try_from(frame_ordinal + 1).unwrap_or(u64::MAX),
+                    frame_number: sample.frame_number,
+                    frame_time_epoch: sample.frame_time_epoch.clone(),
+                    frame_time: sample.frame_time.clone(),
                     frame_hex: frame.frame_hex,
                     declared_len: frame.declared_len,
                     payload_len,
@@ -34849,6 +34844,82 @@ fn device_to_host_serial_frame_summary_from_observed_reports(
         tuple_counts: tuple_counts.into_values().collect(),
         tuple_samples,
     }
+}
+
+fn observed_report_payload_samples(report: &Value) -> Vec<PassiveObservedReportPayloadSample> {
+    if let Some(samples) = report.get("payload_samples").and_then(Value::as_array) {
+        return samples
+            .iter()
+            .filter_map(|sample| {
+                let payload_hex = json_string(sample, "payload_hex")?.to_string();
+                let sample_index = sample
+                    .get("sample_index")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
+                let packet_ordinal = sample
+                    .get("packet_ordinal")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(sample_index);
+                Some(PassiveObservedReportPayloadSample {
+                    sample_index,
+                    packet_ordinal,
+                    frame_number: sample.get("frame_number").and_then(Value::as_u64),
+                    frame_time_epoch: json_string(sample, "frame_time_epoch").map(str::to_string),
+                    frame_time: json_string(sample, "frame_time").map(str::to_string),
+                    payload_hex,
+                })
+            })
+            .collect();
+    }
+
+    report
+        .get("payload_hex_samples")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .enumerate()
+        .filter_map(|(index, sample)| {
+            let sample_index = u64::try_from(index + 1).unwrap_or(u64::MAX);
+            Some(PassiveObservedReportPayloadSample {
+                sample_index,
+                packet_ordinal: sample_index,
+                frame_number: None,
+                frame_time_epoch: None,
+                frame_time: None,
+                payload_hex: sample.as_str()?.to_string(),
+            })
+        })
+        .collect()
+}
+
+fn vendor_status_timing_correlation_sample_json(sample: &VendorProtocolTupleSampleFrame) -> Value {
+    let mut value = serde_json::json!({
+        "tuple_id": sample.tuple_id,
+        "frame_hex": sample.frame_hex,
+        "packet_ordinal": sample.packet_ordinal,
+        "frame_ordinal_in_packet": sample.frame_ordinal_in_packet,
+        "payload_hex": sample.payload_hex,
+        "checksum_valid": sample.checksum_valid,
+        "hardware_output_authorized": false,
+        "output_sendability_claim": false
+    });
+
+    if let Some(object) = value.as_object_mut() {
+        if let Some(frame_number) = sample.frame_number {
+            object.insert("frame_number".to_string(), serde_json::json!(frame_number));
+        }
+        if let Some(frame_time_epoch) = &sample.frame_time_epoch {
+            object.insert(
+                "frame_time_epoch".to_string(),
+                serde_json::json!(frame_time_epoch),
+            );
+        }
+        if let Some(frame_time) = &sample.frame_time {
+            object.insert("frame_time".to_string(), serde_json::json!(frame_time));
+        }
+    }
+
+    value
 }
 
 struct PassiveSerialFrameExtraction {
@@ -38960,6 +39031,12 @@ struct VendorProtocolTupleSampleFrame {
     sample_index: u64,
     packet_ordinal: u64,
     frame_ordinal_in_packet: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    frame_number: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    frame_time_epoch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    frame_time: Option<String>,
     frame_hex: String,
     declared_len: u64,
     payload_len: u64,
@@ -49763,9 +49840,61 @@ mod tests {
         );
         assert_eq!(json_string(&receipt, "authority_state"), Some("blocked"));
         assert_eq!(json_u64(&receipt, "target_tuple_sample_count"), Some(4));
+        assert_eq!(
+            json_bool(&receipt, "summary_has_packet_timestamp_samples"),
+            Some(false)
+        );
         assert!(json_contains_string(&receipt, "0x8E/0x21/0x00"));
         assert!(json_contains_string(&receipt, "unknown_do_not_send"));
 
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_timing_correlation_review_preserves_packet_timestamps() -> TestResult {
+        let payload_source_candidates: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_PAYLOAD_SOURCE_CANDIDATES_JSON)?;
+        let semantic_review = vendor_status_payload_source_semantic_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-candidates.json",
+            ),
+            &payload_source_candidates,
+        )?;
+        let summary = sample_passive_sniff_summary_with_timestamped_0x8e_frames(100_492);
+
+        let receipt = vendor_status_timing_correlation_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
+            ),
+            &semantic_review,
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json"),
+            &summary,
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"),
+            &complete_0x8e_timing_operator_notes(),
+        )?;
+
+        assert_eq!(
+            json_bool(&receipt, "summary_has_packet_timestamp_samples"),
+            Some(true)
+        );
+        assert_eq!(json_bool(&receipt, "motion_attempt_allowed"), Some(false));
+        assert_eq!(
+            json_bool(&receipt, "hardware_output_authorized"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(&receipt, "wheel_moved_under_openracing"),
+            Some(false)
+        );
+        let first_sample = receipt
+            .pointer("/target_tuple_reviews/0/summary_samples/0")
+            .ok_or("missing first target tuple timestamp sample")?;
+        assert_eq!(
+            json_string(first_sample, "frame_time_epoch"),
+            Some("1770000100.125000000")
+        );
+        assert_eq!(json_u64(first_sample, "packet_ordinal"), Some(10));
+        assert_eq!(json_u64(first_sample, "frame_number"), Some(42));
         Ok(())
     }
 
@@ -52243,6 +52372,78 @@ mod tests {
                     "7E 07 8E 31 00 01 91 00 00 26 24 2D",
                     "7E 07 8E 71 00 0F B3 00 00 00 01 54",
                     "7E 07 8E 91 00 01 3E 00 00 00 E6 D6"
+                ]
+            }));
+        }
+        summary
+    }
+
+    fn sample_passive_sniff_summary_with_timestamped_0x8e_frames(matched_packets: u64) -> Value {
+        let mut summary = sample_passive_sniff_summary(matched_packets);
+        if let Some(reports) = summary
+            .get_mut("observed_reports")
+            .and_then(Value::as_array_mut)
+        {
+            reports.push(serde_json::json!({
+                "direction": "device_to_host",
+                "report_id": "0x7E",
+                "classification": {
+                    "category": "input_or_status_report",
+                    "native_control_evidence": false
+                },
+                "count": 4,
+                "payload_sample_count": 4,
+                "payload_hex_samples": [
+                    "7E 07 8E 21 00 01 91 00 00 26 24 1D",
+                    "7E 07 8E 31 00 01 91 00 00 26 24 2D",
+                    "7E 07 8E 71 00 0F B3 00 00 00 01 54",
+                    "7E 07 8E 91 00 01 3E 00 00 00 E6 D6"
+                ],
+                "payload_samples": [
+                    {
+                        "sample_index": 1,
+                        "packet_ordinal": 10,
+                        "frame_number": 42,
+                        "frame_time_epoch": "1770000100.125000000",
+                        "frame_time": "May 30, 2026 01:01:40.125000000 UTC",
+                        "payload_sha256": sha256_hex(&[0x7E, 0x07, 0x8E, 0x21, 0x00, 0x01, 0x91, 0x00, 0x00, 0x26, 0x24, 0x1D]),
+                        "payload_hex": "7E 07 8E 21 00 01 91 00 00 26 24 1D",
+                        "hardware_output_authorized": false,
+                        "output_sendability_claim": false
+                    },
+                    {
+                        "sample_index": 2,
+                        "packet_ordinal": 11,
+                        "frame_number": 43,
+                        "frame_time_epoch": "1770000101.250000000",
+                        "frame_time": "May 30, 2026 01:01:41.250000000 UTC",
+                        "payload_sha256": sha256_hex(&[0x7E, 0x07, 0x8E, 0x31, 0x00, 0x01, 0x91, 0x00, 0x00, 0x26, 0x24, 0x2D]),
+                        "payload_hex": "7E 07 8E 31 00 01 91 00 00 26 24 2D",
+                        "hardware_output_authorized": false,
+                        "output_sendability_claim": false
+                    },
+                    {
+                        "sample_index": 3,
+                        "packet_ordinal": 12,
+                        "frame_number": 44,
+                        "frame_time_epoch": "1770000102.375000000",
+                        "frame_time": "May 30, 2026 01:01:42.375000000 UTC",
+                        "payload_sha256": sha256_hex(&[0x7E, 0x07, 0x8E, 0x71, 0x00, 0x0F, 0xB3, 0x00, 0x00, 0x00, 0x01, 0x54]),
+                        "payload_hex": "7E 07 8E 71 00 0F B3 00 00 00 01 54",
+                        "hardware_output_authorized": false,
+                        "output_sendability_claim": false
+                    },
+                    {
+                        "sample_index": 4,
+                        "packet_ordinal": 13,
+                        "frame_number": 45,
+                        "frame_time_epoch": "1770000103.500000000",
+                        "frame_time": "May 30, 2026 01:01:43.500000000 UTC",
+                        "payload_sha256": sha256_hex(&[0x7E, 0x07, 0x8E, 0x91, 0x00, 0x01, 0x3E, 0x00, 0x00, 0x00, 0xE6, 0xD6]),
+                        "payload_hex": "7E 07 8E 91 00 01 3E 00 00 00 E6 D6",
+                        "hardware_output_authorized": false,
+                        "output_sendability_claim": false
+                    }
                 ]
             }));
         }
