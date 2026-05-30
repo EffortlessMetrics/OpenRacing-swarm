@@ -28,7 +28,7 @@
   "device_to_host_serial_frame_shape_decode_gap": false,
   "event_correlation_window_seconds": 5.0,
   "exact_next_blocker": "The stored 0x8E samples include packet timestamps and same-tuple payload variation, but the operator notes lack complete event-marker timing. Run the staged passive Pit House 0x8E event-marker capture and no-output timing review; do not rerun read-only status, authorize output, rerun PIDFF, or attempt motion.",
-  "generated_at_utc": "2026-05-30T09:27:37Z",
+  "generated_at_utc": "2026-05-30T10:30:53Z",
   "hardware_output_authorized": false,
   "high_torque_enabled": false,
   "live_read_only_probe_allowed": false,
@@ -45,7 +45,23 @@
     "Native visible motion remains blocked; no wheel movement is claimed."
   ],
   "opened_serial_device": false,
+  "operator_event_marker_correlation_markers_allowed": [
+    "pit_house_opened_utc",
+    "r5_recognized_in_pit_house_utc",
+    "idle_stable_before_change_utc",
+    "ks_top_left_front_led_default_teal_observed_utc",
+    "ks_top_left_front_led_changed_to_red_utc",
+    "ks_top_left_front_led_restored_to_default_teal_utc",
+    "idle_stable_after_restore_utc",
+    "pit_house_closed_utc"
+  ],
+  "operator_event_marker_correlation_markers_ignored": [
+    "capture_start_utc",
+    "hardware_doctor_selector_reviewed_utc",
+    "capture_stop_utc"
+  ],
   "operator_event_marker_correlation_observed": false,
+  "operator_event_marker_correlation_scope": "semantic_operator_events_only",
   "operator_event_marker_count": 0,
   "operator_event_marker_notes_complete": false,
   "operator_event_marker_order_valid": false,

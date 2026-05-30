@@ -9089,6 +9089,113 @@ source-of-truth work item. Do not remove the timing-correlation plan, strict
 event-marker validation, movement blocker audit, status probe receipts, demux
 evidence, endpoint diagnoses, or native-visible promotion block.
 
+## Work item: gate-0x8e-semantic-event-marker-correlation
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: treating administrative capture timing as payload-bearing 0x8E
+authority/mode correlation
+Blocked by: rendered 0x8E event marker helper
+
+### Goal
+
+Keep the movement path from advancing on weak timing evidence. Capture start,
+capture stop, and hardware-doctor selector review are required chronology
+markers, but they are not semantic device-state events. A 0x8E candidate should
+surface only when payload variation is near semantic operator events such as
+Pit House open, R5 recognition, default-teal observation, red change,
+default-teal restore, idle stability, or Pit House close.
+
+### Production delta
+
+`wheelctl moza vendor-status-timing-correlation-review` now separates:
+
+- required chronology markers, which still gate completeness and capture-window
+  validation;
+- semantic operator-event markers, which are the only markers eligible for
+  candidate payload correlation;
+- administrative markers, which are reported but ignored for candidate
+  correlation.
+
+The receipt records:
+
+```text
+operator_event_marker_correlation_scope=semantic_operator_events_only
+operator_event_marker_correlation_markers_allowed=[Pit House/R5/LED/idle/close markers]
+operator_event_marker_correlation_markers_ignored=[capture_start_utc, hardware_doctor_selector_reviewed_utc, capture_stop_utc]
+```
+
+The checked-in timing review and movement-blocker audit are regenerated. They
+remain blocked because the existing setting-change notes still lack event
+markers.
+
+### Non-goals
+
+No live hardware access, HID open, serial open, read-only query send, live
+capture, raw pcap commit, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, or wheel movement.
+
+### Acceptance
+
+- Complete notes with target samples only near administrative markers do not
+  produce `timing_correlation_candidate_observed=true`.
+- Candidate correlation can still surface when payload variation is near the KS
+  top-left front LED semantic event markers.
+- The timing-correlation review schema requires the marker-correlation scope and
+  the allowed/ignored marker lists.
+- The checked-in review/audit keep `live_read_only_probe_allowed=false`,
+  `authorization_plan_allowed=false`, `motion_attempt_allowed=false`,
+  `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked`.
+- The next concrete action remains the staged passive Pit House 0x8E
+  event-marker capture plus no-output review, not read-only rerun,
+  authorization, PIDFF rerun, or motion.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-review `
+  --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json `
+  --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-summary.json `
+  --operator-notes ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/operator-notes.md `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-movement-blocker-audit `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json `
+  --demux-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json `
+  --framing-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json `
+  --extended-scan-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json `
+  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json `
+  --payload-rerun-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --timing-correlation-plan ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --timing-correlation-review ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json `
+  --overwrite
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_review -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the semantic-marker correlation filter, receipt/schema fields,
+focused tests, regenerated review/audit receipts, and this source-of-truth work
+item. Do not remove the timing-correlation plan, marker helper, strict
+event-marker validation, movement blocker audit, status probe receipts, demux
+evidence, endpoint diagnoses, or native-visible promotion block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

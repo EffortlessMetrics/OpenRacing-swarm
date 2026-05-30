@@ -24,6 +24,9 @@
     "operator_event_marker_timestamps_complete",
     "operator_event_marker_order_valid",
     "operator_event_marker_order_violations",
+    "operator_event_marker_correlation_scope",
+    "operator_event_marker_correlation_markers_allowed",
+    "operator_event_marker_correlation_markers_ignored",
     "event_correlation_window_seconds",
     "summary_has_packet_timestamp_samples",
     "target_sample_timestamp_count",
@@ -154,6 +157,34 @@
     "operator_event_marker_order_violations": {
       "type": "array",
       "items": { "type": "object" }
+    },
+    "operator_event_marker_correlation_scope": {
+      "const": "semantic_operator_events_only"
+    },
+    "operator_event_marker_correlation_markers_allowed": {
+      "type": "array",
+      "minItems": 8,
+      "uniqueItems": true,
+      "allOf": [
+        { "contains": { "const": "pit_house_opened_utc" } },
+        { "contains": { "const": "r5_recognized_in_pit_house_utc" } },
+        { "contains": { "const": "idle_stable_before_change_utc" } },
+        { "contains": { "const": "ks_top_left_front_led_default_teal_observed_utc" } },
+        { "contains": { "const": "ks_top_left_front_led_changed_to_red_utc" } },
+        { "contains": { "const": "ks_top_left_front_led_restored_to_default_teal_utc" } },
+        { "contains": { "const": "idle_stable_after_restore_utc" } },
+        { "contains": { "const": "pit_house_closed_utc" } }
+      ]
+    },
+    "operator_event_marker_correlation_markers_ignored": {
+      "type": "array",
+      "minItems": 3,
+      "uniqueItems": true,
+      "allOf": [
+        { "contains": { "const": "capture_start_utc" } },
+        { "contains": { "const": "hardware_doctor_selector_reviewed_utc" } },
+        { "contains": { "const": "capture_stop_utc" } }
+      ]
     },
     "event_correlation_window_seconds": { "type": "number", "exclusiveMinimum": 0 },
     "summary_has_packet_timestamp_samples": { "type": "boolean" },

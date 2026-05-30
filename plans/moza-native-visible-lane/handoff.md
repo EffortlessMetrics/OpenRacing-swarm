@@ -611,6 +611,12 @@ fresh hardware-doctor selector review and each required capture event as it
 happens. The helper only edits notes; it does not open HID or serial devices,
 send read-only queries, authorize output, or move the wheel.
 
+`vendor-status-timing-correlation-review` now treats the hardware-doctor marker
+and capture start/stop markers as administrative chronology only. A candidate
+0x8E timing correlation requires payload variation near semantic operator
+events such as Pit House open, R5 recognition, KS LED default-teal observation,
+red change, default-teal restore, idle stability, or Pit House close.
+
 ## Do Not Do
 
 - Do not create another authorization receipt from this handoff.
