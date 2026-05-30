@@ -9487,6 +9487,101 @@ Restore the previous generated marker ordering only if a future operator tooling
 change makes the validator chronology obsolete. Do not remove the strict
 timestamp validators or treat the previous order as capture evidence.
 
+## Work item: split-0x8e-marker-handoff-phases
+
+Status: completed
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: operator confusion between pre-capture selector review markers and
+capture-runtime event markers
+Blocked by: completed 0x8E marker order alignment
+
+### Goal
+
+Make the generated 0x8E timing-correlation command handoff reflect the actual
+operator phases: stamp the hardware-doctor selector review marker before
+USBPcap capture starts, then stamp capture-start and semantic Pit House/KS LED
+event markers while capture is running.
+
+### Production delta
+
+`wheelctl moza vendor-status-timing-correlation-plan` now emits two marker
+handoff steps instead of one overloaded step:
+
+- `stamp_hardware_doctor_selector_marker`, with
+  `requires_capture_running=false`, `requires_capture_not_started=true`, and
+  `command_example_marker=hardware_doctor_selector_reviewed_utc`.
+- `stamp_capture_event_markers`, with `requires_capture_running=true` and
+  `command_example_marker=capture_start_utc`.
+
+Bench-wizard and artifact-index navigation preserve those phase fields from the
+stored plan/audit receipts so the operator does not treat the selector-review
+marker as something to stamp after capture starts.
+
+### Non-goals
+
+No live hardware access, HID open, serial open, read-only query send, live
+capture, raw pcap commit, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, output claim, or wheel movement.
+
+### Acceptance
+
+- The timing-correlation plan and movement-blocker audit list a pre-capture
+  `stamp_hardware_doctor_selector_marker` command before the passive capture
+  command.
+- The timing-correlation plan and bench wizard list a separate
+  `stamp_capture_event_markers` command for `capture_start_utc` and the
+  semantic capture-runtime markers.
+- The pre-capture marker step records `requires_capture_running=false` and
+  `requires_capture_not_started=true`.
+- The capture-runtime marker step records `requires_capture_running=true` and
+  `requires_capture_not_started=false`.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain the operating
+  state.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-plan `
+  --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-movement-blocker-audit `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json `
+  --demux-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json `
+  --framing-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json `
+  --extended-scan-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json `
+  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json `
+  --payload-rerun-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --timing-correlation-plan ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --timing-correlation-review ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json `
+  --overwrite
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_plan -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl sniff_marker -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Restore only the previous single marker handoff template, focused tests,
+regenerated plan/audit receipts, and this source-of-truth work item. Do not
+remove the marker helper, strict timestamp validators, timing-correlation plan,
+movement blocker audit, or native-visible promotion block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

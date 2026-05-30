@@ -624,6 +624,13 @@ local notes file and writes a non-claiming marker receipt; it opens no HID or
 serial device, sends no read-only query, capture, output, configuration,
 firmware, or PIDFF command, and does not change the blocked movement state.
 
+The timing-correlation command handoff now separates marker phases. Stamp
+`hardware_doctor_selector_reviewed_utc` after reviewing the fresh hardware
+doctor selector and before starting USBPcap capture. Stamp `capture_start_utc`
+and the semantic Pit House/KS LED event markers while capture is running. This
+is operator-note sequencing only; it does not run a capture or authorize
+OpenRacing output.
+
 `vendor-status-timing-correlation-review` now treats the hardware-doctor marker
 and capture start/stop markers as administrative chronology only. A candidate
 0x8E timing correlation requires payload variation near semantic operator

@@ -2215,9 +2215,10 @@ fn moza_native_motion_blocker_next_operator_step(lane: &Path) -> Option<Value> {
         "raw_pcap_commit_default": false,
         "steps": [
             "Refresh observe-only hardware doctor and select the current Moza USBPcap hint; do not reuse stale --devices values.",
+            "Stamp hardware_doctor_selector_reviewed_utc after reviewing that fresh selector and before starting capture.",
             "Run the rendered bounded passive sniff-capture helper from operator-notes.md; do not run the placeholder template before sniff-notes-template materializes the current selector.",
             "Open Pit House only as a witness lane and keep firmware/update/DFU pages closed.",
-            "Record explicit event markers for Pit House open, R5 recognized, idle/stable, KS top-left front LED default teal, red, restored default teal, Pit House close, and capture stop.",
+            "While capture is running, record explicit event markers for capture start, Pit House open, R5 recognized, idle/stable, KS top-left front LED default teal, red, restored default teal, Pit House close, and capture stop.",
             "Run the no-output sniff-summary and vendor-status-timing-correlation-review commands on derived artifacts only.",
             "Do not run a live read-only rerun, authorization, PIDFF, force escalation, or motion attempt from this handoff."
         ],
@@ -2331,9 +2332,12 @@ fn moza_native_motion_blocker_command_templates(command_templates: &[Value]) -> 
                 "materialized_command_in",
                 "edits_operator_notes_only",
                 "requires_capture_running",
+                "requires_capture_not_started",
+                "marker_phase",
                 "command_example_marker",
                 "all_marker_commands_materialized_in",
                 "marker_command_source",
+                "sequencing_note",
                 "command_has_selector_placeholders",
                 "must_not_run_unrendered_template",
                 "concrete_command_source",
@@ -30509,14 +30513,17 @@ fn vendor_status_timing_correlation_plan_receipt(
                 "command": "wheelctl hardware sniff-notes-template --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json --hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --out target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-notes-template-receipt.json"
             },
             {
-                "name": "stamp_operator_event_markers",
+                "name": "stamp_hardware_doctor_selector_marker",
                 "output_enabled": false,
                 "edits_operator_notes_only": true,
-                "requires_capture_running": true,
-                "command_example_marker": "capture_start_utc",
+                "requires_capture_running": false,
+                "requires_capture_not_started": true,
+                "marker_phase": "pre_capture_selector_review",
+                "command_example_marker": "hardware_doctor_selector_reviewed_utc",
                 "all_marker_commands_materialized_in": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
                 "marker_command_source": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
-                "command": "wheelctl hardware sniff-marker --operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --marker capture_start_utc --json-out target/sniff/pit-house-0x8e-timing-correlation/marker-capture_start_utc.json"
+                "sequencing_note": "stamp after reviewing the fresh hardware doctor selector and before starting USBPcap capture",
+                "command": "wheelctl hardware sniff-marker --operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --marker hardware_doctor_selector_reviewed_utc --json-out target/sniff/pit-house-0x8e-timing-correlation/marker-hardware_doctor_selector_reviewed_utc.json"
             },
             {
                 "name": "run_bounded_passive_usbpcap_capture",
@@ -30527,6 +30534,19 @@ fn vendor_status_timing_correlation_plan_receipt(
                 "concrete_command_source": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
                 "selector_source": "fresh hardware doctor Moza USBPcap hint rendered by sniff-notes-template",
                 "command": "wheelctl hardware sniff-capture --usbpcapcmd '<USBPcapCMD.exe from hardware doctor>' --usbpcap-interface '<USBPcap interface from hardware doctor>' --devices <capture_devices_value> --hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --duration-ms 180000 --out target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --confirm-external-passive-capture --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json"
+            },
+            {
+                "name": "stamp_capture_event_markers",
+                "output_enabled": false,
+                "edits_operator_notes_only": true,
+                "requires_capture_running": true,
+                "requires_capture_not_started": false,
+                "marker_phase": "capture_runtime_events",
+                "command_example_marker": "capture_start_utc",
+                "all_marker_commands_materialized_in": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
+                "marker_command_source": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
+                "sequencing_note": "stamp capture_start_utc and semantic Pit House/LED event markers while USBPcap capture is running",
+                "command": "wheelctl hardware sniff-marker --operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --marker capture_start_utc --json-out target/sniff/pit-house-0x8e-timing-correlation/marker-capture_start_utc.json"
             },
             {
                 "name": "record_passive_sniff_receipt",
@@ -50255,10 +50275,29 @@ mod tests {
                     == Some(true)
         }));
         assert!(capture_command_templates.iter().any(|template| {
-            json_string(template, "name") == Some("stamp_operator_event_markers")
+            json_string(template, "name") == Some("stamp_hardware_doctor_selector_marker")
+                && json_bool(template, "output_enabled") == Some(false)
+                && json_bool(template, "edits_operator_notes_only") == Some(true)
+                && json_bool(template, "requires_capture_running") == Some(false)
+                && json_bool(template, "requires_capture_not_started") == Some(true)
+                && json_string(template, "marker_phase") == Some("pre_capture_selector_review")
+                && json_string(template, "command_example_marker")
+                    == Some("hardware_doctor_selector_reviewed_utc")
+                && json_string(template, "all_marker_commands_materialized_in")
+                    == Some("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md")
+                && json_string(template, "command").map(|command| {
+                    command.contains("wheelctl hardware sniff-marker")
+                        && command.contains("--marker hardware_doctor_selector_reviewed_utc")
+                        && command.contains("marker-hardware_doctor_selector_reviewed_utc.json")
+                }) == Some(true)
+        }));
+        assert!(capture_command_templates.iter().any(|template| {
+            json_string(template, "name") == Some("stamp_capture_event_markers")
                 && json_bool(template, "output_enabled") == Some(false)
                 && json_bool(template, "edits_operator_notes_only") == Some(true)
                 && json_bool(template, "requires_capture_running") == Some(true)
+                && json_bool(template, "requires_capture_not_started") == Some(false)
+                && json_string(template, "marker_phase") == Some("capture_runtime_events")
                 && json_string(template, "command_example_marker") == Some("capture_start_utc")
                 && json_string(template, "all_marker_commands_materialized_in")
                     == Some("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md")
@@ -56800,8 +56839,9 @@ mod tests {
             vec![
                 "refresh_observe_only_hardware_doctor",
                 "render_checked_in_operator_notes_template",
-                "stamp_operator_event_markers",
+                "stamp_hardware_doctor_selector_marker",
                 "run_bounded_passive_usbpcap_capture",
+                "stamp_capture_event_markers",
                 "record_passive_sniff_receipt",
                 "summarize_passive_capture",
                 "bundle_passive_sniff_evidence",
@@ -56826,10 +56866,33 @@ mod tests {
         );
         assert!(
             commands.iter().any(|command| {
-                json_string(command, "name") == Some("stamp_operator_event_markers")
+                json_string(command, "name") == Some("stamp_hardware_doctor_selector_marker")
+                    && json_bool(command, "output_enabled") == Some(false)
+                    && json_bool(command, "edits_operator_notes_only") == Some(true)
+                    && json_bool(command, "requires_capture_running") == Some(false)
+                    && json_bool(command, "requires_capture_not_started") == Some(true)
+                    && json_string(command, "marker_phase") == Some("pre_capture_selector_review")
+                    && json_string(command, "command_example_marker")
+                        == Some("hardware_doctor_selector_reviewed_utc")
+                    && json_string(command, "all_marker_commands_materialized_in")
+                        == Some("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md")
+                    && json_string(command, "command").is_some_and(|text| {
+                        text.contains("wheelctl hardware sniff-marker")
+                            && text.contains("--operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md")
+                            && text.contains("--marker hardware_doctor_selector_reviewed_utc")
+                            && text.contains("marker-hardware_doctor_selector_reviewed_utc.json")
+                    })
+            }),
+            "0x8E timing-correlation handoff should include the pre-capture selector marker command: {commands:?}"
+        );
+        assert!(
+            commands.iter().any(|command| {
+                json_string(command, "name") == Some("stamp_capture_event_markers")
                     && json_bool(command, "output_enabled") == Some(false)
                     && json_bool(command, "edits_operator_notes_only") == Some(true)
                     && json_bool(command, "requires_capture_running") == Some(true)
+                    && json_bool(command, "requires_capture_not_started") == Some(false)
+                    && json_string(command, "marker_phase") == Some("capture_runtime_events")
                     && json_string(command, "command_example_marker") == Some("capture_start_utc")
                     && json_string(command, "all_marker_commands_materialized_in")
                         == Some("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md")
