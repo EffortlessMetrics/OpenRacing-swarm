@@ -10695,6 +10695,80 @@ git diff --check
 Revert only the refreshed receipts and this source-of-truth work item. Do not
 remove the capture-window gate or relax the current blocker.
 
+## Work item: surface-0x8e-capture-marker-commands
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: running a materialized passive 0x8E capture without the required
+capture-runtime event-marker handoff
+Blocked by: completed local sniff-notes-template and selector-marker
+materialized capture command consumption
+
+### Goal
+
+Keep the materialized passive 0x8E timing-correlation capture command and its
+required runtime event-marker command together in the bench-wizard next
+concrete sequence.
+
+### Production delta
+
+When fresh local no-output pre-capture receipts make the 0x8E materialized
+capture command runnable, `wheelctl moza bench-wizard` keeps both required
+commands in `next_concrete_command_sequence`:
+
+```text
+1. run_bounded_passive_usbpcap_capture
+2. stamp_capture_event_markers
+```
+
+The marker command remains no-output, edits only the materialized operator
+notes, and is marked `run_during_materialized_capture`.
+
+### Non-goals
+
+No live capture, raw pcap commit, HID open, serial open, read-only query,
+PIDFF command, feature report, configuration write, firmware/DFU interaction,
+high torque, mode write, authority write, authorization, semantic decode,
+tuple sendability, native-control claim, native-visible claim, smoke-ready
+claim, release-ready claim, or wheel-movement claim.
+
+### Acceptance
+
+- Fresh local 0x8E pre-capture receipts make the next concrete sequence contain
+  two commands.
+- The materialized selector-bound passive capture command remains first.
+- The runtime marker command is included, parseable as
+  `wheelctl hardware sniff-marker`, marked `run_during_materialized_capture`,
+  and keeps all OpenRacing hardware-output/HID flags false.
+- The exact blocker remains the missing reviewed timing-correlated
+  payload-bearing authority/mode status source.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain explicit.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_uses_materialized_sniff_notes_capture_command_after_selector_marker -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only marker-command surfacing, focused assertions, and this
+source-of-truth work item. Do not remove the 0x8E capture prep gates,
+sniff-marker helper, timing-correlation plan/review artifacts, movement-blocker
+audit, or native-visible promotion block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

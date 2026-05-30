@@ -3191,6 +3191,36 @@ fn moza_native_motion_blocker_apply_materialized_capture_command(
                     );
                 }
             }
+            "stamp_capture_event_markers" => {
+                if selector_marker_recorded && let Some(object) = command.as_object_mut() {
+                    object.insert(
+                        "runnable_next_operator_command".to_string(),
+                        serde_json::json!(true),
+                    );
+                    object.insert(
+                        "next_operator_command_status".to_string(),
+                        serde_json::json!("run_during_materialized_capture"),
+                    );
+                    object.insert(
+                        "materialized_capture_command_source".to_string(),
+                        sniff_notes_template_receipt
+                            .get("path")
+                            .cloned()
+                            .unwrap_or(Value::Null),
+                    );
+                    object.insert(
+                        "selector_marker_receipt".to_string(),
+                        sniff_notes_template_receipt
+                            .get("selector_marker_receipt")
+                            .cloned()
+                            .unwrap_or(Value::Null),
+                    );
+                    object.insert(
+                        "capture_marker_handoff_required".to_string(),
+                        serde_json::json!(true),
+                    );
+                }
+            }
             "run_bounded_passive_usbpcap_capture" => {
                 let mut value = moza_native_motion_blocker_materialized_capture_command_value(
                     materialized_capture_command,
@@ -59746,9 +59776,63 @@ mod tests {
             .ok_or("expected next concrete command sequence")?;
         assert_eq!(
             json_u64(&wizard_receipt, "next_concrete_command_count"),
-            Some(1)
+            Some(2)
         );
-        assert_eq!(sequence.len(), 1);
+        assert_eq!(sequence.len(), 2);
+        assert_eq!(
+            sequence
+                .first()
+                .and_then(|command| json_string(command, "name")),
+            Some("run_bounded_passive_usbpcap_capture")
+        );
+        let marker_command = sequence
+            .iter()
+            .find(|command| json_string(command, "name") == Some("stamp_capture_event_markers"))
+            .ok_or("expected capture event marker command beside capture command")?;
+        assert_eq!(
+            json_string(marker_command, "next_operator_command_status"),
+            Some("run_during_materialized_capture")
+        );
+        assert_eq!(
+            json_bool(marker_command, "runnable_next_operator_command"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(marker_command, "runnable_during_capture"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(marker_command, "openracing_hardware_output"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(marker_command, "openracing_hid_open"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool(marker_command, "capture_marker_handoff_required"),
+            Some(true)
+        );
+        let marker_command_text =
+            json_string(marker_command, "command").ok_or("missing marker command text")?;
+        assert!(
+            marker_command_text.contains("wheelctl hardware sniff-marker")
+                && marker_command_text.contains("--marker capture_start_utc")
+                && marker_command_text
+                    .contains("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"),
+            "capture marker command should point at materialized operator notes: {marker_command_text}"
+        );
+        assert!(
+            !marker_command_text.contains("vendor-status-probe")
+                && !marker_command_text.contains("vendor-authority-attempt")
+                && !marker_command_text.contains("controlled-angle-smoke")
+                && !marker_command_text.contains("pidff")
+                && !marker_command_text.contains("authorize"),
+            "capture marker command must not surface output, authorization, or read-only probe paths: {marker_command_text}"
+        );
+        parse_cli(split_generated_command(marker_command_text)?).map_err(|error| {
+            format!("materialized marker command failed to parse: {marker_command_text}\n{error}")
+        })?;
         let commands = step
             .get("commands")
             .and_then(Value::as_array)
