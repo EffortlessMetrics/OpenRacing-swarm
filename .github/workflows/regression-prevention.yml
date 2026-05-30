@@ -18,7 +18,7 @@ env:
 jobs:
   pr-change-filter:
     name: Regression Change Filter
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 5
     outputs:
       regression_paths: ${{ steps.filter.outputs.regression_paths }}
@@ -62,7 +62,7 @@ jobs:
       needs.pr-change-filter.outputs.regression_paths == 'true' ||
       contains(github.event.pull_request.labels.*.name, 'full-ci') ||
       contains(github.event.pull_request.labels.*.name, 'regression')
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
     
     steps:
@@ -172,7 +172,7 @@ jobs:
       needs.pr-change-filter.outputs.regression_paths == 'true' ||
       contains(github.event.pull_request.labels.*.name, 'full-ci') ||
       contains(github.event.pull_request.labels.*.name, 'regression')
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 20
     
     steps:
@@ -237,7 +237,7 @@ jobs:
       needs.pr-change-filter.outputs.regression_paths == 'true' ||
       contains(github.event.pull_request.labels.*.name, 'full-ci') ||
       contains(github.event.pull_request.labels.*.name, 'regression')
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 15
     
     steps:
@@ -367,7 +367,7 @@ jobs:
       needs.pr-change-filter.outputs.regression_paths == 'true' ||
       contains(github.event.pull_request.labels.*.name, 'full-ci') ||
       contains(github.event.pull_request.labels.*.name, 'regression')
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 30
     
     steps:
@@ -498,7 +498,7 @@ jobs:
       needs.pr-change-filter.outputs.regression_paths == 'true' ||
       contains(github.event.pull_request.labels.*.name, 'full-ci') ||
       contains(github.event.pull_request.labels.*.name, 'regression')
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 15
     
     steps:
@@ -546,7 +546,7 @@ jobs:
 
   comprehensive-validation:
     name: Comprehensive Validation
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 30
     needs: [pr-change-filter, deprecated-field-detection, trybuild-compile-fail-tests, json-schema-validation, lint-enforcement, protobuf-breaking-changes]
     if: >-

@@ -18,7 +18,7 @@ env:
 jobs:
   pr-change-filter:
     name: PR Change Filter
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 5
     outputs:
       ci_paths: ${{ steps.filter.outputs.ci_paths }}
@@ -291,7 +291,7 @@ jobs:
   # Phase 0: Documentation and format validation (fast, no build required)
   changelog-validation:
     name: CHANGELOG Validation
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
 
     steps:
@@ -309,7 +309,7 @@ jobs:
 
   docs-policy-checks:
     name: Docs & Policy Checks
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
 
     steps:
@@ -328,7 +328,7 @@ jobs:
 
   crate-surface-policy:
     name: Crate Surface Policy
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 15
 
     steps:
@@ -343,7 +343,7 @@ jobs:
   # Phase 0b: MSRV (Minimum Supported Rust Version) check
   msrv-check:
     name: MSRV Check
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 20
     needs: [pr-change-filter]
     if: >-
@@ -385,7 +385,7 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'release')
     strategy:
       matrix:
-        os: [ubuntu-latest]
+        os: [self-hosted]
 
     steps:
       - uses: actions/checkout@v4
@@ -460,7 +460,7 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'release')
     strategy:
       matrix:
-        os: [ubuntu-latest]
+        os: [self-hosted]
 
     steps:
       - uses: actions/checkout@v4
@@ -502,7 +502,7 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'release')
     strategy:
       matrix:
-        os: [ubuntu-latest]
+        os: [self-hosted]
 
     steps:
       - uses: actions/checkout@v4
@@ -545,7 +545,7 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'release')
     strategy:
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04]
+        os: [self-hosted, self-hosted]
 
     steps:
       - uses: actions/checkout@v4
@@ -593,7 +593,7 @@ jobs:
   # indicate the PR needs hosted Windows/macOS compatibility coverage.
   platform-change-filter:
     name: Platform Change Filter
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 5
     outputs:
       windows: ${{ steps.changes.outputs.windows }}
@@ -665,7 +665,7 @@ jobs:
 
   windows-smoke:
     name: Windows Smoke
-    runs-on: windows-latest
+    runs-on: self-hosted
     timeout-minutes: 20
     needs: [platform-change-filter]
     if: >-
@@ -696,7 +696,7 @@ jobs:
 
   macos-smoke:
     name: macOS Smoke
-    runs-on: macos-latest
+    runs-on: self-hosted
     timeout-minutes: 20
     needs: [platform-change-filter]
     if: >-
@@ -725,7 +725,7 @@ jobs:
   # Phase 2: Schema validation and trybuild guards
   schemas-validation:
     name: Schemas & Trybuild
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 30
     needs: [pr-change-filter]
     if: >-
@@ -795,7 +795,7 @@ jobs:
 
   moza-focused-checks:
     name: Moza Focused Checks
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 25
     needs: [pr-change-filter]
     if: >-
@@ -845,7 +845,7 @@ jobs:
     timeout-minutes: 45
     strategy:
       matrix:
-        os: [ubuntu-latest]
+        os: [self-hosted]
     needs: [pr-change-filter]
     if: >-
       github.event_name != 'pull_request' ||
@@ -896,7 +896,7 @@ jobs:
   # Phase 4: Feature combinations
   feature-combinations:
     name: Feature Combinations
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 30
     needs: [pr-change-filter, workspace-default]
     if: >-
@@ -947,7 +947,7 @@ jobs:
   # Phase 5: Dependency governance and minimal versions (nightly)
   dependency-governance:
     name: Dependency Governance
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 45
     needs: [pr-change-filter, workspace-default]
     if: >-
@@ -1026,7 +1026,7 @@ jobs:
     timeout-minutes: 45
     strategy:
       matrix:
-        os: [ubuntu-latest]
+        os: [self-hosted]
     needs: [pr-change-filter, workspace-default]
     if: >-
       github.event_name != 'pull_request' ||
@@ -1190,7 +1190,7 @@ jobs:
 
   performance-gate:
     name: Performance Gate
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 30
     needs: [pr-change-filter, lint-gates]
     if: >-
@@ -1298,7 +1298,7 @@ jobs:
 
   security-audit:
     name: Security & License Audit
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 20
     needs: [pr-change-filter, lint-gates]
     if: >-
@@ -1377,7 +1377,7 @@ jobs:
     continue-on-error: true
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [self-hosted, self-hosted]
 
     steps:
       - uses: actions/checkout@v4
@@ -1444,7 +1444,7 @@ jobs:
 
   coverage:
     name: Code Coverage
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 45
     needs: [lint-gates]
     if: github.event_name == 'workflow_dispatch'
@@ -1508,7 +1508,7 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'release')
     strategy:
       matrix:
-        os: [ubuntu-latest]
+        os: [self-hosted]
 
     steps:
       - uses: actions/checkout@v4
@@ -1573,7 +1573,7 @@ jobs:
 
   pr-required-baseline:
     name: PR Required Baseline
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 5
     needs:
       - pr-change-filter

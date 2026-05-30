@@ -24,7 +24,7 @@ env:
 jobs:
   mutation-tests:
     name: Mutation Tests — safety-critical crates
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 180
 
     steps:

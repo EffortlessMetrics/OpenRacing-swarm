@@ -15,7 +15,7 @@ on:
 jobs:
   check-removal-timeline:
     name: Check Compatibility Removal Timeline
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 15
     
     steps:
@@ -162,7 +162,7 @@ jobs:
 
   validate-governance-compliance:
     name: Validate Governance Compliance
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
     
     steps:

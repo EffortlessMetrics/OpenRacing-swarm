@@ -20,7 +20,7 @@ concurrency:
 jobs:
   validate-schemas:
     name: Validate Schemas
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 20
     
     steps:
@@ -111,7 +111,7 @@ jobs:
 
   test-json-schema:
     name: Test JSON Schema
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
     
     steps:

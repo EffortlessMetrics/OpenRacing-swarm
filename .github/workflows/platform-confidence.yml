@@ -16,7 +16,7 @@ env:
 jobs:
   windows-smoke:
     name: Windows Platform Smoke
-    runs-on: windows-latest
+    runs-on: self-hosted
     timeout-minutes: 30
 
     steps:
@@ -38,7 +38,7 @@ jobs:
 
   macos-smoke:
     name: macOS Platform Smoke
-    runs-on: macos-latest
+    runs-on: self-hosted
     timeout-minutes: 30
 
     steps:
@@ -57,7 +57,7 @@ jobs:
 
   linux-ui-packaging-smoke:
     name: Linux UI Packaging Smoke
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 30
 
     steps:
