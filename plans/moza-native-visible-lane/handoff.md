@@ -604,6 +604,13 @@ verdict is `insufficient_missing_event_markers`. The next concrete step remains
 the staged passive Pit House 0x8E event-marker capture and no-output review, not
 read-only rerun, authorization, PIDFF rerun, or motion.
 
+`wheelctl hardware sniff-notes-template` now renders a
+`0x8E Event Marker Timestamp Helper` for that staged capture. Use the rendered
+PowerShell `Set-OpenRacingMarker` commands in `operator-notes.md` to stamp the
+fresh hardware-doctor selector review and each required capture event as it
+happens. The helper only edits notes; it does not open HID or serial devices,
+send read-only queries, authorize output, or move the wheel.
+
 ## Do Not Do
 
 - Do not create another authorization receipt from this handoff.

@@ -9009,6 +9009,86 @@ remove the timing-correlation plan, sniff handoff, event-marker bundle gate,
 status probe receipts, demux evidence, endpoint diagnoses, or native-visible
 promotion block.
 
+## Work item: render-0x8e-event-marker-helper
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: repeating a passive Pit House 0x8E timing-correlation capture without
+complete operator event-marker timestamps
+Blocked by: refined 0x8E timing blocker diagnosis
+
+### Goal
+
+Move the native-motion lane toward the first valid authority/status source by
+removing the exact operator-note failure mode from the next passive capture.
+The current blocker is not serial ownership or broad response framing; stored
+0x8E samples have packet timestamps and same-tuple variation, but the notes lack
+complete event-marker timing. The handoff should render concrete UTC marker
+commands so the next passive capture can produce reviewable timing evidence
+without inventing motion, read-only probe, or authorization permission.
+
+### Production delta
+
+`wheelctl hardware sniff-notes-template` now renders a
+`0x8E Event Marker Timestamp Helper` section for the
+`pit-house-0x8e-timing-correlation` scenario. The helper:
+
+- points at the generated `operator-notes.md` path;
+- defines a PowerShell `Set-OpenRacingMarker` function that stamps the named
+  required field with the current UTC timestamp;
+- lists `hardware_doctor_selector_reviewed_utc` before capture start;
+- lists every ordered 0x8E timing event marker from capture start through
+  capture stop;
+- states that the helper only edits notes and does not open HID or serial
+  devices or send OpenRacing hardware commands.
+
+### Non-goals
+
+No live hardware access, HID open, serial open, read-only query send, live
+capture, raw pcap commit, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, or wheel movement.
+
+### Acceptance
+
+- The 0x8E sniff notes template includes a timestamp helper section.
+- The helper uses the actual requested output path when
+  `sniff-notes-template --out` is invoked.
+- The helper lists `hardware_doctor_selector_reviewed_utc` and each ordered
+  capture event marker required by the timing-correlation review.
+- Existing bundle validation remains strict: missing, malformed, or out-of-order
+  event markers still fail closed.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain the operating
+  state.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_notes_template -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl pit_house_0x8e_timing -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the 0x8E marker helper renderer, focused tests, and this
+source-of-truth work item. Do not remove the timing-correlation plan, strict
+event-marker validation, movement blocker audit, status probe receipts, demux
+evidence, endpoint diagnoses, or native-visible promotion block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
