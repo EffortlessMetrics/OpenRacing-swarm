@@ -32,12 +32,26 @@ This section is diagnostic navigation only. `generic_aux` roles are valid parser
 
 This section is native-control research navigation only. It does not open HID, send serial traffic, create authorization, emit the hardware attempt command, or claim native-visible readiness.
 
-- State: `protocol_evidence_review_recorded`
-- Next allowed action: Continue no-output vendor protocol investigation; finish remaining passive sniff scenarios or decode reviewed protocol candidates before any future output plan.
+- State: `native_motion_timing_source_blocked`
+- Next allowed action: Run the capture command templates from vendor-status-timing-correlation-plan.json, then run vendor-status-timing-correlation-review on the derived summary and complete operator notes. If timing proof is still missing, stop with diagnosis; if timing proof exists, create a separate reviewed read-only/status plan.
 - Hardware output authorized: `false`
 - Native visible ready: `false`
 - Hardware attempt command emitted: `false`
 - Exact command: `estop_set_ffb` frame `7E02461C0001F0` payload `01` risk `vendor_output_candidate`
+
+### Native Motion Blocker
+
+- Exact blocker: Missing reviewed timing-correlated payload-bearing authority/mode status source. The next concrete step is the staged passive Pit House 0x8E event-marker capture and no-output timing review, not a read-only rerun, authorization, PIDFF rerun, or motion.
+- Required passive scenario: `pit-house-0x8e-timing-correlation`
+- Live read-only probe allowed: `false`
+- Authorization plan allowed: `false`
+- Motion attempt allowed: `false`
+- wheel_moved_under_openracing: `false`
+- visible_motion_verified: `false`
+- output_was_sent: `false`
+- authority_state: `blocked`
+- Target 0x8E tuples: `0x8E/0x21/0x00`, `0x8E/0x31/0x00`, `0x8E/0x71/0x00`, `0x8E/0x91/0x00`
+
 - Required bench-clear evidence: `bench clear for exact estop_set_ffb: R5 stable, hands clear, wheel clear`
 - Requires exclusive R5 serial/CDC access before separate attempt: `true`
 - Pit House dependency: `false`; serial-owner risk: `true`

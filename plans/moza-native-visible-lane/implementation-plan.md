@@ -7850,6 +7850,98 @@ Do not remove the timing-correlation plan/review, status probe receipts,
 demux evidence, endpoint diagnoses, payload-source reviews, consumed authority
 attempt, or post-authority PIDFF regression evidence.
 
+## Work item: route-native-motion-blocker-to-0x8e-timing-capture
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: accidental native-motion navigation to the wrong passive witness gap
+Blocked by: completed vendor status movement-blocker audit
+
+### Goal
+
+Make the read-only bench wizard and artifact index route the current
+native-motion blocker to the staged passive Pit House `0x8E` event-marker
+timing-correlation capture, not to the generic SimHub witness-lane gap.
+
+### Production delta
+
+`wheelctl moza bench-wizard` now prefers
+`vendor-status-movement-blocker-audit.json` when that audit records:
+
+```text
+live_read_only_probe_allowed=false
+authorization_plan_allowed=false
+motion_attempt_allowed=false
+timing_correlated_payload_source_missing=true
+```
+
+The next operator step becomes `capture_0x8e_timing_correlation` and surfaces
+the command templates from the blocker audit / timing-correlation plan:
+
+```text
+hardware doctor
+sniff-capture --hardware-doctor --duration-ms 180000
+sniff-summary --include-payload-samples
+vendor-status-timing-correlation-review
+```
+
+`wheelctl moza artifact-index` now surfaces a native-motion blocker navigation
+object under vendor-authority navigation, including
+`wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+`output_was_sent=false`, and `authority_state=blocked`.
+
+### Non-goals
+
+No live hardware access, HID open, serial open, read-only query send, live
+capture, raw pcap commit, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, or wheel movement.
+
+### Acceptance
+
+- Bench wizard next-operator-step is `capture_0x8e_timing_correlation` when the
+  movement-blocker audit is present.
+- The generic passive sniff navigation may still report SimHub as the next
+  witness-lane gap, but it does not override the native-motion blocker.
+- Artifact index vendor navigation names the blocker and keeps all output and
+  readiness claims false.
+- All surfaced commands are no-output handoff/templates and do not authorize a
+  live probe, PIDFF rerun, force escalation, or motion attempt.
+
+### Proof Commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza artifact-index `
+  --lane ci/hardware/moza-r5/2026-05-13 `
+  --json-out target/moza-current/artifact-index-native-motion-blocker-navigation.json `
+  --md-out ci/hardware/moza-r5/2026-05-13/index.md
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza bench-wizard `
+  --lane ci/hardware/moza-r5/2026-05-13 `
+  --json-out target/moza-current/bench-wizard-native-motion-blocker-navigation.json `
+  --md-out target/moza-current/bench-wizard-native-motion-blocker-navigation.md
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the bench-wizard/artifact-index navigation branch and this
+source-of-truth work item. Do not remove the timing-correlation plan/review,
+movement-blocker audit, status probe receipts, demux evidence, endpoint
+diagnoses, payload-source reviews, consumed authority attempt, or
+post-authority PIDFF regression evidence.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

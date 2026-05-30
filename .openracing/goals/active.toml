@@ -2352,6 +2352,27 @@ commands = [
 ]
 
 [[work_item]]
+id = "route-native-motion-blocker-to-0x8e-timing-capture"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-route-native-motion-blocker-to-0x8e-timing-capture"
+current_pointer = "ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json"
+claim_boundary = "No-output navigation-only update; teaches bench-wizard and artifact-index vendor navigation to route the native-motion blocker to the staged passive Pit House 0x8E event-marker timing-correlation capture and no-output review. It opens no HID or serial device, sends no read-only query or output/configuration/firmware/PIDFF command, creates no authorization, runs no capture, and keeps live probe, authorization planning, PIDFF rerun, force escalation, native-control, native-visible, smoke-ready, simulator, coexistence, high-torque, release-ready, and wheel-movement claims false."
+commands = [
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json moza artifact-index --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/artifact-index-native-motion-blocker-navigation.json --md-out ci/hardware/moza-r5/2026-05-13/index.md",
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json moza bench-wizard --lane ci/hardware/moza-r5/2026-05-13 --json-out target/moza-current/bench-wizard-native-motion-blocker-navigation.json --md-out target/moza-current/bench-wizard-native-motion-blocker-navigation.md",
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
