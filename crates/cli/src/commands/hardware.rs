@@ -29,6 +29,8 @@ use crate::commands::{
 
 const SNIFF_CAPTURE_PCAPNG_FINALIZATION_MAX_ATTEMPTS: usize = 11;
 const SNIFF_CAPTURE_PCAPNG_FINALIZATION_RETRY_DELAY_MS: u64 = 100;
+const SNIFF_CAPTURE_HARDWARE_DOCTOR_MAX_AGE_MINUTES: i64 = 10;
+const SNIFF_CAPTURE_HARDWARE_DOCTOR_FUTURE_TOLERANCE_SECONDS: i64 = 30;
 const SNIFF_CAPTURE_PCAPNG_FINALIZATION_READABLE: &str = "readable";
 const SNIFF_CAPTURE_PCAPNG_FINALIZATION_ZERO_BYTE: &str = "zero_byte";
 const SNIFF_CAPTURE_PCAPNG_FINALIZATION_MISSING: &str = "missing";
@@ -646,13 +648,16 @@ fn sniff_capture_selector_verification(
             None,
             "no hardware doctor receipt was supplied; refresh hardware doctor and verify the selector before treating the capture as Moza protocol evidence",
             Vec::new(),
+            None,
         ));
     };
 
     let receipt: serde_json::Value = read_json_file(hardware_doctor)?;
+    let freshness = sniff_capture_hardware_doctor_freshness(hardware_doctor, &receipt)?;
     Ok(selector_verification_from_hardware_doctor_value(
         request,
         Some(required_path_display(hardware_doctor, "hardware-doctor")?),
+        Some(freshness),
         &receipt,
     ))
 }
@@ -660,6 +665,7 @@ fn sniff_capture_selector_verification(
 fn selector_verification_from_hardware_doctor_value(
     request: &HardwareSniffCaptureRequest<'_>,
     hardware_doctor_path: Option<String>,
+    hardware_doctor_freshness: Option<HardwareSniffCaptureHardwareDoctorFreshness>,
     receipt: &serde_json::Value,
 ) -> HardwareSniffCaptureSelectorVerification {
     let expected = sniff_capture_expected_selectors_from_hardware_doctor(receipt);
@@ -680,6 +686,15 @@ fn selector_verification_from_hardware_doctor_value(
             verified_moza_selector: true,
             accepted_moza_protocol_evidence: true,
             hardware_doctor_path,
+            hardware_doctor_generated_at_utc: hardware_doctor_freshness
+                .as_ref()
+                .map(|freshness| freshness.generated_at_utc.clone()),
+            hardware_doctor_age_seconds: hardware_doctor_freshness
+                .as_ref()
+                .map(|freshness| freshness.age_seconds),
+            hardware_doctor_freshness_max_age_minutes: hardware_doctor_freshness
+                .as_ref()
+                .map(|freshness| freshness.max_age_minutes),
             requested_usbpcap_interface: request.usbpcap_interface.to_string(),
             requested_devices: request.devices.to_string(),
             expected_moza_selectors: expected,
@@ -703,6 +718,15 @@ fn selector_verification_from_hardware_doctor_value(
             verified_moza_selector: false,
             accepted_moza_protocol_evidence: false,
             hardware_doctor_path,
+            hardware_doctor_generated_at_utc: hardware_doctor_freshness
+                .as_ref()
+                .map(|freshness| freshness.generated_at_utc.clone()),
+            hardware_doctor_age_seconds: hardware_doctor_freshness
+                .as_ref()
+                .map(|freshness| freshness.age_seconds),
+            hardware_doctor_freshness_max_age_minutes: hardware_doctor_freshness
+                .as_ref()
+                .map(|freshness| freshness.max_age_minutes),
             requested_usbpcap_interface: request.usbpcap_interface.to_string(),
             requested_devices: request.devices.to_string(),
             expected_moza_selectors: expected,
@@ -720,6 +744,15 @@ fn selector_verification_from_hardware_doctor_value(
             verified_moza_selector: false,
             accepted_moza_protocol_evidence: false,
             hardware_doctor_path,
+            hardware_doctor_generated_at_utc: hardware_doctor_freshness
+                .as_ref()
+                .map(|freshness| freshness.generated_at_utc.clone()),
+            hardware_doctor_age_seconds: hardware_doctor_freshness
+                .as_ref()
+                .map(|freshness| freshness.age_seconds),
+            hardware_doctor_freshness_max_age_minutes: hardware_doctor_freshness
+                .as_ref()
+                .map(|freshness| freshness.max_age_minutes),
             requested_usbpcap_interface: request.usbpcap_interface.to_string(),
             requested_devices: request.devices.to_string(),
             expected_moza_selectors: expected,
@@ -735,7 +768,53 @@ fn selector_verification_from_hardware_doctor_value(
         hardware_doctor_path,
         "hardware doctor did not contain a current Moza USBPcap device hint; classify this selector as unverified until a fresh hint exists",
         expected,
+        hardware_doctor_freshness,
     )
+}
+
+fn sniff_capture_hardware_doctor_freshness(
+    hardware_doctor: &Path,
+    receipt: &serde_json::Value,
+) -> Result<HardwareSniffCaptureHardwareDoctorFreshness> {
+    let generated_at = receipt
+        .get("generated_at")
+        .or_else(|| receipt.get("generated_at_utc"))
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "hardware doctor '{}' lacks generated_at freshness timestamp; rerun observe-only hardware doctor before sniff-capture",
+                hardware_doctor.display()
+            )
+        })?;
+    let generated_at_utc = chrono::DateTime::parse_from_rfc3339(generated_at)
+        .with_context(|| {
+            format!(
+                "hardware doctor '{}' has invalid generated_at freshness timestamp `{generated_at}`",
+                hardware_doctor.display()
+            )
+        })?
+        .with_timezone(&Utc);
+    let now = Utc::now();
+    if generated_at_utc
+        > now + chrono::Duration::seconds(SNIFF_CAPTURE_HARDWARE_DOCTOR_FUTURE_TOLERANCE_SECONDS)
+    {
+        anyhow::bail!(
+            "hardware doctor '{}' is from the future; rerun observe-only hardware doctor before sniff-capture",
+            hardware_doctor.display()
+        );
+    }
+    let age = now.signed_duration_since(generated_at_utc);
+    if age > chrono::Duration::minutes(SNIFF_CAPTURE_HARDWARE_DOCTOR_MAX_AGE_MINUTES) {
+        anyhow::bail!(
+            "hardware doctor '{}' is older than {SNIFF_CAPTURE_HARDWARE_DOCTOR_MAX_AGE_MINUTES} minute(s); rerun observe-only hardware doctor before sniff-capture",
+            hardware_doctor.display()
+        );
+    }
+    Ok(HardwareSniffCaptureHardwareDoctorFreshness {
+        generated_at_utc: generated_at_utc.to_rfc3339_opts(SecondsFormat::Secs, true),
+        age_seconds: age.num_seconds().max(0),
+        max_age_minutes: SNIFF_CAPTURE_HARDWARE_DOCTOR_MAX_AGE_MINUTES,
+    })
 }
 
 fn sniff_capture_expected_selectors_from_hardware_doctor(
@@ -7350,6 +7429,12 @@ struct HardwareSniffCaptureSelectorVerification {
     accepted_moza_protocol_evidence: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     hardware_doctor_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hardware_doctor_generated_at_utc: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hardware_doctor_age_seconds: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hardware_doctor_freshness_max_age_minutes: Option<i64>,
     requested_usbpcap_interface: String,
     requested_devices: String,
     expected_moza_selectors: Vec<HardwareSniffCaptureExpectedSelector>,
@@ -7364,12 +7449,22 @@ impl HardwareSniffCaptureSelectorVerification {
         hardware_doctor_path: Option<String>,
         warning: &str,
         expected_moza_selectors: Vec<HardwareSniffCaptureExpectedSelector>,
+        hardware_doctor_freshness: Option<HardwareSniffCaptureHardwareDoctorFreshness>,
     ) -> Self {
         Self {
             status: USBPCAP_SELECTOR_UNVERIFIED.to_string(),
             verified_moza_selector: false,
             accepted_moza_protocol_evidence: false,
             hardware_doctor_path,
+            hardware_doctor_generated_at_utc: hardware_doctor_freshness
+                .as_ref()
+                .map(|freshness| freshness.generated_at_utc.clone()),
+            hardware_doctor_age_seconds: hardware_doctor_freshness
+                .as_ref()
+                .map(|freshness| freshness.age_seconds),
+            hardware_doctor_freshness_max_age_minutes: hardware_doctor_freshness
+                .as_ref()
+                .map(|freshness| freshness.max_age_minutes),
             requested_usbpcap_interface: request.usbpcap_interface.to_string(),
             requested_devices: request.devices.to_string(),
             expected_moza_selectors,
@@ -7381,6 +7476,13 @@ impl HardwareSniffCaptureSelectorVerification {
     fn capture_receipt_success_eligible(&self) -> bool {
         self.status != USBPCAP_SELECTOR_STALE && self.status != USBPCAP_SELECTOR_NON_MOZA
     }
+}
+
+#[derive(Debug, Clone)]
+struct HardwareSniffCaptureHardwareDoctorFreshness {
+    generated_at_utc: String,
+    age_seconds: i64,
+    max_age_minutes: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -9135,10 +9237,21 @@ mod tests {
         }
 
         fn write_selector_hardware_doctor(dir: &Path) -> Result<PathBuf> {
+            write_selector_hardware_doctor_with_generated_at(
+                dir,
+                Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+            )
+        }
+
+        fn write_selector_hardware_doctor_with_generated_at(
+            dir: &Path,
+            generated_at: String,
+        ) -> Result<PathBuf> {
             let path = dir.join("hardware-doctor.json");
             fs::write(
                 &path,
                 serde_json::to_string_pretty(&serde_json::json!({
+                    "generated_at": generated_at,
                     "no_hid_device_opened": true,
                     "no_ffb_writes": true,
                     "no_output_reports": true,
@@ -9345,6 +9458,16 @@ mod tests {
             assert_eq!(verification.status, USBPCAP_SELECTOR_MATCHED_MOZA_HINT);
             assert!(verification.verified_moza_selector);
             assert!(verification.accepted_moza_protocol_evidence);
+            assert!(verification.hardware_doctor_generated_at_utc.is_some());
+            assert!(
+                verification
+                    .hardware_doctor_age_seconds
+                    .is_some_and(|age| age >= 0)
+            );
+            assert_eq!(
+                verification.hardware_doctor_freshness_max_age_minutes,
+                Some(SNIFF_CAPTURE_HARDWARE_DOCTOR_MAX_AGE_MINUTES)
+            );
             assert_eq!(verification.expected_moza_selectors.len(), 1);
             assert!(
                 verification
@@ -9387,6 +9510,30 @@ mod tests {
         }
 
         #[test]
+        fn sniff_capture_rejects_stale_hardware_doctor_before_selector_acceptance() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let usbpcapcmd = dir.path().join("USBPcapCMD.exe");
+            fs::write(&usbpcapcmd, b"fake")?;
+            let out = dir.path().join("capture.pcapng");
+            let stale_generated_at = (Utc::now()
+                - chrono::Duration::minutes(SNIFF_CAPTURE_HARDWARE_DOCTOR_MAX_AGE_MINUTES + 1))
+            .to_rfc3339_opts(SecondsFormat::Secs, true);
+            let doctor =
+                write_selector_hardware_doctor_with_generated_at(dir.path(), stale_generated_at)?;
+            let request =
+                sample_sniff_capture_request_with_selector_doctor(&usbpcapcmd, &out, "4", &doctor);
+
+            let message = match sniff_capture_selector_verification(&request) {
+                Ok(_) => return Err("stale hardware doctor should fail before capture".into()),
+                Err(error) => error.to_string(),
+            };
+
+            assert!(message.contains("older than 10 minute(s)"));
+            assert!(message.contains("rerun observe-only hardware doctor"));
+            Ok(())
+        }
+
+        #[test]
         fn sniff_capture_stale_selector_is_reported_and_fails_closed() -> TestResult {
             let dir = tempfile::tempdir()?;
             let usbpcapcmd = dir.path().join("USBPcapCMD.exe");
@@ -9396,6 +9543,7 @@ mod tests {
             fs::write(
                 &doctor,
                 serde_json::to_string_pretty(&serde_json::json!({
+                    "generated_at": Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
                     "tools": {
                         "usbpcap_descriptor_capture": {
                             "usbpcap_moza_device_hints": [
