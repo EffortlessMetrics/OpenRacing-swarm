@@ -30822,11 +30822,10 @@ fn vendor_status_timing_correlation_review_receipt(
         "insufficient_no_target_0x8e_samples"
     } else if timing_correlation_candidate_observed {
         "candidate_payload_variation_correlated_to_operator_events"
-    } else if !event_marker_notes_complete
-        || !event_marker_timestamps_complete
-        || !summary_has_packet_timestamp_samples
-    {
-        "insufficient_missing_event_markers_or_packet_timestamps"
+    } else if !summary_has_packet_timestamp_samples || target_sample_timestamp_count == 0 {
+        "insufficient_missing_packet_timestamps"
+    } else if !event_marker_notes_complete || !event_marker_timestamps_complete {
+        "insufficient_missing_event_markers"
     } else if event_marker_timestamps_complete && !operator_event_marker_order_valid {
         "insufficient_event_marker_order_invalid"
     } else if summary_has_packet_timestamp_samples && !target_samples_within_capture_window {
@@ -31017,7 +31016,7 @@ fn vendor_status_timing_correlation_review_receipt(
     insert_json!("unknown_safety_or_mode_state_blocks_authority", true);
     insert_json!(
         "exact_next_blocker",
-        "No reviewed timing-correlation evidence links the 0x8E payload-bearing status-source samples to authority or mode state. Live probe, authorization, PIDFF, force escalation, and motion remain blocked."
+        vendor_status_timing_correlation_exact_next_blocker(timing_correlation_verdict)
     );
     insert_json!(
         "next_allowed_action",
@@ -31211,12 +31210,8 @@ fn vendor_status_timing_correlation_capture_window_sample_status(
     marker_times: &BTreeMap<String, f64>,
     operator_event_marker_order_valid: bool,
 ) -> (u64, Vec<Value>, bool) {
-    let Some(capture_start) = marker_times.get("capture_start_utc").copied() else {
-        return (0, Vec::new(), false);
-    };
-    let Some(capture_stop) = marker_times.get("capture_stop_utc").copied() else {
-        return (0, Vec::new(), false);
-    };
+    let capture_start = marker_times.get("capture_start_utc").copied();
+    let capture_stop = marker_times.get("capture_stop_utc").copied();
 
     let mut timestamp_count = 0_u64;
     let mut outside_window = Vec::new();
@@ -31226,7 +31221,9 @@ fn vendor_status_timing_correlation_capture_window_sample_status(
                 continue;
             };
             timestamp_count = timestamp_count.saturating_add(1);
-            if sample_epoch_seconds < capture_start || sample_epoch_seconds > capture_stop {
+            if let (Some(capture_start), Some(capture_stop)) = (capture_start, capture_stop)
+                && (sample_epoch_seconds < capture_start || sample_epoch_seconds > capture_stop)
+            {
                 outside_window.push(serde_json::json!({
                     "tuple_id": tuple_id,
                     "packet_ordinal": json_u64(sample, "packet_ordinal").unwrap_or(0),
@@ -31243,9 +31240,32 @@ fn vendor_status_timing_correlation_capture_window_sample_status(
         }
     }
 
-    let samples_within_window =
-        operator_event_marker_order_valid && timestamp_count > 0 && outside_window.is_empty();
+    let capture_window_present = capture_start.is_some() && capture_stop.is_some();
+    let samples_within_window = operator_event_marker_order_valid
+        && capture_window_present
+        && timestamp_count > 0
+        && outside_window.is_empty();
     (timestamp_count, outside_window, samples_within_window)
+}
+
+fn vendor_status_timing_correlation_exact_next_blocker(verdict: &str) -> &'static str {
+    match verdict {
+        "insufficient_missing_event_markers" => {
+            "The stored 0x8E samples include packet timestamps and same-tuple payload variation, but the operator notes lack complete event-marker timing. Run the staged passive Pit House 0x8E event-marker capture and no-output timing review; do not rerun read-only status, authorize output, rerun PIDFF, or attempt motion."
+        }
+        "insufficient_missing_packet_timestamps" => {
+            "The 0x8E timing review lacks target packet timestamps, so it cannot link payload changes to operator events. Rebuild the derived sniff summary with packet timestamp samples before any read-only plan, authorization, PIDFF rerun, or motion."
+        }
+        "insufficient_event_marker_order_invalid" => {
+            "The 0x8E timing review has malformed event chronology. Repeat or correct the passive event-marker evidence before any read-only plan, authorization, PIDFF rerun, or motion."
+        }
+        "insufficient_target_samples_outside_capture_window" => {
+            "The 0x8E target samples fall outside the declared capture window. Repeat the staged passive event-marker capture before any read-only plan, authorization, PIDFF rerun, or motion."
+        }
+        _ => {
+            "No reviewed timing-correlation evidence links the 0x8E payload-bearing status-source samples to authority or mode state. Live probe, authorization, PIDFF, force escalation, and motion remain blocked."
+        }
+    }
 }
 
 fn parse_rfc3339_epoch_seconds_from_text(line: &str) -> Option<f64> {
@@ -50250,7 +50270,16 @@ mod tests {
         );
         assert_eq!(
             json_string(&receipt, "timing_correlation_verdict"),
-            Some("insufficient_missing_event_markers_or_packet_timestamps")
+            Some("insufficient_missing_packet_timestamps")
+        );
+        assert_eq!(json_u64(&receipt, "target_sample_timestamp_count"), Some(0));
+        assert_eq!(
+            json_bool(&receipt, "summary_has_packet_timestamp_samples"),
+            Some(false)
+        );
+        assert!(
+            json_string(&receipt, "exact_next_blocker")
+                .is_some_and(|text| text.contains("lacks target packet timestamps"))
         );
         assert_eq!(
             json_bool(&receipt, "timing_correlation_proven"),
@@ -50309,6 +50338,15 @@ mod tests {
             json_bool(&receipt, "summary_has_packet_timestamp_samples"),
             Some(true)
         );
+        assert_eq!(
+            json_string(&receipt, "timing_correlation_verdict"),
+            Some("insufficient_target_samples_outside_capture_window")
+        );
+        assert_eq!(json_u64(&receipt, "target_sample_timestamp_count"), Some(4));
+        assert!(
+            json_string(&receipt, "exact_next_blocker")
+                .is_some_and(|text| text.contains("fall outside the declared capture window"))
+        );
         assert_eq!(json_bool(&receipt, "motion_attempt_allowed"), Some(false));
         assert_eq!(
             json_bool(&receipt, "hardware_output_authorized"),
@@ -50327,6 +50365,52 @@ mod tests {
         );
         assert_eq!(json_u64(first_sample, "packet_ordinal"), Some(10));
         assert_eq!(json_u64(first_sample, "frame_number"), Some(42));
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_timing_correlation_review_counts_timestamps_when_markers_missing() -> TestResult
+    {
+        let payload_source_candidates: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_PAYLOAD_SOURCE_CANDIDATES_JSON)?;
+        let semantic_review = vendor_status_payload_source_semantic_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-candidates.json",
+            ),
+            &payload_source_candidates,
+        )?;
+        let summary = sample_passive_sniff_summary_with_timestamped_0x8e_frames(100_492);
+
+        let receipt = vendor_status_timing_correlation_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
+            ),
+            &semantic_review,
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json"),
+            &summary,
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"),
+            "scenario performed: legacy notes without event markers",
+        )?;
+
+        assert_eq!(
+            json_bool(&receipt, "summary_has_packet_timestamp_samples"),
+            Some(true)
+        );
+        assert_eq!(json_u64(&receipt, "target_sample_timestamp_count"), Some(4));
+        assert_eq!(
+            json_string(&receipt, "timing_correlation_verdict"),
+            Some("insufficient_missing_event_markers")
+        );
+        assert!(
+            json_string(&receipt, "exact_next_blocker").is_some_and(
+                |text| text.contains("operator notes lack complete event-marker timing")
+            )
+        );
+        assert_eq!(json_bool(&receipt, "motion_attempt_allowed"), Some(false));
+        assert_eq!(
+            json_bool(&receipt, "wheel_moved_under_openracing"),
+            Some(false)
+        );
         Ok(())
     }
 
@@ -50688,7 +50772,7 @@ mod tests {
         );
         assert_eq!(
             json_string(&receipt, "timing_source_correlation_verdict"),
-            Some("insufficient_missing_event_markers_or_packet_timestamps")
+            Some("insufficient_missing_event_markers")
         );
         assert_eq!(
             json_bool(&receipt, "live_read_only_probe_allowed"),

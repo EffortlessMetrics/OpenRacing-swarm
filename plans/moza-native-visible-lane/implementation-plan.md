@@ -7677,11 +7677,10 @@ summary and notes. It finds the four target samples:
 0x8E/0x91/0x00 payload 013E000000E6
 ```
 
-but classifies the evidence as
-`insufficient_missing_event_markers_or_packet_timestamps` because the
-reprocessed derived summary provides varying same-tuple payload samples while
-the operator notes do not contain the new event-marker fields required by the
-timing-correlation plan.
+but classifies the evidence as `insufficient_missing_event_markers` because the
+reprocessed derived summary provides packet-timestamped, varying same-tuple
+payload samples while the operator notes do not contain the new event-marker
+fields required by the timing-correlation plan.
 
 The receipt records `timing_correlation_proven=false`,
 `same_tuple_payload_variation_observed=true`,
@@ -8348,10 +8347,11 @@ The refreshed `vendor-status-timing-correlation-review.json` now records:
 
 ```text
 summary_has_packet_timestamp_samples=true
+target_sample_timestamp_count=27
 same_tuple_payload_variation_observed=true
 operator_event_marker_notes_complete=false
 operator_event_marker_timestamps_complete=false
-timing_correlation_verdict=insufficient_missing_event_markers_or_packet_timestamps
+timing_correlation_verdict=insufficient_missing_event_markers
 ```
 
 `vendor-status-movement-blocker-audit.json` records that same-tuple 0x8E
@@ -8902,6 +8902,112 @@ tests, schema additions, regenerated review/audit receipts, and this
 source-of-truth work item. Do not remove the timing-correlation plan, sniff
 handoff, event-marker bundle gate, status probe receipts, demux evidence,
 endpoint diagnoses, or native-visible promotion block.
+
+## Work item: refine-0x8e-timing-blocker-diagnostics
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: ambiguous timing-review blocker wording that could imply packet
+timestamps are missing when only operator event-marker timing is missing
+Blocked by: completed 0x8E review capture-window gate
+
+### Goal
+
+Keep the shortest native-motion path pointed at the real missing evidence. The
+current checked-in Pit House setting-change summary already has timestamped
+target 0x8E samples and same-tuple payload variation, but the operator notes do
+not contain the required event-marker timestamps. The receipt should say that
+directly, rather than grouping event-marker and packet-timestamp failures under
+one verdict.
+
+### Production delta
+
+`wheelctl moza vendor-status-timing-correlation-review` now:
+
+- counts timestamped target 0x8E samples even when the capture window is
+  unavailable;
+- reports `insufficient_missing_packet_timestamps` only when target packet
+  timestamps are absent;
+- reports `insufficient_missing_event_markers` when packet timestamps exist but
+  operator event markers are incomplete;
+- emits a verdict-specific `exact_next_blocker` that routes to the staged
+  passive Pit House 0x8E event-marker capture and no-output review.
+
+The checked-in timing-correlation review now records:
+
+```text
+summary_has_packet_timestamp_samples=true
+target_sample_timestamp_count=27
+same_tuple_payload_variation_observed=true
+timing_correlation_verdict=insufficient_missing_event_markers
+```
+
+### Non-goals
+
+No live hardware access, HID open, serial open, read-only query send, live
+capture, raw pcap commit, PIDFF output, feature report, configuration write,
+firmware/update/DFU path, high torque, mode-enable write, authority write,
+authorization receipt, semantic decode claim, registry promotion, tuple
+sendability, corrected read-only probe readiness, native-control claim,
+native-visible claim, smoke-ready claim, simulator claim, coexistence claim,
+release-ready claim, or wheel movement.
+
+### Acceptance
+
+- Reviews with no target packet timestamps get
+  `insufficient_missing_packet_timestamps`.
+- Reviews with target packet timestamps but missing operator event markers get
+  `insufficient_missing_event_markers`.
+- Reviews with out-of-window target samples still get
+  `insufficient_target_samples_outside_capture_window`.
+- The checked-in review/audit keep `live_read_only_probe_allowed=false`,
+  `authorization_plan_allowed=false`, `motion_attempt_allowed=false`,
+  `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked`.
+- The next concrete action remains the staged passive Pit House 0x8E
+  event-marker capture plus no-output review, not read-only rerun,
+  authorization, PIDFF rerun, or motion.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-review `
+  --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json `
+  --summary ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/sniff-summary.json `
+  --operator-notes ci/hardware/sniff/moza-r5/2026-05-13/pit-house-setting-change/operator-notes.md `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-movement-blocker-audit `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json `
+  --demux-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json `
+  --framing-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json `
+  --extended-scan-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json `
+  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json `
+  --payload-rerun-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --timing-correlation-plan ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --timing-correlation-review ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json `
+  --overwrite
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_review -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the split verdict logic, timestamp-counting change, focused tests,
+regenerated review/audit receipts, and this source-of-truth work item. Do not
+remove the timing-correlation plan, sniff handoff, event-marker bundle gate,
+status probe receipts, demux evidence, endpoint diagnoses, or native-visible
+promotion block.
 
 ## Work item: native-visible-promotion
 
