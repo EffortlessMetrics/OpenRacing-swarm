@@ -27,8 +27,8 @@
   "device_to_host_serial_frame_count": 56,
   "device_to_host_serial_frame_shape_decode_gap": false,
   "event_correlation_window_seconds": 5.0,
-  "exact_next_blocker": "No reviewed timing-correlation evidence links the 0x8E payload-bearing status-source samples to authority or mode state. Live probe, authorization, PIDFF, force escalation, and motion remain blocked.",
-  "generated_at_utc": "2026-05-30T08:43:13Z",
+  "exact_next_blocker": "The stored 0x8E samples include packet timestamps and same-tuple payload variation, but the operator notes lack complete event-marker timing. Run the staged passive Pit House 0x8E event-marker capture and no-output timing review; do not rerun read-only status, authorize output, rerun PIDFF, or attempt motion.",
+  "generated_at_utc": "2026-05-30T09:27:37Z",
   "hardware_output_authorized": false,
   "high_torque_enabled": false,
   "live_read_only_probe_allowed": false,
@@ -123,7 +123,7 @@
   "summary_matched_packets": 100492,
   "summary_pcapng_sha256": "39d43f3454648ea9767e3cf88740073eec9f120ca42f36dfa438fd8f2707d3fc",
   "target_group_id": "passive_payload_bearing_status_source_0x8e",
-  "target_sample_timestamp_count": 0,
+  "target_sample_timestamp_count": 27,
   "target_samples_outside_capture_window": [],
   "target_samples_within_capture_window": false,
   "target_tuple_ids": [
@@ -611,7 +611,7 @@
   "target_tuple_sample_count": 27,
   "timing_correlation_candidate_observed": false,
   "timing_correlation_proven": false,
-  "timing_correlation_verdict": "insufficient_missing_event_markers_or_packet_timestamps",
+  "timing_correlation_verdict": "insufficient_missing_event_markers",
   "unknown_safety_or_mode_state_blocks_authority": true,
   "visible_motion_verified": false,
   "wheel_moved_under_openracing": false

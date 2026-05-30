@@ -595,6 +595,15 @@ checked-in review remains blocked because the older setting-change notes lack
 event markers; no live probe, authorization, PIDFF rerun, output, or motion is
 allowed from that receipt.
 
+The current checked-in timing review no longer treats packet timestamps and
+event markers as the same missing evidence. The stored setting-change summary
+has timestamped target 0x8E samples and same-tuple payload variation
+(`target_sample_timestamp_count=27`, `summary_has_packet_timestamp_samples=true`),
+but the operator notes still lack the required event-marker timestamps, so the
+verdict is `insufficient_missing_event_markers`. The next concrete step remains
+the staged passive Pit House 0x8E event-marker capture and no-output review, not
+read-only rerun, authorization, PIDFF rerun, or motion.
+
 ## Do Not Do
 
 - Do not create another authorization receipt from this handoff.
