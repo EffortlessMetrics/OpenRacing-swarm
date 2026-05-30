@@ -2292,6 +2292,34 @@ fn moza_native_motion_blocker_command_templates(command_templates: &[Value]) -> 
         .filter_map(|template| {
             let name = json_string(template, "name")?;
             let command = json_string(template, "command")?;
+            let requires_capture_running = template
+                .get("requires_capture_running")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let requires_capture_not_started = template
+                .get("requires_capture_not_started")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let requires_completed_capture = template
+                .get("requires_completed_capture")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let requires_pcapng = template
+                .get("requires_pcapng")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let requires_sniff_receipt = template
+                .get("requires_sniff_receipt")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let requires_sniff_summary = template
+                .get("requires_sniff_summary")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let requires_post_capture_inputs = requires_completed_capture
+                || requires_pcapng
+                || requires_sniff_receipt
+                || requires_sniff_summary;
             let placeholder_capture_template = template
                 .get("must_not_run_unrendered_template")
                 .and_then(Value::as_bool)
@@ -2300,6 +2328,18 @@ fn moza_native_motion_blocker_command_templates(command_templates: &[Value]) -> 
                     .get("command_has_selector_placeholders")
                     .and_then(Value::as_bool)
                     .unwrap_or(false);
+            let (runnable_next_operator_command, next_operator_command_status) =
+                if placeholder_capture_template {
+                    (false, "placeholder_template_not_runnable")
+                } else if requires_capture_running {
+                    (false, "requires_capture_running")
+                } else if requires_post_capture_inputs {
+                    (false, "requires_completed_capture_artifacts")
+                } else if requires_capture_not_started {
+                    (true, "runnable_before_capture")
+                } else {
+                    (true, "runnable_as_written")
+                };
             let mut value = serde_json::json!({
                 "name": name,
                 "owner": if command.contains("sniff-capture") {
@@ -2317,12 +2357,10 @@ fn moza_native_motion_blocker_command_templates(command_templates: &[Value]) -> 
                 "external_capture_tool_invoked": command.contains("sniff-capture"),
                 "requires_hardware_doctor_hint": command.contains("sniff-capture"),
                 "raw_pcapng_commit_default": false,
-                "runnable_next_operator_command": !placeholder_capture_template,
-                "next_operator_command_status": if placeholder_capture_template {
-                    "placeholder_template_not_runnable"
-                } else {
-                    "runnable_as_written"
-                },
+                "runnable_next_operator_command": runnable_next_operator_command,
+                "runnable_during_capture": requires_capture_running,
+                "runnable_after_capture": requires_post_capture_inputs,
+                "next_operator_command_status": next_operator_command_status,
                 "command_template": command,
                 "command": command
             });
@@ -2343,6 +2381,10 @@ fn moza_native_motion_blocker_command_templates(command_templates: &[Value]) -> 
                 "concrete_command_source",
                 "selector_source",
                 "requires_operator_notes",
+                "requires_completed_capture",
+                "requires_pcapng",
+                "requires_sniff_receipt",
+                "requires_sniff_summary",
             ] {
                 if let Some(field) = template.get(key)
                     && let Some(object) = value.as_object_mut()
@@ -30551,6 +30593,8 @@ fn vendor_status_timing_correlation_plan_receipt(
             {
                 "name": "record_passive_sniff_receipt",
                 "output_enabled": false,
+                "requires_completed_capture": true,
+                "requires_pcapng": true,
                 "requires_operator_notes": true,
                 "raw_pcapng_commit_default": false,
                 "command": "wheelctl hardware sniff-receipt --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json --pcapng target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --operator Steven --app 'MOZA Pit House' --scenario pit-house-0x8e-timing-correlation --evidence 'Pit House 0x8E timing-correlation passive capture with complete operator event markers; raw pcap local only; OpenRacing sent no HID/output/feature/serial/firmware commands' --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-receipt.json"
@@ -30558,18 +30602,26 @@ fn vendor_status_timing_correlation_plan_receipt(
             {
                 "name": "summarize_passive_capture",
                 "output_enabled": false,
+                "requires_completed_capture": true,
+                "requires_pcapng": true,
                 "command": "wheelctl hardware sniff-summary --pcapng target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --vendor 0x346E --product 0x0004 --include-payload-samples --max-samples-per-report 32 --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json --md-out target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.md"
             },
             {
                 "name": "bundle_passive_sniff_evidence",
                 "output_enabled": false,
+                "requires_completed_capture": true,
                 "requires_operator_notes": true,
+                "requires_sniff_receipt": true,
+                "requires_sniff_summary": true,
                 "raw_pcapng_commit_default": false,
                 "command": "wheelctl hardware sniff-bundle --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json --receipt target/sniff/pit-house-0x8e-timing-correlation/sniff-receipt.json --summary target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json --operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --operator-notes-receipt target/sniff/pit-house-0x8e-timing-correlation/sniff-notes-template-receipt.json --out target/sniff/pit-house-0x8e-timing-correlation/openracing-sniff-bundle.zip --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-bundle-manifest.json"
             },
             {
                 "name": "future_no_output_timing_review",
                 "output_enabled": false,
+                "requires_completed_capture": true,
+                "requires_operator_notes": true,
+                "requires_sniff_summary": true,
                 "command": "wheelctl moza vendor-status-timing-correlation-review --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json --summary target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json --operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --json-out target/sniff/pit-house-0x8e-timing-correlation/vendor-status-timing-correlation-review.json"
             }
         ]),
@@ -45897,15 +45949,17 @@ fn push_next_operator_step_external_capture_commands_markdown(out: &mut String, 
     }
 
     out.push_str("### External Capture Commands\n\n");
-    out.push_str("These command templates are for passive USB capture, not for OpenRacing hardware output. Run the notes-template command first; it renders the concrete USBPcap selector-bound capture command from the fresh hardware doctor receipt.\n\n");
-    out.push_str("| Name | Command Template |\n");
-    out.push_str("| --- | --- |\n");
+    out.push_str("These command templates are for passive USB capture, not for OpenRacing hardware output. Run the notes-template command first; it renders the concrete USBPcap selector-bound capture command from the fresh hardware doctor receipt. Commands marked as capture-runtime or post-capture prerequisites are sequencing references, not immediate next commands.\n\n");
+    out.push_str("| Name | Status | Command Template |\n");
+    out.push_str("| --- | --- | --- |\n");
     for command in commands {
         let name = json_string(command, "name").unwrap_or("unknown");
+        let status = json_string(command, "next_operator_command_status").unwrap_or("unknown");
         let command_text = json_string(command, "command_template").unwrap_or("");
         out.push_str(&format!(
-            "| `{}` | `{}` |\n",
+            "| `{}` | `{}` | `{}` |\n",
             markdown_escape(name),
+            markdown_escape(status),
             markdown_escape(command_text)
         ));
     }
@@ -45932,7 +45986,7 @@ fn push_next_operator_step_commands_markdown(out: &mut String, step: &Value) {
 
     out.push_str("### Next Operator Commands\n\n");
     if commands.len() != runnable_commands.len() {
-        out.push_str("This table omits placeholder capture templates that must be materialized by `sniff-notes-template` before they are runnable.\n\n");
+        out.push_str("This table includes only commands runnable in the current pre-capture phase. It omits placeholder capture templates, capture-runtime marker commands, and post-capture receipt/summary/bundle/review commands until their prerequisites exist.\n\n");
     }
     out.push_str("| Name | Command |\n");
     out.push_str("| --- | --- |\n");
@@ -56871,6 +56925,9 @@ mod tests {
                     && json_bool(command, "edits_operator_notes_only") == Some(true)
                     && json_bool(command, "requires_capture_running") == Some(false)
                     && json_bool(command, "requires_capture_not_started") == Some(true)
+                    && json_bool(command, "runnable_next_operator_command") == Some(true)
+                    && json_string(command, "next_operator_command_status")
+                        == Some("runnable_before_capture")
                     && json_string(command, "marker_phase") == Some("pre_capture_selector_review")
                     && json_string(command, "command_example_marker")
                         == Some("hardware_doctor_selector_reviewed_utc")
@@ -56892,6 +56949,10 @@ mod tests {
                     && json_bool(command, "edits_operator_notes_only") == Some(true)
                     && json_bool(command, "requires_capture_running") == Some(true)
                     && json_bool(command, "requires_capture_not_started") == Some(false)
+                    && json_bool(command, "runnable_next_operator_command") == Some(false)
+                    && json_bool(command, "runnable_during_capture") == Some(true)
+                    && json_string(command, "next_operator_command_status")
+                        == Some("requires_capture_running")
                     && json_string(command, "marker_phase") == Some("capture_runtime_events")
                     && json_string(command, "command_example_marker") == Some("capture_start_utc")
                     && json_string(command, "all_marker_commands_materialized_in")
@@ -56931,7 +56992,13 @@ mod tests {
             commands.iter().any(|command| {
                 json_string(command, "name") == Some("record_passive_sniff_receipt")
                     && json_bool(command, "output_enabled") == Some(false)
+                    && json_bool(command, "requires_completed_capture") == Some(true)
+                    && json_bool(command, "requires_pcapng") == Some(true)
                     && json_bool(command, "requires_operator_notes") == Some(true)
+                    && json_bool(command, "runnable_next_operator_command") == Some(false)
+                    && json_bool(command, "runnable_after_capture") == Some(true)
+                    && json_string(command, "next_operator_command_status")
+                        == Some("requires_completed_capture_artifacts")
                     && json_bool(command, "raw_pcapng_commit_default") == Some(false)
                     && json_string(command, "command").is_some_and(|text| {
                         text.contains("wheelctl hardware sniff-receipt")
@@ -56946,9 +57013,35 @@ mod tests {
         );
         assert!(
             commands.iter().any(|command| {
+                json_string(command, "name") == Some("summarize_passive_capture")
+                    && json_bool(command, "output_enabled") == Some(false)
+                    && json_bool(command, "requires_completed_capture") == Some(true)
+                    && json_bool(command, "requires_pcapng") == Some(true)
+                    && json_bool(command, "runnable_next_operator_command") == Some(false)
+                    && json_bool(command, "runnable_after_capture") == Some(true)
+                    && json_string(command, "next_operator_command_status")
+                        == Some("requires_completed_capture_artifacts")
+                    && json_string(command, "command").is_some_and(|text| {
+                        text.contains("wheelctl hardware sniff-summary")
+                            && text.contains(
+                                "target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng",
+                            )
+                    })
+            }),
+            "0x8E timing-correlation handoff should keep sniff-summary conditional on completed capture artifacts: {commands:?}"
+        );
+        assert!(
+            commands.iter().any(|command| {
                 json_string(command, "name") == Some("bundle_passive_sniff_evidence")
                     && json_bool(command, "output_enabled") == Some(false)
+                    && json_bool(command, "requires_completed_capture") == Some(true)
                     && json_bool(command, "requires_operator_notes") == Some(true)
+                    && json_bool(command, "requires_sniff_receipt") == Some(true)
+                    && json_bool(command, "requires_sniff_summary") == Some(true)
+                    && json_bool(command, "runnable_next_operator_command") == Some(false)
+                    && json_bool(command, "runnable_after_capture") == Some(true)
+                    && json_string(command, "next_operator_command_status")
+                        == Some("requires_completed_capture_artifacts")
                     && json_bool(command, "raw_pcapng_commit_default") == Some(false)
                     && json_string(command, "command").is_some_and(|text| {
                         text.contains("wheelctl hardware sniff-bundle")
@@ -56963,6 +57056,13 @@ mod tests {
             commands.iter().any(|command| {
                 json_string(command, "name") == Some("future_no_output_timing_review")
                     && json_bool(command, "output_enabled") == Some(false)
+                    && json_bool(command, "requires_completed_capture") == Some(true)
+                    && json_bool(command, "requires_operator_notes") == Some(true)
+                    && json_bool(command, "requires_sniff_summary") == Some(true)
+                    && json_bool(command, "runnable_next_operator_command") == Some(false)
+                    && json_bool(command, "runnable_after_capture") == Some(true)
+                    && json_string(command, "next_operator_command_status")
+                        == Some("requires_completed_capture_artifacts")
                     && json_string(command, "command").is_some_and(|text| {
                         text.contains("wheelctl moza vendor-status-timing-correlation-review")
                             && text.contains("vendor-status-payload-source-semantic-review.json")
@@ -57030,6 +57130,19 @@ mod tests {
         assert!(
             next_operator_commands.contains("wheelctl hardware sniff-notes-template"),
             "Next Operator Commands should still surface the concrete materialization step: {next_operator_commands}"
+        );
+        assert!(
+            next_operator_commands.contains("--marker hardware_doctor_selector_reviewed_utc"),
+            "Next Operator Commands should include the pre-capture selector marker: {next_operator_commands}"
+        );
+        assert!(
+            !next_operator_commands.contains("--marker capture_start_utc")
+                && !next_operator_commands.contains("wheelctl hardware sniff-receipt")
+                && !next_operator_commands.contains("wheelctl hardware sniff-summary")
+                && !next_operator_commands.contains("wheelctl hardware sniff-bundle")
+                && !next_operator_commands
+                    .contains("wheelctl moza vendor-status-timing-correlation-review"),
+            "Next Operator Commands must not present capture-runtime or post-capture commands as immediately runnable: {next_operator_commands}"
         );
         assert!(wizard_markdown.contains("Native Motion Blocker"));
         assert!(wizard_markdown.contains("wheel_moved_under_openracing: `false`"));

@@ -644,6 +644,14 @@ evidence, but they remain non-claiming: raw pcap stays local by default, no
 OpenRacing HID/serial/output/feature/firmware command is sent, and native
 visible motion remains blocked.
 
+The bench-wizard handoff now separates immediate and conditional commands. The
+"Next Operator Commands" table is pre-capture work only: refresh hardware
+doctor, render operator notes, and stamp the selector-review marker. The
+USBPcap capture template remains a placeholder until `sniff-notes-template`
+renders it, capture event markers require the capture to be running, and
+receipt/summary/bundle/timing-review commands require completed capture
+artifacts.
+
 ## Do Not Do
 
 - Do not create another authorization receipt from this handoff.
