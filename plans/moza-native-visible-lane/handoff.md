@@ -617,6 +617,13 @@ and capture start/stop markers as administrative chronology only. A candidate
 events such as Pit House open, R5 recognition, KS LED default-teal observation,
 red change, default-teal restore, idle stability, or Pit House close.
 
+The 0x8E timing-correlation handoff now also surfaces the post-capture
+`wheelctl hardware sniff-receipt` and `wheelctl hardware sniff-bundle` commands.
+Those commands are required to make the passive capture reviewable as derived
+evidence, but they remain non-claiming: raw pcap stays local by default, no
+OpenRacing HID/serial/output/feature/firmware command is sent, and native
+visible motion remains blocked.
+
 ## Do Not Do
 
 - Do not create another authorization receipt from this handoff.

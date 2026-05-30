@@ -69,7 +69,7 @@
   "fresh_command_bound_bench_clear_present": false,
   "fresh_command_bound_bench_clear_required_for_motion": true,
   "fresh_exact_authorization_present": false,
-  "generated_at_utc": "2026-05-30T10:30:54Z",
+  "generated_at_utc": "2026-05-30T11:13:21Z",
   "hardware_output_authorized": false,
   "high_torque_enabled": false,
   "line_setting_or_ownership_primary_blocker": false,
@@ -104,9 +104,23 @@
       "selector_source": "fresh hardware doctor Moza USBPcap hint rendered by sniff-notes-template"
     },
     {
+      "command": "wheelctl hardware sniff-receipt --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json --pcapng target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --operator Steven --app 'MOZA Pit House' --scenario pit-house-0x8e-timing-correlation --evidence 'Pit House 0x8E timing-correlation passive capture with complete operator event markers; raw pcap local only; OpenRacing sent no HID/output/feature/serial/firmware commands' --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-receipt.json",
+      "name": "record_passive_sniff_receipt",
+      "output_enabled": false,
+      "raw_pcapng_commit_default": false,
+      "requires_operator_notes": true
+    },
+    {
       "command": "wheelctl hardware sniff-summary --pcapng target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --vendor 0x346E --product 0x0004 --include-payload-samples --max-samples-per-report 32 --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json --md-out target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.md",
       "name": "summarize_passive_capture",
       "output_enabled": false
+    },
+    {
+      "command": "wheelctl hardware sniff-bundle --plan ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json --receipt target/sniff/pit-house-0x8e-timing-correlation/sniff-receipt.json --summary target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json --operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --operator-notes-receipt target/sniff/pit-house-0x8e-timing-correlation/sniff-notes-template-receipt.json --out target/sniff/pit-house-0x8e-timing-correlation/openracing-sniff-bundle.zip --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-bundle-manifest.json",
+      "name": "bundle_passive_sniff_evidence",
+      "output_enabled": false,
+      "raw_pcapng_commit_default": false,
+      "requires_operator_notes": true
     },
     {
       "command": "wheelctl moza vendor-status-timing-correlation-review --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json --summary target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json --operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --json-out target/sniff/pit-house-0x8e-timing-correlation/vendor-status-timing-correlation-review.json",

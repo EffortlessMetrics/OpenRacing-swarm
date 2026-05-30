@@ -109,7 +109,7 @@
     },
     "capture_command_templates": {
       "type": "array",
-      "minItems": 5,
+      "minItems": 7,
       "allOf": [
         {
           "contains": {
@@ -155,6 +155,38 @@
               "selector_source": {
                 "const": "fresh hardware doctor Moza USBPcap hint rendered by sniff-notes-template"
               }
+            }
+          }
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "name",
+              "requires_operator_notes",
+              "raw_pcapng_commit_default"
+            ],
+            "properties": {
+              "name": { "const": "record_passive_sniff_receipt" },
+              "output_enabled": { "const": false },
+              "requires_operator_notes": { "const": true },
+              "raw_pcapng_commit_default": { "const": false }
+            }
+          }
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "name",
+              "requires_operator_notes",
+              "raw_pcapng_commit_default"
+            ],
+            "properties": {
+              "name": { "const": "bundle_passive_sniff_evidence" },
+              "output_enabled": { "const": false },
+              "requires_operator_notes": { "const": true },
+              "raw_pcapng_commit_default": { "const": false }
             }
           }
         }
