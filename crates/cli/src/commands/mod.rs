@@ -428,6 +428,19 @@ pub enum HardwareCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
+    /// Stamp a UTC event marker into passive sniff operator notes
+    SniffMarker {
+        /// Operator notes Markdown file to update
+        #[arg(long)]
+        operator_notes: std::path::PathBuf,
+        /// Marker field to stamp, for example capture_start_utc
+        #[arg(long)]
+        marker: String,
+        /// Write the sniff marker JSON receipt to this file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
+
     /// Run a bounded passive USBPcapCMD capture and write a non-claiming receipt
     SniffCapture {
         /// USBPcapCMD.exe path from hardware doctor

@@ -104,6 +104,11 @@ pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
             )
             .await
         }
+        HardwareCommands::SniffMarker {
+            operator_notes,
+            marker,
+            json_out,
+        } => sniff_marker(json, operator_notes, marker, json_out.as_deref()).await,
         HardwareCommands::SniffCapture {
             usbpcapcmd,
             usbpcap_interface,
@@ -332,6 +337,18 @@ async fn sniff_notes_template(
     };
     write_json_receipt(json_out, &receipt)?;
     print_sniff_notes_template(json, out, json_out, &receipt)
+}
+
+async fn sniff_marker(
+    json: bool,
+    operator_notes: &Path,
+    marker: &str,
+    json_out: Option<&Path>,
+) -> Result<()> {
+    let timestamp = Utc::now();
+    let receipt = stamp_sniff_operator_note_marker_at(operator_notes, marker, timestamp)?;
+    write_json_receipt(json_out, &receipt)?;
+    print_sniff_marker(json, json_out, &receipt)
 }
 
 async fn sniff_capture(
@@ -1767,6 +1784,104 @@ fn parse_0x8e_operator_note_timestamp(
         })
 }
 
+fn stamp_sniff_operator_note_marker_at(
+    operator_notes: &Path,
+    marker: &str,
+    timestamp: chrono::DateTime<Utc>,
+) -> Result<HardwareSniffMarkerReceipt> {
+    let marker = required_text(marker, "marker")?;
+    if !is_supported_0x8e_timing_marker(&marker) {
+        anyhow::bail!(
+            "unsupported sniff marker '{}'; supported pit-house-0x8e-timing-correlation markers are hardware_doctor_selector_reviewed_utc plus the capture event UTC markers",
+            marker
+        );
+    }
+
+    let original = fs::read_to_string(operator_notes)
+        .with_context(|| format!("failed to read '{}'", operator_notes.display()))?;
+    let timestamp_utc = timestamp.to_rfc3339_opts(SecondsFormat::Nanos, true);
+    let marker_prefix = format!("- [ ] {marker}:");
+    let completed_prefix = format!("- [x] {marker}:");
+    let completed_upper_prefix = format!("- [X] {marker}:");
+    let mut replaced = false;
+    let mut already_set = false;
+    let mut updated_lines = Vec::new();
+
+    for line in original.lines() {
+        let trimmed = line.trim();
+        if trimmed == marker_prefix {
+            if replaced {
+                anyhow::bail!(
+                    "operator notes '{}' contain duplicate unset marker '{}'",
+                    operator_notes.display(),
+                    marker
+                );
+            }
+            updated_lines.push(format!("- [x] {marker}: {timestamp_utc}"));
+            replaced = true;
+        } else {
+            if trimmed.starts_with(&completed_prefix)
+                || trimmed.starts_with(&completed_upper_prefix)
+            {
+                already_set = true;
+            }
+            updated_lines.push(line.to_string());
+        }
+    }
+
+    if already_set {
+        anyhow::bail!(
+            "operator notes '{}' marker '{}' is already set",
+            operator_notes.display(),
+            marker
+        );
+    }
+    if !replaced {
+        anyhow::bail!(
+            "operator notes '{}' are missing unset marker '{}'",
+            operator_notes.display(),
+            marker
+        );
+    }
+
+    let trailing_newline = original.ends_with('\n') || original.ends_with('\r');
+    let mut updated = updated_lines.join("\n");
+    if trailing_newline {
+        updated.push('\n');
+    }
+    write_text_file(operator_notes, &updated)?;
+
+    Ok(HardwareSniffMarkerReceipt {
+        schema_version: 1,
+        success: true,
+        command: "wheelctl hardware sniff-marker",
+        generated_at_utc: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        operator_notes_path: required_path_display(operator_notes, "operator-notes")?,
+        marker,
+        marker_timestamp_utc: timestamp_utc,
+        claim_scope: "local_operator_notes_marker_only",
+        evidence_status: SNIFF_EVIDENCE_STATUS,
+        native_control_evidence: false,
+        openracing_hardware_output: false,
+        no_hid_device_opened: true,
+        opened_serial_device: false,
+        sent_read_only_query_commands: false,
+        sent_output_writes: false,
+        sent_configuration_writes: false,
+        sent_firmware_or_dfu_commands: false,
+        satisfies_native_response_ready: false,
+        satisfies_native_visible_ready: false,
+        satisfies_smoke_ready: false,
+        satisfies_release_ready: false,
+        readiness_claims: HardwareSniffReadinessClaims::none(),
+    })
+}
+
+fn is_supported_0x8e_timing_marker(marker: &str) -> bool {
+    marker == "hardware_doctor_selector_reviewed_utc"
+        || PIT_HOUSE_0X8E_TIMING_EVENT_ORDER.contains(&marker)
+}
+
 fn setting_change_restore_status_is_affirmative(value: &str) -> bool {
     let normalized = value.trim().to_ascii_lowercase().replace(['_', '-'], " ");
     let normalized = normalized.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -2976,6 +3091,26 @@ fn render_0x8e_event_marker_timestamp_helper(
         powershell_double_quoted_arg(&notes_path)
     ));
     out.push_str(
+        "# After reviewing the fresh hardware doctor selector and before starting capture:\n",
+    );
+    out.push_str(&sniff_marker_command(
+        plan,
+        "$notes",
+        "hardware_doctor_selector_reviewed_utc",
+    ));
+    out.push_str("\n\n# Run each marker when the named event happens:\n");
+    for marker in PIT_HOUSE_0X8E_TIMING_EVENT_ORDER {
+        out.push_str(&sniff_marker_command(plan, "$notes", marker));
+        out.push('\n');
+    }
+    out.push_str("```\n\n");
+    out.push_str("PowerShell fallback if `wheelctl hardware sniff-marker` is unavailable:\n\n");
+    out.push_str("```powershell\n");
+    out.push_str(&format!(
+        "$notes = {}\n",
+        powershell_double_quoted_arg(&notes_path)
+    ));
+    out.push_str(
         "function Set-OpenRacingMarker {\n\
   param([Parameter(Mandatory=$true)][string]$Name)\n\
   $timestamp = (Get-Date).ToUniversalTime().ToString(\"o\")\n\
@@ -2996,6 +3131,17 @@ fn render_0x8e_event_marker_timestamp_helper(
     }
     out.push_str("```\n");
     out
+}
+
+fn sniff_marker_command(plan: &StoredHardwareSniffPlan, notes_arg: &str, marker: &str) -> String {
+    format!(
+        "wheelctl hardware sniff-marker --operator-notes {notes_arg} --marker {marker} --json-out {}\n",
+        powershell_double_quoted_arg(&sniff_notes_local_marker_receipt_path(plan, marker))
+    )
+}
+
+fn sniff_notes_local_marker_receipt_path(plan: &StoredHardwareSniffPlan, marker: &str) -> String {
+    format!("target\\sniff\\{}\\marker-{marker}.json", plan.scenario)
 }
 
 fn sniff_notes_local_operator_notes_path(plan: &StoredHardwareSniffPlan) -> String {
@@ -6213,6 +6359,30 @@ fn print_sniff_notes_template(
     Ok(())
 }
 
+fn print_sniff_marker(
+    json: bool,
+    json_out: Option<&Path>,
+    receipt: &HardwareSniffMarkerReceipt,
+) -> Result<()> {
+    if json {
+        write_stdout_line(&serde_json::to_string_pretty(receipt)?)?;
+        return Ok(());
+    }
+
+    write_stdout_line(&format!(
+        "Passive USB sniff event marker stamped: {} at {}",
+        receipt.marker, receipt.marker_timestamp_utc
+    ))?;
+    write_stdout_line(&format!("Operator notes: {}", receipt.operator_notes_path))?;
+    write_stdout_line(
+        "Non-claiming: this edited only operator notes and sent no hardware commands.",
+    )?;
+    if let Some(path) = json_out {
+        write_stdout_line(&format!("Receipt: {}", path.display()))?;
+    }
+    Ok(())
+}
+
 fn print_sniff_capture(
     json: bool,
     json_out: Option<&Path>,
@@ -6829,6 +6999,32 @@ struct HardwareSniffNotesTemplateReceipt {
     evidence_status: &'static str,
     native_control_evidence: bool,
     openracing_hardware_output: bool,
+    satisfies_native_response_ready: bool,
+    satisfies_native_visible_ready: bool,
+    satisfies_smoke_ready: bool,
+    satisfies_release_ready: bool,
+    readiness_claims: HardwareSniffReadinessClaims,
+}
+
+#[derive(Debug, Serialize)]
+struct HardwareSniffMarkerReceipt {
+    schema_version: u32,
+    success: bool,
+    command: &'static str,
+    generated_at_utc: String,
+    operator_notes_path: String,
+    marker: String,
+    marker_timestamp_utc: String,
+    claim_scope: &'static str,
+    evidence_status: &'static str,
+    native_control_evidence: bool,
+    openracing_hardware_output: bool,
+    no_hid_device_opened: bool,
+    opened_serial_device: bool,
+    sent_read_only_query_commands: bool,
+    sent_output_writes: bool,
+    sent_configuration_writes: bool,
+    sent_firmware_or_dfu_commands: bool,
     satisfies_native_response_ready: bool,
     satisfies_native_visible_ready: bool,
     satisfies_smoke_ready: bool,
@@ -9436,10 +9632,22 @@ mod tests {
             assert!(
                 notes.contains("Set-OpenRacingMarker \"hardware_doctor_selector_reviewed_utc\"")
             );
+            assert!(
+                notes.contains(
+                    "wheelctl hardware sniff-marker --operator-notes $notes --marker hardware_doctor_selector_reviewed_utc"
+                ),
+                "operator notes template missing first-class marker command"
+            );
             for marker in PIT_HOUSE_0X8E_TIMING_EVENT_ORDER {
                 assert!(
                     notes.contains(&format!("Set-OpenRacingMarker \"{marker}\"")),
                     "operator notes template missing marker helper command: {marker}"
+                );
+                assert!(
+                    notes.contains(&format!(
+                        "wheelctl hardware sniff-marker --operator-notes $notes --marker {marker}"
+                    )),
+                    "operator notes template missing sniff-marker command: {marker}"
                 );
             }
             assert_schema_valid("sniff-plan.schema.json", &serde_json::to_value(&plan)?)?;
@@ -9734,6 +9942,80 @@ mod tests {
             assert!(
                 notes.contains("Set-OpenRacingMarker \"capture_start_utc\"")
                     && notes.contains("Set-OpenRacingMarker \"capture_stop_utc\"")
+            );
+            assert!(
+                notes.contains("wheelctl hardware sniff-marker --operator-notes $notes --marker capture_start_utc")
+                    && notes.contains("marker-capture_stop_utc.json")
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_marker_stamps_0x8e_operator_note_marker_without_output_claims() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let plan = sample_plan_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseZeroX8eTimingCorrelation,
+            )?;
+            let plan_path = dir.path().join("sniff-plan.json");
+            write_json_file(&plan_path, &plan)?;
+            let stored = read_and_validate_sniff_plan(&plan_path)?;
+            let notes_path = dir.path().join("operator-notes.md");
+            let notes =
+                render_sniff_operator_notes_template(&plan_path, &stored, None, Some(&notes_path));
+            write_text_file(&notes_path, &notes)?;
+            let timestamp =
+                chrono::DateTime::parse_from_rfc3339("2026-05-30T12:00:00Z")?.with_timezone(&Utc);
+
+            let receipt =
+                stamp_sniff_operator_note_marker_at(&notes_path, "capture_start_utc", timestamp)?;
+            let updated = fs::read_to_string(&notes_path)?;
+
+            assert_eq!(receipt.command, "wheelctl hardware sniff-marker");
+            assert_eq!(receipt.marker, "capture_start_utc");
+            assert!(!receipt.native_control_evidence);
+            assert!(!receipt.openracing_hardware_output);
+            assert!(receipt.no_hid_device_opened);
+            assert!(!receipt.opened_serial_device);
+            assert!(!receipt.sent_read_only_query_commands);
+            assert!(!receipt.sent_output_writes);
+            assert!(!receipt.satisfies_native_visible_ready);
+            assert!(updated.contains(&format!(
+                "- [x] capture_start_utc: {}",
+                receipt.marker_timestamp_utc
+            )));
+            assert!(updated.contains("- [ ] pit_house_opened_utc:"));
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_marker_rejects_already_set_or_unsupported_markers() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let notes_path = dir.path().join("operator-notes.md");
+            write_text_file(
+                &notes_path,
+                "- [ ] capture_start_utc:\n- [ ] pit_house_opened_utc:\n",
+            )?;
+            let timestamp =
+                chrono::DateTime::parse_from_rfc3339("2026-05-30T12:00:00Z")?.with_timezone(&Utc);
+
+            stamp_sniff_operator_note_marker_at(&notes_path, "capture_start_utc", timestamp)?;
+            let already_set =
+                stamp_sniff_operator_note_marker_at(&notes_path, "capture_start_utc", timestamp)
+                    .err()
+                    .ok_or("expected already-set marker to fail")?;
+            assert!(
+                already_set.to_string().contains("already set"),
+                "unexpected error: {already_set}"
+            );
+
+            let unsupported =
+                stamp_sniff_operator_note_marker_at(&notes_path, "not_a_timing_marker", timestamp)
+                    .err()
+                    .ok_or("expected unsupported marker to fail")?;
+            assert!(
+                unsupported.to_string().contains("unsupported sniff marker"),
+                "unexpected error: {unsupported}"
             );
             Ok(())
         }

@@ -109,7 +109,7 @@
     },
     "capture_command_templates": {
       "type": "array",
-      "minItems": 7,
+      "minItems": 8,
       "allOf": [
         {
           "contains": {
@@ -117,6 +117,7 @@
             "required": [
               "name",
               "materializes_capture_command",
+              "materializes_event_marker_commands",
               "materialized_command_in",
               "selector_source"
             ],
@@ -124,11 +125,38 @@
               "name": { "const": "render_checked_in_operator_notes_template" },
               "output_enabled": { "const": false },
               "materializes_capture_command": { "const": true },
+              "materializes_event_marker_commands": { "const": true },
               "materialized_command_in": {
                 "const": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"
               },
               "selector_source": {
                 "const": "fresh hardware doctor Moza USBPcap hint"
+              }
+            }
+          }
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "name",
+              "edits_operator_notes_only",
+              "requires_capture_running",
+              "command_example_marker",
+              "all_marker_commands_materialized_in",
+              "marker_command_source"
+            ],
+            "properties": {
+              "name": { "const": "stamp_operator_event_markers" },
+              "output_enabled": { "const": false },
+              "edits_operator_notes_only": { "const": true },
+              "requires_capture_running": { "const": true },
+              "command_example_marker": { "const": "capture_start_utc" },
+              "all_marker_commands_materialized_in": {
+                "const": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"
+              },
+              "marker_command_source": {
+                "const": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"
               }
             }
           }
