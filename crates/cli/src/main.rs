@@ -2645,6 +2645,10 @@ mod tests {
             "vendor-status-timing-correlation-review",
             "--semantic-review",
             "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
+            "--sniff-capture-receipt",
+            "target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json",
+            "--sniff-receipt",
+            "target/sniff/pit-house-0x8e-timing-correlation/sniff-receipt.json",
             "--summary",
             "target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json",
             "--operator-notes",
@@ -2656,6 +2660,8 @@ mod tests {
         match &cli.command {
             Commands::Moza(MozaCommands::VendorStatusTimingCorrelationReview {
                 semantic_review,
+                sniff_capture_receipt,
+                sniff_receipt,
                 summary,
                 operator_notes,
                 json_out,
@@ -2666,6 +2672,18 @@ mod tests {
                     Some(
                         "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json"
                     )
+                );
+                assert_eq!(
+                    sniff_capture_receipt
+                        .as_ref()
+                        .and_then(|path| path.to_str()),
+                    Some(
+                        "target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json"
+                    )
+                );
+                assert_eq!(
+                    sniff_receipt.as_ref().and_then(|path| path.to_str()),
+                    Some("target/sniff/pit-house-0x8e-timing-correlation/sniff-receipt.json")
                 );
                 assert_eq!(
                     summary.to_str(),

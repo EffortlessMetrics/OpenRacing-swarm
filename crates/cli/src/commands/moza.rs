@@ -720,10 +720,32 @@ struct VendorStatusTimingCorrelationPlanRequest<'a> {
 struct VendorStatusTimingCorrelationReviewRequest<'a> {
     json: bool,
     semantic_review: &'a Path,
+    sniff_capture_receipt: Option<&'a Path>,
+    sniff_receipt: Option<&'a Path>,
     summary: &'a Path,
     operator_notes: &'a Path,
     json_out: &'a Path,
     overwrite: bool,
+}
+
+#[derive(Clone, Copy)]
+struct VendorStatusTimingCorrelationCaptureProvenanceInput<'a> {
+    sniff_capture_receipt_path: Option<&'a Path>,
+    sniff_capture_receipt: Option<&'a Value>,
+    sniff_receipt_path: Option<&'a Path>,
+    sniff_receipt: Option<&'a Value>,
+}
+
+#[cfg(test)]
+impl VendorStatusTimingCorrelationCaptureProvenanceInput<'_> {
+    fn none() -> Self {
+        Self {
+            sniff_capture_receipt_path: None,
+            sniff_capture_receipt: None,
+            sniff_receipt_path: None,
+            sniff_receipt: None,
+        }
+    }
 }
 
 struct VendorStatusMovementBlockerAuditRequest<'a> {
@@ -1078,6 +1100,8 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
         }
         MozaCommands::VendorStatusTimingCorrelationReview {
             semantic_review,
+            sniff_capture_receipt,
+            sniff_receipt,
             summary,
             operator_notes,
             json_out,
@@ -1086,6 +1110,8 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             vendor_status_timing_correlation_review(VendorStatusTimingCorrelationReviewRequest {
                 json,
                 semantic_review,
+                sniff_capture_receipt: sniff_capture_receipt.as_deref(),
+                sniff_receipt: sniff_receipt.as_deref(),
                 summary,
                 operator_notes,
                 json_out,
@@ -7731,12 +7757,28 @@ async fn vendor_status_timing_correlation_review(
 ) -> Result<()> {
     ensure_receipt_writable(request.json_out, request.overwrite)?;
     let semantic_review = read_json_path(request.semantic_review)?;
+    if request.sniff_capture_receipt.is_some() != request.sniff_receipt.is_some() {
+        return Err(anyhow!(
+            "timing-correlation review must pass --sniff-capture-receipt and --sniff-receipt together when capture provenance is supplied"
+        ));
+    }
+    let sniff_capture_receipt = request
+        .sniff_capture_receipt
+        .map(read_json_path)
+        .transpose()?;
+    let sniff_receipt = request.sniff_receipt.map(read_json_path).transpose()?;
     let summary = read_json_path(request.summary)?;
     let operator_notes = fs::read_to_string(request.operator_notes)
         .with_context(|| format!("read operator notes '{}'", request.operator_notes.display()))?;
     let receipt = vendor_status_timing_correlation_review_receipt(
         request.semantic_review,
         &semantic_review,
+        VendorStatusTimingCorrelationCaptureProvenanceInput {
+            sniff_capture_receipt_path: request.sniff_capture_receipt,
+            sniff_capture_receipt: sniff_capture_receipt.as_ref(),
+            sniff_receipt_path: request.sniff_receipt,
+            sniff_receipt: sniff_receipt.as_ref(),
+        },
         request.summary,
         &summary,
         request.operator_notes,
@@ -30621,8 +30663,10 @@ fn vendor_status_timing_correlation_plan_receipt(
                 "output_enabled": false,
                 "requires_completed_capture": true,
                 "requires_operator_notes": true,
+                "requires_sniff_capture_receipt": true,
+                "requires_sniff_receipt": true,
                 "requires_sniff_summary": true,
-                "command": "wheelctl moza vendor-status-timing-correlation-review --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json --summary target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json --operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --json-out target/sniff/pit-house-0x8e-timing-correlation/vendor-status-timing-correlation-review.json"
+                "command": "wheelctl moza vendor-status-timing-correlation-review --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json --sniff-capture-receipt target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json --sniff-receipt target/sniff/pit-house-0x8e-timing-correlation/sniff-receipt.json --summary target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json --operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --json-out target/sniff/pit-house-0x8e-timing-correlation/vendor-status-timing-correlation-review.json"
             }
         ]),
     );
@@ -30727,6 +30771,7 @@ fn vendor_status_timing_correlation_plan_receipt(
 fn vendor_status_timing_correlation_review_receipt(
     semantic_review_path: &Path,
     semantic_review: &Value,
+    capture_provenance_input: VendorStatusTimingCorrelationCaptureProvenanceInput<'_>,
     summary_path: &Path,
     summary: &Value,
     operator_notes_path: &Path,
@@ -30734,6 +30779,10 @@ fn vendor_status_timing_correlation_review_receipt(
 ) -> Result<Value> {
     validate_vendor_status_timing_correlation_plan_source(semantic_review_path, semantic_review)?;
     validate_vendor_status_timing_correlation_review_summary(summary_path, summary)?;
+    let capture_provenance =
+        vendor_status_timing_correlation_capture_provenance(summary, capture_provenance_input)?;
+    let capture_provenance_verified =
+        json_bool(&capture_provenance, "capture_provenance_verified") == Some(true);
 
     let required_markers = vendor_status_timing_correlation_required_markers();
     let present_markers = required_markers
@@ -30925,17 +30974,23 @@ fn vendor_status_timing_correlation_review_receipt(
         }));
     }
 
-    let timing_correlation_candidate_observed = event_marker_notes_complete
+    let timing_correlation_candidate_without_capture_provenance = event_marker_notes_complete
         && event_marker_timestamps_complete
         && operator_event_marker_order_valid
         && summary_has_packet_timestamp_samples
         && target_samples_within_capture_window
         && same_tuple_payload_variation_with_event_markers_observed;
+    let timing_correlation_candidate_observed =
+        timing_correlation_candidate_without_capture_provenance && capture_provenance_verified;
     let timing_correlation_proven = false;
     let timing_correlation_verdict = if !any_target_samples_observed {
         "insufficient_no_target_0x8e_samples"
     } else if timing_correlation_candidate_observed {
         "candidate_payload_variation_correlated_to_operator_events"
+    } else if timing_correlation_candidate_without_capture_provenance
+        && !capture_provenance_verified
+    {
+        "insufficient_capture_provenance_missing_or_unverified"
     } else if !summary_has_packet_timestamp_samples || target_sample_timestamp_count == 0 {
         "insufficient_missing_packet_timestamps"
     } else if !event_marker_notes_complete || !event_marker_timestamps_complete {
@@ -30979,6 +31034,17 @@ fn vendor_status_timing_correlation_review_receipt(
     );
     insert_json!("sniff_summary", summary_path.display().to_string());
     insert_json!("operator_notes", operator_notes_path.display().to_string());
+    insert_json!(
+        "capture_provenance_inputs_provided",
+        json_bool(&capture_provenance, "capture_provenance_inputs_provided").unwrap_or(false)
+    );
+    insert_json!("capture_provenance_verified", capture_provenance_verified);
+    insert_json!("capture_provenance_required_for_candidate", true);
+    insert_json!(
+        "capture_provenance_status",
+        json_string(&capture_provenance, "capture_provenance_status").unwrap_or("unknown")
+    );
+    receipt.insert("capture_provenance".to_string(), capture_provenance.clone());
     insert_json!(
         "summary_command",
         json_string(summary, "command").unwrap_or("unknown")
@@ -31118,6 +31184,10 @@ fn vendor_status_timing_correlation_review_receipt(
         "timing_correlation_candidate_observed",
         timing_correlation_candidate_observed
     );
+    insert_json!(
+        "timing_correlation_candidate_without_capture_provenance",
+        timing_correlation_candidate_without_capture_provenance
+    );
     insert_json!("timing_correlation_proven", timing_correlation_proven);
     insert_json!("timing_correlation_verdict", timing_correlation_verdict);
     insert_json!("payload_bearing_authority_state_source_found", false);
@@ -31196,6 +31266,227 @@ fn vendor_status_timing_correlation_review_receipt(
     );
 
     Ok(Value::Object(receipt))
+}
+
+fn vendor_status_timing_correlation_capture_provenance(
+    summary: &Value,
+    input: VendorStatusTimingCorrelationCaptureProvenanceInput<'_>,
+) -> Result<Value> {
+    if input.sniff_capture_receipt_path.is_some() != input.sniff_capture_receipt.is_some()
+        || input.sniff_receipt_path.is_some() != input.sniff_receipt.is_some()
+        || input.sniff_capture_receipt_path.is_some() != input.sniff_receipt_path.is_some()
+    {
+        return Err(anyhow!(
+            "timing-correlation capture provenance must include both receipt paths and both receipt JSON values"
+        ));
+    }
+
+    let mut provenance = serde_json::Map::new();
+    macro_rules! insert_json {
+        ($key:literal, $value:expr) => {
+            provenance.insert($key.to_string(), serde_json::json!($value));
+        };
+    }
+
+    insert_json!("capture_provenance_required_for_candidate", true);
+
+    let (
+        Some(sniff_capture_receipt_path),
+        Some(sniff_capture_receipt),
+        Some(sniff_receipt_path),
+        Some(sniff_receipt),
+    ) = (
+        input.sniff_capture_receipt_path,
+        input.sniff_capture_receipt,
+        input.sniff_receipt_path,
+        input.sniff_receipt,
+    )
+    else {
+        insert_json!("capture_provenance_inputs_provided", false);
+        insert_json!("capture_provenance_verified", false);
+        insert_json!("capture_provenance_status", "not_provided");
+        insert_json!(
+            "notes",
+            [
+                "No capture provenance receipts were supplied; this legacy review can remain blocked, but it cannot surface a candidate timing correlation."
+            ]
+        );
+        return Ok(Value::Object(provenance));
+    };
+
+    let capture_path = sniff_capture_receipt_path.display().to_string();
+    let receipt_path = sniff_receipt_path.display().to_string();
+    insert_json!("capture_provenance_inputs_provided", true);
+    insert_json!("sniff_capture_receipt", capture_path);
+    insert_json!("sniff_receipt", receipt_path);
+
+    if json_string(sniff_capture_receipt, "command") != Some("wheelctl hardware sniff-capture") {
+        return Err(anyhow!(
+            "timing-correlation capture receipt '{}' must come from `wheelctl hardware sniff-capture`",
+            sniff_capture_receipt_path.display()
+        ));
+    }
+    if json_bool(sniff_capture_receipt, "success") != Some(true) {
+        return Err(anyhow!(
+            "timing-correlation capture receipt '{}' must have success=true",
+            sniff_capture_receipt_path.display()
+        ));
+    }
+    if json_bool(sniff_capture_receipt, "openracing_hardware_output") != Some(false) {
+        return Err(anyhow!(
+            "timing-correlation capture receipt '{}' must keep openracing_hardware_output=false",
+            sniff_capture_receipt_path.display()
+        ));
+    }
+    for field in [
+        "native_control_evidence",
+        "openracing_hid_device_opened",
+        "openracing_ffb_writes",
+        "openracing_output_reports",
+        "openracing_feature_reports",
+        "openracing_serial_config_commands",
+        "openracing_firmware_or_dfu_commands",
+        "satisfies_native_visible_ready",
+        "satisfies_smoke_ready",
+        "satisfies_release_ready",
+    ] {
+        if json_bool(sniff_capture_receipt, field) != Some(false) {
+            return Err(anyhow!(
+                "timing-correlation capture receipt '{}' must keep {field}=false",
+                sniff_capture_receipt_path.display()
+            ));
+        }
+    }
+    if json_bool(sniff_capture_receipt, "pcapng_finalization_succeeded") != Some(true) {
+        return Err(anyhow!(
+            "timing-correlation capture receipt '{}' must have pcapng_finalization_succeeded=true",
+            sniff_capture_receipt_path.display()
+        ));
+    }
+    if json_u64(sniff_capture_receipt, "pcapng_size_bytes").unwrap_or(0) == 0 {
+        return Err(anyhow!(
+            "timing-correlation capture receipt '{}' must record a non-empty pcapng",
+            sniff_capture_receipt_path.display()
+        ));
+    }
+    let selector_verification = sniff_capture_receipt
+        .get("selector_verification")
+        .ok_or_else(|| {
+            anyhow!(
+                "timing-correlation capture receipt '{}' is missing selector_verification",
+                sniff_capture_receipt_path.display()
+            )
+        })?;
+    if json_bool(selector_verification, "verified_moza_selector") != Some(true) {
+        return Err(anyhow!(
+            "timing-correlation capture receipt '{}' must verify the Moza USBPcap selector",
+            sniff_capture_receipt_path.display()
+        ));
+    }
+    if json_bool(selector_verification, "accepted_moza_protocol_evidence") != Some(true) {
+        return Err(anyhow!(
+            "timing-correlation capture receipt '{}' must have accepted_moza_protocol_evidence=true",
+            sniff_capture_receipt_path.display()
+        ));
+    }
+
+    if json_string(sniff_receipt, "command") != Some("wheelctl hardware sniff-receipt") {
+        return Err(anyhow!(
+            "timing-correlation sniff receipt '{}' must come from `wheelctl hardware sniff-receipt`",
+            sniff_receipt_path.display()
+        ));
+    }
+    if json_bool(sniff_receipt, "success") != Some(true) {
+        return Err(anyhow!(
+            "timing-correlation sniff receipt '{}' must have success=true",
+            sniff_receipt_path.display()
+        ));
+    }
+    if json_string(sniff_receipt, "scenario") != Some("pit-house-0x8e-timing-correlation") {
+        return Err(anyhow!(
+            "timing-correlation sniff receipt '{}' must use scenario pit-house-0x8e-timing-correlation",
+            sniff_receipt_path.display()
+        ));
+    }
+    for field in [
+        "native_control_evidence",
+        "openracing_hardware_output",
+        "openracing_hid_device_opened",
+        "openracing_ffb_writes",
+        "openracing_output_reports",
+        "openracing_feature_reports",
+        "openracing_serial_config_commands",
+        "openracing_firmware_or_dfu_commands",
+        "satisfies_native_visible_ready",
+        "satisfies_smoke_ready",
+        "satisfies_release_ready",
+    ] {
+        if json_bool(sniff_receipt, field) != Some(false) {
+            return Err(anyhow!(
+                "timing-correlation sniff receipt '{}' must keep {field}=false",
+                sniff_receipt_path.display()
+            ));
+        }
+    }
+
+    let summary_sha = json_string(summary, "pcapng_sha256").unwrap_or("");
+    let capture_sha = json_string(sniff_capture_receipt, "pcapng_sha256").unwrap_or("");
+    let receipt_sha = json_string(sniff_receipt, "pcapng_sha256").unwrap_or("");
+    if summary_sha.is_empty() || summary_sha != capture_sha || summary_sha != receipt_sha {
+        return Err(anyhow!(
+            "timing-correlation summary/capture/sniff receipt pcapng hashes must match"
+        ));
+    }
+    let capture_out_path = json_string(sniff_capture_receipt, "out_path").unwrap_or("");
+    let receipt_pcap_path = json_string(sniff_receipt, "pcapng_path").unwrap_or("");
+    if !capture_out_path.is_empty()
+        && !receipt_pcap_path.is_empty()
+        && capture_out_path != receipt_pcap_path
+    {
+        return Err(anyhow!(
+            "timing-correlation capture out_path '{}' must match sniff receipt pcapng_path '{}'",
+            capture_out_path,
+            receipt_pcap_path
+        ));
+    }
+
+    insert_json!("capture_provenance_verified", true);
+    insert_json!("capture_provenance_status", "verified");
+    insert_json!("summary_pcapng_sha256", summary_sha);
+    insert_json!("capture_pcapng_sha256", capture_sha);
+    insert_json!("sniff_receipt_pcapng_sha256", receipt_sha);
+    insert_json!("capture_out_path", capture_out_path);
+    insert_json!("sniff_receipt_pcapng_path", receipt_pcap_path);
+    insert_json!(
+        "capture_selector_status",
+        json_string(selector_verification, "status").unwrap_or("unknown")
+    );
+    insert_json!(
+        "capture_requested_usbpcap_interface",
+        json_string(selector_verification, "requested_usbpcap_interface").unwrap_or("unknown")
+    );
+    insert_json!(
+        "capture_requested_devices",
+        json_string(selector_verification, "requested_devices").unwrap_or("unknown")
+    );
+    insert_json!(
+        "sniff_receipt_scenario",
+        json_string(sniff_receipt, "scenario").unwrap_or("unknown")
+    );
+    insert_json!("hardware_output_authorized", false);
+    insert_json!("native_control_evidence", false);
+    insert_json!("native_visible_ready", false);
+    insert_json!("output_was_sent", false);
+    insert_json!(
+        "notes",
+        [
+            "Capture provenance is derived-only and non-claiming.",
+            "Verified provenance is required before a timing-correlation candidate can be surfaced.",
+            "The reviewed 0x8E tuples remain unknown_do_not_send."
+        ]
+    );
+
+    Ok(Value::Object(provenance))
 }
 
 fn validate_vendor_status_timing_correlation_review_summary(
@@ -31416,6 +31707,9 @@ fn vendor_status_timing_correlation_exact_next_blocker(verdict: &str) -> &'stati
         }
         "insufficient_target_samples_outside_capture_window" => {
             "The 0x8E target samples fall outside the declared capture window. Repeat the staged passive event-marker capture before any read-only plan, authorization, PIDFF rerun, or motion."
+        }
+        "insufficient_capture_provenance_missing_or_unverified" => {
+            "The 0x8E samples vary near operator events, but the review lacks matching sniff-capture and sniff-receipt provenance. Re-run the no-output review with validated capture provenance before any read-only plan, authorization, PIDFF rerun, or motion."
         }
         _ => {
             "No reviewed timing-correlation evidence links the 0x8E payload-bearing status-source samples to authority or mode state. Live probe, authorization, PIDFF, force escalation, and motion remain blocked."
@@ -50481,6 +50775,7 @@ mod tests {
                 "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
             ),
             &semantic_review,
+            VendorStatusTimingCorrelationCaptureProvenanceInput::none(),
             Path::new("target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json"),
             &summary,
             Path::new("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"),
@@ -50557,6 +50852,7 @@ mod tests {
                 "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
             ),
             &semantic_review,
+            VendorStatusTimingCorrelationCaptureProvenanceInput::none(),
             Path::new("target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json"),
             &summary,
             Path::new("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"),
@@ -50615,6 +50911,7 @@ mod tests {
                 "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
             ),
             &semantic_review,
+            VendorStatusTimingCorrelationCaptureProvenanceInput::none(),
             Path::new("target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json"),
             &summary,
             Path::new("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"),
@@ -50654,12 +50951,24 @@ mod tests {
             &payload_source_candidates,
         )?;
         let summary = sample_passive_sniff_summary_with_event_correlated_0x8e_variation(100_492);
+        let sniff_capture_receipt = sample_0x8e_sniff_capture_receipt();
+        let sniff_receipt = sample_0x8e_sniff_receipt();
 
         let receipt = vendor_status_timing_correlation_review_receipt(
             Path::new(
                 "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
             ),
             &semantic_review,
+            VendorStatusTimingCorrelationCaptureProvenanceInput {
+                sniff_capture_receipt_path: Some(Path::new(
+                    "target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json",
+                )),
+                sniff_capture_receipt: Some(&sniff_capture_receipt),
+                sniff_receipt_path: Some(Path::new(
+                    "target/sniff/pit-house-0x8e-timing-correlation/sniff-receipt.json",
+                )),
+                sniff_receipt: Some(&sniff_receipt),
+            },
             Path::new("target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json"),
             &summary,
             Path::new("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"),
@@ -50693,6 +51002,10 @@ mod tests {
                 &receipt,
                 "same_tuple_payload_variation_with_event_markers_observed"
             ),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&receipt, "capture_provenance_verified"),
             Some(true)
         );
         assert_eq!(
@@ -50745,6 +51058,108 @@ mod tests {
     }
 
     #[test]
+    fn vendor_status_timing_correlation_review_requires_provenance_for_candidate() -> TestResult {
+        let payload_source_candidates: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_PAYLOAD_SOURCE_CANDIDATES_JSON)?;
+        let semantic_review = vendor_status_payload_source_semantic_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-candidates.json",
+            ),
+            &payload_source_candidates,
+        )?;
+        let summary = sample_passive_sniff_summary_with_event_correlated_0x8e_variation(100_492);
+
+        let receipt = vendor_status_timing_correlation_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
+            ),
+            &semantic_review,
+            VendorStatusTimingCorrelationCaptureProvenanceInput::none(),
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json"),
+            &summary,
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"),
+            &complete_0x8e_timing_operator_notes_near_samples(),
+        )?;
+
+        assert_eq!(
+            json_bool(
+                &receipt,
+                "timing_correlation_candidate_without_capture_provenance"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(&receipt, "capture_provenance_verified"),
+            Some(false)
+        );
+        assert_eq!(
+            json_string(&receipt, "capture_provenance_status"),
+            Some("not_provided")
+        );
+        assert_eq!(
+            json_bool(&receipt, "timing_correlation_candidate_observed"),
+            Some(false)
+        );
+        assert_eq!(
+            json_string(&receipt, "timing_correlation_verdict"),
+            Some("insufficient_capture_provenance_missing_or_unverified")
+        );
+        assert_eq!(json_bool(&receipt, "motion_attempt_allowed"), Some(false));
+        assert_eq!(
+            json_bool(&receipt, "wheel_moved_under_openracing"),
+            Some(false)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn vendor_status_timing_correlation_review_rejects_stale_provenance() -> TestResult {
+        let payload_source_candidates: Value =
+            serde_json::from_str(MOZA_VENDOR_STATUS_PAYLOAD_SOURCE_CANDIDATES_JSON)?;
+        let semantic_review = vendor_status_payload_source_semantic_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-candidates.json",
+            ),
+            &payload_source_candidates,
+        )?;
+        let summary = sample_passive_sniff_summary_with_event_correlated_0x8e_variation(100_492);
+        let sniff_capture_receipt = sample_0x8e_sniff_capture_receipt();
+        let mut sniff_receipt = sample_0x8e_sniff_receipt();
+        sniff_receipt["scenario"] = Value::String("pit-house-setting-change".to_string());
+
+        let result = vendor_status_timing_correlation_review_receipt(
+            Path::new(
+                "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
+            ),
+            &semantic_review,
+            VendorStatusTimingCorrelationCaptureProvenanceInput {
+                sniff_capture_receipt_path: Some(Path::new(
+                    "target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json",
+                )),
+                sniff_capture_receipt: Some(&sniff_capture_receipt),
+                sniff_receipt_path: Some(Path::new(
+                    "target/sniff/pit-house-0x8e-timing-correlation/sniff-receipt.json",
+                )),
+                sniff_receipt: Some(&sniff_receipt),
+            },
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json"),
+            &summary,
+            Path::new("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"),
+            &complete_0x8e_timing_operator_notes_near_samples(),
+        );
+        let Err(error) = result else {
+            return Err("timing-correlation review must reject stale sniff receipts".into());
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("pit-house-0x8e-timing-correlation"),
+            "unexpected error: {error}"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn vendor_status_timing_correlation_review_ignores_admin_markers_for_candidate() -> TestResult {
         let payload_source_candidates: Value =
             serde_json::from_str(MOZA_VENDOR_STATUS_PAYLOAD_SOURCE_CANDIDATES_JSON)?;
@@ -50761,6 +51176,7 @@ mod tests {
                 "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
             ),
             &semantic_review,
+            VendorStatusTimingCorrelationCaptureProvenanceInput::none(),
             Path::new("target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json"),
             &summary,
             Path::new("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"),
@@ -50878,6 +51294,7 @@ mod tests {
                 "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
             ),
             &semantic_review,
+            VendorStatusTimingCorrelationCaptureProvenanceInput::none(),
             Path::new("target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json"),
             &summary,
             Path::new("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"),
@@ -50931,6 +51348,7 @@ mod tests {
                 "ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json",
             ),
             &semantic_review,
+            VendorStatusTimingCorrelationCaptureProvenanceInput::none(),
             Path::new("target/sniff/pit-house-0x8e-timing-correlation/sniff-summary.json"),
             &summary,
             Path::new("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"),
@@ -50976,6 +51394,8 @@ mod tests {
         vendor_status_timing_correlation_review(VendorStatusTimingCorrelationReviewRequest {
             json: false,
             semantic_review: &semantic_review_path,
+            sniff_capture_receipt: None,
+            sniff_receipt: None,
             summary: &summary_path,
             operator_notes: &operator_notes_path,
             json_out: &json_out,
@@ -53457,6 +53877,81 @@ mod tests {
             }));
         }
         summary
+    }
+
+    fn sample_0x8e_sniff_capture_receipt() -> Value {
+        serde_json::json!({
+            "schema_version": 1,
+            "success": true,
+            "command": "wheelctl hardware sniff-capture",
+            "generated_at_utc": "2026-05-30T12:00:00Z",
+            "capture_tool": "USBPcapCMD",
+            "usbpcapcmd_path": "C:/Program Files/Wireshark/extcap/USBPcapCMD.exe",
+            "usbpcap_interface": "\\\\.\\USBPcap2",
+            "devices": "4",
+            "hardware_doctor_path": "target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json",
+            "selector_verification": {
+                "status": "verified_moza_selector",
+                "verified_moza_selector": true,
+                "accepted_moza_protocol_evidence": true,
+                "hardware_doctor_path": "target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json",
+                "requested_usbpcap_interface": "\\\\.\\USBPcap2",
+                "requested_devices": "4",
+                "expected_moza_selectors": [],
+                "matched_device_displays": ["MOZA R5 0x346E:0x0004"]
+            },
+            "duration_ms": 180000,
+            "out_path": "target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng",
+            "process_started": true,
+            "terminated_after_duration": true,
+            "pcapng_exists": true,
+            "pcapng_size_bytes": 6259122,
+            "pcapng_sha256": "example",
+            "pcapng_finalization_succeeded": true,
+            "native_control_evidence": false,
+            "openracing_hardware_output": false,
+            "openracing_hid_device_opened": false,
+            "openracing_ffb_writes": false,
+            "openracing_output_reports": false,
+            "openracing_feature_reports": false,
+            "openracing_serial_config_commands": false,
+            "openracing_firmware_or_dfu_commands": false,
+            "satisfies_native_visible_ready": false,
+            "satisfies_smoke_ready": false,
+            "satisfies_release_ready": false
+        })
+    }
+
+    fn sample_0x8e_sniff_receipt() -> Value {
+        serde_json::json!({
+            "schema_version": 1,
+            "success": true,
+            "command": "wheelctl hardware sniff-receipt",
+            "generated_at_utc": "2026-05-30T12:03:00Z",
+            "plan_path": "ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json",
+            "pcapng_path": "target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng",
+            "pcapng_sha256": "example",
+            "pcapng_size_bytes": 6259122,
+            "operator": "Steven",
+            "app": "MOZA Pit House",
+            "scenario": "pit-house-0x8e-timing-correlation",
+            "device_note": "Moza R5 0x346E:0x0004",
+            "evidence": "Pit House 0x8E timing-correlation passive capture with complete operator event markers; raw pcap local only; OpenRacing sent no HID/output/feature/serial/firmware commands",
+            "evidence_status": "passive_external_usb_observation",
+            "native_control_evidence": false,
+            "openracing_hardware_output": false,
+            "openracing_hid_device_opened": false,
+            "openracing_ffb_writes": false,
+            "openracing_output_reports": false,
+            "openracing_feature_reports": false,
+            "openracing_serial_config_commands": false,
+            "openracing_firmware_or_dfu_commands": false,
+            "external_app_observed": true,
+            "external_app_may_have_sent_output": true,
+            "satisfies_native_visible_ready": false,
+            "satisfies_smoke_ready": false,
+            "satisfies_release_ready": false
+        })
     }
 
     fn sample_passive_sniff_summary_with_timestamped_0x8e_frames(matched_packets: u64) -> Value {

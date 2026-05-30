@@ -1029,6 +1029,12 @@ pub enum MozaCommands {
         /// Stored payload-source semantic review receipt
         #[arg(long)]
         semantic_review: std::path::PathBuf,
+        /// Optional passive capture helper receipt from wheelctl hardware sniff-capture
+        #[arg(long)]
+        sniff_capture_receipt: Option<std::path::PathBuf>,
+        /// Optional derived passive sniff receipt from wheelctl hardware sniff-receipt
+        #[arg(long)]
+        sniff_receipt: Option<std::path::PathBuf>,
         /// Derived passive sniff summary from wheelctl hardware sniff-summary
         #[arg(long)]
         summary: std::path::PathBuf,

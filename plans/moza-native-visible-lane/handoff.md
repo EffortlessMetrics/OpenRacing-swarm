@@ -652,6 +652,13 @@ renders it, capture event markers require the capture to be running, and
 receipt/summary/bundle/timing-review commands require completed capture
 artifacts.
 
+The future 0x8E timing-correlation review is now provenance-bound. Run it with
+the matching `sniff-capture-receipt.json`, `sniff-receipt.json`,
+`sniff-summary.json`, and `operator-notes.md` from the same completed
+`pit-house-0x8e-timing-correlation` capture. A review without matching capture
+provenance can remain as blocked legacy evidence, but it cannot surface a
+candidate timing correlation or justify a read-only/status plan.
+
 ## Do Not Do
 
 - Do not create another authorization receipt from this handoff.
