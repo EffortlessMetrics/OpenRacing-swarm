@@ -2021,6 +2021,7 @@ commands = [
   "cargo test --locked -p wheelctl --bin wheelctl vendor_protocol_evidence_review -- --nocapture",
   "cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture",
   "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo clippy --locked -p racing-wheel-hid-moza-protocol --all-targets --all-features -- -D warnings",
   "cargo run --locked -p openracing-tools --bin package-surface -- --check",
   "python scripts/policy_file.py",
   "git diff --check",
@@ -2970,6 +2971,26 @@ claim_boundary = "No-output passive-capture command guard only; wheelctl hardwar
 commands = [
   "python scripts/cargo_fmt_workspace.py",
   "cargo test --locked -p wheelctl --bin wheelctl sniff_capture -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture",
+  "cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
+id = "bind-0x8e-review-to-fresh-capture-doctor"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-bind-0x8e-review-to-fresh-capture-doctor"
+current_pointer = "crates/cli/src/commands/moza.rs"
+claim_boundary = "No-output timing-correlation review provenance guard only; requires future 0x8E timing-correlation review capture provenance to include sniff-capture hardware-doctor freshness metadata with the 10-minute selector window before candidate timing evidence can be surfaced. Opens no HID or serial device, sends no read-only query/output/configuration/firmware/PIDFF command, runs no live capture, creates no authorization, promotes no semantic decode or tuple sendability, and keeps live probe, PIDFF rerun, force escalation, native-control, native-visible, smoke-ready, simulator, coexistence, high-torque, release-ready, output, and wheel-movement claims false."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_review -- --nocapture",
   "cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture",
   "cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture",
   "cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture",
