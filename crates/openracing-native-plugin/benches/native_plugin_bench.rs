@@ -7,6 +7,8 @@ use openracing_native_plugin::{
     CURRENT_ABI_VERSION, NativePluginConfig, SpscChannel, check_abi_compatibility,
 };
 
+const BENCH_CHANNEL_CAPACITY: u32 = 256;
+
 fn bench_abi_check(c: &mut Criterion) {
     c.bench_function("abi_check_compatible", |b| {
         b.iter(|| check_abi_compatibility(black_box(CURRENT_ABI_VERSION)))
@@ -58,7 +60,8 @@ fn bench_spsc_different_sizes(c: &mut Criterion) {
 
     for size in [16, 64, 256, 1024, 4096].iter() {
         let frame_size = *size;
-        let channel = SpscChannel::new(frame_size).expect("Failed to create channel");
+        let channel = SpscChannel::with_capacity(frame_size, BENCH_CHANNEL_CAPACITY)
+            .expect("Failed to create channel");
         let frame = vec![0x42u8; frame_size];
 
         group.bench_with_input(BenchmarkId::new("write", size), &frame_size, |b, _| {

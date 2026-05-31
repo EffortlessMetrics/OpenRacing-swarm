@@ -5,18 +5,33 @@
 
 #![allow(unused_comparisons)]
 use racing_wheel_engine::{
-    DeviceEvent,
+    DeviceEvent, HidPort, VirtualDevice, VirtualHidPort,
     hid::{RTSetup, create_hid_port},
 };
 use racing_wheel_schemas::prelude::DeviceId;
+use std::env;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::time::{Duration, timeout};
 
+fn create_test_hid_port() -> Result<Box<dyn HidPort>, Box<dyn std::error::Error>> {
+    if env::var_os("OPENRACING_LIVE_HID_TESTS").is_some() {
+        return create_hid_port();
+    }
+
+    let mut port = VirtualHidPort::new();
+    let device_id: DeviceId = "virtual-hid-integration-wheel".parse()?;
+    port.add_device(VirtualDevice::new(
+        device_id,
+        "Virtual HID Integration Wheel".to_string(),
+    ))?;
+    Ok(Box::new(port))
+}
+
 /// Test HID port creation for current platform
 #[tokio::test]
 async fn test_hid_port_creation() -> Result<(), Box<dyn std::error::Error>> {
-    let port = create_hid_port()?;
+    let port = create_test_hid_port()?;
 
     // Should be able to list devices (even if empty)
     let devices = port.list_devices().await?;
@@ -38,7 +53,7 @@ async fn test_hid_port_creation() -> Result<(), Box<dyn std::error::Error>> {
 /// Test device enumeration and refresh
 #[tokio::test]
 async fn test_device_enumeration_and_refresh() -> Result<(), Box<dyn std::error::Error>> {
-    let port = create_hid_port()?;
+    let port = create_test_hid_port()?;
 
     // Initial enumeration
     let devices1 = port.list_devices().await?;
@@ -64,7 +79,7 @@ async fn test_device_enumeration_and_refresh() -> Result<(), Box<dyn std::error:
 /// Test device opening and basic operations
 #[tokio::test]
 async fn test_device_opening_and_operations() -> Result<(), Box<dyn std::error::Error>> {
-    let port = create_hid_port()?;
+    let port = create_test_hid_port()?;
     let devices = port.list_devices().await?;
 
     if devices.is_empty() {
@@ -113,7 +128,7 @@ async fn test_device_opening_and_operations() -> Result<(), Box<dyn std::error::
 /// Test device monitoring for connect/disconnect events
 #[tokio::test]
 async fn test_device_monitoring() -> Result<(), Box<dyn std::error::Error>> {
-    let port = create_hid_port()?;
+    let port = create_test_hid_port()?;
 
     // Start monitoring
     let mut event_rx = port.monitor_devices().await?;
@@ -147,7 +162,7 @@ async fn test_device_monitoring() -> Result<(), Box<dyn std::error::Error>> {
 /// Test RT-safe FFB writing under load
 #[tokio::test]
 async fn test_rt_safe_ffb_writing() -> Result<(), Box<dyn std::error::Error>> {
-    let port = create_hid_port()?;
+    let port = create_test_hid_port()?;
     let devices = port.list_devices().await?;
 
     if devices.is_empty() {
@@ -205,7 +220,7 @@ async fn test_rt_safe_ffb_writing() -> Result<(), Box<dyn std::error::Error>> {
 /// Test telemetry reading consistency
 #[tokio::test]
 async fn test_telemetry_reading_consistency() -> Result<(), Box<dyn std::error::Error>> {
-    let port = create_hid_port()?;
+    let port = create_test_hid_port()?;
     let devices = port.list_devices().await?;
 
     if devices.is_empty() {
@@ -297,7 +312,7 @@ fn test_rt_setup_and_cleanup() -> Result<(), Box<dyn std::error::Error>> {
 /// Test device capabilities validation
 #[tokio::test]
 async fn test_device_capabilities_validation() -> Result<(), Box<dyn std::error::Error>> {
-    let port = create_hid_port()?;
+    let port = create_test_hid_port()?;
     let devices = port.list_devices().await?;
 
     for device_info in &devices {
@@ -345,7 +360,7 @@ async fn test_device_capabilities_validation() -> Result<(), Box<dyn std::error:
 /// Test error handling and recovery
 #[tokio::test]
 async fn test_error_handling_and_recovery() -> Result<(), Box<dyn std::error::Error>> {
-    let port = create_hid_port()?;
+    let port = create_test_hid_port()?;
 
     // Try to open non-existent device
     let fake_id = DeviceId::new("non-existent-device".to_string())?;
@@ -375,7 +390,7 @@ async fn test_error_handling_and_recovery() -> Result<(), Box<dyn std::error::Er
 /// Benchmark FFB write latency
 #[tokio::test]
 async fn test_ffb_write_latency_benchmark() -> Result<(), Box<dyn std::error::Error>> {
-    let port = create_hid_port()?;
+    let port = create_test_hid_port()?;
     let devices = port.list_devices().await?;
 
     if devices.is_empty() {

@@ -30,6 +30,22 @@ The Coverage workflow runs on:
 
 Other PRs do not run coverage by default to save CI cost.
 
+That skip is allowed by the legacy workflow, but it is not coverage proof. The
+quality closure receipt reports skipped coverage as not closure-satisfied:
+
+```bash
+cargo xtask quality-closure --check
+```
+
+The receipt is written under `target/xtask/quality-closure/` and records the
+current state of RIPR+, workflow skip behavior, Codecov patch status, and owned
+coverage/RIPR exceptions.
+
+On Windows, direct workspace `cargo llvm-cov` collection can also fail before a
+coverage percentage is produced if the generated object list exceeds the command
+line length limit. That is tracked as owned coverage infrastructure debt, not as
+a coverage pass.
+
 ## Artifacts
 
 Durable receipts are:
@@ -59,6 +75,8 @@ Without this token, coverage artifacts are still generated and uploaded to GitHu
 ## Codecov comments
 
 Codecov comments are **disabled**. Coverage status is advisory only and does not block merges.
+While Codecov patch status is informational, the quality closure receipt reports
+`patch_coverage_status = "advisory"` rather than treating it as a hard pass.
 
 If you need coverage details, check:
 

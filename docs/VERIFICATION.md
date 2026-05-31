@@ -43,3 +43,26 @@ Pull requests run advisory `ripr` evidence, impacted evidence, fast gates, docs-
 `ripr` may suggest focused tests or route targeted mutation. It does not edit code, generate tests, run mutation, or make merge decisions by default.
 
 Pull request artifacts and summaries are diff-scoped. They must not be reused as repo-scope README badges.
+
+## Quality Closure
+
+RIPR+ zero and coverage closure are tracked by the quality closure lane:
+
+- Proposal: `docs/proposals/OR-PROP-0002-quality-closure-lane.md`
+- Spec: `docs/specs/OR-SPEC-0003-ripr-plus-coverage-closure.md`
+- Plan: `plans/quality-closure/implementation-plan.md`
+- Exception ledger: `policy/quality-closure-exceptions.toml`
+
+Generate the current receipt:
+
+```bash
+cargo xtask quality-closure --check
+```
+
+The receipt distinguishes `pass`, `fail`, `advisory`, `skipped`, and
+`not_applicable`. Skipped coverage is not a coverage pass. Informational
+Codecov patch status is advisory until a later PR turns it into a hard gate or
+replaces it with an equivalent repo-owned patch coverage check.
+
+If a local coverage or RIPR+ generator cannot produce evidence, that is tracked
+as closure debt in the exception ledger. It is not treated as a successful gate.

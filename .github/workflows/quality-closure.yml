@@ -1,0 +1,47 @@
+name: Quality Closure
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality-closure:
+    name: RIPR+ / coverage closure receipt
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate quality closure receipt
+        run: cargo xtask quality-closure --check
+
+      - name: Summarize quality closure
+        if: always()
+        run: |
+          {
+            echo "## Quality Closure"
+            echo ""
+            if [ -f target/xtask/quality-closure/latest.md ]; then
+              cat target/xtask/quality-closure/latest.md
+            else
+              echo "No quality closure receipt was produced."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload quality closure receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-closure
+          path: |
+            target/xtask/quality-closure/latest.json
+            target/xtask/quality-closure/latest.md
+          if-no-files-found: warn

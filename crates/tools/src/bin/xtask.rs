@@ -14,6 +14,7 @@ const BADGE_ENDPOINT_DIR: &str = "badges";
 const BADGE_ENDPOINT_TARGET_DIR: &str = "target/xtask/badges";
 const RIPR_PR_DIR: &str = "target/ripr/pr";
 const RIPR_REVIEW_DIR: &str = "target/ripr/review";
+const QUALITY_CLOSURE_DIR: &str = "target/xtask/quality-closure";
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 struct ShieldsEndpointBadge {
@@ -26,13 +27,28 @@ struct ShieldsEndpointBadge {
 
 #[derive(Debug, PartialEq, Eq)]
 enum CommandKind {
-    Badges { check: bool },
-    RiprPr { check: bool },
-    RiprReviewComments { check: bool },
+    Badges {
+        check: bool,
+    },
+    RiprPr {
+        check: bool,
+    },
+    RiprReviewComments {
+        check: bool,
+    },
     ImpactedEvidence,
-    MutantsPr { args: Vec<String> },
+    MutantsPr {
+        args: Vec<String>,
+    },
+    QualityClosure {
+        check: bool,
+        json_out: PathBuf,
+        md_out: PathBuf,
+    },
     CheckFilePolicy,
-    DocsSync { check: bool },
+    DocsSync {
+        check: bool,
+    },
     Pr,
     Help,
 }
@@ -70,6 +86,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> anyhow::Result<CommandK
         }
         "impacted-evidence" => Ok(CommandKind::ImpactedEvidence),
         "mutants-pr" => Ok(CommandKind::MutantsPr { args: rest }),
+        "quality-closure" => parse_quality_closure_args(rest),
         "check-file-policy" => Ok(CommandKind::CheckFilePolicy),
         "pr" => Ok(CommandKind::Pr),
         "-h" | "--help" | "help" => Ok(CommandKind::Help),
@@ -84,6 +101,11 @@ fn run(command: CommandKind) -> anyhow::Result<()> {
         CommandKind::RiprReviewComments { check } => ripr_review_comments(check),
         CommandKind::ImpactedEvidence => impacted_evidence(),
         CommandKind::MutantsPr { args } => mutants_pr(&args),
+        CommandKind::QualityClosure {
+            check,
+            json_out,
+            md_out,
+        } => quality_closure(check, &json_out, &md_out),
         CommandKind::CheckFilePolicy => run_python_script("scripts/policy_file.py", &[]),
         CommandKind::DocsSync { check } => docs_sync(check),
         CommandKind::Pr => pr_gate(),
@@ -95,7 +117,7 @@ fn run(command: CommandKind) -> anyhow::Result<()> {
 }
 
 fn usage() -> &'static str {
-    "Usage: cargo xtask <command> [--check]\n\nCommands:\n  badges [--check]\n  ripr-pr [--check]\n  ripr-review-comments [--check]\n  impacted-evidence\n  mutants-pr [--changed] [--full-owner] [--dry-run]\n  check-file-policy\n  docs-sync [--check]\n  pr"
+    "Usage: cargo xtask <command> [--check]\n\nCommands:\n  badges [--check]\n  ripr-pr [--check]\n  ripr-review-comments [--check]\n  impacted-evidence\n  mutants-pr [--changed] [--full-owner] [--dry-run]\n  quality-closure [--check] [--json-out PATH] [--md-out PATH]\n  check-file-policy\n  docs-sync [--check]\n  pr"
 }
 
 fn badges(check: bool) -> anyhow::Result<()> {
@@ -381,6 +403,340 @@ fn mutants_pr(args: &[String]) -> anyhow::Result<()> {
     )
 }
 
+fn parse_quality_closure_args(args: Vec<String>) -> anyhow::Result<CommandKind> {
+    let mut check = false;
+    let mut json_out: Option<PathBuf> = None;
+    let mut md_out: Option<PathBuf> = None;
+    let mut iter = args.into_iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--check" => check = true,
+            "--json-out" => {
+                let Some(path) = iter.next() else {
+                    bail!("--json-out requires a path");
+                };
+                json_out = Some(PathBuf::from(path));
+            }
+            "--md-out" => {
+                let Some(path) = iter.next() else {
+                    bail!("--md-out requires a path");
+                };
+                md_out = Some(PathBuf::from(path));
+            }
+            _ => bail!("unsupported quality-closure argument `{arg}`"),
+        }
+    }
+
+    Ok(CommandKind::QualityClosure {
+        check,
+        json_out: json_out
+            .unwrap_or_else(|| PathBuf::from(QUALITY_CLOSURE_DIR).join("latest.json")),
+        md_out: md_out.unwrap_or_else(|| PathBuf::from(QUALITY_CLOSURE_DIR).join("latest.md")),
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct QualityExceptionLedger {
+    schema_version: String,
+    exception: Vec<QualityException>,
+}
+
+#[derive(Debug, Deserialize)]
+struct QualityException {
+    id: String,
+    owner: String,
+    path: String,
+    kind: String,
+    reason: String,
+    test_surface: Vec<String>,
+    review_after: String,
+    removal_condition: String,
+    #[serde(default = "default_active_status")]
+    status: String,
+}
+
+fn default_active_status() -> String {
+    "active".to_string()
+}
+
+fn quality_closure(check: bool, json_out: &Path, md_out: &Path) -> anyhow::Result<()> {
+    let workspace_root = workspace_root_path()?;
+    let receipt = build_quality_closure_receipt(&workspace_root)?;
+    let json_path = workspace_root.join(json_out);
+    if let Some(parent) = json_path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    write_json_pretty(&json_path, &receipt)?;
+    write_quality_closure_markdown(&workspace_root.join(md_out), &receipt)?;
+
+    if check {
+        validate_json_file(&json_path)?;
+        ensure_non_empty_file(&workspace_root.join(md_out))?;
+    }
+
+    stdout_line(format_args!(
+        "quality-closure: wrote {} and {}",
+        json_out.display(),
+        md_out.display()
+    ));
+    Ok(())
+}
+
+fn build_quality_closure_receipt(workspace_root: &Path) -> anyhow::Result<serde_json::Value> {
+    let ledger = read_quality_exception_ledger(workspace_root)?;
+    validate_quality_exception_ledger(&ledger)?;
+
+    let ripr_unresolved_gap_count =
+        read_ripr_plus_badge_count(&workspace_root.join("badges/ripr-plus.json"))?;
+    let coverage_workflow =
+        fs::read_to_string(workspace_root.join(".github/workflows/coverage.yml"))
+            .with_context(|| "failed to read .github/workflows/coverage.yml")?;
+    let ci_workflow = fs::read_to_string(workspace_root.join(".github/workflows/ci.yml"))
+        .with_context(|| "failed to read .github/workflows/ci.yml")?;
+    let codecov = fs::read_to_string(workspace_root.join("codecov.yml"))
+        .with_context(|| "failed to read codecov.yml")?;
+
+    let coverage_pr_label_gated = coverage_pr_job_is_label_gated(&coverage_workflow);
+    let legacy_ci_coverage_manual_only = ci_coverage_job_is_manual_only(&ci_workflow);
+    let coverage_workflow_skipped = coverage_pr_label_gated || legacy_ci_coverage_manual_only;
+    let patch_coverage_informational = patch_coverage_is_informational(&codecov)?;
+    let patch_coverage_status = if patch_coverage_informational {
+        "advisory"
+    } else {
+        "pass"
+    };
+    let coverage_required = !coverage_workflow_skipped && !patch_coverage_informational;
+
+    let active_exceptions = ledger
+        .exception
+        .iter()
+        .filter(|entry| entry.status == "active")
+        .count();
+    let ripr_plus_unowned_gap_count = ledger
+        .exception
+        .iter()
+        .filter(|entry| entry.status == "active" && entry.kind == "ripr_unowned_gap")
+        .count();
+    let uncovered_owned_surface_count = ledger
+        .exception
+        .iter()
+        .filter(|entry| entry.status == "active" && entry.kind == "owned_coverage_gap")
+        .count();
+
+    let quality_closure_satisfied = ripr_unresolved_gap_count == 0
+        && ripr_plus_unowned_gap_count == 0
+        && coverage_required
+        && !coverage_workflow_skipped
+        && patch_coverage_status == "pass"
+        && uncovered_owned_surface_count == 0;
+    let status = if quality_closure_satisfied {
+        "pass"
+    } else {
+        "advisory"
+    };
+
+    Ok(serde_json::json!({
+        "schema_version": 1,
+        "lane": "ripr-plus-coverage-closure",
+        "status": status,
+        "quality_closure_satisfied": quality_closure_satisfied,
+        "ripr_unresolved_gap_count": ripr_unresolved_gap_count,
+        "ripr_plus_unowned_gap_count": ripr_plus_unowned_gap_count,
+        "coverage_required": coverage_required,
+        "coverage_workflow_skipped": coverage_workflow_skipped,
+        "patch_coverage_status": patch_coverage_status,
+        "uncovered_owned_surface_count": uncovered_owned_surface_count,
+        "exception_count": active_exceptions,
+        "workflow_observations": {
+            "coverage_pr_label_gated": coverage_pr_label_gated,
+            "legacy_ci_coverage_manual_only": legacy_ci_coverage_manual_only,
+            "codecov_patch_informational": patch_coverage_informational
+        },
+        "result_states": [
+            {
+                "name": "ripr_plus_zero",
+                "status": if ripr_unresolved_gap_count == 0 { "pass" } else { "fail" },
+                "satisfied": ripr_unresolved_gap_count == 0,
+                "details": "badges/ripr-plus.json message is treated as the repo-scope RIPR+ unresolved gap count"
+            },
+            {
+                "name": "coverage_required_gate",
+                "status": if coverage_required { "pass" } else { "fail" },
+                "satisfied": coverage_required,
+                "details": "coverage is not closure-satisfied while PR coverage can skip or patch coverage remains informational"
+            },
+            {
+                "name": "coverage_workflow_execution",
+                "status": if coverage_workflow_skipped { "skipped" } else { "pass" },
+                "satisfied": !coverage_workflow_skipped,
+                "details": "skipped coverage is reported explicitly and is not equivalent to coverage pass"
+            },
+            {
+                "name": "patch_coverage",
+                "status": patch_coverage_status,
+                "satisfied": patch_coverage_status == "pass",
+                "details": "Codecov patch coverage remains advisory while its status is informational"
+            },
+            {
+                "name": "mutation_expansion",
+                "status": "not_applicable",
+                "satisfied": true,
+                "details": "mutation expansion is outside this scaffold PR unless routed by existing RIPR policy"
+            }
+        ],
+        "next_pr_queue": [
+            "core protocol/domain logic",
+            "receipt/schema/verifier logic",
+            "CLI parse/guard rails",
+            "CI/policy/xtask surfaces",
+            "hardware-only seams behind fake transports"
+        ],
+        "claim_boundary": [
+            "quality-closure-measurement-only",
+            "not-full-line-coverage-claim",
+            "not-mutation-completeness",
+            "not-hardware-validation",
+            "not-release-readiness"
+        ]
+    }))
+}
+
+fn read_quality_exception_ledger(workspace_root: &Path) -> anyhow::Result<QualityExceptionLedger> {
+    let path = workspace_root.join("policy/quality-closure-exceptions.toml");
+    let content =
+        fs::read_to_string(&path).with_context(|| format!("failed to read {}", path.display()))?;
+    toml::from_str(&content).with_context(|| format!("invalid TOML in {}", path.display()))
+}
+
+fn validate_quality_exception_ledger(ledger: &QualityExceptionLedger) -> anyhow::Result<()> {
+    if ledger.schema_version != "1.0" {
+        bail!("quality exception ledger schema_version must be 1.0");
+    }
+
+    for entry in &ledger.exception {
+        validate_required_text(&entry.id, "id")?;
+        validate_required_text(&entry.owner, "owner")?;
+        validate_required_text(&entry.path, "path")?;
+        validate_required_text(&entry.kind, "kind")?;
+        validate_required_text(&entry.reason, "reason")?;
+        validate_required_text(&entry.review_after, "review_after")?;
+        validate_required_text(&entry.removal_condition, "removal_condition")?;
+        if entry.test_surface.is_empty() {
+            bail!("quality exception `{}` must list test_surface", entry.id);
+        }
+        if !entry
+            .review_after
+            .chars()
+            .enumerate()
+            .all(|(index, value)| {
+                matches!(index, 4 | 7)
+                    .then_some(value == '-')
+                    .unwrap_or_else(|| value.is_ascii_digit())
+            })
+            || entry.review_after.len() != 10
+        {
+            bail!(
+                "quality exception `{}` review_after must use YYYY-MM-DD",
+                entry.id
+            );
+        }
+        if entry.status != "active" && entry.status != "retired" {
+            bail!(
+                "quality exception `{}` status must be active or retired",
+                entry.id
+            );
+        }
+    }
+    Ok(())
+}
+
+fn validate_required_text(value: &str, field: &str) -> anyhow::Result<()> {
+    if value.trim().is_empty() {
+        bail!("quality exception field `{field}` must not be empty");
+    }
+    Ok(())
+}
+
+fn read_ripr_plus_badge_count(path: &Path) -> anyhow::Result<u64> {
+    let content =
+        fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
+    let value: serde_json::Value = serde_json::from_str(&content)
+        .with_context(|| format!("invalid JSON in {}", path.display()))?;
+    let Some(message) = value.get("message").and_then(serde_json::Value::as_str) else {
+        bail!("ripr+ badge missing string message");
+    };
+    message
+        .parse::<u64>()
+        .with_context(|| format!("ripr+ badge message `{message}` is not a gap count"))
+}
+
+fn coverage_pr_job_is_label_gated(workflow: &str) -> bool {
+    workflow.contains("github.event_name == 'push'")
+        && workflow.contains("github.event_name == 'workflow_dispatch'")
+        && workflow.contains("github.event.pull_request.labels.*.name")
+}
+
+fn ci_coverage_job_is_manual_only(workflow: &str) -> bool {
+    workflow.contains("coverage:")
+        && workflow.contains("name: Code Coverage")
+        && workflow.contains("if: github.event_name == 'workflow_dispatch'")
+}
+
+fn patch_coverage_is_informational(codecov: &str) -> anyhow::Result<bool> {
+    let value: serde_yaml::Value =
+        serde_yaml::from_str(codecov).with_context(|| "invalid YAML in codecov.yml")?;
+    yaml_path_bool(
+        &value,
+        &["coverage", "status", "patch", "default", "informational"],
+    )
+    .with_context(|| "codecov.yml missing coverage.status.patch.default.informational")
+}
+
+fn yaml_path_bool(value: &serde_yaml::Value, path: &[&str]) -> Option<bool> {
+    let mut cursor = value;
+    for key in path {
+        let mapping = cursor.as_mapping()?;
+        cursor = mapping.get(serde_yaml::Value::String((*key).to_string()))?;
+    }
+    cursor.as_bool()
+}
+
+fn write_quality_closure_markdown(path: &Path, receipt: &serde_json::Value) -> anyhow::Result<()> {
+    let Some(parent) = path.parent() else {
+        bail!(
+            "quality closure markdown path has no parent: {}",
+            path.display()
+        );
+    };
+    fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
+    let status = receipt
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("unknown");
+    let mut content = String::new();
+    content.push_str("# Quality Closure Receipt\n\n");
+    content.push_str(&format!("Status: `{status}`\n\n"));
+    content.push_str("| Field | Value |\n| --- | ---: |\n");
+    for field in [
+        "ripr_unresolved_gap_count",
+        "ripr_plus_unowned_gap_count",
+        "coverage_required",
+        "coverage_workflow_skipped",
+        "patch_coverage_status",
+        "uncovered_owned_surface_count",
+        "exception_count",
+    ] {
+        let value = receipt
+            .get(field)
+            .map(serde_json::Value::to_string)
+            .unwrap_or_else(|| "null".to_string());
+        content.push_str(&format!("| `{field}` | `{value}` |\n"));
+    }
+    content.push_str("\nSkipped coverage is not treated as a pass by this receipt.\n");
+    fs::write(path, content).with_context(|| format!("failed to write {}", path.display()))
+}
+
 fn docs_sync(_check: bool) -> anyhow::Result<()> {
     run_status(
         Command::new("cargo")
@@ -478,13 +834,20 @@ fn compare_files(committed: &Path, generated: &Path) -> anyhow::Result<()> {
 
 fn run_python_script(script: &str, args: &[&str]) -> anyhow::Result<()> {
     let workspace_root = workspace_root_path()?;
-    run_status(
-        Command::new("python3")
-            .arg(script)
-            .args(args)
-            .current_dir(workspace_root),
-        script,
-    )
+    let mut python3 = Command::new("python3");
+    python3.arg(script).args(args).current_dir(&workspace_root);
+    match python3.stdin(Stdio::null()).status() {
+        Ok(status) if status.success() => Ok(()),
+        Ok(status) => bail!("{script} failed with status {status}"),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => run_status(
+            Command::new("python")
+                .arg(script)
+                .args(args)
+                .current_dir(workspace_root),
+            script,
+        ),
+        Err(error) => Err(error).with_context(|| format!("failed to execute {script}")),
+    }
 }
 
 fn run_status(command: &mut Command, label: &str) -> anyhow::Result<()> {
@@ -557,6 +920,126 @@ mod tests {
     fn parses_badges_check() -> anyhow::Result<()> {
         let command = parse_args(["badges".to_string(), "--check".to_string()].into_iter())?;
         assert_eq!(command, CommandKind::Badges { check: true });
+        Ok(())
+    }
+
+    #[test]
+    fn quality_exception_ledger_requires_owned_reviewable_entries() {
+        let ledger = QualityExceptionLedger {
+            schema_version: "1.0".to_string(),
+            exception: vec![QualityException {
+                id: "coverage-pr-label-gated".to_string(),
+                owner: "release/ci".to_string(),
+                path: ".github/workflows/coverage.yml".to_string(),
+                kind: "coverage_gate_debt".to_string(),
+                reason: "PR coverage is label-gated".to_string(),
+                test_surface: vec!["cargo xtask quality-closure --check".to_string()],
+                review_after: "2026-06-30".to_string(),
+                removal_condition: "Make patch coverage required.".to_string(),
+                status: "active".to_string(),
+            }],
+        };
+
+        assert!(validate_quality_exception_ledger(&ledger).is_ok());
+
+        let invalid = QualityExceptionLedger {
+            schema_version: "1.0".to_string(),
+            exception: vec![QualityException {
+                id: "missing-owner".to_string(),
+                owner: String::new(),
+                path: ".github/workflows/coverage.yml".to_string(),
+                kind: "coverage_gate_debt".to_string(),
+                reason: "PR coverage is label-gated".to_string(),
+                test_surface: vec!["cargo xtask quality-closure --check".to_string()],
+                review_after: "2026-06-30".to_string(),
+                removal_condition: "Make patch coverage required.".to_string(),
+                status: "active".to_string(),
+            }],
+        };
+
+        assert!(validate_quality_exception_ledger(&invalid).is_err());
+    }
+
+    #[test]
+    fn quality_closure_marks_label_gated_coverage_as_skipped() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        fs::create_dir_all(root.join("badges"))?;
+        fs::create_dir_all(root.join(".github/workflows"))?;
+        fs::create_dir_all(root.join("policy"))?;
+
+        fs::write(
+            root.join("badges/ripr-plus.json"),
+            r#"{"schemaVersion":1,"label":"ripr+","message":"0","color":"brightgreen"}"#,
+        )?;
+        fs::write(
+            root.join(".github/workflows/coverage.yml"),
+            "name: Code Coverage\njobs:\n  coverage:\n    if: >-\n      github.event_name == 'push' ||\n      github.event_name == 'workflow_dispatch' ||\n      contains(github.event.pull_request.labels.*.name, 'coverage')\n",
+        )?;
+        fs::write(
+            root.join(".github/workflows/ci.yml"),
+            "jobs:\n  coverage:\n    name: Code Coverage\n    if: github.event_name == 'workflow_dispatch'\n",
+        )?;
+        fs::write(
+            root.join("codecov.yml"),
+            "coverage:\n  status:\n    patch:\n      default:\n        informational: true\n",
+        )?;
+        fs::write(
+            root.join("policy/quality-closure-exceptions.toml"),
+            r#"
+schema_version = "1.0"
+
+[[exception]]
+id = "coverage-pr-label-gated"
+owner = "release/ci"
+path = ".github/workflows/coverage.yml"
+kind = "coverage_gate_debt"
+reason = "PR coverage is label-gated while the closure lane is measured."
+test_surface = ["cargo xtask quality-closure --check"]
+review_after = "2026-06-30"
+removal_condition = "Make patch coverage required or add a required non-skipped coverage sentinel."
+"#,
+        )?;
+
+        let receipt = build_quality_closure_receipt(root)?;
+        assert_eq!(receipt["ripr_unresolved_gap_count"], 0);
+        assert_eq!(receipt["coverage_required"], false);
+        assert_eq!(receipt["coverage_workflow_skipped"], true);
+        assert_eq!(receipt["patch_coverage_status"], "advisory");
+        assert_eq!(
+            receipt["result_states"][2]["status"],
+            serde_json::Value::String("skipped".to_string())
+        );
+        assert_eq!(receipt["quality_closure_satisfied"], false);
+        Ok(())
+    }
+
+    #[test]
+    fn parses_quality_closure_outputs() -> anyhow::Result<()> {
+        let command = parse_args(
+            [
+                "quality-closure".to_string(),
+                "--check".to_string(),
+                "--json-out".to_string(),
+                "target/custom.json".to_string(),
+                "--md-out".to_string(),
+                "target/custom.md".to_string(),
+            ]
+            .into_iter(),
+        )?;
+
+        match command {
+            CommandKind::QualityClosure {
+                check,
+                json_out,
+                md_out,
+            } => {
+                assert!(check);
+                assert_eq!(json_out, PathBuf::from("target/custom.json"));
+                assert_eq!(md_out, PathBuf::from("target/custom.md"));
+            }
+            other => bail!("expected quality closure command, got {other:?}"),
+        }
         Ok(())
     }
 }

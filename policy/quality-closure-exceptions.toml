@@ -1,0 +1,162 @@
+schema_version = "1.0"
+
+# RIPR+/coverage closure exceptions are not waivers from testing. They are the
+# owned inventory of surfaces that are not yet closure-satisfied by the quality
+# receipt. Remove entries as gates become required or explicitly out of scope.
+
+[[exception]]
+id = "coverage-pr-label-gated"
+owner = "release/ci"
+path = ".github/workflows/coverage.yml"
+kind = "coverage_gate_debt"
+reason = "The standalone Code Coverage workflow runs for pushes, manual dispatch, or labeled PRs; unlabeled PRs can show skipped coverage."
+test_surface = [
+  "cargo xtask quality-closure --check",
+  ".github/workflows/coverage.yml",
+]
+review_after = "2026-06-30"
+removal_condition = "Patch coverage is required on PRs or a required non-skipped coverage sentinel proves coverage status separately from the legacy workflow."
+
+[[exception]]
+id = "legacy-ci-coverage-manual-only"
+owner = "release/ci"
+path = ".github/workflows/ci.yml"
+kind = "coverage_gate_debt"
+reason = "The legacy CI Code Coverage job is workflow_dispatch-only and must not be interpreted as a PR coverage pass."
+test_surface = [
+  "cargo xtask quality-closure --check",
+  ".github/workflows/ci.yml",
+]
+review_after = "2026-06-30"
+removal_condition = "The legacy manual-only coverage job is removed, renamed to avoid check-rollup ambiguity, or replaced by a required coverage sentinel."
+
+[[exception]]
+id = "codecov-patch-informational"
+owner = "release/ci"
+path = "codecov.yml"
+kind = "coverage_gate_debt"
+reason = "Codecov patch coverage is configured as informational while the closure lane establishes measured ratchets."
+test_surface = [
+  "cargo xtask quality-closure --check",
+  "codecov.yml",
+]
+review_after = "2026-06-30"
+removal_condition = "Patch coverage becomes a required status or an equivalent repo-owned patch coverage gate replaces it."
+
+[[exception]]
+id = "ripr-plus-test-efficiency-generator-missing"
+owner = "release/ci"
+path = "crates/tools/src/bin/xtask.rs"
+kind = "ripr_gate_debt"
+reason = "cargo xtask badges --check cannot currently regenerate the ripr+ endpoint because ripr repo-badge-plus formats require target/ripr/reports/test-efficiency.json, but this xtask does not expose the referenced test-efficiency-report generator."
+test_surface = [
+  "cargo xtask badges --check",
+  "cargo xtask quality-closure --check",
+]
+review_after = "2026-06-30"
+removal_condition = "A repo-owned test-efficiency report generator exists and cargo xtask badges --check passes without pre-seeded target artifacts, or the ripr+ endpoint generation policy is replaced by another checked source."
+
+[[exception]]
+id = "coverage-windows-command-line-limit"
+owner = "release/ci"
+path = "scripts/coverage.sh"
+kind = "coverage_gate_debt"
+reason = "The direct cargo llvm-cov workspace command can fail on Windows with os error 206 because the generated object list exceeds the command-line length limit."
+test_surface = [
+  "scripts/coverage.sh --json",
+  "cargo llvm-cov --workspace --all-features --codecov",
+  "cargo xtask quality-closure --check",
+]
+review_after = "2026-06-30"
+removal_condition = "The local coverage helper uses a Windows-safe collection strategy or the required coverage sentinel runs in an environment where the command-line length limit is not hit."
+
+[[exception]]
+id = "coverage-generated-protobuf"
+owner = "schemas"
+path = "**/*.pb.rs"
+kind = "generated"
+reason = "Generated protobuf output is excluded from human-authored Rust coverage accounting."
+test_surface = [
+  ".github/workflows/coverage.yml",
+  "scripts/coverage.sh",
+]
+review_after = "2026-09-30"
+removal_condition = "Generated protobuf coverage is accounted through generator conformance tests or removed from the Rust coverage surface."
+
+[[exception]]
+id = "coverage-test-harness-code"
+owner = "core"
+path = "*/tests/*"
+kind = "generated"
+reason = "Committed test harnesses are not counted as product code coverage targets."
+test_surface = [
+  ".github/workflows/coverage.yml",
+  "scripts/coverage.sh",
+]
+review_after = "2026-09-30"
+removal_condition = "Coverage policy starts measuring test harness execution separately from product coverage."
+
+[[exception]]
+id = "coverage-bench-fuzz-surfaces"
+owner = "core"
+path = "benches/**, crates/*/benches/**, fuzz/**"
+kind = "intentionally_advisory"
+reason = "Benchmarks and fuzz harnesses have separate proof lanes and should not inflate or block product coverage closure."
+test_surface = [
+  ".github/workflows/coverage.yml",
+  "scripts/coverage.sh",
+]
+review_after = "2026-09-30"
+removal_condition = "Bench and fuzz proof receipts are integrated into the quality closure receipt as separate not-coverage lanes."
+
+[[exception]]
+id = "coverage-build-scripts"
+owner = "release/ci"
+path = "**/build.rs"
+kind = "intentionally_advisory"
+reason = "Build scripts are environment-dependent setup code and are excluded from the initial Rust execution-surface coverage denominator."
+test_surface = [
+  ".github/workflows/coverage.yml",
+  "scripts/coverage.sh",
+]
+review_after = "2026-09-30"
+removal_condition = "Build script behavior has owned unit or integration coverage and is included in the coverage denominator."
+
+[[exception]]
+id = "coverage-ui-crate"
+owner = "ui"
+path = "crates/ui"
+kind = "coverage_surface_deferred"
+reason = "The Tauri UI has platform dependencies and is excluded from the rust-core cargo-llvm-cov workflow until it has a dedicated UI coverage lane."
+test_surface = [
+  ".github/workflows/coverage.yml",
+  "codecov.yml",
+]
+review_after = "2026-09-30"
+removal_condition = "A UI-specific coverage lane exists or the crate is included in the shared rust-core denominator."
+
+[[exception]]
+id = "coverage-integration-tests-crate"
+owner = "core"
+path = "crates/integration-tests"
+kind = "coverage_surface_deferred"
+reason = "Integration-test harness code is excluded from the rust-core coverage denominator while product crates remain the first ratchet target."
+test_surface = [
+  ".github/workflows/coverage.yml",
+  "codecov.yml",
+]
+review_after = "2026-09-30"
+removal_condition = "Integration-test harness coverage is measured as a separate surface or included in the shared denominator."
+
+[[exception]]
+id = "coverage-workspace-hack"
+owner = "release/ci"
+path = "workspace-hack"
+kind = "generated"
+reason = "cargo-hakari workspace-hack is generated dependency unification infrastructure, not human-authored product behavior."
+test_surface = [
+  "cargo hakari verify",
+  "codecov.yml",
+]
+review_after = "2026-09-30"
+removal_condition = "Workspace-hack coverage is intentionally measured or the generated crate is removed."
