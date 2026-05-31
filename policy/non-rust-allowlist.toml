@@ -237,6 +237,15 @@ reason = "Architecture/design/ADR/policy documentation."
 covered_by = ["cargo run -p openracing-tools --bin validate-adr --"]
 
 [[allow]]
+glob = "plans/**/*.md"
+kind = "source_truth_plan"
+owner = "core"
+surface = "docs"
+classification = "production"
+reason = "Source-of-truth implementation plans and lane handoffs."
+covered_by = ["python scripts/policy_file.py"]
+
+[[allow]]
 glob = "docs/adr/*.md"
 kind = "adr"
 owner = "core"

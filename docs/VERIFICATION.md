@@ -66,3 +66,26 @@ replaces it with an equivalent repo-owned patch coverage check.
 
 If a local coverage or RIPR+ generator cannot produce evidence, that is tracked
 as closure debt in the exception ledger. It is not treated as a successful gate.
+
+## Unsafe Review Closure
+
+Unsafe-review closure is tracked separately from RIPR+ and coverage:
+
+- Proposal: `docs/proposals/OR-PROP-0003-unsafe-review-closure-lane.md`
+- Spec: `docs/specs/OR-SPEC-0004-unsafe-review-closure.md`
+- Plan: `plans/unsafe-review-closure/implementation-plan.md`
+- Exception ledger: `policy/unsafe-review-exceptions.toml`
+
+Generate the current receipt:
+
+```bash
+cargo xtask unsafe-review-closure --check
+```
+
+The receipt reports unsafe site inventory, changed unsafe sites, missing local
+contracts, missing local guards, missing witnesses, missing owners, expired
+reviews, unreviewed unsafe gaps, and Miri status.
+
+Unsafe-review closure makes unsafe seams reviewable. It does not prove unsafe
+Rust soundness, UB-freedom, Miri-clean status, release readiness, or hardware
+readiness. Skipped Miri evidence is not an unsafe-review pass.

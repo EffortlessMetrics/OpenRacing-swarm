@@ -3,18 +3,21 @@
 
 use anyhow::{Context, bail};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const BADGE_ENDPOINT_DIR: &str = "badges";
 const BADGE_ENDPOINT_TARGET_DIR: &str = "target/xtask/badges";
 const RIPR_PR_DIR: &str = "target/ripr/pr";
 const RIPR_REVIEW_DIR: &str = "target/ripr/review";
 const QUALITY_CLOSURE_DIR: &str = "target/xtask/quality-closure";
+const UNSAFE_REVIEW_CLOSURE_DIR: &str = "target/xtask/unsafe-review-closure";
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 struct ShieldsEndpointBadge {
@@ -41,6 +44,11 @@ enum CommandKind {
         args: Vec<String>,
     },
     QualityClosure {
+        check: bool,
+        json_out: PathBuf,
+        md_out: PathBuf,
+    },
+    UnsafeReviewClosure {
         check: bool,
         json_out: PathBuf,
         md_out: PathBuf,
@@ -87,6 +95,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> anyhow::Result<CommandK
         "impacted-evidence" => Ok(CommandKind::ImpactedEvidence),
         "mutants-pr" => Ok(CommandKind::MutantsPr { args: rest }),
         "quality-closure" => parse_quality_closure_args(rest),
+        "unsafe-review-closure" => parse_unsafe_review_closure_args(rest),
         "check-file-policy" => Ok(CommandKind::CheckFilePolicy),
         "pr" => Ok(CommandKind::Pr),
         "-h" | "--help" | "help" => Ok(CommandKind::Help),
@@ -106,6 +115,11 @@ fn run(command: CommandKind) -> anyhow::Result<()> {
             json_out,
             md_out,
         } => quality_closure(check, &json_out, &md_out),
+        CommandKind::UnsafeReviewClosure {
+            check,
+            json_out,
+            md_out,
+        } => unsafe_review_closure(check, &json_out, &md_out),
         CommandKind::CheckFilePolicy => run_python_script("scripts/policy_file.py", &[]),
         CommandKind::DocsSync { check } => docs_sync(check),
         CommandKind::Pr => pr_gate(),
@@ -117,7 +131,7 @@ fn run(command: CommandKind) -> anyhow::Result<()> {
 }
 
 fn usage() -> &'static str {
-    "Usage: cargo xtask <command> [--check]\n\nCommands:\n  badges [--check]\n  ripr-pr [--check]\n  ripr-review-comments [--check]\n  impacted-evidence\n  mutants-pr [--changed] [--full-owner] [--dry-run]\n  quality-closure [--check] [--json-out PATH] [--md-out PATH]\n  check-file-policy\n  docs-sync [--check]\n  pr"
+    "Usage: cargo xtask <command> [--check]\n\nCommands:\n  badges [--check]\n  ripr-pr [--check]\n  ripr-review-comments [--check]\n  impacted-evidence\n  mutants-pr [--changed] [--full-owner] [--dry-run]\n  quality-closure [--check] [--json-out PATH] [--md-out PATH]\n  unsafe-review-closure [--check] [--json-out PATH] [--md-out PATH]\n  check-file-policy\n  docs-sync [--check]\n  pr"
 }
 
 fn badges(check: bool) -> anyhow::Result<()> {
@@ -435,6 +449,39 @@ fn parse_quality_closure_args(args: Vec<String>) -> anyhow::Result<CommandKind> 
     })
 }
 
+fn parse_unsafe_review_closure_args(args: Vec<String>) -> anyhow::Result<CommandKind> {
+    let mut check = false;
+    let mut json_out: Option<PathBuf> = None;
+    let mut md_out: Option<PathBuf> = None;
+    let mut iter = args.into_iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--check" => check = true,
+            "--json-out" => {
+                let Some(path) = iter.next() else {
+                    bail!("--json-out requires a path");
+                };
+                json_out = Some(PathBuf::from(path));
+            }
+            "--md-out" => {
+                let Some(path) = iter.next() else {
+                    bail!("--md-out requires a path");
+                };
+                md_out = Some(PathBuf::from(path));
+            }
+            _ => bail!("unsupported unsafe-review-closure argument `{arg}`"),
+        }
+    }
+
+    Ok(CommandKind::UnsafeReviewClosure {
+        check,
+        json_out: json_out
+            .unwrap_or_else(|| PathBuf::from(UNSAFE_REVIEW_CLOSURE_DIR).join("latest.json")),
+        md_out: md_out
+            .unwrap_or_else(|| PathBuf::from(UNSAFE_REVIEW_CLOSURE_DIR).join("latest.md")),
+    })
+}
+
 #[derive(Debug, Deserialize)]
 struct QualityExceptionLedger {
     schema_version: String,
@@ -451,6 +498,35 @@ struct QualityException {
     test_surface: Vec<String>,
     review_after: String,
     removal_condition: String,
+    #[serde(default = "default_active_status")]
+    status: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct UnsafeSite {
+    path: String,
+    line: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct UnsafeReviewExceptionLedger {
+    schema_version: String,
+    exception: Vec<UnsafeReviewException>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UnsafeReviewException {
+    id: String,
+    owner: String,
+    path: String,
+    kind: String,
+    reason: String,
+    test_surface: Vec<String>,
+    review_after: String,
+    removal_condition: String,
+    safety_contract: String,
+    local_guard: String,
+    witness: String,
     #[serde(default = "default_active_status")]
     status: String,
 }
@@ -734,6 +810,630 @@ fn write_quality_closure_markdown(path: &Path, receipt: &serde_json::Value) -> a
         content.push_str(&format!("| `{field}` | `{value}` |\n"));
     }
     content.push_str("\nSkipped coverage is not treated as a pass by this receipt.\n");
+    fs::write(path, content).with_context(|| format!("failed to write {}", path.display()))
+}
+
+fn unsafe_review_closure(check: bool, json_out: &Path, md_out: &Path) -> anyhow::Result<()> {
+    let workspace_root = workspace_root_path()?;
+    let receipt = build_unsafe_review_closure_receipt(&workspace_root)?;
+    let json_path = workspace_root.join(json_out);
+    if let Some(parent) = json_path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    write_json_pretty(&json_path, &receipt)?;
+    write_unsafe_review_closure_markdown(&workspace_root.join(md_out), &receipt)?;
+
+    if check {
+        validate_json_file(&json_path)?;
+        ensure_non_empty_file(&workspace_root.join(md_out))?;
+    }
+
+    stdout_line(format_args!(
+        "unsafe-review-closure: wrote {} and {}",
+        json_out.display(),
+        md_out.display()
+    ));
+    Ok(())
+}
+
+fn build_unsafe_review_closure_receipt(workspace_root: &Path) -> anyhow::Result<serde_json::Value> {
+    let ledger = read_unsafe_review_exception_ledger(workspace_root)?;
+    validate_unsafe_review_exception_ledger(&ledger)?;
+    let unsafe_sites = discover_unsafe_sites(workspace_root)?;
+    let changed_rust_paths = discover_changed_rust_paths(workspace_root);
+    let miri_status = detect_miri_status(workspace_root, unsafe_sites.len())?;
+    build_unsafe_review_closure_receipt_value(
+        &ledger,
+        &unsafe_sites,
+        &changed_rust_paths,
+        &current_utc_date_string()?,
+        &miri_status,
+    )
+}
+
+fn build_unsafe_review_closure_receipt_value(
+    ledger: &UnsafeReviewExceptionLedger,
+    unsafe_sites: &[UnsafeSite],
+    changed_rust_paths: &BTreeSet<String>,
+    today: &str,
+    miri_status: &str,
+) -> anyhow::Result<serde_json::Value> {
+    validate_status_value(miri_status, "miri_status")?;
+    let active_exceptions: Vec<&UnsafeReviewException> = ledger
+        .exception
+        .iter()
+        .filter(|entry| entry.status == "active")
+        .collect();
+
+    let mut unsafe_contract_missing_count = 0_u64;
+    let mut local_guard_missing_count = 0_u64;
+    let mut witness_missing_count = 0_u64;
+    let mut unreviewed_unsafe_gap_count = 0_u64;
+    let mut changed_unsafe_site_count = 0_u64;
+    let mut unreviewed_samples = Vec::new();
+
+    for site in unsafe_sites {
+        if changed_rust_paths.contains(&site.path) {
+            changed_unsafe_site_count += 1;
+        }
+
+        let Some(exception) = matching_unsafe_exception(site, &active_exceptions) else {
+            unreviewed_unsafe_gap_count += 1;
+            unsafe_contract_missing_count += 1;
+            local_guard_missing_count += 1;
+            witness_missing_count += 1;
+            if unreviewed_samples.len() < 20 {
+                unreviewed_samples.push(format!("{}:{}", site.path, site.line));
+            }
+            continue;
+        };
+
+        if exception.safety_contract == "missing" {
+            unsafe_contract_missing_count += 1;
+        }
+        if exception.local_guard == "missing" {
+            local_guard_missing_count += 1;
+        }
+        if exception.witness == "missing" {
+            witness_missing_count += 1;
+        }
+    }
+
+    let owner_missing_count = active_exceptions
+        .iter()
+        .filter(|entry| entry.owner.trim().is_empty())
+        .count() as u64;
+    let expired_review_count = active_exceptions
+        .iter()
+        .filter(|entry| entry.review_after.as_str() < today)
+        .count() as u64;
+
+    let unsafe_review_closure_satisfied = unreviewed_unsafe_gap_count == 0
+        && unsafe_contract_missing_count == 0
+        && local_guard_missing_count == 0
+        && witness_missing_count == 0
+        && owner_missing_count == 0
+        && expired_review_count == 0;
+    let status = if unsafe_review_closure_satisfied {
+        "pass"
+    } else {
+        "advisory"
+    };
+
+    Ok(serde_json::json!({
+        "schema_version": 1,
+        "lane": "unsafe-review-closure",
+        "status": status,
+        "unsafe_site_count": unsafe_sites.len() as u64,
+        "changed_unsafe_site_count": changed_unsafe_site_count,
+        "unsafe_contract_missing_count": unsafe_contract_missing_count,
+        "local_guard_missing_count": local_guard_missing_count,
+        "witness_missing_count": witness_missing_count,
+        "owner_missing_count": owner_missing_count,
+        "expired_review_count": expired_review_count,
+        "unreviewed_unsafe_gap_count": unreviewed_unsafe_gap_count,
+        "unsafe_review_closure_satisfied": unsafe_review_closure_satisfied,
+        "miri_status": miri_status,
+        "exception_count": active_exceptions.len() as u64,
+        "review_date": today,
+        "unreviewed_samples": unreviewed_samples,
+        "result_states": [
+            {
+                "name": "unsafe_site_inventory",
+                "status": "pass",
+                "satisfied": true,
+                "details": "tracked Rust files were scanned for unsafe keyword sites outside comments and string literals"
+            },
+            {
+                "name": "unsafe_review_evidence",
+                "status": if unsafe_review_closure_satisfied { "pass" } else { "fail" },
+                "satisfied": unsafe_review_closure_satisfied,
+                "details": "unsafe-review closure requires every unsafe site to have a local contract, local guard, witness, owner, and current review"
+            },
+            {
+                "name": "unreviewed_unsafe_gaps",
+                "status": if unreviewed_unsafe_gap_count == 0 { "pass" } else { "fail" },
+                "satisfied": unreviewed_unsafe_gap_count == 0,
+                "details": "unsafe sites without a matching active ledger entry are not treated as reviewed"
+            },
+            {
+                "name": "miri",
+                "status": miri_status,
+                "satisfied": miri_status == "pass" || miri_status == "not_applicable",
+                "details": "Miri is evidence about one execution model; skipped or missing Miri evidence is not an unsafe-review pass and does not prove or disprove soundness"
+            },
+            {
+                "name": "hardware_execution",
+                "status": "not_applicable",
+                "satisfied": true,
+                "details": "this unsafe-review receipt does not run hardware, open HID or serial, launch vendor tools, or execute motion paths"
+            }
+        ],
+        "next_pr_queue": [
+            "changed unsafe seams",
+            "FFI / raw pointer / transmute-like seams",
+            "shared-memory / concurrency / RT boundaries",
+            "HID/USB/driver-facing unsafe boundaries",
+            "generated or platform-specific unsafe surfaces",
+            "Miri/property/fake-transport witnesses"
+        ],
+        "claim_boundary": [
+            "unsafe-reviewability-only",
+            "not-unsafe-rust-soundness",
+            "not-ub-free",
+            "not-miri-clean-unless-miri-passed",
+            "not-hardware-validation"
+        ]
+    }))
+}
+
+fn read_unsafe_review_exception_ledger(
+    workspace_root: &Path,
+) -> anyhow::Result<UnsafeReviewExceptionLedger> {
+    let path = workspace_root.join("policy/unsafe-review-exceptions.toml");
+    let content =
+        fs::read_to_string(&path).with_context(|| format!("failed to read {}", path.display()))?;
+    toml::from_str(&content).with_context(|| format!("invalid TOML in {}", path.display()))
+}
+
+fn validate_unsafe_review_exception_ledger(
+    ledger: &UnsafeReviewExceptionLedger,
+) -> anyhow::Result<()> {
+    if ledger.schema_version != "1.0" {
+        bail!("unsafe-review exception ledger schema_version must be 1.0");
+    }
+
+    for entry in &ledger.exception {
+        validate_required_text(&entry.id, "id")?;
+        validate_required_text(&entry.owner, "owner")?;
+        validate_required_text(&entry.path, "path")?;
+        validate_required_text(&entry.kind, "kind")?;
+        validate_required_text(&entry.reason, "reason")?;
+        validate_required_text(&entry.review_after, "review_after")?;
+        validate_required_text(&entry.removal_condition, "removal_condition")?;
+        validate_evidence_value(&entry.safety_contract, &entry.id, "safety_contract")?;
+        validate_evidence_value(&entry.local_guard, &entry.id, "local_guard")?;
+        validate_evidence_value(&entry.witness, &entry.id, "witness")?;
+        if entry.test_surface.is_empty() {
+            bail!(
+                "unsafe-review exception `{}` must list test_surface",
+                entry.id
+            );
+        }
+        if !is_yyyy_mm_dd(&entry.review_after) {
+            bail!(
+                "unsafe-review exception `{}` review_after must use YYYY-MM-DD",
+                entry.id
+            );
+        }
+        if entry.status != "active" && entry.status != "retired" {
+            bail!(
+                "unsafe-review exception `{}` status must be active or retired",
+                entry.id
+            );
+        }
+    }
+    Ok(())
+}
+
+fn validate_evidence_value(value: &str, id: &str, field: &str) -> anyhow::Result<()> {
+    match value {
+        "present" | "missing" | "not_applicable" => Ok(()),
+        _ => bail!(
+            "unsafe-review exception `{id}` field `{field}` must be present, missing, or not_applicable"
+        ),
+    }
+}
+
+fn validate_status_value(value: &str, field: &str) -> anyhow::Result<()> {
+    match value {
+        "pass" | "fail" | "advisory" | "skipped" | "not_applicable" => Ok(()),
+        _ => bail!("{field} must be pass, fail, advisory, skipped, or not_applicable"),
+    }
+}
+
+fn is_yyyy_mm_dd(value: &str) -> bool {
+    value.len() == 10
+        && value.chars().enumerate().all(|(index, value)| {
+            matches!(index, 4 | 7)
+                .then_some(value == '-')
+                .unwrap_or_else(|| value.is_ascii_digit())
+        })
+}
+
+fn discover_unsafe_sites(workspace_root: &Path) -> anyhow::Result<Vec<UnsafeSite>> {
+    let rust_files = git_lines(workspace_root, &["ls-files", "--", "*.rs"])?;
+    let mut sites = Vec::new();
+    for file in rust_files {
+        let path = normalize_repo_path(&file);
+        let source_path = workspace_root.join(&path);
+        let source = fs::read_to_string(&source_path)
+            .with_context(|| format!("failed to read {}", source_path.display()))?;
+        sites.extend(unsafe_keyword_sites_in_source(&path, &source));
+    }
+    Ok(sites)
+}
+
+fn discover_changed_rust_paths(workspace_root: &Path) -> BTreeSet<String> {
+    let mut paths = BTreeSet::new();
+    for args in [
+        &[
+            "diff",
+            "--name-only",
+            "--diff-filter=ACMRT",
+            "origin/main...HEAD",
+            "--",
+            "*.rs",
+        ][..],
+        &["diff", "--name-only", "--diff-filter=ACMRT", "--", "*.rs"][..],
+    ] {
+        if let Ok(lines) = git_lines(workspace_root, args) {
+            paths.extend(lines.into_iter().map(|path| normalize_repo_path(&path)));
+        }
+    }
+    paths
+}
+
+fn git_lines(workspace_root: &Path, args: &[&str]) -> anyhow::Result<Vec<String>> {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(workspace_root)
+        .output()
+        .with_context(|| format!("failed to run git {}", args.join(" ")))?;
+    if !output.status.success() {
+        bail!(
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(normalize_repo_path)
+        .collect())
+}
+
+fn unsafe_keyword_sites_in_source(path: &str, source: &str) -> Vec<UnsafeSite> {
+    let bytes = source.as_bytes();
+    let mut sites = Vec::new();
+    let mut index = 0_usize;
+    let mut line = 1_usize;
+    let mut block_comment_depth = 0_usize;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if byte == b'\n' {
+            line += 1;
+            index += 1;
+            continue;
+        }
+
+        if block_comment_depth > 0 {
+            if starts_with(bytes, index, b"/*") {
+                block_comment_depth += 1;
+                index += 2;
+            } else if starts_with(bytes, index, b"*/") {
+                block_comment_depth -= 1;
+                index += 2;
+            } else {
+                index += 1;
+            }
+            continue;
+        }
+
+        if starts_with(bytes, index, b"//") {
+            index = skip_line_comment(bytes, index);
+            continue;
+        }
+        if starts_with(bytes, index, b"/*") {
+            block_comment_depth = 1;
+            index += 2;
+            continue;
+        }
+        if let Some(next_index) = skip_raw_string(bytes, index) {
+            line += count_newlines(&bytes[index..next_index]);
+            index = next_index;
+            continue;
+        }
+        if byte == b'"' || starts_with(bytes, index, b"b\"") {
+            let start = if byte == b'"' { index } else { index + 1 };
+            let next_index = skip_quoted_string(bytes, start);
+            line += count_newlines(&bytes[index..next_index]);
+            index = next_index;
+            continue;
+        }
+        if is_ident_start(byte) {
+            let start = index;
+            index += 1;
+            while index < bytes.len() && is_ident_continue(bytes[index]) {
+                index += 1;
+            }
+            if is_unsafe_keyword(source, start, index) {
+                sites.push(UnsafeSite {
+                    path: path.to_string(),
+                    line,
+                });
+            }
+            continue;
+        }
+        index += 1;
+    }
+
+    sites
+}
+
+fn starts_with(bytes: &[u8], index: usize, needle: &[u8]) -> bool {
+    bytes
+        .get(index..)
+        .is_some_and(|remaining| remaining.starts_with(needle))
+}
+
+fn skip_line_comment(bytes: &[u8], mut index: usize) -> usize {
+    while index < bytes.len() && bytes[index] != b'\n' {
+        index += 1;
+    }
+    index
+}
+
+fn skip_quoted_string(bytes: &[u8], mut index: usize) -> usize {
+    index += 1;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\\' => index = index.saturating_add(2),
+            b'"' => return index + 1,
+            _ => index += 1,
+        }
+    }
+    index
+}
+
+fn skip_raw_string(bytes: &[u8], index: usize) -> Option<usize> {
+    let mut cursor = index;
+    if bytes.get(cursor) == Some(&b'b') {
+        cursor += 1;
+    }
+    if bytes.get(cursor) != Some(&b'r') {
+        return None;
+    }
+    cursor += 1;
+    let hash_start = cursor;
+    while bytes.get(cursor) == Some(&b'#') {
+        cursor += 1;
+    }
+    if bytes.get(cursor) != Some(&b'"') {
+        return None;
+    }
+    let hash_count = cursor - hash_start;
+    cursor += 1;
+    while cursor < bytes.len() {
+        if bytes[cursor] == b'"'
+            && bytes
+                .get(cursor + 1..cursor + 1 + hash_count)
+                .is_some_and(|hashes| hashes.iter().all(|value| *value == b'#'))
+        {
+            return Some(cursor + 1 + hash_count);
+        }
+        cursor += 1;
+    }
+    Some(bytes.len())
+}
+
+fn count_newlines(bytes: &[u8]) -> usize {
+    bytes.iter().filter(|value| **value == b'\n').count()
+}
+
+fn is_ident_start(byte: u8) -> bool {
+    byte == b'_' || byte.is_ascii_alphabetic()
+}
+
+fn is_ident_continue(byte: u8) -> bool {
+    is_ident_start(byte) || byte.is_ascii_digit()
+}
+
+fn is_unsafe_keyword(source: &str, start: usize, end: usize) -> bool {
+    const UNSAFE_KEYWORD_BYTES: [u8; 6] = [117, 110, 115, 97, 102, 101];
+    source.as_bytes().get(start..end) == Some(UNSAFE_KEYWORD_BYTES.as_slice())
+}
+
+fn matching_unsafe_exception<'a>(
+    site: &UnsafeSite,
+    active_exceptions: &[&'a UnsafeReviewException],
+) -> Option<&'a UnsafeReviewException> {
+    active_exceptions
+        .iter()
+        .copied()
+        .find(|entry| repo_path_matches(&entry.path, &site.path))
+}
+
+fn repo_path_matches(pattern: &str, path: &str) -> bool {
+    let pattern = normalize_repo_path(pattern);
+    let path = normalize_repo_path(path);
+    if pattern == path {
+        return true;
+    }
+    if !pattern.contains('*') {
+        let directory_prefix = format!("{}/", pattern.trim_end_matches('/'));
+        return path.starts_with(&directory_prefix);
+    }
+    glob_segments_match(
+        &pattern.split('/').collect::<Vec<_>>(),
+        &path.split('/').collect::<Vec<_>>(),
+    )
+}
+
+fn glob_segments_match(pattern: &[&str], path: &[&str]) -> bool {
+    let Some((head, tail)) = pattern.split_first() else {
+        return path.is_empty();
+    };
+    if *head == "**" {
+        return tail.is_empty()
+            || (0..=path.len()).any(|index| glob_segments_match(tail, &path[index..]));
+    }
+    let Some((path_head, path_tail)) = path.split_first() else {
+        return false;
+    };
+    segment_wildcard_match(head, path_head) && glob_segments_match(tail, path_tail)
+}
+
+fn segment_wildcard_match(pattern: &str, value: &str) -> bool {
+    if pattern == "*" {
+        return true;
+    }
+    let pattern = pattern.as_bytes();
+    let value = value.as_bytes();
+    let mut p = 0_usize;
+    let mut v = 0_usize;
+    let mut star: Option<usize> = None;
+    let mut star_value_index = 0_usize;
+
+    while v < value.len() {
+        if p < pattern.len() && pattern[p] == value[v] {
+            p += 1;
+            v += 1;
+        } else if p < pattern.len() && pattern[p] == b'*' {
+            star = Some(p);
+            p += 1;
+            star_value_index = v;
+        } else if let Some(star_index) = star {
+            p = star_index + 1;
+            star_value_index += 1;
+            v = star_value_index;
+        } else {
+            return false;
+        }
+    }
+
+    while p < pattern.len() && pattern[p] == b'*' {
+        p += 1;
+    }
+    p == pattern.len()
+}
+
+fn normalize_repo_path(path: &str) -> String {
+    path.trim().replace('\\', "/")
+}
+
+fn detect_miri_status(workspace_root: &Path, unsafe_site_count: usize) -> anyhow::Result<String> {
+    if unsafe_site_count == 0 {
+        return Ok("not_applicable".to_string());
+    }
+    if let Ok(value) = env::var("OPENRACING_MIRI_STATUS") {
+        validate_status_value(&value, "OPENRACING_MIRI_STATUS")?;
+        return Ok(value);
+    }
+    let tracked = git_lines(workspace_root, &["ls-files"])?;
+    let has_miri_surface = tracked.iter().any(|path| {
+        path.ends_with(".yml")
+            || path.ends_with(".yaml")
+            || path.ends_with(".toml")
+            || path.ends_with(".md")
+    }) && tracked
+        .iter()
+        .filter(|path| {
+            path.starts_with(".github/")
+                || path.starts_with("scripts/")
+                || path.as_str() == "Cargo.toml"
+                || path.starts_with("docs/")
+        })
+        .filter_map(|path| fs::read_to_string(workspace_root.join(path)).ok())
+        .any(|content| content.contains("cargo miri") || content.contains("MIRIFLAGS"));
+    Ok(if has_miri_surface {
+        "advisory"
+    } else {
+        "skipped"
+    }
+    .to_string())
+}
+
+fn current_utc_date_string() -> anyhow::Result<String> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .with_context(|| "system clock is before UNIX_EPOCH")?;
+    let days_since_epoch = (now.as_secs() / 86_400) as i64;
+    let (year, month, day) = civil_from_days(days_since_epoch);
+    Ok(format!("{year:04}-{month:02}-{day:02}"))
+}
+
+fn civil_from_days(days_since_epoch: i64) -> (i64, u32, u32) {
+    let days = days_since_epoch + 719_468;
+    let era = if days >= 0 { days } else { days - 146_096 } / 146_097;
+    let day_of_era = days - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let mut year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
+    if month <= 2 {
+        year += 1;
+    }
+    (year, month as u32, day as u32)
+}
+
+fn write_unsafe_review_closure_markdown(
+    path: &Path,
+    receipt: &serde_json::Value,
+) -> anyhow::Result<()> {
+    let Some(parent) = path.parent() else {
+        bail!(
+            "unsafe-review closure markdown path has no parent: {}",
+            path.display()
+        );
+    };
+    fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
+    let status = receipt
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("unknown");
+    let mut content = String::new();
+    content.push_str("# Unsafe Review Closure Receipt\n\n");
+    content.push_str(&format!("Status: `{status}`\n\n"));
+    content.push_str("| Field | Value |\n| --- | ---: |\n");
+    for field in [
+        "unsafe_site_count",
+        "changed_unsafe_site_count",
+        "unsafe_contract_missing_count",
+        "local_guard_missing_count",
+        "witness_missing_count",
+        "owner_missing_count",
+        "expired_review_count",
+        "unreviewed_unsafe_gap_count",
+        "unsafe_review_closure_satisfied",
+        "miri_status",
+        "exception_count",
+    ] {
+        let value = receipt
+            .get(field)
+            .map(serde_json::Value::to_string)
+            .unwrap_or_else(|| "null".to_string());
+        content.push_str(&format!("| `{field}` | `{value}` |\n"));
+    }
+    content.push_str(
+        "\nUnsafe-review closure makes unsafe seams reviewable; it does not prove soundness, UB-freedom, or Miri-clean status.\n",
+    );
     fs::write(path, content).with_context(|| format!("failed to write {}", path.display()))
 }
 
@@ -1041,5 +1741,145 @@ removal_condition = "Make patch coverage required or add a required non-skipped 
             other => bail!("expected quality closure command, got {other:?}"),
         }
         Ok(())
+    }
+
+    #[test]
+    fn parses_unsafe_review_closure_outputs() -> anyhow::Result<()> {
+        let command = parse_args(
+            [
+                "unsafe-review-closure".to_string(),
+                "--check".to_string(),
+                "--json-out".to_string(),
+                "target/unsafe.json".to_string(),
+                "--md-out".to_string(),
+                "target/unsafe.md".to_string(),
+            ]
+            .into_iter(),
+        )?;
+
+        match command {
+            CommandKind::UnsafeReviewClosure {
+                check,
+                json_out,
+                md_out,
+            } => {
+                assert!(check);
+                assert_eq!(json_out, PathBuf::from("target/unsafe.json"));
+                assert_eq!(md_out, PathBuf::from("target/unsafe.md"));
+            }
+            other => bail!("expected unsafe-review closure command, got {other:?}"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn unsafe_review_ledger_requires_reviewable_entries() {
+        let ledger = UnsafeReviewExceptionLedger {
+            schema_version: "1.0".to_string(),
+            exception: vec![UnsafeReviewException {
+                id: "unsafe-engine".to_string(),
+                owner: "core".to_string(),
+                path: "crates/engine/src/**".to_string(),
+                kind: "rt_raw_memory".to_string(),
+                reason: "needs contracts".to_string(),
+                test_surface: vec!["cargo xtask unsafe-review-closure --check".to_string()],
+                review_after: "2026-06-30".to_string(),
+                removal_condition: "add contracts".to_string(),
+                safety_contract: "missing".to_string(),
+                local_guard: "missing".to_string(),
+                witness: "missing".to_string(),
+                status: "active".to_string(),
+            }],
+        };
+
+        assert!(validate_unsafe_review_exception_ledger(&ledger).is_ok());
+
+        let invalid = UnsafeReviewExceptionLedger {
+            schema_version: "1.0".to_string(),
+            exception: vec![UnsafeReviewException {
+                id: "unsafe-engine".to_string(),
+                owner: String::new(),
+                path: "crates/engine/src/**".to_string(),
+                kind: "rt_raw_memory".to_string(),
+                reason: "needs contracts".to_string(),
+                test_surface: vec!["cargo xtask unsafe-review-closure --check".to_string()],
+                review_after: "2026-06-30".to_string(),
+                removal_condition: "add contracts".to_string(),
+                safety_contract: "missing".to_string(),
+                local_guard: "missing".to_string(),
+                witness: "missing".to_string(),
+                status: "active".to_string(),
+            }],
+        };
+
+        assert!(validate_unsafe_review_exception_ledger(&invalid).is_err());
+    }
+
+    #[test]
+    fn unsafe_review_receipt_counts_missing_evidence_without_miri_claim() -> anyhow::Result<()> {
+        let ledger = UnsafeReviewExceptionLedger {
+            schema_version: "1.0".to_string(),
+            exception: vec![UnsafeReviewException {
+                id: "unsafe-engine".to_string(),
+                owner: "core".to_string(),
+                path: "crates/engine/src/**".to_string(),
+                kind: "rt_raw_memory".to_string(),
+                reason: "needs contracts".to_string(),
+                test_surface: vec!["cargo xtask unsafe-review-closure --check".to_string()],
+                review_after: "2026-06-30".to_string(),
+                removal_condition: "add contracts".to_string(),
+                safety_contract: "missing".to_string(),
+                local_guard: "missing".to_string(),
+                witness: "missing".to_string(),
+                status: "active".to_string(),
+            }],
+        };
+        let sites = vec![
+            UnsafeSite {
+                path: "crates/engine/src/protocol.rs".to_string(),
+                line: 10,
+            },
+            UnsafeSite {
+                path: "crates/new/src/lib.rs".to_string(),
+                line: 5,
+            },
+        ];
+        let changed = BTreeSet::from(["crates/new/src/lib.rs".to_string()]);
+        let receipt = build_unsafe_review_closure_receipt_value(
+            &ledger,
+            &sites,
+            &changed,
+            "2026-05-31",
+            "skipped",
+        )?;
+
+        assert_eq!(receipt["unsafe_site_count"], 2);
+        assert_eq!(receipt["changed_unsafe_site_count"], 1);
+        assert_eq!(receipt["unsafe_contract_missing_count"], 2);
+        assert_eq!(receipt["local_guard_missing_count"], 2);
+        assert_eq!(receipt["witness_missing_count"], 2);
+        assert_eq!(receipt["unreviewed_unsafe_gap_count"], 1);
+        assert_eq!(receipt["miri_status"], "skipped");
+        assert_eq!(receipt["unsafe_review_closure_satisfied"], false);
+        Ok(())
+    }
+
+    #[test]
+    fn unsafe_scanner_ignores_comments_and_strings() {
+        let source = r#"
+// unsafe { ignored(); }
+const TEXT: &str = "unsafe";
+fn demo() {
+    unsafe { call(); }
+}
+"#;
+        let sites = unsafe_keyword_sites_in_source("crates/example/src/lib.rs", source);
+        assert_eq!(
+            sites,
+            vec![UnsafeSite {
+                path: "crates/example/src/lib.rs".to_string(),
+                line: 5,
+            }]
+        );
     }
 }

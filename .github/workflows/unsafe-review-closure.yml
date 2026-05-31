@@ -1,0 +1,47 @@
+name: Unsafe Review Closure
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unsafe-review-closure:
+    name: unsafe-review closure receipt
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate unsafe-review closure receipt
+        run: cargo xtask unsafe-review-closure --check
+
+      - name: Summarize unsafe-review closure
+        if: always()
+        run: |
+          {
+            echo "## Unsafe Review Closure"
+            echo ""
+            if [ -f target/xtask/unsafe-review-closure/latest.md ]; then
+              cat target/xtask/unsafe-review-closure/latest.md
+            else
+              echo "No unsafe-review closure receipt was produced."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload unsafe-review closure receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsafe-review-closure
+          path: |
+            target/xtask/unsafe-review-closure/latest.json
+            target/xtask/unsafe-review-closure/latest.md
+          if-no-files-found: warn
