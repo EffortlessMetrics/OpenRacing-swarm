@@ -663,6 +663,87 @@ mod tests {
     }
 
     #[test]
+    fn parse_hardware_sniff_guided_capture() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "hardware",
+            "sniff-guided-capture",
+            "--plan",
+            "ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json",
+            "--hardware-doctor",
+            "target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json",
+            "--usbpcapcmd",
+            "C:/Program Files/Wireshark/extcap/USBPcapCMD.exe",
+            "--usbpcap-interface",
+            "\\\\.\\USBPcap2",
+            "--devices",
+            "3",
+            "--duration-ms",
+            "180000",
+            "--out",
+            "target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng",
+            "--operator-notes",
+            "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
+            "--confirm-external-passive-capture",
+            "--json-out",
+            "target/sniff/pit-house-0x8e-timing-correlation/sniff-guided-capture-receipt.json",
+        ])?;
+        match &cli.command {
+            Commands::Hardware(HardwareCommands::SniffGuidedCapture {
+                plan,
+                hardware_doctor,
+                usbpcapcmd,
+                usbpcap_interface,
+                devices,
+                duration_ms,
+                out,
+                operator_notes,
+                overwrite,
+                confirm_external_passive_capture,
+                json_out,
+            }) => {
+                assert_eq!(
+                    plan.to_str(),
+                    Some(
+                        "ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json"
+                    )
+                );
+                assert_eq!(
+                    hardware_doctor.to_str(),
+                    Some(
+                        "target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json"
+                    )
+                );
+                assert_eq!(
+                    usbpcapcmd.to_str(),
+                    Some("C:/Program Files/Wireshark/extcap/USBPcapCMD.exe")
+                );
+                assert_eq!(usbpcap_interface, "\\\\.\\USBPcap2");
+                assert_eq!(devices, "3");
+                assert_eq!(*duration_ms, 180_000);
+                assert_eq!(
+                    out.to_str(),
+                    Some("target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng")
+                );
+                assert_eq!(
+                    operator_notes.to_str(),
+                    Some("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md")
+                );
+                assert!(!overwrite);
+                assert!(*confirm_external_passive_capture);
+                assert_eq!(
+                    json_out.as_ref().and_then(|p| p.to_str()),
+                    Some(
+                        "target/sniff/pit-house-0x8e-timing-correlation/sniff-guided-capture-receipt.json"
+                    )
+                );
+            }
+            _ => return Err("expected Hardware SniffGuidedCapture command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_hardware_sniff_summary() -> TestResult {
         let cli = parse_cli([
             "wheelctl",

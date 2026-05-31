@@ -10980,6 +10980,100 @@ receipts, and this source-of-truth work item. Do not remove the marker command
 list, selector-verified capture handoff, timing-correlation review blockers,
 movement-blocker audit, or native-visible promotion block.
 
+## Work item: guided-0x8e-passive-capture-session
+
+Status: completed
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: operator-hostile two-terminal choreography for the passive 0x8E timing
+capture
+Blocked by: completed 0x8E capture marker concurrency handoff
+
+### Goal
+
+Make the passive Pit House 0x8E timing-correlation capture runnable as a
+one-terminal guided workflow while preserving the existing two-terminal
+`sniff-capture` plus `sniff-marker` fallback.
+
+### Production delta
+
+`wheelctl hardware sniff-guided-capture` now wraps the existing bounded
+`wheelctl hardware sniff-capture` helper as a child process, prompts the
+operator for each required runtime event marker, stamps marker receipts, and
+writes a guided receipt that fails closed when required markers are missing or
+outside the child capture receipt window.
+
+The preferred 0x8E handoff now surfaces:
+
+```text
+execution_model=guided_single_terminal_capture_with_inline_event_prompts
+preferred_operator_path=true
+manual_two_terminal_fallback_available=true
+marker_prompts_in_same_terminal=true
+```
+
+The manual fallback remains available with the previous two-terminal execution
+model for operators who need it.
+
+### Non-goals
+
+No live capture, raw pcap commit, HID open, serial open, read-only query,
+PIDFF command, feature report, configuration write, firmware/DFU interaction,
+high torque, mode write, authority write, authorization, semantic decode,
+tuple sendability, native-control claim, native-visible claim, smoke-ready
+claim, release-ready claim, or wheel-movement claim.
+
+### Acceptance
+
+- The guided command accepts the same selector-verified capture inputs plus the
+  checked-in 0x8E plan and local operator notes.
+- Guided receipts keep `wheel_moved_under_openracing=false`,
+  `visible_motion_verified=false`, `output_was_sent=false`, and
+  `authority_state=blocked`.
+- Missing required capture-runtime markers fail closed.
+- Markers outside the child `sniff-capture` receipt window fail closed.
+- Bench-wizard and the timing-correlation plan prefer the guided one-terminal
+  command and preserve the manual two-terminal fallback.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-plan `
+  --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-movement-blocker-audit `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json `
+  --demux-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json `
+  --framing-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json `
+  --extended-scan-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json `
+  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json `
+  --payload-rerun-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --timing-correlation-plan ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --timing-correlation-review ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json `
+  --overwrite
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl sniff_marker -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl sniff_guided -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl parse_hardware_sniff_guided_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the guided capture command, guided handoff metadata, focused tests,
+regenerated plan/audit receipts, and this source-of-truth work item. Do not
+remove the two-terminal fallback, selector-verified capture handoff,
+timing-correlation review blockers, movement-blocker audit, or native-visible
+promotion block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

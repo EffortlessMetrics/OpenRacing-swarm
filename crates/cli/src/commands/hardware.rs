@@ -41,6 +41,8 @@ const USBPCAP_SELECTOR_STALE: &str = "stale_selector";
 const USBPCAP_SELECTOR_NON_MOZA: &str = "non_moza_selector";
 const USBPCAP_SELECTOR_CLASS_MOZA: &str = "moza_device_stack";
 const USBPCAP_SELECTOR_CLASS_HUB_OR_NON_MOZA: &str = "hub_or_non_moza";
+const GUIDED_0X8E_CAPTURE_EXECUTION_MODEL: &str =
+    "guided_single_terminal_capture_with_inline_event_prompts";
 
 pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
     match cmd {
@@ -133,6 +135,33 @@ pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
                 confirm_external_passive_capture: *confirm_external_passive_capture,
             };
             sniff_capture(json, &request, json_out.as_deref()).await
+        }
+        HardwareCommands::SniffGuidedCapture {
+            plan,
+            hardware_doctor,
+            usbpcapcmd,
+            usbpcap_interface,
+            devices,
+            duration_ms,
+            out,
+            operator_notes,
+            overwrite,
+            confirm_external_passive_capture,
+            json_out,
+        } => {
+            let request = HardwareSniffGuidedCaptureRequest {
+                plan,
+                hardware_doctor,
+                usbpcapcmd,
+                usbpcap_interface,
+                devices,
+                duration_ms: *duration_ms,
+                out,
+                operator_notes,
+                overwrite: *overwrite,
+                confirm_external_passive_capture: *confirm_external_passive_capture,
+            };
+            sniff_guided_capture(json, &request, json_out.as_deref()).await
         }
         HardwareCommands::SniffSummary {
             pcapng,
@@ -318,6 +347,8 @@ async fn sniff_notes_template(
         &stored_plan,
         capture_hints.as_ref(),
         hardware_doctor_path.as_deref(),
+        plan,
+        Some(out),
     );
     let next_concrete_command = next_concrete_command_sequence
         .first()
@@ -376,6 +407,16 @@ async fn sniff_capture(
     let receipt = run_hardware_sniff_capture(request)?;
     write_json_receipt(json_out, &receipt)?;
     print_sniff_capture(json, json_out, &receipt)
+}
+
+async fn sniff_guided_capture(
+    json: bool,
+    request: &HardwareSniffGuidedCaptureRequest<'_>,
+    json_out: Option<&Path>,
+) -> Result<()> {
+    let receipt = run_hardware_sniff_guided_capture(request)?;
+    write_json_receipt(json_out, &receipt)?;
+    print_sniff_guided_capture(json, json_out, &receipt)
 }
 
 async fn sniff_summary(
@@ -1148,6 +1189,336 @@ fn build_hardware_sniff_capture_receipt(
             "raw pcapng remains local scratch evidence unless separately reviewed for bundling or commit".to_string(),
         ],
     })
+}
+
+fn run_hardware_sniff_guided_capture(
+    request: &HardwareSniffGuidedCaptureRequest<'_>,
+) -> Result<HardwareSniffGuidedCaptureReceipt> {
+    validate_hardware_sniff_guided_capture_request(request)?;
+
+    let capture_receipt_path = sniff_capture_receipt_path(&request.out.display().to_string());
+    let capture_receipt_path = PathBuf::from(capture_receipt_path);
+    let (stdout_path, stderr_path) = sniff_guided_capture_child_log_paths(request.out);
+    let stdout = File::create(&stdout_path)
+        .with_context(|| format!("failed to create '{}'", stdout_path.display()))?;
+    let stderr = File::create(&stderr_path)
+        .with_context(|| format!("failed to create '{}'", stderr_path.display()))?;
+
+    let mut child = Command::new(env::current_exe().context("failed to resolve wheelctl path")?)
+        .args(sniff_guided_capture_child_args(
+            request,
+            &capture_receipt_path,
+        ))
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr))
+        .spawn()
+        .context("failed to start child wheelctl hardware sniff-capture process")?;
+
+    let process_id = child.id();
+    let mut marker_receipts = Vec::new();
+    let run_result = run_guided_0x8e_marker_prompts(request, &mut marker_receipts);
+    let exit_status = child
+        .wait()
+        .context("failed to wait for guided sniff-capture child process")?;
+    run_result?;
+
+    let capture_receipt = if capture_receipt_path.is_file() {
+        Some(read_json_file::<serde_json::Value>(&capture_receipt_path)?)
+    } else {
+        None
+    };
+
+    build_hardware_sniff_guided_capture_receipt(
+        request,
+        Some(process_id),
+        Some(exit_status.to_string()),
+        exit_status.success(),
+        &capture_receipt_path,
+        capture_receipt.as_ref(),
+        &marker_receipts,
+    )
+}
+
+fn run_guided_0x8e_marker_prompts(
+    request: &HardwareSniffGuidedCaptureRequest<'_>,
+    marker_receipts: &mut Vec<HardwareSniffGuidedCaptureMarkerReceipt>,
+) -> Result<()> {
+    stamp_guided_0x8e_marker(request, "capture_start_utc", marker_receipts)?;
+    for marker in PIT_HOUSE_0X8E_TIMING_EVENT_ORDER
+        .iter()
+        .copied()
+        .filter(|marker| *marker != "capture_start_utc")
+    {
+        write_stdout_line(guided_0x8e_marker_prompt(marker))?;
+        write_stdout_line("Press ENTER when this event has happened.")?;
+        io::stdout().flush().context("failed to flush prompt")?;
+        let mut line = String::new();
+        io::stdin()
+            .read_line(&mut line)
+            .context("failed to read guided capture marker confirmation")?;
+        stamp_guided_0x8e_marker(request, marker, marker_receipts)?;
+    }
+    Ok(())
+}
+
+fn stamp_guided_0x8e_marker(
+    request: &HardwareSniffGuidedCaptureRequest<'_>,
+    marker: &str,
+    marker_receipts: &mut Vec<HardwareSniffGuidedCaptureMarkerReceipt>,
+) -> Result<()> {
+    let timestamp = Utc::now();
+    let receipt = stamp_sniff_operator_note_marker_at(request.operator_notes, marker, timestamp)?;
+    let receipt_path = guided_0x8e_marker_receipt_path(request.operator_notes, marker);
+    write_json_file(&receipt_path, &receipt)?;
+    marker_receipts.push(HardwareSniffGuidedCaptureMarkerReceipt {
+        marker: receipt.marker,
+        marker_receipt_path: required_path_display(&receipt_path, "marker-receipt")?,
+        marker_timestamp_utc: receipt.marker_timestamp_utc,
+    });
+    Ok(())
+}
+
+fn guided_0x8e_marker_prompt(marker: &str) -> &'static str {
+    match marker {
+        "pit_house_opened_utc" => "Open Pit House.",
+        "r5_recognized_in_pit_house_utc" => "Wait until Pit House recognizes the R5.",
+        "idle_stable_before_change_utc" => {
+            "Wait until Pit House is idle and stable before changing the LED."
+        }
+        "ks_top_left_front_led_default_teal_observed_utc" => {
+            "Observe the KS wheel top-left front LED in its default teal state."
+        }
+        "ks_top_left_front_led_changed_to_red_utc" => {
+            "Change only the KS wheel top-left front LED from default teal to red."
+        }
+        "ks_top_left_front_led_restored_to_default_teal_utc" => {
+            "Restore the KS wheel top-left front LED from red to default teal."
+        }
+        "idle_stable_after_restore_utc" => {
+            "Wait until Pit House is idle and stable after the LED restore."
+        }
+        "pit_house_closed_utc" => "Close Pit House.",
+        "capture_stop_utc" => "Before the capture duration ends, confirm capture stop marker.",
+        _ => "Confirm the guided capture event marker.",
+    }
+}
+
+fn validate_hardware_sniff_guided_capture_request(
+    request: &HardwareSniffGuidedCaptureRequest<'_>,
+) -> Result<()> {
+    let plan = read_and_validate_sniff_plan(request.plan)?;
+    if plan.scenario != "pit-house-0x8e-timing-correlation" {
+        anyhow::bail!("sniff-guided-capture only supports pit-house-0x8e-timing-correlation plans");
+    }
+    if !request.operator_notes.is_file() {
+        anyhow::bail!(
+            "--operator-notes '{}' does not exist or is not a file",
+            request.operator_notes.display()
+        );
+    }
+    let capture_request = HardwareSniffCaptureRequest {
+        usbpcapcmd: request.usbpcapcmd,
+        usbpcap_interface: request.usbpcap_interface,
+        devices: request.devices,
+        hardware_doctor: Some(request.hardware_doctor),
+        duration_ms: request.duration_ms,
+        out: request.out,
+        overwrite: request.overwrite,
+        confirm_external_passive_capture: request.confirm_external_passive_capture,
+    };
+    validate_hardware_sniff_capture_request(&capture_request)
+}
+
+fn sniff_guided_capture_child_args(
+    request: &HardwareSniffGuidedCaptureRequest<'_>,
+    capture_receipt_path: &Path,
+) -> Vec<String> {
+    let mut args = vec![
+        "hardware".to_string(),
+        "sniff-capture".to_string(),
+        "--usbpcapcmd".to_string(),
+        request.usbpcapcmd.display().to_string(),
+        "--usbpcap-interface".to_string(),
+        request.usbpcap_interface.to_string(),
+        "--devices".to_string(),
+        request.devices.to_string(),
+        "--hardware-doctor".to_string(),
+        request.hardware_doctor.display().to_string(),
+        "--duration-ms".to_string(),
+        request.duration_ms.to_string(),
+        "--out".to_string(),
+        request.out.display().to_string(),
+        "--confirm-external-passive-capture".to_string(),
+        "--json-out".to_string(),
+        capture_receipt_path.display().to_string(),
+    ];
+    if request.overwrite {
+        args.push("--overwrite".to_string());
+    }
+    args
+}
+
+fn sniff_guided_capture_child_log_paths(out: &Path) -> (PathBuf, PathBuf) {
+    let parent = out
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new(""));
+    (
+        parent.join("sniff-guided-capture-child.stdout.txt"),
+        parent.join("sniff-guided-capture-child.stderr.txt"),
+    )
+}
+
+fn guided_0x8e_marker_receipt_path(operator_notes: &Path, marker: &str) -> PathBuf {
+    operator_notes
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new(""))
+        .join(format!("marker-{marker}.json"))
+}
+
+fn build_hardware_sniff_guided_capture_receipt(
+    request: &HardwareSniffGuidedCaptureRequest<'_>,
+    capture_process_id: Option<u32>,
+    capture_process_exit_status: Option<String>,
+    capture_process_exit_success: bool,
+    capture_receipt_path: &Path,
+    capture_receipt: Option<&serde_json::Value>,
+    marker_receipts: &[HardwareSniffGuidedCaptureMarkerReceipt],
+) -> Result<HardwareSniffGuidedCaptureReceipt> {
+    let marker_by_name = marker_receipts
+        .iter()
+        .map(|receipt| (receipt.marker.as_str(), receipt))
+        .collect::<BTreeMap<_, _>>();
+    let missing_capture_event_markers = PIT_HOUSE_0X8E_TIMING_EVENT_ORDER
+        .iter()
+        .copied()
+        .filter(|marker| !marker_by_name.contains_key(marker))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let capture_receipt_success = capture_receipt
+        .and_then(|receipt| receipt.get("success").and_then(serde_json::Value::as_bool))
+        == Some(true);
+    let capture_started_at_utc = capture_receipt
+        .and_then(|receipt| receipt.get("started_at_utc"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let capture_completed_at_utc = capture_receipt
+        .and_then(|receipt| receipt.get("completed_at_utc"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let capture_start = capture_started_at_utc
+        .as_deref()
+        .and_then(parse_guided_capture_timestamp);
+    let capture_stop = capture_completed_at_utc
+        .as_deref()
+        .and_then(parse_guided_capture_timestamp);
+
+    let mut marker_statuses = Vec::new();
+    let mut outside_window = Vec::new();
+    for receipt in marker_receipts {
+        let marker_time = parse_guided_capture_timestamp(&receipt.marker_timestamp_utc);
+        let inside_capture_window = match (capture_start, capture_stop, marker_time) {
+            (Some(start), Some(stop), Some(marker_time)) => {
+                marker_time >= start && marker_time <= stop
+            }
+            _ => false,
+        };
+        if !inside_capture_window
+            && PIT_HOUSE_0X8E_TIMING_EVENT_ORDER.contains(&receipt.marker.as_str())
+        {
+            outside_window.push(HardwareSniffGuidedCaptureMarkerWindowViolation {
+                marker: receipt.marker.clone(),
+                marker_timestamp_utc: receipt.marker_timestamp_utc.clone(),
+                capture_started_at_utc: capture_started_at_utc.clone(),
+                capture_completed_at_utc: capture_completed_at_utc.clone(),
+            });
+        }
+        marker_statuses.push(HardwareSniffGuidedCaptureMarkerStatus {
+            marker: receipt.marker.clone(),
+            marker_receipt_path: receipt.marker_receipt_path.clone(),
+            marker_timestamp_utc: receipt.marker_timestamp_utc.clone(),
+            inside_capture_window,
+        });
+    }
+
+    let capture_receipt_window_verified = capture_start.is_some()
+        && capture_stop.is_some()
+        && missing_capture_event_markers.is_empty()
+        && outside_window.is_empty();
+    let success =
+        capture_process_exit_success && capture_receipt_success && capture_receipt_window_verified;
+
+    Ok(HardwareSniffGuidedCaptureReceipt {
+        schema_version: 1,
+        success,
+        command: "wheelctl hardware sniff-guided-capture",
+        generated_at_utc: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        plan_path: required_path_display(request.plan, "plan")?,
+        hardware_doctor_path: required_path_display(request.hardware_doctor, "hardware-doctor")?,
+        operator_notes_path: required_path_display(request.operator_notes, "operator-notes")?,
+        capture_receipt_path: required_path_display(capture_receipt_path, "capture-receipt")?,
+        capture_process_id,
+        capture_process_exit_status,
+        capture_process_exit_success,
+        capture_receipt_success,
+        capture_started_at_utc,
+        capture_completed_at_utc,
+        execution_model: GUIDED_0X8E_CAPTURE_EXECUTION_MODEL,
+        preferred_operator_path: true,
+        manual_two_terminal_fallback_available: true,
+        guided_prompts_stamped_markers: true,
+        required_capture_event_markers: PIT_HOUSE_0X8E_TIMING_EVENT_ORDER
+            .iter()
+            .copied()
+            .map(str::to_string)
+            .collect(),
+        required_capture_event_marker_count: PIT_HOUSE_0X8E_TIMING_EVENT_ORDER.len(),
+        recorded_capture_event_marker_count: marker_statuses
+            .iter()
+            .filter(|status| PIT_HOUSE_0X8E_TIMING_EVENT_ORDER.contains(&status.marker.as_str()))
+            .count(),
+        missing_capture_event_markers,
+        marker_receipts: marker_statuses,
+        capture_receipt_window_verified,
+        operator_event_markers_inside_capture_receipt_window: capture_receipt_window_verified,
+        operator_event_markers_outside_capture_receipt_window: outside_window,
+        evidence_status: SNIFF_EVIDENCE_STATUS,
+        claim_scope: "guided_external_passive_capture_only",
+        native_control_evidence: false,
+        openracing_hardware_output: false,
+        opened_hid_device: false,
+        opened_serial_device: false,
+        sent_read_only_query_commands: false,
+        sent_output_writes: false,
+        sent_feature_reports: false,
+        sent_configuration_writes: false,
+        sent_firmware_or_dfu_commands: false,
+        hardware_output_authorized: false,
+        native_visible_ready: false,
+        smoke_ready: false,
+        release_ready: false,
+        wheel_moved_under_openracing: false,
+        visible_motion_verified: false,
+        output_was_sent: false,
+        authority_state: "blocked",
+        next_allowed_action: if success {
+            "Summarize and review the passive capture; do not authorize output."
+        } else {
+            "Repeat the guided passive capture with complete markers inside the capture receipt window."
+        },
+        notes: vec![
+            "sniff-guided-capture wraps wheelctl hardware sniff-capture and stamps operator-note markers from inline prompts".to_string(),
+            "the command does not open HID or serial devices and does not send read-only queries, PIDFF, feature reports, vendor writes, firmware, DFU, configuration, or hardware output commands".to_string(),
+            "guided capture receipts are local operator workflow receipts, not native-control proof or readiness claims".to_string(),
+        ],
+    })
+}
+
+fn parse_guided_capture_timestamp(value: &str) -> Option<chrono::DateTime<Utc>> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|timestamp| timestamp.with_timezone(&Utc))
 }
 
 fn build_hardware_sniff_summary(
@@ -3016,10 +3387,36 @@ fn wheelctl_sniff_capture_command(
     )
 }
 
+fn wheelctl_sniff_guided_capture_command(
+    extcap_path: &str,
+    hint: &HardwareSniffNotesUsbPcapHint,
+    hardware_doctor_path: &str,
+    plan_path: &Path,
+    capture_path: &str,
+    operator_notes_path: &str,
+    duration_ms: u64,
+) -> String {
+    let guided_receipt_path = sniff_guided_capture_receipt_path(capture_path);
+    format!(
+        "wheelctl hardware sniff-guided-capture --plan {} --hardware-doctor {} --usbpcapcmd {} --usbpcap-interface {} --devices {} --duration-ms {} --out {} --operator-notes {} --confirm-external-passive-capture --json-out {}",
+        powershell_double_quoted_arg(&plan_path.display().to_string()),
+        powershell_double_quoted_arg(hardware_doctor_path),
+        powershell_double_quoted_arg(extcap_path),
+        powershell_double_quoted_arg(&hint.usbpcap_interface),
+        hint.capture_devices_value,
+        duration_ms,
+        powershell_double_quoted_arg(capture_path),
+        powershell_double_quoted_arg(operator_notes_path),
+        powershell_double_quoted_arg(&guided_receipt_path)
+    )
+}
+
 fn sniff_notes_next_concrete_capture_commands(
     plan: &StoredHardwareSniffPlan,
     capture_hints: Option<&HardwareSniffNotesCaptureHints>,
     hardware_doctor_path: Option<&str>,
+    plan_path: &Path,
+    operator_notes_path: Option<&Path>,
 ) -> Vec<HardwareSniffNotesNextConcreteCommand> {
     let Some(capture_hints) = capture_hints else {
         return Vec::new();
@@ -3031,22 +3428,71 @@ fn sniff_notes_next_concrete_capture_commands(
         return Vec::new();
     };
     let capture_path = sniff_notes_local_capture_path(plan);
+    let operator_notes_path = operator_notes_path
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| sniff_notes_local_operator_notes_path(plan));
     let duration_ms = sniff_notes_capture_duration_ms(plan);
     let json_out_path = sniff_capture_receipt_path(&capture_path);
     capture_hints
         .hints
         .iter()
-        .map(|hint| {
-            let command = wheelctl_sniff_capture_command(
+        .flat_map(|hint| {
+            let capture_command = wheelctl_sniff_capture_command(
                 extcap_path,
                 hint,
                 hardware_doctor_path,
                 &capture_path,
                 duration_ms,
             );
-            HardwareSniffNotesNextConcreteCommand {
+            let mut commands = Vec::new();
+            if plan.scenario == "pit-house-0x8e-timing-correlation" {
+                let guided_command = wheelctl_sniff_guided_capture_command(
+                    extcap_path,
+                    hint,
+                    hardware_doctor_path,
+                    plan_path,
+                    &capture_path,
+                    &operator_notes_path,
+                    duration_ms,
+                );
+                commands.push(HardwareSniffNotesNextConcreteCommand {
+                    name: "run_guided_0x8e_passive_capture".to_string(),
+                    command: guided_command,
+                    scenario: plan.scenario.clone(),
+                    usbpcap_interface: hint.usbpcap_interface.clone(),
+                    capture_devices_value: hint.capture_devices_value.clone(),
+                    hardware_doctor_path: hardware_doctor_path.to_string(),
+                    duration_ms,
+                    out_path: capture_path.clone(),
+                    json_out_path: sniff_guided_capture_receipt_path(&capture_path),
+                    requires_operator_action: true,
+                    external_passive_capture: true,
+                    raw_pcapng_commit_default: false,
+                    preferred_operator_path: Some(true),
+                    fallback_operator_path: Some(false),
+                    manual_two_terminal_fallback_available: Some(true),
+                    marker_prompts_in_same_terminal: Some(true),
+                    capture_blocks_current_shell: Some(true),
+                    marker_commands_must_run_while_capture_running: Some(false),
+                    requires_parallel_marker_terminal: Some(false),
+                    execution_model: Some(GUIDED_0X8E_CAPTURE_EXECUTION_MODEL.to_string()),
+                    openracing_hardware_output: false,
+                    opened_hid_device: false,
+                    opened_serial_device: false,
+                    sent_read_only_query_commands: false,
+                    sent_output_writes: false,
+                    sent_feature_reports: false,
+                    sent_configuration_writes: false,
+                    sent_firmware_or_dfu_commands: false,
+                    native_control_evidence: false,
+                    visible_motion_verified: false,
+                    smoke_ready: false,
+                    release_ready: false,
+                });
+            }
+            commands.push(HardwareSniffNotesNextConcreteCommand {
                 name: "run_bounded_external_passive_sniff_capture".to_string(),
-                command,
+                command: capture_command,
                 scenario: plan.scenario.clone(),
                 usbpcap_interface: hint.usbpcap_interface.clone(),
                 capture_devices_value: hint.capture_devices_value.clone(),
@@ -3057,6 +3503,30 @@ fn sniff_notes_next_concrete_capture_commands(
                 requires_operator_action: true,
                 external_passive_capture: true,
                 raw_pcapng_commit_default: false,
+                preferred_operator_path: if plan.scenario == "pit-house-0x8e-timing-correlation" {
+                    Some(false)
+                } else {
+                    None
+                },
+                fallback_operator_path: if plan.scenario == "pit-house-0x8e-timing-correlation" {
+                    Some(true)
+                } else {
+                    None
+                },
+                manual_two_terminal_fallback_available: if plan.scenario
+                    == "pit-house-0x8e-timing-correlation"
+                {
+                    Some(true)
+                } else {
+                    None
+                },
+                marker_prompts_in_same_terminal: if plan.scenario
+                    == "pit-house-0x8e-timing-correlation"
+                {
+                    Some(false)
+                } else {
+                    None
+                },
                 capture_blocks_current_shell: Some(true),
                 marker_commands_must_run_while_capture_running: Some(
                     plan.scenario == "pit-house-0x8e-timing-correlation",
@@ -3084,7 +3554,8 @@ fn sniff_notes_next_concrete_capture_commands(
                 visible_motion_verified: false,
                 smoke_ready: false,
                 release_ready: false,
-            }
+            });
+            commands
         })
         .collect()
 }
@@ -3094,6 +3565,15 @@ fn sniff_capture_receipt_path(capture_path: &str) -> String {
     let parent = path.parent().unwrap_or_else(|| Path::new(""));
     parent
         .join("sniff-capture-receipt.json")
+        .display()
+        .to_string()
+}
+
+fn sniff_guided_capture_receipt_path(capture_path: &str) -> String {
+    let path = Path::new(capture_path);
+    let parent = path.parent().unwrap_or_else(|| Path::new(""));
+    parent
+        .join("sniff-guided-capture-receipt.json")
         .display()
         .to_string()
 }
@@ -3212,9 +3692,31 @@ fn render_sniff_operator_notes_template(
                     hint.capture_devices_value
                 ));
                 if let Some(extcap_path) = &capture_hints.usbpcap_extcap_path {
-                    out.push_str(
-                        "- [ ] Bounded wheelctl USBPcapCMD capture helper; run this while performing the scenario. This command blocks until capture completes; for 0x8E timing-correlation captures, keep it running in one terminal and stamp event markers from a second terminal during the capture window:\n\n",
-                    );
+                    if plan.scenario == "pit-house-0x8e-timing-correlation" {
+                        out.push_str(
+                            "- [ ] Preferred guided one-terminal 0x8E capture helper; run this while performing the LED change/restore scenario. It starts the bounded passive capture and prompts for each required event marker in the same terminal:\n\n",
+                        );
+                        out.push_str("```powershell\n");
+                        out.push_str(&wheelctl_sniff_guided_capture_command(
+                            extcap_path,
+                            hint,
+                            &capture_hints.source,
+                            plan_path,
+                            &local_capture_path,
+                            &operator_notes_path
+                                .map(|path| path.display().to_string())
+                                .unwrap_or_else(|| sniff_notes_local_operator_notes_path(plan)),
+                            sniff_notes_capture_duration_ms(plan),
+                        ));
+                        out.push_str("\n```\n");
+                        out.push_str(
+                            "- [ ] Manual two-terminal fallback; this command blocks until capture completes, so stamp event markers from a second terminal during the capture window:\n\n",
+                        );
+                    } else {
+                        out.push_str(
+                            "- [ ] Bounded wheelctl USBPcapCMD capture helper; run this while performing the scenario. This command blocks until capture completes:\n\n",
+                        );
+                    }
                     out.push_str("```powershell\n");
                     out.push_str(&wheelctl_sniff_capture_command(
                         extcap_path,
@@ -6653,6 +7155,39 @@ fn print_sniff_capture(
     Ok(())
 }
 
+fn print_sniff_guided_capture(
+    json: bool,
+    json_out: Option<&Path>,
+    receipt: &HardwareSniffGuidedCaptureReceipt,
+) -> Result<()> {
+    if json {
+        write_stdout_line(&serde_json::to_string_pretty(receipt)?)?;
+        return Ok(());
+    }
+
+    write_stdout_line(&format!(
+        "Guided passive 0x8E capture {}.",
+        if receipt.success {
+            "completed"
+        } else {
+            "failed closed"
+        }
+    ))?;
+    write_stdout_line(&format!(
+        "Markers recorded: {}/{}; inside capture window: {}",
+        receipt.recorded_capture_event_marker_count,
+        receipt.required_capture_event_marker_count,
+        receipt.operator_event_markers_inside_capture_receipt_window
+    ))?;
+    write_stdout_line(
+        "Non-claiming: guided capture sent no OpenRacing hardware output and made no readiness claim.",
+    )?;
+    if let Some(path) = json_out {
+        write_stdout_line(&format!("Receipt: {}", path.display()))?;
+    }
+    Ok(())
+}
+
 fn print_sniff_summary(
     json: bool,
     json_out: Option<&Path>,
@@ -7114,6 +7649,20 @@ struct HardwareSniffCaptureRequest<'a> {
 }
 
 #[derive(Debug)]
+struct HardwareSniffGuidedCaptureRequest<'a> {
+    plan: &'a Path,
+    hardware_doctor: &'a Path,
+    usbpcapcmd: &'a Path,
+    usbpcap_interface: &'a str,
+    devices: &'a str,
+    duration_ms: u64,
+    out: &'a Path,
+    operator_notes: &'a Path,
+    overwrite: bool,
+    confirm_external_passive_capture: bool,
+}
+
+#[derive(Debug)]
 struct HardwareSniffBundleRequest<'a> {
     plan: &'a Path,
     receipt: &'a Path,
@@ -7241,6 +7790,14 @@ struct HardwareSniffNotesNextConcreteCommand {
     external_passive_capture: bool,
     raw_pcapng_commit_default: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    preferred_operator_path: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fallback_operator_path: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    manual_two_terminal_fallback_available: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    marker_prompts_in_same_terminal: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     capture_blocks_current_shell: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     marker_commands_must_run_while_capture_running: Option<bool>,
@@ -7348,6 +7905,87 @@ struct HardwareSniffMarkerReceipt {
     satisfies_smoke_ready: bool,
     satisfies_release_ready: bool,
     readiness_claims: HardwareSniffReadinessClaims,
+}
+
+#[derive(Debug, Clone)]
+struct HardwareSniffGuidedCaptureMarkerReceipt {
+    marker: String,
+    marker_receipt_path: String,
+    marker_timestamp_utc: String,
+}
+
+#[derive(Debug, Serialize)]
+struct HardwareSniffGuidedCaptureMarkerStatus {
+    marker: String,
+    marker_receipt_path: String,
+    marker_timestamp_utc: String,
+    inside_capture_window: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct HardwareSniffGuidedCaptureMarkerWindowViolation {
+    marker: String,
+    marker_timestamp_utc: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    capture_started_at_utc: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    capture_completed_at_utc: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct HardwareSniffGuidedCaptureReceipt {
+    schema_version: u32,
+    success: bool,
+    command: &'static str,
+    generated_at_utc: String,
+    plan_path: String,
+    hardware_doctor_path: String,
+    operator_notes_path: String,
+    capture_receipt_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    capture_process_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    capture_process_exit_status: Option<String>,
+    capture_process_exit_success: bool,
+    capture_receipt_success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    capture_started_at_utc: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    capture_completed_at_utc: Option<String>,
+    execution_model: &'static str,
+    preferred_operator_path: bool,
+    manual_two_terminal_fallback_available: bool,
+    guided_prompts_stamped_markers: bool,
+    required_capture_event_markers: Vec<String>,
+    required_capture_event_marker_count: usize,
+    recorded_capture_event_marker_count: usize,
+    missing_capture_event_markers: Vec<String>,
+    marker_receipts: Vec<HardwareSniffGuidedCaptureMarkerStatus>,
+    capture_receipt_window_verified: bool,
+    operator_event_markers_inside_capture_receipt_window: bool,
+    operator_event_markers_outside_capture_receipt_window:
+        Vec<HardwareSniffGuidedCaptureMarkerWindowViolation>,
+    evidence_status: &'static str,
+    claim_scope: &'static str,
+    native_control_evidence: bool,
+    openracing_hardware_output: bool,
+    opened_hid_device: bool,
+    opened_serial_device: bool,
+    sent_read_only_query_commands: bool,
+    sent_output_writes: bool,
+    sent_feature_reports: bool,
+    sent_configuration_writes: bool,
+    sent_firmware_or_dfu_commands: bool,
+    hardware_output_authorized: bool,
+    native_visible_ready: bool,
+    smoke_ready: bool,
+    release_ready: bool,
+    wheel_moved_under_openracing: bool,
+    visible_motion_verified: bool,
+    output_was_sent: bool,
+    authority_state: &'static str,
+    next_allowed_action: &'static str,
+    notes: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -10411,10 +11049,11 @@ mod tests {
             else {
                 return Err("expected next_concrete_command".into());
             };
-            assert!(command.contains("wheelctl hardware sniff-capture"));
+            assert!(command.contains("wheelctl hardware sniff-guided-capture"));
             assert!(command.contains("--hardware-doctor"));
             assert!(command.contains("--duration-ms 180000"));
             assert!(command.contains("--devices 3"));
+            assert!(command.contains("--operator-notes"));
             assert!(!command.contains("--devices 4"));
             assert!(!command.contains("<USBPcapCMD.exe"));
             assert!(!command.contains("<capture_devices_value>"));
@@ -10422,7 +11061,7 @@ mod tests {
                 value
                     .get("next_concrete_command_count")
                     .and_then(serde_json::Value::as_u64),
-                Some(1)
+                Some(2)
             );
 
             let Some(sequence) = value
@@ -10431,10 +11070,39 @@ mod tests {
             else {
                 return Err("expected next_concrete_command_sequence array".into());
             };
-            assert_eq!(sequence.len(), 1);
+            assert_eq!(sequence.len(), 2);
             let Some(entry) = sequence.first() else {
-                return Err("expected one next concrete command entry".into());
+                return Err("expected next concrete command entry".into());
             };
+            assert_eq!(
+                entry.get("name").and_then(serde_json::Value::as_str),
+                Some("run_guided_0x8e_passive_capture")
+            );
+            assert_eq!(
+                entry
+                    .get("preferred_operator_path")
+                    .and_then(serde_json::Value::as_bool),
+                Some(true)
+            );
+            assert_eq!(
+                entry
+                    .get("requires_parallel_marker_terminal")
+                    .and_then(serde_json::Value::as_bool),
+                Some(false)
+            );
+            assert_eq!(
+                entry
+                    .get("marker_prompts_in_same_terminal")
+                    .and_then(serde_json::Value::as_bool),
+                Some(true)
+            );
+            let manual_entry = sequence
+                .iter()
+                .find(|entry| {
+                    entry.get("name").and_then(serde_json::Value::as_str)
+                        == Some("run_bounded_external_passive_sniff_capture")
+                })
+                .ok_or("expected manual two-terminal fallback command")?;
             assert_eq!(
                 entry
                     .get("capture_devices_value")
@@ -10454,25 +11122,25 @@ mod tests {
                 Some(true)
             );
             assert_eq!(
-                entry
+                manual_entry
                     .get("capture_blocks_current_shell")
                     .and_then(serde_json::Value::as_bool),
                 Some(true)
             );
             assert_eq!(
-                entry
+                manual_entry
                     .get("marker_commands_must_run_while_capture_running")
                     .and_then(serde_json::Value::as_bool),
                 Some(true)
             );
             assert_eq!(
-                entry
+                manual_entry
                     .get("requires_parallel_marker_terminal")
                     .and_then(serde_json::Value::as_bool),
                 Some(true)
             );
             assert_eq!(
-                entry
+                manual_entry
                     .get("execution_model")
                     .and_then(serde_json::Value::as_str),
                 Some(
@@ -10621,6 +11289,177 @@ mod tests {
                 "unexpected error: {unsupported}"
             );
             Ok(())
+        }
+
+        #[test]
+        fn sniff_guided_capture_receipt_is_non_claiming() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = GuidedCaptureTestPaths::new(dir.path());
+            let request = paths.request();
+            let capture_receipt = serde_json::json!({
+                "success": true,
+                "started_at_utc": "2026-05-31T12:00:00Z",
+                "completed_at_utc": "2026-05-31T12:03:00Z"
+            });
+            let marker_receipts = guided_marker_receipts("2026-05-31T12:00:10Z");
+
+            let receipt = build_hardware_sniff_guided_capture_receipt(
+                &request,
+                Some(42),
+                Some("exit code: 0".to_string()),
+                true,
+                &dir.path().join("sniff-capture-receipt.json"),
+                Some(&capture_receipt),
+                &marker_receipts,
+            )?;
+
+            assert!(receipt.success);
+            assert_eq!(receipt.command, "wheelctl hardware sniff-guided-capture");
+            assert_eq!(receipt.execution_model, GUIDED_0X8E_CAPTURE_EXECUTION_MODEL);
+            assert!(receipt.preferred_operator_path);
+            assert!(receipt.manual_two_terminal_fallback_available);
+            assert!(receipt.capture_receipt_window_verified);
+            assert!(receipt.operator_event_markers_inside_capture_receipt_window);
+            assert!(!receipt.native_control_evidence);
+            assert!(!receipt.openracing_hardware_output);
+            assert!(!receipt.opened_hid_device);
+            assert!(!receipt.opened_serial_device);
+            assert!(!receipt.sent_read_only_query_commands);
+            assert!(!receipt.sent_output_writes);
+            assert!(!receipt.sent_feature_reports);
+            assert!(!receipt.sent_configuration_writes);
+            assert!(!receipt.sent_firmware_or_dfu_commands);
+            assert!(!receipt.hardware_output_authorized);
+            assert!(!receipt.native_visible_ready);
+            assert!(!receipt.smoke_ready);
+            assert!(!receipt.release_ready);
+            assert!(!receipt.wheel_moved_under_openracing);
+            assert!(!receipt.visible_motion_verified);
+            assert!(!receipt.output_was_sent);
+            assert_eq!(receipt.authority_state, "blocked");
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_guided_capture_missing_markers_fail_closed() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = GuidedCaptureTestPaths::new(dir.path());
+            let request = paths.request();
+            let capture_receipt = serde_json::json!({
+                "success": true,
+                "started_at_utc": "2026-05-31T12:00:00Z",
+                "completed_at_utc": "2026-05-31T12:03:00Z"
+            });
+            let mut marker_receipts = guided_marker_receipts("2026-05-31T12:00:10Z");
+            marker_receipts.retain(|receipt| receipt.marker != "pit_house_closed_utc");
+
+            let receipt = build_hardware_sniff_guided_capture_receipt(
+                &request,
+                Some(42),
+                Some("exit code: 0".to_string()),
+                true,
+                &dir.path().join("sniff-capture-receipt.json"),
+                Some(&capture_receipt),
+                &marker_receipts,
+            )?;
+
+            assert!(!receipt.success);
+            assert!(!receipt.capture_receipt_window_verified);
+            assert!(
+                receipt
+                    .missing_capture_event_markers
+                    .iter()
+                    .any(|marker| marker == "pit_house_closed_utc")
+            );
+            assert!(!receipt.openracing_hardware_output);
+            assert!(!receipt.visible_motion_verified);
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_guided_capture_markers_outside_window_fail_closed() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = GuidedCaptureTestPaths::new(dir.path());
+            let request = paths.request();
+            let capture_receipt = serde_json::json!({
+                "success": true,
+                "started_at_utc": "2026-05-31T12:00:00Z",
+                "completed_at_utc": "2026-05-31T12:03:00Z"
+            });
+            let mut marker_receipts = guided_marker_receipts("2026-05-31T12:00:10Z");
+            for receipt in &mut marker_receipts {
+                if receipt.marker == "ks_top_left_front_led_changed_to_red_utc" {
+                    receipt.marker_timestamp_utc = "2026-05-31T12:04:00Z".to_string();
+                }
+            }
+
+            let receipt = build_hardware_sniff_guided_capture_receipt(
+                &request,
+                Some(42),
+                Some("exit code: 0".to_string()),
+                true,
+                &dir.path().join("sniff-capture-receipt.json"),
+                Some(&capture_receipt),
+                &marker_receipts,
+            )?;
+
+            assert!(!receipt.success);
+            assert!(!receipt.operator_event_markers_inside_capture_receipt_window);
+            assert!(receipt.operator_event_markers_outside_capture_receipt_window.iter().any(
+                |violation| violation.marker == "ks_top_left_front_led_changed_to_red_utc"
+            ));
+            assert!(!receipt.openracing_hardware_output);
+            assert!(!receipt.sent_output_writes);
+            Ok(())
+        }
+
+        struct GuidedCaptureTestPaths {
+            plan_path: PathBuf,
+            hardware_doctor: PathBuf,
+            usbpcapcmd: PathBuf,
+            out: PathBuf,
+            operator_notes: PathBuf,
+        }
+
+        impl GuidedCaptureTestPaths {
+            fn new(dir: &Path) -> Self {
+                Self {
+                    plan_path: dir.join("sniff-plan.json"),
+                    hardware_doctor: dir.join("hardware-doctor.json"),
+                    usbpcapcmd: dir.join("USBPcapCMD.exe"),
+                    out: dir.join("capture.pcapng"),
+                    operator_notes: dir.join("operator-notes.md"),
+                }
+            }
+
+            fn request(&self) -> HardwareSniffGuidedCaptureRequest<'_> {
+                HardwareSniffGuidedCaptureRequest {
+                    plan: &self.plan_path,
+                    hardware_doctor: &self.hardware_doctor,
+                    usbpcapcmd: &self.usbpcapcmd,
+                    usbpcap_interface: r"\\.\USBPcap2",
+                    devices: "3",
+                    duration_ms: 180_000,
+                    out: &self.out,
+                    operator_notes: &self.operator_notes,
+                    overwrite: false,
+                    confirm_external_passive_capture: true,
+                }
+            }
+        }
+
+        fn guided_marker_receipts(timestamp: &str) -> Vec<HardwareSniffGuidedCaptureMarkerReceipt> {
+            PIT_HOUSE_0X8E_TIMING_EVENT_ORDER
+                .iter()
+                .copied()
+                .map(|marker| HardwareSniffGuidedCaptureMarkerReceipt {
+                    marker: marker.to_string(),
+                    marker_receipt_path: format!(
+                        "target/sniff/pit-house-0x8e-timing-correlation/marker-{marker}.json"
+                    ),
+                    marker_timestamp_utc: timestamp.to_string(),
+                })
+                .collect()
         }
 
         #[test]

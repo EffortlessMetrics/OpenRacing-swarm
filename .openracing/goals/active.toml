@@ -3116,6 +3116,30 @@ commands = [
 ]
 
 [[work_item]]
+id = "guided-0x8e-passive-capture-session"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-guided-0x8e-passive-capture-session"
+current_pointer = "crates/cli/src/commands/hardware.rs"
+claim_boundary = "No-output guided passive capture workflow only; adds wheelctl hardware sniff-guided-capture and makes the 0x8E handoff prefer a one-terminal guided operator flow while preserving the two-terminal sniff-capture/sniff-marker fallback. Opens no HID or serial device directly, sends no read-only query/output/configuration/firmware/PIDFF command, runs no live capture in this PR, creates no authorization, promotes no semantic decode or tuple sendability, and keeps live probe, PIDFF rerun, force escalation, native-control, native-visible, smoke-ready, simulator, coexistence, high-torque, release-ready, output, and wheel-movement claims false."
+commands = [
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-plan --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json --overwrite",
+  "cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-movement-blocker-audit --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json --demux-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json --framing-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json --extended-scan-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json --payload-rerun-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json --timing-correlation-plan ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json --timing-correlation-review ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json --overwrite",
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl sniff_capture -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl sniff_marker -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl sniff_guided -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl parse_hardware_sniff_guided_capture -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

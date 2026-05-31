@@ -182,8 +182,8 @@ The broader Moza objective remains incomplete:
 | Authority status endpoint diagnosis | `vendor-status-authority-endpoint-diagnosis.json`; `vendor-status-endpoint-candidates.json`; `vendor-status-endpoint-candidates-from-payload-rerun.json` | Broad serial transport ruled out; current authority-status endpoint returns ACK/no-payload or diagnostic telemetry only, and corrected endpoint candidates remain non-sendable |
 | Payload-bearing status-source candidates | `vendor-status-payload-source-candidates.json` | Recorded four nonzero `0x8E` device-to-host setting-change samples as `unknown_do_not_send` status-source questions; no semantic decode, probe readiness, authorization, output, or motion claim |
 | Payload-source semantic review | `vendor-status-payload-source-semantic-review.json` | Fixture decoder coverage now recognizes the four `0x8E` samples as payload-bearing status-source questions, but the review records no same-tuple payload variation, no timing correlation, no authority-state source, and no live probe/output/motion eligibility |
-| 0x8E timing-correlation plan | `vendor-status-timing-correlation-plan.json` | Stages a passive Pit House event-marker capture for the same four `0x8E` samples with fresh hardware-doctor selector verification and complete LED default-teal/red/default-teal notes; no capture, timing proof, live probe, authorization, output, or motion claim |
-| 0x8E timing-correlation sniff plan | `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json` | Checked-in passive handoff that requires fresh USBPcap selector review, explicit event markers, KS top-left front LED default-teal/red/default-teal notes, and 180000 ms `sniff-capture --hardware-doctor`; still no capture, semantic decode, output, or motion claim |
+| 0x8E timing-correlation plan | `vendor-status-timing-correlation-plan.json` | Stages a passive Pit House event-marker capture for the same four `0x8E` samples with fresh hardware-doctor selector verification and complete LED default-teal/red/default-teal notes; the preferred operator path is now guided one-terminal capture with the two-terminal path retained as fallback; no capture, timing proof, live probe, authorization, output, or motion claim |
+| 0x8E timing-correlation sniff plan | `ci/hardware/sniff/moza-r5/2026-05-13/pit-house-0x8e-timing-correlation/sniff-plan.json` | Checked-in passive handoff that requires fresh USBPcap selector review, explicit event markers, KS top-left front LED default-teal/red/default-teal notes, and a 180000 ms selector-verified capture; `sniff-guided-capture` is preferred and `sniff-capture --hardware-doctor` remains fallback; still no capture, semantic decode, output, or motion claim |
 | Existing 0x8E timing-correlation review | `vendor-status-timing-correlation-review.json` | Reviews the accepted Pit House setting-change derived summary and now records same-tuple payload variation for all four target `0x8E` tuples, but the old notes lack complete event-marker timing proof; live probe, authorization, output, and motion remain blocked |
 | Vendor status movement blocker audit | `vendor-status-movement-blocker-audit.json` | Consolidates the zero-response probe thread: broad serial ownership/line-setting/framing/scan-window depth are not the current blocker; authority endpoint/command mismatch and missing timing-correlated payload-bearing status-source evidence still block live probe, authorization, output, and motion |
 | Passive sniff protocol evidence | `pit-house-open-idle`, `pit-house-full-controls`, and `pit-house-setting-change` sniff receipts, summaries, and bundle manifests | Recorded non-claiming evidence; setting-change keeps the earlier low-yield classification as historical failed evidence |
@@ -238,9 +238,11 @@ containment for the mode/enable candidate questions: representative frames are
 observable in software fake transport while the command/send path still rejects
 them as unknown commands. The current native-path passive target remains the
 planned `pit-house-0x8e-timing-correlation` capture, which requires fresh
-hardware-doctor selector verification, a passive `sniff-capture
---hardware-doctor` command, explicit LED event markers, and no OpenRacing
-hardware output. The existing setting-change capture was reviewed and found
+hardware-doctor selector verification, a passive selector-verified capture,
+explicit LED event markers, and no OpenRacing hardware output.
+`sniff-guided-capture` is now the preferred one-terminal capture wrapper; the
+older two-terminal `sniff-capture --hardware-doctor` plus `sniff-marker` flow
+remains a fallback. The existing setting-change capture was reviewed and found
 insufficient for this purpose because the reprocessed derived summary now shows
 varying same-tuple `0x8E` payloads, but the notes still lack the event-marker
 fields required to prove timing correlation.
@@ -630,6 +632,17 @@ doctor selector and before starting USBPcap capture. Stamp `capture_start_utc`
 and the semantic Pit House/KS LED event markers while capture is running. This
 is operator-note sequencing only; it does not run a capture or authorize
 OpenRacing output.
+
+The preferred operator path for the staged 0x8E capture is now
+`wheelctl hardware sniff-guided-capture`. The guided command starts the bounded
+passive `sniff-capture` helper as a child process, prompts for each required
+runtime marker in the same terminal, writes marker receipts, and fails closed if
+markers are missing or outside the child capture receipt window. The older
+two-terminal `sniff-capture` plus `sniff-marker` choreography remains available
+as a manual fallback, but it is no longer the preferred handoff. This is still a
+passive capture workflow only: no HID open, serial open, read-only query,
+PIDFF, output, firmware/DFU, authorization, semantic decode, native-visible, or
+wheel-movement claim is created.
 
 `vendor-status-timing-correlation-review` now treats the hardware-doctor marker
 and capture start/stop markers as administrative chronology only. A candidate
