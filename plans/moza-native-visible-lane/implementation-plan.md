@@ -11198,6 +11198,88 @@ source-of-truth work item. Do not remove the guided capture command,
 selector-verified capture handoff, timing-correlation plan, two-terminal
 fallback, movement-blocker audit, or native-visible promotion block.
 
+## Work item: guided-0x8e-capture-test-lock
+
+Status: completed
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: weak regression coverage around guided capture marker receipts and selector rejection
+Blocked by: completed guided 0x8E preflight test lock
+
+### Goal
+
+Lock the guided 0x8E capture workflow as passive capture UX setup, not movement
+or authority evidence, before the next physical guided capture is run.
+
+### Production delta
+
+The guided capture receipt now records duplicate required event markers and
+fails closed when any required marker appears more than once. Focused tests also
+assert:
+
+- the required guided capture event markers are exactly the ten capture-runtime
+  markers from `capture_start_utc` through `capture_stop_utc`;
+- missing required markers fail closed;
+- duplicate markers fail closed deterministically;
+- markers outside the child `sniff-capture` receipt window fail closed;
+- missing, invalid, and stale hardware-doctor receipts fail through the child
+  selector verification path before capture evidence can be accepted;
+- a hub/non-Moza USBPcap selector remains rejected as accepted Moza protocol
+  evidence;
+- guided receipt output keeps all movement, output, readiness, and authority
+  claims false;
+- CLI help describes `sniff-guided-capture` as external passive capture UX,
+  with no OpenRacing movement or output.
+
+### Non-goals
+
+No live capture, Pit House launch, raw pcap creation, sniff-capture receipt,
+sniff summary, timing-review evidence, authorization, motion artifact, HID open,
+serial open, read-only query, PIDFF command, feature report, vendor write, mode
+or enable write, configuration write, firmware/DFU interaction, authority
+command, output command, semantic decode, tuple sendability, native-control
+claim, native-visible claim, smoke-ready claim, release-ready claim, or
+wheel-movement claim.
+
+### Acceptance
+
+- Guided capture command rendering remains the preferred path in bench-wizard
+  and artifact-index navigation, with the two-terminal manual path still visible
+  as fallback.
+- The required guided capture event marker list stays exact and ordered.
+- Missing, duplicate, or outside-window markers fail closed.
+- Missing, invalid, stale, mismatched, or hub/non-Moza selector evidence cannot
+  become accepted Moza protocol evidence.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, `authority_state=blocked`,
+  `hardware_output_authorized=false`, `native_control_evidence=false`,
+  `native_visible_ready=false`, `smoke_ready=false`, and `release_ready=false`
+  remain asserted by receipt/navigation tests.
+- The next physical event is still the guided passive 0x8E capture.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_guided_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl sniff_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl sniff_marker -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the duplicate marker fail-closed receipt field, focused test
+assertions, CLI help wording, and this source-of-truth work item. Do not remove
+the guided capture command, selector-verified capture handoff, timing-correlation
+plan, two-terminal fallback, movement-blocker audit, or native-visible promotion
+block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

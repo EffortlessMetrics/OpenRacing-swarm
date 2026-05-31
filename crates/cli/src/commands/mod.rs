@@ -472,7 +472,7 @@ pub enum HardwareCommands {
         json_out: Option<std::path::PathBuf>,
     },
 
-    /// Run a one-terminal guided 0x8E passive capture with inline event markers
+    /// Run a one-terminal external passive 0x8E capture UX helper; no OpenRacing movement or output
     SniffGuidedCapture {
         /// Sniff plan JSON artifact to read
         #[arg(long)]

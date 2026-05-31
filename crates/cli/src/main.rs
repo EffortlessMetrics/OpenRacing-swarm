@@ -273,6 +273,23 @@ mod tests {
         Ok(parsed?)
     }
 
+    fn parse_cli_error<I, T>(args: I) -> Result<clap::Error, Box<dyn std::error::Error>>
+    where
+        I: IntoIterator<Item = T> + Send + 'static,
+        T: Into<std::ffi::OsString> + Clone + Send + 'static,
+    {
+        let handle = std::thread::Builder::new()
+            .name("wheelctl-parse-error-test".to_string())
+            .stack_size(8 * 1024 * 1024)
+            .spawn(move || Cli::try_parse_from(args))?;
+        let parsed = handle
+            .join()
+            .map_err(|_| std::io::Error::other("CLI parse thread panicked"))?;
+        parsed
+            .err()
+            .ok_or_else(|| "expected CLI parse error".into())
+    }
+
     // --- Global flag parsing ---
 
     #[test]
@@ -740,6 +757,21 @@ mod tests {
             }
             _ => return Err("expected Hardware SniffGuidedCapture command".into()),
         }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_hardware_sniff_guided_capture_help_is_no_output_capture_ux() -> TestResult {
+        let error = parse_cli_error(["wheelctl", "hardware", "sniff-guided-capture", "--help"])?;
+        let help = error.to_string();
+        assert!(
+            help.contains("external passive 0x8E capture UX helper"),
+            "help should describe guided capture as passive UX setup: {help}"
+        );
+        assert!(
+            help.contains("no OpenRacing movement or output"),
+            "help should keep movement/output claims closed: {help}"
+        );
         Ok(())
     }
 

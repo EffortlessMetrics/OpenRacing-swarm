@@ -3176,6 +3176,27 @@ commands = [
 ]
 
 [[work_item]]
+id = "guided-0x8e-capture-test-lock"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-guided-0x8e-capture-test-lock"
+current_pointer = "crates/cli/src/commands/hardware.rs"
+claim_boundary = "No-output guided-capture test lock only; hardens duplicate marker fail-closed receipts, exact required marker assertions, missing/invalid/stale hardware-doctor selector rejection, hub selector rejection, non-claiming guided receipt flags, and help/UX wording for wheelctl hardware sniff-guided-capture without running a live capture, launching Pit House, opening HID or serial, sending read-only query/output/feature/configuration/firmware/PIDFF/authority commands, creating capture/timing/authorization/motion artifacts, promoting semantic decode or tuple sendability, or claiming native-control, native-visible, smoke-ready, release-ready, output, or wheel movement."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl sniff_guided_capture -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl sniff_capture -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl sniff_marker -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

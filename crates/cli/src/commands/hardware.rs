@@ -1402,6 +1402,18 @@ fn build_hardware_sniff_guided_capture_receipt(
         .filter(|marker| !marker_by_name.contains_key(marker))
         .map(str::to_string)
         .collect::<Vec<_>>();
+    let mut marker_counts = BTreeMap::<&str, usize>::new();
+    for receipt in marker_receipts {
+        if PIT_HOUSE_0X8E_TIMING_EVENT_ORDER.contains(&receipt.marker.as_str()) {
+            *marker_counts.entry(receipt.marker.as_str()).or_insert(0) += 1;
+        }
+    }
+    let duplicate_capture_event_markers = PIT_HOUSE_0X8E_TIMING_EVENT_ORDER
+        .iter()
+        .copied()
+        .filter(|marker| marker_counts.get(marker).copied().unwrap_or_default() > 1)
+        .map(str::to_string)
+        .collect::<Vec<_>>();
     let capture_receipt_success = capture_receipt
         .and_then(|receipt| receipt.get("success").and_then(serde_json::Value::as_bool))
         == Some(true);
@@ -1451,6 +1463,7 @@ fn build_hardware_sniff_guided_capture_receipt(
     let capture_receipt_window_verified = capture_start.is_some()
         && capture_stop.is_some()
         && missing_capture_event_markers.is_empty()
+        && duplicate_capture_event_markers.is_empty()
         && outside_window.is_empty();
     let success =
         capture_process_exit_success && capture_receipt_success && capture_receipt_window_verified;
@@ -1485,6 +1498,7 @@ fn build_hardware_sniff_guided_capture_receipt(
             .filter(|status| PIT_HOUSE_0X8E_TIMING_EVENT_ORDER.contains(&status.marker.as_str()))
             .count(),
         missing_capture_event_markers,
+        duplicate_capture_event_markers,
         marker_receipts: marker_statuses,
         capture_receipt_window_verified,
         operator_event_markers_inside_capture_receipt_window: capture_receipt_window_verified,
@@ -7966,6 +7980,7 @@ struct HardwareSniffGuidedCaptureReceipt {
     required_capture_event_marker_count: usize,
     recorded_capture_event_marker_count: usize,
     missing_capture_event_markers: Vec<String>,
+    duplicate_capture_event_markers: Vec<String>,
     marker_receipts: Vec<HardwareSniffGuidedCaptureMarkerStatus>,
     capture_receipt_window_verified: bool,
     operator_event_markers_inside_capture_receipt_window: bool,
@@ -11324,6 +11339,18 @@ mod tests {
             assert_eq!(receipt.execution_model, GUIDED_0X8E_CAPTURE_EXECUTION_MODEL);
             assert!(receipt.preferred_operator_path);
             assert!(receipt.manual_two_terminal_fallback_available);
+            assert_eq!(
+                receipt.required_capture_event_markers,
+                PIT_HOUSE_0X8E_TIMING_EVENT_ORDER
+                    .iter()
+                    .copied()
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(receipt.required_capture_event_marker_count, 10);
+            assert_eq!(receipt.recorded_capture_event_marker_count, 10);
+            assert!(receipt.missing_capture_event_markers.is_empty());
+            assert!(receipt.duplicate_capture_event_markers.is_empty());
             assert!(receipt.capture_receipt_window_verified);
             assert!(receipt.operator_event_markers_inside_capture_receipt_window);
             assert!(!receipt.native_control_evidence);
@@ -11342,6 +11369,47 @@ mod tests {
             assert!(!receipt.wheel_moved_under_openracing);
             assert!(!receipt.visible_motion_verified);
             assert!(!receipt.output_was_sent);
+            assert_eq!(receipt.authority_state, "blocked");
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_guided_capture_duplicate_markers_fail_closed() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = GuidedCaptureTestPaths::new(dir.path());
+            let request = paths.request();
+            let capture_receipt = serde_json::json!({
+                "success": true,
+                "started_at_utc": "2026-05-31T12:00:00Z",
+                "completed_at_utc": "2026-05-31T12:03:00Z"
+            });
+            let mut marker_receipts = guided_marker_receipts("2026-05-31T12:00:10Z");
+            marker_receipts.push(HardwareSniffGuidedCaptureMarkerReceipt {
+                marker: "capture_start_utc".to_string(),
+                marker_receipt_path: "target/sniff/pit-house-0x8e-timing-correlation/marker-capture_start_utc-duplicate.json".to_string(),
+                marker_timestamp_utc: "2026-05-31T12:00:11Z".to_string(),
+            });
+
+            let receipt = build_hardware_sniff_guided_capture_receipt(
+                &request,
+                Some(42),
+                Some("exit code: 0".to_string()),
+                true,
+                &dir.path().join("sniff-capture-receipt.json"),
+                Some(&capture_receipt),
+                &marker_receipts,
+            )?;
+
+            assert!(!receipt.success);
+            assert!(!receipt.capture_receipt_window_verified);
+            assert!(receipt.missing_capture_event_markers.is_empty());
+            assert_eq!(
+                receipt.duplicate_capture_event_markers,
+                vec!["capture_start_utc".to_string()]
+            );
+            assert_eq!(receipt.recorded_capture_event_marker_count, 11);
+            assert!(!receipt.openracing_hardware_output);
+            assert!(!receipt.visible_motion_verified);
             assert_eq!(receipt.authority_state, "blocked");
             Ok(())
         }
@@ -11459,6 +11527,59 @@ mod tests {
         }
 
         #[test]
+        fn sniff_guided_capture_child_selector_guard_rejects_missing_hardware_doctor() -> TestResult
+        {
+            let dir = tempfile::tempdir()?;
+            let paths = GuidedCaptureTestPaths::new(dir.path());
+            let plan = sample_plan_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseZeroX8eTimingCorrelation,
+            )?;
+            write_json_file(&paths.plan_path, &plan)?;
+            fs::write(&paths.operator_notes, "operator notes placeholder")?;
+            fs::write(&paths.usbpcapcmd, "fake USBPcapCMD")?;
+
+            let request = paths.request();
+            validate_hardware_sniff_guided_capture_request(&request)?;
+            let capture_request = sniff_guided_capture_child_request(&request);
+            let error = sniff_capture_selector_verification(&capture_request)
+                .err()
+                .ok_or("expected missing hardware doctor to fail closed")?;
+            assert!(
+                error.to_string().contains("hardware-doctor.json"),
+                "unexpected error: {error}"
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_guided_capture_child_selector_guard_rejects_invalid_hardware_doctor() -> TestResult
+        {
+            let dir = tempfile::tempdir()?;
+            let paths = GuidedCaptureTestPaths::new(dir.path());
+            let plan = sample_plan_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseZeroX8eTimingCorrelation,
+            )?;
+            write_json_file(&paths.plan_path, &plan)?;
+            fs::write(&paths.operator_notes, "operator notes placeholder")?;
+            fs::write(&paths.usbpcapcmd, "fake USBPcapCMD")?;
+            fs::write(&paths.hardware_doctor, "{")?;
+
+            let request = paths.request();
+            validate_hardware_sniff_guided_capture_request(&request)?;
+            let capture_request = sniff_guided_capture_child_request(&request);
+            let error = sniff_capture_selector_verification(&capture_request)
+                .err()
+                .ok_or("expected invalid hardware doctor to fail closed")?;
+            assert!(
+                error.to_string().contains("failed to parse"),
+                "unexpected error: {error}"
+            );
+            Ok(())
+        }
+
+        #[test]
         fn sniff_guided_capture_child_selector_guard_rejects_stale_hardware_doctor() -> TestResult {
             let dir = tempfile::tempdir()?;
             let paths = GuidedCaptureTestPaths::new(dir.path());
@@ -11485,6 +11606,61 @@ mod tests {
                 error.to_string().contains("is older than"),
                 "unexpected error: {error}"
             );
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_guided_capture_child_selector_guard_rejects_hub_selector() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = GuidedCaptureTestPaths::new(dir.path());
+            let plan = sample_plan_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseZeroX8eTimingCorrelation,
+            )?;
+            write_json_file(&paths.plan_path, &plan)?;
+            fs::write(&paths.operator_notes, "operator notes placeholder")?;
+            fs::write(&paths.usbpcapcmd, "fake USBPcapCMD")?;
+            write_selector_hardware_doctor(dir.path())?;
+
+            let request = paths.request();
+            validate_hardware_sniff_guided_capture_request(&request)?;
+            let capture_request = sniff_guided_capture_child_request(&request);
+            let verification = sniff_capture_selector_verification(&capture_request)?;
+            assert_eq!(verification.status, USBPCAP_SELECTOR_NON_MOZA);
+            assert!(!verification.verified_moza_selector);
+            assert!(!verification.accepted_moza_protocol_evidence);
+            assert!(
+                verification
+                    .matched_device_displays
+                    .iter()
+                    .any(|display| display.contains("VID_1A40&PID_0101"))
+            );
+
+            let metadata = HardwareSniffCaptureOutputMetadata {
+                exists: true,
+                size_bytes: 42,
+                sha256: Some("abc123".to_string()),
+                finalization: HardwareSniffCapturePcapngFinalization {
+                    retry_count: 0,
+                    first_error: None,
+                    final_result: SNIFF_CAPTURE_PCAPNG_FINALIZATION_READABLE.to_string(),
+                    final_error: None,
+                    elapsed_ms: 0,
+                    succeeded: true,
+                    succeeded_after_retry: false,
+                },
+            };
+            let child_receipt =
+                sniff_capture_receipt_from_metadata(&capture_request, dir.path(), metadata)?;
+            assert!(!child_receipt.success);
+            assert_eq!(
+                child_receipt.selector_verification.status,
+                USBPCAP_SELECTOR_NON_MOZA
+            );
+            assert!(!child_receipt.openracing_hardware_output);
+            assert!(!child_receipt.satisfies_native_visible_ready);
+            assert!(!child_receipt.satisfies_smoke_ready);
+            assert!(!child_receipt.satisfies_release_ready);
             Ok(())
         }
 
