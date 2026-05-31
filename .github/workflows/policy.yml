@@ -29,6 +29,9 @@ jobs:
       - name: File policy (non-Rust surface)
         run: python scripts/policy_file.py
 
+      - name: Runner routing policy
+        run: scripts/check_runner_routing.sh
+
       - name: "No-panic family checker (Stage A: report-only)"
         run: python scripts/policy_no_panic.py
 
