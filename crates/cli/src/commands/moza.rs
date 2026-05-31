@@ -2659,6 +2659,16 @@ fn moza_native_motion_blocker_command_templates(command_templates: &[Value]) -> 
                 "requires_pcapng",
                 "requires_sniff_receipt",
                 "requires_sniff_summary",
+                "capture_blocks_current_shell",
+                "marker_commands_must_run_while_capture_running",
+                "requires_parallel_marker_terminal",
+                "requires_parallel_capture_process",
+                "must_run_while_capture_running",
+                "do_not_wait_until_capture_exits",
+                "parallel_marker_command_template",
+                "parallel_capture_command_template",
+                "execution_model",
+                "concurrency_note",
             ] {
                 if let Some(field) = template.get(key)
                     && let Some(object) = value.as_object_mut()
@@ -3221,6 +3231,30 @@ fn moza_native_motion_blocker_apply_materialized_capture_command(
                         serde_json::json!(true),
                     );
                     object.insert(
+                        "must_run_while_capture_running".to_string(),
+                        serde_json::json!(true),
+                    );
+                    object.insert(
+                        "do_not_wait_until_capture_exits".to_string(),
+                        serde_json::json!(true),
+                    );
+                    object.insert(
+                        "requires_parallel_capture_process".to_string(),
+                        serde_json::json!(true),
+                    );
+                    object.insert(
+                        "parallel_capture_command_template".to_string(),
+                        serde_json::json!("run_bounded_passive_usbpcap_capture"),
+                    );
+                    object.insert(
+                        "execution_model".to_string(),
+                        serde_json::json!(VENDOR_STATUS_TIMING_CORRELATION_EXECUTION_MODEL),
+                    );
+                    object.insert(
+                        "concurrency_note".to_string(),
+                        serde_json::json!(VENDOR_STATUS_TIMING_CORRELATION_CONCURRENCY_NOTE),
+                    );
+                    object.insert(
                         "required_capture_event_markers".to_string(),
                         serde_json::json!(markers),
                     );
@@ -3257,7 +3291,7 @@ fn moza_native_motion_blocker_materialized_capture_command_value(
 ) -> Value {
     let command = json_string(materialized_capture_command, "command").unwrap_or_default();
     let duration_ms = json_u64(materialized_capture_command, "duration_ms").unwrap_or(180_000);
-    serde_json::json!({
+    let mut value = serde_json::json!({
         "name": json_string(materialized_capture_command, "name").unwrap_or("run_bounded_external_passive_sniff_capture"),
         "owner": "operator_external_capture_tool",
         "openracing_command": true,
@@ -3309,7 +3343,34 @@ fn moza_native_motion_blocker_materialized_capture_command_value(
         "json_out_path": json_string(materialized_capture_command, "json_out_path").unwrap_or("target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json"),
         "command_template": command,
         "command": command
-    })
+    });
+    if let Some(object) = value.as_object_mut() {
+        object.insert(
+            "capture_blocks_current_shell".to_string(),
+            serde_json::json!(true),
+        );
+        object.insert(
+            "marker_commands_must_run_while_capture_running".to_string(),
+            serde_json::json!(true),
+        );
+        object.insert(
+            "requires_parallel_marker_terminal".to_string(),
+            serde_json::json!(true),
+        );
+        object.insert(
+            "parallel_marker_command_template".to_string(),
+            serde_json::json!("stamp_capture_event_markers"),
+        );
+        object.insert(
+            "execution_model".to_string(),
+            serde_json::json!(VENDOR_STATUS_TIMING_CORRELATION_EXECUTION_MODEL),
+        );
+        object.insert(
+            "concurrency_note".to_string(),
+            serde_json::json!(VENDOR_STATUS_TIMING_CORRELATION_CONCURRENCY_NOTE),
+        );
+    }
+    value
 }
 
 fn moza_native_motion_blocker_navigation(lane: &Path) -> Value {
@@ -31501,6 +31562,12 @@ fn vendor_status_timing_correlation_plan_receipt(
                 "must_not_run_unrendered_template": true,
                 "concrete_command_source": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md",
                 "selector_source": "fresh hardware doctor Moza USBPcap hint rendered by sniff-notes-template",
+                "capture_blocks_current_shell": true,
+                "marker_commands_must_run_while_capture_running": true,
+                "requires_parallel_marker_terminal": true,
+                "parallel_marker_command_template": "stamp_capture_event_markers",
+                "execution_model": VENDOR_STATUS_TIMING_CORRELATION_EXECUTION_MODEL,
+                "concurrency_note": VENDOR_STATUS_TIMING_CORRELATION_CONCURRENCY_NOTE,
                 "command": "wheelctl hardware sniff-capture --usbpcapcmd '<USBPcapCMD.exe from hardware doctor>' --usbpcap-interface '<USBPcap interface from hardware doctor>' --devices <capture_devices_value> --hardware-doctor target/moza-current/pit-house-0x8e-timing-correlation-hardware-doctor.json --duration-ms 180000 --out target/sniff/pit-house-0x8e-timing-correlation/capture.pcapng --confirm-external-passive-capture --json-out target/sniff/pit-house-0x8e-timing-correlation/sniff-capture-receipt.json"
             },
             {
@@ -31509,6 +31576,12 @@ fn vendor_status_timing_correlation_plan_receipt(
                 "edits_operator_notes_only": true,
                 "requires_capture_running": true,
                 "requires_capture_not_started": false,
+                "must_run_while_capture_running": true,
+                "do_not_wait_until_capture_exits": true,
+                "requires_parallel_capture_process": true,
+                "parallel_capture_command_template": "run_bounded_passive_usbpcap_capture",
+                "execution_model": VENDOR_STATUS_TIMING_CORRELATION_EXECUTION_MODEL,
+                "concurrency_note": VENDOR_STATUS_TIMING_CORRELATION_CONCURRENCY_NOTE,
                 "marker_phase": "capture_runtime_events",
                 "command_example_marker": "capture_start_utc",
                 "required_capture_event_markers": vendor_status_timing_correlation_event_marker_order(),
@@ -32785,6 +32858,11 @@ fn vendor_status_timing_correlation_marker_commands(markers: &[&str]) -> Vec<Val
                 "marker": marker,
                 "command": vendor_status_timing_correlation_marker_command(marker),
                 "edits_operator_notes_only": true,
+                "must_run_while_capture_running": true,
+                "do_not_wait_until_capture_exits": true,
+                "requires_parallel_capture_process": true,
+                "parallel_capture_command_template": "run_bounded_passive_usbpcap_capture",
+                "execution_model": VENDOR_STATUS_TIMING_CORRELATION_EXECUTION_MODEL,
                 "openracing_hardware_output": false,
                 "openracing_hid_open": false,
                 "opened_serial_device": false,
@@ -32805,6 +32883,10 @@ fn vendor_status_timing_correlation_marker_command(marker: &str) -> String {
         "wheelctl hardware sniff-marker --operator-notes target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md --marker {marker} --json-out target/sniff/pit-house-0x8e-timing-correlation/marker-{marker}.json"
     )
 }
+
+const VENDOR_STATUS_TIMING_CORRELATION_EXECUTION_MODEL: &str =
+    "run_capture_in_one_terminal_stamp_event_markers_in_second_terminal_during_capture_window";
+const VENDOR_STATUS_TIMING_CORRELATION_CONCURRENCY_NOTE: &str = "The sniff-capture helper blocks for the capture duration; start it in one terminal and stamp event markers from a second terminal while capture is still running. Do not wait until sniff-capture exits before stamping runtime markers.";
 
 const VENDOR_STATUS_TIMING_CORRELATION_WINDOW_SECONDS: f64 = 5.0;
 const VENDOR_STATUS_TIMING_CORRELATION_CAPTURE_WINDOW_TOLERANCE_SECONDS: f64 = 30.0;
@@ -46612,6 +46694,11 @@ fn push_next_concrete_command_markdown(out: &mut String, receipt: &Value) {
     out.push_str(&format!(
         "- openracing_firmware_or_dfu_commands: `{openracing_firmware_or_dfu}`\n"
     ));
+    if json_bool(command, "requires_parallel_marker_terminal") == Some(true)
+        || json_bool(command, "requires_parallel_capture_process") == Some(true)
+    {
+        out.push_str("- Execution model: run the blocking capture command in one terminal and the marker commands in a second terminal during the same capture window.\n");
+    }
     out.push_str("\n```powershell\n");
     out.push_str(command_text);
     out.push_str("\n```\n\n");
@@ -47652,6 +47739,15 @@ fn push_next_operator_step_external_capture_commands_markdown(out: &mut String, 
     }) {
         out.push_str("Do not run placeholder capture templates directly. Use the rendered command in `operator-notes.md` after `wheelctl hardware sniff-notes-template` reads the fresh hardware doctor selector.\n\n");
     }
+    if commands
+        .iter()
+        .any(|command| json_bool(command, "requires_parallel_marker_terminal") == Some(true))
+        || commands
+            .iter()
+            .any(|command| json_bool(command, "requires_parallel_capture_process") == Some(true))
+    {
+        out.push_str("For 0x8E timing correlation, the passive capture command blocks for the capture duration. Start it in one terminal and stamp marker commands from a second terminal while the capture is still running; do not wait until capture exits before stamping runtime markers.\n\n");
+    }
 }
 
 fn push_next_operator_step_commands_markdown(out: &mut String, step: &Value) {
@@ -47669,6 +47765,15 @@ fn push_next_operator_step_commands_markdown(out: &mut String, step: &Value) {
     out.push_str("### Next Operator Commands\n\n");
     if commands.len() != runnable_commands.len() {
         out.push_str("This table includes only commands runnable in the current pre-capture phase. It omits placeholder capture templates, capture-runtime marker commands, and post-capture receipt/summary/bundle/review commands until their prerequisites exist.\n\n");
+    }
+    if runnable_commands
+        .iter()
+        .any(|command| json_bool(command, "requires_parallel_marker_terminal") == Some(true))
+        || runnable_commands
+            .iter()
+            .any(|command| json_bool(command, "requires_parallel_capture_process") == Some(true))
+    {
+        out.push_str("For 0x8E timing correlation, run the blocking capture command in one terminal and the marker commands in a second terminal during the same capture window.\n\n");
     }
     out.push_str("| Name | Command |\n");
     out.push_str("| --- | --- |\n");
@@ -51990,6 +52095,14 @@ mod tests {
             json_string(template, "name") == Some("run_bounded_passive_usbpcap_capture")
                 && json_bool(template, "command_has_selector_placeholders") == Some(true)
                 && json_bool(template, "must_not_run_unrendered_template") == Some(true)
+                && json_bool(template, "capture_blocks_current_shell") == Some(true)
+                && json_bool(template, "marker_commands_must_run_while_capture_running")
+                    == Some(true)
+                && json_bool(template, "requires_parallel_marker_terminal") == Some(true)
+                && json_string(template, "parallel_marker_command_template")
+                    == Some("stamp_capture_event_markers")
+                && json_string(template, "execution_model")
+                    == Some(VENDOR_STATUS_TIMING_CORRELATION_EXECUTION_MODEL)
                 && json_string(template, "concrete_command_source")
                     == Some("target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md")
                 && json_string(template, "command")
@@ -52048,6 +52161,26 @@ mod tests {
             Some(false)
         );
         assert_eq!(
+            json_bool(capture_marker_template, "must_run_while_capture_running"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(capture_marker_template, "do_not_wait_until_capture_exits"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(capture_marker_template, "requires_parallel_capture_process"),
+            Some(true)
+        );
+        assert_eq!(
+            json_string(capture_marker_template, "parallel_capture_command_template"),
+            Some("run_bounded_passive_usbpcap_capture")
+        );
+        assert_eq!(
+            json_string(capture_marker_template, "execution_model"),
+            Some(VENDOR_STATUS_TIMING_CORRELATION_EXECUTION_MODEL)
+        );
+        assert_eq!(
             json_string(capture_marker_template, "marker_phase"),
             Some("capture_runtime_events")
         );
@@ -52099,6 +52232,18 @@ mod tests {
             assert_eq!(
                 json_bool(marker_command, "wheel_moved_under_openracing"),
                 Some(false)
+            );
+            assert_eq!(
+                json_bool(marker_command, "must_run_while_capture_running"),
+                Some(true)
+            );
+            assert_eq!(
+                json_bool(marker_command, "do_not_wait_until_capture_exits"),
+                Some(true)
+            );
+            assert_eq!(
+                json_bool(marker_command, "requires_parallel_capture_process"),
+                Some(true)
             );
             let command = json_string(marker_command, "command")
                 .ok_or("missing concrete timing marker command")?;
@@ -59818,6 +59963,29 @@ mod tests {
             Some("runnable_materialized_capture_command")
         );
         assert_eq!(
+            json_bool(next_concrete_command, "capture_blocks_current_shell"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(
+                next_concrete_command,
+                "marker_commands_must_run_while_capture_running"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(next_concrete_command, "requires_parallel_marker_terminal"),
+            Some(true)
+        );
+        assert_eq!(
+            json_string(next_concrete_command, "parallel_marker_command_template"),
+            Some("stamp_capture_event_markers")
+        );
+        assert_eq!(
+            json_string(next_concrete_command, "execution_model"),
+            Some(VENDOR_STATUS_TIMING_CORRELATION_EXECUTION_MODEL)
+        );
+        assert_eq!(
             json_bool(
                 next_concrete_command,
                 "materialized_from_sniff_notes_template_receipt"
@@ -59925,6 +60093,26 @@ mod tests {
             Some(true)
         );
         assert_eq!(
+            json_bool(marker_command, "must_run_while_capture_running"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(marker_command, "do_not_wait_until_capture_exits"),
+            Some(true)
+        );
+        assert_eq!(
+            json_bool(marker_command, "requires_parallel_capture_process"),
+            Some(true)
+        );
+        assert_eq!(
+            json_string(marker_command, "parallel_capture_command_template"),
+            Some("run_bounded_passive_usbpcap_capture")
+        );
+        assert_eq!(
+            json_string(marker_command, "execution_model"),
+            Some(VENDOR_STATUS_TIMING_CORRELATION_EXECUTION_MODEL)
+        );
+        assert_eq!(
             json_u64(marker_command, "required_capture_event_marker_count"),
             Some(10)
         );
@@ -59948,6 +60136,18 @@ mod tests {
                 Some(false)
             );
             assert_eq!(json_bool(marker_entry, "sent_output_writes"), Some(false));
+            assert_eq!(
+                json_bool(marker_entry, "must_run_while_capture_running"),
+                Some(true)
+            );
+            assert_eq!(
+                json_bool(marker_entry, "do_not_wait_until_capture_exits"),
+                Some(true)
+            );
+            assert_eq!(
+                json_bool(marker_entry, "requires_parallel_capture_process"),
+                Some(true)
+            );
             let marker_entry_text =
                 json_string(marker_entry, "command").ok_or("missing marker entry command")?;
             assert!(
@@ -60010,6 +60210,7 @@ mod tests {
             .ok_or("expected Next Concrete Command section")?;
         assert!(next_concrete_section.contains("wheelctl hardware sniff-capture"));
         assert!(next_concrete_section.contains("--devices 3"));
+        assert!(next_concrete_section.contains("second terminal"));
         assert!(!next_concrete_section.contains("<capture_devices_value>"));
         assert!(!next_concrete_section.contains("vendor-authority-attempt"));
         Ok(())
