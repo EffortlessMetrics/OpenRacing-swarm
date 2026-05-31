@@ -3140,6 +3140,24 @@ commands = [
 ]
 
 [[work_item]]
+id = "artifact-index-guided-0x8e-navigation"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-artifact-index-guided-0x8e-navigation"
+current_pointer = "crates/cli/src/commands/moza.rs"
+claim_boundary = "No-output artifact-index navigation alignment only; surfaces the guided 0x8E capture preference, manual two-terminal fallback, and capture_not_yet_run gate in the native-motion blocker index. Opens no HID or serial device, sends no read-only query/output/configuration/firmware/PIDFF command, runs no live capture, creates no authorization, promotes no semantic decode or tuple sendability, and keeps live probe, PIDFF rerun, force escalation, native-control, native-visible, smoke-ready, simulator, coexistence, high-torque, release-ready, output, and wheel-movement claims false."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl artifact_index -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

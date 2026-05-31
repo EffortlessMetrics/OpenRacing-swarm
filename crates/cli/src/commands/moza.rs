@@ -2393,6 +2393,27 @@ fn moza_native_motion_blocker_next_operator_step(
     if commands.is_empty() {
         return None;
     }
+    let preferred_path = if commands.iter().any(|command| {
+        json_string(command, "name") == Some("run_guided_0x8e_passive_capture")
+            && json_bool(command, "preferred_operator_path") == Some(true)
+    }) {
+        "guided_capture"
+    } else {
+        "not_available"
+    };
+    let fallback_path = if commands.iter().any(|command| {
+        json_bool(command, "fallback_operator_path") == Some(true)
+            && json_bool(command, "manual_two_terminal_fallback_available") == Some(true)
+    }) {
+        "two_terminal_manual"
+    } else {
+        "not_available"
+    };
+    let capture_not_yet_run = plan
+        .as_ref()
+        .and_then(|plan| json_bool(plan, "capture_recorded"))
+        .map(|recorded| !recorded)
+        .unwrap_or(true);
     let (sniff_notes_template_receipt, materialized_capture_command) =
         moza_native_motion_blocker_sniff_notes_template_receipt(
             scenario,
@@ -2556,6 +2577,18 @@ fn moza_native_motion_blocker_next_operator_step(
         );
         object.insert("demux_follow_up".to_string(), demux_follow_up);
         object.insert("original_status_probe".to_string(), original_status_probe);
+        object.insert(
+            "preferred_path".to_string(),
+            serde_json::json!(preferred_path),
+        );
+        object.insert(
+            "fallback_path".to_string(),
+            serde_json::json!(fallback_path),
+        );
+        object.insert(
+            "capture_not_yet_run".to_string(),
+            serde_json::json!(capture_not_yet_run),
+        );
     }
     Some(step)
 }
@@ -3607,6 +3640,9 @@ fn moza_native_motion_blocker_navigation(lane: &Path) -> Value {
         "live_read_only_probe_allowed": false,
         "authorization_plan_allowed": false,
         "motion_attempt_allowed": false,
+        "preferred_path": json_string(&step, "preferred_path").unwrap_or("not_available"),
+        "fallback_path": json_string(&step, "fallback_path").unwrap_or("not_available"),
+        "capture_not_yet_run": json_bool(&step, "capture_not_yet_run").unwrap_or(true),
         "wheel_moved_under_openracing": false,
         "visible_motion_verified": false,
         "output_was_sent": false,
@@ -47097,6 +47133,9 @@ fn push_vendor_authority_navigation_markdown(out: &mut String, receipt: &Value) 
         let authorization_plan_allowed =
             json_bool(blocker, "authorization_plan_allowed").unwrap_or(false);
         let motion_attempt_allowed = json_bool(blocker, "motion_attempt_allowed").unwrap_or(false);
+        let preferred_path = json_string(blocker, "preferred_path").unwrap_or("not_available");
+        let fallback_path = json_string(blocker, "fallback_path").unwrap_or("not_available");
+        let capture_not_yet_run = json_bool(blocker, "capture_not_yet_run").unwrap_or(false);
         let wheel_moved = json_bool(blocker, "wheel_moved_under_openracing").unwrap_or(false);
         let visible_motion = json_bool(blocker, "visible_motion_verified").unwrap_or(false);
         let output_was_sent = json_bool(blocker, "output_was_sent").unwrap_or(false);
@@ -47119,6 +47158,15 @@ fn push_vendor_authority_navigation_markdown(out: &mut String, receipt: &Value) 
         out.push_str(&format!(
             "- Motion attempt allowed: `{motion_attempt_allowed}`\n"
         ));
+        out.push_str(&format!(
+            "- preferred_path: `{}`\n",
+            markdown_escape(preferred_path)
+        ));
+        out.push_str(&format!(
+            "- fallback_path: `{}`\n",
+            markdown_escape(fallback_path)
+        ));
+        out.push_str(&format!("- capture_not_yet_run: `{capture_not_yet_run}`\n"));
         out.push_str(&format!(
             "- wheel_moved_under_openracing: `{wheel_moved}`\n"
         ));
@@ -59963,6 +60011,20 @@ mod tests {
         assert_eq!(json_bool(blocker, "visible_motion_verified"), Some(false));
         assert_eq!(json_bool(blocker, "output_was_sent"), Some(false));
         assert_eq!(json_string(blocker, "authority_state"), Some("blocked"));
+        assert_eq!(
+            json_string(blocker, "preferred_path"),
+            Some("guided_capture")
+        );
+        assert_eq!(
+            json_string(blocker, "fallback_path"),
+            Some("two_terminal_manual")
+        );
+        assert_eq!(json_bool(blocker, "capture_not_yet_run"), Some(true));
+
+        let artifact_markdown = render_moza_lane_artifact_index_markdown(&artifact_receipt);
+        assert!(artifact_markdown.contains("preferred_path: `guided_capture`"));
+        assert!(artifact_markdown.contains("fallback_path: `two_terminal_manual`"));
+        assert!(artifact_markdown.contains("capture_not_yet_run: `true`"));
 
         let wizard_markdown = render_moza_bench_wizard_markdown(&wizard_receipt);
         assert!(wizard_markdown.contains("capture_0x8e_timing_correlation"));

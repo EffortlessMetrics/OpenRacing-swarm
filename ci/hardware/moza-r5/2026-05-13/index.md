@@ -46,6 +46,9 @@ This section is native-control research navigation only. It does not open HID, s
 - Live read-only probe allowed: `false`
 - Authorization plan allowed: `false`
 - Motion attempt allowed: `false`
+- preferred_path: `guided_capture`
+- fallback_path: `two_terminal_manual`
+- capture_not_yet_run: `true`
 - wheel_moved_under_openracing: `false`
 - visible_motion_verified: `false`
 - output_was_sent: `false`

@@ -11074,6 +11074,72 @@ remove the two-terminal fallback, selector-verified capture handoff,
 timing-correlation review blockers, movement-blocker audit, or native-visible
 promotion block.
 
+## Work item: artifact-index-guided-0x8e-navigation
+
+Status: completed
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: artifact-index readers missing the guided 0x8E capture path summary
+Blocked by: completed guided 0x8E capture session
+
+### Goal
+
+Make the artifact-index native-motion blocker mirror the guided 0x8E capture
+handoff state that the bench wizard and timing-correlation plan already expose.
+
+### Production delta
+
+The artifact-index native-motion blocker now surfaces:
+
+```text
+preferred_path=guided_capture
+fallback_path=two_terminal_manual
+capture_not_yet_run=true
+motion_attempt_allowed=false
+live_read_only_probe_allowed=false
+authority_state=blocked
+```
+
+This is navigation only. It does not make the placeholder capture command
+runnable, does not run a capture, and does not promote the 0x8E evidence into a
+semantic decode or sendable tuple.
+
+### Non-goals
+
+No live capture, raw pcap commit, HID open, serial open, read-only query,
+PIDFF command, feature report, configuration write, firmware/DFU interaction,
+high torque, mode write, authority write, authorization, semantic decode,
+tuple sendability, native-control claim, native-visible claim, smoke-ready
+claim, release-ready claim, or wheel-movement claim.
+
+### Acceptance
+
+- Artifact-index JSON and Markdown show the preferred guided path, manual
+  two-terminal fallback, and `capture_not_yet_run=true`.
+- Existing movement gates remain false:
+  `motion_attempt_allowed=false`, `live_read_only_probe_allowed=false`, and
+  `authority_state=blocked`.
+- Bench-wizard guided capture behavior remains unchanged.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl artifact_index -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the artifact-index guided-path fields, Markdown lines, focused test
+assertions, and this source-of-truth work item. Do not remove the guided capture
+command, timing-correlation plan, two-terminal fallback, or movement-blocker
+audit.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
