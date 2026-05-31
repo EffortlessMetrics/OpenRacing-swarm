@@ -3057,6 +3057,21 @@ fn sniff_notes_next_concrete_capture_commands(
                 requires_operator_action: true,
                 external_passive_capture: true,
                 raw_pcapng_commit_default: false,
+                capture_blocks_current_shell: Some(true),
+                marker_commands_must_run_while_capture_running: Some(
+                    plan.scenario == "pit-house-0x8e-timing-correlation",
+                ),
+                requires_parallel_marker_terminal: Some(
+                    plan.scenario == "pit-house-0x8e-timing-correlation",
+                ),
+                execution_model: if plan.scenario == "pit-house-0x8e-timing-correlation" {
+                    Some(
+                        "run_capture_in_one_terminal_stamp_event_markers_in_second_terminal_during_capture_window"
+                            .to_string(),
+                    )
+                } else {
+                    None
+                },
                 openracing_hardware_output: false,
                 opened_hid_device: false,
                 opened_serial_device: false,
@@ -3198,7 +3213,7 @@ fn render_sniff_operator_notes_template(
                 ));
                 if let Some(extcap_path) = &capture_hints.usbpcap_extcap_path {
                     out.push_str(
-                        "- [ ] Bounded wheelctl USBPcapCMD capture helper; run this while performing the scenario:\n\n",
+                        "- [ ] Bounded wheelctl USBPcapCMD capture helper; run this while performing the scenario. This command blocks until capture completes; for 0x8E timing-correlation captures, keep it running in one terminal and stamp event markers from a second terminal during the capture window:\n\n",
                     );
                     out.push_str("```powershell\n");
                     out.push_str(&wheelctl_sniff_capture_command(
@@ -3279,7 +3294,7 @@ fn render_0x8e_event_marker_timestamp_helper(
     let mut out = String::new();
     out.push_str("\n## 0x8E Event Marker Timestamp Helper\n\n");
     out.push_str(
-        "Use these commands while the passive capture is running to stamp UTC event markers into this notes file. They only edit `operator-notes.md`; they do not open HID or serial devices and do not send OpenRacing hardware commands.\n\n",
+        "Use these commands while the passive capture is running to stamp UTC event markers into this notes file. Run the blocking `wheelctl hardware sniff-capture` command in one terminal, then run these `sniff-marker` commands from a second terminal when each named event happens. Do not wait until capture exits to stamp runtime markers. They only edit `operator-notes.md`; they do not open HID or serial devices and do not send OpenRacing hardware commands.\n\n",
     );
     out.push_str("```powershell\n");
     out.push_str(&format!(
@@ -3294,7 +3309,9 @@ fn render_0x8e_event_marker_timestamp_helper(
         "$notes",
         "hardware_doctor_selector_reviewed_utc",
     ));
-    out.push_str("\n\n# Run each marker when the named event happens:\n");
+    out.push_str(
+        "\n\n# In a second terminal while sniff-capture is still running, run each marker when the named event happens:\n",
+    );
     for marker in PIT_HOUSE_0X8E_TIMING_EVENT_ORDER {
         out.push_str(&sniff_marker_command(plan, "$notes", marker));
         out.push('\n');
@@ -3321,7 +3338,9 @@ fn render_0x8e_event_marker_timestamp_helper(
         "# After reviewing the fresh hardware doctor selector and before starting capture:\n",
     );
     out.push_str("Set-OpenRacingMarker \"hardware_doctor_selector_reviewed_utc\"\n\n");
-    out.push_str("# Run each marker when the named event happens:\n");
+    out.push_str(
+        "# In a second terminal while sniff-capture is still running, run each marker when the named event happens:\n",
+    );
     for marker in PIT_HOUSE_0X8E_TIMING_EVENT_ORDER {
         out.push_str(&format!("Set-OpenRacingMarker \"{marker}\"\n"));
     }
@@ -7221,6 +7240,14 @@ struct HardwareSniffNotesNextConcreteCommand {
     requires_operator_action: bool,
     external_passive_capture: bool,
     raw_pcapng_commit_default: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    capture_blocks_current_shell: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    marker_commands_must_run_while_capture_running: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    requires_parallel_marker_terminal: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    execution_model: Option<String>,
     openracing_hardware_output: bool,
     opened_hid_device: bool,
     opened_serial_device: bool,
@@ -10265,6 +10292,11 @@ mod tests {
             assert!(notes.contains("--hardware-doctor"));
             assert!(notes.contains("do not reuse stale USBPcap --devices values"));
             assert!(notes.contains(
+                "Run the blocking `wheelctl hardware sniff-capture` command in one terminal"
+            ));
+            assert!(notes.contains("from a second terminal"));
+            assert!(notes.contains("Do not wait until capture exits"));
+            assert!(notes.contains(
                 "$notes = \"target\\sniff\\pit-house-0x8e-timing-correlation\\operator-notes.md\""
             ));
             assert!(
@@ -10420,6 +10452,32 @@ mod tests {
                     .get("external_passive_capture")
                     .and_then(serde_json::Value::as_bool),
                 Some(true)
+            );
+            assert_eq!(
+                entry
+                    .get("capture_blocks_current_shell")
+                    .and_then(serde_json::Value::as_bool),
+                Some(true)
+            );
+            assert_eq!(
+                entry
+                    .get("marker_commands_must_run_while_capture_running")
+                    .and_then(serde_json::Value::as_bool),
+                Some(true)
+            );
+            assert_eq!(
+                entry
+                    .get("requires_parallel_marker_terminal")
+                    .and_then(serde_json::Value::as_bool),
+                Some(true)
+            );
+            assert_eq!(
+                entry
+                    .get("execution_model")
+                    .and_then(serde_json::Value::as_str),
+                Some(
+                    "run_capture_in_one_terminal_stamp_event_markers_in_second_terminal_during_capture_window"
+                )
             );
             for field in [
                 "openracing_hardware_output",

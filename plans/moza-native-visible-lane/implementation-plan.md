@@ -10873,6 +10873,113 @@ plan/audit receipts, and this source-of-truth work item. Do not remove the
 timing-correlation capture plan, marker helper, event-marker validators,
 movement-blocker audit, or native-visible promotion block.
 
+## Work item: mark-0x8e-capture-marker-concurrency
+
+Status: completed
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: treating the 0x8E timing capture and event-marker commands as a serial
+one-terminal checklist
+Blocked by: completed materialized 0x8E capture-marker handoff
+
+### Goal
+
+Make the 0x8E timing-correlation handoff explicit that `sniff-capture` is a
+blocking, long-running command and that runtime event markers must be stamped
+from a second terminal while the capture is still running.
+
+### Production delta
+
+`wheelctl moza vendor-status-timing-correlation-plan`,
+`wheelctl moza bench-wizard`, and `wheelctl hardware sniff-notes-template` now
+surface the execution model:
+
+```text
+run_capture_in_one_terminal_stamp_event_markers_in_second_terminal_during_capture_window
+```
+
+The bounded passive capture command is marked:
+
+```text
+capture_blocks_current_shell=true
+marker_commands_must_run_while_capture_running=true
+requires_parallel_marker_terminal=true
+parallel_marker_command_template=stamp_capture_event_markers
+```
+
+The capture-runtime marker command is marked:
+
+```text
+must_run_while_capture_running=true
+do_not_wait_until_capture_exits=true
+requires_parallel_capture_process=true
+parallel_capture_command_template=run_bounded_passive_usbpcap_capture
+```
+
+Operator notes and wizard Markdown also state the same two-terminal execution
+model so the next passive 0x8E capture does not wait until the pcap has closed
+before stamping event markers.
+
+### Non-goals
+
+No live capture, raw pcap commit, HID open, serial open, read-only query,
+PIDFF command, feature report, configuration write, firmware/DFU interaction,
+high torque, mode write, authority write, authorization, semantic decode,
+tuple sendability, native-control claim, native-visible claim, smoke-ready
+claim, release-ready claim, or wheel-movement claim.
+
+### Acceptance
+
+- The template capture command records that it blocks the current terminal.
+- The template and materialized capture commands point at the parallel
+  `stamp_capture_event_markers` marker step.
+- Runtime marker commands record that they must run while capture is still
+  running and must not wait for capture exit.
+- Operator notes and wizard Markdown describe the second-terminal marker flow.
+- The exact blocker remains the missing reviewed timing-correlated
+  payload-bearing authority/mode status source.
+- `wheel_moved_under_openracing=false`, `visible_motion_verified=false`,
+  `output_was_sent=false`, and `authority_state=blocked` remain explicit.
+
+### Proof commands
+
+```powershell
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-timing-correlation-plan `
+  --semantic-review ci/hardware/moza-r5/2026-05-13/vendor-status-payload-source-semantic-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --overwrite
+cargo run --locked -p wheelctl --bin wheelctl -- --json moza vendor-status-movement-blocker-audit `
+  --status-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix.json `
+  --demux-probe ci/hardware/moza-r5/2026-05-13/vendor-status-mode-matrix-demux.json `
+  --framing-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-framing-diagnosis.json `
+  --extended-scan-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-extended-scan-diagnosis.json `
+  --authority-endpoint-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-endpoint-diagnosis.json `
+  --payload-rerun-diagnosis ci/hardware/moza-r5/2026-05-13/vendor-status-authority-payload-rerun-diagnosis.json `
+  --timing-correlation-plan ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-plan.json `
+  --timing-correlation-review ci/hardware/moza-r5/2026-05-13/vendor-status-timing-correlation-review.json `
+  --json-out ci/hardware/moza-r5/2026-05-13/vendor-status-movement-blocker-audit.json `
+  --overwrite
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_probe -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_fake_transport -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl vendor_status_timing_correlation_plan -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_uses_materialized_sniff_notes_capture_command_after_selector_marker -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl bench_wizard_routes_native_motion_blocker_to_0x8e_timing_capture -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl sniff_notes_template -- --nocapture
+cargo test --locked -p racing-wheel-hid-moza-protocol --all-features -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the concurrency metadata, focused assertions, regenerated plan/audit
+receipts, and this source-of-truth work item. Do not remove the marker command
+list, selector-verified capture handoff, timing-correlation review blockers,
+movement-blocker audit, or native-visible promotion block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

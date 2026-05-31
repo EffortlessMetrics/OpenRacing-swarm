@@ -175,6 +175,11 @@
               "edits_operator_notes_only",
               "requires_capture_running",
               "requires_capture_not_started",
+              "must_run_while_capture_running",
+              "do_not_wait_until_capture_exits",
+              "requires_parallel_capture_process",
+              "parallel_capture_command_template",
+              "execution_model",
               "marker_phase",
               "command_example_marker",
               "all_marker_commands_materialized_in",
@@ -186,6 +191,15 @@
               "edits_operator_notes_only": { "const": true },
               "requires_capture_running": { "const": true },
               "requires_capture_not_started": { "const": false },
+              "must_run_while_capture_running": { "const": true },
+              "do_not_wait_until_capture_exits": { "const": true },
+              "requires_parallel_capture_process": { "const": true },
+              "parallel_capture_command_template": {
+                "const": "run_bounded_passive_usbpcap_capture"
+              },
+              "execution_model": {
+                "const": "run_capture_in_one_terminal_stamp_event_markers_in_second_terminal_during_capture_window"
+              },
               "marker_phase": { "const": "capture_runtime_events" },
               "command_example_marker": { "const": "capture_start_utc" },
               "all_marker_commands_materialized_in": {
@@ -204,6 +218,11 @@
               "name",
               "command_has_selector_placeholders",
               "must_not_run_unrendered_template",
+              "capture_blocks_current_shell",
+              "marker_commands_must_run_while_capture_running",
+              "requires_parallel_marker_terminal",
+              "parallel_marker_command_template",
+              "execution_model",
               "concrete_command_source",
               "selector_source"
             ],
@@ -213,6 +232,17 @@
               "openracing_hardware_output": { "const": false },
               "command_has_selector_placeholders": { "const": true },
               "must_not_run_unrendered_template": { "const": true },
+              "capture_blocks_current_shell": { "const": true },
+              "marker_commands_must_run_while_capture_running": {
+                "const": true
+              },
+              "requires_parallel_marker_terminal": { "const": true },
+              "parallel_marker_command_template": {
+                "const": "stamp_capture_event_markers"
+              },
+              "execution_model": {
+                "const": "run_capture_in_one_terminal_stamp_event_markers_in_second_terminal_during_capture_window"
+              },
               "concrete_command_source": {
                 "const": "target/sniff/pit-house-0x8e-timing-correlation/operator-notes.md"
               },
