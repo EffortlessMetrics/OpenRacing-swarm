@@ -3158,6 +3158,24 @@ commands = [
 ]
 
 [[work_item]]
+id = "guided-0x8e-preflight-test-lock"
+status = "completed"
+spec = "docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md"
+adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
+plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-guided-0x8e-preflight-test-lock"
+current_pointer = "crates/cli/src/commands/hardware.rs"
+claim_boundary = "No-output guided-capture test hardening only; locks in wrong-plan, missing-operator-notes, and stale hardware-doctor selector rejection for wheelctl hardware sniff-guided-capture without running a live capture, opening HID or serial, sending read-only query/output/configuration/firmware/PIDFF commands, creating authorization, promoting semantic decode or tuple sendability, or claiming native-control, native-visible, smoke-ready, release-ready, output, or wheel movement."
+commands = [
+  "python scripts/cargo_fmt_workspace.py",
+  "cargo test --locked -p wheelctl --bin wheelctl sniff_guided -- --nocapture",
+  "cargo test --locked -p wheelctl --bin wheelctl sniff_capture -- --nocapture",
+  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
+  "python scripts/policy_file.py",
+  "git diff --check",
+]
+
+[[work_item]]
 id = "native-visible-promotion"
 status = "blocked"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"

@@ -11140,6 +11140,64 @@ assertions, and this source-of-truth work item. Do not remove the guided capture
 command, timing-correlation plan, two-terminal fallback, or movement-blocker
 audit.
 
+## Work item: guided-0x8e-preflight-test-lock
+
+Status: completed
+Linked spec: docs/specs/OR-SPEC-0002-moza-r5-vendor-authority-test-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: weak regression coverage around guided capture preflight rejection
+Blocked by: completed guided 0x8E capture session
+
+### Goal
+
+Lock in the guided 0x8E capture preflight guardrails so future cleanups cannot
+turn the one-terminal helper into a looser capture path.
+
+### Production delta
+
+The guided capture path now constructs its child `sniff-capture` request through
+one shared helper. Focused tests assert that `wheelctl hardware
+sniff-guided-capture` fails before capture when:
+
+- the plan scenario is not `pit-house-0x8e-timing-correlation`;
+- the operator notes file is missing;
+- the child selector verification sees a stale hardware-doctor receipt.
+
+### Non-goals
+
+No live capture, raw pcap commit, HID open, serial open, read-only query,
+PIDFF command, feature report, configuration write, firmware/DFU interaction,
+high torque, mode write, authority write, authorization, semantic decode,
+tuple sendability, native-control claim, native-visible claim, smoke-ready
+claim, release-ready claim, or wheel-movement claim.
+
+### Acceptance
+
+- Guided capture validation rejects non-0x8E plans.
+- Guided capture validation rejects missing operator notes.
+- Guided capture's child request preserves the stale hardware-doctor selector
+  freshness gate.
+- Existing `sniff_capture` selector tests continue to pass.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl sniff_guided -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl sniff_capture -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Remove only the guided preflight helper/test assertions and this
+source-of-truth work item. Do not remove the guided capture command,
+selector-verified capture handoff, timing-correlation plan, two-terminal
+fallback, movement-blocker audit, or native-visible promotion block.
+
 ## Work item: native-visible-promotion
 
 Status: blocked

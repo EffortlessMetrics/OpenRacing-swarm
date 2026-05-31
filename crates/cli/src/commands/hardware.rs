@@ -1316,7 +1316,14 @@ fn validate_hardware_sniff_guided_capture_request(
             request.operator_notes.display()
         );
     }
-    let capture_request = HardwareSniffCaptureRequest {
+    let capture_request = sniff_guided_capture_child_request(request);
+    validate_hardware_sniff_capture_request(&capture_request)
+}
+
+fn sniff_guided_capture_child_request<'a>(
+    request: &HardwareSniffGuidedCaptureRequest<'a>,
+) -> HardwareSniffCaptureRequest<'a> {
+    HardwareSniffCaptureRequest {
         usbpcapcmd: request.usbpcapcmd,
         usbpcap_interface: request.usbpcap_interface,
         devices: request.devices,
@@ -1325,8 +1332,7 @@ fn validate_hardware_sniff_guided_capture_request(
         out: request.out,
         overwrite: request.overwrite,
         confirm_external_passive_capture: request.confirm_external_passive_capture,
-    };
-    validate_hardware_sniff_capture_request(&capture_request)
+    }
 }
 
 fn sniff_guided_capture_child_args(
@@ -11410,6 +11416,75 @@ mod tests {
             ));
             assert!(!receipt.openracing_hardware_output);
             assert!(!receipt.sent_output_writes);
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_guided_capture_rejects_non_0x8e_plan() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = GuidedCaptureTestPaths::new(dir.path());
+            write_json_file(&paths.plan_path, &sample_plan(dir.path())?)?;
+            fs::write(&paths.operator_notes, "operator notes placeholder")?;
+
+            let error = validate_hardware_sniff_guided_capture_request(&paths.request())
+                .err()
+                .ok_or("expected guided capture to reject non-0x8E plan")?;
+            assert!(
+                error
+                    .to_string()
+                    .contains("only supports pit-house-0x8e-timing-correlation"),
+                "unexpected error: {error}"
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_guided_capture_rejects_missing_operator_notes() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = GuidedCaptureTestPaths::new(dir.path());
+            let plan = sample_plan_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseZeroX8eTimingCorrelation,
+            )?;
+            write_json_file(&paths.plan_path, &plan)?;
+
+            let error = validate_hardware_sniff_guided_capture_request(&paths.request())
+                .err()
+                .ok_or("expected guided capture to reject missing operator notes")?;
+            assert!(
+                error.to_string().contains("--operator-notes"),
+                "unexpected error: {error}"
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_guided_capture_child_selector_guard_rejects_stale_hardware_doctor() -> TestResult {
+            let dir = tempfile::tempdir()?;
+            let paths = GuidedCaptureTestPaths::new(dir.path());
+            let plan = sample_plan_for_scenario(
+                dir.path(),
+                HardwareSniffScenario::PitHouseZeroX8eTimingCorrelation,
+            )?;
+            write_json_file(&paths.plan_path, &plan)?;
+            fs::write(&paths.operator_notes, "operator notes placeholder")?;
+            fs::write(&paths.usbpcapcmd, "fake USBPcapCMD")?;
+            write_selector_hardware_doctor_with_generated_at(
+                dir.path(),
+                (Utc::now() - chrono::Duration::minutes(30))
+                    .to_rfc3339_opts(SecondsFormat::Secs, true),
+            )?;
+
+            let request = paths.request();
+            validate_hardware_sniff_guided_capture_request(&request)?;
+            let capture_request = sniff_guided_capture_child_request(&request);
+            let error = sniff_capture_selector_verification(&capture_request)
+                .err()
+                .ok_or("expected stale hardware doctor to fail closed")?;
+            assert!(
+                error.to_string().contains("is older than"),
+                "unexpected error: {error}"
+            );
             Ok(())
         }
 
