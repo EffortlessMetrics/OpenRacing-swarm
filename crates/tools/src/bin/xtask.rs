@@ -809,8 +809,54 @@ fn write_quality_closure_markdown(path: &Path, receipt: &serde_json::Value) -> a
             .unwrap_or_else(|| "null".to_string());
         content.push_str(&format!("| `{field}` | `{value}` |\n"));
     }
+    append_result_states_markdown(&mut content, receipt);
     content.push_str("\nSkipped coverage is not treated as a pass by this receipt.\n");
     fs::write(path, content).with_context(|| format!("failed to write {}", path.display()))
+}
+
+fn append_result_states_markdown(content: &mut String, receipt: &serde_json::Value) {
+    let Some(states) = receipt
+        .get("result_states")
+        .and_then(serde_json::Value::as_array)
+        .filter(|states| !states.is_empty())
+    else {
+        return;
+    };
+
+    content.push_str("\n## Result States\n\n");
+    content.push_str("| Name | Status | Satisfied | Details |\n| --- | --- | ---: | --- |\n");
+    for state in states {
+        let name = markdown_cell(
+            state
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown"),
+        );
+        let status = markdown_cell(
+            state
+                .get("status")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown"),
+        );
+        let satisfied = state
+            .get("satisfied")
+            .and_then(serde_json::Value::as_bool)
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "null".to_string());
+        let details = markdown_cell(
+            state
+                .get("details")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+        );
+        content.push_str(&format!(
+            "| `{name}` | `{status}` | `{satisfied}` | {details} |\n"
+        ));
+    }
+}
+
+fn markdown_cell(value: &str) -> String {
+    value.replace('|', "\\|").replace(['\r', '\n'], " ")
 }
 
 fn unsafe_review_closure(check: bool, json_out: &Path, md_out: &Path) -> anyhow::Result<()> {
@@ -1431,6 +1477,7 @@ fn write_unsafe_review_closure_markdown(
             .unwrap_or_else(|| "null".to_string());
         content.push_str(&format!("| `{field}` | `{value}` |\n"));
     }
+    append_result_states_markdown(&mut content, receipt);
     content.push_str(
         "\nUnsafe-review closure makes unsafe seams reviewable; it does not prove soundness, UB-freedom, or Miri-clean status.\n",
     );
@@ -1769,6 +1816,101 @@ removal_condition = "Make patch coverage required or add a required non-skipped 
             }
             other => bail!("expected unsafe-review closure command, got {other:?}"),
         }
+        Ok(())
+    }
+
+    #[test]
+    fn quality_closure_markdown_surfaces_result_states() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("quality.md");
+        let receipt = serde_json::json!({
+            "status": "advisory",
+            "ripr_unresolved_gap_count": 0,
+            "ripr_plus_unowned_gap_count": 0,
+            "coverage_required": false,
+            "coverage_workflow_skipped": true,
+            "patch_coverage_status": "advisory",
+            "uncovered_owned_surface_count": 0,
+            "exception_count": 12,
+            "result_states": [
+                {
+                    "name": "coverage_workflow_execution",
+                    "status": "skipped",
+                    "satisfied": false,
+                    "details": "skipped coverage is not a pass"
+                },
+                {
+                    "name": "patch_coverage",
+                    "status": "advisory",
+                    "satisfied": false,
+                    "details": "patch coverage remains informational"
+                },
+                {
+                    "name": "mutation_expansion",
+                    "status": "not_applicable",
+                    "satisfied": true,
+                    "details": "outside this scaffold"
+                }
+            ]
+        });
+
+        write_quality_closure_markdown(&path, &receipt)?;
+        let content = fs::read_to_string(&path)?;
+
+        assert!(content.contains("## Result States"));
+        assert!(content.contains("| `coverage_workflow_execution` | `skipped` | `false` |"));
+        assert!(content.contains("| `patch_coverage` | `advisory` | `false` |"));
+        assert!(content.contains("| `mutation_expansion` | `not_applicable` | `true` |"));
+        Ok(())
+    }
+
+    #[test]
+    fn unsafe_review_markdown_surfaces_result_states() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("unsafe.md");
+        let receipt = serde_json::json!({
+            "status": "advisory",
+            "unsafe_site_count": 375,
+            "changed_unsafe_site_count": 0,
+            "unsafe_contract_missing_count": 329,
+            "local_guard_missing_count": 329,
+            "witness_missing_count": 329,
+            "owner_missing_count": 0,
+            "expired_review_count": 0,
+            "unreviewed_unsafe_gap_count": 0,
+            "unsafe_review_closure_satisfied": false,
+            "miri_status": "skipped",
+            "exception_count": 17,
+            "result_states": [
+                {
+                    "name": "unsafe_review_evidence",
+                    "status": "fail",
+                    "satisfied": false,
+                    "details": "missing contracts remain visible"
+                },
+                {
+                    "name": "miri",
+                    "status": "skipped",
+                    "satisfied": false,
+                    "details": "Miri did not run"
+                },
+                {
+                    "name": "hardware_execution",
+                    "status": "not_applicable",
+                    "satisfied": true,
+                    "details": "no hardware execution in this receipt"
+                }
+            ]
+        });
+
+        write_unsafe_review_closure_markdown(&path, &receipt)?;
+        let content = fs::read_to_string(&path)?;
+
+        assert!(content.contains("## Result States"));
+        assert!(content.contains("| `unsafe_review_evidence` | `fail` | `false` |"));
+        assert!(content.contains("| `miri` | `skipped` | `false` |"));
+        assert!(content.contains("| `hardware_execution` | `not_applicable` | `true` |"));
+        assert!(content.contains("does not prove soundness, UB-freedom, or Miri-clean status"));
         Ok(())
     }
 
