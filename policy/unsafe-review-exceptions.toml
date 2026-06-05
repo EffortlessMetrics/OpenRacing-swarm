@@ -254,16 +254,16 @@ id = "unsafe-test-helper-crate"
 owner = "core"
 path = "crates/openracing-test-helpers/**"
 kind = "test_helper_unsafe"
-reason = "Shared test helper unsafe code needs explicit helper contracts so product tests do not inherit hidden assumptions."
+reason = "Shared allocation-tracking test helper unsafe code is reviewed through a local GlobalAlloc delegation contract, non-null/tracking-enabled accounting guards, saturating counter updates, and helper-level allocation tracking witnesses."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p openracing-test-helpers --all-targets",
 ]
-review_after = "2026-06-30"
-removal_condition = "Test helper unsafe seams have local contracts and helper-level witnesses, or move under test-harness-only policy."
-safety_contract = "missing"
-local_guard = "missing"
-witness = "missing"
+review_after = "2026-09-30"
+removal_condition = "Reopen to missing evidence if a new openracing-test-helpers unsafe seam lands without a local contract, guard, and helper-level witness; retire only if the tracking allocator unsafe sites are removed or moved under per-site test-harness policy."
+safety_contract = "present"
+local_guard = "present"
+witness = "present"
 
 [[exception]]
 id = "unsafe-third-party-shared-memory"
