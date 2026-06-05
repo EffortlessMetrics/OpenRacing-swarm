@@ -219,16 +219,17 @@ id = "unsafe-plugin-runtime-crate"
 owner = "plugins"
 path = "crates/plugins/**"
 kind = "plugin_runtime_unsafe"
-reason = "Plugin runtime unsafe seams need local contracts around ABI/runtime boundaries before unsafe-review closure."
+reason = "The plugin helper shared-memory unsafe seams are reviewed through a local checked layout contract, header/payload guards, safety comments, and helper unit tests for invalid ABI/runtime layouts."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
+  "cargo test --locked -p racing-wheel-plugins --bin wheel-plugin-helper",
   "cargo test --locked -p racing-wheel-plugins --all-targets",
 ]
-review_after = "2026-06-30"
-removal_condition = "Plugin runtime unsafe seams have local contracts, guards, and ABI/runtime witnesses."
-safety_contract = "missing"
-local_guard = "missing"
-witness = "missing"
+review_after = "2026-09-30"
+removal_condition = "Reopen to missing evidence if a new plugin runtime unsafe seam lands without a local contract, guard, and unit/property/ABI witness; retire only if plugin runtime unsafe sites are removed or tracked per site."
+safety_contract = "present"
+local_guard = "present"
+witness = "present"
 
 [[exception]]
 id = "unsafe-schema-domain-unchecked-constructors"
