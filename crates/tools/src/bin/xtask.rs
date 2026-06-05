@@ -502,6 +502,48 @@ struct QualityException {
     status: String,
 }
 
+#[derive(Clone, Debug, Serialize)]
+struct QualityExceptionBreakdown {
+    id: String,
+    owner: String,
+    path: String,
+    kind: String,
+    review_after: String,
+    receipt_status: String,
+    follow_up_required: bool,
+    test_surface_count: u64,
+    removal_condition: String,
+}
+
+impl QualityExceptionBreakdown {
+    fn from_exception(
+        exception: &QualityException,
+        coverage_workflow_skipped: bool,
+        coverage_tool_status: &str,
+        patch_coverage_status: &str,
+        badge_endpoint_status: &str,
+    ) -> Self {
+        let (receipt_status, follow_up_required) = quality_exception_receipt_state(
+            exception,
+            coverage_workflow_skipped,
+            coverage_tool_status,
+            patch_coverage_status,
+            badge_endpoint_status,
+        );
+        Self {
+            id: exception.id.clone(),
+            owner: exception.owner.clone(),
+            path: exception.path.clone(),
+            kind: exception.kind.clone(),
+            review_after: exception.review_after.clone(),
+            receipt_status,
+            follow_up_required,
+            test_surface_count: exception.test_surface.len() as u64,
+            removal_condition: exception.removal_condition.clone(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct UnsafeSite {
     path: String,
@@ -640,20 +682,42 @@ fn build_quality_closure_receipt_value(
         && !patch_coverage_informational
         && coverage_tool_status == "pass";
 
-    let active_exceptions = ledger
+    let active_exceptions: Vec<&QualityException> = ledger
         .exception
         .iter()
         .filter(|entry| entry.status == "active")
-        .count();
-    let ripr_plus_unowned_gap_count = ledger
-        .exception
+        .collect();
+    let mut quality_exception_breakdown: Vec<QualityExceptionBreakdown> = active_exceptions
         .iter()
-        .filter(|entry| entry.status == "active" && entry.kind == "ripr_unowned_gap")
-        .count();
-    let uncovered_owned_surface_count = ledger
-        .exception
+        .map(|entry| {
+            QualityExceptionBreakdown::from_exception(
+                entry,
+                coverage_workflow_skipped,
+                coverage_tool_status,
+                patch_coverage_status,
+                badge_endpoint_status,
+            )
+        })
+        .collect();
+    quality_exception_breakdown.sort_by(|left, right| {
+        right
+            .follow_up_required
+            .cmp(&left.follow_up_required)
+            .then_with(|| {
+                receipt_status_rank(&left.receipt_status)
+                    .cmp(&receipt_status_rank(&right.receipt_status))
+            })
+            .then_with(|| left.kind.cmp(&right.kind))
+            .then_with(|| left.id.cmp(&right.id))
+    });
+
+    let ripr_plus_unowned_gap_count = active_exceptions
         .iter()
-        .filter(|entry| entry.status == "active" && entry.kind == "owned_coverage_gap")
+        .filter(|entry| entry.kind == "ripr_unowned_gap")
+        .count();
+    let uncovered_owned_surface_count = active_exceptions
+        .iter()
+        .filter(|entry| entry.kind == "owned_coverage_gap")
         .count();
 
     let quality_closure_satisfied = ripr_unresolved_gap_count == 0
@@ -683,7 +747,8 @@ fn build_quality_closure_receipt_value(
         "patch_coverage_status": patch_coverage_status,
         "badge_endpoint_status": badge_endpoint_status,
         "uncovered_owned_surface_count": uncovered_owned_surface_count,
-        "exception_count": active_exceptions,
+        "exception_count": active_exceptions.len() as u64,
+        "quality_exception_breakdown": quality_exception_breakdown,
         "workflow_observations": {
             "coverage_pr_label_gated": coverage_pr_label_gated,
             "legacy_ci_coverage_manual_only": legacy_ci_coverage_manual_only,
@@ -748,6 +813,55 @@ fn build_quality_closure_receipt_value(
             "not-release-readiness"
         ]
     }))
+}
+
+fn quality_exception_receipt_state(
+    exception: &QualityException,
+    coverage_workflow_skipped: bool,
+    coverage_tool_status: &str,
+    patch_coverage_status: &str,
+    badge_endpoint_status: &str,
+) -> (String, bool) {
+    match exception.kind.as_str() {
+        "ripr_gate_debt" => (
+            badge_endpoint_status.to_string(),
+            badge_endpoint_status != "pass",
+        ),
+        "coverage_gate_debt" => match exception.id.as_str() {
+            "coverage-pr-label-gated" | "legacy-ci-coverage-manual-only" => {
+                if coverage_workflow_skipped {
+                    ("skipped".to_string(), true)
+                } else {
+                    ("pass".to_string(), false)
+                }
+            }
+            "codecov-patch-informational" => (
+                patch_coverage_status.to_string(),
+                patch_coverage_status != "pass",
+            ),
+            "coverage-local-llvm-cov-tooling" => (
+                coverage_tool_status.to_string(),
+                coverage_tool_status != "pass",
+            ),
+            "coverage-windows-command-line-limit" => ("advisory".to_string(), true),
+            _ => ("fail".to_string(), true),
+        },
+        "owned_coverage_gap" => ("fail".to_string(), true),
+        "coverage_surface_deferred" => ("advisory".to_string(), true),
+        "generated" | "intentionally_advisory" => ("not_applicable".to_string(), false),
+        _ => ("advisory".to_string(), true),
+    }
+}
+
+fn receipt_status_rank(status: &str) -> u8 {
+    match status {
+        "fail" => 0,
+        "skipped" => 1,
+        "advisory" => 2,
+        "pass" => 3,
+        "not_applicable" => 4,
+        _ => 5,
+    }
 }
 
 fn detect_badge_endpoint_status(workspace_root: &Path) -> anyhow::Result<String> {
@@ -951,8 +1065,67 @@ fn write_quality_closure_markdown(path: &Path, receipt: &serde_json::Value) -> a
         content.push_str(&format!("| `{field}` | `{value}` |\n"));
     }
     append_result_states_markdown(&mut content, receipt);
+    append_quality_exception_breakdown_markdown(&mut content, receipt);
     content.push_str("\nSkipped coverage is not treated as a pass by this receipt.\n");
     fs::write(path, content).with_context(|| format!("failed to write {}", path.display()))
+}
+
+fn append_quality_exception_breakdown_markdown(content: &mut String, receipt: &serde_json::Value) {
+    let Some(rows) = receipt
+        .get("quality_exception_breakdown")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return;
+    };
+    if rows.is_empty() {
+        return;
+    }
+    content.push_str("\n## Quality Exception Breakdown\n\n");
+    content.push_str(
+        "| Exception | Owner | Kind | Status | Follow-up | Review After | Test Surfaces | Path |\n",
+    );
+    content.push_str("| --- | --- | --- | --- | ---: | --- | ---: | --- |\n");
+    for row in rows {
+        let id = markdown_cell(
+            row.get("id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+        );
+        let owner = markdown_cell(
+            row.get("owner")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+        );
+        let kind = markdown_cell(
+            row.get("kind")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+        );
+        let status = markdown_cell(
+            row.get("receipt_status")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown"),
+        );
+        let follow_up_required = row
+            .get("follow_up_required")
+            .and_then(serde_json::Value::as_bool)
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "null".to_string());
+        let review_after = markdown_cell(
+            row.get("review_after")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+        );
+        let test_surface_count = json_u64_field(row, "test_surface_count");
+        let path = markdown_cell(
+            row.get("path")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+        );
+        content.push_str(&format!(
+            "| `{id}` | `{owner}` | `{kind}` | `{status}` | `{follow_up_required}` | `{review_after}` | `{test_surface_count}` | `{path}` |\n"
+        ));
+    }
 }
 
 fn append_result_states_markdown(content: &mut String, receipt: &serde_json::Value) {
@@ -1981,6 +2154,22 @@ mod tests {
         assert_eq!(receipt["badge_endpoint_status"], "skipped");
         assert_eq!(receipt["patch_coverage_status"], "advisory");
         assert_eq!(
+            receipt["quality_exception_breakdown"][0]["id"],
+            "coverage-pr-label-gated"
+        );
+        assert_eq!(
+            receipt["quality_exception_breakdown"][0]["receipt_status"],
+            "skipped"
+        );
+        assert_eq!(
+            receipt["quality_exception_breakdown"][0]["follow_up_required"],
+            true
+        );
+        assert_eq!(
+            receipt["quality_exception_breakdown"][0]["test_surface_count"],
+            1
+        );
+        assert_eq!(
             receipt["result_states"][1]["name"],
             serde_json::Value::String("badge_endpoint_regeneration".to_string())
         );
@@ -2077,6 +2266,19 @@ mod tests {
             "badge_endpoint_status": "skipped",
             "uncovered_owned_surface_count": 0,
             "exception_count": 12,
+            "quality_exception_breakdown": [
+                {
+                    "id": "coverage-pr-label-gated",
+                    "owner": "release/ci",
+                    "path": ".github/workflows/coverage.yml",
+                    "kind": "coverage_gate_debt",
+                    "review_after": "2026-06-30",
+                    "receipt_status": "skipped",
+                    "follow_up_required": true,
+                    "test_surface_count": 2,
+                    "removal_condition": "Patch coverage is required on PRs."
+                }
+            ],
             "result_states": [
                 {
                     "name": "badge_endpoint_regeneration",
@@ -2122,6 +2324,10 @@ mod tests {
         assert!(content.contains("| `coverage_tooling` | `skipped` | `false` |"));
         assert!(content.contains("| `patch_coverage` | `advisory` | `false` |"));
         assert!(content.contains("| `mutation_expansion` | `not_applicable` | `true` |"));
+        assert!(content.contains("## Quality Exception Breakdown"));
+        assert!(content.contains(
+            "| `coverage-pr-label-gated` | `release/ci` | `coverage_gate_debt` | `skipped` | `true` | `2026-06-30` | `2` | `.github/workflows/coverage.yml` |"
+        ));
         Ok(())
     }
 

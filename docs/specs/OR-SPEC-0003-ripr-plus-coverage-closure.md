@@ -46,7 +46,8 @@ The quality closure command MUST emit a machine-readable receipt with at least:
   "patch_coverage_status": "pass|fail|advisory|skipped|not_applicable",
   "badge_endpoint_status": "pass|fail|advisory|skipped|not_applicable",
   "uncovered_owned_surface_count": 0,
-  "exception_count": 0
+  "exception_count": 0,
+  "quality_exception_breakdown": []
 }
 ```
 
@@ -84,6 +85,9 @@ The receipt MUST distinguish these statuses:
 - Generated, test-harness, benchmark, fuzz, build-script, UI, integration-test,
   workspace-hack, hardware-only, and unreachable surfaces MUST be represented by
   policy entries before they are excluded from the closure denominator.
+- Active RIPR+/coverage exceptions MUST be attributable through
+  `quality_exception_breakdown` with owner, path, kind, status, review date, and
+  whether follow-up remains required.
 - Hardware-only code SHOULD be covered through fake transports or receipt
   validators before any live hardware path is counted as covered.
 

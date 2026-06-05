@@ -32,6 +32,11 @@ debts:
 All three are tracked in `policy/quality-closure-exceptions.toml`; none is
 treated as a passing coverage, badge, or RIPR+ closure signal.
 
+The receipt also needs to keep active RIPR+/coverage exceptions attributable to
+owners and follow-up status, so follow-up PRs can distinguish required gate
+debt from generated, advisory, or deferred surfaces without redefining coverage
+closure as a line-percentage claim.
+
 ## Work item: define-ripr-plus-zero-and-coverage-closure-gates
 
 Status: completed
@@ -117,7 +122,8 @@ hardware lanes remain unchanged.
 
 1. Turn the skipped coverage debt into a required non-skipped coverage sentinel
    or a required patch coverage job.
-2. Close the highest-leverage owned gaps in core protocol/domain logic.
+2. Use `quality_exception_breakdown` to close the highest-leverage owned gaps in
+   core protocol/domain logic.
 3. Remove exception entries as durable tests land.
 4. Ratchet patch coverage, then crate/module coverage, using the receipt as the
    denominator.
