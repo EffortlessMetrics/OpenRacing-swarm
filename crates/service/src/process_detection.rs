@@ -12,11 +12,13 @@ use tokio::time::interval;
 use tracing::{debug, info, warn};
 
 #[cfg(target_os = "windows")]
-use winapi::um::handleapi::CloseHandle;
+use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
 #[cfg(target_os = "windows")]
 use winapi::um::tlhelp32::{
     CreateToolhelp32Snapshot, PROCESSENTRY32, Process32First, Process32Next, TH32CS_SNAPPROCESS,
 };
+#[cfg(target_os = "windows")]
+use winapi::um::winnt::HANDLE;
 
 #[cfg(target_os = "linux")]
 use std::fs;
@@ -120,42 +122,27 @@ impl ProcessDetectionService {
 
     #[cfg(target_os = "windows")]
     async fn scan_processes_windows(&self) -> Result<Vec<ProcessInfo>> {
-        use std::ffi::CStr;
-        use std::mem;
-
         let mut processes = Vec::new();
+        let snapshot = ProcessSnapshot::create()?;
+        let mut entry = process_entry_buffer();
 
-        unsafe {
-            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-            if snapshot == winapi::um::handleapi::INVALID_HANDLE_VALUE {
-                return Err(anyhow::anyhow!("Failed to create process snapshot"));
-            }
+        if first_process(snapshot.as_raw(), &mut entry) {
+            loop {
+                let process_name = process_entry_name(&entry);
 
-            let mut entry: PROCESSENTRY32 = mem::zeroed();
-            entry.dwSize = mem::size_of::<PROCESSENTRY32>() as u32;
+                let game_id = self.match_process_to_game(&process_name);
 
-            if Process32First(snapshot, &mut entry) != 0 {
-                loop {
-                    let process_name = CStr::from_ptr(entry.szExeFile.as_ptr())
-                        .to_string_lossy()
-                        .to_string();
+                processes.push(ProcessInfo {
+                    pid: entry.th32ProcessID,
+                    name: process_name,
+                    game_id,
+                    detected_at: Instant::now(),
+                });
 
-                    let game_id = self.match_process_to_game(&process_name);
-
-                    processes.push(ProcessInfo {
-                        pid: entry.th32ProcessID,
-                        name: process_name,
-                        game_id,
-                        detected_at: Instant::now(),
-                    });
-
-                    if Process32Next(snapshot, &mut entry) == 0 {
-                        break;
-                    }
+                if !next_process(snapshot.as_raw(), &mut entry) {
+                    break;
                 }
             }
-
-            CloseHandle(snapshot);
         }
 
         Ok(processes)
@@ -309,6 +296,80 @@ impl Default for ProcessDetectionService {
     }
 }
 
+#[cfg(target_os = "windows")]
+struct ProcessSnapshot {
+    handle: HANDLE,
+}
+
+#[cfg(target_os = "windows")]
+impl ProcessSnapshot {
+    fn create() -> Result<Self> {
+        // SAFETY: `CreateToolhelp32Snapshot` does not dereference caller-owned
+        // pointers for this use; it receives a constant process-snapshot flag
+        // and process id 0 to enumerate all processes. The returned handle is
+        // checked against `INVALID_HANDLE_VALUE` before use and closed by
+        // `Drop`.
+        let handle = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+        if handle == INVALID_HANDLE_VALUE {
+            Err(anyhow::anyhow!("Failed to create process snapshot"))
+        } else {
+            Ok(Self { handle })
+        }
+    }
+
+    fn as_raw(&self) -> HANDLE {
+        self.handle
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for ProcessSnapshot {
+    fn drop(&mut self) {
+        // SAFETY: `handle` was returned by `CreateToolhelp32Snapshot` and
+        // validated as not `INVALID_HANDLE_VALUE`. `Drop` is the sole owner of
+        // this wrapper, so the snapshot handle is closed at most once.
+        unsafe {
+            CloseHandle(self.handle);
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn process_entry_buffer() -> PROCESSENTRY32 {
+    // SAFETY: `PROCESSENTRY32` is a C POD buffer whose all-zero state is a valid
+    // initialization baseline for the Windows enumeration APIs. `dwSize` is set
+    // immediately after zero-initialization as required by `Process32First` and
+    // `Process32Next`.
+    let mut entry: PROCESSENTRY32 = unsafe { std::mem::zeroed() };
+    entry.dwSize = std::mem::size_of::<PROCESSENTRY32>() as u32;
+    entry
+}
+
+#[cfg(target_os = "windows")]
+fn first_process(snapshot: HANDLE, entry: &mut PROCESSENTRY32) -> bool {
+    // SAFETY: `snapshot` comes from `ProcessSnapshot::create`, and `entry` was
+    // initialized by `process_entry_buffer` with the correct `dwSize` before
+    // being passed to the Windows API.
+    unsafe { Process32First(snapshot, entry) != 0 }
+}
+
+#[cfg(target_os = "windows")]
+fn next_process(snapshot: HANDLE, entry: &mut PROCESSENTRY32) -> bool {
+    // SAFETY: `snapshot` remains owned by `ProcessSnapshot`, and `entry` remains
+    // a valid mutable `PROCESSENTRY32` buffer across the enumeration loop.
+    unsafe { Process32Next(snapshot, entry) != 0 }
+}
+
+#[cfg(target_os = "windows")]
+fn process_entry_name(entry: &PROCESSENTRY32) -> String {
+    let nul = match entry.szExeFile.iter().position(|ch| *ch == 0) {
+        Some(idx) => idx,
+        None => entry.szExeFile.len(),
+    };
+    let bytes: Vec<u8> = entry.szExeFile[..nul].iter().map(|ch| *ch as u8).collect();
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,5 +454,17 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn process_entry_name_stops_at_nul_terminator() {
+        let mut entry = process_entry_buffer();
+        let name = b"example.exe";
+        for (idx, byte) in name.iter().copied().enumerate() {
+            entry.szExeFile[idx] = byte as i8;
+        }
+
+        assert_eq!(process_entry_name(&entry), "example.exe");
     }
 }

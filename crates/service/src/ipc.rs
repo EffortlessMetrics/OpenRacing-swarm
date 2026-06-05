@@ -427,11 +427,18 @@ impl Default for TransportType {
         }
         #[cfg(unix)]
         {
-            let uid = unsafe { libc::getuid() };
+            let uid = current_user_id();
             let socket_path = PathBuf::from(format!("/run/user/{}/wheel.sock", uid));
             Self::UnixSocket { socket_path }
         }
     }
+}
+
+#[cfg(unix)]
+fn current_user_id() -> libc::uid_t {
+    // SAFETY: `getuid` has no preconditions, does not dereference pointers, and
+    // only reads the current process credentials from the OS.
+    unsafe { libc::getuid() }
 }
 
 /// Health event for broadcasting
@@ -1215,6 +1222,17 @@ impl WheelService for WheelServiceImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn test_default_unix_socket_path_is_scoped_to_current_user() {
+        let uid = current_user_id();
+        let transport = TransportType::default();
+
+        assert!(
+            matches!(transport, TransportType::UnixSocket { ref socket_path } if socket_path == &PathBuf::from(format!("/run/user/{uid}/wheel.sock")))
+        );
+    }
 
     #[tokio::test]
     async fn test_list_devices_preserves_usb_identity() -> std::result::Result<(), Box<dyn std::error::Error>> {

@@ -281,7 +281,10 @@ struct AMS2SharedMemory {
 
 impl Default for AMS2SharedMemory {
     fn default() -> Self {
-        // Use zeroed memory for safety
+        // SAFETY: `AMS2SharedMemory` is a `repr(C)` telemetry buffer made only
+        // of integer, float, and fixed-size byte-array fields. An all-zero bit
+        // pattern is valid for each field and matches the empty shared-memory
+        // baseline used by the AMS2 adapter tests.
         unsafe { std::mem::zeroed() }
     }
 }
@@ -577,7 +580,9 @@ fn build_acc_realtime_car_update_packet(
 fn to_raw_bytes<T: Copy>(data: &T) -> Vec<u8> {
     let size = std::mem::size_of::<T>();
     let ptr = data as *const T as *const u8;
-    // SAFETY: We're reading a valid struct as bytes
+    // SAFETY: `ptr` is derived from a valid shared reference to `data`, and the
+    // slice length is exactly `size_of::<T>()`. The bytes are copied into an
+    // owned `Vec` immediately, so no aliasing or lifetime extension is exposed.
     unsafe { std::slice::from_raw_parts(ptr, size).to_vec() }
 }
 
@@ -699,6 +704,19 @@ mod unit_tests {
     use super::*;
 
     type UnitTestResult = Result<(), Box<dyn std::error::Error>>;
+
+    #[test]
+    fn test_to_raw_bytes_preserves_copy_layout_size() {
+        let data = RF2WheelTelemetry {
+            pressure: 21.0,
+            ..Default::default()
+        };
+        let bytes = to_raw_bytes(&data);
+        let default_bytes = to_raw_bytes(&RF2WheelTelemetry::default());
+
+        assert_eq!(bytes.len(), std::mem::size_of::<RF2WheelTelemetry>());
+        assert_ne!(bytes, default_bytes);
+    }
 
     /// Test that iRacing parsing with default data completes within 1ms
     #[test]

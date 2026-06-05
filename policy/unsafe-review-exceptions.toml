@@ -122,16 +122,16 @@ id = "unsafe-service-platform-process-boundaries"
 owner = "service"
 path = "crates/service/**"
 kind = "platform_process_or_ipc_unsafe"
-reason = "Service process, IPC, telemetry, and firmware seams touch platform APIs and need local contracts before review closure."
+reason = "Service platform unsafe seams are reviewed through local Unix UID helpers, Windows process snapshot guards, telemetry raw-byte layout contracts, and service/property witnesses."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p racing-wheel-service --all-targets",
 ]
-review_after = "2026-06-30"
-removal_condition = "Each service unsafe seam has a local contract, guard, and unit/integration/fake-platform witness."
-safety_contract = "missing"
-local_guard = "missing"
-witness = "missing"
+review_after = "2026-09-30"
+removal_condition = "Reopen to missing evidence if a new service unsafe seam lands without a local contract, guard, and unit/property/fake-platform witness; retire only if service unsafe sites are removed or tracked per site."
+safety_contract = "present"
+local_guard = "present"
+witness = "present"
 
 [[exception]]
 id = "unsafe-platform-support-crates"
