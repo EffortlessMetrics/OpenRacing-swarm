@@ -186,16 +186,17 @@ id = "unsafe-hardware-watchdog-crate"
 owner = "core"
 path = "crates/openracing-hardware-watchdog/**"
 kind = "watchdog_platform_unsafe"
-reason = "Watchdog platform seams need local contracts and fake-platform witnesses before review closure."
+reason = "Retired after the unsafe-review scanner reported zero tracked unsafe sites under crates/openracing-hardware-watchdog/**; the software watchdog metrics path now uses lock-free atomics instead of UnsafeCell/manual Send/Sync."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p openracing-hardware-watchdog --all-targets",
 ]
 review_after = "2026-06-30"
-removal_condition = "Watchdog unsafe seams have local contracts, guards, and fake-platform witnesses."
+removal_condition = "Reopen only if a tracked unsafe site lands under crates/openracing-hardware-watchdog/**; do not use hardware execution as review evidence."
 safety_contract = "missing"
 local_guard = "missing"
 witness = "missing"
+status = "retired"
 
 [[exception]]
 id = "unsafe-firmware-update-crate"
