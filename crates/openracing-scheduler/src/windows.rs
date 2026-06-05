@@ -23,10 +23,7 @@ impl PlatformSleep {
     /// Apply Windows-specific RT setup.
     pub fn apply_rt_setup(&mut self, setup: &RTSetup) -> RTResult {
         if setup.high_priority {
-            unsafe {
-                SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL)
-                    .map_err(|_| RTError::RTSetupFailed)?;
-            }
+            set_current_thread_time_critical()?;
         }
         let _ = self.get_or_create_timer()?;
         Ok(())
@@ -57,12 +54,7 @@ impl PlatformSleep {
 
         let timer = self.get_or_create_timer()?;
         let due_time = relative_due_time_100ns(sleep_duration);
-
-        unsafe {
-            SetWaitableTimer(timer, &due_time, 0, None, None, false)
-                .map_err(|_| RTError::TimingViolation)?;
-            WaitForSingleObject(timer, INFINITE);
-        }
+        wait_for_timer(timer, &due_time)?;
 
         // Busy-spin for final precision
         while Instant::now() < target {
@@ -77,8 +69,7 @@ impl PlatformSleep {
             return Ok(handle);
         }
 
-        let timer =
-            unsafe { CreateWaitableTimerW(None, true, None).map_err(|_| RTError::RTSetupFailed)? };
+        let timer = create_manual_reset_timer()?;
         self.timer_handle = Some(timer);
         Ok(timer)
     }
@@ -87,10 +78,63 @@ impl PlatformSleep {
 impl Drop for PlatformSleep {
     fn drop(&mut self) {
         if let Some(handle) = self.timer_handle.take() {
-            unsafe {
-                let _ = CloseHandle(handle);
-            }
+            close_timer_handle(handle);
         }
+    }
+}
+
+fn set_current_thread_time_critical() -> RTResult {
+    // SAFETY: `GetCurrentThread` returns the current thread pseudo-handle,
+    // which is accepted by `SetThreadPriority` and does not need ownership or
+    // closing. `THREAD_PRIORITY_TIME_CRITICAL` is a valid priority constant.
+    unsafe {
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL)
+            .map_err(|_| RTError::RTSetupFailed)
+    }
+}
+
+fn create_manual_reset_timer() -> RTResult<HANDLE> {
+    // SAFETY: The security attributes and name are absent, so the call does
+    // not dereference caller-provided pointers. The returned handle is checked
+    // before it is stored for later wait/close operations.
+    let timer =
+        unsafe { CreateWaitableTimerW(None, true, None) }.map_err(|_| RTError::RTSetupFailed)?;
+    checked_timer_handle(timer)
+}
+
+fn checked_timer_handle(handle: HANDLE) -> RTResult<HANDLE> {
+    if handle.is_invalid() {
+        Err(RTError::RTSetupFailed)
+    } else {
+        Ok(handle)
+    }
+}
+
+fn wait_for_timer(timer: HANDLE, due_time: &i64) -> RTResult {
+    let timer = checked_timer_handle(timer).map_err(|_| RTError::TimingViolation)?;
+
+    // SAFETY: `timer` has been checked as a valid waitable-timer handle and
+    // `due_time` points to an initialized relative due-time value that lives for
+    // the duration of `SetWaitableTimer`. Completion callbacks are not used, and
+    // waiting on the same valid handle is permitted by the Windows API.
+    unsafe {
+        SetWaitableTimer(timer, due_time, 0, None, None, false)
+            .map_err(|_| RTError::TimingViolation)?;
+        WaitForSingleObject(timer, INFINITE);
+    }
+    Ok(())
+}
+
+fn close_timer_handle(handle: HANDLE) {
+    if handle.is_invalid() {
+        return;
+    }
+
+    // SAFETY: `handle` is checked as non-invalid and is only closed from
+    // `Drop` after being removed from `timer_handle`, so this path does not
+    // double-close the stored timer handle.
+    unsafe {
+        let _ = CloseHandle(handle);
     }
 }
 
@@ -121,5 +165,18 @@ mod tests {
         let duration = Duration::from_micros(1000);
         let due = relative_due_time_100ns(duration);
         assert!(due < 0); // Negative for relative time
+    }
+
+    #[test]
+    fn test_relative_due_time_never_zero() {
+        assert_eq!(relative_due_time_100ns(Duration::ZERO), -1);
+    }
+
+    #[test]
+    fn test_checked_timer_handle_rejects_invalid_handle() {
+        assert_eq!(
+            checked_timer_handle(HANDLE::default()),
+            Err(RTError::RTSetupFailed)
+        );
     }
 }

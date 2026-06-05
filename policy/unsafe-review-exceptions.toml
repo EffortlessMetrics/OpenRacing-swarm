@@ -138,16 +138,16 @@ id = "unsafe-platform-support-crates"
 owner = "core"
 path = "crates/openracing-scheduler/**"
 kind = "platform_threading_unsafe"
-reason = "Scheduler platform calls are bounded support seams and need local contracts plus platform-fake or unit witnesses."
+reason = "Scheduler platform FFI calls are reviewed through local contracts for Linux sched/mlock/nanosleep and Windows priority/timer/handle calls, guardable timespec/handle conversion helpers, and scheduler platform/unit tests."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p openracing-scheduler --all-targets",
 ]
-review_after = "2026-06-30"
-removal_condition = "Scheduler unsafe seams have local contracts, guards, and platform witness coverage."
-safety_contract = "missing"
-local_guard = "missing"
-witness = "missing"
+review_after = "2026-09-30"
+removal_condition = "Reopen to missing evidence if a new scheduler platform unsafe seam lands without a local contract, guard, and platform/unit witness; retire only if scheduler unsafe sites are removed or tracked per site."
+safety_contract = "present"
+local_guard = "present"
+witness = "present"
 
 [[exception]]
 id = "unsafe-ipc-support-crate"
