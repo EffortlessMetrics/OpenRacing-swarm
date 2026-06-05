@@ -46,7 +46,9 @@ The quality closure command MUST emit a machine-readable receipt with at least:
   "patch_coverage_status": "pass|fail|advisory|skipped|not_applicable",
   "badge_endpoint_status": "pass|fail|advisory|skipped|not_applicable",
   "uncovered_owned_surface_count": 0,
+  "expired_review_count": 0,
   "exception_count": 0,
+  "review_date": "YYYY-MM-DD",
   "quality_exception_breakdown": []
 }
 ```
@@ -88,6 +90,9 @@ The receipt MUST distinguish these statuses:
 - Active RIPR+/coverage exceptions MUST be attributable through
   `quality_exception_breakdown` with owner, path, kind, status, review date, and
   whether follow-up remains required.
+- Active RIPR+/coverage exceptions with expired `review_after` dates MUST
+  increment `expired_review_count` and MUST require follow-up in
+  `quality_exception_breakdown`.
 - Hardware-only code SHOULD be covered through fake transports or receipt
   validators before any live hardware path is counted as covered.
 

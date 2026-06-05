@@ -37,6 +37,10 @@ owners and follow-up status, so follow-up PRs can distinguish required gate
 debt from generated, advisory, or deferred surfaces without redefining coverage
 closure as a line-percentage claim.
 
+Review dates are part of that ownership model. Expired quality exceptions must
+remain visible in the receipt rather than silently relying on old exception
+metadata.
+
 ## Work item: define-ripr-plus-zero-and-coverage-closure-gates
 
 Status: completed
@@ -124,6 +128,8 @@ hardware lanes remain unchanged.
    or a required patch coverage job.
 2. Use `quality_exception_breakdown` to close the highest-leverage owned gaps in
    core protocol/domain logic.
-3. Remove exception entries as durable tests land.
-4. Ratchet patch coverage, then crate/module coverage, using the receipt as the
+3. Keep quality exception `review_after` dates current or narrow/remove entries
+   before they expire.
+4. Remove exception entries as durable tests land.
+5. Ratchet patch coverage, then crate/module coverage, using the receipt as the
    denominator.
