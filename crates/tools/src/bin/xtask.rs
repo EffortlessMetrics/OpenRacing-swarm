@@ -531,6 +531,37 @@ struct UnsafeReviewException {
     status: String,
 }
 
+#[derive(Clone, Debug, Serialize)]
+struct UnsafeExceptionBreakdown {
+    id: String,
+    owner: String,
+    path: String,
+    kind: String,
+    unsafe_site_count: u64,
+    changed_unsafe_site_count: u64,
+    unsafe_contract_missing_count: u64,
+    local_guard_missing_count: u64,
+    witness_missing_count: u64,
+    missing_evidence_count: u64,
+}
+
+impl UnsafeExceptionBreakdown {
+    fn from_exception(exception: &UnsafeReviewException) -> Self {
+        Self {
+            id: exception.id.clone(),
+            owner: exception.owner.clone(),
+            path: exception.path.clone(),
+            kind: exception.kind.clone(),
+            unsafe_site_count: 0,
+            changed_unsafe_site_count: 0,
+            unsafe_contract_missing_count: 0,
+            local_guard_missing_count: 0,
+            witness_missing_count: 0,
+            missing_evidence_count: 0,
+        }
+    }
+}
+
 fn default_active_status() -> String {
     "active".to_string()
 }
@@ -1021,6 +1052,10 @@ fn build_unsafe_review_closure_receipt_value(
         .iter()
         .filter(|entry| entry.status == "active")
         .collect();
+    let mut unsafe_exception_breakdown: Vec<UnsafeExceptionBreakdown> = active_exceptions
+        .iter()
+        .map(|entry| UnsafeExceptionBreakdown::from_exception(entry))
+        .collect();
 
     let mut unsafe_contract_missing_count = 0_u64;
     let mut local_guard_missing_count = 0_u64;
@@ -1044,17 +1079,54 @@ fn build_unsafe_review_closure_receipt_value(
             }
             continue;
         };
+        let exception_breakdown = unsafe_exception_breakdown
+            .iter_mut()
+            .find(|entry| entry.id == exception.id);
+        if let Some(entry) = exception_breakdown {
+            entry.unsafe_site_count += 1;
+            if changed_rust_paths.contains(&site.path) {
+                entry.changed_unsafe_site_count += 1;
+            }
+        }
 
         if exception.safety_contract == "missing" {
             unsafe_contract_missing_count += 1;
+            if let Some(entry) = unsafe_exception_breakdown
+                .iter_mut()
+                .find(|entry| entry.id == exception.id)
+            {
+                entry.unsafe_contract_missing_count += 1;
+                entry.missing_evidence_count += 1;
+            }
         }
         if exception.local_guard == "missing" {
             local_guard_missing_count += 1;
+            if let Some(entry) = unsafe_exception_breakdown
+                .iter_mut()
+                .find(|entry| entry.id == exception.id)
+            {
+                entry.local_guard_missing_count += 1;
+                entry.missing_evidence_count += 1;
+            }
         }
         if exception.witness == "missing" {
             witness_missing_count += 1;
+            if let Some(entry) = unsafe_exception_breakdown
+                .iter_mut()
+                .find(|entry| entry.id == exception.id)
+            {
+                entry.witness_missing_count += 1;
+                entry.missing_evidence_count += 1;
+            }
         }
     }
+    unsafe_exception_breakdown.sort_by(|left, right| {
+        right
+            .missing_evidence_count
+            .cmp(&left.missing_evidence_count)
+            .then_with(|| right.unsafe_site_count.cmp(&left.unsafe_site_count))
+            .then_with(|| left.id.cmp(&right.id))
+    });
 
     let owner_missing_count = active_exceptions
         .iter()
@@ -1094,6 +1166,7 @@ fn build_unsafe_review_closure_receipt_value(
         "exception_count": active_exceptions.len() as u64,
         "review_date": today,
         "unreviewed_samples": unreviewed_samples,
+        "unsafe_exception_breakdown": unsafe_exception_breakdown,
         "result_states": [
             {
                 "name": "unsafe_site_inventory",
@@ -1588,10 +1661,61 @@ fn write_unsafe_review_closure_markdown(
         content.push_str(&format!("| `{field}` | `{value}` |\n"));
     }
     append_result_states_markdown(&mut content, receipt);
+    append_unsafe_exception_breakdown_markdown(&mut content, receipt);
     content.push_str(
         "\nUnsafe-review closure makes unsafe seams reviewable; it does not prove soundness, UB-freedom, or Miri-clean status.\n",
     );
     fs::write(path, content).with_context(|| format!("failed to write {}", path.display()))
+}
+
+fn append_unsafe_exception_breakdown_markdown(content: &mut String, receipt: &serde_json::Value) {
+    let Some(rows) = receipt
+        .get("unsafe_exception_breakdown")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return;
+    };
+    if rows.is_empty() {
+        return;
+    }
+    content.push_str("\n## Unsafe Exception Breakdown\n\n");
+    content.push_str(
+        "| Exception | Owner | Path | Sites | Changed | Missing Contract | Missing Guard | Missing Witness | Missing Evidence |\n",
+    );
+    content.push_str("| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |\n");
+    for row in rows {
+        let id = markdown_cell(
+            row.get("id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+        );
+        let owner = markdown_cell(
+            row.get("owner")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+        );
+        let path = markdown_cell(
+            row.get("path")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+        );
+        let site_count = json_u64_field(row, "unsafe_site_count");
+        let changed_count = json_u64_field(row, "changed_unsafe_site_count");
+        let contract_missing = json_u64_field(row, "unsafe_contract_missing_count");
+        let guard_missing = json_u64_field(row, "local_guard_missing_count");
+        let witness_missing = json_u64_field(row, "witness_missing_count");
+        let missing_evidence = json_u64_field(row, "missing_evidence_count");
+        content.push_str(&format!(
+            "| `{id}` | `{owner}` | `{path}` | `{site_count}` | `{changed_count}` | `{contract_missing}` | `{guard_missing}` | `{witness_missing}` | `{missing_evidence}` |\n"
+        ));
+    }
+}
+
+fn json_u64_field(value: &serde_json::Value, field: &str) -> u64 {
+    value
+        .get(field)
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0)
 }
 
 fn docs_sync(_check: bool) -> anyhow::Result<()> {
@@ -2018,6 +2142,20 @@ mod tests {
             "unsafe_review_closure_satisfied": false,
             "miri_status": "skipped",
             "exception_count": 17,
+            "unsafe_exception_breakdown": [
+                {
+                    "id": "unsafe-native-plugin-ffi",
+                    "owner": "plugins",
+                    "path": "crates/openracing-native-plugin/src/**",
+                    "kind": "ffi_shared_memory_or_abi_unsafe",
+                    "unsafe_site_count": 12,
+                    "changed_unsafe_site_count": 0,
+                    "unsafe_contract_missing_count": 12,
+                    "local_guard_missing_count": 12,
+                    "witness_missing_count": 12,
+                    "missing_evidence_count": 36
+                }
+            ],
             "result_states": [
                 {
                     "name": "unsafe_review_evidence",
@@ -2047,6 +2185,10 @@ mod tests {
         assert!(content.contains("| `unsafe_review_evidence` | `fail` | `false` |"));
         assert!(content.contains("| `miri` | `skipped` | `false` |"));
         assert!(content.contains("| `hardware_execution` | `not_applicable` | `true` |"));
+        assert!(content.contains("## Unsafe Exception Breakdown"));
+        assert!(content.contains(
+            "| `unsafe-native-plugin-ffi` | `plugins` | `crates/openracing-native-plugin/src/**` | `12` | `0` | `12` | `12` | `12` | `36` |"
+        ));
         assert!(content.contains("does not prove soundness, UB-freedom, or Miri-clean status"));
         Ok(())
     }
@@ -2140,6 +2282,22 @@ mod tests {
         assert_eq!(receipt["unreviewed_unsafe_gap_count"], 1);
         assert_eq!(receipt["miri_status"], "skipped");
         assert_eq!(receipt["unsafe_review_closure_satisfied"], false);
+        assert_eq!(
+            receipt["unsafe_exception_breakdown"][0]["id"],
+            "unsafe-engine"
+        );
+        assert_eq!(
+            receipt["unsafe_exception_breakdown"][0]["unsafe_site_count"],
+            1
+        );
+        assert_eq!(
+            receipt["unsafe_exception_breakdown"][0]["changed_unsafe_site_count"],
+            0
+        );
+        assert_eq!(
+            receipt["unsafe_exception_breakdown"][0]["missing_evidence_count"],
+            3
+        );
         Ok(())
     }
 

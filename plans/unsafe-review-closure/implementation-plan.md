@@ -15,6 +15,10 @@ native plugins, telemetry shared memory, service/platform integration, and
 third-party shared-memory support. Those seams are not automatically wrong, but
 they are not yet represented by one reviewability receipt.
 
+The receipt also needs to keep aggregate missing-evidence counts attributable to
+the active exception entries that own them, so follow-up PRs can target the
+largest unsafe-review seams without redefining unsafe-review as soundness proof.
+
 Miri is not treated as a required gate in this scaffold. Missing Miri evidence
 is visible as `skipped` or `advisory`; it is not a claim that unsafe Rust is
 sound or UB-free.
@@ -98,7 +102,8 @@ lanes remain unchanged.
 ## Next work
 
 1. Close changed unsafe seams first.
-2. Add contracts and witnesses for FFI, raw pointer, and transmute-like seams.
+2. Use `unsafe_exception_breakdown` to add contracts and witnesses for the
+   highest-leverage FFI, raw pointer, and transmute-like seams.
 3. Add fake-memory/fake-transport witnesses for shared-memory, RT, HID, USB, and
    driver-facing seams.
 4. Narrow or remove exception entries as evidence lands.
