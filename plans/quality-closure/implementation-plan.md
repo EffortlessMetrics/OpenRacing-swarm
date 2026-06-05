@@ -18,11 +18,14 @@ patch coverage is currently informational.
 That means the quality lane is not closure-satisfied even when ordinary PR
 checks are green.
 
-Local discovery for this scaffold also found two measurable infrastructure
+Local discovery for this scaffold also found three measurable infrastructure
 debts:
 
 - `cargo xtask badges --check` depends on a `test-efficiency.json` report, but
   this xtask does not yet expose the referenced generator.
+- `scripts/coverage.sh --json` cannot run when the helper's shell environment
+  cannot see `cargo-llvm-cov`; missing coverage tooling must stay visible as
+  skipped evidence rather than disappearing into a shell helper failure.
 - the direct Windows `cargo llvm-cov` workspace path can hit command-line
   length error 206 when the object list becomes too large.
 

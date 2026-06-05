@@ -42,6 +42,7 @@ The quality closure command MUST emit a machine-readable receipt with at least:
   "ripr_plus_unowned_gap_count": 0,
   "coverage_required": false,
   "coverage_workflow_skipped": true,
+  "coverage_tool_status": "pass|fail|advisory|skipped|not_applicable",
   "patch_coverage_status": "pass|fail|advisory|skipped|not_applicable",
   "uncovered_owned_surface_count": 0,
   "exception_count": 0
@@ -70,6 +71,9 @@ The receipt MUST distinguish these statuses:
 
 - A skipped Code Coverage workflow MUST set `coverage_workflow_skipped = true`.
 - Skipped coverage MUST NOT satisfy `coverage_required`.
+- Missing local or CI coverage tooling MUST report
+  `coverage_tool_status = "skipped"` or `coverage_tool_status = "fail"` and
+  MUST NOT be treated as coverage evidence.
 - Codecov informational patch coverage MUST report
   `patch_coverage_status = "advisory"`.
 - Generated, test-harness, benchmark, fuzz, build-script, UI, integration-test,

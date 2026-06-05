@@ -561,8 +561,6 @@ fn quality_closure(check: bool, json_out: &Path, md_out: &Path) -> anyhow::Resul
 
 fn build_quality_closure_receipt(workspace_root: &Path) -> anyhow::Result<serde_json::Value> {
     let ledger = read_quality_exception_ledger(workspace_root)?;
-    validate_quality_exception_ledger(&ledger)?;
-
     let ripr_unresolved_gap_count =
         read_ripr_plus_badge_count(&workspace_root.join("badges/ripr-plus.json"))?;
     let coverage_workflow =
@@ -572,17 +570,40 @@ fn build_quality_closure_receipt(workspace_root: &Path) -> anyhow::Result<serde_
         .with_context(|| "failed to read .github/workflows/ci.yml")?;
     let codecov = fs::read_to_string(workspace_root.join("codecov.yml"))
         .with_context(|| "failed to read codecov.yml")?;
+    let coverage_tool_status = detect_coverage_tool_status(workspace_root)?;
 
-    let coverage_pr_label_gated = coverage_pr_job_is_label_gated(&coverage_workflow);
-    let legacy_ci_coverage_manual_only = ci_coverage_job_is_manual_only(&ci_workflow);
+    build_quality_closure_receipt_value(
+        &ledger,
+        ripr_unresolved_gap_count,
+        &coverage_workflow,
+        &ci_workflow,
+        &codecov,
+        &coverage_tool_status,
+    )
+}
+
+fn build_quality_closure_receipt_value(
+    ledger: &QualityExceptionLedger,
+    ripr_unresolved_gap_count: u64,
+    coverage_workflow: &str,
+    ci_workflow: &str,
+    codecov: &str,
+    coverage_tool_status: &str,
+) -> anyhow::Result<serde_json::Value> {
+    validate_quality_exception_ledger(ledger)?;
+    validate_status_value(coverage_tool_status, "coverage_tool_status")?;
+    let coverage_pr_label_gated = coverage_pr_job_is_label_gated(coverage_workflow);
+    let legacy_ci_coverage_manual_only = ci_coverage_job_is_manual_only(ci_workflow);
     let coverage_workflow_skipped = coverage_pr_label_gated || legacy_ci_coverage_manual_only;
-    let patch_coverage_informational = patch_coverage_is_informational(&codecov)?;
+    let patch_coverage_informational = patch_coverage_is_informational(codecov)?;
     let patch_coverage_status = if patch_coverage_informational {
         "advisory"
     } else {
         "pass"
     };
-    let coverage_required = !coverage_workflow_skipped && !patch_coverage_informational;
+    let coverage_required = !coverage_workflow_skipped
+        && !patch_coverage_informational
+        && coverage_tool_status == "pass";
 
     let active_exceptions = ledger
         .exception
@@ -604,6 +625,7 @@ fn build_quality_closure_receipt(workspace_root: &Path) -> anyhow::Result<serde_
         && ripr_plus_unowned_gap_count == 0
         && coverage_required
         && !coverage_workflow_skipped
+        && coverage_tool_status == "pass"
         && patch_coverage_status == "pass"
         && uncovered_owned_surface_count == 0;
     let status = if quality_closure_satisfied {
@@ -621,6 +643,7 @@ fn build_quality_closure_receipt(workspace_root: &Path) -> anyhow::Result<serde_
         "ripr_plus_unowned_gap_count": ripr_plus_unowned_gap_count,
         "coverage_required": coverage_required,
         "coverage_workflow_skipped": coverage_workflow_skipped,
+        "coverage_tool_status": coverage_tool_status,
         "patch_coverage_status": patch_coverage_status,
         "uncovered_owned_surface_count": uncovered_owned_surface_count,
         "exception_count": active_exceptions,
@@ -647,6 +670,12 @@ fn build_quality_closure_receipt(workspace_root: &Path) -> anyhow::Result<serde_
                 "status": if coverage_workflow_skipped { "skipped" } else { "pass" },
                 "satisfied": !coverage_workflow_skipped,
                 "details": "skipped coverage is reported explicitly and is not equivalent to coverage pass"
+            },
+            {
+                "name": "coverage_tooling",
+                "status": coverage_tool_status,
+                "satisfied": coverage_tool_status == "pass",
+                "details": "cargo-llvm-cov availability is reported separately; missing local coverage tooling is not coverage evidence"
             },
             {
                 "name": "patch_coverage",
@@ -676,6 +705,40 @@ fn build_quality_closure_receipt(workspace_root: &Path) -> anyhow::Result<serde_
             "not-release-readiness"
         ]
     }))
+}
+
+fn detect_coverage_tool_status(workspace_root: &Path) -> anyhow::Result<String> {
+    if let Ok(value) = env::var("OPENRACING_COVERAGE_TOOL_STATUS") {
+        validate_status_value(&value, "OPENRACING_COVERAGE_TOOL_STATUS")?;
+        return Ok(value);
+    }
+
+    if let Ok(output) = Command::new("bash")
+        .arg("-lc")
+        .arg(
+            "command -v cargo-llvm-cov >/dev/null 2>&1 || cargo llvm-cov --version >/dev/null 2>&1",
+        )
+        .output()
+    {
+        return Ok(if output.status.success() {
+            "pass"
+        } else {
+            "skipped"
+        }
+        .to_string());
+    }
+
+    let output = Command::new("cargo")
+        .args(["llvm-cov", "--version"])
+        .current_dir(workspace_root)
+        .output()
+        .with_context(|| "failed to probe cargo llvm-cov")?;
+    Ok(if output.status.success() {
+        "pass"
+    } else {
+        "skipped"
+    }
+    .to_string())
 }
 
 fn read_quality_exception_ledger(workspace_root: &Path) -> anyhow::Result<QualityExceptionLedger> {
@@ -799,6 +862,7 @@ fn write_quality_closure_markdown(path: &Path, receipt: &serde_json::Value) -> a
         "ripr_plus_unowned_gap_count",
         "coverage_required",
         "coverage_workflow_skipped",
+        "coverage_tool_status",
         "patch_coverage_status",
         "uncovered_owned_surface_count",
         "exception_count",
@@ -1709,52 +1773,51 @@ mod tests {
 
     #[test]
     fn quality_closure_marks_label_gated_coverage_as_skipped() -> anyhow::Result<()> {
-        let temp = tempfile::tempdir()?;
-        let root = temp.path();
-        fs::create_dir_all(root.join("badges"))?;
-        fs::create_dir_all(root.join(".github/workflows"))?;
-        fs::create_dir_all(root.join("policy"))?;
+        let ledger = QualityExceptionLedger {
+            schema_version: "1.0".to_string(),
+            exception: vec![QualityException {
+                id: "coverage-pr-label-gated".to_string(),
+                owner: "release/ci".to_string(),
+                path: ".github/workflows/coverage.yml".to_string(),
+                kind: "coverage_gate_debt".to_string(),
+                reason: "PR coverage is label-gated while the closure lane is measured."
+                    .to_string(),
+                test_surface: vec!["cargo xtask quality-closure --check".to_string()],
+                review_after: "2026-06-30".to_string(),
+                removal_condition:
+                    "Make patch coverage required or add a required non-skipped coverage sentinel."
+                        .to_string(),
+                status: "active".to_string(),
+            }],
+        };
+        let coverage_workflow = "name: Code Coverage\njobs:\n  coverage:\n    if: >-\n      github.event_name == 'push' ||\n      github.event_name == 'workflow_dispatch' ||\n      contains(github.event.pull_request.labels.*.name, 'coverage')\n";
+        let ci_workflow = "jobs:\n  coverage:\n    name: Code Coverage\n    if: github.event_name == 'workflow_dispatch'\n";
+        let codecov =
+            "coverage:\n  status:\n    patch:\n      default:\n        informational: true\n";
 
-        fs::write(
-            root.join("badges/ripr-plus.json"),
-            r#"{"schemaVersion":1,"label":"ripr+","message":"0","color":"brightgreen"}"#,
+        let receipt = build_quality_closure_receipt_value(
+            &ledger,
+            0,
+            coverage_workflow,
+            ci_workflow,
+            codecov,
+            "skipped",
         )?;
-        fs::write(
-            root.join(".github/workflows/coverage.yml"),
-            "name: Code Coverage\njobs:\n  coverage:\n    if: >-\n      github.event_name == 'push' ||\n      github.event_name == 'workflow_dispatch' ||\n      contains(github.event.pull_request.labels.*.name, 'coverage')\n",
-        )?;
-        fs::write(
-            root.join(".github/workflows/ci.yml"),
-            "jobs:\n  coverage:\n    name: Code Coverage\n    if: github.event_name == 'workflow_dispatch'\n",
-        )?;
-        fs::write(
-            root.join("codecov.yml"),
-            "coverage:\n  status:\n    patch:\n      default:\n        informational: true\n",
-        )?;
-        fs::write(
-            root.join("policy/quality-closure-exceptions.toml"),
-            r#"
-schema_version = "1.0"
-
-[[exception]]
-id = "coverage-pr-label-gated"
-owner = "release/ci"
-path = ".github/workflows/coverage.yml"
-kind = "coverage_gate_debt"
-reason = "PR coverage is label-gated while the closure lane is measured."
-test_surface = ["cargo xtask quality-closure --check"]
-review_after = "2026-06-30"
-removal_condition = "Make patch coverage required or add a required non-skipped coverage sentinel."
-"#,
-        )?;
-
-        let receipt = build_quality_closure_receipt(root)?;
         assert_eq!(receipt["ripr_unresolved_gap_count"], 0);
         assert_eq!(receipt["coverage_required"], false);
         assert_eq!(receipt["coverage_workflow_skipped"], true);
+        assert_eq!(receipt["coverage_tool_status"], "skipped");
         assert_eq!(receipt["patch_coverage_status"], "advisory");
         assert_eq!(
             receipt["result_states"][2]["status"],
+            serde_json::Value::String("skipped".to_string())
+        );
+        assert_eq!(
+            receipt["result_states"][3]["name"],
+            serde_json::Value::String("coverage_tooling".to_string())
+        );
+        assert_eq!(
+            receipt["result_states"][3]["status"],
             serde_json::Value::String("skipped".to_string())
         );
         assert_eq!(receipt["quality_closure_satisfied"], false);
@@ -1829,6 +1892,7 @@ removal_condition = "Make patch coverage required or add a required non-skipped 
             "ripr_plus_unowned_gap_count": 0,
             "coverage_required": false,
             "coverage_workflow_skipped": true,
+            "coverage_tool_status": "skipped",
             "patch_coverage_status": "advisory",
             "uncovered_owned_surface_count": 0,
             "exception_count": 12,
@@ -1838,6 +1902,12 @@ removal_condition = "Make patch coverage required or add a required non-skipped 
                     "status": "skipped",
                     "satisfied": false,
                     "details": "skipped coverage is not a pass"
+                },
+                {
+                    "name": "coverage_tooling",
+                    "status": "skipped",
+                    "satisfied": false,
+                    "details": "cargo-llvm-cov did not run"
                 },
                 {
                     "name": "patch_coverage",
@@ -1858,7 +1928,9 @@ removal_condition = "Make patch coverage required or add a required non-skipped 
         let content = fs::read_to_string(&path)?;
 
         assert!(content.contains("## Result States"));
+        assert!(content.contains("| `coverage_tool_status` | `\"skipped\"` |"));
         assert!(content.contains("| `coverage_workflow_execution` | `skipped` | `false` |"));
+        assert!(content.contains("| `coverage_tooling` | `skipped` | `false` |"));
         assert!(content.contains("| `patch_coverage` | `advisory` | `false` |"));
         assert!(content.contains("| `mutation_expansion` | `not_applicable` | `true` |"));
         Ok(())

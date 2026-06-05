@@ -44,6 +44,19 @@ review_after = "2026-06-30"
 removal_condition = "Patch coverage becomes a required status or an equivalent repo-owned patch coverage gate replaces it."
 
 [[exception]]
+id = "coverage-local-llvm-cov-tooling"
+owner = "release/ci"
+path = "scripts/coverage.sh"
+kind = "coverage_gate_debt"
+reason = "The Bash coverage helper cannot produce coverage evidence when its cargo environment cannot see cargo-llvm-cov; this must be reported as skipped tooling evidence, not a coverage pass."
+test_surface = [
+  "scripts/coverage.sh --json",
+  "cargo xtask quality-closure --check",
+]
+review_after = "2026-06-30"
+removal_condition = "The coverage helper has a repo-owned prerequisite bootstrap or the quality receipt runs the helper in a managed environment where cargo-llvm-cov availability is guaranteed."
+
+[[exception]]
 id = "ripr-plus-test-efficiency-generator-missing"
 owner = "release/ci"
 path = "crates/tools/src/bin/xtask.rs"
