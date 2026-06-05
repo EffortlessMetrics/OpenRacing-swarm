@@ -90,16 +90,16 @@ id = "unsafe-pipeline-raw-state"
 owner = "core"
 path = "crates/openracing-pipeline/src/**"
 kind = "raw_pointer_state_layout_unsafe"
-reason = "Pipeline compiler/executor raw-state accesses need layout contracts and focused state-layout witnesses before closure."
+reason = "Pipeline compiler/executor raw-state seams are reviewed through 16-byte aligned backing storage, typed state-node insertion, executor pointer guards, typed wrapper contracts, and state-layout/process witnesses."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p openracing-pipeline --all-targets",
 ]
-review_after = "2026-06-30"
-removal_condition = "Each pipeline unsafe seam has a local layout contract, bounds/alignment guard, and state-layout or property witness."
-safety_contract = "missing"
-local_guard = "missing"
-witness = "missing"
+review_after = "2026-09-30"
+removal_condition = "Reopen if new pipeline unsafe seams land without a local layout contract, bounds/alignment guard, and state-layout or property witness; retire if raw state unsafe is removed or tracked per-site."
+safety_contract = "present"
+local_guard = "present"
+witness = "present"
 
 [[exception]]
 id = "unsafe-telemetry-shared-memory-adapters"

@@ -26,7 +26,7 @@ impl Pipeline {
     pub fn state_snapshot(&self) -> PipelineStateSnapshot {
         PipelineStateSnapshot {
             node_count: self.node_count(),
-            state_size: self.state.len(),
+            state_size: self.state_len_bytes,
             config_hash: self.config_hash(),
             has_response_curve: self.response_curve().is_some(),
         }
@@ -35,7 +35,7 @@ impl Pipeline {
     /// Get the total state size in bytes
     #[must_use]
     pub fn state_size(&self) -> usize {
-        self.state.len()
+        self.state_len_bytes
     }
 
     /// Check if state is properly aligned
@@ -44,7 +44,13 @@ impl Pipeline {
     #[must_use]
     pub fn is_state_aligned(&self) -> bool {
         let align = std::mem::align_of::<f64>();
-        self.state_offsets.iter().all(|&offset| offset % align == 0)
+        let base_aligned =
+            self.state.is_empty() || (self.state.as_ptr() as usize).is_multiple_of(align);
+        base_aligned
+            && self
+                .state_offsets
+                .iter()
+                .all(|&offset| offset.is_multiple_of(align))
     }
 
     /// Reset all state to initial values
@@ -52,8 +58,8 @@ impl Pipeline {
     /// This zeroes out all state buffers. Should only be called during
     /// initialization or when explicitly resetting the pipeline.
     pub fn reset_state(&mut self) {
-        for byte in &mut self.state {
-            *byte = 0;
+        for word in &mut self.state {
+            *word = Default::default();
         }
     }
 
@@ -74,14 +80,7 @@ impl Pipeline {
             return None;
         }
 
-        let start = self.state_offsets[node_index];
-        let end = if node_index + 1 < self.state_offsets.len() {
-            self.state_offsets[node_index + 1]
-        } else {
-            self.state.len()
-        };
-
-        Some(end - start)
+        self.state_sizes.get(node_index).copied()
     }
 }
 
