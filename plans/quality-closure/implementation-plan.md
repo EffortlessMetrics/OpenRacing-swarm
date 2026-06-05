@@ -29,8 +29,8 @@ debts:
 - the direct Windows `cargo llvm-cov` workspace path can hit command-line
   length error 206 when the object list becomes too large.
 
-Both are tracked in `policy/quality-closure-exceptions.toml`; neither is treated
-as a passing coverage or RIPR+ closure signal.
+All three are tracked in `policy/quality-closure-exceptions.toml`; none is
+treated as a passing coverage, badge, or RIPR+ closure signal.
 
 ## Work item: define-ripr-plus-zero-and-coverage-closure-gates
 

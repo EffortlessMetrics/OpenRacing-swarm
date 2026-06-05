@@ -571,6 +571,7 @@ fn build_quality_closure_receipt(workspace_root: &Path) -> anyhow::Result<serde_
     let codecov = fs::read_to_string(workspace_root.join("codecov.yml"))
         .with_context(|| "failed to read codecov.yml")?;
     let coverage_tool_status = detect_coverage_tool_status(workspace_root)?;
+    let badge_endpoint_status = detect_badge_endpoint_status(workspace_root)?;
 
     build_quality_closure_receipt_value(
         &ledger,
@@ -579,6 +580,7 @@ fn build_quality_closure_receipt(workspace_root: &Path) -> anyhow::Result<serde_
         &ci_workflow,
         &codecov,
         &coverage_tool_status,
+        &badge_endpoint_status,
     )
 }
 
@@ -589,9 +591,11 @@ fn build_quality_closure_receipt_value(
     ci_workflow: &str,
     codecov: &str,
     coverage_tool_status: &str,
+    badge_endpoint_status: &str,
 ) -> anyhow::Result<serde_json::Value> {
     validate_quality_exception_ledger(ledger)?;
     validate_status_value(coverage_tool_status, "coverage_tool_status")?;
+    validate_status_value(badge_endpoint_status, "badge_endpoint_status")?;
     let coverage_pr_label_gated = coverage_pr_job_is_label_gated(coverage_workflow);
     let legacy_ci_coverage_manual_only = ci_coverage_job_is_manual_only(ci_workflow);
     let coverage_workflow_skipped = coverage_pr_label_gated || legacy_ci_coverage_manual_only;
@@ -627,6 +631,7 @@ fn build_quality_closure_receipt_value(
         && !coverage_workflow_skipped
         && coverage_tool_status == "pass"
         && patch_coverage_status == "pass"
+        && badge_endpoint_status == "pass"
         && uncovered_owned_surface_count == 0;
     let status = if quality_closure_satisfied {
         "pass"
@@ -645,6 +650,7 @@ fn build_quality_closure_receipt_value(
         "coverage_workflow_skipped": coverage_workflow_skipped,
         "coverage_tool_status": coverage_tool_status,
         "patch_coverage_status": patch_coverage_status,
+        "badge_endpoint_status": badge_endpoint_status,
         "uncovered_owned_surface_count": uncovered_owned_surface_count,
         "exception_count": active_exceptions,
         "workflow_observations": {
@@ -658,6 +664,12 @@ fn build_quality_closure_receipt_value(
                 "status": if ripr_unresolved_gap_count == 0 { "pass" } else { "fail" },
                 "satisfied": ripr_unresolved_gap_count == 0,
                 "details": "badges/ripr-plus.json message is treated as the repo-scope RIPR+ unresolved gap count"
+            },
+            {
+                "name": "badge_endpoint_regeneration",
+                "status": badge_endpoint_status,
+                "satisfied": badge_endpoint_status == "pass",
+                "details": "ripr+ badge endpoint regeneration is reported separately; missing test-efficiency evidence is not a badge pass"
             },
             {
                 "name": "coverage_required_gate",
@@ -705,6 +717,39 @@ fn build_quality_closure_receipt_value(
             "not-release-readiness"
         ]
     }))
+}
+
+fn detect_badge_endpoint_status(workspace_root: &Path) -> anyhow::Result<String> {
+    if let Ok(value) = env::var("OPENRACING_BADGE_ENDPOINT_STATUS") {
+        validate_status_value(&value, "OPENRACING_BADGE_ENDPOINT_STATUS")?;
+        return Ok(value);
+    }
+
+    let test_efficiency_report = workspace_root.join("target/ripr/reports/test-efficiency.json");
+    if !test_efficiency_report.exists() {
+        return Ok("skipped".to_string());
+    }
+
+    let committed_path = workspace_root.join("badges/ripr-plus.json");
+    let Ok(committed_content) = fs::read_to_string(&committed_path) else {
+        return Ok("fail".to_string());
+    };
+    let Ok(committed_badge) = serde_json::from_str::<ShieldsEndpointBadge>(&committed_content)
+    else {
+        return Ok("fail".to_string());
+    };
+    if validate_shields_badge(&committed_badge, Some("ripr+")).is_err() {
+        return Ok("fail".to_string());
+    }
+
+    let Ok(generated_badge) = ripr_plus_badge(workspace_root) else {
+        return Ok("fail".to_string());
+    };
+    if generated_badge == committed_badge {
+        Ok("pass".to_string())
+    } else {
+        Ok("fail".to_string())
+    }
 }
 
 fn detect_coverage_tool_status(workspace_root: &Path) -> anyhow::Result<String> {
@@ -864,6 +909,7 @@ fn write_quality_closure_markdown(path: &Path, receipt: &serde_json::Value) -> a
         "coverage_workflow_skipped",
         "coverage_tool_status",
         "patch_coverage_status",
+        "badge_endpoint_status",
         "uncovered_owned_surface_count",
         "exception_count",
     ] {
@@ -1802,22 +1848,32 @@ mod tests {
             ci_workflow,
             codecov,
             "skipped",
+            "skipped",
         )?;
         assert_eq!(receipt["ripr_unresolved_gap_count"], 0);
         assert_eq!(receipt["coverage_required"], false);
         assert_eq!(receipt["coverage_workflow_skipped"], true);
         assert_eq!(receipt["coverage_tool_status"], "skipped");
+        assert_eq!(receipt["badge_endpoint_status"], "skipped");
         assert_eq!(receipt["patch_coverage_status"], "advisory");
         assert_eq!(
-            receipt["result_states"][2]["status"],
+            receipt["result_states"][1]["name"],
+            serde_json::Value::String("badge_endpoint_regeneration".to_string())
+        );
+        assert_eq!(
+            receipt["result_states"][1]["status"],
             serde_json::Value::String("skipped".to_string())
         );
         assert_eq!(
-            receipt["result_states"][3]["name"],
+            receipt["result_states"][3]["status"],
+            serde_json::Value::String("skipped".to_string())
+        );
+        assert_eq!(
+            receipt["result_states"][4]["name"],
             serde_json::Value::String("coverage_tooling".to_string())
         );
         assert_eq!(
-            receipt["result_states"][3]["status"],
+            receipt["result_states"][4]["status"],
             serde_json::Value::String("skipped".to_string())
         );
         assert_eq!(receipt["quality_closure_satisfied"], false);
@@ -1894,9 +1950,16 @@ mod tests {
             "coverage_workflow_skipped": true,
             "coverage_tool_status": "skipped",
             "patch_coverage_status": "advisory",
+            "badge_endpoint_status": "skipped",
             "uncovered_owned_surface_count": 0,
             "exception_count": 12,
             "result_states": [
+                {
+                    "name": "badge_endpoint_regeneration",
+                    "status": "skipped",
+                    "satisfied": false,
+                    "details": "missing test-efficiency report"
+                },
                 {
                     "name": "coverage_workflow_execution",
                     "status": "skipped",
@@ -1929,6 +1992,8 @@ mod tests {
 
         assert!(content.contains("## Result States"));
         assert!(content.contains("| `coverage_tool_status` | `\"skipped\"` |"));
+        assert!(content.contains("| `badge_endpoint_status` | `\"skipped\"` |"));
+        assert!(content.contains("| `badge_endpoint_regeneration` | `skipped` | `false` |"));
         assert!(content.contains("| `coverage_workflow_execution` | `skipped` | `false` |"));
         assert!(content.contains("| `coverage_tooling` | `skipped` | `false` |"));
         assert!(content.contains("| `patch_coverage` | `advisory` | `false` |"));
