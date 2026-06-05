@@ -235,16 +235,17 @@ id = "unsafe-schema-domain-unchecked-constructors"
 owner = "schemas"
 path = "crates/schemas/**"
 kind = "unchecked_constructor_unsafe"
-reason = "Schema/domain unchecked constructors and compile-fail surfaces need local contracts and trybuild/property witnesses before closure."
+reason = "TorqueNm::new_unchecked is reviewed through a local safety contract, shared value precondition guard, debug assertion, and domain tests that witness the guard and valid unsafe construction."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p racing-wheel-schemas --all-targets",
+  "cargo test --locked -p racing-wheel-schemas --doc",
 ]
-review_after = "2026-06-30"
-removal_condition = "Schema unsafe seams have local contracts, guards, and trybuild/property witnesses."
-safety_contract = "missing"
-local_guard = "missing"
-witness = "missing"
+review_after = "2026-09-30"
+removal_condition = "Reopen to missing evidence if a new schema unchecked constructor lands without a local contract, guard, and unit/trybuild/property witness; retire only if schema unsafe sites are removed or tracked per site."
+safety_contract = "present"
+local_guard = "present"
+witness = "present"
 
 [[exception]]
 id = "unsafe-test-helper-crate"
