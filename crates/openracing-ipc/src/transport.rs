@@ -93,8 +93,7 @@ impl TransportType {
         }
         #[cfg(unix)]
         {
-            let uid = unsafe { libc::getuid() };
-            let socket_path = PathBuf::from(format!("/run/user/{}/openracing.sock", uid));
+            let socket_path = user_runtime_socket_path(current_user_id());
             TransportType::UnixSocket { socket_path }
         }
     }
@@ -111,6 +110,20 @@ impl TransportType {
             TransportType::NamedPipe { pipe_name } => format!("Named pipe {}", pipe_name),
         }
     }
+}
+
+#[cfg(unix)]
+fn current_user_id() -> libc::uid_t {
+    // SAFETY: getuid has no pointer arguments, no caller-provided buffers, and
+    // no documented preconditions; it only reads the current process UID.
+    unsafe { libc::getuid() }
+}
+
+#[cfg(unix)]
+fn user_runtime_socket_path(uid: libc::uid_t) -> PathBuf {
+    // Keep the platform default path derived from a numeric UID instead of
+    // caller-provided path text.
+    PathBuf::from(format!("/run/user/{uid}/openracing.sock"))
 }
 
 impl Default for TransportType {
@@ -245,6 +258,28 @@ mod tests {
     fn test_transport_type_description() {
         let transport = TransportType::tcp();
         assert!(transport.description().contains("TCP"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_unix_socket_path_uses_numeric_uid_runtime_dir() {
+        let socket_path = user_runtime_socket_path(1000);
+        assert_eq!(socket_path, PathBuf::from("/run/user/1000/openracing.sock"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_platform_default_unix_socket_path_matches_current_uid() -> Result<(), String> {
+        let expected = user_runtime_socket_path(current_user_id());
+        let transport = TransportType::platform_default();
+
+        let TransportType::UnixSocket { socket_path } = transport else {
+            return Err(format!(
+                "expected UnixSocket platform default, got {transport:?}"
+            ));
+        };
+        assert_eq!(socket_path, expected);
+        Ok(())
     }
 
     #[test]

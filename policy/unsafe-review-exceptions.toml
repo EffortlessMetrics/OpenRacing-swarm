@@ -154,16 +154,16 @@ id = "unsafe-ipc-support-crate"
 owner = "core"
 path = "crates/openracing-ipc/**"
 kind = "ipc_platform_unsafe"
-reason = "IPC transport unsafe seams need local contracts and fake-transport witnesses before closure."
+reason = "IPC transport Unix getuid FFI seam is reviewed through a local safety contract, numeric UID path construction guard, and transport tests; keep active so future IPC unsafe sites remain owned."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p openracing-ipc --all-targets",
 ]
-review_after = "2026-06-30"
-removal_condition = "IPC unsafe seams have local contracts, guards, and fake-transport witnesses."
-safety_contract = "missing"
-local_guard = "missing"
-witness = "missing"
+review_after = "2026-09-30"
+removal_condition = "Reopen to missing evidence if a new IPC unsafe seam lands without a local contract, guard, and witness; retire only if IPC unsafe sites are removed or tracked per site."
+safety_contract = "present"
+local_guard = "present"
+witness = "present"
 
 [[exception]]
 id = "unsafe-tracing-platform-crate"
