@@ -170,16 +170,16 @@ id = "unsafe-tracing-platform-crate"
 owner = "core"
 path = "crates/openracing-tracing/**"
 kind = "platform_tracing_unsafe"
-reason = "Tracing platform bindings need explicit local contracts before unsafe-review closure."
+reason = "Windows ETW platform unsafe calls are reviewed through local register/write/unregister safety contracts, nonzero provider-handle guards, ETW descriptor guards, and unit tests for descriptor/handle witness coverage."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p openracing-tracing --all-targets",
 ]
-review_after = "2026-06-30"
-removal_condition = "Tracing unsafe seams have local contracts, guards, and platform witness coverage."
-safety_contract = "missing"
-local_guard = "missing"
-witness = "missing"
+review_after = "2026-09-30"
+removal_condition = "Reopen to missing evidence if a new tracing platform unsafe seam lands without a local contract, guard, and unit/property/platform witness; retire only if tracing unsafe sites are removed or tracked per site."
+safety_contract = "present"
+local_guard = "present"
+witness = "present"
 
 [[exception]]
 id = "unsafe-hardware-watchdog-crate"
