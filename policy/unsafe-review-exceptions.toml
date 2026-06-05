@@ -25,16 +25,17 @@ id = "unsafe-cli-process-and-env-seams"
 owner = "cli"
 path = "crates/cli/**"
 kind = "platform_or_process_unsafe"
-reason = "CLI unsafe seams are process/environment guard rails rather than hardware proof; they need local contracts and focused CLI parse/guard tests before closure."
+reason = "Retired after the unsafe-review scanner reported zero tracked unsafe sites under crates/cli/**; future CLI unsafe seams must be reintroduced as active owned entries."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p wheelctl --bin wheelctl -- --nocapture",
 ]
 review_after = "2026-06-30"
-removal_condition = "Each CLI unsafe seam has a local safety contract, local precondition guard, and a parse/guard or receipt witness."
+removal_condition = "Reopen only if a tracked unsafe site lands under crates/cli/**."
 safety_contract = "missing"
 local_guard = "missing"
 witness = "missing"
+status = "retired"
 
 [[exception]]
 id = "unsafe-engine-hid-platform-boundaries"
@@ -201,16 +202,17 @@ id = "unsafe-firmware-update-crate"
 owner = "firmware"
 path = "crates/openracing-firmware-update/**"
 kind = "firmware_platform_unsafe"
-reason = "Firmware-related unsafe seams are review-only here; this lane must not run firmware, DFU, or device paths."
+reason = "Retired after the unsafe-review scanner reported zero tracked unsafe sites under crates/openracing-firmware-update/**; firmware, DFU, and device paths remain out of scope for this lane."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p openracing-firmware-update --all-targets",
 ]
 review_after = "2026-06-30"
-removal_condition = "Firmware unsafe seams have local contracts, guards, and non-hardware witnesses."
+removal_condition = "Reopen only if a tracked unsafe site lands under crates/openracing-firmware-update/**; do not use firmware, DFU, or device execution as review evidence."
 safety_contract = "missing"
 local_guard = "missing"
 witness = "missing"
+status = "retired"
 
 [[exception]]
 id = "unsafe-plugin-runtime-crate"
