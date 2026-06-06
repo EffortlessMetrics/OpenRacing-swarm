@@ -319,23 +319,22 @@ impl DeviceTelemetryReport {
 
     /// Convert to byte array for HID transmission
     pub fn to_bytes(&self) -> [u8; 13] {
-        let [angle_0, angle_1, angle_2, angle_3] = self.wheel_angle_mdeg.to_le_bytes();
-        let [speed_0, speed_1] = self.wheel_speed_mrad_s.to_le_bytes();
-        let [seq_0, seq_1] = self.last_torque_seq.to_le_bytes();
+        let Self {
+            report_id,
+            wheel_angle_mdeg,
+            wheel_speed_mrad_s,
+            temp_c,
+            faults,
+            hands_on,
+            last_torque_seq,
+            crc8,
+        } = *self;
+        let [angle_0, angle_1, angle_2, angle_3] = wheel_angle_mdeg.to_le_bytes();
+        let [speed_0, speed_1] = wheel_speed_mrad_s.to_le_bytes();
+        let [seq_0, seq_1] = last_torque_seq.to_le_bytes();
         [
-            self.report_id,
-            angle_0,
-            angle_1,
-            angle_2,
-            angle_3,
-            speed_0,
-            speed_1,
-            self.temp_c,
-            self.faults,
-            self.hands_on,
-            seq_0,
-            seq_1,
-            self.crc8,
+            report_id, angle_0, angle_1, angle_2, angle_3, speed_0, speed_1, temp_c, faults,
+            hands_on, seq_0, seq_1, crc8,
         ]
     }
 
