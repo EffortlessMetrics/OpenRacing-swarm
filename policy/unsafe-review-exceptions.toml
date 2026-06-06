@@ -58,16 +58,16 @@ id = "unsafe-engine-rt-core"
 owner = "core"
 path = "crates/engine/src/**"
 kind = "rt_raw_memory_or_platform_unsafe"
-reason = "Engine RT and protocol unsafe seams need local invariants and no-allocation/no-blocking witnesses before unsafe-review closure."
+reason = "Engine RT core unsafe seams are reviewed through System allocator delegation contracts, seqlock mailbox contracts, explicit little-endian protocol packing, typed aligned pipeline state storage, filter pointer guards, scheduler OS-call contracts, and zero-allocation/protocol/scheduler witnesses."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p racing-wheel-engine --all-targets",
 ]
-review_after = "2026-06-30"
-removal_condition = "Each RT unsafe seam has a local contract, guard, and targeted unit/property/receipt witness."
-safety_contract = "missing"
-local_guard = "missing"
-witness = "missing"
+review_after = "2026-09-30"
+removal_condition = "Reopen if a new engine RT/core unsafe seam lands without a local contract, guard, and targeted unit/property/zero-allocation/protocol witness; retire only if these unsafe sites are removed or tracked per site."
+safety_contract = "present"
+local_guard = "present"
+witness = "present"
 
 [[exception]]
 id = "unsafe-native-plugin-ffi"

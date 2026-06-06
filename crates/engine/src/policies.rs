@@ -186,7 +186,11 @@ impl Default for SafetyPolicy {
         const DEFAULT_HIGH: f32 = 25.0;
 
         Self {
+            // SAFETY: Both constants are finite positive torque values within
+            // the `TorqueNm` domain and are covered by safety policy tests.
             max_safe_torque: unsafe { TorqueNm::new_unchecked(DEFAULT_SAFE) },
+            // SAFETY: 25.0 Nm is the policy's bounded high-torque ceiling and
+            // is within the `TorqueNm` domain.
             max_high_torque: unsafe { TorqueNm::new_unchecked(DEFAULT_HIGH) },
             max_temperature_c: 80,
             max_hands_off_duration: Duration::from_secs(5),
