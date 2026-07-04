@@ -146,18 +146,36 @@ impl TorqueNm {
 
     /// Create a new torque value with validation
     pub fn new(value: f32) -> Result<Self, DomainError> {
-        if !(0.0..=Self::MAX_TORQUE).contains(&value) || !value.is_finite() {
+        if !Self::is_valid_raw_value(value) {
             return Err(DomainError::InvalidTorque(value, Self::MAX_TORQUE));
         }
         Ok(TorqueNm(value))
     }
 
+    fn is_valid_raw_value(value: f32) -> bool {
+        (0.0..=Self::MAX_TORQUE).contains(&value) && value.is_finite()
+    }
+
     /// Create a new torque value without validation
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use racing_wheel_schemas::domain::TorqueNm;
+    ///
+    /// // SAFETY: 25.0 is finite and in the allowed [0.0, MAX_TORQUE] range.
+    /// let torque = unsafe { TorqueNm::new_unchecked(25.0) };
+    /// assert_eq!(torque.value(), 25.0);
+    /// ```
     ///
     /// # Safety
     ///
     /// The caller must ensure that the value is finite and within the range [0.0, MAX_TORQUE].
     pub unsafe fn new_unchecked(value: f32) -> Self {
+        debug_assert!(
+            Self::is_valid_raw_value(value),
+            "TorqueNm::new_unchecked requires a finite value in [0.0, MAX_TORQUE]"
+        );
         TorqueNm(value)
     }
 
@@ -777,6 +795,17 @@ mod tests {
         assert!(TorqueNm::new(51.0).is_err());
         assert!(TorqueNm::new(f32::NAN).is_err());
         assert!(TorqueNm::new(f32::INFINITY).is_err());
+    }
+
+    #[test]
+    fn test_torque_nm_raw_value_guard() {
+        assert!(TorqueNm::is_valid_raw_value(0.0));
+        assert!(TorqueNm::is_valid_raw_value(25.0));
+        assert!(TorqueNm::is_valid_raw_value(TorqueNm::MAX_TORQUE));
+        assert!(!TorqueNm::is_valid_raw_value(-1.0));
+        assert!(!TorqueNm::is_valid_raw_value(TorqueNm::MAX_TORQUE + 1.0));
+        assert!(!TorqueNm::is_valid_raw_value(f32::NAN));
+        assert!(!TorqueNm::is_valid_raw_value(f32::INFINITY));
     }
 
     #[test]

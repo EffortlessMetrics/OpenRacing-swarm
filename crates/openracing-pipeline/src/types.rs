@@ -9,6 +9,22 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::{Mutex, oneshot};
 
+const STATE_WORD_BYTES: usize = 16;
+
+#[repr(C, align(16))]
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct StateWord {
+    _bytes: [u8; STATE_WORD_BYTES],
+}
+
+impl Default for StateWord {
+    fn default() -> Self {
+        Self {
+            _bytes: [0; STATE_WORD_BYTES],
+        }
+    }
+}
+
 /// Function pointer type for filter nodes
 ///
 /// Each filter node is a function that takes a mutable frame and a pointer
@@ -53,9 +69,13 @@ pub struct Pipeline {
     /// Function pointers for each filter node
     pub(crate) nodes: Vec<FilterNodeFn>,
     /// State storage for all nodes (Structure of Arrays)
-    pub(crate) state: Vec<u8>,
+    pub(crate) state: Vec<StateWord>,
+    /// Used bytes in the aligned state buffer.
+    pub(crate) state_len_bytes: usize,
     /// Offsets into state storage for each node
     pub(crate) state_offsets: Vec<usize>,
+    /// State sizes in bytes for each node
+    pub(crate) state_sizes: Vec<usize>,
     /// Configuration hash for deterministic comparison
     pub(crate) config_hash: u64,
     /// Optional response curve for torque transformation (pre-computed LUT)
@@ -129,7 +149,9 @@ impl Pipeline {
         Self {
             nodes: Vec::new(),
             state: Vec::new(),
+            state_len_bytes: 0,
             state_offsets: Vec::new(),
+            state_sizes: Vec::new(),
             config_hash: 0,
             response_curve: None,
         }
@@ -153,7 +175,9 @@ impl Pipeline {
         Self {
             nodes: Vec::new(),
             state: Vec::new(),
+            state_len_bytes: 0,
             state_offsets: Vec::new(),
+            state_sizes: Vec::new(),
             config_hash,
             response_curve: None,
         }
@@ -240,49 +264,86 @@ impl Pipeline {
         self.nodes.len()
     }
 
-    /// Add a filter node to the pipeline (used during compilation)
+    /// Add a typed filter node to the pipeline (used during compilation)
     ///
     /// This method is used internally by the compiler to build the pipeline.
-    /// It ensures proper alignment of state data.
-    pub(crate) fn add_node(&mut self, node_fn: FilterNodeFn, state_size: usize) {
-        let align = std::mem::align_of::<f64>();
-        let current_len = self.state.len();
-        let aligned_offset = (current_len + align - 1) & !(align - 1);
-
-        self.state.resize(aligned_offset, 0);
-        self.state_offsets.push(aligned_offset);
-        self.state.resize(aligned_offset + state_size, 0);
-        self.nodes.push(node_fn);
-    }
-
-    /// Initialize state for a specific node (used during compilation)
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that:
-    /// - `node_index` is valid
-    /// - The type `T` matches the state type for this node
-    /// - The state offset is properly aligned for type `T`
-    pub(crate) unsafe fn init_node_state<T>(&mut self, node_index: usize, initial_state: T)
+    /// It stores node state in a 16-byte aligned backing buffer and records the
+    /// exact byte offset/size used by the executor.
+    pub(crate) fn add_state_node<T>(&mut self, node_fn: FilterNodeFn, initial_state: T)
     where
         T: Copy,
     {
-        debug_assert!(node_index < self.state_offsets.len(), "Invalid node index");
-        debug_assert!(node_index < self.state_offsets.len(), "Invalid node index");
-        debug_assert!(
-            self.state_offsets[node_index].is_multiple_of(std::mem::align_of::<T>()),
-            "State offset not aligned for type"
+        let state_size = std::mem::size_of::<T>();
+        let state_align = std::mem::align_of::<T>().max(std::mem::align_of::<f64>());
+        assert!(
+            state_align <= std::mem::align_of::<StateWord>(),
+            "state type alignment exceeds pipeline state buffer alignment"
         );
 
-        if node_index < self.state_offsets.len() {
-            let offset = self.state_offsets[node_index];
-            // SAFETY: The caller ensures the offset is valid and aligned
-            let state_ptr = unsafe { self.state.as_mut_ptr().add(offset) as *mut T };
-            unsafe {
-                *state_ptr = initial_state;
-            }
+        let aligned_offset = align_up(self.state_len_bytes, state_align);
+        assert!(
+            state_size <= usize::MAX - aligned_offset,
+            "pipeline state buffer size overflow"
+        );
+        let end = aligned_offset + state_size;
+        self.resize_state_bytes(end);
+
+        let state_ptr = self.state_ptr_at(aligned_offset).cast::<T>();
+
+        // SAFETY: `state_ptr` points inside the aligned state buffer after it
+        // has been resized to cover `end`. `aligned_offset` is rounded to
+        // `align_of::<T>()`, and the 16-byte backing storage is at least as
+        // aligned as every accepted state type. `T: Copy`, so writing the value
+        // into zeroed byte storage cannot skip a destructor.
+        unsafe {
+            state_ptr.write(initial_state);
         }
+
+        self.nodes.push(node_fn);
+        self.state_offsets.push(aligned_offset);
+        self.state_sizes.push(state_size);
     }
+
+    pub(crate) fn node_state_ptr(&mut self, node_index: usize) -> *mut u8 {
+        let Some(&offset) = self.state_offsets.get(node_index) else {
+            return std::ptr::null_mut();
+        };
+        let Some(&state_size) = self.state_sizes.get(node_index) else {
+            return std::ptr::null_mut();
+        };
+        let Some(end) = offset.checked_add(state_size) else {
+            return std::ptr::null_mut();
+        };
+        if end > self.state_len_bytes {
+            return std::ptr::null_mut();
+        }
+
+        self.state_ptr_at(offset)
+    }
+
+    fn resize_state_bytes(&mut self, len_bytes: usize) {
+        let word_count = len_bytes.div_ceil(STATE_WORD_BYTES);
+        self.state.resize(word_count, StateWord::default());
+        self.state_len_bytes = len_bytes;
+    }
+
+    fn state_ptr_at(&mut self, offset: usize) -> *mut u8 {
+        debug_assert!(offset <= self.state_len_bytes, "state offset out of bounds");
+        // SAFETY: `offset` is checked by callers against `state_len_bytes`, and
+        // `resize_state_bytes` keeps enough `StateWord` entries allocated to
+        // cover every byte up to `state_len_bytes`.
+        unsafe { self.state.as_mut_ptr().cast::<u8>().add(offset) }
+    }
+}
+
+fn align_up(value: usize, align: usize) -> usize {
+    debug_assert!(align.is_power_of_two(), "alignment must be a power of two");
+    let mask = align - 1;
+    assert!(
+        value <= usize::MAX - mask,
+        "pipeline state buffer size overflow"
+    );
+    (value + mask) & !mask
 }
 
 impl Default for Pipeline {
@@ -296,7 +357,9 @@ impl Clone for Pipeline {
         Self {
             nodes: self.nodes.clone(),
             state: self.state.clone(),
+            state_len_bytes: self.state_len_bytes,
             state_offsets: self.state_offsets.clone(),
+            state_sizes: self.state_sizes.clone(),
             config_hash: self.config_hash,
             response_curve: self.response_curve.clone(),
         }
@@ -339,5 +402,36 @@ mod tests {
         let pipeline = Pipeline::with_hash(0x12345678);
         let cloned = pipeline.clone();
         assert_eq!(pipeline.config_hash(), cloned.config_hash());
+    }
+
+    fn no_op_node(_frame: &mut Frame, _state: *mut u8) {}
+
+    #[repr(align(16))]
+    #[derive(Clone, Copy)]
+    struct AlignedState {
+        _value: u8,
+    }
+
+    #[test]
+    fn test_add_state_node_records_aligned_offsets_and_sizes() {
+        let mut pipeline = Pipeline::new();
+        pipeline.add_state_node(no_op_node, 1_u8);
+        pipeline.add_state_node(no_op_node, AlignedState { _value: 7 });
+
+        assert_eq!(pipeline.node_count(), 2);
+        assert_eq!(pipeline.state_offset(0), Some(0));
+        assert_eq!(pipeline.node_state_size(0), Some(std::mem::size_of::<u8>()));
+        assert!(
+            matches!(pipeline.state_offset(1), Some(offset) if offset.is_multiple_of(16)),
+            "16-byte aligned state should be placed at a 16-byte offset"
+        );
+        assert_eq!(
+            pipeline.node_state_size(1),
+            Some(std::mem::size_of::<AlignedState>())
+        );
+        assert!(pipeline.state_size() >= std::mem::size_of::<u8>() + 16);
+        assert!(!pipeline.node_state_ptr(0).is_null());
+        assert!(!pipeline.node_state_ptr(1).is_null());
+        assert!(pipeline.node_state_ptr(2).is_null());
     }
 }

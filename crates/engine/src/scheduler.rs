@@ -537,15 +537,17 @@ impl AbsoluteScheduler {
             GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_TIME_CRITICAL,
         };
 
-        unsafe {
-            if setup.high_priority {
-                // Set thread to time-critical priority
+        if setup.high_priority {
+            // SAFETY: `GetCurrentThread` returns the current thread pseudo
+            // handle, which is valid for `SetThreadPriority` for the duration
+            // of this call. No handle ownership is transferred.
+            unsafe {
                 SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL)
                     .map_err(|_| RTError::TimingViolation)?;
-
-                // Note: SetProcessPriorityClass and power management APIs
-                // would be added here in a full implementation
             }
+
+            // Note: SetProcessPriorityClass and power management APIs
+            // would be added here in a full implementation
         }
 
         Ok(())
@@ -579,6 +581,9 @@ impl AbsoluteScheduler {
         // Relative due time in 100ns units. Negative means relative wait.
         let due_time_100ns = relative_due_time_100ns(sleep_duration);
 
+        // SAFETY: `timer` is owned by this scheduler, `due_time_100ns` lives
+        // until the call returns, and `WaitForSingleObject` only observes the
+        // valid handle without taking ownership.
         unsafe {
             SetWaitableTimer(timer, &due_time_100ns, 0, None, None, false)
                 .map_err(|_| RTError::TimingViolation)?;
@@ -600,20 +605,26 @@ impl AbsoluteScheduler {
             MCL_CURRENT, MCL_FUTURE, SCHED_FIFO, mlockall, sched_param, sched_setscheduler,
         };
 
-        unsafe {
-            if setup.high_priority {
-                // Set SCHED_FIFO with high priority
-                let param = sched_param {
-                    sched_priority: 80, // High priority but not maximum
-                };
+        if setup.high_priority {
+            // Set SCHED_FIFO with high priority
+            let param = sched_param {
+                sched_priority: 80, // High priority but not maximum
+            };
 
+            // SAFETY: `param` is initialized for `sched_setscheduler` and the
+            // pid `0` targets the current process per POSIX/Linux semantics.
+            unsafe {
                 if sched_setscheduler(0, SCHED_FIFO, &param) != 0 {
                     // Fall back to trying via rtkit if direct scheduling fails
                     // This would require rtkit integration in a full implementation
                 }
             }
+        }
 
-            if setup.lock_memory {
+        if setup.lock_memory {
+            // SAFETY: `mlockall` takes only flag bits and does not dereference
+            // user pointers; failure is advisory for this setup path.
+            unsafe {
                 // Lock all current and future memory to prevent swapping
                 mlockall(MCL_CURRENT | MCL_FUTURE);
             }
@@ -650,17 +661,20 @@ impl AbsoluteScheduler {
             tv_nsec: sleep_duration.subsec_nanos() as i64,
         };
 
-        unsafe {
-            let result = clock_nanosleep(
+        // SAFETY: `ts` is a valid relative timespec for the duration of the
+        // call and the remaining-time pointer is null because interruption is
+        // handled as a timing violation.
+        let result = unsafe {
+            clock_nanosleep(
                 CLOCK_MONOTONIC,
                 0, // Relative time
                 &ts,
                 std::ptr::null_mut(),
-            );
+            )
+        };
 
-            if result != 0 {
-                return Err(RTError::TimingViolation);
-            }
+        if result != 0 {
+            return Err(RTError::TimingViolation);
         }
 
         // Busy-spin for the final precision
@@ -725,6 +739,9 @@ impl AbsoluteScheduler {
             return Ok(HANDLE(raw_handle as *mut c_void));
         }
 
+        // SAFETY: Passing null security attributes and name requests an unnamed
+        // manual-reset waitable timer; the returned handle is stored and closed
+        // in `Drop`.
         let timer = unsafe {
             CreateWaitableTimerW(None, true, None).map_err(|_| RTError::TimingViolation)?
         };
@@ -747,6 +764,9 @@ impl Drop for AbsoluteScheduler {
         use windows::Win32::Foundation::HANDLE;
 
         if let Some(raw_handle) = self.waitable_timer_raw.take() {
+            // SAFETY: `raw_handle` was returned by `CreateWaitableTimerW` and
+            // is removed from `waitable_timer_raw` before close to avoid a
+            // double close on repeated drops.
             unsafe {
                 let timer = HANDLE(raw_handle as *mut c_void);
                 let _ = CloseHandle(timer);

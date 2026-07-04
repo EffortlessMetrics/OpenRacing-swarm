@@ -18,16 +18,28 @@ patch coverage is currently informational.
 That means the quality lane is not closure-satisfied even when ordinary PR
 checks are green.
 
-Local discovery for this scaffold also found two measurable infrastructure
+Local discovery for this scaffold also found three measurable infrastructure
 debts:
 
 - `cargo xtask badges --check` depends on a `test-efficiency.json` report, but
   this xtask does not yet expose the referenced generator.
+- `scripts/coverage.sh --json` cannot run when the helper's shell environment
+  cannot see `cargo-llvm-cov`; missing coverage tooling must stay visible as
+  skipped evidence rather than disappearing into a shell helper failure.
 - the direct Windows `cargo llvm-cov` workspace path can hit command-line
   length error 206 when the object list becomes too large.
 
-Both are tracked in `policy/quality-closure-exceptions.toml`; neither is treated
-as a passing coverage or RIPR+ closure signal.
+All three are tracked in `policy/quality-closure-exceptions.toml`; none is
+treated as a passing coverage, badge, or RIPR+ closure signal.
+
+The receipt also needs to keep active RIPR+/coverage exceptions attributable to
+owners and follow-up status, so follow-up PRs can distinguish required gate
+debt from generated, advisory, or deferred surfaces without redefining coverage
+closure as a line-percentage claim.
+
+Review dates are part of that ownership model. Expired quality exceptions must
+remain visible in the receipt rather than silently relying on old exception
+metadata.
 
 ## Work item: define-ripr-plus-zero-and-coverage-closure-gates
 
@@ -114,7 +126,10 @@ hardware lanes remain unchanged.
 
 1. Turn the skipped coverage debt into a required non-skipped coverage sentinel
    or a required patch coverage job.
-2. Close the highest-leverage owned gaps in core protocol/domain logic.
-3. Remove exception entries as durable tests land.
-4. Ratchet patch coverage, then crate/module coverage, using the receipt as the
+2. Use `quality_exception_breakdown` to close the highest-leverage owned gaps in
+   core protocol/domain logic.
+3. Keep quality exception `review_after` dates current or narrow/remove entries
+   before they expire.
+4. Remove exception entries as durable tests land.
+5. Ratchet patch coverage, then crate/module coverage, using the receipt as the
    denominator.

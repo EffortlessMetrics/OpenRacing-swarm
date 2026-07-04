@@ -25,16 +25,17 @@ id = "unsafe-cli-process-and-env-seams"
 owner = "cli"
 path = "crates/cli/**"
 kind = "platform_or_process_unsafe"
-reason = "CLI unsafe seams are process/environment guard rails rather than hardware proof; they need local contracts and focused CLI parse/guard tests before closure."
+reason = "Retired after the unsafe-review scanner reported zero tracked unsafe sites under crates/cli/**; future CLI unsafe seams must be reintroduced as active owned entries."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p wheelctl --bin wheelctl -- --nocapture",
 ]
 review_after = "2026-06-30"
-removal_condition = "Each CLI unsafe seam has a local safety contract, local precondition guard, and a parse/guard or receipt witness."
+removal_condition = "Reopen only if a tracked unsafe site lands under crates/cli/**."
 safety_contract = "missing"
 local_guard = "missing"
 witness = "missing"
+status = "retired"
 
 [[exception]]
 id = "unsafe-engine-hid-platform-boundaries"
@@ -57,16 +58,16 @@ id = "unsafe-engine-rt-core"
 owner = "core"
 path = "crates/engine/src/**"
 kind = "rt_raw_memory_or_platform_unsafe"
-reason = "Engine RT and protocol unsafe seams need local invariants and no-allocation/no-blocking witnesses before unsafe-review closure."
+reason = "Engine RT core unsafe seams are reviewed through System allocator delegation contracts, seqlock mailbox contracts, explicit little-endian protocol packing, typed aligned pipeline state storage, filter pointer guards, scheduler OS-call contracts, and zero-allocation/protocol/scheduler witnesses."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p racing-wheel-engine --all-targets",
 ]
-review_after = "2026-06-30"
-removal_condition = "Each RT unsafe seam has a local contract, guard, and targeted unit/property/receipt witness."
-safety_contract = "missing"
-local_guard = "missing"
-witness = "missing"
+review_after = "2026-09-30"
+removal_condition = "Reopen if a new engine RT/core unsafe seam lands without a local contract, guard, and targeted unit/property/zero-allocation/protocol witness; retire only if these unsafe sites are removed or tracked per site."
+safety_contract = "present"
+local_guard = "present"
+witness = "present"
 
 [[exception]]
 id = "unsafe-native-plugin-ffi"
@@ -89,16 +90,16 @@ id = "unsafe-pipeline-raw-state"
 owner = "core"
 path = "crates/openracing-pipeline/src/**"
 kind = "raw_pointer_state_layout_unsafe"
-reason = "Pipeline compiler/executor raw-state accesses need layout contracts and focused state-layout witnesses before closure."
+reason = "Pipeline compiler/executor raw-state seams are reviewed through 16-byte aligned backing storage, typed state-node insertion, executor pointer guards, typed wrapper contracts, and state-layout/process witnesses."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p openracing-pipeline --all-targets",
 ]
-review_after = "2026-06-30"
-removal_condition = "Each pipeline unsafe seam has a local layout contract, bounds/alignment guard, and state-layout or property witness."
-safety_contract = "missing"
-local_guard = "missing"
-witness = "missing"
+review_after = "2026-09-30"
+removal_condition = "Reopen if new pipeline unsafe seams land without a local layout contract, bounds/alignment guard, and state-layout or property witness; retire if raw state unsafe is removed or tracked per-site."
+safety_contract = "present"
+local_guard = "present"
+witness = "present"
 
 [[exception]]
 id = "unsafe-telemetry-shared-memory-adapters"
@@ -121,144 +122,148 @@ id = "unsafe-service-platform-process-boundaries"
 owner = "service"
 path = "crates/service/**"
 kind = "platform_process_or_ipc_unsafe"
-reason = "Service process, IPC, telemetry, and firmware seams touch platform APIs and need local contracts before review closure."
+reason = "Service platform unsafe seams are reviewed through local Unix UID helpers, Windows process snapshot guards, telemetry raw-byte layout contracts, and service/property witnesses."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p racing-wheel-service --all-targets",
 ]
-review_after = "2026-06-30"
-removal_condition = "Each service unsafe seam has a local contract, guard, and unit/integration/fake-platform witness."
-safety_contract = "missing"
-local_guard = "missing"
-witness = "missing"
+review_after = "2026-09-30"
+removal_condition = "Reopen to missing evidence if a new service unsafe seam lands without a local contract, guard, and unit/property/fake-platform witness; retire only if service unsafe sites are removed or tracked per site."
+safety_contract = "present"
+local_guard = "present"
+witness = "present"
 
 [[exception]]
 id = "unsafe-platform-support-crates"
 owner = "core"
 path = "crates/openracing-scheduler/**"
 kind = "platform_threading_unsafe"
-reason = "Scheduler platform calls are bounded support seams and need local contracts plus platform-fake or unit witnesses."
+reason = "Scheduler platform FFI calls are reviewed through local contracts for Linux sched/mlock/nanosleep and Windows priority/timer/handle calls, guardable timespec/handle conversion helpers, and scheduler platform/unit tests."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p openracing-scheduler --all-targets",
 ]
-review_after = "2026-06-30"
-removal_condition = "Scheduler unsafe seams have local contracts, guards, and platform witness coverage."
-safety_contract = "missing"
-local_guard = "missing"
-witness = "missing"
+review_after = "2026-09-30"
+removal_condition = "Reopen to missing evidence if a new scheduler platform unsafe seam lands without a local contract, guard, and platform/unit witness; retire only if scheduler unsafe sites are removed or tracked per site."
+safety_contract = "present"
+local_guard = "present"
+witness = "present"
 
 [[exception]]
 id = "unsafe-ipc-support-crate"
 owner = "core"
 path = "crates/openracing-ipc/**"
 kind = "ipc_platform_unsafe"
-reason = "IPC transport unsafe seams need local contracts and fake-transport witnesses before closure."
+reason = "IPC transport Unix getuid FFI seam is reviewed through a local safety contract, numeric UID path construction guard, and transport tests; keep active so future IPC unsafe sites remain owned."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p openracing-ipc --all-targets",
 ]
-review_after = "2026-06-30"
-removal_condition = "IPC unsafe seams have local contracts, guards, and fake-transport witnesses."
-safety_contract = "missing"
-local_guard = "missing"
-witness = "missing"
+review_after = "2026-09-30"
+removal_condition = "Reopen to missing evidence if a new IPC unsafe seam lands without a local contract, guard, and witness; retire only if IPC unsafe sites are removed or tracked per site."
+safety_contract = "present"
+local_guard = "present"
+witness = "present"
 
 [[exception]]
 id = "unsafe-tracing-platform-crate"
 owner = "core"
 path = "crates/openracing-tracing/**"
 kind = "platform_tracing_unsafe"
-reason = "Tracing platform bindings need explicit local contracts before unsafe-review closure."
+reason = "Windows ETW platform unsafe calls are reviewed through local register/write/unregister safety contracts, nonzero provider-handle guards, ETW descriptor guards, and unit tests for descriptor/handle witness coverage."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p openracing-tracing --all-targets",
 ]
-review_after = "2026-06-30"
-removal_condition = "Tracing unsafe seams have local contracts, guards, and platform witness coverage."
-safety_contract = "missing"
-local_guard = "missing"
-witness = "missing"
+review_after = "2026-09-30"
+removal_condition = "Reopen to missing evidence if a new tracing platform unsafe seam lands without a local contract, guard, and unit/property/platform witness; retire only if tracing unsafe sites are removed or tracked per site."
+safety_contract = "present"
+local_guard = "present"
+witness = "present"
 
 [[exception]]
 id = "unsafe-hardware-watchdog-crate"
 owner = "core"
 path = "crates/openracing-hardware-watchdog/**"
 kind = "watchdog_platform_unsafe"
-reason = "Watchdog platform seams need local contracts and fake-platform witnesses before review closure."
+reason = "Retired after the unsafe-review scanner reported zero tracked unsafe sites under crates/openracing-hardware-watchdog/**; the software watchdog metrics path now uses lock-free atomics instead of UnsafeCell/manual Send/Sync."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p openracing-hardware-watchdog --all-targets",
 ]
 review_after = "2026-06-30"
-removal_condition = "Watchdog unsafe seams have local contracts, guards, and fake-platform witnesses."
+removal_condition = "Reopen only if a tracked unsafe site lands under crates/openracing-hardware-watchdog/**; do not use hardware execution as review evidence."
 safety_contract = "missing"
 local_guard = "missing"
 witness = "missing"
+status = "retired"
 
 [[exception]]
 id = "unsafe-firmware-update-crate"
 owner = "firmware"
 path = "crates/openracing-firmware-update/**"
 kind = "firmware_platform_unsafe"
-reason = "Firmware-related unsafe seams are review-only here; this lane must not run firmware, DFU, or device paths."
+reason = "Retired after the unsafe-review scanner reported zero tracked unsafe sites under crates/openracing-firmware-update/**; firmware, DFU, and device paths remain out of scope for this lane."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p openracing-firmware-update --all-targets",
 ]
 review_after = "2026-06-30"
-removal_condition = "Firmware unsafe seams have local contracts, guards, and non-hardware witnesses."
+removal_condition = "Reopen only if a tracked unsafe site lands under crates/openracing-firmware-update/**; do not use firmware, DFU, or device execution as review evidence."
 safety_contract = "missing"
 local_guard = "missing"
 witness = "missing"
+status = "retired"
 
 [[exception]]
 id = "unsafe-plugin-runtime-crate"
 owner = "plugins"
 path = "crates/plugins/**"
 kind = "plugin_runtime_unsafe"
-reason = "Plugin runtime unsafe seams need local contracts around ABI/runtime boundaries before unsafe-review closure."
+reason = "The plugin helper shared-memory unsafe seams are reviewed through a local checked layout contract, header/payload guards, safety comments, and helper unit tests for invalid ABI/runtime layouts."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
+  "cargo test --locked -p racing-wheel-plugins --bin wheel-plugin-helper",
   "cargo test --locked -p racing-wheel-plugins --all-targets",
 ]
-review_after = "2026-06-30"
-removal_condition = "Plugin runtime unsafe seams have local contracts, guards, and ABI/runtime witnesses."
-safety_contract = "missing"
-local_guard = "missing"
-witness = "missing"
+review_after = "2026-09-30"
+removal_condition = "Reopen to missing evidence if a new plugin runtime unsafe seam lands without a local contract, guard, and unit/property/ABI witness; retire only if plugin runtime unsafe sites are removed or tracked per site."
+safety_contract = "present"
+local_guard = "present"
+witness = "present"
 
 [[exception]]
 id = "unsafe-schema-domain-unchecked-constructors"
 owner = "schemas"
 path = "crates/schemas/**"
 kind = "unchecked_constructor_unsafe"
-reason = "Schema/domain unchecked constructors and compile-fail surfaces need local contracts and trybuild/property witnesses before closure."
+reason = "TorqueNm::new_unchecked is reviewed through a local safety contract, shared value precondition guard, debug assertion, and domain tests that witness the guard and valid unsafe construction."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p racing-wheel-schemas --all-targets",
+  "cargo test --locked -p racing-wheel-schemas --doc",
 ]
-review_after = "2026-06-30"
-removal_condition = "Schema unsafe seams have local contracts, guards, and trybuild/property witnesses."
-safety_contract = "missing"
-local_guard = "missing"
-witness = "missing"
+review_after = "2026-09-30"
+removal_condition = "Reopen to missing evidence if a new schema unchecked constructor lands without a local contract, guard, and unit/trybuild/property witness; retire only if schema unsafe sites are removed or tracked per site."
+safety_contract = "present"
+local_guard = "present"
+witness = "present"
 
 [[exception]]
 id = "unsafe-test-helper-crate"
 owner = "core"
 path = "crates/openracing-test-helpers/**"
 kind = "test_helper_unsafe"
-reason = "Shared test helper unsafe code needs explicit helper contracts so product tests do not inherit hidden assumptions."
+reason = "Shared allocation-tracking test helper unsafe code is reviewed through a local GlobalAlloc delegation contract, non-null/tracking-enabled accounting guards, saturating counter updates, and helper-level allocation tracking witnesses."
 test_surface = [
   "cargo xtask unsafe-review-closure --check",
   "cargo test --locked -p openracing-test-helpers --all-targets",
 ]
-review_after = "2026-06-30"
-removal_condition = "Test helper unsafe seams have local contracts and helper-level witnesses, or move under test-harness-only policy."
-safety_contract = "missing"
-local_guard = "missing"
-witness = "missing"
+review_after = "2026-09-30"
+removal_condition = "Reopen to missing evidence if a new openracing-test-helpers unsafe seam lands without a local contract, guard, and helper-level witness; retire only if the tracking allocator unsafe sites are removed or moved under per-site test-harness policy."
+safety_contract = "present"
+local_guard = "present"
+witness = "present"
 
 [[exception]]
 id = "unsafe-third-party-shared-memory"

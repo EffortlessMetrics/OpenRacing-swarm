@@ -12,6 +12,10 @@ pub struct SnapshotMailbox<T: Copy> {
     data: UnsafeCell<T>,
 }
 
+// SAFETY: `SnapshotMailbox` exposes mutation only through `write`, which is a
+// single-writer API by construction for this engine surface. Readers copy `T`
+// through the seqlock retry loop and accept a value only when the sequence is
+// even and unchanged across the copy.
 unsafe impl<T: Copy> Sync for SnapshotMailbox<T> {}
 
 impl<T: Copy> SnapshotMailbox<T> {
@@ -24,8 +28,9 @@ impl<T: Copy> SnapshotMailbox<T> {
 
     pub fn write(&self, value: T) {
         self.seq.fetch_add(1, Ordering::Release);
-        // SAFETY: Single-writer guarantee; the odd sequence number prevents readers
-        // from observing a torn write.
+        // SAFETY: The engine owns a single writer for each mailbox. Publishing
+        // an odd sequence before the write prevents readers from accepting a
+        // concurrently copied value.
         unsafe {
             *self.data.get() = value;
         }
@@ -39,7 +44,8 @@ impl<T: Copy> SnapshotMailbox<T> {
                 continue;
             }
 
-            // SAFETY: T is Copy; the seqlock retry loop discards torn reads.
+            // SAFETY: `T: Copy`; if this races with the single writer, the
+            // sequence comparison below rejects the copied value and retries.
             let value = unsafe { *self.data.get() };
             let end = self.seq.load(Ordering::Acquire);
             if start == end {

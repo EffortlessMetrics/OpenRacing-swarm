@@ -12,35 +12,102 @@ thread_local! {
     static TRACKING_ENABLED: Cell<bool> = const { Cell::new(false) };
 }
 
+/// Test-only allocator wrapper that delegates allocation to [`System`] and
+/// records successful allocations in thread-local counters when tracking is
+/// enabled.
+///
+/// # Safety contract
+///
+/// `TrackingAllocator` does not alter allocator ownership or layout rules. Each
+/// allocation primitive forwards the caller-provided pointer and [`Layout`] to
+/// [`System`] under the same [`GlobalAlloc`] contract, and then records only
+/// successful allocation/growth results without dereferencing allocator
+/// pointers.
 pub struct TrackingAllocator;
 
+// SAFETY: `TrackingAllocator` preserves the `GlobalAlloc` contract by
+// delegating every allocation primitive to `System` with the original
+// caller-provided pointer/layout arguments. Its local side effect is limited to
+// thread-local accounting after successful allocations, guarded by non-null
+// result checks and explicit tracking enablement.
 unsafe impl GlobalAlloc for TrackingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        // SAFETY: The caller of `GlobalAlloc::alloc` must provide a valid
+        // `Layout`. This implementation forwards that layout unchanged to the
+        // system allocator and does not dereference the returned pointer.
         let ptr = unsafe { System.alloc(layout) };
-        if !ptr.is_null() && TRACKING_ENABLED.with(|e| e.get()) {
-            ALLOCATION_COUNT.with(|count| {
-                count.set(count.get().saturating_add(1));
-            });
-            ALLOCATION_BYTES.with(|bytes| {
-                bytes.set(bytes.get().saturating_add(layout.size()));
-            });
-        }
+        record_allocation(ptr, layout);
         ptr
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        // SAFETY: The caller of `GlobalAlloc::dealloc` must provide a pointer
+        // previously allocated by this allocator with the matching `Layout`.
+        // The tracking wrapper forwards those arguments unchanged and performs
+        // no pointer access of its own.
         unsafe { System.dealloc(ptr, layout) };
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        // SAFETY: The caller of `GlobalAlloc::realloc` must provide a pointer
+        // and layout that satisfy the allocator contract. This wrapper delegates
+        // the operation to `System`, then records only successful growth.
         let new_ptr = unsafe { System.realloc(ptr, layout, new_size) };
-        if !new_ptr.is_null() && TRACKING_ENABLED.with(|e| e.get()) && new_size > layout.size() {
-            ALLOCATION_BYTES.with(|bytes| {
-                bytes.set(bytes.get().saturating_add(new_size - layout.size()));
-            });
+        if !new_ptr.is_null() {
+            record_reallocation_growth(layout, new_size);
         }
         new_ptr
     }
+}
+
+fn tracking_enabled() -> bool {
+    TRACKING_ENABLED.with(Cell::get)
+}
+
+fn set_tracking_enabled(enabled: bool) {
+    TRACKING_ENABLED.with(|enabled_cell| enabled_cell.set(enabled));
+}
+
+fn allocation_count() -> usize {
+    ALLOCATION_COUNT.with(Cell::get)
+}
+
+fn allocation_bytes() -> usize {
+    ALLOCATION_BYTES.with(Cell::get)
+}
+
+fn reset_tracking_counters() {
+    ALLOCATION_COUNT.with(|count| count.set(0));
+    ALLOCATION_BYTES.with(|bytes| bytes.set(0));
+}
+
+fn add_allocation_count(delta: usize) {
+    ALLOCATION_COUNT.with(|count| {
+        count.set(count.get().saturating_add(delta));
+    });
+}
+
+fn add_allocation_bytes(delta: usize) {
+    ALLOCATION_BYTES.with(|bytes| {
+        bytes.set(bytes.get().saturating_add(delta));
+    });
+}
+
+fn record_allocation(ptr: *mut u8, layout: Layout) {
+    if ptr.is_null() || !tracking_enabled() {
+        return;
+    }
+
+    add_allocation_count(1);
+    add_allocation_bytes(layout.size());
+}
+
+fn record_reallocation_growth(layout: Layout, new_size: usize) {
+    if !tracking_enabled() || new_size <= layout.size() {
+        return;
+    }
+
+    add_allocation_bytes(new_size - layout.size());
 }
 
 pub struct AllocationGuard {
@@ -51,24 +118,20 @@ pub struct AllocationGuard {
 
 impl AllocationGuard {
     pub fn new() -> Self {
-        TRACKING_ENABLED.with(|e| e.set(true));
+        set_tracking_enabled(true);
         Self {
-            start_count: ALLOCATION_COUNT.with(|c| c.get()),
-            start_bytes: ALLOCATION_BYTES.with(|b| b.get()),
+            start_count: allocation_count(),
+            start_bytes: allocation_bytes(),
             _private: (),
         }
     }
 
     pub fn allocations(&self) -> usize {
-        ALLOCATION_COUNT
-            .with(|count| count.get())
-            .saturating_sub(self.start_count)
+        allocation_count().saturating_sub(self.start_count)
     }
 
     pub fn bytes(&self) -> usize {
-        ALLOCATION_BYTES
-            .with(|bytes| bytes.get())
-            .saturating_sub(self.start_bytes)
+        allocation_bytes().saturating_sub(self.start_bytes)
     }
 
     pub fn has_allocations(&self) -> bool {
@@ -76,8 +139,7 @@ impl AllocationGuard {
     }
 
     pub fn reset(&self) {
-        ALLOCATION_COUNT.with(|c| c.set(0));
-        ALLOCATION_BYTES.with(|b| b.set(0));
+        reset_tracking_counters();
     }
 }
 
@@ -89,7 +151,7 @@ impl Default for AllocationGuard {
 
 impl Drop for AllocationGuard {
     fn drop(&mut self) {
-        TRACKING_ENABLED.with(|e| e.set(false));
+        set_tracking_enabled(false);
     }
 }
 
@@ -197,6 +259,19 @@ impl std::fmt::Display for AllocationReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ptr::NonNull;
+
+    fn test_layout_8() -> Layout {
+        Layout::new::<u64>()
+    }
+
+    fn test_layout_16() -> Layout {
+        Layout::new::<[u64; 2]>()
+    }
+
+    fn test_layout_64() -> Layout {
+        Layout::new::<[u64; 8]>()
+    }
 
     #[test]
     fn test_guard_no_allocations() {
@@ -270,5 +345,61 @@ mod tests {
         let _x = 1;
         assert_rt_safe!(guard2);
         assert_rt_safe!(guard1);
+    }
+
+    #[test]
+    fn record_allocation_requires_enabled_tracking_and_non_null_pointer() {
+        reset_tracking_counters();
+        set_tracking_enabled(false);
+
+        let ptr = NonNull::<u8>::dangling().as_ptr();
+        record_allocation(ptr, test_layout_16());
+
+        assert_eq!(allocation_count(), 0);
+        assert_eq!(allocation_bytes(), 0);
+
+        set_tracking_enabled(true);
+        record_allocation(std::ptr::null_mut::<u8>(), test_layout_16());
+
+        assert_eq!(allocation_count(), 0);
+        assert_eq!(allocation_bytes(), 0);
+
+        record_allocation(ptr, test_layout_16());
+
+        assert_eq!(allocation_count(), 1);
+        assert_eq!(allocation_bytes(), 16);
+        set_tracking_enabled(false);
+    }
+
+    #[test]
+    fn record_reallocation_growth_counts_only_successful_growth() {
+        reset_tracking_counters();
+        set_tracking_enabled(true);
+
+        record_reallocation_growth(test_layout_64(), 32);
+        record_reallocation_growth(test_layout_64(), 64);
+
+        assert_eq!(allocation_bytes(), 0);
+
+        record_reallocation_growth(test_layout_64(), 96);
+
+        assert_eq!(allocation_bytes(), 32);
+        set_tracking_enabled(false);
+    }
+
+    #[test]
+    fn allocation_tracking_saturates_counters() {
+        reset_tracking_counters();
+        set_tracking_enabled(true);
+
+        ALLOCATION_COUNT.with(|count| count.set(usize::MAX));
+        ALLOCATION_BYTES.with(|bytes| bytes.set(usize::MAX - 1));
+
+        let ptr = NonNull::<u8>::dangling().as_ptr();
+        record_allocation(ptr, test_layout_8());
+
+        assert_eq!(allocation_count(), usize::MAX);
+        assert_eq!(allocation_bytes(), usize::MAX);
+        set_tracking_enabled(false);
     }
 }

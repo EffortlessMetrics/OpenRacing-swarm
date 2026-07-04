@@ -39,95 +39,146 @@ impl WindowsETWProvider {
     }
 
     fn emit_etw_event(&self, handle: REGHANDLE, event: RTTraceEvent) {
-        let event_descriptor = match event {
-            RTTraceEvent::TickStart { .. } => EVENT_DESCRIPTOR {
-                Id: 1,
-                Version: 1,
-                Channel: 0,
-                Level: 4,
-                Opcode: 1,
-                Task: 1,
-                Keyword: 0x1,
-            },
-            RTTraceEvent::TickEnd { .. } => EVENT_DESCRIPTOR {
-                Id: 2,
-                Version: 1,
-                Channel: 0,
-                Level: 4,
-                Opcode: 2,
-                Task: 1,
-                Keyword: 0x1,
-            },
-            RTTraceEvent::HidWrite { .. } => EVENT_DESCRIPTOR {
-                Id: 3,
-                Version: 1,
-                Channel: 0,
-                Level: 4,
-                Opcode: 0,
-                Task: 2,
-                Keyword: 0x2,
-            },
-            RTTraceEvent::DeadlineMiss { .. } => EVENT_DESCRIPTOR {
-                Id: 4,
-                Version: 1,
-                Channel: 0,
-                Level: 2,
-                Opcode: 0,
-                Task: 1,
-                Keyword: 0x4,
-            },
-            RTTraceEvent::PipelineFault { .. } => EVENT_DESCRIPTOR {
-                Id: 5,
-                Version: 1,
-                Channel: 0,
-                Level: 1,
-                Opcode: 0,
-                Task: 3,
-                Keyword: 0x4,
-            },
-        };
-
-        unsafe {
-            let _ = EventWrite(handle, &event_descriptor, None);
-        }
-
+        let event_descriptor = rt_event_descriptor(event);
+        write_etw_event(handle, &event_descriptor);
         self.rt_events_count.fetch_add(1, Ordering::Relaxed);
     }
 
     fn emit_etw_app_event(&self, handle: REGHANDLE, _event: &AppTraceEvent) {
-        let event_descriptor = EVENT_DESCRIPTOR {
-            Id: 100,
+        let event_descriptor = app_event_descriptor();
+        write_etw_event(handle, &event_descriptor);
+        self.app_events_count.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+fn rt_event_descriptor(event: RTTraceEvent) -> EVENT_DESCRIPTOR {
+    match event {
+        RTTraceEvent::TickStart { .. } => EVENT_DESCRIPTOR {
+            Id: 1,
+            Version: 1,
+            Channel: 0,
+            Level: 4,
+            Opcode: 1,
+            Task: 1,
+            Keyword: 0x1,
+        },
+        RTTraceEvent::TickEnd { .. } => EVENT_DESCRIPTOR {
+            Id: 2,
+            Version: 1,
+            Channel: 0,
+            Level: 4,
+            Opcode: 2,
+            Task: 1,
+            Keyword: 0x1,
+        },
+        RTTraceEvent::HidWrite { .. } => EVENT_DESCRIPTOR {
+            Id: 3,
             Version: 1,
             Channel: 0,
             Level: 4,
             Opcode: 0,
-            Task: 10,
-            Keyword: 0x10,
-        };
+            Task: 2,
+            Keyword: 0x2,
+        },
+        RTTraceEvent::DeadlineMiss { .. } => EVENT_DESCRIPTOR {
+            Id: 4,
+            Version: 1,
+            Channel: 0,
+            Level: 2,
+            Opcode: 0,
+            Task: 1,
+            Keyword: 0x4,
+        },
+        RTTraceEvent::PipelineFault { .. } => EVENT_DESCRIPTOR {
+            Id: 5,
+            Version: 1,
+            Channel: 0,
+            Level: 1,
+            Opcode: 0,
+            Task: 3,
+            Keyword: 0x4,
+        },
+    }
+}
 
-        unsafe {
-            let _ = EventWrite(handle, &event_descriptor, None);
-        }
+fn app_event_descriptor() -> EVENT_DESCRIPTOR {
+    EVENT_DESCRIPTOR {
+        Id: 100,
+        Version: 1,
+        Channel: 0,
+        Level: 4,
+        Opcode: 0,
+        Task: 10,
+        Keyword: 0x10,
+    }
+}
 
-        self.app_events_count.fetch_add(1, Ordering::Relaxed);
+fn descriptor_is_reviewed_for_etw(descriptor: &EVENT_DESCRIPTOR) -> bool {
+    descriptor.Id != 0
+        && descriptor.Version == 1
+        && (1..=5).contains(&descriptor.Level)
+        && descriptor.Task != 0
+        && descriptor.Keyword != 0
+}
+
+fn registered_etw_handle(handle: REGHANDLE) -> bool {
+    handle.0 != 0
+}
+
+fn register_etw_provider(provider_guid: &GUID) -> Result<REGHANDLE, TracingError> {
+    let mut handle = REGHANDLE(0);
+
+    // SAFETY: `provider_guid` is a valid immutable GUID for the duration of
+    // the call, callback/context pointers are intentionally absent, and
+    // `handle` is a valid out-parameter owned by this stack frame.
+    let result = unsafe { EventRegister(provider_guid, None, None, &mut handle) };
+
+    if result != 0 {
+        return Err(TracingError::InitializationFailed(format!(
+            "EventRegister failed with code: {}",
+            result
+        )));
+    }
+
+    if !registered_etw_handle(handle) {
+        return Err(TracingError::InitializationFailed(
+            "EventRegister returned a zero provider handle".to_string(),
+        ));
+    }
+
+    Ok(handle)
+}
+
+fn write_etw_event(handle: REGHANDLE, descriptor: &EVENT_DESCRIPTOR) {
+    if !registered_etw_handle(handle) || !descriptor_is_reviewed_for_etw(descriptor) {
+        return;
+    }
+
+    // SAFETY: `handle` passed the nonzero registration guard, `descriptor`
+    // passed the local ETW descriptor contract, and the user-data argument is
+    // `None`, so no payload pointer or length pair is provided to ETW.
+    unsafe {
+        let _ = EventWrite(handle, descriptor, None);
+    }
+}
+
+fn unregister_etw_provider(handle: REGHANDLE) {
+    if !registered_etw_handle(handle) {
+        return;
+    }
+
+    // SAFETY: only nonzero handles previously stored by successful
+    // `EventRegister` are passed here, and the provider handle is removed from
+    // `WindowsETWProvider` before this call so it is not unregistered twice.
+    unsafe {
+        let _ = EventUnregister(handle);
     }
 }
 
 impl TracingProvider for WindowsETWProvider {
     fn initialize(&mut self) -> Result<(), TracingError> {
         let provider_guid = GUID::from_u128(PROVIDER_GUID);
-        let mut handle = REGHANDLE(0);
-
-        unsafe {
-            let result = EventRegister(&provider_guid, None, None, &mut handle);
-
-            if result != 0 {
-                return Err(TracingError::InitializationFailed(format!(
-                    "EventRegister failed with code: {}",
-                    result
-                )));
-            }
-        }
+        let handle = register_etw_provider(&provider_guid)?;
 
         self.provider_handle = Some(handle);
         tracing::info!("ETW provider initialized with handle: {}", handle.0);
@@ -218,9 +269,7 @@ impl TracingProvider for WindowsETWProvider {
 
     fn shutdown(&mut self) {
         if let Some(handle) = self.provider_handle.take() {
-            unsafe {
-                let _ = EventUnregister(handle);
-            }
+            unregister_etw_provider(handle);
             tracing::info!("ETW provider shutdown");
         }
     }
@@ -280,5 +329,76 @@ mod tests {
             provider.shutdown();
             assert!(!provider.is_enabled());
         }
+    }
+
+    #[test]
+    fn test_etw_registered_handle_guard() {
+        assert!(!registered_etw_handle(REGHANDLE(0)));
+        assert!(registered_etw_handle(REGHANDLE(1)));
+    }
+
+    #[test]
+    fn test_etw_app_descriptor_contract() {
+        let descriptor = app_event_descriptor();
+        assert!(descriptor_is_reviewed_for_etw(&descriptor));
+        assert_eq!(descriptor.Id, 100);
+        assert_eq!(descriptor.Task, 10);
+        assert_eq!(descriptor.Keyword, 0x10);
+    }
+
+    #[test]
+    fn test_etw_rt_descriptor_contracts() {
+        let events = [
+            RTTraceEvent::TickStart {
+                tick_count: 1,
+                timestamp_ns: 100,
+            },
+            RTTraceEvent::TickEnd {
+                tick_count: 1,
+                timestamp_ns: 200,
+                processing_time_ns: 50,
+            },
+            RTTraceEvent::HidWrite {
+                tick_count: 1,
+                timestamp_ns: 300,
+                torque_nm: 1.0,
+                seq: 7,
+            },
+            RTTraceEvent::DeadlineMiss {
+                tick_count: 1,
+                timestamp_ns: 400,
+                jitter_ns: 25,
+            },
+            RTTraceEvent::PipelineFault {
+                tick_count: 1,
+                timestamp_ns: 500,
+                error_code: 9,
+            },
+        ];
+
+        for (event, expected_id) in events.into_iter().zip(1..=5) {
+            let descriptor = rt_event_descriptor(event);
+            assert!(descriptor_is_reviewed_for_etw(&descriptor));
+            assert_eq!(descriptor.Id, expected_id);
+        }
+    }
+
+    #[test]
+    fn test_etw_descriptor_contract_rejects_invalid_shapes() {
+        let mut descriptor = app_event_descriptor();
+        descriptor.Id = 0;
+        assert!(!descriptor_is_reviewed_for_etw(&descriptor));
+
+        descriptor = app_event_descriptor();
+        descriptor.Level = 0;
+        assert!(!descriptor_is_reviewed_for_etw(&descriptor));
+
+        descriptor = app_event_descriptor();
+        descriptor.Task = 0;
+        assert!(!descriptor_is_reviewed_for_etw(&descriptor));
+
+        descriptor = app_event_descriptor();
+        descriptor.Keyword = 0;
+        assert!(!descriptor_is_reviewed_for_etw(&descriptor));
     }
 }

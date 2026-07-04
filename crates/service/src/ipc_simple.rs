@@ -41,10 +41,17 @@ impl Default for TransportType {
         }
         #[cfg(unix)]
         {
-            let uid = unsafe { libc::getuid() };
+            let uid = current_user_id();
             TransportType::UnixDomainSocket(format!("/run/user/{}/wheel.sock", uid))
         }
     }
+}
+
+#[cfg(unix)]
+fn current_user_id() -> libc::uid_t {
+    // SAFETY: `getuid` has no preconditions, does not dereference pointers, and
+    // only reads the current process credentials from the OS.
+    unsafe { libc::getuid() }
 }
 
 /// Internal health event for broadcasting
@@ -262,17 +269,10 @@ impl IpcServer {
     }
 
     #[cfg(unix)]
-    async fn verify_unix_peer_credentials(&self, stream: &tokio::net::UnixStream) -> Result<()> {
-        use std::os::unix::io::{AsRawFd, FromRawFd};
-        use std::os::unix::net::UnixStream as StdUnixStream;
-
-        // Get peer credentials
-        let raw_fd = stream.as_raw_fd();
-        let _std_stream = unsafe { StdUnixStream::from_raw_fd(raw_fd) };
-
+    async fn verify_unix_peer_credentials(&self, _stream: &tokio::net::UnixStream) -> Result<()> {
         // Use SO_PEERCRED to get peer process info
         // This is a simplified version - full implementation would use libc calls
-        let current_uid = unsafe { libc::getuid() };
+        let current_uid = current_user_id();
 
         debug!(
             "Verifying peer credentials against current UID: {}",
@@ -375,6 +375,19 @@ mod tests {
                 "Unix default transport should be a UDS path containing 'wheel.sock'"
             );
         }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_default_unix_socket_path_is_scoped_to_current_user() -> Result<()> {
+        let uid = current_user_id();
+        let transport = TransportType::default();
+
+        assert!(
+            matches!(transport, TransportType::UnixDomainSocket(ref path) if path == &format!("/run/user/{uid}/wheel.sock")),
+            "Unix default transport should be scoped to the current user"
+        );
         Ok(())
     }
 
