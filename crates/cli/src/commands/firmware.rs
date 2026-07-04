@@ -477,63 +477,63 @@ async fn list_available_versions(device: Option<&str>, json: bool) -> Result<()>
         return Ok(());
     }
 
+    print_versions_header(device);
+
+    if versions.is_empty() {
+        print_empty_versions_hint();
+        return Ok(());
+    }
+
+    print_versions_by_channel(&versions);
+    print_versions_footer();
+
+    Ok(())
+}
+
+fn print_versions_header(device: Option<&str>) {
     println!("{}", "Available Firmware Versions".bold());
     if let Some(dev) = device {
         println!("Device: {}", dev.cyan());
     }
     println!("{}", "═".repeat(60));
     println!();
+}
 
-    if versions.is_empty() {
-        println!("{}", "No firmware versions available".yellow());
-        println!();
-        println!(
-            "{}",
-            "Hint: Check your internet connection or registry configuration.".dimmed()
-        );
-        return Ok(());
+fn print_empty_versions_hint() {
+    println!("{}", "No firmware versions available".yellow());
+    println!();
+    println!(
+        "{}",
+        "Hint: Check your internet connection or registry configuration.".dimmed()
+    );
+}
+
+fn print_versions_by_channel(versions: &[FirmwareVersionInfo]) {
+    print_channel_versions(versions, "stable", "Stable".bold().to_string());
+    print_channel_versions(versions, "beta", "Beta".bold().yellow().to_string());
+    print_channel_versions(versions, "nightly", "Nightly".bold().red().to_string());
+}
+
+fn print_channel_versions(versions: &[FirmwareVersionInfo], channel: &str, header: String) {
+    let channel_versions: Vec<_> = versions.iter().filter(|v| v.channel == channel).collect();
+    if channel_versions.is_empty() {
+        return;
     }
 
-    // Group by channel
-    let stable: Vec<_> = versions.iter().filter(|v| v.channel == "stable").collect();
-    let beta: Vec<_> = versions.iter().filter(|v| v.channel == "beta").collect();
-    let nightly: Vec<_> = versions.iter().filter(|v| v.channel == "nightly").collect();
-
-    // Display stable versions
-    if !stable.is_empty() {
-        println!("  {} ({})", "Stable".bold(), stable.len());
-        for v in &stable {
-            print_version_entry(v);
-        }
-        println!();
+    println!("  {} ({})", header, channel_versions.len());
+    for version in &channel_versions {
+        print_version_entry(version);
     }
+    println!();
+}
 
-    // Display beta versions
-    if !beta.is_empty() {
-        println!("  {} ({})", "Beta".bold().yellow(), beta.len());
-        for v in &beta {
-            print_version_entry(v);
-        }
-        println!();
-    }
-
-    // Display nightly versions
-    if !nightly.is_empty() {
-        println!("  {} ({})", "Nightly".bold().red(), nightly.len());
-        for v in &nightly {
-            print_version_entry(v);
-        }
-        println!();
-    }
-
+fn print_versions_footer() {
     println!("{}", "═".repeat(60));
     println!();
     println!(
         "{}",
         "Use 'wheelctl firmware update <device> <bundle.owfb>' to install firmware".dimmed()
     );
-
-    Ok(())
 }
 
 /// Print a single version entry
