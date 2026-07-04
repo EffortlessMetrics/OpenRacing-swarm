@@ -68,31 +68,34 @@ scattering policy through workflow YAML or one-off scripts.
 ## Stable `xtask` command surface
 
 The repo should expose stable wrappers even when the upstream implementation
-changes:
+changes.
+
+Implemented today (see `crates/tools/src/bin/xtask.rs`):
 
 ```bash
-cargo xtask check-pr
-cargo xtask fix-pr
-cargo xtask pr-summary
+cargo xtask pr                        # aggregate PR gate
+cargo xtask ripr-pr [--check]         # static mutation-exposure PR evidence
+cargo xtask ripr-review-comments [--check]
+cargo xtask mutants-pr [...]          # targeted runtime mutation for a PR
+cargo xtask quality-closure [--check] [--json-out ..] [--md-out ..]
+cargo xtask unsafe-review-closure [--check] [--json-out ..] [--md-out ..]
+cargo xtask impacted-evidence         # map changed files to evidence lanes
+cargo xtask check-file-policy         # wraps scripts/policy_file.py
+cargo xtask docs-sync [--check]
+cargo xtask badges [--check]          # regenerate badges/ endpoint JSON
+```
 
-cargo xtask allow-check
-cargo xtask allow-diff
-cargo xtask ripr-pr
-cargo xtask unsafe-review-pr
+Target surface, not yet implemented — running these today fails with
+`unknown xtask command`. Each one is a candidate wrapper that a linked plan
+may promote:
 
-cargo xtask test-pr
-cargo xtask test-risk-pack <pack>
-cargo xtask test-docs
-cargo xtask coverage
-cargo xtask mutation-targeted
-cargo xtask miri-targeted
-
-cargo xtask check-deps
-cargo xtask check-supply-chain
-cargo xtask semver-check
-cargo xtask check-workflows
-cargo xtask check-toml
-cargo xtask policy-report
+```bash
+cargo xtask check-pr | fix-pr | pr-summary
+cargo xtask allow-check | allow-diff | unsafe-review-pr
+cargo xtask test-pr | test-risk-pack <pack> | test-docs
+cargo xtask coverage | mutation-targeted | miri-targeted
+cargo xtask check-deps | check-supply-chain | semver-check
+cargo xtask check-workflows | check-toml | policy-report
 ```
 
 A wrapper may initially be advisory, a placeholder, or absent. Adding or
