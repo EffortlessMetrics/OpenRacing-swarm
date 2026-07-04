@@ -43,7 +43,8 @@ The unsafe-review command MUST emit a machine-readable receipt with at least:
   "expired_review_count": 0,
   "unreviewed_unsafe_gap_count": 0,
   "unsafe_review_closure_satisfied": false,
-  "miri_status": "pass|fail|advisory|skipped|not_applicable"
+  "miri_status": "pass|fail|advisory|skipped|not_applicable",
+  "unsafe_exception_breakdown": []
 }
 ```
 
@@ -62,6 +63,8 @@ The receipt MUST distinguish these statuses:
   string literals.
 - Changed unsafe sites MUST be counted separately from repo-wide unsafe sites.
 - Missing local contracts, local guards, and witnesses MUST be counted.
+- Missing local contracts, local guards, and witnesses MUST be attributable to
+  active exception entries through `unsafe_exception_breakdown`.
 - Missing owners and expired reviews MUST be counted.
 - Unsafe sites without a matching active ledger entry MUST increment
   `unreviewed_unsafe_gap_count`.

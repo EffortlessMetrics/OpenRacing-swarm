@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::broadcast;
@@ -63,9 +63,12 @@ impl ServiceConfig {
     /// Load configuration from file or create default
     pub async fn load() -> Result<Self> {
         let config_path = Self::config_path()?;
+        Self::load_from_path(&config_path).await
+    }
 
+    async fn load_from_path(config_path: &Path) -> Result<Self> {
         if config_path.exists() {
-            let content = tokio::fs::read_to_string(&config_path)
+            let content = tokio::fs::read_to_string(config_path)
                 .await
                 .context("Failed to read config file")?;
 
@@ -76,7 +79,7 @@ impl ServiceConfig {
             Ok(config)
         } else {
             let config = Self::default();
-            config.save().await?;
+            config.save_to_path(config_path).await?;
             info!("Created default config at {:?}", config_path);
             Ok(config)
         }
@@ -85,7 +88,10 @@ impl ServiceConfig {
     /// Save configuration to file
     pub async fn save(&self) -> Result<()> {
         let config_path = Self::config_path()?;
+        self.save_to_path(&config_path).await
+    }
 
+    async fn save_to_path(&self, config_path: &Path) -> Result<()> {
         if let Some(parent) = config_path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
@@ -94,12 +100,22 @@ impl ServiceConfig {
 
         let content = serde_json::to_string_pretty(self).context("Failed to serialize config")?;
 
-        tokio::fs::write(&config_path, content)
+        tokio::fs::write(config_path, content)
             .await
             .context("Failed to write config file")?;
 
         debug!("Saved config to {:?}", config_path);
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn load_from_path_for_test(config_path: &Path) -> Result<Self> {
+        Self::load_from_path(config_path).await
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn save_to_path_for_test(&self, config_path: &Path) -> Result<()> {
+        self.save_to_path(config_path).await
     }
 
     /// Get configuration file path

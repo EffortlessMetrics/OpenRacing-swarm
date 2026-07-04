@@ -7,7 +7,7 @@ use crate::config::WatchdogConfig;
 use crate::error::{HardwareWatchdogError, HardwareWatchdogResult};
 use crate::state::{WatchdogMetrics, WatchdogState, WatchdogStatus};
 use crate::watchdog::HardwareWatchdog;
-use portable_atomic::{AtomicBool, AtomicU64, Ordering};
+use portable_atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 /// Software-based hardware watchdog implementation.
 ///
@@ -56,8 +56,8 @@ pub struct SoftwareWatchdog {
     start_time_us: AtomicU64,
     /// Safe state triggered flag.
     safe_state_triggered: AtomicBool,
-    /// Metrics (not atomic, requires &mut for updates).
-    metrics: core::cell::UnsafeCell<WatchdogMetrics>,
+    /// Metrics snapshot counters.
+    metrics: AtomicWatchdogMetrics,
 }
 
 impl SoftwareWatchdog {
@@ -74,7 +74,7 @@ impl SoftwareWatchdog {
             last_feed_us: AtomicU64::new(0),
             start_time_us: AtomicU64::new(0),
             safe_state_triggered: AtomicBool::new(false),
-            metrics: core::cell::UnsafeCell::new(WatchdogMetrics::new()),
+            metrics: AtomicWatchdogMetrics::new(),
         }
     }
 
@@ -156,13 +156,6 @@ impl SoftwareWatchdog {
         elapsed > timeout_us
     }
 
-    /// Update metrics (internal helper).
-    fn update_metrics(&self, f: impl FnOnce(&mut WatchdogMetrics)) {
-        unsafe {
-            f(&mut *self.metrics.get());
-        }
-    }
-
     /// Manually trigger a timeout for testing purposes.
     ///
     /// This method forces the watchdog into the timed out state,
@@ -177,8 +170,93 @@ impl SoftwareWatchdog {
     /// Returns an error if the watchdog is not in the Armed state.
     pub fn trigger_timeout(&self) -> HardwareWatchdogResult<()> {
         self.state.timeout()?;
-        self.update_metrics(WatchdogMetrics::record_timeout);
+        self.metrics.record_timeout();
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct AtomicWatchdogMetrics {
+    feed_count: AtomicU64,
+    arm_count: AtomicU64,
+    timeout_count: AtomicU64,
+    safe_state_count: AtomicU64,
+    consecutive_failures: AtomicU32,
+    max_feed_interval_us: AtomicU64,
+    last_feed_timestamp_us: AtomicU64,
+}
+
+impl AtomicWatchdogMetrics {
+    fn new() -> Self {
+        Self {
+            feed_count: AtomicU64::new(0),
+            arm_count: AtomicU64::new(0),
+            timeout_count: AtomicU64::new(0),
+            safe_state_count: AtomicU64::new(0),
+            consecutive_failures: AtomicU32::new(0),
+            max_feed_interval_us: AtomicU64::new(0),
+            last_feed_timestamp_us: AtomicU64::new(0),
+        }
+    }
+
+    fn record_feed(&self, timestamp_us: u64) {
+        let previous = self
+            .last_feed_timestamp_us
+            .swap(timestamp_us, Ordering::AcqRel);
+        if previous > 0 {
+            self.record_max_feed_interval(timestamp_us.saturating_sub(previous));
+        }
+        self.feed_count.fetch_add(1, Ordering::Relaxed);
+        self.consecutive_failures.store(0, Ordering::Release);
+    }
+
+    fn record_max_feed_interval(&self, interval_us: u64) {
+        let mut current = self.max_feed_interval_us.load(Ordering::Acquire);
+        while interval_us > current {
+            match self.max_feed_interval_us.compare_exchange_weak(
+                current,
+                interval_us,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return,
+                Err(observed) => current = observed,
+            }
+        }
+    }
+
+    fn record_arm(&self) {
+        self.arm_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_timeout(&self) {
+        self.timeout_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_safe_state(&self) {
+        self.safe_state_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn reset(&self) {
+        self.feed_count.store(0, Ordering::Release);
+        self.arm_count.store(0, Ordering::Release);
+        self.timeout_count.store(0, Ordering::Release);
+        self.safe_state_count.store(0, Ordering::Release);
+        self.consecutive_failures.store(0, Ordering::Release);
+        self.max_feed_interval_us.store(0, Ordering::Release);
+        self.last_feed_timestamp_us.store(0, Ordering::Release);
+    }
+
+    fn snapshot(&self) -> WatchdogMetrics {
+        WatchdogMetrics {
+            feed_count: self.feed_count.load(Ordering::Acquire),
+            arm_count: self.arm_count.load(Ordering::Acquire),
+            timeout_count: self.timeout_count.load(Ordering::Acquire),
+            safe_state_count: self.safe_state_count.load(Ordering::Acquire),
+            consecutive_failures: self.consecutive_failures.load(Ordering::Acquire),
+            max_feed_interval_us: self.max_feed_interval_us.load(Ordering::Acquire),
+            last_feed_timestamp_us: self.last_feed_timestamp_us.load(Ordering::Acquire),
+        }
     }
 }
 
@@ -191,7 +269,7 @@ impl HardwareWatchdog for SoftwareWatchdog {
                 let timestamp = self.current_timestamp_us();
                 self.last_feed_us.store(timestamp, Ordering::Release);
                 self.state.feed()?;
-                self.update_metrics(|m| m.record_feed(timestamp));
+                self.metrics.record_feed(timestamp);
                 Ok(())
             }
             WatchdogStatus::TimedOut => Err(HardwareWatchdogError::TimedOut),
@@ -214,7 +292,7 @@ impl HardwareWatchdog for SoftwareWatchdog {
             .store(self.current_timestamp_us(), Ordering::Release);
         self.last_feed_us
             .store(self.current_timestamp_us(), Ordering::Release);
-        self.update_metrics(WatchdogMetrics::record_arm);
+        self.metrics.record_arm();
         Ok(())
     }
 
@@ -225,7 +303,7 @@ impl HardwareWatchdog for SoftwareWatchdog {
     fn trigger_safe_state(&mut self) -> HardwareWatchdogResult<()> {
         self.state.trigger_safe_state()?;
         self.safe_state_triggered.store(true, Ordering::Release);
-        self.update_metrics(WatchdogMetrics::record_safe_state);
+        self.metrics.record_safe_state();
         Ok(())
     }
 
@@ -236,7 +314,7 @@ impl HardwareWatchdog for SoftwareWatchdog {
 
         if self.check_timeout() {
             let _ = self.state.timeout();
-            self.update_metrics(WatchdogMetrics::record_timeout);
+            self.metrics.record_timeout();
             return true;
         }
 
@@ -265,7 +343,7 @@ impl HardwareWatchdog for SoftwareWatchdog {
         self.last_feed_us.store(0, Ordering::Release);
         self.start_time_us.store(0, Ordering::Release);
         self.safe_state_triggered.store(false, Ordering::Release);
-        self.update_metrics(WatchdogMetrics::reset);
+        self.metrics.reset();
     }
 
     fn config(&self) -> &WatchdogConfig {
@@ -273,7 +351,7 @@ impl HardwareWatchdog for SoftwareWatchdog {
     }
 
     fn metrics(&self) -> WatchdogMetrics {
-        unsafe { *self.metrics.get() }
+        self.metrics.snapshot()
     }
 }
 
@@ -282,9 +360,6 @@ impl Default for SoftwareWatchdog {
         Self::with_default_timeout()
     }
 }
-
-unsafe impl Send for SoftwareWatchdog {}
-unsafe impl Sync for SoftwareWatchdog {}
 
 #[cfg(test)]
 mod tests {
@@ -303,6 +378,74 @@ mod tests {
     fn test_software_watchdog_default() {
         let watchdog = SoftwareWatchdog::with_default_timeout();
         assert_eq!(watchdog.timeout_ms(), 100);
+    }
+
+    #[test]
+    fn test_software_watchdog_is_send_sync_from_atomic_fields() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<SoftwareWatchdog>();
+    }
+
+    #[test]
+    fn test_atomic_metrics_tracks_feed_snapshot() {
+        let metrics = AtomicWatchdogMetrics::new();
+
+        metrics.record_feed(1_000);
+        metrics.record_feed(1_500);
+        metrics.record_feed(2_250);
+
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.feed_count, 3);
+        assert_eq!(snapshot.max_feed_interval_us, 750);
+        assert_eq!(snapshot.last_feed_timestamp_us, 2_250);
+    }
+
+    #[test]
+    fn test_atomic_metrics_reset_clears_snapshot() {
+        let metrics = AtomicWatchdogMetrics::new();
+
+        metrics.record_arm();
+        metrics.record_feed(1_000);
+        metrics.record_timeout();
+        metrics.record_safe_state();
+        metrics.reset();
+
+        assert_eq!(metrics.snapshot(), WatchdogMetrics::new());
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn test_atomic_metrics_shared_updates_are_counted() {
+        use std::sync::Arc;
+        use std::thread;
+        use std::vec::Vec;
+
+        const WORKERS: u64 = 4;
+        const UPDATES_PER_WORKER: u64 = 32;
+
+        let metrics = Arc::new(AtomicWatchdogMetrics::new());
+        let mut handles = Vec::new();
+        for worker in 0..WORKERS {
+            let metrics = Arc::clone(&metrics);
+            handles.push(thread::spawn(move || {
+                metrics.record_arm();
+                for update in 0..UPDATES_PER_WORKER {
+                    metrics.record_feed(worker * UPDATES_PER_WORKER + update + 1);
+                    metrics.record_timeout();
+                    metrics.record_safe_state();
+                }
+            }));
+        }
+
+        for handle in handles {
+            assert!(handle.join().is_ok(), "metrics worker should finish");
+        }
+
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.arm_count, WORKERS);
+        assert_eq!(snapshot.feed_count, WORKERS * UPDATES_PER_WORKER);
+        assert_eq!(snapshot.timeout_count, WORKERS * UPDATES_PER_WORKER);
+        assert_eq!(snapshot.safe_state_count, WORKERS * UPDATES_PER_WORKER);
     }
 
     #[test]

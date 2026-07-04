@@ -8,7 +8,27 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, oneshot};
 use tracing::debug;
 
+const STATE_WORD_BYTES: usize = 16;
+
+#[repr(C, align(16))]
+#[derive(Clone, Copy, Debug)]
+struct StateWord {
+    _bytes: [u8; STATE_WORD_BYTES],
+}
+
+impl Default for StateWord {
+    fn default() -> Self {
+        Self {
+            _bytes: [0; STATE_WORD_BYTES],
+        }
+    }
+}
+
 /// Function pointer type for filter nodes
+///
+/// The executor passes a node-specific state pointer produced by
+/// `Pipeline::add_state_node`; wrappers must cast it to the state type paired
+/// with the registered function.
 pub type FilterNodeFn = fn(&mut Frame, *mut u8);
 
 /// Compiled filter pipeline with zero-allocation execution
@@ -17,9 +37,13 @@ pub struct Pipeline {
     /// Function pointers for each filter node
     nodes: Vec<FilterNodeFn>,
     /// State storage for all nodes (Structure of Arrays)
-    state: Vec<u8>,
+    state: Vec<StateWord>,
+    /// Used bytes in the aligned state buffer.
+    state_len_bytes: usize,
     /// Offsets into state storage for each node
     state_offsets: Vec<usize>,
+    /// State sizes in bytes for each node
+    state_sizes: Vec<usize>,
     /// Configuration hash for deterministic comparison
     config_hash: u64,
     /// Optional response curve for torque transformation (pre-computed LUT)
@@ -73,7 +97,9 @@ impl Pipeline {
         Self {
             nodes: Vec::new(),
             state: Vec::new(),
+            state_len_bytes: 0,
             state_offsets: Vec::new(),
+            state_sizes: Vec::new(),
             config_hash: 0,
             response_curve: None,
         }
@@ -84,7 +110,9 @@ impl Pipeline {
         Self {
             nodes: Vec::new(),
             state: Vec::new(),
+            state_len_bytes: 0,
             state_offsets: Vec::new(),
+            state_sizes: Vec::new(),
             config_hash,
             response_curve: None,
         }
@@ -134,8 +162,14 @@ impl Pipeline {
     /// Internal processing method (separated for allocation tracking)
     #[inline]
     fn process_internal(&mut self, frame: &mut Frame) -> RTResult {
-        for (i, &node_fn) in self.nodes.iter().enumerate() {
-            let state_ptr = unsafe { self.state.as_mut_ptr().add(self.state_offsets[i]) };
+        for i in 0..self.nodes.len() {
+            let Some(&node_fn) = self.nodes.get(i) else {
+                return Err(RTError::PipelineFault);
+            };
+            let state_ptr = self.node_state_ptr(i);
+            if state_ptr.is_null() {
+                return Err(RTError::PipelineFault);
+            }
 
             // Call filter node function
             node_fn(frame, state_ptr);
@@ -179,45 +213,85 @@ impl Pipeline {
         self.nodes.len()
     }
 
-    /// Add a filter node to the pipeline (used during compilation)
-    fn add_node(&mut self, node_fn: FilterNodeFn, state_size: usize) {
-        // Ensure proper alignment for the state data
-        let align = std::mem::align_of::<f64>(); // Use f64 alignment for safety
-        let current_len = self.state.len();
-        let aligned_offset = (current_len + align - 1) & !(align - 1);
-
-        // Pad to alignment boundary
-        self.state.resize(aligned_offset, 0);
-        self.state_offsets.push(aligned_offset);
-
-        // Add the actual state data
-        self.state.resize(aligned_offset + state_size, 0);
-        self.nodes.push(node_fn);
-    }
-
-    /// Initialize state for a specific node (used during compilation)
-    fn init_node_state<T>(&mut self, node_index: usize, initial_state: T)
+    /// Add a typed filter node to the pipeline (used during compilation).
+    ///
+    /// This stores node state in a 16-byte aligned backing buffer and records
+    /// the exact byte offset/size used by the RT executor.
+    fn add_state_node<T>(&mut self, node_fn: FilterNodeFn, initial_state: T)
     where
         T: Copy,
     {
-        if node_index < self.state_offsets.len() {
-            let offset = self.state_offsets[node_index];
+        let state_size = std::mem::size_of::<T>();
+        let state_align = std::mem::align_of::<T>().max(std::mem::align_of::<f64>());
+        assert!(
+            state_align <= std::mem::align_of::<StateWord>(),
+            "state type alignment exceeds engine pipeline state buffer alignment"
+        );
 
-            // Verify alignment
-            assert_eq!(
-                offset % std::mem::align_of::<T>(),
-                0,
-                "State offset {} is not aligned for type {}",
-                offset,
-                std::any::type_name::<T>()
-            );
+        let aligned_offset = align_up(self.state_len_bytes, state_align);
+        assert!(
+            state_size <= usize::MAX - aligned_offset,
+            "engine pipeline state buffer size overflow"
+        );
+        let end = aligned_offset + state_size;
+        self.resize_state_bytes(end);
 
-            let state_ptr = unsafe { self.state.as_mut_ptr().add(offset) as *mut T };
-            unsafe {
-                *state_ptr = initial_state;
-            }
+        let state_ptr = self.state_ptr_at(aligned_offset).cast::<T>();
+
+        // SAFETY: `state_ptr` points inside the aligned state buffer after it
+        // has been resized to cover `end`. `aligned_offset` is rounded to
+        // `align_of::<T>()`, and the 16-byte backing storage is at least as
+        // aligned as every accepted state type. `T: Copy`, so writing the value
+        // into zeroed byte storage cannot skip a destructor.
+        unsafe {
+            state_ptr.write(initial_state);
         }
+
+        self.nodes.push(node_fn);
+        self.state_offsets.push(aligned_offset);
+        self.state_sizes.push(state_size);
     }
+
+    fn node_state_ptr(&mut self, node_index: usize) -> *mut u8 {
+        let Some(&offset) = self.state_offsets.get(node_index) else {
+            return std::ptr::null_mut();
+        };
+        let Some(&state_size) = self.state_sizes.get(node_index) else {
+            return std::ptr::null_mut();
+        };
+        let Some(end) = offset.checked_add(state_size) else {
+            return std::ptr::null_mut();
+        };
+        if end > self.state_len_bytes {
+            return std::ptr::null_mut();
+        }
+
+        self.state_ptr_at(offset)
+    }
+
+    fn resize_state_bytes(&mut self, len_bytes: usize) {
+        let word_count = len_bytes.div_ceil(STATE_WORD_BYTES);
+        self.state.resize(word_count, StateWord::default());
+        self.state_len_bytes = len_bytes;
+    }
+
+    fn state_ptr_at(&mut self, offset: usize) -> *mut u8 {
+        debug_assert!(offset <= self.state_len_bytes, "state offset out of bounds");
+        // SAFETY: `offset` is checked by callers against `state_len_bytes`, and
+        // `resize_state_bytes` keeps enough `StateWord` entries allocated to
+        // cover every byte up to `state_len_bytes`.
+        unsafe { self.state.as_mut_ptr().cast::<u8>().add(offset) }
+    }
+}
+
+fn align_up(value: usize, align: usize) -> usize {
+    debug_assert!(align.is_power_of_two(), "alignment must be a power of two");
+    let mask = align - 1;
+    assert!(
+        value <= usize::MAX - mask,
+        "engine pipeline state buffer size overflow"
+    );
+    (value + mask) & !mask
 }
 
 impl Default for Pipeline {
@@ -588,15 +662,8 @@ impl PipelineCompiler {
             return Ok(()); // No reconstruction filter
         }
 
-        // Add reconstruction filter node with appropriate state
-        pipeline.add_node(
-            crate::filters::reconstruction_filter,
-            std::mem::size_of::<crate::filters::ReconstructionState>(),
-        );
-        let node_index = pipeline.nodes.len() - 1;
-
         let state = crate::filters::ReconstructionState::new(level);
-        pipeline.init_node_state(node_index, state);
+        pipeline.add_state_node(crate::filters::reconstruction_filter, state);
         Ok(())
     }
 
@@ -610,14 +677,8 @@ impl PipelineCompiler {
             return Ok(()); // No friction
         }
 
-        pipeline.add_node(
-            crate::filters::friction_filter,
-            std::mem::size_of::<crate::filters::FrictionState>(),
-        );
-        let node_index = pipeline.nodes.len() - 1;
-
         let state = crate::filters::FrictionState::new(friction.value(), true); // Enable speed adaptation
-        pipeline.init_node_state(node_index, state);
+        pipeline.add_state_node(crate::filters::friction_filter, state);
         Ok(())
     }
 
@@ -631,14 +692,8 @@ impl PipelineCompiler {
             return Ok(()); // No damping
         }
 
-        pipeline.add_node(
-            crate::filters::damper_filter,
-            std::mem::size_of::<crate::filters::DamperState>(),
-        );
-        let node_index = pipeline.nodes.len() - 1;
-
         let state = crate::filters::DamperState::new(damper.value(), true); // Enable speed adaptation
-        pipeline.init_node_state(node_index, state);
+        pipeline.add_state_node(crate::filters::damper_filter, state);
         Ok(())
     }
 
@@ -652,14 +707,8 @@ impl PipelineCompiler {
             return Ok(()); // No inertia
         }
 
-        pipeline.add_node(
-            crate::filters::inertia_filter,
-            std::mem::size_of::<crate::filters::InertiaState>(),
-        );
-        let node_index = pipeline.nodes.len() - 1;
-
         let state = crate::filters::InertiaState::new(inertia.value());
-        pipeline.init_node_state(node_index, state);
+        pipeline.add_state_node(crate::filters::inertia_filter, state);
         Ok(())
     }
 
@@ -670,12 +719,6 @@ impl PipelineCompiler {
         filters: &[NotchFilter],
     ) -> Result<(), PipelineError> {
         for filter in filters {
-            pipeline.add_node(
-                crate::filters::notch_filter,
-                std::mem::size_of::<crate::filters::NotchState>(),
-            );
-            let node_index = pipeline.nodes.len() - 1;
-
             let state = crate::filters::NotchState::new(
                 filter.frequency.value(),
                 filter.q_factor,
@@ -683,7 +726,7 @@ impl PipelineCompiler {
                 1000.0, // 1kHz sample rate
             );
 
-            pipeline.init_node_state(node_index, state);
+            pipeline.add_state_node(crate::filters::notch_filter, state);
         }
         Ok(())
     }
@@ -698,14 +741,8 @@ impl PipelineCompiler {
             return Ok(()); // No slew rate limiting
         }
 
-        pipeline.add_node(
-            crate::filters::slew_rate_filter,
-            std::mem::size_of::<crate::filters::SlewRateState>(),
-        );
-        let node_index = pipeline.nodes.len() - 1;
-
         let state = crate::filters::SlewRateState::new(slew_rate.value());
-        pipeline.init_node_state(node_index, state);
+        pipeline.add_state_node(crate::filters::slew_rate_filter, state);
         Ok(())
     }
 
@@ -724,18 +761,12 @@ impl PipelineCompiler {
             return Ok(()); // Linear curve, no filtering needed
         }
 
-        pipeline.add_node(
-            crate::filters::curve_filter,
-            std::mem::size_of::<crate::filters::CurveState>(),
-        );
-        let node_index = pipeline.nodes.len() - 1;
-
         // Convert CurvePoint to tuple format for the filter
         let curve_tuples: Vec<(f32, f32)> =
             curve_points.iter().map(|p| (p.input, p.output)).collect();
 
         let state = crate::filters::CurveState::new(&curve_tuples);
-        pipeline.init_node_state(node_index, state);
+        pipeline.add_state_node(crate::filters::curve_filter, state);
         Ok(())
     }
 
@@ -749,12 +780,7 @@ impl PipelineCompiler {
             return Ok(()); // No torque limiting needed
         }
 
-        pipeline.add_node(
-            crate::filters::torque_cap_filter,
-            std::mem::size_of::<f32>(),
-        );
-        let node_index = pipeline.nodes.len() - 1;
-        pipeline.init_node_state(node_index, torque_cap);
+        pipeline.add_state_node(crate::filters::torque_cap_filter, torque_cap);
         Ok(())
     }
 
@@ -768,12 +794,6 @@ impl PipelineCompiler {
             return Ok(()); // Bumpstop disabled
         }
 
-        pipeline.add_node(
-            crate::filters::bumpstop_filter,
-            std::mem::size_of::<crate::filters::BumpstopState>(),
-        );
-        let node_index = pipeline.nodes.len() - 1;
-
         let state = crate::filters::BumpstopState::new(
             bumpstop_config.enabled,
             bumpstop_config.start_angle,
@@ -782,7 +802,7 @@ impl PipelineCompiler {
             bumpstop_config.damping,
         );
 
-        pipeline.init_node_state(node_index, state);
+        pipeline.add_state_node(crate::filters::bumpstop_filter, state);
         Ok(())
     }
 
@@ -796,19 +816,13 @@ impl PipelineCompiler {
             return Ok(()); // Hands-off detection disabled
         }
 
-        pipeline.add_node(
-            crate::filters::hands_off_detector,
-            std::mem::size_of::<crate::filters::HandsOffState>(),
-        );
-        let node_index = pipeline.nodes.len() - 1;
-
         let state = crate::filters::HandsOffState::new(
             config.enabled,
             config.threshold,
             config.timeout_seconds,
         );
 
-        pipeline.init_node_state(node_index, state);
+        pipeline.add_state_node(crate::filters::hands_off_detector, state);
         Ok(())
     }
 
@@ -987,6 +1001,44 @@ mod tests {
 
         // Verify swap completed atomically
         assert_eq!(pipeline1.config_hash(), 0x12345678);
+    }
+
+    fn no_op_node(_frame: &mut Frame, _state: *mut u8) {}
+
+    #[repr(align(16))]
+    #[derive(Clone, Copy)]
+    struct AlignedState {
+        _value: u8,
+    }
+
+    #[test]
+    fn test_add_state_node_records_aligned_offsets_and_sizes() {
+        let mut pipeline = Pipeline::new();
+        pipeline.add_state_node(no_op_node, 1_u8);
+        pipeline.add_state_node(no_op_node, AlignedState { _value: 7 });
+
+        assert_eq!(pipeline.node_count(), 2);
+        assert_eq!(pipeline.state_offsets.first().copied(), Some(0));
+        assert_eq!(
+            pipeline.state_sizes.first().copied(),
+            Some(std::mem::size_of::<u8>())
+        );
+        assert!(
+            pipeline
+                .state_offsets
+                .get(1)
+                .copied()
+                .is_some_and(|offset| offset.is_multiple_of(16)),
+            "16-byte aligned state should be placed at a 16-byte offset"
+        );
+        assert_eq!(
+            pipeline.state_sizes.get(1).copied(),
+            Some(std::mem::size_of::<AlignedState>())
+        );
+        assert!(pipeline.state_len_bytes >= std::mem::size_of::<u8>() + 16);
+        assert!(!pipeline.node_state_ptr(0).is_null());
+        assert!(!pipeline.node_state_ptr(1).is_null());
+        assert!(pipeline.node_state_ptr(2).is_null());
     }
 
     #[tokio::test]

@@ -18,73 +18,105 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, oneshot};
 use tracing::debug;
 
+unsafe fn state_mut<'a, T>(state: *mut u8) -> &'a mut T {
+    debug_assert!(!state.is_null(), "pipeline node state pointer is null");
+    debug_assert!(
+        (state as usize).is_multiple_of(std::mem::align_of::<T>()),
+        "pipeline node state pointer is not aligned for its state type"
+    );
+    // SAFETY: Callers pair each wrapper with `Pipeline::add_state_node::<T>`,
+    // which allocates, aligns, and initializes exactly one `T` for the node.
+    unsafe { &mut *state.cast::<T>() }
+}
+
+unsafe fn state_ref<'a, T>(state: *mut u8) -> &'a T {
+    debug_assert!(!state.is_null(), "pipeline node state pointer is null");
+    debug_assert!(
+        (state as usize).is_multiple_of(std::mem::align_of::<T>()),
+        "pipeline node state pointer is not aligned for its state type"
+    );
+    // SAFETY: Callers pair each wrapper with `Pipeline::add_state_node::<T>`,
+    // which allocates, aligns, and initializes exactly one `T` for the node.
+    unsafe { &*state.cast::<T>() }
+}
+
 fn reconstruction_filter_wrapper(frame: &mut Frame, state: *mut u8) {
+    // SAFETY: `add_reconstruction_filter_static` registers this wrapper with a
+    // `ReconstructionState` allocated by `Pipeline::add_state_node`.
     unsafe {
-        let state = &mut *(state as *mut ReconstructionState);
-        openracing_filters::reconstruction_filter(frame, state);
+        openracing_filters::reconstruction_filter(frame, state_mut::<ReconstructionState>(state));
     }
 }
 
 fn friction_filter_wrapper(frame: &mut Frame, state: *mut u8) {
+    // SAFETY: `add_friction_filter_static` registers this wrapper with a
+    // `FrictionState` allocated by `Pipeline::add_state_node`.
     unsafe {
-        let state = &*(state as *const FrictionState);
-        openracing_filters::friction_filter(frame, state);
+        openracing_filters::friction_filter(frame, state_ref::<FrictionState>(state));
     }
 }
 
 fn damper_filter_wrapper(frame: &mut Frame, state: *mut u8) {
+    // SAFETY: `add_damper_filter_static` registers this wrapper with a
+    // `DamperState` allocated by `Pipeline::add_state_node`.
     unsafe {
-        let state = &*(state as *const DamperState);
-        openracing_filters::damper_filter(frame, state);
+        openracing_filters::damper_filter(frame, state_ref::<DamperState>(state));
     }
 }
 
 fn inertia_filter_wrapper(frame: &mut Frame, state: *mut u8) {
+    // SAFETY: `add_inertia_filter_static` registers this wrapper with an
+    // `InertiaState` allocated by `Pipeline::add_state_node`.
     unsafe {
-        let state = &mut *(state as *mut InertiaState);
-        openracing_filters::inertia_filter(frame, state);
+        openracing_filters::inertia_filter(frame, state_mut::<InertiaState>(state));
     }
 }
 
 fn notch_filter_wrapper(frame: &mut Frame, state: *mut u8) {
+    // SAFETY: `add_notch_filters_static` registers this wrapper with a
+    // `NotchState` allocated by `Pipeline::add_state_node`.
     unsafe {
-        let state = &mut *(state as *mut NotchState);
-        openracing_filters::notch_filter(frame, state);
+        openracing_filters::notch_filter(frame, state_mut::<NotchState>(state));
     }
 }
 
 fn slew_rate_filter_wrapper(frame: &mut Frame, state: *mut u8) {
+    // SAFETY: `add_slew_rate_filter_static` registers this wrapper with a
+    // `SlewRateState` allocated by `Pipeline::add_state_node`.
     unsafe {
-        let state = &mut *(state as *mut SlewRateState);
-        openracing_filters::slew_rate_filter(frame, state);
+        openracing_filters::slew_rate_filter(frame, state_mut::<SlewRateState>(state));
     }
 }
 
 fn curve_filter_wrapper(frame: &mut Frame, state: *mut u8) {
+    // SAFETY: `add_curve_filter_static` registers this wrapper with a
+    // `CurveState` allocated by `Pipeline::add_state_node`.
     unsafe {
-        let state = &*(state as *const CurveState);
-        openracing_filters::curve_filter(frame, state);
+        openracing_filters::curve_filter(frame, state_ref::<CurveState>(state));
     }
 }
 
 fn torque_cap_filter_wrapper(frame: &mut Frame, state: *mut u8) {
+    // SAFETY: `add_torque_cap_filter_static` registers this wrapper with an
+    // `f32` torque cap allocated by `Pipeline::add_state_node`.
     unsafe {
-        let max_torque = *(state as *const f32);
-        openracing_filters::torque_cap_filter(frame, max_torque);
+        openracing_filters::torque_cap_filter(frame, *state_ref::<f32>(state));
     }
 }
 
 fn bumpstop_filter_wrapper(frame: &mut Frame, state: *mut u8) {
+    // SAFETY: `add_bumpstop_filter_static` registers this wrapper with a
+    // `BumpstopState` allocated by `Pipeline::add_state_node`.
     unsafe {
-        let state = &mut *(state as *mut BumpstopState);
-        openracing_filters::bumpstop_filter(frame, state);
+        openracing_filters::bumpstop_filter(frame, state_mut::<BumpstopState>(state));
     }
 }
 
 fn hands_off_detector_wrapper(frame: &mut Frame, state: *mut u8) {
+    // SAFETY: `add_hands_off_detector_static` registers this wrapper with a
+    // `HandsOffState` allocated by `Pipeline::add_state_node`.
     unsafe {
-        let state = &mut *(state as *mut HandsOffState);
-        openracing_filters::hands_off_detector(frame, state);
+        openracing_filters::hands_off_detector(frame, state_mut::<HandsOffState>(state));
     }
 }
 
@@ -320,15 +352,7 @@ fn add_reconstruction_filter_static(
     }
 
     let state = ReconstructionState::new(level);
-    pipeline.add_node(
-        reconstruction_filter_wrapper as FilterNodeFn,
-        std::mem::size_of::<ReconstructionState>(),
-    );
-    let node_index = pipeline.node_count() - 1;
-
-    unsafe {
-        pipeline.init_node_state(node_index, state);
-    }
+    pipeline.add_state_node(reconstruction_filter_wrapper as FilterNodeFn, state);
     Ok(())
 }
 
@@ -341,15 +365,7 @@ fn add_friction_filter_static(
     }
 
     let state = FrictionState::new(friction.value(), true);
-    pipeline.add_node(
-        friction_filter_wrapper as FilterNodeFn,
-        std::mem::size_of::<FrictionState>(),
-    );
-    let node_index = pipeline.node_count() - 1;
-
-    unsafe {
-        pipeline.init_node_state(node_index, state);
-    }
+    pipeline.add_state_node(friction_filter_wrapper as FilterNodeFn, state);
     Ok(())
 }
 
@@ -362,15 +378,7 @@ fn add_damper_filter_static(
     }
 
     let state = DamperState::new(damper.value(), true);
-    pipeline.add_node(
-        damper_filter_wrapper as FilterNodeFn,
-        std::mem::size_of::<DamperState>(),
-    );
-    let node_index = pipeline.node_count() - 1;
-
-    unsafe {
-        pipeline.init_node_state(node_index, state);
-    }
+    pipeline.add_state_node(damper_filter_wrapper as FilterNodeFn, state);
     Ok(())
 }
 
@@ -383,15 +391,7 @@ fn add_inertia_filter_static(
     }
 
     let state = InertiaState::new(inertia.value());
-    pipeline.add_node(
-        inertia_filter_wrapper as FilterNodeFn,
-        std::mem::size_of::<InertiaState>(),
-    );
-    let node_index = pipeline.node_count() - 1;
-
-    unsafe {
-        pipeline.init_node_state(node_index, state);
-    }
+    pipeline.add_state_node(inertia_filter_wrapper as FilterNodeFn, state);
     Ok(())
 }
 
@@ -406,15 +406,7 @@ fn add_notch_filters_static(
             filter.gain_db,
             1000.0,
         );
-        pipeline.add_node(
-            notch_filter_wrapper as FilterNodeFn,
-            std::mem::size_of::<NotchState>(),
-        );
-        let node_index = pipeline.node_count() - 1;
-
-        unsafe {
-            pipeline.init_node_state(node_index, state);
-        }
+        pipeline.add_state_node(notch_filter_wrapper as FilterNodeFn, state);
     }
     Ok(())
 }
@@ -428,15 +420,7 @@ fn add_slew_rate_filter_static(
     }
 
     let state = SlewRateState::new(slew_rate.value());
-    pipeline.add_node(
-        slew_rate_filter_wrapper as FilterNodeFn,
-        std::mem::size_of::<SlewRateState>(),
-    );
-    let node_index = pipeline.node_count() - 1;
-
-    unsafe {
-        pipeline.init_node_state(node_index, state);
-    }
+    pipeline.add_state_node(slew_rate_filter_wrapper as FilterNodeFn, state);
     Ok(())
 }
 
@@ -455,15 +439,7 @@ fn add_curve_filter_static(
 
     let curve_tuples: Vec<(f32, f32)> = curve_points.iter().map(|p| (p.input, p.output)).collect();
     let state = CurveState::new(&curve_tuples);
-    pipeline.add_node(
-        curve_filter_wrapper as FilterNodeFn,
-        std::mem::size_of::<CurveState>(),
-    );
-    let node_index = pipeline.node_count() - 1;
-
-    unsafe {
-        pipeline.init_node_state(node_index, state);
-    }
+    pipeline.add_state_node(curve_filter_wrapper as FilterNodeFn, state);
     Ok(())
 }
 
@@ -475,15 +451,7 @@ fn add_torque_cap_filter_static(
         return Ok(());
     }
 
-    pipeline.add_node(
-        torque_cap_filter_wrapper as FilterNodeFn,
-        std::mem::size_of::<f32>(),
-    );
-    let node_index = pipeline.node_count() - 1;
-
-    unsafe {
-        pipeline.init_node_state(node_index, torque_cap);
-    }
+    pipeline.add_state_node(torque_cap_filter_wrapper as FilterNodeFn, torque_cap);
     Ok(())
 }
 
@@ -502,15 +470,7 @@ fn add_bumpstop_filter_static(
         bumpstop_config.stiffness,
         bumpstop_config.damping,
     );
-    pipeline.add_node(
-        bumpstop_filter_wrapper as FilterNodeFn,
-        std::mem::size_of::<BumpstopState>(),
-    );
-    let node_index = pipeline.node_count() - 1;
-
-    unsafe {
-        pipeline.init_node_state(node_index, state);
-    }
+    pipeline.add_state_node(bumpstop_filter_wrapper as FilterNodeFn, state);
     Ok(())
 }
 
@@ -523,15 +483,7 @@ fn add_hands_off_detector_static(
     }
 
     let state = HandsOffState::new(config.enabled, config.threshold, config.timeout_seconds);
-    pipeline.add_node(
-        hands_off_detector_wrapper as FilterNodeFn,
-        std::mem::size_of::<HandsOffState>(),
-    );
-    let node_index = pipeline.node_count() - 1;
-
-    unsafe {
-        pipeline.init_node_state(node_index, state);
-    }
+    pipeline.add_state_node(hands_off_detector_wrapper as FilterNodeFn, state);
     Ok(())
 }
 

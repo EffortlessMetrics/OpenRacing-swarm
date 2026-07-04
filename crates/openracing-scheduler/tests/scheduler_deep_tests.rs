@@ -219,13 +219,14 @@ fn graceful_shutdown_within_timeout() -> Result<(), Box<dyn std::error::Error>> 
         let setup = RTSetup::minimal();
         let _ = scheduler.apply_rt_setup(&setup);
 
-        while !stop_clone.load(Ordering::Acquire) {
-            match scheduler.wait_for_tick() {
-                Ok(_) | Err(RTError::TimingViolation) => {}
-                Err(_) => break,
+        let mut completed_ticks = 0u64;
+        while let Ok(_) | Err(RTError::TimingViolation) = scheduler.wait_for_tick() {
+            completed_ticks += 1;
+            if stop_clone.load(Ordering::Acquire) {
+                break;
             }
         }
-        scheduler.tick_count()
+        completed_ticks
     });
 
     // Let the scheduler run for a short while

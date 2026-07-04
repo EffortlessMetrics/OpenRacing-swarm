@@ -16,8 +16,14 @@ thread_local! {
 /// Custom allocator that tracks allocations
 pub struct TrackingAllocator;
 
+// SAFETY: This allocator delegates every allocation operation to
+// `std::alloc::System` with the same pointer/layout contract it received. The
+// added bookkeeping is thread-local and does not retain or reinterpret
+// allocation pointers.
 unsafe impl GlobalAlloc for TrackingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        // SAFETY: `GlobalAlloc::alloc` callers provide a valid `Layout`; the
+        // result is returned directly after non-owning thread-local accounting.
         let ptr = unsafe { System.alloc(layout) };
         if !ptr.is_null() {
             ALLOCATION_COUNT.with(|count| {
@@ -31,11 +37,15 @@ unsafe impl GlobalAlloc for TrackingAllocator {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        // SAFETY: `ptr` and `layout` are the exact deallocation contract passed
+        // to this `GlobalAlloc` implementation and are forwarded unchanged.
         unsafe { System.dealloc(ptr, layout) };
         let _ = layout;
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        // SAFETY: `ptr`, `layout`, and `new_size` are forwarded unchanged to
+        // the system allocator; bookkeeping runs only after a non-null result.
         let new_ptr = unsafe { System.realloc(ptr, layout, new_size) };
         if !new_ptr.is_null() && new_size > layout.size() {
             ALLOCATION_BYTES.with(|bytes| {

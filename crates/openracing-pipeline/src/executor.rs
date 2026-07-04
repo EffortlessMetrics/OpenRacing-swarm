@@ -62,14 +62,12 @@ impl Pipeline {
     /// in the parent crate.
     #[inline]
     fn process_internal(&mut self, frame: &mut Frame) -> RTResult {
-        for (i, &node_fn) in self.nodes.iter().enumerate() {
-            let state_ptr = if self.state.is_empty() {
-                std::ptr::null_mut()
-            } else {
-                // SAFETY: state_offsets[i] is valid because i < nodes.len() == state_offsets.len()
-                unsafe { self.state.as_mut_ptr().add(self.state_offsets[i]) }
-            };
-
+        for i in 0..self.nodes.len() {
+            let node_fn = self.nodes[i];
+            let state_ptr = self.node_state_ptr(i);
+            if state_ptr.is_null() {
+                return Err(RTError::PipelineFault);
+            }
             node_fn(frame, state_ptr);
 
             if !frame.torque_out.is_finite() || frame.torque_out.abs() > 1.0 {
@@ -129,13 +127,12 @@ impl Pipeline {
         frame: &mut Frame,
         curve: Option<&openracing_curves::CurveLut>,
     ) -> RTResult {
-        for (i, &node_fn) in self.nodes.iter().enumerate() {
-            let state_ptr = if self.state.is_empty() {
-                std::ptr::null_mut()
-            } else {
-                unsafe { self.state.as_mut_ptr().add(self.state_offsets[i]) }
-            };
-
+        for i in 0..self.nodes.len() {
+            let node_fn = self.nodes[i];
+            let state_ptr = self.node_state_ptr(i);
+            if state_ptr.is_null() {
+                return Err(RTError::PipelineFault);
+            }
             node_fn(frame, state_ptr);
 
             if !frame.torque_out.is_finite() || frame.torque_out.abs() > 1.0 {

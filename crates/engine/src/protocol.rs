@@ -8,8 +8,6 @@
 //! The protocol uses HID reports for bidirectional communication with endian-safe structures,
 //! sequence numbers, and CRC validation.
 
-use std::mem;
-
 /// OWP-1 Protocol version
 pub const OWP1_VERSION: u8 = 0;
 
@@ -145,19 +143,41 @@ impl TorqueCommand {
 
     /// Convert to byte array for HID transmission
     pub fn to_bytes(&self) -> [u8; 7] {
-        unsafe { mem::transmute(*self) }
+        let [torque_lo, torque_hi] = self.torque_mnm.to_le_bytes();
+        let [sequence_lo, sequence_hi] = self.sequence.to_le_bytes();
+        [
+            self.report_id,
+            torque_lo,
+            torque_hi,
+            self.flags,
+            sequence_lo,
+            sequence_hi,
+            self.crc8,
+        ]
     }
 
     /// Create from byte array received from HID
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.len() < 7 {
+        let [
+            report_id,
+            torque_lo,
+            torque_hi,
+            flags,
+            sequence_lo,
+            sequence_hi,
+            crc8,
+            ..,
+        ] = bytes
+        else {
             return Err("Torque command too short".to_string());
-        }
+        };
 
-        let cmd: Self = unsafe {
-            mem::transmute([
-                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6],
-            ])
+        let cmd = Self {
+            report_id: *report_id,
+            torque_mnm: i16::from_le_bytes([*torque_lo, *torque_hi]),
+            flags: *flags,
+            sequence: u16::from_le_bytes([*sequence_lo, *sequence_hi]),
+            crc8: *crc8,
         };
 
         if cmd.report_id != report_ids::TORQUE_COMMAND {
@@ -299,20 +319,56 @@ impl DeviceTelemetryReport {
 
     /// Convert to byte array for HID transmission
     pub fn to_bytes(&self) -> [u8; 13] {
-        unsafe { mem::transmute(*self) }
+        let Self {
+            report_id,
+            wheel_angle_mdeg,
+            wheel_speed_mrad_s,
+            temp_c,
+            faults,
+            hands_on,
+            last_torque_seq,
+            crc8,
+        } = *self;
+        let [angle_0, angle_1, angle_2, angle_3] = wheel_angle_mdeg.to_le_bytes();
+        let [speed_0, speed_1] = wheel_speed_mrad_s.to_le_bytes();
+        let [seq_0, seq_1] = last_torque_seq.to_le_bytes();
+        [
+            report_id, angle_0, angle_1, angle_2, angle_3, speed_0, speed_1, temp_c, faults,
+            hands_on, seq_0, seq_1, crc8,
+        ]
     }
 
     /// Create from byte array received from HID
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.len() < 13 {
+        let [
+            report_id,
+            angle_0,
+            angle_1,
+            angle_2,
+            angle_3,
+            speed_0,
+            speed_1,
+            temp_c,
+            faults,
+            hands_on,
+            seq_0,
+            seq_1,
+            crc8,
+            ..,
+        ] = bytes
+        else {
             return Err("Telemetry report too short".to_string());
-        }
+        };
 
-        let report: Self = unsafe {
-            mem::transmute([
-                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-                bytes[8], bytes[9], bytes[10], bytes[11], bytes[12],
-            ])
+        let report = Self {
+            report_id: *report_id,
+            wheel_angle_mdeg: i32::from_le_bytes([*angle_0, *angle_1, *angle_2, *angle_3]),
+            wheel_speed_mrad_s: i16::from_le_bytes([*speed_0, *speed_1]),
+            temp_c: *temp_c,
+            faults: *faults,
+            hands_on: *hands_on,
+            last_torque_seq: u16::from_le_bytes([*seq_0, *seq_1]),
+            crc8: *crc8,
         };
 
         if report.report_id != report_ids::DEVICE_TELEMETRY {
@@ -433,20 +489,47 @@ impl DeviceCapabilitiesReport {
 
     /// Convert to byte array for HID transmission
     pub fn to_bytes(&self) -> [u8; 9] {
-        unsafe { mem::transmute(*self) }
+        let [max_torque_0, max_torque_1] = self.max_torque_cnm.to_le_bytes();
+        let [encoder_0, encoder_1] = self.encoder_cpr.to_le_bytes();
+        let [period_0, period_1] = self.min_report_period_us.to_le_bytes();
+        [
+            self.report_id,
+            self.flags,
+            max_torque_0,
+            max_torque_1,
+            encoder_0,
+            encoder_1,
+            period_0,
+            period_1,
+            self.protocol_version,
+        ]
     }
 
     /// Create from byte array received from HID
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.len() < 9 {
+        let [
+            report_id,
+            flags,
+            max_torque_0,
+            max_torque_1,
+            encoder_0,
+            encoder_1,
+            period_0,
+            period_1,
+            protocol_version,
+            ..,
+        ] = bytes
+        else {
             return Err("Capabilities report too short".to_string());
-        }
+        };
 
-        let report: Self = unsafe {
-            mem::transmute([
-                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-                bytes[8],
-            ])
+        let report = Self {
+            report_id: *report_id,
+            flags: *flags,
+            max_torque_cnm: u16::from_le_bytes([*max_torque_0, *max_torque_1]),
+            encoder_cpr: u16::from_le_bytes([*encoder_0, *encoder_1]),
+            min_report_period_us: u16::from_le_bytes([*period_0, *period_1]),
+            protocol_version: *protocol_version,
         };
 
         if report.report_id != report_ids::CAPABILITIES {
@@ -506,20 +589,58 @@ impl SafetyInterlockChallenge {
 
     /// Convert to byte array for HID transmission
     pub fn to_bytes(&self) -> [u8; 12] {
-        unsafe { mem::transmute(*self) }
+        let [challenge_0, challenge_1, challenge_2, challenge_3] =
+            self.challenge_token.to_le_bytes();
+        let [hold_0, hold_1] = self.hold_duration_ms.to_le_bytes();
+        let [expires_0, expires_1, expires_2, expires_3] = self.expires_unix_secs.to_le_bytes();
+        [
+            self.report_id,
+            challenge_0,
+            challenge_1,
+            challenge_2,
+            challenge_3,
+            self.combo_type,
+            hold_0,
+            hold_1,
+            expires_0,
+            expires_1,
+            expires_2,
+            expires_3,
+        ]
     }
 
     /// Create from byte array received from HID
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.len() < 12 {
+        let [
+            report_id,
+            challenge_0,
+            challenge_1,
+            challenge_2,
+            challenge_3,
+            combo_type,
+            hold_0,
+            hold_1,
+            expires_0,
+            expires_1,
+            expires_2,
+            expires_3,
+            ..,
+        ] = bytes
+        else {
             return Err("Safety challenge too short".to_string());
-        }
+        };
 
-        let challenge: Self = unsafe {
-            mem::transmute([
-                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-                bytes[8], bytes[9], bytes[10], bytes[11],
-            ])
+        let challenge = Self {
+            report_id: *report_id,
+            challenge_token: u32::from_le_bytes([
+                *challenge_0,
+                *challenge_1,
+                *challenge_2,
+                *challenge_3,
+            ]),
+            combo_type: *combo_type,
+            hold_duration_ms: u16::from_le_bytes([*hold_0, *hold_1]),
+            expires_unix_secs: u32::from_le_bytes([*expires_0, *expires_1, *expires_2, *expires_3]),
         };
 
         if challenge.report_id != report_ids::SAFETY_CHALLENGE {
@@ -615,21 +736,77 @@ impl SafetyInterlockAck {
 
     /// Convert to byte array for HID transmission
     pub fn to_bytes(&self) -> [u8; 17] {
-        unsafe { mem::transmute(*self) }
+        let [challenge_0, challenge_1, challenge_2, challenge_3] =
+            self.challenge_token.to_le_bytes();
+        let [device_0, device_1, device_2, device_3] = self.device_token.to_le_bytes();
+        let [hold_0, hold_1] = self.actual_hold_duration_ms.to_le_bytes();
+        let [completed_0, completed_1, completed_2, completed_3] =
+            self.completion_timestamp.to_le_bytes();
+        [
+            self.report_id,
+            challenge_0,
+            challenge_1,
+            challenge_2,
+            challenge_3,
+            device_0,
+            device_1,
+            device_2,
+            device_3,
+            self.combo_completed,
+            hold_0,
+            hold_1,
+            completed_0,
+            completed_1,
+            completed_2,
+            completed_3,
+            self.crc8,
+        ]
     }
 
     /// Create from byte array received from HID
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.len() < 17 {
+        let [
+            report_id,
+            challenge_0,
+            challenge_1,
+            challenge_2,
+            challenge_3,
+            device_0,
+            device_1,
+            device_2,
+            device_3,
+            combo_completed,
+            hold_0,
+            hold_1,
+            completed_0,
+            completed_1,
+            completed_2,
+            completed_3,
+            crc8,
+            ..,
+        ] = bytes
+        else {
             return Err("Safety acknowledgment too short".to_string());
-        }
+        };
 
-        let ack: Self = unsafe {
-            mem::transmute([
-                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-                bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14],
-                bytes[15], bytes[16],
-            ])
+        let ack = Self {
+            report_id: *report_id,
+            challenge_token: u32::from_le_bytes([
+                *challenge_0,
+                *challenge_1,
+                *challenge_2,
+                *challenge_3,
+            ]),
+            device_token: u32::from_le_bytes([*device_0, *device_1, *device_2, *device_3]),
+            combo_completed: *combo_completed,
+            actual_hold_duration_ms: u16::from_le_bytes([*hold_0, *hold_1]),
+            completion_timestamp: u32::from_le_bytes([
+                *completed_0,
+                *completed_1,
+                *completed_2,
+                *completed_3,
+            ]),
+            crc8: *crc8,
         };
 
         if ack.report_id != report_ids::SAFETY_ACK {
@@ -672,6 +849,7 @@ fn crc8(data: &[u8]) -> u8 {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use std::mem;
 
     /// Golden test data for OWP-1 protocol validation
     #[allow(dead_code)]

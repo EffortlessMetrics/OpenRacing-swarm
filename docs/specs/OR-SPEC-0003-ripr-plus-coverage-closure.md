@@ -42,9 +42,14 @@ The quality closure command MUST emit a machine-readable receipt with at least:
   "ripr_plus_unowned_gap_count": 0,
   "coverage_required": false,
   "coverage_workflow_skipped": true,
+  "coverage_tool_status": "pass|fail|advisory|skipped|not_applicable",
   "patch_coverage_status": "pass|fail|advisory|skipped|not_applicable",
+  "badge_endpoint_status": "pass|fail|advisory|skipped|not_applicable",
   "uncovered_owned_surface_count": 0,
-  "exception_count": 0
+  "expired_review_count": 0,
+  "exception_count": 0,
+  "review_date": "YYYY-MM-DD",
+  "quality_exception_breakdown": []
 }
 ```
 
@@ -61,6 +66,10 @@ The receipt MUST distinguish these statuses:
 
 - The repo-scoped `ripr+` badge message is the default unresolved gap count.
 - `ripr_unresolved_gap_count` MUST be numeric.
+- Badge endpoint regeneration MUST report `badge_endpoint_status`.
+- Missing RIPR test-efficiency evidence MUST report
+  `badge_endpoint_status = "skipped"` or `badge_endpoint_status = "fail"` and
+  MUST NOT be treated as a badge regeneration pass.
 - `ripr_plus_unowned_gap_count` MUST count active exception entries of kind
   `ripr_unowned_gap`.
 - RIPR PR artifacts remain diff-scoped and MUST NOT be reused as repo-scope
@@ -70,11 +79,20 @@ The receipt MUST distinguish these statuses:
 
 - A skipped Code Coverage workflow MUST set `coverage_workflow_skipped = true`.
 - Skipped coverage MUST NOT satisfy `coverage_required`.
+- Missing local or CI coverage tooling MUST report
+  `coverage_tool_status = "skipped"` or `coverage_tool_status = "fail"` and
+  MUST NOT be treated as coverage evidence.
 - Codecov informational patch coverage MUST report
   `patch_coverage_status = "advisory"`.
 - Generated, test-harness, benchmark, fuzz, build-script, UI, integration-test,
   workspace-hack, hardware-only, and unreachable surfaces MUST be represented by
   policy entries before they are excluded from the closure denominator.
+- Active RIPR+/coverage exceptions MUST be attributable through
+  `quality_exception_breakdown` with owner, path, kind, status, review date, and
+  whether follow-up remains required.
+- Active RIPR+/coverage exceptions with expired `review_after` dates MUST
+  increment `expired_review_count` and MUST require follow-up in
+  `quality_exception_breakdown`.
 - Hardware-only code SHOULD be covered through fake transports or receipt
   validators before any live hardware path is counted as covered.
 

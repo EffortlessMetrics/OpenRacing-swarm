@@ -38,29 +38,17 @@ mod tests {
 
     #[tokio::test]
     #[traced_test]
-    #[cfg_attr(
-        target_os = "windows",
-        ignore = "set_var is not thread-safe on Windows"
-    )]
     async fn test_service_config_save_load() -> Result<()> {
         let temp_dir = TempDir::new()?;
-
-        // Override the config path for testing
-        // SAFETY: This is a test-only function that sets environment variables
-        // in a controlled test environment. We ensure no other threads are
-        // reading these variables during the test.
-        unsafe {
-            std::env::set_var("LOCALAPPDATA", temp_dir.path());
-            std::env::set_var("HOME", temp_dir.path());
-        }
+        let config_path = temp_dir.path().join("wheel").join("service.json");
 
         let original_config = create_test_config();
 
         // Save config
-        original_config.save().await?;
+        original_config.save_to_path_for_test(&config_path).await?;
 
         // Load config
-        let loaded_config = ServiceConfig::load().await?;
+        let loaded_config = ServiceConfig::load_from_path_for_test(&config_path).await?;
 
         assert_eq!(original_config.service_name, loaded_config.service_name);
         assert_eq!(

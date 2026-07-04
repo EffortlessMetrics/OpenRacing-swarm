@@ -502,6 +502,56 @@ struct QualityException {
     status: String,
 }
 
+#[derive(Clone, Debug, Serialize)]
+struct QualityExceptionBreakdown {
+    id: String,
+    owner: String,
+    path: String,
+    kind: String,
+    review_after: String,
+    review_expired: bool,
+    receipt_status: String,
+    follow_up_required: bool,
+    test_surface_count: u64,
+    removal_condition: String,
+}
+
+impl QualityExceptionBreakdown {
+    fn from_exception(
+        exception: &QualityException,
+        coverage_workflow_skipped: bool,
+        coverage_tool_status: &str,
+        patch_coverage_status: &str,
+        badge_endpoint_status: &str,
+        today: &str,
+    ) -> Self {
+        let review_expired = exception.review_after.as_str() < today;
+        let (mut receipt_status, mut follow_up_required) = quality_exception_receipt_state(
+            exception,
+            coverage_workflow_skipped,
+            coverage_tool_status,
+            patch_coverage_status,
+            badge_endpoint_status,
+        );
+        if review_expired {
+            receipt_status = "fail".to_string();
+            follow_up_required = true;
+        }
+        Self {
+            id: exception.id.clone(),
+            owner: exception.owner.clone(),
+            path: exception.path.clone(),
+            kind: exception.kind.clone(),
+            review_after: exception.review_after.clone(),
+            review_expired,
+            receipt_status,
+            follow_up_required,
+            test_surface_count: exception.test_surface.len() as u64,
+            removal_condition: exception.removal_condition.clone(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct UnsafeSite {
     path: String,
@@ -529,6 +579,37 @@ struct UnsafeReviewException {
     witness: String,
     #[serde(default = "default_active_status")]
     status: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct UnsafeExceptionBreakdown {
+    id: String,
+    owner: String,
+    path: String,
+    kind: String,
+    unsafe_site_count: u64,
+    changed_unsafe_site_count: u64,
+    unsafe_contract_missing_count: u64,
+    local_guard_missing_count: u64,
+    witness_missing_count: u64,
+    missing_evidence_count: u64,
+}
+
+impl UnsafeExceptionBreakdown {
+    fn from_exception(exception: &UnsafeReviewException) -> Self {
+        Self {
+            id: exception.id.clone(),
+            owner: exception.owner.clone(),
+            path: exception.path.clone(),
+            kind: exception.kind.clone(),
+            unsafe_site_count: 0,
+            changed_unsafe_site_count: 0,
+            unsafe_contract_missing_count: 0,
+            local_guard_missing_count: 0,
+            witness_missing_count: 0,
+            missing_evidence_count: 0,
+        }
+    }
 }
 
 fn default_active_status() -> String {
@@ -561,8 +642,6 @@ fn quality_closure(check: bool, json_out: &Path, md_out: &Path) -> anyhow::Resul
 
 fn build_quality_closure_receipt(workspace_root: &Path) -> anyhow::Result<serde_json::Value> {
     let ledger = read_quality_exception_ledger(workspace_root)?;
-    validate_quality_exception_ledger(&ledger)?;
-
     let ripr_unresolved_gap_count =
         read_ripr_plus_badge_count(&workspace_root.join("badges/ripr-plus.json"))?;
     let coverage_workflow =
@@ -572,40 +651,99 @@ fn build_quality_closure_receipt(workspace_root: &Path) -> anyhow::Result<serde_
         .with_context(|| "failed to read .github/workflows/ci.yml")?;
     let codecov = fs::read_to_string(workspace_root.join("codecov.yml"))
         .with_context(|| "failed to read codecov.yml")?;
+    let coverage_tool_status = detect_coverage_tool_status(workspace_root)?;
+    let badge_endpoint_status = detect_badge_endpoint_status(workspace_root)?;
 
-    let coverage_pr_label_gated = coverage_pr_job_is_label_gated(&coverage_workflow);
-    let legacy_ci_coverage_manual_only = ci_coverage_job_is_manual_only(&ci_workflow);
+    build_quality_closure_receipt_value(
+        &ledger,
+        ripr_unresolved_gap_count,
+        &coverage_workflow,
+        &ci_workflow,
+        &codecov,
+        &coverage_tool_status,
+        &badge_endpoint_status,
+        &current_utc_date_string()?,
+    )
+}
+
+fn build_quality_closure_receipt_value(
+    ledger: &QualityExceptionLedger,
+    ripr_unresolved_gap_count: u64,
+    coverage_workflow: &str,
+    ci_workflow: &str,
+    codecov: &str,
+    coverage_tool_status: &str,
+    badge_endpoint_status: &str,
+    today: &str,
+) -> anyhow::Result<serde_json::Value> {
+    validate_quality_exception_ledger(ledger)?;
+    validate_status_value(coverage_tool_status, "coverage_tool_status")?;
+    validate_status_value(badge_endpoint_status, "badge_endpoint_status")?;
+    let coverage_pr_label_gated = coverage_pr_job_is_label_gated(coverage_workflow);
+    let legacy_ci_coverage_manual_only = ci_coverage_job_is_manual_only(ci_workflow);
     let coverage_workflow_skipped = coverage_pr_label_gated || legacy_ci_coverage_manual_only;
-    let patch_coverage_informational = patch_coverage_is_informational(&codecov)?;
+    let patch_coverage_informational = patch_coverage_is_informational(codecov)?;
     let patch_coverage_status = if patch_coverage_informational {
         "advisory"
     } else {
         "pass"
     };
-    let coverage_required = !coverage_workflow_skipped && !patch_coverage_informational;
+    let coverage_required = !coverage_workflow_skipped
+        && !patch_coverage_informational
+        && coverage_tool_status == "pass";
 
-    let active_exceptions = ledger
+    let active_exceptions: Vec<&QualityException> = ledger
         .exception
         .iter()
         .filter(|entry| entry.status == "active")
-        .count();
-    let ripr_plus_unowned_gap_count = ledger
-        .exception
+        .collect();
+    let mut quality_exception_breakdown: Vec<QualityExceptionBreakdown> = active_exceptions
         .iter()
-        .filter(|entry| entry.status == "active" && entry.kind == "ripr_unowned_gap")
-        .count();
-    let uncovered_owned_surface_count = ledger
-        .exception
+        .map(|entry| {
+            QualityExceptionBreakdown::from_exception(
+                entry,
+                coverage_workflow_skipped,
+                coverage_tool_status,
+                patch_coverage_status,
+                badge_endpoint_status,
+                today,
+            )
+        })
+        .collect();
+    quality_exception_breakdown.sort_by(|left, right| {
+        right
+            .follow_up_required
+            .cmp(&left.follow_up_required)
+            .then_with(|| {
+                receipt_status_rank(&left.receipt_status)
+                    .cmp(&receipt_status_rank(&right.receipt_status))
+            })
+            .then_with(|| left.kind.cmp(&right.kind))
+            .then_with(|| left.id.cmp(&right.id))
+    });
+
+    let ripr_plus_unowned_gap_count = active_exceptions
         .iter()
-        .filter(|entry| entry.status == "active" && entry.kind == "owned_coverage_gap")
+        .filter(|entry| entry.kind == "ripr_unowned_gap")
+        .count();
+    let uncovered_owned_surface_count = active_exceptions
+        .iter()
+        .filter(|entry| entry.kind == "owned_coverage_gap")
+        .count();
+    let expired_review_count = active_exceptions
+        .iter()
+        .filter(|entry| entry.review_after.as_str() < today)
         .count();
 
     let quality_closure_satisfied = ripr_unresolved_gap_count == 0
         && ripr_plus_unowned_gap_count == 0
         && coverage_required
         && !coverage_workflow_skipped
+        && coverage_tool_status == "pass"
         && patch_coverage_status == "pass"
-        && uncovered_owned_surface_count == 0;
+        && badge_endpoint_status == "pass"
+        && uncovered_owned_surface_count == 0
+        && expired_review_count == 0;
     let status = if quality_closure_satisfied {
         "pass"
     } else {
@@ -621,9 +759,14 @@ fn build_quality_closure_receipt(workspace_root: &Path) -> anyhow::Result<serde_
         "ripr_plus_unowned_gap_count": ripr_plus_unowned_gap_count,
         "coverage_required": coverage_required,
         "coverage_workflow_skipped": coverage_workflow_skipped,
+        "coverage_tool_status": coverage_tool_status,
         "patch_coverage_status": patch_coverage_status,
+        "badge_endpoint_status": badge_endpoint_status,
         "uncovered_owned_surface_count": uncovered_owned_surface_count,
-        "exception_count": active_exceptions,
+        "expired_review_count": expired_review_count,
+        "exception_count": active_exceptions.len() as u64,
+        "review_date": today,
+        "quality_exception_breakdown": quality_exception_breakdown,
         "workflow_observations": {
             "coverage_pr_label_gated": coverage_pr_label_gated,
             "legacy_ci_coverage_manual_only": legacy_ci_coverage_manual_only,
@@ -635,6 +778,12 @@ fn build_quality_closure_receipt(workspace_root: &Path) -> anyhow::Result<serde_
                 "status": if ripr_unresolved_gap_count == 0 { "pass" } else { "fail" },
                 "satisfied": ripr_unresolved_gap_count == 0,
                 "details": "badges/ripr-plus.json message is treated as the repo-scope RIPR+ unresolved gap count"
+            },
+            {
+                "name": "badge_endpoint_regeneration",
+                "status": badge_endpoint_status,
+                "satisfied": badge_endpoint_status == "pass",
+                "details": "ripr+ badge endpoint regeneration is reported separately; missing test-efficiency evidence is not a badge pass"
             },
             {
                 "name": "coverage_required_gate",
@@ -649,10 +798,22 @@ fn build_quality_closure_receipt(workspace_root: &Path) -> anyhow::Result<serde_
                 "details": "skipped coverage is reported explicitly and is not equivalent to coverage pass"
             },
             {
+                "name": "coverage_tooling",
+                "status": coverage_tool_status,
+                "satisfied": coverage_tool_status == "pass",
+                "details": "cargo-llvm-cov availability is reported separately; missing local coverage tooling is not coverage evidence"
+            },
+            {
                 "name": "patch_coverage",
                 "status": patch_coverage_status,
                 "satisfied": patch_coverage_status == "pass",
                 "details": "Codecov patch coverage remains advisory while its status is informational"
+            },
+            {
+                "name": "quality_exception_reviews",
+                "status": if expired_review_count == 0 { "pass" } else { "fail" },
+                "satisfied": expired_review_count == 0,
+                "details": "active quality exceptions must have non-expired review_after dates"
             },
             {
                 "name": "mutation_expansion",
@@ -676,6 +837,122 @@ fn build_quality_closure_receipt(workspace_root: &Path) -> anyhow::Result<serde_
             "not-release-readiness"
         ]
     }))
+}
+
+fn quality_exception_receipt_state(
+    exception: &QualityException,
+    coverage_workflow_skipped: bool,
+    coverage_tool_status: &str,
+    patch_coverage_status: &str,
+    badge_endpoint_status: &str,
+) -> (String, bool) {
+    match exception.kind.as_str() {
+        "ripr_gate_debt" => (
+            badge_endpoint_status.to_string(),
+            badge_endpoint_status != "pass",
+        ),
+        "coverage_gate_debt" => match exception.id.as_str() {
+            "coverage-pr-label-gated" | "legacy-ci-coverage-manual-only" => {
+                if coverage_workflow_skipped {
+                    ("skipped".to_string(), true)
+                } else {
+                    ("pass".to_string(), false)
+                }
+            }
+            "codecov-patch-informational" => (
+                patch_coverage_status.to_string(),
+                patch_coverage_status != "pass",
+            ),
+            "coverage-local-llvm-cov-tooling" => (
+                coverage_tool_status.to_string(),
+                coverage_tool_status != "pass",
+            ),
+            "coverage-windows-command-line-limit" => ("advisory".to_string(), true),
+            _ => ("fail".to_string(), true),
+        },
+        "owned_coverage_gap" => ("fail".to_string(), true),
+        "coverage_surface_deferred" => ("advisory".to_string(), true),
+        "generated" | "intentionally_advisory" => ("not_applicable".to_string(), false),
+        _ => ("advisory".to_string(), true),
+    }
+}
+
+fn receipt_status_rank(status: &str) -> u8 {
+    match status {
+        "fail" => 0,
+        "skipped" => 1,
+        "advisory" => 2,
+        "pass" => 3,
+        "not_applicable" => 4,
+        _ => 5,
+    }
+}
+
+fn detect_badge_endpoint_status(workspace_root: &Path) -> anyhow::Result<String> {
+    if let Ok(value) = env::var("OPENRACING_BADGE_ENDPOINT_STATUS") {
+        validate_status_value(&value, "OPENRACING_BADGE_ENDPOINT_STATUS")?;
+        return Ok(value);
+    }
+
+    let test_efficiency_report = workspace_root.join("target/ripr/reports/test-efficiency.json");
+    if !test_efficiency_report.exists() {
+        return Ok("skipped".to_string());
+    }
+
+    let committed_path = workspace_root.join("badges/ripr-plus.json");
+    let Ok(committed_content) = fs::read_to_string(&committed_path) else {
+        return Ok("fail".to_string());
+    };
+    let Ok(committed_badge) = serde_json::from_str::<ShieldsEndpointBadge>(&committed_content)
+    else {
+        return Ok("fail".to_string());
+    };
+    if validate_shields_badge(&committed_badge, Some("ripr+")).is_err() {
+        return Ok("fail".to_string());
+    }
+
+    let Ok(generated_badge) = ripr_plus_badge(workspace_root) else {
+        return Ok("fail".to_string());
+    };
+    if generated_badge == committed_badge {
+        Ok("pass".to_string())
+    } else {
+        Ok("fail".to_string())
+    }
+}
+
+fn detect_coverage_tool_status(workspace_root: &Path) -> anyhow::Result<String> {
+    if let Ok(value) = env::var("OPENRACING_COVERAGE_TOOL_STATUS") {
+        validate_status_value(&value, "OPENRACING_COVERAGE_TOOL_STATUS")?;
+        return Ok(value);
+    }
+
+    if let Ok(output) = Command::new("bash")
+        .arg("-lc")
+        .arg(
+            "command -v cargo-llvm-cov >/dev/null 2>&1 || cargo llvm-cov --version >/dev/null 2>&1",
+        )
+        .output()
+    {
+        return Ok(if output.status.success() {
+            "pass"
+        } else {
+            "skipped"
+        }
+        .to_string());
+    }
+
+    let output = Command::new("cargo")
+        .args(["llvm-cov", "--version"])
+        .current_dir(workspace_root)
+        .output()
+        .with_context(|| "failed to probe cargo llvm-cov")?;
+    Ok(if output.status.success() {
+        "pass"
+    } else {
+        "skipped"
+    }
+    .to_string())
 }
 
 fn read_quality_exception_ledger(workspace_root: &Path) -> anyhow::Result<QualityExceptionLedger> {
@@ -799,8 +1076,11 @@ fn write_quality_closure_markdown(path: &Path, receipt: &serde_json::Value) -> a
         "ripr_plus_unowned_gap_count",
         "coverage_required",
         "coverage_workflow_skipped",
+        "coverage_tool_status",
         "patch_coverage_status",
+        "badge_endpoint_status",
         "uncovered_owned_surface_count",
+        "expired_review_count",
         "exception_count",
     ] {
         let value = receipt
@@ -810,8 +1090,72 @@ fn write_quality_closure_markdown(path: &Path, receipt: &serde_json::Value) -> a
         content.push_str(&format!("| `{field}` | `{value}` |\n"));
     }
     append_result_states_markdown(&mut content, receipt);
+    append_quality_exception_breakdown_markdown(&mut content, receipt);
     content.push_str("\nSkipped coverage is not treated as a pass by this receipt.\n");
     fs::write(path, content).with_context(|| format!("failed to write {}", path.display()))
+}
+
+fn append_quality_exception_breakdown_markdown(content: &mut String, receipt: &serde_json::Value) {
+    let Some(rows) = receipt
+        .get("quality_exception_breakdown")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return;
+    };
+    if rows.is_empty() {
+        return;
+    }
+    content.push_str("\n## Quality Exception Breakdown\n\n");
+    content.push_str(
+        "| Exception | Owner | Kind | Status | Follow-up | Expired | Review After | Test Surfaces | Path |\n",
+    );
+    content.push_str("| --- | --- | --- | --- | ---: | ---: | --- | ---: | --- |\n");
+    for row in rows {
+        let id = markdown_cell(
+            row.get("id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+        );
+        let owner = markdown_cell(
+            row.get("owner")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+        );
+        let kind = markdown_cell(
+            row.get("kind")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+        );
+        let status = markdown_cell(
+            row.get("receipt_status")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown"),
+        );
+        let follow_up_required = row
+            .get("follow_up_required")
+            .and_then(serde_json::Value::as_bool)
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "null".to_string());
+        let review_expired = row
+            .get("review_expired")
+            .and_then(serde_json::Value::as_bool)
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "null".to_string());
+        let review_after = markdown_cell(
+            row.get("review_after")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+        );
+        let test_surface_count = json_u64_field(row, "test_surface_count");
+        let path = markdown_cell(
+            row.get("path")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+        );
+        content.push_str(&format!(
+            "| `{id}` | `{owner}` | `{kind}` | `{status}` | `{follow_up_required}` | `{review_expired}` | `{review_after}` | `{test_surface_count}` | `{path}` |\n"
+        ));
+    }
 }
 
 fn append_result_states_markdown(content: &mut String, receipt: &serde_json::Value) {
@@ -911,6 +1255,10 @@ fn build_unsafe_review_closure_receipt_value(
         .iter()
         .filter(|entry| entry.status == "active")
         .collect();
+    let mut unsafe_exception_breakdown: Vec<UnsafeExceptionBreakdown> = active_exceptions
+        .iter()
+        .map(|entry| UnsafeExceptionBreakdown::from_exception(entry))
+        .collect();
 
     let mut unsafe_contract_missing_count = 0_u64;
     let mut local_guard_missing_count = 0_u64;
@@ -934,17 +1282,54 @@ fn build_unsafe_review_closure_receipt_value(
             }
             continue;
         };
+        let exception_breakdown = unsafe_exception_breakdown
+            .iter_mut()
+            .find(|entry| entry.id == exception.id);
+        if let Some(entry) = exception_breakdown {
+            entry.unsafe_site_count += 1;
+            if changed_rust_paths.contains(&site.path) {
+                entry.changed_unsafe_site_count += 1;
+            }
+        }
 
         if exception.safety_contract == "missing" {
             unsafe_contract_missing_count += 1;
+            if let Some(entry) = unsafe_exception_breakdown
+                .iter_mut()
+                .find(|entry| entry.id == exception.id)
+            {
+                entry.unsafe_contract_missing_count += 1;
+                entry.missing_evidence_count += 1;
+            }
         }
         if exception.local_guard == "missing" {
             local_guard_missing_count += 1;
+            if let Some(entry) = unsafe_exception_breakdown
+                .iter_mut()
+                .find(|entry| entry.id == exception.id)
+            {
+                entry.local_guard_missing_count += 1;
+                entry.missing_evidence_count += 1;
+            }
         }
         if exception.witness == "missing" {
             witness_missing_count += 1;
+            if let Some(entry) = unsafe_exception_breakdown
+                .iter_mut()
+                .find(|entry| entry.id == exception.id)
+            {
+                entry.witness_missing_count += 1;
+                entry.missing_evidence_count += 1;
+            }
         }
     }
+    unsafe_exception_breakdown.sort_by(|left, right| {
+        right
+            .missing_evidence_count
+            .cmp(&left.missing_evidence_count)
+            .then_with(|| right.unsafe_site_count.cmp(&left.unsafe_site_count))
+            .then_with(|| left.id.cmp(&right.id))
+    });
 
     let owner_missing_count = active_exceptions
         .iter()
@@ -984,6 +1369,7 @@ fn build_unsafe_review_closure_receipt_value(
         "exception_count": active_exceptions.len() as u64,
         "review_date": today,
         "unreviewed_samples": unreviewed_samples,
+        "unsafe_exception_breakdown": unsafe_exception_breakdown,
         "result_states": [
             {
                 "name": "unsafe_site_inventory",
@@ -1478,10 +1864,61 @@ fn write_unsafe_review_closure_markdown(
         content.push_str(&format!("| `{field}` | `{value}` |\n"));
     }
     append_result_states_markdown(&mut content, receipt);
+    append_unsafe_exception_breakdown_markdown(&mut content, receipt);
     content.push_str(
         "\nUnsafe-review closure makes unsafe seams reviewable; it does not prove soundness, UB-freedom, or Miri-clean status.\n",
     );
     fs::write(path, content).with_context(|| format!("failed to write {}", path.display()))
+}
+
+fn append_unsafe_exception_breakdown_markdown(content: &mut String, receipt: &serde_json::Value) {
+    let Some(rows) = receipt
+        .get("unsafe_exception_breakdown")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return;
+    };
+    if rows.is_empty() {
+        return;
+    }
+    content.push_str("\n## Unsafe Exception Breakdown\n\n");
+    content.push_str(
+        "| Exception | Owner | Path | Sites | Changed | Missing Contract | Missing Guard | Missing Witness | Missing Evidence |\n",
+    );
+    content.push_str("| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |\n");
+    for row in rows {
+        let id = markdown_cell(
+            row.get("id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+        );
+        let owner = markdown_cell(
+            row.get("owner")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+        );
+        let path = markdown_cell(
+            row.get("path")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+        );
+        let site_count = json_u64_field(row, "unsafe_site_count");
+        let changed_count = json_u64_field(row, "changed_unsafe_site_count");
+        let contract_missing = json_u64_field(row, "unsafe_contract_missing_count");
+        let guard_missing = json_u64_field(row, "local_guard_missing_count");
+        let witness_missing = json_u64_field(row, "witness_missing_count");
+        let missing_evidence = json_u64_field(row, "missing_evidence_count");
+        content.push_str(&format!(
+            "| `{id}` | `{owner}` | `{path}` | `{site_count}` | `{changed_count}` | `{contract_missing}` | `{guard_missing}` | `{witness_missing}` | `{missing_evidence}` |\n"
+        ));
+    }
+}
+
+fn json_u64_field(value: &serde_json::Value, field: &str) -> u64 {
+    value
+        .get(field)
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0)
 }
 
 fn docs_sync(_check: bool) -> anyhow::Result<()> {
@@ -1709,55 +2146,143 @@ mod tests {
 
     #[test]
     fn quality_closure_marks_label_gated_coverage_as_skipped() -> anyhow::Result<()> {
-        let temp = tempfile::tempdir()?;
-        let root = temp.path();
-        fs::create_dir_all(root.join("badges"))?;
-        fs::create_dir_all(root.join(".github/workflows"))?;
-        fs::create_dir_all(root.join("policy"))?;
+        let ledger = QualityExceptionLedger {
+            schema_version: "1.0".to_string(),
+            exception: vec![QualityException {
+                id: "coverage-pr-label-gated".to_string(),
+                owner: "release/ci".to_string(),
+                path: ".github/workflows/coverage.yml".to_string(),
+                kind: "coverage_gate_debt".to_string(),
+                reason: "PR coverage is label-gated while the closure lane is measured."
+                    .to_string(),
+                test_surface: vec!["cargo xtask quality-closure --check".to_string()],
+                review_after: "2026-06-30".to_string(),
+                removal_condition:
+                    "Make patch coverage required or add a required non-skipped coverage sentinel."
+                        .to_string(),
+                status: "active".to_string(),
+            }],
+        };
+        let coverage_workflow = "name: Code Coverage\njobs:\n  coverage:\n    if: >-\n      github.event_name == 'push' ||\n      github.event_name == 'workflow_dispatch' ||\n      contains(github.event.pull_request.labels.*.name, 'coverage')\n";
+        let ci_workflow = "jobs:\n  coverage:\n    name: Code Coverage\n    if: github.event_name == 'workflow_dispatch'\n";
+        let codecov =
+            "coverage:\n  status:\n    patch:\n      default:\n        informational: true\n";
 
-        fs::write(
-            root.join("badges/ripr-plus.json"),
-            r#"{"schemaVersion":1,"label":"ripr+","message":"0","color":"brightgreen"}"#,
+        let receipt = build_quality_closure_receipt_value(
+            &ledger,
+            0,
+            coverage_workflow,
+            ci_workflow,
+            codecov,
+            "skipped",
+            "skipped",
+            "2026-06-05",
         )?;
-        fs::write(
-            root.join(".github/workflows/coverage.yml"),
-            "name: Code Coverage\njobs:\n  coverage:\n    if: >-\n      github.event_name == 'push' ||\n      github.event_name == 'workflow_dispatch' ||\n      contains(github.event.pull_request.labels.*.name, 'coverage')\n",
-        )?;
-        fs::write(
-            root.join(".github/workflows/ci.yml"),
-            "jobs:\n  coverage:\n    name: Code Coverage\n    if: github.event_name == 'workflow_dispatch'\n",
-        )?;
-        fs::write(
-            root.join("codecov.yml"),
-            "coverage:\n  status:\n    patch:\n      default:\n        informational: true\n",
-        )?;
-        fs::write(
-            root.join("policy/quality-closure-exceptions.toml"),
-            r#"
-schema_version = "1.0"
-
-[[exception]]
-id = "coverage-pr-label-gated"
-owner = "release/ci"
-path = ".github/workflows/coverage.yml"
-kind = "coverage_gate_debt"
-reason = "PR coverage is label-gated while the closure lane is measured."
-test_surface = ["cargo xtask quality-closure --check"]
-review_after = "2026-06-30"
-removal_condition = "Make patch coverage required or add a required non-skipped coverage sentinel."
-"#,
-        )?;
-
-        let receipt = build_quality_closure_receipt(root)?;
         assert_eq!(receipt["ripr_unresolved_gap_count"], 0);
         assert_eq!(receipt["coverage_required"], false);
         assert_eq!(receipt["coverage_workflow_skipped"], true);
+        assert_eq!(receipt["coverage_tool_status"], "skipped");
+        assert_eq!(receipt["badge_endpoint_status"], "skipped");
         assert_eq!(receipt["patch_coverage_status"], "advisory");
+        assert_eq!(receipt["expired_review_count"], 0);
         assert_eq!(
-            receipt["result_states"][2]["status"],
+            receipt["quality_exception_breakdown"][0]["id"],
+            "coverage-pr-label-gated"
+        );
+        assert_eq!(
+            receipt["quality_exception_breakdown"][0]["receipt_status"],
+            "skipped"
+        );
+        assert_eq!(
+            receipt["quality_exception_breakdown"][0]["follow_up_required"],
+            true
+        );
+        assert_eq!(
+            receipt["quality_exception_breakdown"][0]["review_expired"],
+            false
+        );
+        assert_eq!(
+            receipt["quality_exception_breakdown"][0]["test_surface_count"],
+            1
+        );
+        assert_eq!(
+            receipt["result_states"][1]["name"],
+            serde_json::Value::String("badge_endpoint_regeneration".to_string())
+        );
+        assert_eq!(
+            receipt["result_states"][1]["status"],
+            serde_json::Value::String("skipped".to_string())
+        );
+        assert_eq!(
+            receipt["result_states"][3]["status"],
+            serde_json::Value::String("skipped".to_string())
+        );
+        assert_eq!(
+            receipt["result_states"][4]["name"],
+            serde_json::Value::String("coverage_tooling".to_string())
+        );
+        assert_eq!(
+            receipt["result_states"][4]["status"],
             serde_json::Value::String("skipped".to_string())
         );
         assert_eq!(receipt["quality_closure_satisfied"], false);
+        Ok(())
+    }
+
+    #[test]
+    fn quality_closure_counts_expired_exception_reviews() -> anyhow::Result<()> {
+        let ledger = QualityExceptionLedger {
+            schema_version: "1.0".to_string(),
+            exception: vec![QualityException {
+                id: "coverage-generated-protobuf".to_string(),
+                owner: "schemas".to_string(),
+                path: "**/*.pb.rs".to_string(),
+                kind: "generated".to_string(),
+                reason: "Generated protobuf output is excluded from human-authored coverage."
+                    .to_string(),
+                test_surface: vec!["cargo xtask quality-closure --check".to_string()],
+                review_after: "2026-06-30".to_string(),
+                removal_condition: "Generated protobuf coverage is accounted elsewhere."
+                    .to_string(),
+                status: "active".to_string(),
+            }],
+        };
+        let codecov =
+            "coverage:\n  status:\n    patch:\n      default:\n        informational: false\n";
+
+        let receipt = build_quality_closure_receipt_value(
+            &ledger,
+            0,
+            "",
+            "",
+            codecov,
+            "pass",
+            "pass",
+            "2026-07-01",
+        )?;
+
+        assert_eq!(receipt["expired_review_count"], 1);
+        assert_eq!(
+            receipt["quality_exception_breakdown"][0]["receipt_status"],
+            "fail"
+        );
+        assert_eq!(
+            receipt["quality_exception_breakdown"][0]["review_expired"],
+            true
+        );
+        assert_eq!(
+            receipt["quality_exception_breakdown"][0]["follow_up_required"],
+            true
+        );
+        assert_eq!(receipt["quality_closure_satisfied"], false);
+        assert_eq!(
+            receipt["result_states"][6]["name"],
+            serde_json::Value::String("quality_exception_reviews".to_string())
+        );
+        assert_eq!(
+            receipt["result_states"][6]["status"],
+            serde_json::Value::String("fail".to_string())
+        );
         Ok(())
     }
 
@@ -1829,10 +2354,33 @@ removal_condition = "Make patch coverage required or add a required non-skipped 
             "ripr_plus_unowned_gap_count": 0,
             "coverage_required": false,
             "coverage_workflow_skipped": true,
+            "coverage_tool_status": "skipped",
             "patch_coverage_status": "advisory",
+            "badge_endpoint_status": "skipped",
             "uncovered_owned_surface_count": 0,
+            "expired_review_count": 0,
             "exception_count": 12,
+            "quality_exception_breakdown": [
+                {
+                    "id": "coverage-pr-label-gated",
+                    "owner": "release/ci",
+                    "path": ".github/workflows/coverage.yml",
+                    "kind": "coverage_gate_debt",
+                    "review_after": "2026-06-30",
+                    "review_expired": false,
+                    "receipt_status": "skipped",
+                    "follow_up_required": true,
+                    "test_surface_count": 2,
+                    "removal_condition": "Patch coverage is required on PRs."
+                }
+            ],
             "result_states": [
+                {
+                    "name": "badge_endpoint_regeneration",
+                    "status": "skipped",
+                    "satisfied": false,
+                    "details": "missing test-efficiency report"
+                },
                 {
                     "name": "coverage_workflow_execution",
                     "status": "skipped",
@@ -1840,10 +2388,22 @@ removal_condition = "Make patch coverage required or add a required non-skipped 
                     "details": "skipped coverage is not a pass"
                 },
                 {
+                    "name": "coverage_tooling",
+                    "status": "skipped",
+                    "satisfied": false,
+                    "details": "cargo-llvm-cov did not run"
+                },
+                {
                     "name": "patch_coverage",
                     "status": "advisory",
                     "satisfied": false,
                     "details": "patch coverage remains informational"
+                },
+                {
+                    "name": "quality_exception_reviews",
+                    "status": "pass",
+                    "satisfied": true,
+                    "details": "reviews are current"
                 },
                 {
                     "name": "mutation_expansion",
@@ -1858,9 +2418,18 @@ removal_condition = "Make patch coverage required or add a required non-skipped 
         let content = fs::read_to_string(&path)?;
 
         assert!(content.contains("## Result States"));
+        assert!(content.contains("| `coverage_tool_status` | `\"skipped\"` |"));
+        assert!(content.contains("| `badge_endpoint_status` | `\"skipped\"` |"));
+        assert!(content.contains("| `badge_endpoint_regeneration` | `skipped` | `false` |"));
         assert!(content.contains("| `coverage_workflow_execution` | `skipped` | `false` |"));
+        assert!(content.contains("| `coverage_tooling` | `skipped` | `false` |"));
         assert!(content.contains("| `patch_coverage` | `advisory` | `false` |"));
+        assert!(content.contains("| `quality_exception_reviews` | `pass` | `true` |"));
         assert!(content.contains("| `mutation_expansion` | `not_applicable` | `true` |"));
+        assert!(content.contains("## Quality Exception Breakdown"));
+        assert!(content.contains(
+            "| `coverage-pr-label-gated` | `release/ci` | `coverage_gate_debt` | `skipped` | `true` | `false` | `2026-06-30` | `2` | `.github/workflows/coverage.yml` |"
+        ));
         Ok(())
     }
 
@@ -1881,6 +2450,20 @@ removal_condition = "Make patch coverage required or add a required non-skipped 
             "unsafe_review_closure_satisfied": false,
             "miri_status": "skipped",
             "exception_count": 17,
+            "unsafe_exception_breakdown": [
+                {
+                    "id": "unsafe-native-plugin-ffi",
+                    "owner": "plugins",
+                    "path": "crates/openracing-native-plugin/src/**",
+                    "kind": "ffi_shared_memory_or_abi_unsafe",
+                    "unsafe_site_count": 12,
+                    "changed_unsafe_site_count": 0,
+                    "unsafe_contract_missing_count": 12,
+                    "local_guard_missing_count": 12,
+                    "witness_missing_count": 12,
+                    "missing_evidence_count": 36
+                }
+            ],
             "result_states": [
                 {
                     "name": "unsafe_review_evidence",
@@ -1910,6 +2493,10 @@ removal_condition = "Make patch coverage required or add a required non-skipped 
         assert!(content.contains("| `unsafe_review_evidence` | `fail` | `false` |"));
         assert!(content.contains("| `miri` | `skipped` | `false` |"));
         assert!(content.contains("| `hardware_execution` | `not_applicable` | `true` |"));
+        assert!(content.contains("## Unsafe Exception Breakdown"));
+        assert!(content.contains(
+            "| `unsafe-native-plugin-ffi` | `plugins` | `crates/openracing-native-plugin/src/**` | `12` | `0` | `12` | `12` | `12` | `36` |"
+        ));
         assert!(content.contains("does not prove soundness, UB-freedom, or Miri-clean status"));
         Ok(())
     }
@@ -2003,6 +2590,22 @@ removal_condition = "Make patch coverage required or add a required non-skipped 
         assert_eq!(receipt["unreviewed_unsafe_gap_count"], 1);
         assert_eq!(receipt["miri_status"], "skipped");
         assert_eq!(receipt["unsafe_review_closure_satisfied"], false);
+        assert_eq!(
+            receipt["unsafe_exception_breakdown"][0]["id"],
+            "unsafe-engine"
+        );
+        assert_eq!(
+            receipt["unsafe_exception_breakdown"][0]["unsafe_site_count"],
+            1
+        );
+        assert_eq!(
+            receipt["unsafe_exception_breakdown"][0]["changed_unsafe_site_count"],
+            0
+        );
+        assert_eq!(
+            receipt["unsafe_exception_breakdown"][0]["missing_evidence_count"],
+            3
+        );
         Ok(())
     }
 
