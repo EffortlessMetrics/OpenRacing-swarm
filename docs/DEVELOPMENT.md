@@ -16,6 +16,14 @@ All significant architectural decisions are documented in ADRs located in `docs/
 - [ADR-0007: Multi-Vendor HID Protocol Architecture](adr/0007-multi-vendor-hid-protocol-architecture.md)
 - [ADR-0008: Game Auto-Configure and Telemetry Bridge](adr/0008-game-auto-configure-telemetry-bridge.md)
 
+## Tooling control plane
+
+OpenRacing exposes repository policy through stable `xtask` commands while
+using upstream tools as the engine room. See
+[Tooling control plane standard](reference/TOOLING_CONTROL_PLANE.md) for the
+standard upstream substrate, authority rules, lane posture, and wrapper command
+surface.
+
 ## Continuous Integration
 
 The CI pipeline enforces code quality, performance, and security standards:
