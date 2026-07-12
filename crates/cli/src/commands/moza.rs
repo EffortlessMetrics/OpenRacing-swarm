@@ -13467,7 +13467,7 @@ fn moza_status_receipt(
     selector: Option<&str>,
     lane: Option<&Path>,
 ) -> Value {
-    let lane_status = lane.map(support_bundle_status);
+    let lane_status = lane.map(artifact_navigation_status);
     let device_statuses: Vec<_> = devices
         .into_iter()
         .map(|device| {
@@ -58005,6 +58005,26 @@ mod tests {
         assert_eq!(json_string(first, "init_state"), Some("uninitialized"));
         assert_eq!(json_bool(first, "safe_to_send_torque"), Some(false));
         assert_eq!(json_bool(first, "high_torque_allowed"), Some(false));
+        Ok(())
+    }
+
+    #[test]
+    fn status_lane_context_uses_stored_navigation_without_replaying_captures() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let receipt = moza_status_receipt(Vec::new(), None, Some(dir.path()));
+        let lane_status = receipt.get("lane_status").ok_or("expected lane status")?;
+
+        assert!(lane_status.get("readiness").is_some());
+        assert!(lane_status.get("artifact_index").is_some());
+        assert!(lane_status.get("verifications").is_none());
+        let notes = lane_status
+            .get("notes")
+            .and_then(Value::as_array)
+            .ok_or("expected navigation notes")?;
+        assert!(notes.iter().any(|note| {
+            note.as_str()
+                .is_some_and(|text| text.contains("reads stored lane receipts only"))
+        }));
         Ok(())
     }
 
