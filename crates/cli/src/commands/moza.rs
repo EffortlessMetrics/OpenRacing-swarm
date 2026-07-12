@@ -46,6 +46,7 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::commands::{
@@ -75,6 +76,7 @@ const MOZA_PIT_HOUSE_INSTALL_GUIDANCE: &str = "Install or update Pit House from 
 const PASSIVE_SNIFF_POST_CAPTURE_EVIDENCE_COMMANDS_CHECKLIST_ITEM: &str = "run sniff-receipt, sniff-notes-template, and sniff-summary before treating the capture as lane evidence";
 const PIT_HOUSE_0X8E_CAPTURE_PREP_MAX_AGE_MINUTES: i64 = 10;
 const LOCAL_CAPTURE_PREP_FUTURE_TOLERANCE_SECONDS: i64 = 30;
+static JSON_WRITE_COUNTER: AtomicU64 = AtomicU64::new(0);
 const PASSIVE_SNIFF_LOW_YIELD_CLASSIFICATION_FILE: &str = "low-yield-capture-classification.json";
 const HIGH_TORQUE_FEATURE_REPORT_ID: &str = "0x02";
 const START_REPORTING_FEATURE_REPORT_ID: &str = "0x03";
@@ -46550,7 +46552,45 @@ fn write_json_file<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     }
 
     let json = serde_json::to_string_pretty(value).context("failed to serialize JSON receipt")?;
-    fs::write(path, json).with_context(|| format!("failed to write '{}'", path.display()))?;
+    let file_name = path
+        .file_name()
+        .map(|name| name.to_string_lossy())
+        .unwrap_or_else(|| std::borrow::Cow::Borrowed("receipt.json"));
+    let temp_path = path.with_file_name(format!(
+        ".{file_name}.{}.{}.tmp",
+        std::process::id(),
+        JSON_WRITE_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+
+    if let Err(error) = fs::write(&temp_path, json) {
+        let _ = fs::remove_file(&temp_path);
+        return Err(error).with_context(|| {
+            format!(
+                "failed to write temporary receipt '{}'",
+                temp_path.display()
+            )
+        });
+    }
+
+    let publish_result = fs::rename(&temp_path, path);
+    if let Err(rename_error) = publish_result {
+        #[cfg(windows)]
+        let publish_result = if path.exists() {
+            fs::remove_file(path).and_then(|()| fs::rename(&temp_path, path))
+        } else {
+            Err(rename_error)
+        };
+
+        #[cfg(not(windows))]
+        let publish_result = Err(rename_error);
+
+        if let Err(error) = publish_result {
+            let _ = fs::remove_file(&temp_path);
+            return Err(error)
+                .with_context(|| format!("failed to publish receipt '{}'", path.display()));
+        }
+    }
+
     Ok(())
 }
 
@@ -83531,6 +83571,32 @@ mod tests {
             "expected service gate to reject support-bundle top-level PID mismatch, got {}",
             service_gate.details
         );
+        Ok(())
+    }
+
+    #[test]
+    fn write_json_file_replaces_receipt_without_leaving_partial_or_temp_files() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("verification.json");
+
+        write_json_file(
+            &path,
+            &serde_json::json!({"success": false, "generation": 1}),
+        )?;
+        write_json_file(
+            &path,
+            &serde_json::json!({"success": true, "generation": 2}),
+        )?;
+
+        let receipt = read_json_path(&path)?;
+        assert_eq!(json_bool(&receipt, "success"), Some(true));
+        assert_eq!(json_u64(&receipt, "generation"), Some(2));
+
+        let temp_files = fs::read_dir(dir.path())?
+            .filter_map(std::result::Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
+            .count();
+        assert_eq!(temp_files, 0);
         Ok(())
     }
 }
