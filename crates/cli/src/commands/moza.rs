@@ -46575,14 +46575,14 @@ fn write_json_file<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     let publish_result = fs::rename(&temp_path, path);
     if let Err(rename_error) = publish_result {
         #[cfg(windows)]
-        let publish_result = if path.exists() {
+        let publish_result: std::io::Result<()> = if path.exists() {
             fs::remove_file(path).and_then(|()| fs::rename(&temp_path, path))
         } else {
             Err(rename_error)
         };
 
         #[cfg(not(windows))]
-        let publish_result = Err(rename_error);
+        let publish_result: std::io::Result<()> = Err(rename_error);
 
         if let Err(error) = publish_result {
             let _ = fs::remove_file(&temp_path);
