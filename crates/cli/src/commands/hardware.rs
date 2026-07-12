@@ -1684,6 +1684,7 @@ fn build_hardware_sniff_summary_from_tshark_json(
 ) -> Result<HardwareSniffSummaryArtifact> {
     let packets = parse_tshark_usb_packets(tshark_json)?;
     let packets = enrich_tshark_usb_packets(packets);
+    let packets = correlate_tshark_usb_packets(packets);
     let matched_packets: Vec<TsharkUsbPacket> = packets
         .into_iter()
         .filter(|packet| sniff_packet_matches_filters(packet, &config.filters))
@@ -1707,6 +1708,12 @@ fn build_hardware_sniff_summary_from_tshark_json(
             host_to_device_payload_coverage.observe(packet);
             if let Some(payload) = &packet.payload {
                 usbcom_serial_frame_summary.observe_payload(payload);
+            }
+            if packet.payload.is_none() {
+                transfer_summary.host_to_device_missing_payload += 1;
+            }
+            if packet.report_id.is_none() {
+                transfer_summary.host_to_device_missing_report_identity += 1;
             }
         }
         if matches!(packet.direction, Some(SniffUsbDirection::DeviceToHost)) {
@@ -1802,6 +1809,18 @@ fn build_hardware_sniff_summary_from_tshark_json(
     }
     if let Some(reason) = &reason {
         notes.push(reason.clone());
+    }
+    if transfer_summary.host_to_device_missing_payload > 0 {
+        notes.push(format!(
+            "{} host-to-device logical transfer(s) had no extractable payload",
+            transfer_summary.host_to_device_missing_payload
+        ));
+    }
+    if transfer_summary.host_to_device_missing_report_identity > 0 {
+        notes.push(format!(
+            "{} host-to-device logical transfer(s) had no extractable report identity",
+            transfer_summary.host_to_device_missing_report_identity
+        ));
     }
 
     let observed_reports: Vec<_> = reports
@@ -2437,8 +2456,7 @@ fn parse_tshark_usb_packet(
     );
     let direction = parse_packet_direction(&fields, endpoint_address);
     let payload = first_payload_field(&fields).and_then(|value| parse_payload_hex(&value));
-    let report_id = first_u8_field(&fields, &["usbhid.report_id", "hid.report_id"])
-        .or_else(|| payload.as_ref().and_then(|bytes| bytes.first().copied()));
+    let report_id = first_u8_field(&fields, &["usbhid.report_id", "hid.report_id"]);
     let data_len = first_usize_field(&fields, &["usb.data_len"]);
 
     let control_setup_stage = tshark_usb_setup_fields_present(&fields);
@@ -2453,6 +2471,9 @@ fn parse_tshark_usb_packet(
         frame_number: first_u64_field(&fields, &["frame.number"]),
         frame_time_epoch: first_field_value(&fields, &["frame.time_epoch"]),
         frame_time: first_field_value(&fields, &["frame.time"]),
+        urb_id: first_field_value(&fields, &["usb.urb_id"]),
+        request_in: first_field_value(&fields, &["usb.request_in"]),
+        response_in: first_field_value(&fields, &["usb.response_in"]),
         device_key: packet_device_key(&fields),
         vendor_id: first_hex16_field(
             &fields,
@@ -2487,6 +2508,147 @@ fn parse_tshark_usb_packet(
         control_setup_stage,
         descriptor_kind: parse_packet_descriptor_kind(&fields),
     })
+}
+
+fn correlate_tshark_usb_packets(packets: Vec<TsharkUsbPacket>) -> Vec<TsharkUsbPacket> {
+    if packets.len() < 2 {
+        return packets.into_iter().map(with_derived_report_id).collect();
+    }
+
+    let mut parents: Vec<usize> = (0..packets.len()).collect();
+    let mut frame_indexes = BTreeMap::new();
+    let mut urb_indexes = BTreeMap::new();
+
+    for (index, packet) in packets.iter().enumerate() {
+        if let Some(frame_number) = &packet.frame_number {
+            frame_indexes.insert(frame_number.to_string(), index);
+        }
+        if let Some(urb_id) = &packet.urb_id
+            && let Some(previous) = urb_indexes.insert(urb_id.clone(), index)
+        {
+            union_packet_groups(&mut parents, previous, index);
+        }
+    }
+
+    for (index, packet) in packets.iter().enumerate() {
+        for reference in [&packet.request_in, &packet.response_in]
+            .into_iter()
+            .flatten()
+        {
+            if let Some(&partner) = frame_indexes.get(reference) {
+                union_packet_groups(&mut parents, index, partner);
+            }
+        }
+    }
+
+    let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for index in 0..packets.len() {
+        let root = find_packet_group(&mut parents, index);
+        groups.entry(root).or_default().push(index);
+    }
+
+    groups
+        .into_values()
+        .filter_map(|members| {
+            let first = members.first().copied()?;
+            let mut merged = packets.get(first)?.clone();
+            for &index in members.iter().skip(1) {
+                merge_tshark_usb_packet(&mut merged, packets.get(index)?);
+            }
+            Some(with_derived_report_id(merged))
+        })
+        .collect()
+}
+
+fn find_packet_group(parents: &mut [usize], index: usize) -> usize {
+    let Some(&parent) = parents.get(index) else {
+        return index;
+    };
+    if parent == index {
+        return index;
+    }
+    let root = find_packet_group(parents, parent);
+    if let Some(slot) = parents.get_mut(index) {
+        *slot = root;
+    }
+    root
+}
+
+fn union_packet_groups(parents: &mut [usize], left: usize, right: usize) {
+    let left_root = find_packet_group(parents, left);
+    let right_root = find_packet_group(parents, right);
+    if left_root != right_root
+        && let Some(slot) = parents.get_mut(right_root)
+    {
+        *slot = left_root;
+    }
+}
+
+fn merge_tshark_usb_packet(target: &mut TsharkUsbPacket, candidate: &TsharkUsbPacket) {
+    target.packet_ordinal = target.packet_ordinal.min(candidate.packet_ordinal);
+    target.frame_number = target.frame_number.or(candidate.frame_number);
+    target.frame_time_epoch = target
+        .frame_time_epoch
+        .clone()
+        .or_else(|| candidate.frame_time_epoch.clone());
+    target.frame_time = target
+        .frame_time
+        .clone()
+        .or_else(|| candidate.frame_time.clone());
+    target.urb_id = target.urb_id.clone().or_else(|| candidate.urb_id.clone());
+    target.request_in = target
+        .request_in
+        .clone()
+        .or_else(|| candidate.request_in.clone());
+    target.response_in = target
+        .response_in
+        .clone()
+        .or_else(|| candidate.response_in.clone());
+    target.device_key = target
+        .device_key
+        .clone()
+        .or_else(|| candidate.device_key.clone());
+    target.vendor_id = target
+        .vendor_id
+        .clone()
+        .or_else(|| candidate.vendor_id.clone());
+    target.product_id = target
+        .product_id
+        .clone()
+        .or_else(|| candidate.product_id.clone());
+    target.interface_number = target.interface_number.or(candidate.interface_number);
+    target.endpoint_address = target.endpoint_address.or(candidate.endpoint_address);
+    target.direction = target.direction.or(candidate.direction);
+    target.transfer_type = target.transfer_type.or(candidate.transfer_type);
+    target.data_len = target.data_len.or(candidate.data_len);
+    target.report_id = target.report_id.or(candidate.report_id);
+    target.control_setup_stage |= candidate.control_setup_stage;
+    target.descriptor_kind = target.descriptor_kind.or(candidate.descriptor_kind);
+
+    if candidate.payload.is_some()
+        && (target.payload.is_none()
+            || candidate.request_in.is_some()
+            || candidate.payload.as_ref().is_some_and(|payload| {
+                target
+                    .payload
+                    .as_ref()
+                    .is_some_and(|current| payload.len() > current.len())
+            }))
+    {
+        target.payload = candidate.payload.clone();
+    }
+}
+
+fn with_derived_report_id(mut packet: TsharkUsbPacket) -> TsharkUsbPacket {
+    if packet.report_id.is_none()
+        && matches!(packet.transfer_type, Some(SniffUsbTransferType::Interrupt))
+    {
+        packet.report_id = packet
+            .payload
+            .as_ref()
+            .and_then(|payload| payload.first().copied());
+    }
+    packet
 }
 
 fn collect_tshark_fields(value: &serde_json::Value, fields: &mut BTreeMap<String, Vec<String>>) {
@@ -3928,6 +4090,16 @@ fn render_sniff_summary_markdown(summary: &HardwareSniffSummaryArtifact) -> Stri
     out.push_str(&format!(
         "- interrupt: `{}`\n\n",
         summary.usb_transfer_summary.interrupt
+    ));
+    out.push_str(&format!(
+        "- host-to-device missing payload: `{}`\n",
+        summary.usb_transfer_summary.host_to_device_missing_payload
+    ));
+    out.push_str(&format!(
+        "- host-to-device missing report identity: `{}`\n\n",
+        summary
+            .usb_transfer_summary
+            .host_to_device_missing_report_identity
     ));
 
     out.push_str("## Host-to-Device Payload Coverage\n\n");
@@ -8345,6 +8517,8 @@ struct HardwareSniffUsbTransferSummary {
     device_to_host: usize,
     control: usize,
     interrupt: usize,
+    host_to_device_missing_payload: usize,
+    host_to_device_missing_report_identity: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -8968,6 +9142,9 @@ struct TsharkUsbPacket {
     frame_number: Option<u64>,
     frame_time_epoch: Option<String>,
     frame_time: Option<String>,
+    urb_id: Option<String>,
+    request_in: Option<String>,
+    response_in: Option<String>,
     device_key: Option<String>,
     vendor_id: Option<String>,
     product_id: Option<String>,
@@ -8997,7 +9174,7 @@ impl SniffUsbDirection {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SniffUsbTransferType {
     Control,
     Interrupt,
@@ -11926,6 +12103,8 @@ mod tests {
                     device_to_host: 1,
                     control: 0,
                     interrupt: 1,
+                    host_to_device_missing_payload: 0,
+                    host_to_device_missing_report_identity: 0,
                 },
                 observed_devices: vec![HardwareSniffObservedDevice {
                     vendor_id: "0x346E".to_string(),
@@ -12652,6 +12831,8 @@ mod tests {
                 device_to_host: 0,
                 control: 0,
                 interrupt: 0,
+                host_to_device_missing_payload: 0,
+                host_to_device_missing_report_identity: 0,
             };
             summary.observed_devices.clear();
             summary.observed_reports.clear();
@@ -12855,6 +13036,90 @@ mod tests {
           }
         ]"#;
 
+        const CORRELATED_TSHARK_JSON_FIXTURE: &str = r#"[
+          {
+            "_source": {
+              "layers": {
+                "frame": { "frame.number": "10" },
+                "usb": {
+                  "usb.bus_id": "1",
+                  "usb.device_address": "12",
+                  "usb.idVendor": "0x346e",
+                  "usb.idProduct": "0x0014",
+                  "usb.interface_number": "2",
+                  "usb.endpoint_address": "0x02",
+                  "usb.endpoint_direction": "OUT",
+                  "usb.transfer_type": "Interrupt",
+                  "usb.urb_id": "0xABC",
+                  "usb.response_in": "11",
+                  "usb.capdata": "AA:BB:CC"
+                }
+              }
+            }
+          },
+          {
+            "_source": {
+              "layers": {
+                "frame": { "frame.number": "11" },
+                "usb": {
+                  "usb.bus_id": "1",
+                  "usb.device_address": "12",
+                  "usb.idVendor": "0x346e",
+                  "usb.idProduct": "0x0014",
+                  "usb.interface_number": "2",
+                  "usb.endpoint_address": "0x02",
+                  "usb.endpoint_direction": "OUT",
+                  "usb.transfer_type": "Interrupt",
+                  "usb.urb_id": "0xABC",
+                  "usb.request_in": "10",
+                  "usb.capdata": "05:01:00"
+                }
+              }
+            }
+          }
+        ]"#;
+
+        const CORRELATED_MISSING_PAYLOAD_FIXTURE: &str = r#"[
+          {
+            "_source": {
+              "layers": {
+                "frame": { "frame.number": "20" },
+                "usb": {
+                  "usb.bus_id": "1",
+                  "usb.device_address": "12",
+                  "usb.idVendor": "0x346e",
+                  "usb.idProduct": "0x0014",
+                  "usb.interface_number": "2",
+                  "usb.endpoint_address": "0x02",
+                  "usb.endpoint_direction": "OUT",
+                  "usb.transfer_type": "Interrupt",
+                  "usb.urb_id": "0xDEF",
+                  "usb.response_in": "21"
+                }
+              }
+            }
+          },
+          {
+            "_source": {
+              "layers": {
+                "frame": { "frame.number": "21" },
+                "usb": {
+                  "usb.bus_id": "1",
+                  "usb.device_address": "12",
+                  "usb.idVendor": "0x346e",
+                  "usb.idProduct": "0x0014",
+                  "usb.interface_number": "2",
+                  "usb.endpoint_address": "0x02",
+                  "usb.endpoint_direction": "OUT",
+                  "usb.transfer_type": "Interrupt",
+                  "usb.urb_id": "0xDEF",
+                  "usb.request_in": "20"
+                }
+              }
+            }
+          }
+        ]"#;
+
         fn sniff_schema_path(file_name: &str) -> PathBuf {
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../../ci/hardware/sniffing")
@@ -13003,6 +13268,97 @@ mod tests {
                     .ok_or("missing descriptor candidate")?
                     .kind,
                 "hid_report_descriptor"
+            );
+            assert_schema_valid(
+                "sniff-summary.schema.json",
+                &serde_json::to_value(&summary)?,
+            )?;
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_summary_correlates_urb_request_and_completion_once() -> TestResult {
+            let summary = build_hardware_sniff_summary_from_tshark_json(
+                HardwareSniffSummaryConfig {
+                    filters: HardwareSniffSummaryFilters {
+                        vendor_id: Some("0x346E".to_string()),
+                        product_id: Some("0x0014".to_string()),
+                        interface_number: Some(2),
+                    },
+                    include_payload_samples: true,
+                    max_samples_per_report: 2,
+                },
+                sha256_hex(b"correlated fixture"),
+                true,
+                Some("TShark synthetic correlated fixture".to_string()),
+                CORRELATED_TSHARK_JSON_FIXTURE,
+            )?;
+
+            assert_eq!(summary.matched_packets, 1);
+            assert_eq!(summary.usb_transfer_summary.host_to_device, 1);
+            assert_eq!(summary.usb_transfer_summary.interrupt, 1);
+            assert_eq!(
+                summary.usb_transfer_summary.host_to_device_missing_payload,
+                0
+            );
+            assert_eq!(
+                summary
+                    .usb_transfer_summary
+                    .host_to_device_missing_report_identity,
+                0
+            );
+            let report = summary
+                .observed_reports
+                .first()
+                .ok_or("missing correlated report")?;
+            assert_eq!(report.report_id, "0x05");
+            assert_eq!(report.count, 1);
+            assert_eq!(
+                report.payload_hex_samples,
+                Some(vec!["05 01 00".to_string()])
+            );
+            assert_schema_valid(
+                "sniff-summary.schema.json",
+                &serde_json::to_value(&summary)?,
+            )?;
+            Ok(())
+        }
+
+        #[test]
+        fn sniff_summary_reports_correlated_host_to_device_payload_gaps() -> TestResult {
+            let summary = build_hardware_sniff_summary_from_tshark_json(
+                HardwareSniffSummaryConfig {
+                    filters: HardwareSniffSummaryFilters {
+                        vendor_id: Some("0x346E".to_string()),
+                        product_id: Some("0x0014".to_string()),
+                        interface_number: Some(2),
+                    },
+                    include_payload_samples: false,
+                    max_samples_per_report: 2,
+                },
+                sha256_hex(b"correlated missing payload fixture"),
+                true,
+                Some("TShark synthetic missing payload fixture".to_string()),
+                CORRELATED_MISSING_PAYLOAD_FIXTURE,
+            )?;
+
+            assert_eq!(summary.matched_packets, 1);
+            assert_eq!(summary.observed_reports.len(), 0);
+            assert_eq!(
+                summary.usb_transfer_summary.host_to_device_missing_payload,
+                1
+            );
+            assert_eq!(
+                summary
+                    .usb_transfer_summary
+                    .host_to_device_missing_report_identity,
+                1
+            );
+            assert!(
+                summary
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("no extractable payload"))
             );
             assert_schema_valid(
                 "sniff-summary.schema.json",

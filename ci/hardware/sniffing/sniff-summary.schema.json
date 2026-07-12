@@ -110,7 +110,14 @@
     "usb_transfer_summary": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["host_to_device", "device_to_host", "control", "interrupt"],
+      "required": [
+        "host_to_device",
+        "device_to_host",
+        "control",
+        "interrupt",
+        "host_to_device_missing_payload",
+        "host_to_device_missing_report_identity"
+      ],
       "properties": {
         "host_to_device": {
           "type": "integer",
@@ -125,6 +132,14 @@
           "minimum": 0
         },
         "interrupt": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "host_to_device_missing_payload": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "host_to_device_missing_report_identity": {
           "type": "integer",
           "minimum": 0
         }
