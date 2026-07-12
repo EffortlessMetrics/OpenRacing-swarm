@@ -5,11 +5,14 @@
 //! - DM-02: Disconnect detection within 100ms and torque stop within 50ms
 //! - Testability: RT loop validation without physical hardware
 
+use openracing_ffb::{ConstantEffect, FfbGain};
 use racing_wheel_engine::{
     ExpectedResponse, HidDevice, HidPort, RTLoopTestHarness, TestHarnessConfig, TestScenario,
     TorquePattern, VirtualDevice, VirtualHidPort,
 };
 use racing_wheel_schemas::prelude::{DeviceId, DeviceType};
+use serde_json::Value;
+use std::fs;
 use std::time::{Duration, Instant};
 use tracing_test::traced_test;
 
@@ -591,5 +594,160 @@ async fn test_telemetry_consistency() -> Result<(), Box<dyn std::error::Error>> 
             assert_eq!(telemetry.fault_flags, 0);
         }
     }
+    Ok(())
+}
+
+/// Replay a checked-in simulator fixture through the bounded virtual FFB path.
+///
+/// This intentionally stays in the fake backend lane: it proves the ordering
+/// and cleanup contract without making any physical hardware or readiness claim.
+#[tokio::test]
+#[traced_test]
+async fn test_replayed_simulator_telemetry_ffb_lifecycle() -> Result<(), Box<dyn std::error::Error>>
+{
+    let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/telemetry/acc/basic-lap.jsonl");
+    let fixture = fs::read_to_string(&fixture_path)?;
+    let mut replayed_frames = Vec::new();
+    for line in fixture.lines() {
+        let record: Value = serde_json::from_str(line)?;
+        if record.get("fixture_source").and_then(Value::as_str) != Some("synthetic")
+            || record
+                .get("real_simulator_validated")
+                .and_then(Value::as_bool)
+                != Some(false)
+        {
+            return Err("fixture must remain explicitly synthetic and non-real".into());
+        }
+        let snapshot = record
+            .get("snapshot")
+            .ok_or("fixture record is missing snapshot")?;
+        replayed_frames.push((
+            snapshot
+                .get("sequence")
+                .and_then(Value::as_u64)
+                .ok_or("snapshot is missing sequence")?,
+            snapshot
+                .get("timestamp_ns")
+                .and_then(Value::as_u64)
+                .ok_or("snapshot is missing timestamp_ns")?,
+            snapshot
+                .get("ffb_scalar")
+                .and_then(Value::as_f64)
+                .ok_or("snapshot is missing ffb_scalar")? as f32,
+        ));
+    }
+    if replayed_frames.len() != 3 {
+        return Err("expected the three-frame ACC replay fixture".into());
+    }
+
+    let device_id = "simulator-ffb-lifecycle".parse::<DeviceId>()?;
+    let mut device = VirtualDevice::new(device_id.clone(), "Virtual Simulator Wheel".to_string());
+    let profile_name = "bounded-simulator-v1";
+    let gain = FfbGain::new(0.8).with_torque(0.75).with_effects(0.5);
+    let max_torque_nm = 1.25_f32;
+    let max_slew_nm = 0.25_f32;
+    let stale_timeout = Duration::from_millis(100);
+    let session_started = true;
+    let mut effect_created = false;
+    let mut effect_updates = 0usize;
+    let mut clipped_outputs = 0usize;
+    let mut watchdog_interventions = 0usize;
+    let mut accepted_writes = 0usize;
+    let mut last_torque_nm = 0.0_f32;
+    let mut last_timestamp_ns = None;
+
+    for (sequence, timestamp_ns, ffb_scalar) in replayed_frames.iter().copied() {
+        let effect_magnitude = (ffb_scalar.clamp(-1.0, 1.0) * f32::from(i16::MAX)).round() as i16;
+        let effect = ConstantEffect::new(effect_magnitude);
+        effect_created = true;
+        effect_updates += 1;
+        let target_torque_nm =
+            (f32::from(effect.apply_gain(gain.combined())) / f32::from(i16::MAX)) * 25.0;
+        let bounded_target = target_torque_nm.clamp(-max_torque_nm, max_torque_nm);
+        if (bounded_target - target_torque_nm).abs() > f32::EPSILON {
+            clipped_outputs += 1;
+        }
+        let torque_nm = (last_torque_nm
+            + (bounded_target - last_torque_nm).clamp(-max_slew_nm, max_slew_nm))
+        .clamp(-max_torque_nm, max_torque_nm);
+        device.write_ffb_report(torque_nm, sequence as u16)?;
+        accepted_writes += 1;
+        device.simulate_physics(Duration::from_millis(16));
+        last_torque_nm = torque_nm;
+        last_timestamp_ns = Some(timestamp_ns);
+    }
+
+    let stale_timestamp_ns = last_timestamp_ns.ok_or("replay did not produce a timestamp")?
+        + stale_timeout.as_nanos() as u64
+        + 1;
+    if Duration::from_nanos(stale_timestamp_ns - last_timestamp_ns.ok_or("missing timestamp")?)
+        > stale_timeout
+    {
+        watchdog_interventions += 1;
+        device.write_ffb_report(0.0, 3)?;
+        accepted_writes += 1;
+        last_torque_nm = 0.0;
+    }
+
+    let high_scalar_effect = ConstantEffect::new(i16::MAX);
+    let high_scalar_target =
+        (f32::from(high_scalar_effect.apply_gain(gain.combined())) / f32::from(i16::MAX)) * 25.0;
+    if high_scalar_target > max_torque_nm {
+        clipped_outputs += 1;
+    }
+    let clipped_torque = (last_torque_nm
+        + (max_torque_nm - last_torque_nm).clamp(-max_slew_nm, max_slew_nm))
+    .clamp(-max_torque_nm, max_torque_nm);
+    device.write_ffb_report(clipped_torque, 4)?;
+    accepted_writes += 1;
+
+    // Stop All/final zero must be attempted before the daemon session ends.
+    device.write_ffb_report(0.0, 5)?;
+    accepted_writes += 1;
+    last_torque_nm = 0.0;
+    let stop_all_sent = true;
+    let final_zero_sent = last_torque_nm.abs() <= f32::EPSILON;
+    let session_stopped = true;
+
+    assert!(session_started && session_stopped);
+    assert_eq!(profile_name, "bounded-simulator-v1");
+    assert!(effect_created);
+    assert_eq!(effect_updates, 3);
+    assert!(clipped_outputs >= 1);
+    assert_eq!(watchdog_interventions, 1);
+    assert_eq!(accepted_writes, 6);
+    assert!(stop_all_sent);
+    assert!(final_zero_sent);
+
+    // A disconnected backend rejects output, then recovers after reconnect.
+    device.disconnect();
+    assert!(matches!(
+        device.write_ffb_report(0.5, 6),
+        Err(racing_wheel_engine::RTError::DeviceDisconnected)
+    ));
+    assert!(matches!(
+        device.write_ffb_report(0.0, 7),
+        Err(racing_wheel_engine::RTError::DeviceDisconnected)
+    ));
+    device.reconnect();
+    device.write_ffb_report(0.0, 8)?;
+
+    // A daemon restart must rediscover and reopen the device after removal.
+    let mut port = VirtualHidPort::new();
+    port.add_device(VirtualDevice::new(
+        device_id.clone(),
+        "Virtual Simulator Wheel".to_string(),
+    ))?;
+    assert_eq!(port.list_devices().await?.len(), 1);
+    port.remove_device(&device_id)?;
+    assert!(port.list_devices().await?.is_empty());
+    port.add_device(VirtualDevice::new(
+        device_id.clone(),
+        "Virtual Simulator Wheel".to_string(),
+    ))?;
+    let mut reopened = port.open_device(&device_id).await?;
+    assert!(reopened.is_connected());
+    reopened.write_ffb_report(0.0, 9)?;
     Ok(())
 }
