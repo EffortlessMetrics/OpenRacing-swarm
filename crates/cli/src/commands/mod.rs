@@ -1933,6 +1933,9 @@ pub enum MozaCommands {
         /// Write the verification receipt to this JSON file
         #[arg(long)]
         json_out: Option<std::path::PathBuf>,
+        /// Emit bounded phase progress to stderr
+        #[arg(long)]
+        progress: bool,
     },
 
     /// Audit stored verification and manifest-promotion receipts after promotion

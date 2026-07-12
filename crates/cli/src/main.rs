@@ -4706,6 +4706,7 @@ mod tests {
                 lane,
                 stage,
                 json_out,
+                progress,
             }) => {
                 assert_eq!(
                     lane.as_path().to_str(),
@@ -4716,6 +4717,7 @@ mod tests {
                     json_out.as_ref().and_then(|p| p.to_str()),
                     Some("bundle-verification.json")
                 );
+                assert!(!progress);
             }
             _ => return Err("expected Moza VerifyBundle command".into()),
         }

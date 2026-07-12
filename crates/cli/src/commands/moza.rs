@@ -1788,7 +1788,8 @@ pub async fn execute(cmd: &MozaCommands, json: bool) -> Result<()> {
             lane,
             stage,
             json_out,
-        } => verify_bundle(json, lane, *stage, json_out.as_deref()).await,
+            progress,
+        } => verify_bundle(json, lane, *stage, json_out.as_deref(), *progress).await,
         MozaCommands::AuditLane {
             lane,
             stage,
@@ -8718,8 +8719,21 @@ async fn verify_bundle(
     lane: &Path,
     stage: MozaBundleStage,
     json_out: Option<&Path>,
+    progress: bool,
 ) -> Result<()> {
-    let receipt = verify_bundle_dir(lane, stage);
+    let progress_reporter = |phase: &str| {
+        eprintln!("[moza verify-bundle] {phase}");
+    };
+    let receipt = if progress {
+        verify_bundle_dir_with_progress(
+            lane,
+            stage,
+            SupportBundleValidationMode::Fresh,
+            Some(&progress_reporter),
+        )
+    } else {
+        verify_bundle_dir(lane, stage)
+    };
     write_json_receipt(json_out, &receipt)?;
     print_bundle_verification_receipt(json, json_out, &receipt)?;
     if !receipt.success {
@@ -13513,12 +13527,25 @@ fn verify_bundle_dir_with_support_validation(
     stage: MozaBundleStage,
     support_validation: SupportBundleValidationMode,
 ) -> BundleVerificationReceipt {
+    verify_bundle_dir_with_progress(lane, stage, support_validation, None)
+}
+
+fn verify_bundle_dir_with_progress(
+    lane: &Path,
+    stage: MozaBundleStage,
+    support_validation: SupportBundleValidationMode,
+    progress: Option<&dyn Fn(&str)>,
+) -> BundleVerificationReceipt {
+    let started = Instant::now();
+    let mut phase_timings_ms = BTreeMap::new();
+    report_verification_phase(progress, "loading artifact requirements");
     let artifact_requirements = bundle_artifact_requirements_for_lane(lane);
     let artifact_checks: Vec<_> = artifact_requirements
         .iter()
         .filter(|requirement| stage_rank(requirement.stage) <= stage_rank(stage))
         .map(|requirement| check_bundle_artifact(lane, requirement))
         .collect();
+    record_verification_phase(&mut phase_timings_ms, started, progress, "artifact_checks");
     // Missing stage artifacts already make the receipt fail; avoid recursively
     // rebuilding fresh support status before writing that diagnostic receipt.
     let support_validation = if matches!(support_validation, SupportBundleValidationMode::Fresh)
@@ -13557,11 +13584,13 @@ fn verify_bundle_dir_with_support_validation(
     gates.push(verify_passive_capture_parse_gate(lane));
     gates.push(verify_parser_validation_gate(lane));
     gates.push(verify_fixture_promotion_gate(lane));
+    record_verification_phase(&mut phase_timings_ms, started, progress, "passive_gates");
 
     if stage_rank(stage) >= stage_rank(MozaBundleStage::Zero) {
         gates.push(verify_zero_torque_gate(lane));
         gates.push(verify_watchdog_proof_gate(lane));
         gates.push(verify_disconnect_proof_gate(lane));
+        record_verification_phase(&mut phase_timings_ms, started, progress, "zero_gates");
     }
 
     if stage_rank(stage) >= stage_rank(MozaBundleStage::OpenRacingControlReady) {
@@ -13591,14 +13620,27 @@ fn verify_bundle_dir_with_support_validation(
         gates.push(verify_low_torque_gate(lane));
         gates.push(verify_steering_angle_stream_gate(lane));
         gates.push(verify_native_actuator_profile_smoke_gate(lane));
+        record_verification_phase(&mut phase_timings_ms, started, progress, "control_gates");
     }
 
     if stage_rank(stage) >= stage_rank(MozaBundleStage::NativeResponseReady) {
         gates.push(verify_native_actuator_response_smoke_gate(lane));
+        record_verification_phase(
+            &mut phase_timings_ms,
+            started,
+            progress,
+            "native_response_gate",
+        );
     }
 
     if stage_rank(stage) >= stage_rank(MozaBundleStage::NativeVisibleReady) {
         gates.push(verify_native_actuator_visible_smoke_gate(lane));
+        record_verification_phase(
+            &mut phase_timings_ms,
+            started,
+            progress,
+            "native_visible_gate",
+        );
     }
 
     if stage_rank(stage) >= stage_rank(MozaBundleStage::SmokeReady) {
@@ -13608,6 +13650,7 @@ fn verify_bundle_dir_with_support_validation(
         ));
         gates.push(verify_simulator_telemetry_gate(lane));
         gates.push(verify_simulator_ffb_gate(lane));
+        record_verification_phase(&mut phase_timings_ms, started, progress, "smoke_gates");
     }
 
     let missing_artifacts = artifact_checks
@@ -13642,6 +13685,7 @@ fn verify_bundle_dir_with_support_validation(
         operator_actions,
         next_commands,
         blocked_safe_followups,
+        phase_timings_ms,
         no_hid_device_opened: true,
         no_ffb_writes: true,
         no_serial_config_commands: true,
@@ -13655,6 +13699,22 @@ fn verify_bundle_dir_with_support_validation(
                 .to_string(),
         ],
     }
+}
+
+fn report_verification_phase(progress: Option<&dyn Fn(&str)>, phase: &str) {
+    if let Some(progress) = progress {
+        progress(phase);
+    }
+}
+
+fn record_verification_phase(
+    timings: &mut BTreeMap<String, u128>,
+    started: Instant,
+    progress: Option<&dyn Fn(&str)>,
+    phase: &str,
+) {
+    timings.insert(phase.to_string(), started.elapsed().as_millis());
+    report_verification_phase(progress, phase);
 }
 
 fn bundle_role_evidence(lane: &Path) -> Vec<LaneRoleEvidenceEntry> {
@@ -45604,6 +45664,7 @@ struct BundleVerificationReceipt {
     operator_actions: Vec<String>,
     next_commands: Vec<String>,
     blocked_safe_followups: Vec<BundleBlockedSafeFollowup>,
+    phase_timings_ms: BTreeMap<String, u128>,
     no_hid_device_opened: bool,
     no_ffb_writes: bool,
     no_serial_config_commands: bool,
@@ -82727,6 +82788,7 @@ mod tests {
                 operator_actions: Vec::new(),
                 next_commands: Vec::new(),
                 blocked_safe_followups: Vec::new(),
+                phase_timings_ms: BTreeMap::new(),
                 no_hid_device_opened: true,
                 no_ffb_writes: true,
                 no_serial_config_commands: true,
