@@ -4,7 +4,10 @@ use crate::RTResult;
 use crate::prelude::MutexExt;
 pub use openracing_errors::RTError;
 use racing_wheel_schemas::prelude::*;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
@@ -96,7 +99,7 @@ pub struct VirtualDevice {
     info: DeviceInfo,
     capabilities: DeviceCapabilities,
     state: Arc<Mutex<VirtualDeviceState>>,
-    connected: bool,
+    connected: Arc<AtomicBool>,
 }
 
 #[derive(Debug)]
@@ -160,7 +163,7 @@ impl VirtualDevice {
             info,
             capabilities,
             state: Arc::new(Mutex::new(state)),
-            connected: true,
+            connected: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -228,18 +231,18 @@ impl VirtualDevice {
 
     /// Disconnect the device (for testing)
     pub fn disconnect(&mut self) {
-        self.connected = false;
+        self.connected.store(false, Ordering::Release);
     }
 
     /// Reconnect the device (for testing)
     pub fn reconnect(&mut self) {
-        self.connected = true;
+        self.connected.store(true, Ordering::Release);
     }
 }
 
 impl HidDevice for VirtualDevice {
     fn write_ffb_report(&mut self, torque_nm: f32, seq: u16) -> RTResult {
-        if !self.connected {
+        if !self.connected.load(Ordering::Acquire) {
             return Err(RTError::DeviceDisconnected);
         }
 
@@ -271,7 +274,7 @@ impl HidDevice for VirtualDevice {
     }
 
     fn read_telemetry(&mut self) -> Option<TelemetryData> {
-        if !self.connected {
+        if !self.connected.load(Ordering::Acquire) {
             return None;
         }
 
@@ -296,7 +299,7 @@ impl HidDevice for VirtualDevice {
     }
 
     fn is_connected(&self) -> bool {
-        self.connected
+        self.connected.load(Ordering::Acquire)
     }
 
     fn health_status(&self) -> DeviceHealthStatus {
@@ -314,7 +317,7 @@ impl HidDevice for VirtualDevice {
 /// Virtual HID port for testing
 pub struct VirtualHidPort {
     devices: Arc<Mutex<Vec<VirtualDevice>>>,
-    event_tx: Option<mpsc::Sender<DeviceEvent>>,
+    event_tx: Arc<Mutex<Option<mpsc::Sender<DeviceEvent>>>>,
 }
 
 impl VirtualHidPort {
@@ -322,12 +325,23 @@ impl VirtualHidPort {
     pub fn new() -> Self {
         Self {
             devices: Arc::new(Mutex::new(Vec::new())),
-            event_tx: None,
+            event_tx: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    fn emit_event(&self, event: DeviceEvent) {
+        if let Ok(event_tx) = self.event_tx.lock()
+            && let Some(tx) = event_tx.as_ref()
+        {
+            let _ = tx.try_send(event);
         }
     }
 
     /// Add a virtual device to the port
     pub fn add_device(&mut self, device: VirtualDevice) -> Result<(), Box<dyn std::error::Error>> {
+        let mut device = device;
+        device.info.is_connected = true;
+        device.connected.store(true, Ordering::Release);
         let device_info = device.device_info().clone();
 
         {
@@ -336,9 +350,7 @@ impl VirtualHidPort {
         }
 
         // Send connect event if monitoring
-        if let Some(tx) = &self.event_tx {
-            let _ = tx.try_send(DeviceEvent::Connected(device_info));
-        }
+        self.emit_event(DeviceEvent::Connected(device_info));
 
         Ok(())
     }
@@ -346,18 +358,18 @@ impl VirtualHidPort {
     /// Remove a device by ID
     pub fn remove_device(&mut self, id: &DeviceId) -> Result<(), Box<dyn std::error::Error>> {
         let mut devices = self.devices.lock_or_panic();
-        let device_info = devices
-            .iter()
-            .find(|d| d.info.id == *id)
-            .map(|d| d.info.clone());
+        let device_info = devices.iter_mut().find(|d| d.info.id == *id).map(|d| {
+            d.connected.store(false, Ordering::Release);
+            let mut info = d.info.clone();
+            info.is_connected = false;
+            info
+        });
 
         devices.retain(|d| d.info.id != *id);
 
         // Send disconnect event if monitoring
-        if let Some(tx) = &self.event_tx
-            && let Some(info) = device_info
-        {
-            let _ = tx.try_send(DeviceEvent::Disconnected(info));
+        if let Some(info) = device_info {
+            self.emit_event(DeviceEvent::Disconnected(info));
         }
 
         Ok(())
@@ -384,7 +396,14 @@ impl VirtualHidPort {
 impl HidPort for VirtualHidPort {
     async fn list_devices(&self) -> Result<Vec<DeviceInfo>, Box<dyn std::error::Error>> {
         let devices = self.devices.lock_or_panic();
-        Ok(devices.iter().map(|d| d.device_info().clone()).collect())
+        Ok(devices
+            .iter()
+            .map(|d| {
+                let mut info = d.device_info().clone();
+                info.is_connected = d.is_connected();
+                info
+            })
+            .collect())
     }
 
     async fn open_device(
@@ -397,10 +416,14 @@ impl HidPort for VirtualHidPort {
             if device.info.id == *id {
                 // Create a new instance that shares the same state
                 let virtual_device = VirtualDevice {
-                    info: device.info.clone(),
+                    info: {
+                        let mut info = device.info.clone();
+                        info.is_connected = device.is_connected();
+                        info
+                    },
                     capabilities: device.capabilities.clone(),
                     state: Arc::clone(&device.state),
-                    connected: device.connected,
+                    connected: Arc::clone(&device.connected),
                 };
 
                 return Ok(Box::new(virtual_device));
@@ -413,9 +436,12 @@ impl HidPort for VirtualHidPort {
     async fn monitor_devices(
         &self,
     ) -> Result<mpsc::Receiver<DeviceEvent>, Box<dyn std::error::Error>> {
-        let (_tx, rx) = mpsc::channel(100);
-        // Store the sender for future events
-        // Note: This is a simplified implementation for testing
+        let (tx, rx) = mpsc::channel(100);
+        let mut event_tx = self
+            .event_tx
+            .lock()
+            .map_err(|_| std::io::Error::other("virtual device event monitor lock poisoned"))?;
+        *event_tx = Some(tx);
         Ok(rx)
     }
 
@@ -511,6 +537,91 @@ mod tests {
 
         let telemetry = opened_device.read_telemetry();
         assert!(telemetry.is_some());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_virtual_hid_port_reports_reenumeration_and_invalidates_open_handle() -> Result<()>
+    {
+        let mut port = VirtualHidPort::new();
+        let mut events = port.monitor_devices().await?;
+        let device_id = "reconnect-device".parse::<DeviceId>()?;
+
+        port.add_device(VirtualDevice::new(
+            device_id.clone(),
+            "Reconnect Wheel".to_string(),
+        ))?;
+
+        let connected = events.recv().await.ok_or("missing connect event")?;
+        match connected {
+            DeviceEvent::Connected(info) => {
+                assert_eq!(info.id, device_id);
+                assert!(info.is_connected);
+            }
+            DeviceEvent::Disconnected(_) => return Err("unexpected disconnect event".into()),
+        }
+
+        let mut stale_handle = port.open_device(&device_id).await?;
+        assert!(stale_handle.is_connected());
+
+        port.remove_device(&device_id)?;
+
+        let disconnected = events.recv().await.ok_or("missing disconnect event")?;
+        match disconnected {
+            DeviceEvent::Disconnected(info) => {
+                assert_eq!(info.id, device_id);
+                assert!(!info.is_connected);
+            }
+            DeviceEvent::Connected(_) => return Err("unexpected connect event".into()),
+        }
+        assert!(!stale_handle.is_connected());
+        assert_eq!(
+            stale_handle.write_ffb_report(2.0, 1),
+            Err(RTError::DeviceDisconnected)
+        );
+        assert!(stale_handle.read_telemetry().is_none());
+
+        port.add_device(VirtualDevice::new(
+            device_id.clone(),
+            "Reconnect Wheel".to_string(),
+        ))?;
+        let reconnected = events.recv().await.ok_or("missing re-connect event")?;
+        match reconnected {
+            DeviceEvent::Connected(info) => {
+                assert_eq!(info.id, device_id);
+                assert!(info.is_connected);
+            }
+            DeviceEvent::Disconnected(_) => return Err("unexpected second disconnect".into()),
+        }
+
+        let mut fresh_handle = port.open_device(&device_id).await?;
+        assert!(fresh_handle.is_connected());
+        fresh_handle.write_ffb_report(2.0, 2)?;
+        assert!(fresh_handle.read_telemetry().is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn test_virtual_device_connection_state_is_shared_with_open_handle() -> Result<()> {
+        let device_id = "shared-connection-device".parse::<DeviceId>()?;
+        let mut original = VirtualDevice::new(device_id, "Shared Wheel".to_string());
+        let mut opened = VirtualDevice {
+            info: original.info.clone(),
+            capabilities: original.capabilities.clone(),
+            state: Arc::clone(&original.state),
+            connected: Arc::clone(&original.connected),
+        };
+
+        original.disconnect();
+        assert!(!opened.is_connected());
+        assert_eq!(
+            opened.write_ffb_report(1.0, 1),
+            Err(RTError::DeviceDisconnected)
+        );
+
+        original.reconnect();
+        assert!(opened.is_connected());
+        opened.write_ffb_report(1.0, 2)?;
         Ok(())
     }
 
