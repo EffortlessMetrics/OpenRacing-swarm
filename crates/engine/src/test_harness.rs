@@ -10,8 +10,8 @@ use crate::{PerformanceMetrics, TelemetryData, VirtualDevice, VirtualHidPort};
 use racing_wheel_schemas::prelude::*;
 use std::collections::VecDeque;
 use std::sync::{
-    Arc, Mutex,
     atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc, Mutex,
 };
 use std::time::{Duration, Instant};
 
@@ -540,18 +540,15 @@ impl RTLoopTestHarness {
             }
 
             let final_zero_result = device.write_ffb_report(0.0, seq.wrapping_add(1));
-            let final_zero_error = final_zero_result.as_ref().err().map(ToString::to_string);
-            {
+            if let Err(error) = final_zero_result {
                 let mut output = output_trace.lock_or_panic();
                 output.attempted_writes += 1;
-                output.final_zero_written = final_zero_result.is_ok();
-                if final_zero_result.is_err() {
-                    output.rejected_writes += 1;
-                }
-            }
-            if let Some(error) = final_zero_error {
+                output.rejected_writes += 1;
                 return Err(format!("final zero-torque write rejected: {error}").into());
             }
+            let mut output = output_trace.lock_or_panic();
+            output.attempted_writes += 1;
+            output.final_zero_written = true;
 
             info!(
                 "RT loop stopped after {} ticks",

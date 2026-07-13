@@ -783,16 +783,13 @@ async fn test_replayed_simulator_telemetry_ffb_lifecycle() -> Result<(), Box<dyn
 
     let device_id = "simulator-ffb-lifecycle".parse::<DeviceId>()?;
     let mut device = VirtualDevice::new(device_id.clone(), "Virtual Simulator Wheel".to_string());
-    let profile_name = "bounded-simulator-v1";
     let gain = FfbGain::new(0.8).with_torque(0.75).with_effects(0.5);
     let max_torque_nm = 1.25_f32;
     let max_slew_nm = 0.25_f32;
     let stale_timeout = Duration::from_millis(100);
-    let session_started = true;
     let mut effect_created = false;
     let mut effect_updates = 0usize;
     let mut clipped_outputs = 0usize;
-    let mut watchdog_interventions = 0usize;
     let mut accepted_writes = 0usize;
     let mut last_torque_nm = 0.0_f32;
     let mut last_timestamp_ns = None;
@@ -827,8 +824,8 @@ async fn test_replayed_simulator_telemetry_ffb_lifecycle() -> Result<(), Box<dyn
     if Duration::from_nanos(stale_timestamp_ns - last_timestamp_ns.ok_or("missing timestamp")?)
         > stale_timeout
     {
-        watchdog_interventions += 1;
-        device.write_ffb_report(0.0, 3)?;
+        let watchdog_result = device.write_ffb_report(0.0, 3);
+        watchdog_result?;
         accepted_writes += 1;
         last_torque_nm = 0.0;
     }
@@ -846,19 +843,18 @@ async fn test_replayed_simulator_telemetry_ffb_lifecycle() -> Result<(), Box<dyn
     accepted_writes += 1;
 
     // Stop All/final zero must be attempted before the daemon session ends.
-    device.write_ffb_report(0.0, 5)?;
-    accepted_writes += 1;
+    let final_zero_result = device.write_ffb_report(0.0, 5);
+    let stop_all_sent = final_zero_result.is_ok();
+    final_zero_result?;
+    if stop_all_sent {
+        accepted_writes += 1;
+    }
     last_torque_nm = 0.0;
-    let stop_all_sent = true;
-    let final_zero_sent = last_torque_nm.abs() <= f32::EPSILON;
-    let session_stopped = true;
+    let final_zero_sent = stop_all_sent && device.is_connected() && last_torque_nm == 0.0;
 
-    assert!(session_started && session_stopped);
-    assert_eq!(profile_name, "bounded-simulator-v1");
     assert!(effect_created);
     assert_eq!(effect_updates, 3);
     assert!(clipped_outputs >= 1);
-    assert_eq!(watchdog_interventions, 1);
     assert_eq!(accepted_writes, 6);
     assert!(stop_all_sent);
     assert!(final_zero_sent);
@@ -929,8 +925,8 @@ fn test_replay_rejects_malformed_telemetry_records() -> Result<(), Box<dyn std::
 }
 
 #[test]
-fn test_recorded_output_lifecycle_failure_matrix_is_bounded()
--> Result<(), Box<dyn std::error::Error>> {
+fn test_recorded_output_lifecycle_failure_matrix_is_bounded(
+) -> Result<(), Box<dyn std::error::Error>> {
     let replayed_frames = [
         ReplayFrame {
             sequence: 1,
@@ -1025,8 +1021,8 @@ fn test_recorded_output_lifecycle_failure_matrix_is_bounded()
 }
 
 #[test]
-fn test_recorded_output_status_is_consistent_under_concurrent_queries()
--> Result<(), Box<dyn std::error::Error>> {
+fn test_recorded_output_status_is_consistent_under_concurrent_queries(
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut backend = RecordedOutputBackend::new([
         PlannedWrite::Accept,
         PlannedWrite::Accept,
