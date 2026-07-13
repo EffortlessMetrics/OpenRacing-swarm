@@ -75667,6 +75667,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn simulator_telemetry_proof_accepts_live_game_adapter_provenance() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let recording = dir.path().join("simulator-telemetry-recording.jsonl");
+        let mut lines = String::new();
+        for sequence in 0..120 {
+            let mut record = simulator_telemetry_snapshot(sequence);
+            record["game"] = serde_json::json!("dirt_rally_2");
+            record["telemetry_source"] = serde_json::json!("real_game");
+            record["recording_origin"] = serde_json::json!("live_game_adapter");
+            record["real_simulator_source"] = serde_json::json!(true);
+            lines.push_str(&serde_json::to_string(&record)?);
+            lines.push('\n');
+        }
+        write_text_file(&recording, &lines)?;
+
+        simulator_telemetry_proof(
+            false,
+            dir.path(),
+            "dirt_rally_2",
+            "real_game",
+            Path::new("simulator-telemetry-recording.jsonl"),
+            5000,
+            None,
+            false,
+        )
+        .await?;
+
+        let receipt = read_json_path(&dir.path().join("simulator-telemetry-proof.json"))?;
+        assert_eq!(json_bool(&receipt, "success"), Some(true));
+        assert_eq!(
+            json_string(&receipt, "recording_origin"),
+            Some("live_game_adapter")
+        );
+        assert_eq!(json_bool(&receipt, "real_simulator_source"), Some(true));
+        let gate = verify_simulator_telemetry_gate(dir.path());
+        assert_eq!(gate.status, "pass");
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn simulator_telemetry_proof_rejects_artifact_provenance_mismatch() -> TestResult {
         let dir = tempfile::tempdir()?;
         write_simulator_telemetry_jsonl(
