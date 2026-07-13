@@ -184,14 +184,18 @@ fn run_recorded_output_lifecycle(
         let _ = backend.write_frame(&encoded);
     }
 
+    let writes_before_stop_all = backend.attempted_writes;
     let stop_all_result = backend.write_frame(&[0x7f, 0x00]);
+    let stop_all_attempted = backend.attempted_writes > writes_before_stop_all;
+    let writes_before_final_zero = backend.attempted_writes;
     let final_zero_result = backend.write_frame(&[0x00, 0x00]);
+    let final_zero_attempted = backend.attempted_writes > writes_before_final_zero;
 
     LifecycleReceipt {
         status: backend.status(),
-        stop_all_attempted: true,
+        stop_all_attempted,
         stop_all_accepted: stop_all_result.is_ok(),
-        final_zero_attempted: true,
+        final_zero_attempted,
         final_zero_accepted: final_zero_result.is_ok(),
         cleanup_interrupted: matches!(stop_all_result, Err(OutputWriteError::Interrupted))
             || matches!(final_zero_result, Err(OutputWriteError::Interrupted)),
@@ -1017,6 +1021,53 @@ fn test_recorded_output_lifecycle_failure_matrix_is_bounded(
         }
     }
 
+    Ok(())
+}
+
+#[test]
+fn test_recorded_output_lifecycle_is_deterministic() -> Result<(), Box<dyn std::error::Error>> {
+    let replayed_frames = [
+        ReplayFrame {
+            sequence: 1,
+            timestamp_ns: 10,
+            ffb_scalar: 0.25,
+        },
+        ReplayFrame {
+            sequence: 2,
+            timestamp_ns: 20,
+            ffb_scalar: -0.5,
+        },
+    ];
+
+    let mut first_backend = RecordedOutputBackend::new([
+        PlannedWrite::Accept,
+        PlannedWrite::Accept,
+        PlannedWrite::Accept,
+        PlannedWrite::Accept,
+    ]);
+    let first_receipt = run_recorded_output_lifecycle(&mut first_backend, &replayed_frames);
+
+    let mut second_backend = RecordedOutputBackend::new([
+        PlannedWrite::Accept,
+        PlannedWrite::Accept,
+        PlannedWrite::Accept,
+        PlannedWrite::Accept,
+    ]);
+    let second_receipt = run_recorded_output_lifecycle(&mut second_backend, &replayed_frames);
+
+    assert_eq!(first_receipt, second_receipt);
+    assert_eq!(
+        first_backend.recorded_frames,
+        second_backend.recorded_frames
+    );
+    assert_eq!(
+        first_receipt.status.attempted_writes,
+        replayed_frames.len() + 2
+    );
+    assert!(first_receipt.stop_all_attempted);
+    assert!(first_receipt.final_zero_attempted);
+    assert!(first_receipt.stop_all_accepted);
+    assert!(first_receipt.final_zero_accepted);
     Ok(())
 }
 
