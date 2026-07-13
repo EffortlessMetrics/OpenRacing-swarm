@@ -11379,6 +11379,60 @@ wheelctl moza audit-lane --lane ci/hardware/moza-r5/2026-05-13 --stage native-vi
 If promotion was incorrect, add a corrective PR that preserves the faulty
 receipt and demotes the manifest with analysis. Do not erase evidence.
 
+## Work item: calibration-range-safety
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: reliable calibrated input mapping for later simulator and hardware proof
+Blocked by: n/a
+
+### Goal
+
+Keep axis calibration finite, bounded, monotonic, and backward-compatible when
+calibration ranges are partial, raw samples are outside the range, persisted
+dead-zone fields use legacy full-u16 defaults, or dead-zone bounds are invalid.
+
+### Production delta
+
+Clamp raw inputs and dead-zone bounds in `AxisCalibration::apply()` using the
+axis's raw coordinate space, saturate degenerate ranges to the documented
+midpoint, and resolve inverted or collapsed dead-zones without underflow,
+division by zero, or non-finite output.
+
+### Non-goals
+
+No Moza protocol change, input-role promotion, simulator receipt, hardware
+output, authorization, native-visible promotion, smoke-ready promotion, or
+release claim.
+
+### Acceptance
+
+- Default and legacy `0..=u16::MAX` dead-zones are no-ops for nonzero-min axes.
+- Explicit nonzero dead-zones remap the calibrated span correctly.
+- Raw values below/above the calibrated range saturate to `[0.0, 1.0]`.
+- Inverted, collapsed, and zero-width inputs remain finite and deterministic.
+- Regression, property, engine, doctest, policy, package-surface, and diff
+  checks pass.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p openracing-calibration --all-features
+cargo test --locked -p racing-wheel-engine --test calibration_deep_tests --test calibration_workflow_tests --all-features
+cargo clippy --locked -p openracing-calibration --all-targets --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert the calibration implementation, regression coverage, and this plan
+item together. Do not alter Moza hardware receipts or readiness state.
+
 ## Later work
 
 - Capture the planned passive USB sniff scenarios, generate non-claiming
