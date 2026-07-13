@@ -155,10 +155,9 @@ mod ffb_strength_tests {
 
     #[test]
     fn ffb_strength_with_custom_range() {
-        // For AxisCalibration, deadzones are divided by range in apply(),
-        // so set deadzone_max = range to get correct 0-1 mapping
-        let range = 50000 - 10000;
-        let axis = AxisCalibration::new(10000, 50000).with_deadzone(0, range);
+        // deadzone bounds share the same raw coordinate space as min/max,
+        // so matching them to the axis range is a no-op.
+        let axis = AxisCalibration::new(10000, 50000).with_deadzone(10000, 50000);
         let mid = 30000;
         assert_near(axis.apply(mid), 0.5, "mid-range FFB");
     }

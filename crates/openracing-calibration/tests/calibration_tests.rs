@@ -36,8 +36,9 @@ mod axis_calibration {
 
     #[test]
     fn partial_range_with_matching_deadzone_maps_full_span() {
-        // deadzone values are divided by range, so use 0..range for full mapping
-        let cal = AxisCalibration::new(1000, 2000).with_deadzone(0, 1000);
+        // deadzone values live in the same raw coordinate space as min/max,
+        // so a deadzone matching the axis range is a no-op.
+        let cal = AxisCalibration::new(1000, 2000).with_deadzone(1000, 2000);
         assert!((cal.apply(1000) - 0.0).abs() < 0.01);
         assert!((cal.apply(1500) - 0.5).abs() < 0.01);
         assert!((cal.apply(2000) - 1.0).abs() < 0.01);
@@ -88,10 +89,15 @@ mod axis_calibration {
 
     #[test]
     fn apply_within_range_is_clamped_to_zero_one() {
-        // Note: apply() assumes raw >= min (u16 subtraction underflows otherwise)
         let cal = AxisCalibration::new(100, 200);
+        let below_min = cal.apply(50);
         let at_min = cal.apply(100);
         let above = cal.apply(200);
+        assert!(
+            (below_min - 0.0).abs() < 0.01,
+            "raw below min must saturate to 0.0, got {}",
+            below_min
+        );
         assert!(at_min >= 0.0, "output must be >= 0.0, got {}", at_min);
         assert!(above <= 1.0, "output must be <= 1.0, got {}", above);
     }
@@ -461,7 +467,8 @@ mod property_tests {
             min in 0u16..=32767,
             raw_offset in 0u16..=32767u16,
         ) {
-            // apply() does `raw - self.min` so raw must be >= min to avoid underflow
+            // Inputs may be outside the calibrated span; apply() must remain
+            // bounded and finite by saturating to the span endpoints.
             let max = min.saturating_add(1).max(min + 1);
             let raw = min.saturating_add(raw_offset);
             let cal = AxisCalibration::new(min, max);

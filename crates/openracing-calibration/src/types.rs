@@ -58,8 +58,16 @@ pub struct AxisCalibration {
     /// Maximum raw value observed (full-right / pedal fully pressed).
     pub max: u16,
     /// Lower dead-zone boundary (raw values below this map to 0.0).
+    ///
+    /// Stored in the same raw coordinate space as `min`/`max`. The default
+    /// (`0`) and any legacy-deserialized value at or below `min` are a no-op:
+    /// [`apply`](Self::apply) clamps this bound into `[min, max]`.
     pub deadzone_min: u16,
     /// Upper dead-zone boundary (raw values above this map to 1.0).
+    ///
+    /// Stored in the same raw coordinate space as `min`/`max`. The default
+    /// (`u16::MAX`) and any legacy-deserialized value at or above `max` are
+    /// a no-op: [`apply`](Self::apply) clamps this bound into `[min, max]`.
     pub deadzone_max: u16,
 }
 
@@ -78,8 +86,10 @@ impl Default for AxisCalibration {
 impl AxisCalibration {
     /// Creates an axis calibration with the given raw min/max range.
     ///
-    /// Center and dead-zone are unset; use [`with_center`](Self::with_center)
-    /// and [`with_deadzone`](Self::with_deadzone) to configure them.
+    /// Center is unset and the dead-zone defaults to `0..=u16::MAX`, which
+    /// [`apply`](Self::apply) treats as a no-op regardless of `min`/`max`.
+    /// Use [`with_center`](Self::with_center) and
+    /// [`with_deadzone`](Self::with_deadzone) to configure them explicitly.
     ///
     /// # Examples
     ///
@@ -116,9 +126,12 @@ impl AxisCalibration {
         self
     }
 
-    /// Sets the dead-zone boundaries in raw units.
+    /// Sets the dead-zone boundaries in raw units, in the same coordinate
+    /// space as the axis's `min`/`max`.
     ///
-    /// Values below `min` map to `0.0`; values above `max` map to `1.0`.
+    /// Values at or below `min` map to `0.0`; values at or above `max` map
+    /// to `1.0`. [`apply`](Self::apply) clamps both bounds into the axis's
+    /// `[min, max]` range, so bounds outside that range are harmless.
     ///
     /// # Examples
     ///
@@ -148,23 +161,36 @@ impl AxisCalibration {
     /// assert!((cal.apply(0) - 0.0).abs() < 0.01);
     /// assert!((cal.apply(500) - 0.5).abs() < 0.01);
     /// assert!((cal.apply(1000) - 1.0).abs() < 0.01);
+    ///
+    /// // A non-zero-min axis with the default dead-zone still maps its
+    /// // full calibrated span to [0.0, 1.0].
+    /// let pedal = AxisCalibration::new(1000, 3000);
+    /// assert!((pedal.apply(1000) - 0.0).abs() < 0.01);
+    /// assert!((pedal.apply(2000) - 0.5).abs() < 0.01);
+    /// assert!((pedal.apply(3000) - 1.0).abs() < 0.01);
     /// ```
     pub fn apply(&self, raw: u16) -> f32 {
-        let range = (self.max - self.min) as f32;
+        let range = self.max.saturating_sub(self.min) as f32;
         if range <= 0.0 {
             return 0.5;
         }
 
-        let normalized = ((raw - self.min) as f32 / range).clamp(0.0, 1.0);
+        let normalized = (raw.clamp(self.min, self.max) - self.min) as f32 / range;
 
-        // Apply deadzone
-        let dz_min = self.deadzone_min as f32 / range;
-        let dz_max = self.deadzone_max as f32 / range;
+        // Deadzone bounds are raw values in the same coordinate space as
+        // `min`/`max`. Clamp them into `[min, max]` before normalizing so
+        // legacy or default bounds (0..=u16::MAX) act as a no-op instead of
+        // compressing the calibrated span, and so inverted/collapsed bounds
+        // resolve to a deterministic, finite result rather than NaN.
+        let dz_min_raw = self.deadzone_min.clamp(self.min, self.max);
+        let dz_max_raw = self.deadzone_max.clamp(self.min, self.max).max(dz_min_raw);
+        let dz_min = (dz_min_raw - self.min) as f32 / range;
+        let dz_max = (dz_max_raw - self.min) as f32 / range;
 
-        if normalized < dz_min {
+        if normalized <= dz_min {
             return 0.0;
         }
-        if normalized > dz_max {
+        if normalized >= dz_max {
             return 1.0;
         }
 

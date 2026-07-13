@@ -25,8 +25,9 @@ mod axis_calibration_tests {
 
     #[test]
     fn partial_range_with_matching_deadzones() -> TestResult {
-        // Default deadzones (0, 65535) divide by range, so set matching ones
-        let calib = AxisCalibration::new(1000, 3000).with_deadzone(0, 2000); // match the range width
+        // deadzone bounds are raw values in the same coordinate space as
+        // min/max, so a deadzone matching the axis range is a no-op.
+        let calib = AxisCalibration::new(1000, 3000).with_deadzone(1000, 3000);
         assert!((calib.apply(1000) - 0.0).abs() < 0.001, "min → 0.0");
         assert!((calib.apply(2000) - 0.5).abs() < 0.01, "mid → 0.5");
         assert!((calib.apply(3000) - 1.0).abs() < 0.001, "max → 1.0");
@@ -446,7 +447,8 @@ mod prop_tests {
             raw_offset in 0u16..=65534u16,
         ) {
             let max_val = min_val.saturating_add(max_offset);
-            // raw must be >= min to avoid u16 underflow in apply()
+            // The input is kept within the calibrated range for this
+            // monotonicity check; apply() also saturates outside it.
             let raw = min_val.saturating_add(raw_offset % (max_val - min_val + 1));
             let calib = AxisCalibration::new(min_val, max_val);
             let out = calib.apply(raw);
@@ -464,7 +466,8 @@ mod prop_tests {
             raw_offset in 0u16..=65534u16,
         ) {
             let max_val = min_val.saturating_add(max_offset);
-            // Only apply with raw >= min to avoid u16 underflow
+            // Keep this case within the calibrated range; out-of-range
+            // values are covered by the dedicated saturation regressions.
             let raw = if max_val > min_val {
                 min_val.saturating_add(raw_offset % (max_val - min_val + 1))
             } else {
@@ -503,7 +506,7 @@ mod prop_tests {
             val in 0u16..=65535u16,
         ) {
             let calib = AxisCalibration::new(val, val);
-            // Only apply with raw == val to avoid underflow
+            // A collapsed range is defined for its single calibration value.
             let out = calib.apply(val);
             prop_assert!(
                 (out - 0.5).abs() < 0.001,
@@ -537,8 +540,7 @@ mod calibration_workflow_tests {
         assert_eq!(axis.center, Some(500));
 
         // Step 4: apply deadzone
-        let range = axis.max - axis.min;
-        let axis_with_dz = axis.with_deadzone(0, range);
+        let axis_with_dz = axis.clone().with_deadzone(axis.min, axis.max);
 
         let mid = axis_with_dz.apply(500);
         assert!(mid > 0.0 && mid < 1.0, "mid-range works: {mid}");
@@ -874,10 +876,10 @@ mod multi_axis_deep_tests {
             *a = AxisCalibration::new(500, 1500);
         }
 
-        // Each axis maps independently with matching deadzones
+        // Each axis maps independently with a deadzone matching its own range
         let a0 = device.axes[0].clone().with_deadzone(0, 1000);
-        let a1 = device.axes[1].clone().with_deadzone(0, 1000);
-        let a2 = device.axes[2].clone().with_deadzone(0, 1000);
+        let a1 = device.axes[1].clone().with_deadzone(1000, 2000);
+        let a2 = device.axes[2].clone().with_deadzone(500, 1500);
 
         let v0 = a0.apply(500);
         let v1 = a1.apply(1500);
@@ -956,9 +958,8 @@ mod pedal_nonlinear_tests {
     #[test]
     fn pedal_narrow_physical_range() -> TestResult {
         let axes = create_pedal_calibration(&[30000, 40000], &[30000, 40000], &[30000, 40000])?;
-        // Set deadzones to match the range for proper mapping
-        let range = axes[0].max - axes[0].min;
-        let throttle = axes[0].clone().with_deadzone(0, range);
+        // Deadzone matching the axis range is a no-op.
+        let throttle = axes[0].clone().with_deadzone(30000, 40000);
 
         assert!((throttle.apply(30000) - 0.0).abs() < 0.01);
         assert!((throttle.apply(35000) - 0.5).abs() < 0.01);
@@ -994,10 +995,10 @@ mod pedal_nonlinear_tests {
         assert_eq!(axes[2].min, 10000);
         assert_eq!(axes[2].max, 55000);
 
-        // Each maps its range to [0,1] with matching deadzones
+        // Each maps its own range to [0,1] with a matching (no-op) deadzone
         let t = axes[0].clone().with_deadzone(0, 50000);
-        let b = axes[1].clone().with_deadzone(0, 55000);
-        let c = axes[2].clone().with_deadzone(0, 45000);
+        let b = axes[1].clone().with_deadzone(5000, 60000);
+        let c = axes[2].clone().with_deadzone(10000, 55000);
 
         assert!((t.apply(25000) - 0.5).abs() < 0.01);
         assert!((b.apply(32500) - 0.5).abs() < 0.01);
@@ -1225,9 +1226,8 @@ mod additional_edge_cases {
     #[test]
     fn axis_apply_at_boundaries() -> TestResult {
         let calib = AxisCalibration::new(100, 200);
-        // Below min: raw < min causes underflow if not handled, but u16 wraps
-        // At exact min and max with matching deadzones
-        let calib_dz = calib.with_deadzone(0, 100);
+        // Deadzone matching the axis range is a no-op.
+        let calib_dz = calib.with_deadzone(100, 200);
         let at_min = calib_dz.apply(100);
         let at_max = calib_dz.apply(200);
         assert!((at_min - 0.0).abs() < 0.01, "at min: {at_min}");

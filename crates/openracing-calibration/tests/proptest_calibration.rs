@@ -6,11 +6,9 @@ mod proptest_calibration {
     use proptest::prelude::*;
 
     /// Helper: build an AxisCalibration with no deadzone distortion.
-    /// The default deadzone_max (0xFFFF) causes remapping when range < 65535,
-    /// so we set deadzone to match the exact range for clean mapping tests.
+    /// Set deadzone bounds to match min/max exactly for clean mapping tests.
     fn no_deadzone_calib(min: u16, max: u16) -> AxisCalibration {
-        let range = max.saturating_sub(min);
-        AxisCalibration::new(min, max).with_deadzone(0, range)
+        AxisCalibration::new(min, max).with_deadzone(min, max)
     }
 
     proptest! {
