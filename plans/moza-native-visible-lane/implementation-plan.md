@@ -11483,6 +11483,60 @@ git diff --check
 Revert the calibration implementation, regression coverage, and this plan
 item together. Do not alter Moza hardware receipts or readiness state.
 
+## Work item: record-real-game-udp-telemetry
+
+Status: completed
+
+Proposal: `docs/proposals/OR-PROP-0001-moza-native-visible-lane.md`
+Spec: `docs/specs/OR-SPEC-0001-moza-native-visible-lane.md`
+ADR: `docs/adr/0009-hardware-validation-evidence-state-machine.md`
+
+### Goal
+
+Provide a real-game telemetry recorder path for the installed DiRT Rally 2.0
+Codemasters Mode 1 UDP source so simulator evidence does not depend on a
+SimHub bridge or offline fixture input.
+
+### Production delta
+
+`wheelctl telemetry record --live-game --game dirt_rally_2` binds the selected
+UDP port, normalizes packets through the existing `DirtRally2Adapter`, counts
+received bytes and parse failures, and writes ordered JSONL snapshots with
+`recording_origin=live_game_adapter` and `real_simulator_source=true`. The
+existing simulator provenance gate already allows this exact real-game origin.
+
+### Non-goals and claim boundary
+
+- This slice does not launch a game, open HID, send FFB, or authorize output.
+- A successful recorder artifact proves only real-game telemetry observation;
+  it does not prove simulator FFB, visible motion, smoke readiness, or release
+  readiness.
+- Offline input and checked-in fixtures remain rehearsal-only.
+
+### Acceptance
+
+- Valid Codemasters Mode 1 packets produce normalized ordered snapshots.
+- Invalid packets are counted and never create an output artifact when no valid
+  snapshot exists.
+- Conflicting live/input flags fail before binding a socket.
+- Every real-game record carries the existing no-output provenance fields and
+  the provenance accepted by `simulator-telemetry-proof`.
+
+### Proof
+
+- `python scripts/cargo_fmt_workspace.py`
+- `cargo test --locked -p wheelctl --bin wheelctl telemetry -- --nocapture`
+- `cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings`
+- `cargo run --locked -p openracing-tools --bin package-surface -- --check`
+- `python scripts/policy_file.py`
+- `git diff --check`
+
+### Rollback
+
+Revert the live-game recorder commit and remove only this work item. Preserve
+any real-game telemetry receipts as diagnostic artifacts; do not promote them
+to simulator FFB or smoke-ready evidence without the later gates.
+
 ## Later work
 
 - Capture the planned passive USB sniff scenarios, generate non-claiming

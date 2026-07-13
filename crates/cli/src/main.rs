@@ -1681,7 +1681,9 @@ mod tests {
                 telemetry_source,
                 input,
                 live_simhub,
+                live_game,
                 port,
+                game_port,
                 out,
                 session_id,
                 duration_ms,
@@ -1690,7 +1692,9 @@ mod tests {
                 assert_eq!(telemetry_source, "simhub_bridge");
                 assert_eq!(input.as_deref(), Some("normalized.jsonl"));
                 assert!(!live_simhub);
+                assert!(!live_game);
                 assert_eq!(*port, 5555);
+                assert_eq!(*game_port, None);
                 assert_eq!(out, "simulator-telemetry-recording.jsonl");
                 assert_eq!(session_id.as_deref(), Some("session-001"));
                 assert_eq!(*duration_ms, 5000);
@@ -1726,7 +1730,9 @@ mod tests {
                 telemetry_source,
                 input,
                 live_simhub,
+                live_game,
                 port,
+                game_port,
                 out,
                 session_id,
                 duration_ms,
@@ -1735,12 +1741,56 @@ mod tests {
                 assert_eq!(telemetry_source, "simhub_bridge");
                 assert!(input.is_none());
                 assert!(*live_simhub);
+                assert!(!live_game);
                 assert_eq!(*port, 5556);
+                assert_eq!(*game_port, None);
                 assert_eq!(out, "simulator-telemetry-recording.jsonl");
                 assert_eq!(session_id.as_deref(), Some("session-001"));
                 assert_eq!(*duration_ms, 5000);
             }
             _ => return Err("expected Telemetry Record command".into()),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_telemetry_record_live_game() -> TestResult {
+        let cli = parse_cli([
+            "wheelctl",
+            "telemetry",
+            "record",
+            "--game",
+            "dirt_rally_2",
+            "--live-game",
+            "--game-port",
+            "20777",
+            "--out",
+            "simulator-telemetry-recording.jsonl",
+            "--duration-ms",
+            "30000",
+        ])?;
+        match &cli.command {
+            Commands::Telemetry(TelemetryCommands::Record {
+                game,
+                telemetry_source,
+                input,
+                live_simhub,
+                live_game,
+                port,
+                game_port,
+                duration_ms,
+                ..
+            }) => {
+                assert_eq!(game, "dirt_rally_2");
+                assert_eq!(telemetry_source, "real_game");
+                assert!(input.is_none());
+                assert!(!live_simhub);
+                assert!(*live_game);
+                assert_eq!(*port, 5555);
+                assert_eq!(*game_port, Some(20777));
+                assert_eq!(*duration_ms, 30000);
+            }
+            _ => return Err("expected live game Telemetry Record command".into()),
         }
         Ok(())
     }

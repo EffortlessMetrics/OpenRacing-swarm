@@ -4,6 +4,8 @@ use crate::commands::TelemetryCommands;
 use crate::error::CliError;
 use anyhow::{Context, Result, anyhow};
 use chrono::{SecondsFormat, Utc};
+use openracing_telemetry_adapters::TelemetryAdapter;
+use openracing_telemetry_adapters::dirt_rally_2::DirtRally2Adapter;
 use openracing_telemetry_adapters::simhub::parse_simhub_packet;
 use serde_json::Value;
 use std::fs::File;
@@ -30,6 +32,8 @@ use virtual_ffb::write_virtual_ffb_log;
 
 const NORMALIZED_INPUT_RECORDING_ORIGIN: &str = "normalized_input";
 const LIVE_SIMHUB_RECORDING_ORIGIN: &str = "live_simhub_udp";
+const LIVE_GAME_RECORDING_ORIGIN: &str = "live_game_adapter";
+const DIRT_RALLY_2_GAME_ID: &str = "dirt_rally_2";
 
 /// Execute telemetry command.
 pub async fn execute(cmd: &TelemetryCommands, json: bool) -> Result<()> {
@@ -52,12 +56,26 @@ pub async fn execute(cmd: &TelemetryCommands, json: bool) -> Result<()> {
             telemetry_source,
             input,
             live_simhub,
+            live_game,
             port,
+            game_port,
             out,
             session_id,
             duration_ms,
-        } => match (live_simhub, input.as_deref()) {
-            (true, None) => {
+        } => match (*live_game, *live_simhub, input.as_deref()) {
+            (true, false, None) => {
+                record_live_game_snapshots(
+                    game,
+                    telemetry_source,
+                    game_port.unwrap_or(20777),
+                    out,
+                    session_id.as_deref(),
+                    *duration_ms,
+                    json,
+                )
+                .await
+            }
+            (false, true, None) => {
                 record_live_simhub_snapshots(
                     game,
                     telemetry_source,
@@ -69,7 +87,7 @@ pub async fn execute(cmd: &TelemetryCommands, json: bool) -> Result<()> {
                 )
                 .await
             }
-            (false, Some(input)) => {
+            (false, false, Some(input)) => {
                 record_normalized_snapshots(
                     game,
                     telemetry_source,
@@ -81,12 +99,16 @@ pub async fn execute(cmd: &TelemetryCommands, json: bool) -> Result<()> {
                 )
                 .await
             }
-            (true, Some(_)) => Err(CliError::InvalidConfiguration(
+            (true, _, _) => Err(CliError::InvalidConfiguration(
+                "--live-game cannot be combined with --input or --live-simhub".to_string(),
+            )
+            .into()),
+            (false, true, Some(_)) => Err(CliError::InvalidConfiguration(
                 "--input cannot be combined with --live-simhub".to_string(),
             )
             .into()),
-            (false, None) => Err(CliError::InvalidConfiguration(
-                "--input is required unless --live-simhub is set".to_string(),
+            (false, false, None) => Err(CliError::InvalidConfiguration(
+                "--input is required unless --live-simhub or --live-game is set".to_string(),
             )
             .into()),
         },
@@ -576,6 +598,168 @@ async fn record_live_simhub_snapshots_from_socket(
     Ok(())
 }
 
+async fn record_live_game_snapshots(
+    game_id: &str,
+    telemetry_source: &str,
+    port: u16,
+    output_path: &str,
+    session_id: Option<&str>,
+    duration_ms: u64,
+    json: bool,
+) -> Result<()> {
+    validate_record_metadata(game_id, telemetry_source)?;
+    if game_id != DIRT_RALLY_2_GAME_ID {
+        return Err(CliError::InvalidConfiguration(
+            "--live-game currently supports only --game dirt_rally_2".to_string(),
+        )
+        .into());
+    }
+    if telemetry_source != "real_game" {
+        return Err(CliError::InvalidConfiguration(
+            "--live-game requires --telemetry-source real_game".to_string(),
+        )
+        .into());
+    }
+    if duration_ms == 0 {
+        return Err(CliError::InvalidConfiguration(
+            "--duration-ms must be > 0 for --live-game".to_string(),
+        )
+        .into());
+    }
+    if port == 0 {
+        return Err(CliError::InvalidConfiguration(
+            "--port must be > 0 for --live-game".to_string(),
+        )
+        .into());
+    }
+
+    let bind_addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port));
+    let socket = UdpSocket::bind(bind_addr).await.with_context(|| {
+        format!(
+            "failed to bind {} UDP telemetry socket at {} (is the game or another recorder already using this port?)",
+            game_id, bind_addr
+        )
+    })?;
+    let adapter = DirtRally2Adapter::new().with_port(port);
+    let session_id = session_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| default_recorder_session_id(game_id));
+    let input_label = format!("udp://{bind_addr}");
+    let start = Instant::now();
+    let deadline = start + Duration::from_millis(duration_ms);
+    let mut buf = [0u8; MAX_PACKET_SIZE];
+    let mut snapshots = Vec::new();
+    let mut packets_received = 0u64;
+    let mut bytes_received = 0u64;
+    let mut parse_errors = 0u64;
+    let mut previous_timestamp_ns = None;
+
+    while Instant::now() < deadline {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let timeout = remaining.min(Duration::from_millis(100));
+        let recv = tokio::time::timeout(timeout, socket.recv_from(&mut buf)).await;
+        let (len, _) = match recv {
+            Ok(Ok(value)) => value,
+            Ok(Err(error)) => {
+                return Err(anyhow!("{} telemetry receive failed: {}", game_id, error));
+            }
+            Err(_) => continue,
+        };
+        packets_received = packets_received.saturating_add(1);
+        bytes_received = bytes_received
+            .saturating_add(u64::try_from(len).context("received game packet length overflow")?);
+
+        let normalized = match adapter.normalize(&buf[..len]) {
+            Ok(normalized) => normalized,
+            Err(_) => {
+                parse_errors = parse_errors.saturating_add(1);
+                continue;
+            }
+        };
+        let mut snapshot = serde_json::to_value(normalized)?;
+        let sequence = u64::try_from(snapshots.len()).context("too many live telemetry records")?;
+        let mut timestamp_ns = start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+        if previous_timestamp_ns
+            .map(|previous| timestamp_ns <= previous)
+            .unwrap_or(false)
+        {
+            timestamp_ns = previous_timestamp_ns.unwrap_or(0).saturating_add(1);
+        }
+        previous_timestamp_ns = Some(timestamp_ns);
+        let Some(object) = snapshot.as_object_mut() else {
+            return Err(anyhow!(
+                "normalized {} snapshot is not a JSON object",
+                game_id
+            ));
+        };
+        object.insert("sequence".to_string(), serde_json::json!(sequence));
+        object.insert("timestamp_ns".to_string(), serde_json::json!(timestamp_ns));
+        object.insert("raw_packet_bytes".to_string(), serde_json::json!(len));
+        stamp_record_provenance(
+            &mut snapshot,
+            game_id,
+            telemetry_source,
+            &session_id,
+            duration_ms,
+            LIVE_GAME_RECORDING_ORIGIN,
+            true,
+        )?;
+        snapshots.push(snapshot);
+    }
+
+    if snapshots.is_empty() {
+        return Err(anyhow!(
+            "live {} recording listened on {}, received {} packet(s), {} byte(s), {} parse error(s), and produced no valid normalized snapshots; no telemetry artifact was written to {}",
+            game_id,
+            input_label,
+            packets_received,
+            bytes_received,
+            parse_errors,
+            output_path
+        ));
+    }
+    write_jsonl_values(output_path, &snapshots)?;
+
+    let normalized_snapshot_count =
+        u64::try_from(snapshots.len()).context("too many normalized telemetry records")?;
+    let summary = LiveRecordSummary {
+        command: RECORD_COMMAND,
+        game: game_id.to_string(),
+        telemetry_source: telemetry_source.to_string(),
+        input: input_label,
+        output: output_path.to_string(),
+        recorder_session_id: session_id,
+        recording_origin: LIVE_GAME_RECORDING_ORIGIN,
+        real_simulator_source: true,
+        normalized_snapshot_count,
+        duration_ms,
+        packets_received,
+        bytes_received,
+        parse_errors,
+        hardware_output_enabled: false,
+        no_hid_device_opened: true,
+        no_ffb_writes: true,
+        no_serial_config_commands: true,
+        no_firmware_or_dfu_commands: true,
+    };
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&summary)?);
+    } else {
+        println!("Live {} telemetry recording complete", game_id);
+        println!("  listen: {}", summary.input);
+        println!("  snapshots: {}", summary.normalized_snapshot_count);
+        println!("  packets_received: {}", summary.packets_received);
+        println!("  parse_errors: {}", summary.parse_errors);
+        println!("  session: {}", summary.recorder_session_id);
+        println!("  output: {}", summary.output);
+    }
+
+    Ok(())
+}
+
 fn validate_record_metadata(game_id: &str, telemetry_source: &str) -> Result<()> {
     if game_id.trim().is_empty() {
         return Err(CliError::InvalidConfiguration("--game must not be empty".to_string()).into());
@@ -925,6 +1109,10 @@ mod tests {
             "FFBValue": 0.2
         })
         .to_string()
+    }
+
+    fn dirt_rally_2_packet() -> Vec<u8> {
+        vec![0u8; 264]
     }
 
     fn telemetry_fixture_path(relative: &str) -> PathBuf {
@@ -1367,7 +1555,9 @@ mod tests {
             telemetry_source: "simhub_bridge".to_string(),
             input: Some(input.to_str().ok_or("input path not UTF-8")?.to_string()),
             live_simhub: false,
+            live_game: false,
             port: DEFAULT_SIMHUB_PORT,
+            game_port: None,
             out: output.to_str().ok_or("output path not UTF-8")?.to_string(),
             session_id: None,
             duration_ms: 1000,
@@ -1564,6 +1754,155 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn record_live_game_snapshots_writes_real_source_provenance() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let output = dir.path().join("recording.jsonl");
+        let reservation =
+            UdpSocket::bind(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))).await?;
+        let port = reservation.local_addr()?.port();
+        drop(reservation);
+        let output_for_task = output.clone();
+        let task = tokio::spawn(async move {
+            record_live_game_snapshots(
+                "dirt_rally_2",
+                "real_game",
+                port,
+                output_for_task
+                    .to_str()
+                    .ok_or_else(|| anyhow!("output path not UTF-8"))?,
+                Some("dirt-live-session-001"),
+                250,
+                false,
+            )
+            .await
+        });
+
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        let sender =
+            UdpSocket::bind(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))).await?;
+        let packet = dirt_rally_2_packet();
+        for _ in 0..3 {
+            sender
+                .send_to(&packet, SocketAddrV4::new(Ipv4Addr::LOCALHOST, port))
+                .await?;
+        }
+
+        task.await??;
+
+        let records = read_jsonl_values(&output)?;
+        assert_eq!(records.len(), 3);
+        for (sequence, record) in records.iter().enumerate() {
+            assert_eq!(
+                record.get("game").and_then(Value::as_str),
+                Some("dirt_rally_2")
+            );
+            assert_eq!(
+                record.get("telemetry_source").and_then(Value::as_str),
+                Some("real_game")
+            );
+            assert_eq!(
+                record.get("recording_origin").and_then(Value::as_str),
+                Some(LIVE_GAME_RECORDING_ORIGIN)
+            );
+            assert_eq!(
+                record.get("real_simulator_source").and_then(Value::as_bool),
+                Some(true)
+            );
+            assert_eq!(
+                record
+                    .get("hardware_output_enabled")
+                    .and_then(Value::as_bool),
+                Some(false)
+            );
+            assert_eq!(
+                record.get("no_ffb_writes").and_then(Value::as_bool),
+                Some(true)
+            );
+            assert_eq!(
+                record.get("raw_packet_bytes").and_then(Value::as_u64),
+                Some(264)
+            );
+            assert_eq!(
+                record.get("sequence").and_then(Value::as_u64),
+                Some(sequence as u64)
+            );
+            assert!(normalized_telemetry_payload_is_valid(record));
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn record_live_game_snapshots_rejects_invalid_capture_without_output() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let output = dir.path().join("recording.jsonl");
+        let reservation =
+            UdpSocket::bind(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))).await?;
+        let port = reservation.local_addr()?.port();
+        drop(reservation);
+        let output_for_task = output.clone();
+        let task = tokio::spawn(async move {
+            record_live_game_snapshots(
+                "dirt_rally_2",
+                "real_game",
+                port,
+                output_for_task
+                    .to_str()
+                    .ok_or_else(|| anyhow!("output path not UTF-8"))?,
+                Some("dirt-live-session-001"),
+                100,
+                false,
+            )
+            .await
+        });
+
+        tokio::time::sleep(Duration::from_millis(15)).await;
+        let sender =
+            UdpSocket::bind(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))).await?;
+        sender
+            .send_to(
+                b"not-a-codemasters-packet",
+                SocketAddrV4::new(Ipv4Addr::LOCALHOST, port),
+            )
+            .await?;
+
+        let error = match task.await? {
+            Ok(()) => return Err("invalid live game capture unexpectedly succeeded".into()),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("received 1 packet(s)"));
+        assert!(error.contains("1 parse error(s)"));
+        assert!(error.contains("no telemetry artifact was written"));
+        assert!(!output.exists());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn execute_record_rejects_conflicting_live_game_flags() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let output = dir.path().join("recording.jsonl");
+        let command = TelemetryCommands::Record {
+            game: "dirt_rally_2".to_string(),
+            telemetry_source: "real_game".to_string(),
+            input: None,
+            live_simhub: true,
+            live_game: true,
+            port: DEFAULT_SIMHUB_PORT,
+            game_port: Some(20777),
+            out: output.to_str().ok_or("output path not UTF-8")?.to_string(),
+            session_id: None,
+            duration_ms: 1000,
+        };
+
+        let error = match execute(&command, false).await {
+            Ok(()) => return Err("conflicting live recorder flags unexpectedly succeeded".into()),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("--live-game cannot be combined"));
+        assert!(!output.exists());
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn execute_record_rejects_missing_input_without_live_simhub() -> TestResult {
         let dir = tempfile::tempdir()?;
         let output = dir.path().join("recording.jsonl");
@@ -1572,7 +1911,9 @@ mod tests {
             telemetry_source: "simhub_bridge".to_string(),
             input: None,
             live_simhub: false,
+            live_game: false,
             port: DEFAULT_SIMHUB_PORT,
+            game_port: None,
             out: output.to_str().ok_or("output path not UTF-8")?.to_string(),
             session_id: None,
             duration_ms: 1000,
@@ -1600,7 +1941,9 @@ mod tests {
             telemetry_source: "simhub_bridge".to_string(),
             input: Some(input.to_str().ok_or("input path not UTF-8")?.to_string()),
             live_simhub: true,
+            live_game: false,
             port: DEFAULT_SIMHUB_PORT,
+            game_port: None,
             out: output.to_str().ok_or("output path not UTF-8")?.to_string(),
             session_id: None,
             duration_ms: 1000,

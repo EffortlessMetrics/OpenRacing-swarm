@@ -135,8 +135,10 @@ Use `wheelctl game list` to see all supported game IDs. Use `wheelctl game confi
 
 - **Integration:** Codemasters UDP mode 1.
 - Enable UDP telemetry by editing `hardware_settings_config.xml` in the game's documents folder.
-- Default port: set to match OpenRacing (check `wheelctl game list --detailed` for expected port).
+- Default port: `20777`.
 - `wheelctl game configure dirt_rally_2`
+- Record a real-game telemetry-only session with:
+  `wheelctl telemetry record --game dirt_rally_2 --telemetry-source real_game --live-game --game-port 20777 --duration-ms 30000 --out simulator-telemetry-recording.jsonl`
 
 ### EA SPORTS WRC
 

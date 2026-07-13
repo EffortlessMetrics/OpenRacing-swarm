@@ -300,9 +300,15 @@ pub enum TelemetryCommands {
         /// Listen for live SimHub JSON UDP and record normalized snapshots
         #[arg(long)]
         live_simhub: bool,
+        /// Listen for live game UDP and record normalized snapshots through the game adapter
+        #[arg(long)]
+        live_game: bool,
         /// Local UDP listen port for --live-simhub
         #[arg(long, default_value = "5555")]
         port: u16,
+        /// Local UDP listen port for --live-game (DiRT Rally 2.0 defaults to 20777)
+        #[arg(long)]
+        game_port: Option<u16>,
         /// Output JSONL recording path
         #[arg(long)]
         out: String,
