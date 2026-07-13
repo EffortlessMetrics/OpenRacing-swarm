@@ -10,8 +10,8 @@ use crate::{PerformanceMetrics, TelemetryData, VirtualDevice, VirtualHidPort};
 use racing_wheel_schemas::prelude::*;
 use std::collections::VecDeque;
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc, Mutex,
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 use std::time::{Duration, Instant};
 
@@ -224,9 +224,9 @@ pub struct OutputValidation {
 
 #[derive(Debug, Default)]
 struct OutputTrace {
-    attempted_writes: u64,
-    rejected_writes: u64,
-    final_zero_written: bool,
+    attempted_writes: AtomicU64,
+    rejected_writes: AtomicU64,
+    final_zero_written: AtomicBool,
 }
 
 /// Timing validation results
@@ -337,7 +337,7 @@ impl RTLoopTestHarness {
 
         let device_id = devices[0].id.clone();
         let device = self.virtual_port.open_device(&device_id).await?;
-        let output_trace = Arc::new(Mutex::new(OutputTrace::default()));
+        let output_trace = Arc::new(OutputTrace::default());
 
         // Start RT loop
         let start_time = Instant::now();
@@ -366,13 +366,10 @@ impl RTLoopTestHarness {
 
         let timing_validation = self.analyze_timing_data();
         let response_validation = self.validate_responses(&scenario, &device_id).await?;
-        let output_validation = {
-            let output = output_trace.lock_or_panic();
-            OutputValidation {
-                attempted_writes: output.attempted_writes,
-                rejected_writes: output.rejected_writes,
-                final_zero_written: output.final_zero_written,
-            }
+        let output_validation = OutputValidation {
+            attempted_writes: output_trace.attempted_writes.load(Ordering::Relaxed),
+            rejected_writes: output_trace.rejected_writes.load(Ordering::Relaxed),
+            final_zero_written: output_trace.final_zero_written.load(Ordering::Acquire),
         };
 
         // Determine if test passed
@@ -446,7 +443,7 @@ impl RTLoopTestHarness {
         mut device: Box<dyn HidDevice>,
         scenario: &TestScenario,
         start_time: Instant,
-        output_trace: Arc<Mutex<OutputTrace>>,
+        output_trace: Arc<OutputTrace>,
     ) -> Result<
         tokio::task::JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>,
         Box<dyn std::error::Error>,
@@ -494,12 +491,11 @@ impl RTLoopTestHarness {
                 }
 
                 let write_result = device.write_ffb_report(torque_value, seq);
-                {
-                    let mut output = output_trace.lock_or_panic();
-                    output.attempted_writes += 1;
-                    if write_result.is_err() {
-                        output.rejected_writes += 1;
-                    }
+                output_trace
+                    .attempted_writes
+                    .fetch_add(1, Ordering::Relaxed);
+                if write_result.is_err() {
+                    output_trace.rejected_writes.fetch_add(1, Ordering::Relaxed);
                 }
                 if let Err(error) = write_result {
                     warn!("Force-feedback write rejected: {error}");
@@ -540,15 +536,16 @@ impl RTLoopTestHarness {
             }
 
             let final_zero_result = device.write_ffb_report(0.0, seq.wrapping_add(1));
+            output_trace
+                .attempted_writes
+                .fetch_add(1, Ordering::Relaxed);
             if let Err(error) = final_zero_result {
-                let mut output = output_trace.lock_or_panic();
-                output.attempted_writes += 1;
-                output.rejected_writes += 1;
+                output_trace.rejected_writes.fetch_add(1, Ordering::Relaxed);
                 return Err(format!("final zero-torque write rejected: {error}").into());
             }
-            let mut output = output_trace.lock_or_panic();
-            output.attempted_writes += 1;
-            output.final_zero_written = true;
+            output_trace
+                .final_zero_written
+                .store(true, Ordering::Release);
 
             info!(
                 "RT loop stopped after {} ticks",

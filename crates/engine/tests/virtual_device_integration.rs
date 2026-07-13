@@ -929,8 +929,8 @@ fn test_replay_rejects_malformed_telemetry_records() -> Result<(), Box<dyn std::
 }
 
 #[test]
-fn test_recorded_output_lifecycle_failure_matrix_is_bounded(
-) -> Result<(), Box<dyn std::error::Error>> {
+fn test_recorded_output_lifecycle_failure_matrix_is_bounded()
+-> Result<(), Box<dyn std::error::Error>> {
     let replayed_frames = [
         ReplayFrame {
             sequence: 1,
@@ -1072,8 +1072,8 @@ fn test_recorded_output_lifecycle_is_deterministic() -> Result<(), Box<dyn std::
 }
 
 #[test]
-fn test_recorded_output_status_is_consistent_under_concurrent_queries(
-) -> Result<(), Box<dyn std::error::Error>> {
+fn test_recorded_output_status_is_consistent_under_concurrent_queries()
+-> Result<(), Box<dyn std::error::Error>> {
     let mut backend = RecordedOutputBackend::new([
         PlannedWrite::Accept,
         PlannedWrite::Accept,
