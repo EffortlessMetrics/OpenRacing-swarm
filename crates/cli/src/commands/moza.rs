@@ -10079,9 +10079,13 @@ async fn simulator_telemetry_proof(
         snapshot_count,
         duration_ms,
     );
+    let real_source_provenance = telemetry_provenance
+        .as_ref()
+        .is_some_and(|provenance| simulator_telemetry_real_source_is_allowed(provenance));
     let success = !game.trim().is_empty()
         && source_ok
         && provenance_matches_run
+        && real_source_provenance
         && duration_ms > 0
         && snapshot_count > 0
         && artifact_valid;
@@ -10099,6 +10103,12 @@ async fn simulator_telemetry_proof(
         "telemetry_source": telemetry_source,
         "recorder_command": recorder_command,
         "recorder_session_id": recorder_session_id,
+        "recording_origin": telemetry_provenance
+            .as_ref()
+            .map(|provenance| provenance.recording_origin.as_str()),
+        "real_simulator_source": telemetry_provenance
+            .as_ref()
+            .map(|provenance| provenance.real_simulator_source),
         "hardware_output_enabled": false,
         "no_hid_device_opened": true,
         "no_ffb_writes": true,
@@ -25494,6 +25504,10 @@ fn verify_simulator_telemetry_gate(lane: &Path) -> BundleGateCheck {
     let recorder_provenance_valid = recorder_artifact
         .map(|value| simulator_telemetry_artifact_provenance_matches(lane, value, &receipt))
         .unwrap_or(false);
+    let real_source_provenance = recorder_artifact
+        .and_then(|value| read_telemetry_artifact_records(lane, value))
+        .and_then(|records| simulator_telemetry_provenance_for_records(&records))
+        .is_some_and(|provenance| simulator_telemetry_real_source_is_allowed(&provenance));
     let recorder_artifact_valid = json_string(&receipt, "recorder_artifact")
         .or_else(|| json_string(&receipt, "normalized_snapshot_artifact"))
         .map(|value| {
@@ -25516,6 +25530,7 @@ fn verify_simulator_telemetry_gate(lane: &Path) -> BundleGateCheck {
         && snapshot_count > 0
         && duration_ms > 0
         && recorder_provenance_valid
+        && real_source_provenance
         && recorder_artifact_valid
         && faults_empty;
 
@@ -25530,7 +25545,7 @@ fn verify_simulator_telemetry_gate(lane: &Path) -> BundleGateCheck {
         BundleGateCheck::fail(
             "simulator_telemetry",
             format!(
-                "success={success}, command_ok={command_ok}, game_present={}, telemetry_source={source:?}, no_ffb_writes={no_ffb_writes:?}, hardware_output_enabled={hardware_output_enabled:?}, no_out_of_scope={no_out_of_scope}, snapshot_count={snapshot_count}, duration_ms={duration_ms}, recorder_provenance_valid={recorder_provenance_valid}, recorder_artifact_valid={recorder_artifact_valid}, faults_empty={faults_empty}",
+                "success={success}, command_ok={command_ok}, game_present={}, telemetry_source={source:?}, no_ffb_writes={no_ffb_writes:?}, hardware_output_enabled={hardware_output_enabled:?}, no_out_of_scope={no_out_of_scope}, snapshot_count={snapshot_count}, duration_ms={duration_ms}, recorder_provenance_valid={recorder_provenance_valid}, real_source_provenance={real_source_provenance}, recorder_artifact_valid={recorder_artifact_valid}, faults_empty={faults_empty}",
                 !game.trim().is_empty()
             ),
         )
@@ -26084,6 +26099,19 @@ struct SimulatorTelemetryProvenance {
     recorder_session_id: String,
     game: String,
     telemetry_source: String,
+    recording_origin: String,
+    real_simulator_source: bool,
+}
+
+fn simulator_telemetry_real_source_is_allowed(provenance: &SimulatorTelemetryProvenance) -> bool {
+    provenance.real_simulator_source
+        && matches!(
+            (
+                provenance.telemetry_source.as_str(),
+                provenance.recording_origin.as_str()
+            ),
+            ("simhub_bridge", "live_simhub_udp") | ("real_game", "live_game_adapter")
+        )
 }
 
 fn simulator_telemetry_provenance_for_records(
@@ -26129,10 +26157,13 @@ fn simulator_telemetry_record_provenance(record: &Value) -> Option<SimulatorTele
         .or_else(|| telemetry_record_string(record, "session_id"))?;
     let game = telemetry_record_string(record, "game")?;
     let telemetry_source = telemetry_record_string(record, "telemetry_source")?;
+    let recording_origin = telemetry_record_string(record, "recording_origin")?;
+    let real_simulator_source = telemetry_record_bool(record, "real_simulator_source")?;
     if recorder_command != SIMULATOR_TELEMETRY_RECORDER_COMMAND
         || recorder_session_id.trim().is_empty()
         || game.trim().is_empty()
         || !matches!(telemetry_source, "real_game" | "simhub_bridge")
+        || recording_origin.trim().is_empty()
         || telemetry_record_bool(record, "hardware_output_enabled") != Some(false)
         || telemetry_record_bool(record, "no_ffb_writes") != Some(true)
         || telemetry_record_bool(record, "no_serial_config_commands") != Some(true)
@@ -26146,6 +26177,8 @@ fn simulator_telemetry_record_provenance(record: &Value) -> Option<SimulatorTele
         recorder_session_id: recorder_session_id.to_string(),
         game: game.to_string(),
         telemetry_source: telemetry_source.to_string(),
+        recording_origin: recording_origin.to_string(),
+        real_simulator_source,
     })
 }
 
@@ -49405,6 +49438,9 @@ mod tests {
     }
 
     fn simulator_telemetry_snapshot(sequence: usize) -> Value {
+        // This helper models the shape of an accepted live SimHub recording;
+        // tests that exercise `--input` use the recorder command itself, which
+        // stamps `normalized_input` and is rejected by the real-source gate.
         serde_json::json!({
             "sequence": sequence,
             "timestamp_ns": sequence as u64 * 16_666_667,
@@ -49413,6 +49449,8 @@ mod tests {
             "recording_duration_ms": 5000,
             "game": "simhub-bridge",
             "telemetry_source": "simhub_bridge",
+            "recording_origin": "live_simhub_udp",
+            "real_simulator_source": true,
             "hardware_output_enabled": false,
             "no_ffb_writes": true,
             "no_serial_config_commands": true,
@@ -66227,6 +66265,8 @@ mod tests {
             "telemetry_source": "simhub_bridge",
             "recorder_command": SIMULATOR_TELEMETRY_RECORDER_COMMAND,
             "recorder_session_id": "sim-telemetry-session-001",
+            "recording_origin": "live_simhub_udp",
+            "real_simulator_source": true,
             "hardware_output_enabled": false,
             "no_ffb_writes": true,
             "no_serial_config_commands": true,
@@ -75653,6 +75693,46 @@ mod tests {
             json_string(&receipt, "recorder_session_id"),
             Some("sim-telemetry-session-001")
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn simulator_telemetry_proof_rejects_normalized_input_rehearsal() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let recording = dir.path().join("simulator-telemetry-recording.jsonl");
+        let mut lines = String::new();
+        for sequence in 0..120 {
+            let mut record = simulator_telemetry_snapshot(sequence);
+            record["recording_origin"] = serde_json::json!("normalized_input");
+            record["real_simulator_source"] = serde_json::json!(false);
+            lines.push_str(&serde_json::to_string(&record)?);
+            lines.push('\n');
+        }
+        write_text_file(&recording, &lines)?;
+
+        let result = simulator_telemetry_proof(
+            false,
+            dir.path(),
+            "simhub-bridge",
+            "simhub_bridge",
+            Path::new("simulator-telemetry-recording.jsonl"),
+            5000,
+            None,
+            false,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let receipt = read_json_path(&dir.path().join("simulator-telemetry-proof.json"))?;
+        assert_eq!(json_bool(&receipt, "success"), Some(false));
+        assert_eq!(
+            json_string(&receipt, "recording_origin"),
+            Some("normalized_input")
+        );
+        assert_eq!(json_bool(&receipt, "real_simulator_source"), Some(false));
+        let gate = verify_simulator_telemetry_gate(dir.path());
+        assert_eq!(gate.status, "fail");
+        assert!(gate.details.contains("real_source_provenance=false"));
         Ok(())
     }
 

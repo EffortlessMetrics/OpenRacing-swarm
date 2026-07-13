@@ -11379,6 +11379,56 @@ wheelctl moza audit-lane --lane ci/hardware/moza-r5/2026-05-13 --stage native-vi
 If promotion was incorrect, add a corrective PR that preserves the faulty
 receipt and demotes the manifest with analysis. Do not erase evidence.
 
+## Work item: gate-real-simulator-telemetry-source
+
+Status: completed
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: honest simulator telemetry proof and later bounded simulator FFB
+Blocked by: n/a
+
+### Goal
+
+Prevent normalized fixture or offline `--input` rehearsal data from satisfying
+the real simulator telemetry gate.
+
+### Production delta
+
+Stamp recorder provenance with its origin and real-source state. Require an
+allowed live origin before `simulator-telemetry-proof` or its verifier gate can
+pass, while retaining offline input recordings as useful rehearsal artifacts.
+
+### Non-goals
+
+No simulator launch, no hardware output, no FFB writes, no native-visible
+promotion, no smoke-ready promotion, and no claim that a real simulator
+recording exists on the current machine.
+
+### Acceptance
+
+- Live SimHub recordings are marked `live_simhub_udp` and real-source true.
+- `--input` recordings are marked `normalized_input` and real-source false.
+- A checked-in fixture passed through `telemetry record --input` fails the
+  simulator telemetry proof and verifier gate.
+- Existing virtual FFB/replay paths remain available as rehearsal-only paths.
+
+### Proof commands
+
+```powershell
+cargo fmt --manifest-path crates/cli/Cargo.toml
+cargo test --locked -p wheelctl --bin wheelctl simulator_telemetry -- --nocapture
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert the origin fields, live-source gate, regression test, documentation, and
+this plan item together. Preserve any failed receipts as diagnostic evidence.
+
 ## Work item: calibration-range-safety
 
 Status: completed

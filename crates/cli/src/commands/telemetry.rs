@@ -28,6 +28,9 @@ use protocol::{
 use types::{CaptureSummary, LiveRecordSummary, ProbeAttempt, ProbeSummary, RecordSummary};
 use virtual_ffb::write_virtual_ffb_log;
 
+const NORMALIZED_INPUT_RECORDING_ORIGIN: &str = "normalized_input";
+const LIVE_SIMHUB_RECORDING_ORIGIN: &str = "live_simhub_udp";
+
 /// Execute telemetry command.
 pub async fn execute(cmd: &TelemetryCommands, json: bool) -> Result<()> {
     match cmd {
@@ -352,6 +355,8 @@ async fn record_normalized_snapshots(
             telemetry_source,
             &session_id,
             duration_ms,
+            NORMALIZED_INPUT_RECORDING_ORIGIN,
+            false,
         )?;
     }
 
@@ -381,6 +386,8 @@ async fn record_normalized_snapshots(
         input: input_path.to_string(),
         output: output_path.to_string(),
         recorder_session_id: session_id,
+        recording_origin: NORMALIZED_INPUT_RECORDING_ORIGIN,
+        real_simulator_source: false,
         normalized_snapshot_count,
         duration_ms,
         hardware_output_enabled: false,
@@ -512,6 +519,8 @@ async fn record_live_simhub_snapshots_from_socket(
             telemetry_source,
             &session_id,
             duration_ms,
+            LIVE_SIMHUB_RECORDING_ORIGIN,
+            true,
         )?;
         snapshots.push(snapshot);
     }
@@ -536,6 +545,8 @@ async fn record_live_simhub_snapshots_from_socket(
         input: input_label.to_string(),
         output: output_path.to_string(),
         recorder_session_id: session_id,
+        recording_origin: LIVE_SIMHUB_RECORDING_ORIGIN,
+        real_simulator_source: true,
         normalized_snapshot_count,
         duration_ms,
         packets_received,
@@ -610,6 +621,8 @@ fn stamp_record_provenance(
     telemetry_source: &str,
     session_id: &str,
     duration_ms: u64,
+    recording_origin: &str,
+    real_simulator_source: bool,
 ) -> Result<()> {
     let Some(object) = snapshot.as_object_mut() else {
         return Err(anyhow!("validated snapshot is not a JSON object"));
@@ -630,6 +643,14 @@ fn stamp_record_provenance(
     object.insert(
         "telemetry_source".to_string(),
         serde_json::json!(telemetry_source),
+    );
+    object.insert(
+        "recording_origin".to_string(),
+        serde_json::json!(recording_origin),
+    );
+    object.insert(
+        "real_simulator_source".to_string(),
+        serde_json::json!(real_simulator_source),
     );
     object.insert(
         "hardware_output_enabled".to_string(),
@@ -1088,6 +1109,14 @@ mod tests {
                 assert_eq!(
                     record.get("no_ffb_writes").and_then(Value::as_bool),
                     Some(true)
+                );
+                assert_eq!(
+                    record.get("recording_origin").and_then(Value::as_str),
+                    Some("normalized_input")
+                );
+                assert_eq!(
+                    record.get("real_simulator_source").and_then(Value::as_bool),
+                    Some(false)
                 );
                 assert_eq!(
                     record.get("sequence").and_then(Value::as_u64),
