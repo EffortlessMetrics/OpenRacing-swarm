@@ -1877,6 +1877,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn record_live_game_snapshots_rejects_empty_capture_without_output() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let output = dir.path().join("recording.jsonl");
+        let reservation =
+            UdpSocket::bind(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))).await?;
+        let port = reservation.local_addr()?.port();
+        drop(reservation);
+
+        let error = match record_live_game_snapshots(
+            "dirt_rally_2",
+            "real_game",
+            port,
+            output
+                .to_str()
+                .ok_or_else(|| anyhow!("output path not UTF-8"))?,
+            Some("dirt-live-empty-session-001"),
+            20,
+            false,
+        )
+        .await
+        {
+            Ok(()) => return Err("empty live game capture unexpectedly succeeded".into()),
+            Err(error) => error.to_string(),
+        };
+
+        assert!(error.contains("received 0 packet(s)"));
+        assert!(error.contains("0 byte(s)"));
+        assert!(error.contains("0 parse error(s)"));
+        assert!(error.contains("no telemetry artifact was written"));
+        assert!(!output.exists());
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn execute_record_rejects_conflicting_live_game_flags() -> TestResult {
         let dir = tempfile::tempdir()?;
         let output = dir.path().join("recording.jsonl");
