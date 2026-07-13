@@ -46631,11 +46631,18 @@ fn write_json_file<T: Serialize>(path: &Path, value: &T) -> Result<()> {
         });
     }
 
+    let mut destination_removed = false;
     let publish_result = fs::rename(&temp_path, path);
     if let Err(rename_error) = publish_result {
         #[cfg(windows)]
         let publish_result: std::io::Result<()> = if path.exists() {
-            fs::remove_file(path).and_then(|()| fs::rename(&temp_path, path))
+            match fs::remove_file(path) {
+                Ok(()) => {
+                    destination_removed = true;
+                    fs::rename(&temp_path, path)
+                }
+                Err(error) => Err(error),
+            }
         } else {
             Err(rename_error)
         };
@@ -46644,13 +46651,27 @@ fn write_json_file<T: Serialize>(path: &Path, value: &T) -> Result<()> {
         let publish_result: std::io::Result<()> = Err(rename_error);
 
         if let Err(error) = publish_result {
-            let _ = fs::remove_file(&temp_path);
-            return Err(error)
-                .with_context(|| format!("failed to publish receipt '{}'", path.display()));
+            cleanup_failed_receipt_temp(&temp_path, destination_removed);
+            let context = if destination_removed {
+                format!(
+                    "failed to publish receipt '{}'; temporary receipt retained at '{}'",
+                    path.display(),
+                    temp_path.display()
+                )
+            } else {
+                format!("failed to publish receipt '{}'", path.display())
+            };
+            return Err(error).with_context(|| context);
         }
     }
 
     Ok(())
+}
+
+fn cleanup_failed_receipt_temp(temp_path: &Path, destination_removed: bool) {
+    if !destination_removed {
+        let _ = fs::remove_file(temp_path);
+    }
 }
 
 fn write_text_file(path: &Path, contents: &str) -> Result<()> {
@@ -83700,6 +83721,21 @@ mod tests {
             .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
             .count();
         assert_eq!(temp_files, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn failed_receipt_publish_retains_temp_after_destination_removal() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let retained_temp_path = dir.path().join(".verification.json.1.0.tmp");
+        fs::write(&retained_temp_path, "{}")?;
+        cleanup_failed_receipt_temp(&retained_temp_path, true);
+        assert!(retained_temp_path.exists());
+
+        let cleaned_temp_path = dir.path().join(".verification.json.2.0.tmp");
+        fs::write(&cleaned_temp_path, "{}")?;
+        cleanup_failed_receipt_temp(&cleaned_temp_path, false);
+        assert!(!cleaned_temp_path.exists());
         Ok(())
     }
 }
