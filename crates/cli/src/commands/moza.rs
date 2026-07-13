@@ -10081,7 +10081,7 @@ async fn simulator_telemetry_proof(
     );
     let real_source_provenance = telemetry_provenance
         .as_ref()
-        .is_some_and(|provenance| simulator_telemetry_real_source_is_allowed(provenance));
+        .is_some_and(simulator_telemetry_real_source_is_allowed);
     let success = !game.trim().is_empty()
         && source_ok
         && provenance_matches_run
