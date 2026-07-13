@@ -3198,7 +3198,7 @@ commands = [
 
 [[work_item]]
 id = "bound-verify-bundle-runtime"
-status = "in_progress"
+status = "active"
 spec = "docs/specs/OR-SPEC-0001-moza-native-visible-lane.md"
 adr = "docs/adr/0009-hardware-validation-evidence-state-machine.md"
 plan = "plans/moza-native-visible-lane/implementation-plan.md#work-item-bound-verify-bundle-runtime"
@@ -3209,7 +3209,7 @@ commands = [
   "python scripts/cargo_fmt_workspace.py",
   "cargo test --locked -p wheelctl --bin wheelctl verify_bundle_reuses_parser_receipt_only_when_capture_hashes_match -- --nocapture",
   "cargo test --locked -p wheelctl --bin wheelctl",
-  "cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings",
+  "cargo clippy --locked -p wheelctl --all-targets --all-features -- -D warnings",
   "cargo run --locked -p openracing-tools --bin package-surface -- --check",
   "python scripts/policy_file.py",
   "git diff --check",

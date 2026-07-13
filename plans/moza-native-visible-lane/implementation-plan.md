@@ -11325,7 +11325,7 @@ native-visible claim, simulator claim, or release claim.
 python scripts/cargo_fmt_workspace.py
 cargo test --locked -p wheelctl --bin wheelctl verify_bundle_reuses_parser_receipt_only_when_capture_hashes_match -- --nocapture
 cargo test --locked -p wheelctl --bin wheelctl
-cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo clippy --locked -p wheelctl --all-targets --all-features -- -D warnings
 cargo run --locked -p openracing-tools --bin package-surface -- --check
 python scripts/policy_file.py
 git diff --check
@@ -11333,7 +11333,7 @@ git diff --check
 
 ### Rollback
 
-Revert the #669 commits, preserving the existing receipt and readiness claim
+Revert the PR #160 implementation commits, preserving the existing receipt and readiness claim
 boundaries.
 
 ## Work item: native-visible-promotion
