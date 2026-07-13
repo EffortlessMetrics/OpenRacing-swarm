@@ -11280,6 +11280,62 @@ the guided capture command, selector-verified capture handoff, timing-correlatio
 plan, two-terminal fallback, movement-blocker audit, or native-visible promotion
 block.
 
+## Work item: bound-verify-bundle-runtime
+
+Status: in_progress
+Linked issue: https://github.com/EffortlessMetrics/OpenRacing/issues/669
+Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
+Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
+Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
+Blocks: native-visible verification operability
+
+### Goal
+
+Keep the read-only Moza verifier and status command bounded and observable on
+the checked-in large capture lane without replaying expensive parser work when
+the current receipt is still bound to the same source captures.
+
+### Production delta
+
+`verify-bundle --progress` reports phase timing on stderr, publishes receipts
+atomically, and reuses parser-fixture validation only when every required
+capture SHA-256 matches the checked-in receipt. `moza status` remains receipt
+navigation and does not replay the capture set.
+
+### Non-goals
+
+No HID or serial open, output or feature report, configuration, firmware, DFU,
+authorization, hardware evidence, protocol decode, readiness promotion,
+native-visible claim, simulator claim, or release claim.
+
+### Acceptance
+
+- The checked-in lane produces a parseable expected-failure receipt naming only
+  the existing native-visible motion gate.
+- A matching parser receipt is reused; changing any source capture forces a
+  fresh replay.
+- Concurrent `verify-bundle` and `moza status` invocations complete and write
+  independent receipts.
+- JSON stdout remains machine-readable while progress remains on stderr.
+- The receipt records phase timings and atomic publication remains intact.
+
+### Proof commands
+
+```powershell
+python scripts/cargo_fmt_workspace.py
+cargo test --locked -p wheelctl --bin wheelctl verify_bundle_reuses_parser_receipt_only_when_capture_hashes_match -- --nocapture
+cargo test --locked -p wheelctl --bin wheelctl
+cargo clippy --locked -p wheelctl --bin wheelctl --all-features -- -D warnings
+cargo run --locked -p openracing-tools --bin package-surface -- --check
+python scripts/policy_file.py
+git diff --check
+```
+
+### Rollback
+
+Revert the #669 commits, preserving the existing receipt and readiness claim
+boundaries.
+
 ## Work item: native-visible-promotion
 
 Status: blocked
