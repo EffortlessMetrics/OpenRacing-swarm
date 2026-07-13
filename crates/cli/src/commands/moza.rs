@@ -46631,24 +46631,21 @@ fn write_json_file<T: Serialize>(path: &Path, value: &T) -> Result<()> {
         });
     }
 
-    let mut destination_removed = false;
     let publish_result = fs::rename(&temp_path, path);
     if let Err(rename_error) = publish_result {
         #[cfg(windows)]
-        let publish_result: std::io::Result<()> = if path.exists() {
+        let (publish_result, destination_removed): (std::io::Result<()>, bool) = if path.exists() {
             match fs::remove_file(path) {
-                Ok(()) => {
-                    destination_removed = true;
-                    fs::rename(&temp_path, path)
-                }
-                Err(error) => Err(error),
+                Ok(()) => (fs::rename(&temp_path, path), true),
+                Err(error) => (Err(error), false),
             }
         } else {
-            Err(rename_error)
+            (Err(rename_error), false)
         };
 
         #[cfg(not(windows))]
-        let publish_result: std::io::Result<()> = Err(rename_error);
+        let (publish_result, destination_removed): (std::io::Result<()>, bool) =
+            (Err(rename_error), false);
 
         if let Err(error) = publish_result {
             cleanup_failed_receipt_temp(&temp_path, destination_removed);
@@ -46662,6 +46659,8 @@ fn write_json_file<T: Serialize>(path: &Path, value: &T) -> Result<()> {
                 format!("failed to publish receipt '{}'", path.display())
             };
             return Err(error).with_context(|| context);
+        } else {
+            return Ok(());
         }
     }
 
