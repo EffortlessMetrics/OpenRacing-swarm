@@ -20505,6 +20505,10 @@ fn passive_receipt_requirements() -> [PassiveReceiptRequirement; 7] {
 }
 
 fn verify_passive_capture_parse_gate(lane: &Path) -> BundleGateCheck {
+    if let Some(cached) = current_parser_validation_receipt(lane) {
+        return cached;
+    }
+
     let mut failures = Vec::new();
     let mut total_reports = 0usize;
 
@@ -20562,6 +20566,52 @@ fn verify_passive_capture_parse_gate(lane: &Path) -> BundleGateCheck {
         }
         BundleGateCheck::fail("passive_captures_parse", details)
     }
+}
+
+fn current_parser_validation_receipt(lane: &Path) -> Option<BundleGateCheck> {
+    let receipt = read_json_value(lane, "parser-fixture-validation.json").ok()?;
+    if json_string(&receipt, "command") != Some("wheelctl moza validate-captures")
+        || json_bool(&receipt, "success") != Some(true)
+        || !no_out_of_scope_device_commands(&receipt)
+        || json_bool(&receipt, "no_hid_device_opened") != Some(true)
+    {
+        return None;
+    }
+
+    let requirements = passive_capture_requirements_for_lane(lane);
+    let captures = receipt.get("captures").and_then(Value::as_array)?;
+    if captures.len() != requirements.len()
+        || !requirements.iter().all(|requirement| {
+            captures.iter().any(|entry| {
+                parser_validation_entry_matches_requirement(entry, requirement, lane)
+                    && parser_validation_entry_source_hash_matches(entry, lane, requirement)
+            })
+        })
+    {
+        return None;
+    }
+
+    let parsed_reports = json_u64(&receipt, "parsed_reports").unwrap_or(0);
+    Some(BundleGateCheck::pass(
+        "passive_captures_parse",
+        format!(
+            "reused current parser-fixture-validation.json for {parsed_reports} report(s); source hashes match"
+        ),
+    ))
+}
+
+fn parser_validation_entry_source_hash_matches(
+    entry: &Value,
+    lane: &Path,
+    requirement: &PassiveCaptureRequirement,
+) -> bool {
+    let Some(expected_hash) = json_string(entry, "source_sha256") else {
+        return false;
+    };
+    let path = lane.join(requirement.relative_path);
+    sha256_file_hex(&path)
+        .map(|actual_hash| actual_hash == expected_hash)
+        .unwrap_or(false)
 }
 
 fn passive_capture_requirements() -> &'static [PassiveCaptureRequirement] {
@@ -28764,6 +28814,8 @@ fn validate_lane_captures(lane: &Path) -> Result<CaptureValidationSetReceipt> {
         let path = lane.join(requirement.relative_path);
         let receipt = validate_capture_file(&path, None)
             .with_context(|| format!("failed to validate {}", requirement.relative_path))?;
+        let source_sha256 = sha256_file_hex(&path)
+            .with_context(|| format!("failed to hash {}", requirement.relative_path))?;
 
         let expected_product_ids = expected_product_ids_for_requirement(requirement, lane);
         let evaluation =
@@ -28776,6 +28828,7 @@ fn validate_lane_captures(lane: &Path) -> Result<CaptureValidationSetReceipt> {
         captures.push(CaptureValidationSetEntry {
             capture: requirement.relative_path.to_string(),
             fixture_id: requirement.fixture_id.to_string(),
+            source_sha256,
             required_category: requirement.required_category.to_string(),
             required_product_ids: product_id_hex_list(&expected_product_ids),
             required_axis_variation: string_slice_to_vec(requirement.required_axis_variation),
@@ -39426,6 +39479,11 @@ fn sha256_hex(bytes: &[u8]) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+fn sha256_file_hex(path: &Path) -> Result<String> {
+    let bytes = fs::read(path).with_context(|| format!("failed to read '{}'", path.display()))?;
+    Ok(sha256_hex(&bytes))
+}
+
 fn moza_serial_port_identity(serial_port: &str) -> Result<VendorStatusProbePortIdentity> {
     let requested = normalize_serial_port_name(serial_port);
     let ports = serialport::available_ports()
@@ -42169,6 +42227,7 @@ struct CaptureValidationSetReceipt {
 struct CaptureValidationSetEntry {
     capture: String,
     fixture_id: String,
+    source_sha256: String,
     required_category: String,
     required_product_ids: Vec<String>,
     required_axis_variation: Vec<String>,
@@ -80546,6 +80605,30 @@ mod tests {
                 .gates
                 .iter()
                 .any(|gate| { gate.name == "passive_captures_parse" && gate.status == "fail" })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn verify_bundle_reuses_parser_receipt_only_when_capture_hashes_match() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        write_minimal_passive_bundle(dir.path())?;
+        let receipt = validate_lane_captures(dir.path())?;
+        write_test_json_file(
+            &dir.path().join("parser-fixture-validation.json"),
+            &serde_json::to_value(&receipt)?,
+        )?;
+
+        let cached = current_parser_validation_receipt(dir.path())
+            .ok_or("expected current parser receipt cache")?;
+        assert_eq!(cached.status, "pass");
+
+        let capture = dir.path().join("captures/r5-idle.jsonl");
+        let original = fs::read_to_string(&capture)?;
+        write_text_file(&capture, &format!("{original}\n"))?;
+        assert!(
+            current_parser_validation_receipt(dir.path()).is_none(),
+            "a changed capture must force fresh replay"
         );
         Ok(())
     }

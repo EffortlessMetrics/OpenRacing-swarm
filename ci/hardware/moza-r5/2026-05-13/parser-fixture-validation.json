@@ -1,8 +1,8 @@
 {
   "success": true,
   "command": "wheelctl moza validate-captures",
-  "generated_at_utc": "2026-05-20T01:15:27Z",
-  "lane": "ci/hardware/moza-r5/2026-05-13",
+  "generated_at_utc": "2026-07-13T03:21:52Z",
+  "lane": "ci\\hardware\\moza-r5\\2026-05-13",
   "no_ffb_writes": true,
   "no_serial_config_commands": true,
   "no_firmware_or_dfu_commands": true,
@@ -16,6 +16,7 @@
     {
       "capture": "captures/r5-idle.jsonl",
       "fixture_id": "r5_idle",
+      "source_sha256": "ffb76692d33508ebe998397f8833a3eac7ca85378706bd5e35bb3319a6946810",
       "required_category": "wheelbase",
       "required_product_ids": [
         "0x0004"
@@ -124,6 +125,7 @@
     {
       "capture": "captures/r5-steering-sweep.jsonl",
       "fixture_id": "r5_steering_sweep",
+      "source_sha256": "fce25edfc8b0fdf20561c9034537bb1230f670d7851bb434b2f591459826e93c",
       "required_category": "wheelbase",
       "required_product_ids": [
         "0x0004"
@@ -234,6 +236,7 @@
     {
       "capture": "captures/r5-throttle-only-sweep.jsonl",
       "fixture_id": "r5_throttle_only_sweep",
+      "source_sha256": "a955866e3c2174a14013535febbb3cc8ad8bec8f4fbf1b0bd8a5dccb0c3a40a4",
       "required_category": "wheelbase",
       "required_product_ids": [
         "0x0004"
@@ -357,6 +360,7 @@
     {
       "capture": "captures/r5-brake-only-sweep.jsonl",
       "fixture_id": "r5_brake_only_sweep",
+      "source_sha256": "f9293b05d5a3e58016a6ead84b63d94d16dff157f2beb0c24f9f502749ba2681",
       "required_category": "wheelbase",
       "required_product_ids": [
         "0x0004"
@@ -467,6 +471,7 @@
     {
       "capture": "captures/r5-clutch-only-sweep.jsonl",
       "fixture_id": "r5_clutch_only_sweep",
+      "source_sha256": "9963664752a8ccaa0a7d057f638b1151b07d7d0ed9a230ec1249c82f364d48be",
       "required_category": "wheelbase",
       "required_product_ids": [
         "0x0004"
@@ -590,6 +595,7 @@
     {
       "capture": "captures/r5-handbrake-only-sweep.jsonl",
       "fixture_id": "r5_handbrake_only_sweep",
+      "source_sha256": "dff32e0ff4871b91cdfa1504752af43404a7d6f23cb45799af6638f77fe3cc7a",
       "required_category": "wheelbase",
       "required_product_ids": [
         "0x0004"
@@ -700,6 +706,7 @@
     {
       "capture": "captures/r5-aggregated-idle-after-controls.jsonl",
       "fixture_id": "r5_aggregated_idle_after_controls",
+      "source_sha256": "aa07a1d2263b4671e4a7df4bb717ca2836610d9335db0d8aed7696310e85b580",
       "required_category": "wheelbase",
       "required_product_ids": [
         "0x0004"
@@ -808,6 +815,7 @@
     {
       "capture": "captures/ks-controls.jsonl",
       "fixture_id": "ks_controls",
+      "source_sha256": "27347d29b66a2573b5a40319087d2b949885cb80caff7f7024ffaacb94d7753f",
       "required_category": "wheelbase",
       "required_product_ids": [
         "0x0004"
@@ -932,6 +940,7 @@
     {
       "capture": "captures/es-controls.jsonl",
       "fixture_id": "es_controls",
+      "source_sha256": "c947d562107a30c9eecd8fc8526c0b0f1ffff51bcb814a7d56d9ed5d0da2e160",
       "required_category": "wheelbase",
       "required_product_ids": [
         "0x0004"
