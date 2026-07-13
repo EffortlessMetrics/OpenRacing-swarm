@@ -12,7 +12,9 @@ use racing_wheel_engine::{
 };
 use racing_wheel_schemas::prelude::{DeviceId, DeviceType};
 use serde_json::Value;
+use std::collections::VecDeque;
 use std::fs;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tracing_test::traced_test;
 
@@ -32,6 +34,168 @@ fn skip_timing_sensitive_tests() -> bool {
                 )
             })
             .unwrap_or(false)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ReplayFrame {
+    sequence: u64,
+    timestamp_ns: u64,
+    ffb_scalar: f32,
+}
+
+fn parse_replay_record(record: &Value) -> Result<ReplayFrame, Box<dyn std::error::Error>> {
+    if record.get("fixture_source").and_then(Value::as_str) != Some("synthetic")
+        || record
+            .get("real_simulator_validated")
+            .and_then(Value::as_bool)
+            != Some(false)
+    {
+        return Err("fixture must remain explicitly synthetic and non-real".into());
+    }
+
+    let snapshot = record
+        .get("snapshot")
+        .ok_or("fixture record is missing snapshot")?;
+    let ffb_scalar = snapshot
+        .get("ffb_scalar")
+        .and_then(Value::as_f64)
+        .ok_or("snapshot is missing finite ffb_scalar")? as f32;
+    if !ffb_scalar.is_finite() {
+        return Err("snapshot ffb_scalar must be finite".into());
+    }
+
+    Ok(ReplayFrame {
+        sequence: snapshot
+            .get("sequence")
+            .and_then(Value::as_u64)
+            .ok_or("snapshot is missing sequence")?,
+        timestamp_ns: snapshot
+            .get("timestamp_ns")
+            .and_then(Value::as_u64)
+            .ok_or("snapshot is missing timestamp_ns")?,
+        ffb_scalar,
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlannedWrite {
+    Accept,
+    Drop,
+    Short,
+    Interrupted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OutputWriteError {
+    Dropped,
+    ShortWrite { expected: usize, actual: usize },
+    Interrupted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct OutputStatus {
+    attempted_writes: usize,
+    accepted_writes: usize,
+    rejected_writes: usize,
+    partial_writes: usize,
+}
+
+#[derive(Debug, Default)]
+struct RecordedOutputBackend {
+    planned_writes: VecDeque<PlannedWrite>,
+    attempted_writes: usize,
+    accepted_writes: usize,
+    rejected_writes: usize,
+    partial_writes: usize,
+    recorded_frames: Vec<Vec<u8>>,
+}
+
+impl RecordedOutputBackend {
+    fn new(planned_writes: impl IntoIterator<Item = PlannedWrite>) -> Self {
+        Self {
+            planned_writes: planned_writes.into_iter().collect(),
+            ..Self::default()
+        }
+    }
+
+    fn write_frame(&mut self, frame: &[u8]) -> Result<(), OutputWriteError> {
+        self.attempted_writes += 1;
+        match self
+            .planned_writes
+            .pop_front()
+            .unwrap_or(PlannedWrite::Accept)
+        {
+            PlannedWrite::Accept => {
+                self.accepted_writes += 1;
+                self.recorded_frames.push(frame.to_vec());
+                Ok(())
+            }
+            PlannedWrite::Drop => {
+                self.rejected_writes += 1;
+                Err(OutputWriteError::Dropped)
+            }
+            PlannedWrite::Short => {
+                let actual = frame.len().saturating_sub(1);
+                self.rejected_writes += 1;
+                self.partial_writes += 1;
+                self.recorded_frames.push(frame[..actual].to_vec());
+                Err(OutputWriteError::ShortWrite {
+                    expected: frame.len(),
+                    actual,
+                })
+            }
+            PlannedWrite::Interrupted => {
+                self.rejected_writes += 1;
+                Err(OutputWriteError::Interrupted)
+            }
+        }
+    }
+
+    fn status(&self) -> OutputStatus {
+        OutputStatus {
+            attempted_writes: self.attempted_writes,
+            accepted_writes: self.accepted_writes,
+            rejected_writes: self.rejected_writes,
+            partial_writes: self.partial_writes,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LifecycleReceipt {
+    status: OutputStatus,
+    stop_all_attempted: bool,
+    stop_all_accepted: bool,
+    final_zero_attempted: bool,
+    final_zero_accepted: bool,
+    cleanup_interrupted: bool,
+}
+
+fn run_recorded_output_lifecycle(
+    backend: &mut RecordedOutputBackend,
+    replayed_frames: &[ReplayFrame],
+) -> LifecycleReceipt {
+    for frame in replayed_frames {
+        let encoded = [
+            0x01,
+            (frame.sequence & 0xff) as u8,
+            frame.ffb_scalar.to_bits() as u8,
+        ];
+        let _ = backend.write_frame(&encoded);
+    }
+
+    let stop_all_result = backend.write_frame(&[0x7f, 0x00]);
+    let final_zero_result = backend.write_frame(&[0x00, 0x00]);
+
+    LifecycleReceipt {
+        status: backend.status(),
+        stop_all_attempted: true,
+        stop_all_accepted: stop_all_result.is_ok(),
+        final_zero_attempted: true,
+        final_zero_accepted: final_zero_result.is_ok(),
+        cleanup_interrupted: matches!(stop_all_result, Err(OutputWriteError::Interrupted))
+            || matches!(final_zero_result, Err(OutputWriteError::Interrupted)),
+    }
 }
 
 /// Test device enumeration performance (DM-01)
@@ -611,31 +775,7 @@ async fn test_replayed_simulator_telemetry_ffb_lifecycle() -> Result<(), Box<dyn
     let mut replayed_frames = Vec::new();
     for line in fixture.lines() {
         let record: Value = serde_json::from_str(line)?;
-        if record.get("fixture_source").and_then(Value::as_str) != Some("synthetic")
-            || record
-                .get("real_simulator_validated")
-                .and_then(Value::as_bool)
-                != Some(false)
-        {
-            return Err("fixture must remain explicitly synthetic and non-real".into());
-        }
-        let snapshot = record
-            .get("snapshot")
-            .ok_or("fixture record is missing snapshot")?;
-        replayed_frames.push((
-            snapshot
-                .get("sequence")
-                .and_then(Value::as_u64)
-                .ok_or("snapshot is missing sequence")?,
-            snapshot
-                .get("timestamp_ns")
-                .and_then(Value::as_u64)
-                .ok_or("snapshot is missing timestamp_ns")?,
-            snapshot
-                .get("ffb_scalar")
-                .and_then(Value::as_f64)
-                .ok_or("snapshot is missing ffb_scalar")? as f32,
-        ));
+        replayed_frames.push(parse_replay_record(&record)?);
     }
     if replayed_frames.len() != 3 {
         return Err("expected the three-frame ACC replay fixture".into());
@@ -657,7 +797,10 @@ async fn test_replayed_simulator_telemetry_ffb_lifecycle() -> Result<(), Box<dyn
     let mut last_torque_nm = 0.0_f32;
     let mut last_timestamp_ns = None;
 
-    for (sequence, timestamp_ns, ffb_scalar) in replayed_frames.iter().copied() {
+    for frame in replayed_frames.iter().copied() {
+        let sequence = frame.sequence;
+        let timestamp_ns = frame.timestamp_ns;
+        let ffb_scalar = frame.ffb_scalar;
         let effect_magnitude = (ffb_scalar.clamp(-1.0, 1.0) * f32::from(i16::MAX)).round() as i16;
         let effect = ConstantEffect::new(effect_magnitude);
         effect_created = true;
@@ -749,5 +892,180 @@ async fn test_replayed_simulator_telemetry_ffb_lifecycle() -> Result<(), Box<dyn
     let mut reopened = port.open_device(&device_id).await?;
     assert!(reopened.is_connected());
     reopened.write_ffb_report(0.0, 9)?;
+    Ok(())
+}
+
+#[test]
+fn test_replay_rejects_malformed_telemetry_records() -> Result<(), Box<dyn std::error::Error>> {
+    let malformed_records = [
+        serde_json::json!({
+            "fixture_source": "synthetic",
+            "real_simulator_validated": false,
+            "snapshot": {"sequence": 1, "timestamp_ns": 2}
+        }),
+        serde_json::json!({
+            "fixture_source": "synthetic",
+            "real_simulator_validated": false,
+            "snapshot": {"sequence": "one", "timestamp_ns": 2, "ffb_scalar": 0.1}
+        }),
+        serde_json::json!({
+            "fixture_source": "synthetic",
+            "real_simulator_validated": false,
+            "snapshot": {"sequence": 1, "timestamp_ns": 2, "ffb_scalar": "invalid"}
+        }),
+        serde_json::json!({
+            "fixture_source": "synthetic",
+            "real_simulator_validated": true,
+            "snapshot": {"sequence": 1, "timestamp_ns": 2, "ffb_scalar": 0.1}
+        }),
+    ];
+
+    for record in malformed_records {
+        if parse_replay_record(&record).is_ok() {
+            return Err("malformed telemetry record was accepted".into());
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn test_recorded_output_lifecycle_failure_matrix_is_bounded()
+-> Result<(), Box<dyn std::error::Error>> {
+    let replayed_frames = [
+        ReplayFrame {
+            sequence: 1,
+            timestamp_ns: 10,
+            ffb_scalar: 0.25,
+        },
+        ReplayFrame {
+            sequence: 2,
+            timestamp_ns: 20,
+            ffb_scalar: -0.5,
+        },
+        ReplayFrame {
+            sequence: 3,
+            timestamp_ns: 30,
+            ffb_scalar: 1.0,
+        },
+    ];
+    let cases = [
+        (
+            "dropped report",
+            vec![
+                PlannedWrite::Accept,
+                PlannedWrite::Drop,
+                PlannedWrite::Accept,
+                PlannedWrite::Accept,
+                PlannedWrite::Accept,
+            ],
+            OutputStatus {
+                attempted_writes: 5,
+                accepted_writes: 4,
+                rejected_writes: 1,
+                partial_writes: 0,
+            },
+            false,
+        ),
+        (
+            "short write",
+            vec![
+                PlannedWrite::Accept,
+                PlannedWrite::Short,
+                PlannedWrite::Accept,
+                PlannedWrite::Accept,
+                PlannedWrite::Accept,
+            ],
+            OutputStatus {
+                attempted_writes: 5,
+                accepted_writes: 4,
+                rejected_writes: 1,
+                partial_writes: 1,
+            },
+            false,
+        ),
+        (
+            "interrupted shutdown",
+            vec![
+                PlannedWrite::Accept,
+                PlannedWrite::Accept,
+                PlannedWrite::Accept,
+                PlannedWrite::Interrupted,
+                PlannedWrite::Interrupted,
+            ],
+            OutputStatus {
+                attempted_writes: 5,
+                accepted_writes: 3,
+                rejected_writes: 2,
+                partial_writes: 0,
+            },
+            true,
+        ),
+    ];
+
+    for (name, plan, expected_status, expected_interrupted) in cases {
+        let mut backend = RecordedOutputBackend::new(plan);
+        let receipt = run_recorded_output_lifecycle(&mut backend, &replayed_frames);
+        assert_eq!(receipt.status, expected_status, "case: {name}");
+        assert!(receipt.stop_all_attempted, "case: {name}");
+        assert!(receipt.final_zero_attempted, "case: {name}");
+        assert_eq!(
+            receipt.cleanup_interrupted, expected_interrupted,
+            "case: {name}"
+        );
+        if expected_interrupted {
+            assert!(!receipt.stop_all_accepted, "case: {name}");
+            assert!(!receipt.final_zero_accepted, "case: {name}");
+        } else {
+            assert!(receipt.stop_all_accepted, "case: {name}");
+            assert!(receipt.final_zero_accepted, "case: {name}");
+        }
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_recorded_output_status_is_consistent_under_concurrent_queries()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mut backend = RecordedOutputBackend::new([
+        PlannedWrite::Accept,
+        PlannedWrite::Accept,
+        PlannedWrite::Drop,
+    ]);
+    let _ = backend.write_frame(&[1, 2, 3]);
+    let _ = backend.write_frame(&[4, 5, 6]);
+    let _ = backend.write_frame(&[7, 8, 9]);
+    let expected = backend.status();
+    let shared = Arc::new(Mutex::new(backend));
+    let mut handles = Vec::new();
+
+    for _ in 0..8 {
+        let shared = Arc::clone(&shared);
+        handles.push(std::thread::spawn(move || match shared.lock() {
+            Ok(backend) => Ok(backend.status()),
+            Err(_) => Err("status backend lock was poisoned"),
+        }));
+    }
+
+    for handle in handles {
+        let status = match handle.join() {
+            Ok(Ok(status)) => status,
+            Ok(Err(error)) => return Err(error.into()),
+            Err(_) => return Err("status query thread panicked".into()),
+        };
+        assert_eq!(status, expected);
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_missing_device_fails_closed_without_output() -> Result<(), Box<dyn std::error::Error>>
+{
+    let port = VirtualHidPort::new();
+    let device_id = "missing-device".parse::<DeviceId>()?;
+    if port.open_device(&device_id).await.is_ok() {
+        return Err("missing device unexpectedly opened".into());
+    }
     Ok(())
 }
