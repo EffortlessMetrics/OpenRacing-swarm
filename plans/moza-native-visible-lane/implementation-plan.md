@@ -11282,12 +11282,13 @@ block.
 
 ## Work item: bound-verify-bundle-runtime
 
-Status: in_progress
+Status: completed
 Linked issue: https://github.com/EffortlessMetrics/OpenRacing/issues/669
+Linked PR: https://github.com/EffortlessMetrics/OpenRacing-swarm/pull/160 (merged)
 Linked proposal: docs/proposals/OR-PROP-0001-moza-native-visible-lane.md
 Linked spec: docs/specs/OR-SPEC-0001-moza-native-visible-lane.md
 Linked ADR: docs/adr/0009-hardware-validation-evidence-state-machine.md
-Blocks: native-visible verification operability
+Blocks: none; native-visible promotion remains separately blocked by its own gate
 
 ### Goal
 
@@ -11301,6 +11302,12 @@ the current receipt is still bound to the same source captures.
 atomically, and reuses parser-fixture validation only when every required
 capture SHA-256 matches the checked-in receipt. `moza status` remains receipt
 navigation and does not replay the capture set.
+
+Proof: PR #160 merged as commit `445d8aa66a6486d4be7df50d90d0ae4f1357ee69`
+after the focused verifier, wheelctl, lint, package-surface, policy, and
+receipt-verification checks passed. The merged implementation remains bounded
+to source-bound verifier operability and does not produce hardware-output or
+native-visible evidence.
 
 ### Non-goals
 
@@ -11333,7 +11340,7 @@ git diff --check
 
 ### Rollback
 
-Revert the PR #160 implementation commits, preserving the existing receipt and readiness claim
+Revert the merged PR #160 implementation commits, preserving the existing receipt and readiness claim
 boundaries.
 
 ## Work item: native-visible-promotion
