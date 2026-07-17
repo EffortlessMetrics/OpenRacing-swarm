@@ -32,6 +32,30 @@ candidate, and validated semantic identity as distinct provenance states.
 Collect from the existing input owner on a non-RT worker and provide bounded,
 observable backpressure behavior to later subscribers.
 
+## Deployment and release extension
+
+Issue #173 adds a separate package/release work item after the runtime chain.
+The implementation must reconcile the existing release surfaces rather than
+invent a Runbook-specific installer:
+
+- `.github/workflows/release.yml` currently builds Linux and Windows release
+  artifacts;
+- `RELEASING.md` defines the tag, changelog, artifact, and upgrade workflow;
+- `packaging/linux/` owns the Linux package scripts, service, rules, and
+  distribution metadata;
+- `packaging/windows/` owns the portable and MSI packaging scripts and WiX
+  definition;
+- `packaging/macos/` contains the current DMG, bundle, entitlements, and
+  uninstall surfaces; and
+- `crates/schemas/proto/` plus `crates/schemas/build.rs` own the versioned IPC
+  schema and generated-client boundary.
+
+The deployment item must establish that installed `wheeld` advertises
+`control_stream_v1` only when its backing service is present, preserve existing
+upgrade and rollback behavior, and publish schema/client artifacts from the
+same versioned source. Platform support and release readiness remain bounded by
+the proof actually produced for each existing packaging lane.
+
 ## Decisions to lock
 
 - No application or network I/O occurs in the 1 kHz FFB path.
@@ -43,6 +67,9 @@ observable backpressure behavior to later subscribers.
   of scope for the initial contract.
 - Runtime work is split into five independently shippable plan items and does
   not activate this lane by changing `.openracing/goals/active.toml`.
+- Deployment/package work is a separate plan item. It must not broaden support,
+  readiness, output, FFB, high-torque, profile-mutation, or control-claiming
+  semantics.
 
 ## Alternatives considered
 
@@ -57,12 +84,16 @@ observable backpressure behavior to later subscribers.
 
 ## Non-goals
 
-- Implementing runtime collection, projection, gRPC, capture, or replay.
+- Implementing runtime collection, projection, gRPC, capture, replay, or
+  release/package behavior in this source-of-truth scaffold.
+- Editing the release workflow, packaging scripts, installed binaries, schema,
+  or generated client artifacts.
 - Opening hardware or assigning named physical controls without evidence.
 - Changing torque safety, FFB behavior, profiles, or public support tiers.
 
 ## Claim boundary
 
 This proposal creates an activation-ready source-of-truth lane. It does not
-prove a released stream, physical-device compatibility, named paddle/rotary
-roles, Runbook support, simulator behavior, or any hardware output capability.
+prove a released stream, installed-binary negotiation, package compatibility,
+upgrade/rollback, physical-device compatibility, named paddle/rotary roles,
+Runbook support, simulator behavior, or any hardware output capability.

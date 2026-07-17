@@ -36,6 +36,13 @@ plan item, after the pure domain and service contracts have proof.
 Initial controls are buttons, hat/D-pad, and rotary deltas. Steering, pedals,
 dashboards, LEDs, haptics, FFB, and output are not part of this contract.
 
+Package and release behavior is a later, separate plan item. It must use the
+existing release workflow and platform packaging surfaces, publish the
+versioned schema/client boundary consistently, and advertise the stream only
+when the backing service is installed and available. Packaging evidence may
+establish only the platform and compatibility claims that its receipts cover;
+it does not create a Runbook-specific installer or change support/readiness.
+
 ## Consequences
 
 Positive:
@@ -62,6 +69,8 @@ Tradeoffs:
   scaffold.
 - No public support claim until the relevant package, compatibility, and proof
   work exists.
+- No release or package edit in the source-of-truth scaffold; deployment work
+  remains separately reviewable after the runtime contract is implemented.
 
 ## Rationale
 
@@ -83,4 +92,7 @@ consumer from treating an inferred or stale control identity as validated.
 
 The scaffold is checked with ADR validation, package-surface validation, and
 `git diff --check`. Each later plan item adds focused virtual/service/transport
-proof and states what it does not establish.
+proof and states what it does not establish. The separate deployment item must
+add installed-artifact, schema synchronization, upgrade/rollback, disabled
+feature, existing-client/safety, and input-only replay receipts before making
+any package or release claim.

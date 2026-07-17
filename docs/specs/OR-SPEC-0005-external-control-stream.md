@@ -81,6 +81,40 @@ controls.
 - No protobuf, gRPC, WebSocket, Runbook, network, or RT code is added before
   its plan item.
 
+## Deployment and release contract
+
+The deployment work item is separate from the five runtime work items and must
+use the repository's existing release surfaces:
+
+- `.github/workflows/release.yml` and `RELEASING.md` define release assembly,
+  versioning, changelog, checksums, and release publication;
+- `packaging/linux/` contains the Linux package and service inputs;
+- `packaging/windows/` contains the portable and MSI installer inputs;
+- `packaging/macos/` contains the current DMG and bundle inputs; and
+- `crates/schemas/proto/`, `crates/schemas/buf.yaml`,
+  `crates/schemas/buf.gen.yaml`, and `crates/schemas/build.rs` define the
+  versioned schema and generated-client boundary.
+
+The package/release implementation must prove all of the following before it
+claims deployment support:
+
+1. Installed `wheeld` includes and negotiates `control_stream_v1` only when the
+   backing control-stream service exists; missing or disabled service support
+   remains an explicit, safe capability result.
+2. Descriptor, baseline, ordered events, reset/gap, and disconnect behavior are
+   preserved through the installed binary and each claimed package lane.
+3. Protobuf/schema and generated client artifacts are synchronized, versioned,
+   and compatible with existing clients.
+4. Upgrades preserve profiles and the documented rollback path restores the
+   prior service/package behavior.
+5. Platform and artifact claims are limited to the workflows and packaging
+   inputs that produced evidence. Existing release automation is extended only
+   where the proof requires it; a Runbook-specific installer is out of scope.
+
+Observe-only control-stream behavior must not enable output, FFB, high torque,
+profile mutation, or physical-control claiming. This work does not alter the
+active goal or public support/readiness status.
+
 ## Proof expectations
 
 Runtime PRs use their exact plan commands and include focused virtual/fake tests.
@@ -92,8 +126,15 @@ cargo run --locked -p openracing-tools --bin package-surface -- --check
 git diff --check
 ```
 
+The deployment implementation must additionally produce artifact-backed proof
+for installed-binary feature negotiation, schema/package synchronization,
+upgrade/rollback, disabled-feature behavior, existing-client/safety behavior,
+and the input-only Runbook replay consumer.
+
 ## Non-goals and claim boundary
 
-This spec does not implement or release a stream, prove physical-device
-compatibility, assign named paddles/rotaries, integrate Runbook as a product
-dependency, or claim simulator, output, FFB, or hardware readiness.
+This spec does not implement or release a stream in the scaffold, edit release
+automation or packaging in the scaffold, prove physical-device compatibility,
+assign named paddles/rotaries, integrate Runbook as a product dependency, or
+claim simulator, output, FFB, hardware readiness, or platform support beyond
+the produced receipts.

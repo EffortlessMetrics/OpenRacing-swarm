@@ -28,9 +28,28 @@ After activation, implement exactly one plan work item per PR in order:
 
 `#168 -> #169 -> #170 -> #171 -> #172`
 
-Deployment source-truth/package follow-ups are #173 and #174. The external
-Runbook consumer is `EffortlessMetrics/runbook-rs#41`, and remains a proof
-consumer rather than a domain dependency.
+The runtime chain is followed by the deployment source-truth item #173 and
+then the implementation issue #174. The external Runbook consumer is
+`EffortlessMetrics/runbook-rs#41`, and remains a proof consumer rather than a
+domain dependency.
+
+## Deployment source-of-truth item
+
+Issue #173 extends this lane with a package/release contract using the current
+surfaces: `.github/workflows/release.yml`, `RELEASING.md`,
+`packaging/linux/`, `packaging/windows/`, `packaging/macos/`, and
+`crates/schemas/proto/` plus its Buf/build inputs. The current workflow builds
+Linux and Windows artifacts; the macOS packaging directory exists but is not a
+current workflow claim. That distinction must remain explicit until artifact
+proof exists.
+
+The follow-up must cover installed `wheeld` feature negotiation, descriptor /
+baseline / events / reset-gap / disconnect behavior, schema and generated
+client synchronization, prior-release upgrade and rollback, missing or
+disabled service behavior, existing-client and safety compatibility, and the
+input-only replay consumer. It must not change release behavior in this
+source-of-truth PR or broaden output, FFB, high-torque, profile-mutation,
+physical-control, platform, support, or readiness claims.
 
 ## Required review questions
 

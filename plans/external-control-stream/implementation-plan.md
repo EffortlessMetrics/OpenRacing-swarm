@@ -130,9 +130,44 @@ named controls, release readiness, or hardware/output support.
 
 Rollback: remove the capture consumer and retain the transport contract.
 
-## Deployment follow-ups
+## Work item: control-stream-deployment-release-contract
 
-Issues #173 and #174 are separate source-of-truth and package/release work.
-They must add installed-binary negotiation, schema/package synchronization,
-upgrade/rollback, and platform-specific proof before any release claim. They
-are not folded into this scaffold or the active Moza goal.
+Status: blocked by `control-diagnostics-capture-replay` and lane activation
+Linked issue: #173
+Follow-up implementation issue: #174
+Target seams: `.github/workflows/release.yml`, `RELEASING.md`,
+`packaging/linux/`, `packaging/windows/`, `packaging/macos/`,
+`crates/schemas/proto/`, `crates/schemas/buf.yaml`,
+`crates/schemas/buf.gen.yaml`, and `crates/schemas/build.rs`.
+
+Goal: extend the existing package/release lane so installed `wheeld` can
+negotiate `control_stream_v1` only when the backing service exists, while
+keeping schema/client artifacts versioned, existing clients and safety
+behavior compatible, and upgrade/rollback behavior explicit.
+
+Acceptance: the implementation uses the current release workflow and package
+inputs; includes the feature only in installed `wheeld` artifacts; handles
+missing or disabled service support explicitly; preserves descriptor, baseline,
+events, reset/gap, and disconnect semantics; synchronizes schema and generated
+client artifacts; proves prior-release upgrade and rollback; and documents
+platform claims only for lanes with receipts. Observe-only behavior must not
+enable output, FFB, high torque, profile mutation, or physical-control claims.
+The active goal and support/readiness status remain unchanged.
+
+Proof: installed/package binary feature negotiation; descriptor-to-baseline-to-
+events; reset/gap/disconnect; schema and generated-client synchronization;
+prior-release upgrade/rollback; missing/disabled feature; existing clients and
+safety behavior; input-only Runbook replay consumer; package-surface/status
+validation; and `git diff --check`.
+
+Claim boundary: package and release evidence only. This item does not prove
+hardware compatibility, named control roles, output, FFB, high torque, profile
+mutation, Runbook product support, or platform support beyond its receipts.
+
+Rollback: remove the package feature and retain the existing release assets,
+schema versions, client behavior, and safety defaults.
+
+Issues #173 and #174 are separate from the source-of-truth scaffold. #173
+defines this deployment/release contract; #174 may implement the package and
+runtime changes only after the runtime chain and this contract are ready. They
+are not folded into the active Moza goal.
