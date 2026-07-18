@@ -14,6 +14,7 @@ pub mod changelog;
 mod changelog_property_tests;
 pub mod config_validation;
 pub mod config_writers;
+pub mod control_broadcast;
 pub mod crypto;
 pub mod daemon;
 mod daemon_platform;
