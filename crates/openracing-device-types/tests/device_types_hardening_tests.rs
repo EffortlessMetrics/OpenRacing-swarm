@@ -413,8 +413,8 @@ mod unknown_handling {
     #[test]
     fn out_of_range_button_read_returns_false() {
         let inputs = DeviceInputs::default();
-        assert!(!inputs.button(16));
-        assert!(!inputs.button(100));
+        assert!(!inputs.button(128));
+        assert!(!inputs.button(200));
         assert!(!inputs.button(255));
         assert!(!inputs.button(usize::MAX));
     }
@@ -422,12 +422,12 @@ mod unknown_handling {
     #[test]
     fn out_of_range_button_set_is_noop() {
         let mut inputs = DeviceInputs::default();
-        inputs.set_button(16, true);
+        inputs.set_button(128, true);
         inputs.set_button(999, true);
         inputs.set_button(usize::MAX, true);
 
         // No buttons should be set
-        for i in 0..16 {
+        for i in 0..128 {
             assert!(!inputs.button(i), "Button {} should be unset", i);
         }
     }
@@ -568,7 +568,7 @@ mod edge_cases {
 
 proptest! {
     #[test]
-    fn prop_button_set_get_roundtrip(idx in 0usize..16) {
+    fn prop_button_set_get_roundtrip(idx in 0usize..128) {
         let mut inputs = DeviceInputs::default();
         inputs.set_button(idx, true);
         prop_assert!(inputs.button(idx), "Button {} should be set", idx);
@@ -578,8 +578,8 @@ proptest! {
 
     #[test]
     fn prop_button_set_does_not_affect_others(
-        target in 0usize..16,
-        other in 0usize..16
+        target in 0usize..128,
+        other in 0usize..128
     ) {
         if target != other {
             let mut inputs = DeviceInputs::default();
@@ -612,7 +612,7 @@ proptest! {
     }
 
     #[test]
-    fn prop_out_of_range_button_always_false(idx in 16usize..10000) {
+    fn prop_out_of_range_button_always_false(idx in 128usize..10000) {
         let mut inputs = DeviceInputs::default();
         inputs.set_button(idx, true);
         prop_assert!(!inputs.button(idx));

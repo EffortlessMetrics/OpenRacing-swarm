@@ -7,6 +7,22 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(clippy::unwrap_used)]
 
+use serde::{Deserialize, Serialize};
+
+mod control_stream;
+pub use control_stream::{
+    ControlDescriptor, ControlEvent, ControlKind, ControlState, ControlStreamItem,
+    ControlSurfaceDescriptor, ControlSurfaceId, ControlValue, RawControlId, ResetReason,
+    SemanticId, SemanticStatus, StreamSeq,
+};
+
+/// Maximum number of digital buttons a [`DeviceInputs`] snapshot can represent.
+///
+/// The button bitfield is `[u8; 16]` (16 bytes × 8 bits), so valid button
+/// indices are `0..MAX_BUTTONS` (i.e. `0..=127`). Indices at or beyond this
+/// bound read as `false` and are no-ops when set.
+pub const MAX_BUTTONS: usize = 128;
+
 /// Telemetry data from device
 #[derive(Debug, Clone)]
 pub struct TelemetryData {
@@ -72,16 +88,24 @@ impl DeviceInputs {
         self
     }
 
+    /// Return the state of digital button `index`.
+    ///
+    /// Valid indices are `0..MAX_BUTTONS` (`0..=127`); any index `>= 128`
+    /// reads as `false`, preserving the documented out-of-range no-op contract.
     pub fn button(&self, index: usize) -> bool {
-        if index < 16 {
+        if index < MAX_BUTTONS {
             self.buttons[index / 8] & (1 << (index % 8)) != 0
         } else {
             false
         }
     }
 
+    /// Set the state of digital button `index`.
+    ///
+    /// Valid indices are `0..MAX_BUTTONS` (`0..=127`); any index `>= 128` is a
+    /// no-op, preserving the documented out-of-range behavior.
     pub fn set_button(&mut self, index: usize, value: bool) {
-        if index < 16 {
+        if index < MAX_BUTTONS {
             if value {
                 self.buttons[index / 8] |= 1 << (index % 8);
             } else {
@@ -109,7 +133,7 @@ impl DeviceInputs {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum HatDirection {
     Up,
     UpRight,
@@ -244,22 +268,65 @@ mod tests {
     }
 
     #[test]
+    fn test_button_full_128_range_roundtrips() {
+        // The bitfield is [u8; 16] = 128 bits; every index 0..=127 must be
+        // independently settable and readable.
+        let mut inputs = DeviceInputs::default();
+        for index in 0..MAX_BUTTONS {
+            assert!(!inputs.button(index), "button {index} should start false");
+            inputs.set_button(index, true);
+            assert!(
+                inputs.button(index),
+                "button {index} should read true once set"
+            );
+            // Setting one button must not disturb its neighbours.
+            if index > 0 {
+                assert!(inputs.button(index - 1), "button {} disturbed", index - 1);
+            }
+        }
+        // All 128 bits set => every byte is 0xFF.
+        assert_eq!(inputs.buttons, [0xFFu8; 16]);
+    }
+
+    #[test]
+    fn test_button_boundary_indices() {
+        // Boundary indices called out by the 128-button contract: the last
+        // index of each byte, byte boundaries, and the first out-of-range one.
+        let mut inputs = DeviceInputs::default();
+        for &index in &[0usize, 7, 8, 15, 16, 31, 63, 127] {
+            inputs.set_button(index, true);
+            assert!(
+                inputs.button(index),
+                "in-range button {index} must round-trip"
+            );
+            inputs.set_button(index, false);
+            assert!(!inputs.button(index), "button {index} must clear");
+        }
+        // 128 is the first out-of-range index: read false, set is a no-op.
+        assert!(!inputs.button(128));
+        inputs.set_button(128, true);
+        assert_eq!(
+            inputs.buttons, [0u8; 16],
+            "set_button(128) must not touch the bitfield"
+        );
+    }
+
+    #[test]
     fn test_button_out_of_bounds_returns_false() {
         let inputs = DeviceInputs::default();
-        assert!(!inputs.button(16));
-        assert!(!inputs.button(100));
+        assert!(!inputs.button(128));
+        assert!(!inputs.button(200));
         assert!(!inputs.button(usize::MAX));
     }
 
     #[test]
     fn test_set_button_out_of_bounds_is_noop() {
         let mut inputs = DeviceInputs::default();
-        inputs.set_button(16, true); // should not panic
-        inputs.set_button(100, true); // should not panic
-        // All buttons still false
-        for i in 0..16 {
-            assert!(!inputs.button(i));
-        }
+        inputs.set_button(128, true); // first out-of-range index; should not panic
+        inputs.set_button(1000, true); // should not panic
+        inputs.set_button(usize::MAX, true); // should not panic
+        // The bitfield is untouched.
+        assert_eq!(inputs.buttons, [0u8; 16]);
     }
 
     #[test]

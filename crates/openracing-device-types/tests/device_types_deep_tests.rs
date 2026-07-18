@@ -191,8 +191,8 @@ mod button_capabilities {
     #[test]
     fn set_all_then_clear_one() {
         let mut inputs = DeviceInputs::new().with_buttons([0xFF; 16]);
-        // All 16 buttons (0..16) should be true
-        for i in 0..16 {
+        // All 128 buttons (0..128) should be true
+        for i in 0..128 {
             assert!(inputs.button(i));
         }
         inputs.set_button(5, false);
@@ -204,18 +204,18 @@ mod button_capabilities {
     #[test]
     fn button_out_of_range_returns_false() {
         let inputs = DeviceInputs::new().with_buttons([0xFF; 16]);
-        assert!(!inputs.button(16));
-        assert!(!inputs.button(100));
+        assert!(!inputs.button(128));
+        assert!(!inputs.button(200));
         assert!(!inputs.button(usize::MAX));
     }
 
     #[test]
     fn set_button_out_of_range_is_noop() {
         let mut inputs = DeviceInputs::default();
-        inputs.set_button(16, true);
+        inputs.set_button(128, true);
         inputs.set_button(999, true);
         // No button in range should be set
-        for i in 0..16 {
+        for i in 0..128 {
             assert!(!inputs.button(i));
         }
     }
@@ -514,7 +514,7 @@ proptest! {
     #![proptest_config(proptest::test_runner::Config::with_cases(512))]
 
     #[test]
-    fn prop_button_set_get_roundtrip(idx in 0usize..16) {
+    fn prop_button_set_get_roundtrip(idx in 0usize..128) {
         let mut inputs = DeviceInputs::default();
         inputs.set_button(idx, true);
         prop_assert!(inputs.button(idx));
@@ -523,7 +523,7 @@ proptest! {
     }
 
     #[test]
-    fn prop_button_independence(a in 0usize..16, b in 0usize..16) {
+    fn prop_button_independence(a in 0usize..128, b in 0usize..128) {
         let mut inputs = DeviceInputs::default();
         inputs.set_button(a, true);
         if a != b {
@@ -554,7 +554,7 @@ proptest! {
     }
 
     #[test]
-    fn prop_button_out_of_range_always_false(idx in 16usize..10000) {
+    fn prop_button_out_of_range_always_false(idx in 128usize..10000) {
         let mut inputs = DeviceInputs::default();
         inputs.set_button(idx, true);
         prop_assert!(!inputs.button(idx));

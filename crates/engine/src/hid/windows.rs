@@ -35,7 +35,7 @@ use super::{
     DeviceTelemetryReport, HidDeviceInfo, MAX_TORQUE_REPORT_SIZE, MozaInputState, Seqlock,
     encode_torque_report_for_device, vendor,
 };
-use crate::ports::{DeviceHealthStatus, HidDevice, HidPort};
+use crate::ports::{DeviceHealthStatus, DeviceInputsMozaExt, HidDevice, HidPort};
 use crate::{DeviceEvent, DeviceInfo, RTResult, TelemetryData};
 use async_trait::async_trait;
 use hidapi::HidApi;

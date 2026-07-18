@@ -41,6 +41,7 @@ racing-wheel-hid-leo-bodnar-protocol = { workspace = true }
 racing-wheel-hid-accuforce-protocol = { workspace = true }
 racing-wheel-simplemotion-v2 = { path = "../simplemotion-v2", version = "0.1.0" }
 hid-button-box-protocol = { path = "../hid-button-box-protocol", version = "0.1.0" }
+openracing-device-types = { workspace = true }
 openracing-atomic = { workspace = true }
 openracing-tracing = { workspace = true }
 openracing-curves = { workspace = true }

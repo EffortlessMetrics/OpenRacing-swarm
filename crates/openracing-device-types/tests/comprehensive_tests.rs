@@ -83,20 +83,18 @@ mod button_tests {
     #[test]
     fn out_of_range_button_returns_false() {
         let inputs = DeviceInputs::default();
-        assert!(!inputs.button(16));
-        assert!(!inputs.button(100));
+        assert!(!inputs.button(128));
+        assert!(!inputs.button(200));
         assert!(!inputs.button(usize::MAX));
     }
 
     #[test]
     fn out_of_range_set_is_noop() {
         let mut inputs = DeviceInputs::default();
-        inputs.set_button(16, true); // should not panic or change anything
+        inputs.set_button(128, true); // should not panic or change anything
         inputs.set_button(999, true);
-        // All buttons in range should still be false
-        for i in 0..16 {
-            assert!(!inputs.button(i));
-        }
+        // Nothing in range was set, so the bitfield is untouched.
+        assert_eq!(inputs.buttons, [0u8; 16]);
     }
 
     #[test]
@@ -337,7 +335,7 @@ mod trait_tests {
 
 proptest! {
     #[test]
-    fn button_set_get_roundtrip(idx in 0usize..16) {
+    fn button_set_get_roundtrip(idx in 0usize..128) {
         let mut inputs = DeviceInputs::default();
         inputs.set_button(idx, true);
         prop_assert!(inputs.button(idx));
@@ -369,9 +367,10 @@ proptest! {
     }
 
     #[test]
-    fn button_out_of_range_always_false(idx in 16usize..10000) {
+    fn button_out_of_range_always_false(idx in 128usize..10000) {
         let mut inputs = DeviceInputs::default();
-        // Setting out-of-range should be no-op
+        // Indices at or beyond the 128-button contract are out of range:
+        // setting is a no-op and reading is always false.
         inputs.set_button(idx, true);
         prop_assert!(!inputs.button(idx));
     }

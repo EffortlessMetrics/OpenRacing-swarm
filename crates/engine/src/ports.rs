@@ -73,9 +73,21 @@ pub trait HidInputDevice: Send + Sync {
     fn moza_input_state(&self) -> Option<MozaInputState>;
 }
 
-impl DeviceInputs {
+/// Engine-internal extension for constructing a canonical [`DeviceInputs`]
+/// snapshot from a decoded Moza input state.
+///
+/// This lives in the engine rather than in `openracing-device-types` because it
+/// depends on the engine-internal [`MozaInputState`]; the domain crate stays
+/// vendor-neutral. Bring this trait into scope to use the
+/// `DeviceInputs::from_moza_input_state` associated function.
+pub(crate) trait DeviceInputsMozaExt {
+    /// Build a [`DeviceInputs`] snapshot from a decoded Moza input state.
+    fn from_moza_input_state(state: &MozaInputState) -> Self;
+}
+
+impl DeviceInputsMozaExt for DeviceInputs {
     #[allow(dead_code)]
-    pub(crate) fn from_moza_input_state(state: &MozaInputState) -> Self {
+    fn from_moza_input_state(state: &MozaInputState) -> Self {
         let mut inputs = DeviceInputs {
             tick: state.tick,
             buttons: state.buttons,
