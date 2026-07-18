@@ -626,7 +626,7 @@ mod tests {
     type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     fn seeded_port() -> Result<Arc<VirtualHidPort>, Box<dyn std::error::Error>> {
-        let port = VirtualHidPort::new();
+        let mut port = VirtualHidPort::new();
         let device_id: DeviceId = "test-device-0".parse()?;
         let device = VirtualDevice::new(device_id, "Test Wheel".to_string());
         port.add_device(device)?;
