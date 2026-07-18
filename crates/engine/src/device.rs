@@ -86,6 +86,7 @@ struct VirtualDeviceState {
     temperature_c: u8,
     fault_flags: u8,
     hands_on: bool,
+    inputs: DeviceInputs,
     last_torque_nm: f32,
     last_seq: u16,
     last_update: Instant,
@@ -128,6 +129,7 @@ impl VirtualDevice {
             temperature_c: 35,
             fault_flags: 0,
             hands_on: true,
+            inputs: DeviceInputs::default(),
             last_torque_nm: 0.0,
             last_seq: 0,
             last_update: Instant::now(),
@@ -215,6 +217,13 @@ impl VirtualDevice {
     pub fn reconnect(&mut self) {
         self.connected.store(true, Ordering::Release);
     }
+
+    /// Replace the decoded non-real-time input snapshot used by tests.
+    pub fn set_inputs(&self, inputs: DeviceInputs) {
+        if let Ok(mut state) = self.state.lock() {
+            state.inputs = inputs;
+        }
+    }
 }
 
 impl HidDevice for VirtualDevice {
@@ -289,6 +298,14 @@ impl HidDevice for VirtualDevice {
             communication_errors: 0,
         }
     }
+
+    fn read_inputs(&self) -> Option<DeviceInputs> {
+        if !self.connected.load(Ordering::Acquire) {
+            return None;
+        }
+
+        self.state.lock().ok().map(|state| state.inputs)
+    }
 }
 
 /// Virtual HID port for testing
@@ -315,7 +332,7 @@ impl VirtualHidPort {
     }
 
     /// Add a virtual device to the port
-    pub fn add_device(&mut self, device: VirtualDevice) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn add_device(&self, device: VirtualDevice) -> Result<(), Box<dyn std::error::Error>> {
         let mut device = device;
         device.info.is_connected = true;
         device.connected.store(true, Ordering::Release);
@@ -333,7 +350,7 @@ impl VirtualHidPort {
     }
 
     /// Remove a device by ID
-    pub fn remove_device(&mut self, id: &DeviceId) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn remove_device(&self, id: &DeviceId) -> Result<(), Box<dyn std::error::Error>> {
         let mut devices = self.devices.lock_or_panic();
         let device_info = devices.iter_mut().find(|d| d.info.id == *id).map(|d| {
             d.connected.store(false, Ordering::Release);
@@ -358,6 +375,21 @@ impl VirtualHidPort {
         // For testing purposes, we'll provide a different approach
         // The caller should use the device reference returned from open_device
         None
+    }
+
+    /// Replace a virtual device's decoded input snapshot for service tests.
+    pub fn set_device_inputs(
+        &self,
+        id: &DeviceId,
+        inputs: DeviceInputs,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let devices = self.devices.lock_or_panic();
+        let device = devices
+            .iter()
+            .find(|device| device.info.id == *id)
+            .ok_or_else(|| format!("Device not found: {id}"))?;
+        device.set_inputs(inputs);
+        Ok(())
     }
 
     /// Simulate physics for all devices

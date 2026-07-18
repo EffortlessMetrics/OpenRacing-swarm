@@ -1,5 +1,6 @@
 //! Device service for enumeration, calibration, and health monitoring
 
+use crate::control_input::{ControlInputCollector, DEFAULT_CONTROL_INPUT_CAPACITY};
 use anyhow::Result;
 use racing_wheel_engine::{
     AppTraceEvent, DeviceEvent, DeviceHealthStatus, DeviceInfo, HidDevice, HidPort, TelemetryData,
@@ -59,6 +60,8 @@ pub struct ApplicationDeviceService {
     tracer: Option<Arc<TracingManager>>,
     /// Health monitoring interval
     health_check_interval: Duration,
+    /// Non-real-time decoded input collector and shared device sessions
+    control_input: Arc<ControlInputCollector>,
 }
 
 impl ApplicationDeviceService {
@@ -68,6 +71,11 @@ impl ApplicationDeviceService {
         tracer: Option<Arc<TracingManager>>,
     ) -> Result<Self> {
         let (event_sender, event_receiver) = mpsc::unbounded_channel();
+        let control_input = Arc::new(ControlInputCollector::with_options(
+            Arc::clone(&hid_port),
+            DEFAULT_CONTROL_INPUT_CAPACITY,
+            Duration::from_millis(5),
+        ));
 
         Ok(Self {
             hid_port,
@@ -76,12 +84,17 @@ impl ApplicationDeviceService {
             event_receiver: Arc::new(RwLock::new(Some(event_receiver))),
             tracer,
             health_check_interval: Duration::from_secs(5),
+            control_input,
         })
     }
 
     /// Start the device service
     pub async fn start(&self) -> Result<()> {
         info!("Starting device service");
+
+        // Start input collection before the other non-real-time workers so the
+        // same session owns decoded input and health reads for each device.
+        self.control_input.start().await?;
 
         // Start device enumeration
         self.start_device_enumeration().await?;
@@ -94,6 +107,18 @@ impl ApplicationDeviceService {
 
         info!("Device service started successfully");
         Ok(())
+    }
+
+    /// Take the bounded decoded-input stream before service startup.
+    pub async fn take_control_input_stream(
+        &self,
+    ) -> Result<mpsc::Receiver<openracing_device_types::ControlStreamItem>> {
+        self.control_input.take_stream().await
+    }
+
+    /// Stop the decoded-input collector and release its shared sessions.
+    pub async fn stop(&self) -> Result<()> {
+        self.control_input.stop().await
     }
 
     /// Enumerate and discover devices
@@ -186,14 +211,11 @@ impl ApplicationDeviceService {
     pub async fn initialize_device(&self, device_id: &DeviceId) -> Result<()> {
         info!(device_id = %device_id, "Initializing device");
 
-        let device = self
-            .hid_port
-            .open_device(device_id)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to open device: {}", e))?;
+        let device = self.control_input.open_or_get_device(device_id).await?;
+        let device_guard = device.lock().await;
 
         // Read device capabilities
-        let capabilities = device.capabilities().clone();
+        let capabilities = device_guard.capabilities().clone();
 
         // Update managed device
         {
@@ -223,17 +245,14 @@ impl ApplicationDeviceService {
     ) -> Result<CalibrationData> {
         info!(device_id = %device_id, calibration_type = ?calibration_type, "Starting device calibration");
 
-        let mut device = self
-            .hid_port
-            .open_device(device_id)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to open device for calibration: {}", e))?;
+        let device = self.control_input.open_or_get_device(device_id).await?;
+        let mut device = device.lock().await;
 
         let calibration_data = match calibration_type {
-            CalibrationType::Center => self.calibrate_center(device.as_mut()).await?,
-            CalibrationType::Range => self.calibrate_range(device.as_mut()).await?,
-            CalibrationType::Pedals => self.calibrate_pedals(device.as_ref()).await?,
-            CalibrationType::Full => self.calibrate_full(device.as_mut()).await?,
+            CalibrationType::Center => self.calibrate_center(&mut **device).await?,
+            CalibrationType::Range => self.calibrate_range(&mut **device).await?,
+            CalibrationType::Pedals => self.calibrate_pedals(&**device).await?,
+            CalibrationType::Full => self.calibrate_full(&mut **device).await?,
         };
 
         // Store calibration data
@@ -252,11 +271,8 @@ impl ApplicationDeviceService {
     pub async fn get_device_health(&self, device_id: &DeviceId) -> Result<DeviceHealthStatus> {
         debug!(device_id = %device_id, "Getting device health status");
 
-        let device = self
-            .hid_port
-            .open_device(device_id)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to open device for health check: {}", e))?;
+        let device = self.control_input.open_or_get_device(device_id).await?;
+        let device = device.lock().await;
 
         let health_status = device.health_status();
 
@@ -337,7 +353,7 @@ impl ApplicationDeviceService {
     /// Start health monitoring
     async fn start_health_monitoring(&self) -> Result<()> {
         let devices = Arc::clone(&self.devices);
-        let hid_port = Arc::clone(&self.hid_port);
+        let control_input = Arc::clone(&self.control_input);
         let health_interval = self.health_check_interval;
 
         tokio::spawn(async move {
@@ -352,11 +368,9 @@ impl ApplicationDeviceService {
                 };
 
                 for device_id in device_ids {
-                    let device_result = hid_port
-                        .open_device(&device_id)
-                        .await
-                        .map_err(|e| e.to_string());
+                    let device_result = control_input.open_or_get_device(&device_id).await;
                     if let Ok(device) = device_result {
+                        let device = device.lock().await;
                         let health_status = device.health_status();
                         let mut devices_guard = devices.write().await;
                         if let Some(managed_device) = devices_guard.get_mut(&device_id) {
@@ -612,7 +626,7 @@ mod tests {
     type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     fn seeded_port() -> Result<Arc<VirtualHidPort>, Box<dyn std::error::Error>> {
-        let mut port = VirtualHidPort::new();
+        let port = VirtualHidPort::new();
         let device_id: DeviceId = "test-device-0".parse()?;
         let device = VirtualDevice::new(device_id, "Test Wheel".to_string());
         port.add_device(device)?;
