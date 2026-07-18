@@ -103,10 +103,45 @@ pub struct ControlInputMetrics {
     pub last_seq: AtomicU64,
 }
 
+/// Stable key used to retain a device's projector across a reconnect, even when
+/// the platform re-enumerates the device under a different [`DeviceId`] (for
+/// example a new hidraw path on Linux).
+///
+/// Devices that report a serial are matched by vendor/product/serial, so a
+/// physical replug preserves the device instance and epoch. Devices without a
+/// serial fall back to their `DeviceId`; a path-changing reconnect of such a
+/// device cannot be re-identified and is treated as a new device.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum DeviceKey {
+    /// Stable hardware fingerprint (device reports a serial).
+    Fingerprint {
+        vendor_id: u16,
+        product_id: u16,
+        serial: String,
+    },
+    /// Fallback: the platform device id (no usable serial).
+    Id(DeviceId),
+}
+
+/// Derive the retention key for a device.
+fn device_key(info: &DeviceInfo) -> DeviceKey {
+    match &info.serial_number {
+        Some(serial) if !serial.is_empty() => DeviceKey::Fingerprint {
+            vendor_id: info.vendor_id,
+            product_id: info.product_id,
+            serial: serial.clone(),
+        },
+        _ => DeviceKey::Id(info.id.clone()),
+    }
+}
+
 /// Per-device collection state: the single owned handle plus its projector.
 struct ActiveDevice {
     handle: Box<dyn HidDevice>,
     projector: ControlProjector,
+    /// Stable retention key, used to move the projector to `dormant` on
+    /// disconnect so a reconnect can re-identify it.
+    key: DeviceKey,
     /// Set when a channel-full condition forced us to drop items; the next
     /// successful send emits a [`ResetReason::Overflow`] so the consumer learns
     /// a gap occurred and re-baselines.
@@ -124,9 +159,14 @@ pub struct ControlInputCollector {
     item_tx: mpsc::Sender<CollectedControlItem>,
     /// Currently connected devices (each owns its HID handle).
     active: HashMap<DeviceId, ActiveDevice>,
-    /// Projectors for disconnected devices, retained so a reconnect preserves
-    /// the device instance and continues the monotonic epoch sequence.
-    dormant: HashMap<DeviceId, ControlProjector>,
+    /// Projectors for disconnected devices, keyed by a stable retention key so a
+    /// reconnect preserves the device instance and continues the monotonic epoch
+    /// sequence even if the platform id changes.
+    dormant: HashMap<DeviceKey, ControlProjector>,
+    /// Terminal reset items (e.g. disconnect) that could not be sent because the
+    /// channel was full; retried on the next poll so the terminal signal is
+    /// never silently lost.
+    pending_terminal: Vec<CollectedControlItem>,
     /// Monotonic source of new logical instance ids for first-seen devices.
     next_instance: u64,
     metrics: Arc<ControlInputMetrics>,
@@ -145,6 +185,7 @@ impl ControlInputCollector {
             item_tx,
             active: HashMap::new(),
             dormant: HashMap::new(),
+            pending_terminal: Vec::new(),
             next_instance: 0,
             metrics,
         }
@@ -179,10 +220,12 @@ impl ControlInputCollector {
             }
         };
 
-        // Reuse a retained projector on reconnect; otherwise start a fresh one.
-        // A retained projector was already reset on disconnect, so its next
-        // observe re-baselines in the post-disconnect epoch.
-        let projector = match self.dormant.remove(&info.id) {
+        // Reuse a retained projector on reconnect (matched by stable key even if
+        // the platform id changed); otherwise start a fresh one. A retained
+        // projector was already reset on disconnect, so its next observe
+        // re-baselines in the post-disconnect epoch.
+        let key = device_key(&info);
+        let projector = match self.dormant.remove(&key) {
             Some(projector) => projector,
             None => {
                 let instance = self.next_instance;
@@ -202,6 +245,7 @@ impl ControlInputCollector {
             ActiveDevice {
                 handle,
                 projector,
+                key,
                 pending_overflow: false,
             },
         );
@@ -220,8 +264,13 @@ impl ControlInputCollector {
             let reset = active
                 .projector
                 .reset(ResetReason::Disconnect, timestamp_ns);
-            self.push(device, reset);
-            self.dormant.insert(id.clone(), active.projector);
+            // The disconnect reset is a terminal signal for this stream; if the
+            // channel is full it is queued for retry rather than dropped.
+            self.deliver_terminal(CollectedControlItem {
+                device,
+                item: reset,
+            });
+            self.dormant.insert(active.key, active.projector);
             self.metrics
                 .active_devices
                 .store(self.active.len(), Ordering::Relaxed);
@@ -233,6 +282,10 @@ impl ControlInputCollector {
     /// channel. Devices that return `None` from `read_inputs()` are skipped
     /// without busy-looping or crashing.
     pub fn poll_once(&mut self, timestamp_ns: u64) {
+        // Retry any terminal reset (e.g. disconnect) that a full channel could
+        // not accept earlier, before projecting new items.
+        self.flush_pending_terminal();
+
         // Borrow disjoint fields so the send logic can run while iterating the
         // active-device map mutably.
         let tx = &self.item_tx;
@@ -286,11 +339,12 @@ impl ControlInputCollector {
         }
     }
 
-    /// Best-effort tagged push of a single item (used for disconnect resets).
-    fn push(&self, device: DeviceIdentity, item: ControlStreamItem) {
-        let is_reset = matches!(item, ControlStreamItem::Reset { .. });
-        let seq = item.meta().seq;
-        match self.item_tx.try_send(CollectedControlItem { device, item }) {
+    /// Deliver a terminal item (e.g. a disconnect reset), queuing it for retry
+    /// if the channel is momentarily full so the terminal signal is never lost.
+    fn deliver_terminal(&mut self, item: CollectedControlItem) {
+        let is_reset = matches!(item.item, ControlStreamItem::Reset { .. });
+        let seq = item.item.meta().seq;
+        match self.item_tx.try_send(item) {
             Ok(()) => {
                 self.metrics.items_emitted.fetch_add(1, Ordering::Relaxed);
                 self.metrics.last_seq.store(seq, Ordering::Relaxed);
@@ -298,10 +352,19 @@ impl ControlInputCollector {
                     self.metrics.resets.fetch_add(1, Ordering::Relaxed);
                 }
             }
-            Err(mpsc::error::TrySendError::Full(_)) => {
-                self.metrics.dropped_items.fetch_add(1, Ordering::Relaxed);
-            }
+            Err(mpsc::error::TrySendError::Full(item)) => self.pending_terminal.push(item),
             Err(mpsc::error::TrySendError::Closed(_)) => {}
+        }
+    }
+
+    /// Retry queued terminal items. Ordering among queued terminals is
+    /// preserved; items that still cannot be sent stay queued for the next poll.
+    fn flush_pending_terminal(&mut self) {
+        if self.pending_terminal.is_empty() {
+            return;
+        }
+        for item in std::mem::take(&mut self.pending_terminal) {
+            self.deliver_terminal(item);
         }
     }
 }
@@ -390,18 +453,21 @@ impl ControlInputService {
             let mut ticker = tokio::time::interval(poll_interval);
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+            // Disabled once the monitor stream closes, so a dropped monitor
+            // sender cannot make the `select!` spin hot on an always-ready
+            // `recv()`; the worker keeps polling known devices on the cadence.
+            let mut monitor_open = true;
+
             loop {
                 tokio::select! {
                     _ = ticker.tick() => collector.poll_once(now_ns()),
-                    event = events.recv() => {
+                    event = events.recv(), if monitor_open => {
                         match event {
                             Some(DeviceEvent::Connected(info)) => collector.on_connected(info).await,
                             Some(DeviceEvent::Disconnected(info)) => {
                                 collector.on_disconnected(&info.id, now_ns());
                             }
-                            None => {
-                                // Monitor stream closed; keep polling known devices.
-                            }
+                            None => monitor_open = false,
                         }
                     }
                     _ = &mut shutdown_rx => break,
@@ -721,6 +787,72 @@ mod tests {
             "overflow must surface as an explicit reset"
         );
         assert!(collector.metrics.resets.load(Ordering::Relaxed) >= 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn reconnect_under_changed_device_id_preserves_instance()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // A physical replug can re-enumerate under a new platform id/path. As
+        // long as the serial matches, the device instance must be preserved.
+        let port = Arc::new(ScriptedPort::new()?);
+        let (mut collector, mut rx) = collector_with(port.clone(), 64);
+
+        collector.on_connected(port.info.clone()).await;
+        port.push_inputs(DeviceInputs::default());
+        collector.poll_once(1);
+        let instance0 = drain(&mut rx)[0].device.instance;
+
+        collector.on_disconnected(&port.info.id, 2);
+        let _ = drain(&mut rx);
+
+        // Reconnect under a different DeviceId but the same vendor/product/serial.
+        let mut replugged = port.info.clone();
+        replugged.id = "scripted-replugged".parse()?;
+        collector.on_connected(replugged).await;
+        port.push_inputs(DeviceInputs::default());
+        collector.poll_once(3);
+        let baseline = drain(&mut rx);
+        assert_eq!(
+            baseline[0].device.instance, instance0,
+            "instance survives a path-changing reconnect (matched by serial)"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn disconnect_reset_is_retried_when_channel_full()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Capacity 1: the baseline fills the channel, so a disconnect arriving
+        // while it is full must not drop the terminal reset — it is queued and
+        // delivered once space frees.
+        let port = Arc::new(ScriptedPort::new()?);
+        let (mut collector, mut rx) = collector_with(port.clone(), 1);
+        collector.on_connected(port.info.clone()).await;
+        port.push_inputs(DeviceInputs::default());
+        collector.poll_once(1); // baseline occupies the single slot
+
+        collector.on_disconnected(&port.info.id, 2); // reset cannot send -> queued
+        // Only the baseline is in the channel so far.
+        let baseline = rx.try_recv();
+        assert!(matches!(
+            baseline.map(|c| c.item),
+            Ok(ControlStreamItem::InitialSnapshot { .. })
+        ));
+
+        // A later poll retries the queued terminal reset.
+        collector.poll_once(3);
+        let items = drain(&mut rx);
+        assert!(
+            items.iter().any(|c| matches!(
+                c.item,
+                ControlStreamItem::Reset {
+                    reason: ResetReason::Disconnect,
+                    ..
+                }
+            )),
+            "queued disconnect reset must eventually be delivered"
+        );
         Ok(())
     }
 
