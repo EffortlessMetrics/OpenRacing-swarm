@@ -540,7 +540,7 @@ mod tests {
             use racing_wheel_engine::{VirtualDevice, VirtualHidPort};
             use std::sync::Arc;
 
-            let port = VirtualHidPort::new();
+            let mut port = VirtualHidPort::new();
             let device_id = must("virt-wheel-0".parse());
             let vdev = VirtualDevice::new(device_id, "Virtual Wheel".to_string());
             port.add_device(vdev)
@@ -560,7 +560,7 @@ mod tests {
             use racing_wheel_engine::{VirtualDevice, VirtualHidPort};
             use std::sync::Arc;
 
-            let port = VirtualHidPort::new();
+            let mut port = VirtualHidPort::new();
             let device_id = must("recon-dev".parse());
             let vdev = VirtualDevice::new(device_id, "Reconnect Wheel".to_string());
             port.add_device(vdev)
