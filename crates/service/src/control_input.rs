@@ -391,7 +391,7 @@ mod tests {
     fn seeded_port() -> Result<(Arc<VirtualHidPort>, DeviceId), Box<dyn std::error::Error>> {
         let port = VirtualHidPort::new();
         let id = "collector-device".parse::<DeviceId>()?;
-        port.add_device(VirtualDevice::new(
+        port.add_device_shared(VirtualDevice::new(
             id.clone(),
             "Collector Wheel".to_string(),
         ))?;
@@ -440,7 +440,7 @@ mod tests {
         let _ = next_item(&mut stream).await?;
         let _ = next_item(&mut stream).await?;
 
-        port.remove_device(&id)?;
+        port.remove_device_shared(&id)?;
         let item = next_item(&mut stream).await?;
         assert!(matches!(
             item,
@@ -465,7 +465,7 @@ mod tests {
 
         let _ = next_item(&mut stream).await?;
         let _ = next_item(&mut stream).await?;
-        port.remove_device(&id)?;
+        port.remove_device_shared(&id)?;
         assert!(matches!(
             next_item(&mut stream).await?,
             ControlStreamItem::Reset {
@@ -474,7 +474,7 @@ mod tests {
             }
         ));
 
-        port.add_device(VirtualDevice::new(
+        port.add_device_shared(VirtualDevice::new(
             id.clone(),
             "Collector Wheel".to_string(),
         ))?;

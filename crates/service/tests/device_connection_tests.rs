@@ -36,7 +36,7 @@ async fn service_with_port(port: VirtualHidPort) -> Result<ApplicationDeviceServ
 async fn seeded_service(
     names: &[&str],
 ) -> Result<(ApplicationDeviceService, Vec<DeviceId>), BoxErr> {
-    let port = VirtualHidPort::new();
+    let mut port = VirtualHidPort::new();
     let mut ids = Vec::with_capacity(names.len());
     for name in names {
         let id = make_id(name)?;
@@ -180,7 +180,7 @@ async fn initialize_unknown_device_returns_error() -> Result<(), BoxErr> {
 #[tokio::test]
 async fn hotplug_add_device_after_initial_enum() -> Result<(), BoxErr> {
     // Start with one device
-    let port = VirtualHidPort::new();
+    let mut port = VirtualHidPort::new();
     let id_a = make_id("hotplug-a")?;
     port.add_device(VirtualDevice::new(id_a.clone(), "Wheel A".to_string()))?;
 
@@ -220,7 +220,7 @@ async fn repeated_enumeration_is_idempotent() -> Result<(), BoxErr> {
 #[tokio::test]
 async fn enumerate_marks_vanished_device_disconnected() -> Result<(), BoxErr> {
     // Create port with two devices, wrap in Arc so the service can hold it
-    let port = VirtualHidPort::new();
+    let mut port = VirtualHidPort::new();
     let id_a = make_id("vanish-a")?;
     let id_b = make_id("vanish-b")?;
     port.add_device(VirtualDevice::new(id_a.clone(), "A".to_string()))?;

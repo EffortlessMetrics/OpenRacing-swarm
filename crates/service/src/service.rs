@@ -122,7 +122,7 @@ impl WheelService {
     }
 
     fn create_virtual_port() -> Result<Arc<dyn HidPort>> {
-        let virtual_port = VirtualHidPort::new();
+        let mut virtual_port = VirtualHidPort::new();
 
         // Seed with a default virtual device for testing/development
         let device_id: DeviceId = "virtual-wheel-0"

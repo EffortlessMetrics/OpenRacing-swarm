@@ -28,7 +28,7 @@ async fn service_with_port(port: VirtualHidPort) -> Result<ApplicationDeviceServ
 async fn seeded_service(
     names: &[&str],
 ) -> Result<(ApplicationDeviceService, Vec<DeviceId>), BoxErr> {
-    let port = VirtualHidPort::new();
+    let mut port = VirtualHidPort::new();
     let mut ids = Vec::with_capacity(names.len());
     for name in names {
         let id = make_id(name)?;
@@ -271,7 +271,7 @@ async fn get_status_nonexistent_device_returns_error() -> Result<(), BoxErr> {
 
 #[tokio::test]
 async fn re_enumerate_after_device_removal_marks_disconnected() -> Result<(), BoxErr> {
-    let port = VirtualHidPort::new();
+    let mut port = VirtualHidPort::new();
     let id = make_id("will-vanish")?;
     port.add_device(VirtualDevice::new(id.clone(), "Will Vanish".to_string()))?;
 

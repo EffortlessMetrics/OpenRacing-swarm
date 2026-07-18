@@ -332,7 +332,15 @@ impl VirtualHidPort {
     }
 
     /// Add a virtual device to the port
-    pub fn add_device(&self, device: VirtualDevice) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn add_device(&mut self, device: VirtualDevice) -> Result<(), Box<dyn std::error::Error>> {
+        self.add_device_shared(device)
+    }
+
+    /// Add a virtual device through an internally synchronized shared port.
+    pub fn add_device_shared(
+        &self,
+        device: VirtualDevice,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut device = device;
         device.info.is_connected = true;
         device.connected.store(true, Ordering::Release);
@@ -350,7 +358,12 @@ impl VirtualHidPort {
     }
 
     /// Remove a device by ID
-    pub fn remove_device(&self, id: &DeviceId) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn remove_device(&mut self, id: &DeviceId) -> Result<(), Box<dyn std::error::Error>> {
+        self.remove_device_shared(id)
+    }
+
+    /// Remove a device through an internally synchronized shared port.
+    pub fn remove_device_shared(&self, id: &DeviceId) -> Result<(), Box<dyn std::error::Error>> {
         let mut devices = self.devices.lock_or_panic();
         let device_info = devices.iter_mut().find(|d| d.info.id == *id).map(|d| {
             d.connected.store(false, Ordering::Release);
