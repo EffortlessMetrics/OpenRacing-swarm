@@ -122,7 +122,7 @@ impl WheelService {
     }
 
     fn create_virtual_port() -> Result<Arc<dyn HidPort>> {
-        let mut virtual_port = VirtualHidPort::new();
+        let virtual_port = VirtualHidPort::new();
 
         // Seed with a default virtual device for testing/development
         let device_id: DeviceId = "virtual-wheel-0"
@@ -233,6 +233,8 @@ impl WheelService {
     /// Shutdown the service gracefully
     async fn shutdown(&self) -> Result<()> {
         info!("Shutting down services");
+
+        self.device_service.stop().await?;
 
         // Shutdown tracing if available
         if let Some(_tracer) = &self.tracer {

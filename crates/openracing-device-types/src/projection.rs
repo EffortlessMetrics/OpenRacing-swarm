@@ -35,8 +35,8 @@
 //! synthesizes button presses, hat actions, or rotary deltas.
 
 use crate::{
-    ControlEvent, ControlState, ControlStreamItem, ControlValue, DeviceIdentity, DeviceInputs,
-    MAX_BUTTONS, RawControlId, ResetReason, StreamMeta,
+    ControlDescriptor, ControlEvent, ControlState, ControlStreamItem, ControlSurfaceDescriptor,
+    ControlValue, DeviceIdentity, DeviceInputs, MAX_BUTTONS, RawControlId, ResetReason, StreamMeta,
 };
 
 /// Number of rotary encoders addressable by [`DeviceInputs::rotaries`].
@@ -91,6 +91,32 @@ impl ControlProjector {
     #[must_use]
     pub fn mapping_version(&self) -> u32 {
         self.mapping_version
+    }
+
+    /// Emit the descriptor for this projector's generic input surface.
+    ///
+    /// The descriptor consumes the next sequence number so a collector can
+    /// announce a surface before its initial baseline without creating a
+    /// second sequence namespace.
+    pub fn descriptor(&mut self, timestamp_ns: u64) -> ControlStreamItem {
+        let mut controls = Vec::with_capacity(MAX_BUTTONS + 1 + ENCODER_COUNT);
+        for index in 0..MAX_BUTTONS {
+            controls.push(ControlDescriptor::button(index as u8));
+        }
+        controls.push(ControlDescriptor::hat());
+        for index in 0..ENCODER_COUNT {
+            controls.push(ControlDescriptor::encoder(index as u8));
+        }
+
+        let meta = self.next_meta(timestamp_ns);
+        ControlStreamItem::Descriptor {
+            meta,
+            surface: ControlSurfaceDescriptor {
+                device: self.device.clone(),
+                mapping_version: self.mapping_version,
+                controls,
+            },
+        }
     }
 
     /// The current input epoch.
