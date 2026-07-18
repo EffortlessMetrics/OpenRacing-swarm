@@ -21,6 +21,7 @@ keywords = ["engine", "ffb", "real-time", "racing", "openracing"]
 categories = ["game-development", "hardware-support", "embedded"]
 [dependencies]
 racing-wheel-schemas = { path = "../schemas", version = "0.1.0" }
+openracing-device-types = { path = "../openracing-device-types", version = "0.1.0" }
 racing-wheel-ks = { path = "../ks", version = "0.1.0" }
 racing-wheel-input-maps = { path = "../input-maps", version = "0.1.0" }
 racing-wheel-hid-moza-protocol = { path = "../hid-moza-protocol", version = "0.1.0" }

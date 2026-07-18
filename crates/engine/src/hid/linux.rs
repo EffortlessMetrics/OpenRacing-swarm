@@ -1408,7 +1408,7 @@ impl HidDevice for LinuxHidDevice {
 
     fn read_inputs(&self) -> Option<crate::DeviceInputs> {
         self.moza_input_state()
-            .map(|s| crate::DeviceInputs::from_moza_input_state(&s))
+            .map(|s| crate::ports::from_moza_input_state(&s))
     }
 }
 

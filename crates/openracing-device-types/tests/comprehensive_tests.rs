@@ -48,15 +48,15 @@ mod button_tests {
     use super::*;
 
     #[test]
-    fn set_and_get_all_16_buttons() {
+    fn set_and_get_all_128_buttons() {
         let mut inputs = DeviceInputs::default();
-        for i in 0..16 {
+        for i in 0..128 {
             assert!(!inputs.button(i), "Button {i} should start unset");
             inputs.set_button(i, true);
             assert!(inputs.button(i), "Button {i} should be set");
         }
         // Verify all are set
-        for i in 0..16 {
+        for i in 0..128 {
             assert!(inputs.button(i));
         }
     }
@@ -83,18 +83,19 @@ mod button_tests {
     #[test]
     fn out_of_range_button_returns_false() {
         let inputs = DeviceInputs::default();
-        assert!(!inputs.button(16));
-        assert!(!inputs.button(100));
+        // Buttons 0..=127 are valid; 128+ are out of range.
+        assert!(!inputs.button(128));
+        assert!(!inputs.button(200));
         assert!(!inputs.button(usize::MAX));
     }
 
     #[test]
     fn out_of_range_set_is_noop() {
         let mut inputs = DeviceInputs::default();
-        inputs.set_button(16, true); // should not panic or change anything
+        inputs.set_button(128, true); // out of range: no-op, must not panic
         inputs.set_button(999, true);
         // All buttons in range should still be false
-        for i in 0..16 {
+        for i in 0..128 {
             assert!(!inputs.button(i));
         }
     }
@@ -337,7 +338,7 @@ mod trait_tests {
 
 proptest! {
     #[test]
-    fn button_set_get_roundtrip(idx in 0usize..16) {
+    fn button_set_get_roundtrip(idx in 0usize..128) {
         let mut inputs = DeviceInputs::default();
         inputs.set_button(idx, true);
         prop_assert!(inputs.button(idx));
@@ -369,7 +370,7 @@ proptest! {
     }
 
     #[test]
-    fn button_out_of_range_always_false(idx in 16usize..10000) {
+    fn button_out_of_range_always_false(idx in 128usize..10000) {
         let mut inputs = DeviceInputs::default();
         // Setting out-of-range should be no-op
         inputs.set_button(idx, true);

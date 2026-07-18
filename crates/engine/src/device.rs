@@ -28,36 +28,13 @@ pub struct TelemetryData {
     pub timestamp: Instant,
 }
 
-/// Generic non-RT control-surface snapshot used by input pipeline and diagnostics.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct DeviceInputs {
-    /// Monotonic tick counter from the device firmware
-    pub tick: u32,
-    /// Raw button state bytes (up to 128 buttons, 1 bit each)
-    pub buttons: [u8; 16],
-    /// Hat switch / D-pad position (0–8; 0 = center)
-    pub hat: u8,
-    /// Absolute steering axis value (0–65535)
-    pub steering: Option<u16>,
-    /// Absolute throttle axis value (0–65535)
-    pub throttle: Option<u16>,
-    /// Absolute brake axis value (0–65535)
-    pub brake: Option<u16>,
-    /// Left clutch paddle axis value (0–65535)
-    pub clutch_left: Option<u16>,
-    /// Right clutch paddle axis value (0–65535)
-    pub clutch_right: Option<u16>,
-    /// Combined clutch axis value (0–65535)
-    pub clutch_combined: Option<u16>,
-    /// Left clutch paddle digital button state
-    pub clutch_left_button: Option<bool>,
-    /// Right clutch paddle digital button state
-    pub clutch_right_button: Option<bool>,
-    /// Handbrake axis value (0–65535)
-    pub handbrake: Option<u16>,
-    /// Rotary encoder deltas (up to 8 encoders)
-    pub rotaries: [i16; 8],
-}
+// `DeviceInputs` is the vendor-neutral non-RT control-surface snapshot. Its
+// canonical, durable definition lives in the `openracing-device-types` crate
+// (see the external-control-stream plan). The engine re-exports it here so that
+// existing `racing_wheel_engine::DeviceInputs` paths keep working while there is
+// a single source of truth for the button/hat/rotary contract (including the
+// corrected 0..=127 button range). Do not reintroduce a divergent local copy.
+pub use openracing_device_types::DeviceInputs;
 
 /// Device info for enumeration and management
 #[derive(Debug, Clone)]

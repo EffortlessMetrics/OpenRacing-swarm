@@ -4407,6 +4407,8 @@ dependencies = [
  "insta",
  "proptest",
  "racing-wheel-schemas",
+ "serde",
+ "serde_json",
  "workspace-hack",
 ]
 
@@ -5864,6 +5866,7 @@ dependencies = [
  "openracing-atomic",
  "openracing-calibration",
  "openracing-curves",
+ "openracing-device-types",
  "openracing-errors",
  "openracing-ffb",
  "openracing-filters",

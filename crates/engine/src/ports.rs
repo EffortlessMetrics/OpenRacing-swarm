@@ -73,44 +73,48 @@ pub trait HidInputDevice: Send + Sync {
     fn moza_input_state(&self) -> Option<MozaInputState>;
 }
 
-impl DeviceInputs {
-    #[allow(dead_code)]
-    pub(crate) fn from_moza_input_state(state: &MozaInputState) -> Self {
-        let mut inputs = DeviceInputs {
-            tick: state.tick,
-            buttons: state.buttons,
-            hat: state.hat,
-            steering: Some(state.steering_u16),
-            throttle: Some(state.throttle_u16),
-            brake: Some(state.brake_u16),
-            clutch_left: state.ks_snapshot.clutch_left,
-            clutch_right: state.ks_snapshot.clutch_right,
-            clutch_combined: state.ks_snapshot.clutch_combined,
-            clutch_left_button: state.ks_snapshot.clutch_left_button,
-            clutch_right_button: state.ks_snapshot.clutch_right_button,
-            handbrake: Some(state.handbrake_u16),
-            rotaries: [0i16; 8],
-        };
+/// Build a vendor-neutral [`DeviceInputs`] snapshot from a Moza input state.
+///
+/// This adapter is engine-specific (it depends on `MozaInputState`), so it lives
+/// in the engine as a free function rather than as an inherent method on
+/// `DeviceInputs`, whose canonical definition now lives in
+/// `openracing-device-types` and cannot carry engine-specific constructors.
+#[allow(dead_code)]
+pub(crate) fn from_moza_input_state(state: &MozaInputState) -> DeviceInputs {
+    let mut inputs = DeviceInputs {
+        tick: state.tick,
+        buttons: state.buttons,
+        hat: state.hat,
+        steering: Some(state.steering_u16),
+        throttle: Some(state.throttle_u16),
+        brake: Some(state.brake_u16),
+        clutch_left: state.ks_snapshot.clutch_left,
+        clutch_right: state.ks_snapshot.clutch_right,
+        clutch_combined: state.ks_snapshot.clutch_combined,
+        clutch_left_button: state.ks_snapshot.clutch_left_button,
+        clutch_right_button: state.ks_snapshot.clutch_right_button,
+        handbrake: Some(state.handbrake_u16),
+        rotaries: [0i16; 8],
+    };
 
-        if inputs.clutch_left.is_none() && inputs.clutch_right.is_none() {
-            inputs.clutch_left = state
-                .ks_snapshot
-                .clutch_left
-                .or(state.ks_snapshot.clutch_combined)
-                .or(Some(state.clutch_u16));
-        }
-
-        if inputs.clutch_combined.is_none() && inputs.clutch_left.is_none() {
-            inputs.clutch_combined = Some(state.clutch_u16);
-        }
-
-        inputs.rotaries[0] = i16::from(state.rotary[0]);
-        inputs.rotaries[1] = i16::from(state.rotary[1]);
-        for idx in 2..inputs.rotaries.len() {
-            inputs.rotaries[idx] = state.ks_snapshot.encoders[idx];
-        }
-        inputs
+    if inputs.clutch_left.is_none() && inputs.clutch_right.is_none() {
+        inputs.clutch_left = state
+            .ks_snapshot
+            .clutch_left
+            .or(state.ks_snapshot.clutch_combined)
+            .or(Some(state.clutch_u16));
     }
+
+    if inputs.clutch_combined.is_none() && inputs.clutch_left.is_none() {
+        inputs.clutch_combined = Some(state.clutch_u16);
+    }
+
+    inputs.rotaries[0] = i16::from(state.rotary[0]);
+    inputs.rotaries[1] = i16::from(state.rotary[1]);
+    for idx in 2..inputs.rotaries.len() {
+        inputs.rotaries[idx] = state.ks_snapshot.encoders[idx];
+    }
+    inputs
 }
 
 /// Device health status information
@@ -512,7 +516,7 @@ mod tests {
         state.rotary = [3, 9];
         state.ks_snapshot.encoders = [101, 202, 303, 404, 505, 606, 707, 808];
 
-        let inputs = DeviceInputs::from_moza_input_state(&state);
+        let inputs = from_moza_input_state(&state);
 
         assert_eq!(inputs.tick, 42);
         assert_eq!(inputs.rotaries[0], 3);
@@ -531,7 +535,7 @@ mod tests {
         state.clutch_u16 = 1200;
         state.ks_snapshot.clutch_combined = Some(7000);
 
-        let inputs = DeviceInputs::from_moza_input_state(&state);
+        let inputs = from_moza_input_state(&state);
 
         assert_eq!(inputs.clutch_left, Some(7000));
         assert_eq!(inputs.clutch_combined, Some(7000));

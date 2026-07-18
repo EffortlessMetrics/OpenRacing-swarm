@@ -3024,7 +3024,7 @@ impl HidDevice for WindowsHidDevice {
 
     fn read_inputs(&self) -> Option<crate::DeviceInputs> {
         self.moza_input_state()
-            .map(|state| crate::DeviceInputs::from_moza_input_state(&state))
+            .map(|state| crate::ports::from_moza_input_state(&state))
     }
 }
 

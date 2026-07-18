@@ -172,10 +172,10 @@ mod button_capabilities {
 
     #[test]
     fn set_and_get_every_button_independently() {
-        for i in 0..16 {
+        for i in 0..128 {
             let mut inputs = DeviceInputs::default();
             inputs.set_button(i, true);
-            for j in 0..16 {
+            for j in 0..128 {
                 if j == i {
                     assert!(inputs.button(j), "button {j} should be set");
                 } else {
@@ -191,8 +191,8 @@ mod button_capabilities {
     #[test]
     fn set_all_then_clear_one() {
         let mut inputs = DeviceInputs::new().with_buttons([0xFF; 16]);
-        // All 16 buttons (0..16) should be true
-        for i in 0..16 {
+        // All 128 buttons (0..128) should be true
+        for i in 0..128 {
             assert!(inputs.button(i));
         }
         inputs.set_button(5, false);
@@ -204,18 +204,19 @@ mod button_capabilities {
     #[test]
     fn button_out_of_range_returns_false() {
         let inputs = DeviceInputs::new().with_buttons([0xFF; 16]);
-        assert!(!inputs.button(16));
-        assert!(!inputs.button(100));
+        // All 128 in-range bits are set; only 128+ read false.
+        assert!(!inputs.button(128));
+        assert!(!inputs.button(200));
         assert!(!inputs.button(usize::MAX));
     }
 
     #[test]
     fn set_button_out_of_range_is_noop() {
         let mut inputs = DeviceInputs::default();
-        inputs.set_button(16, true);
+        inputs.set_button(128, true);
         inputs.set_button(999, true);
         // No button in range should be set
-        for i in 0..16 {
+        for i in 0..128 {
             assert!(!inputs.button(i));
         }
     }
@@ -554,7 +555,7 @@ proptest! {
     }
 
     #[test]
-    fn prop_button_out_of_range_always_false(idx in 16usize..10000) {
+    fn prop_button_out_of_range_always_false(idx in 128usize..10000) {
         let mut inputs = DeviceInputs::default();
         inputs.set_button(idx, true);
         prop_assert!(!inputs.button(idx));
@@ -705,7 +706,7 @@ mod capability_flags {
     #[test]
     fn button_bitmask_all_set() {
         let inputs = DeviceInputs::new().with_buttons([0xFF; 16]);
-        for i in 0..16 {
+        for i in 0..128 {
             assert!(inputs.button(i), "button {i} should be set");
         }
     }
@@ -713,7 +714,7 @@ mod capability_flags {
     #[test]
     fn button_bitmask_all_clear() {
         let inputs = DeviceInputs::new().with_buttons([0x00; 16]);
-        for i in 0..16 {
+        for i in 0..128 {
             assert!(!inputs.button(i), "button {i} should be clear");
         }
     }
