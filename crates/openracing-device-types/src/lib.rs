@@ -9,6 +9,9 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod projection;
+pub use projection::ControlProjector;
+
 /// Telemetry data from device
 #[derive(Debug, Clone)]
 pub struct TelemetryData {
