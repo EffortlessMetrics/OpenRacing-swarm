@@ -29,6 +29,7 @@ normal = ["workspace-hack", "libudev", "openracing-ipc"]
 [dependencies]
 racing-wheel-schemas = { path = "../schemas", version = "0.1.0" }
 racing-wheel-engine = { path = "../engine", version = "0.1.0" }
+openracing-device-types = { path = "../openracing-device-types", version = "0.1.0" }
 openracing-telemetry = { path = "../telemetry-core", version = "0.1.0", features = ["orchestrator"] }
 openracing-telemetry-adapters = { path = "../telemetry-adapters", version = "0.1.0" }
 openracing-telemetry-recorder = { path = "../telemetry-recorder", version = "0.1.0" }

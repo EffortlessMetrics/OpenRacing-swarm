@@ -6284,6 +6284,7 @@ dependencies = [
  "libudev",
  "metrics",
  "num_cpus",
+ "openracing-device-types",
  "openracing-errors",
  "openracing-hid-common",
  "openracing-ipc",

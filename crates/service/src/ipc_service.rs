@@ -1322,7 +1322,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_devices_preserves_usb_vid_pid() -> anyhow::Result<()> {
-        let mut port = VirtualHidPort::new();
+        let port = VirtualHidPort::new();
         let device_id: DeviceId = "ipc-identity-wheel".parse()?;
         port.add_device(VirtualDevice::new(
             device_id,

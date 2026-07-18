@@ -71,7 +71,7 @@ fn test_device_capabilities() -> Result<DeviceCapabilities, BoxErr> {
 
 #[tokio::test]
 async fn device_multi_device_port_enumerates_all() -> Result<(), BoxErr> {
-    let mut port = VirtualHidPort::new();
+    let port = VirtualHidPort::new();
     for i in 0..3 {
         let id: DeviceId = format!("multi-dev-{i}").parse()?;
         port.add_device(VirtualDevice::new(id, format!("Wheel {i}")))
