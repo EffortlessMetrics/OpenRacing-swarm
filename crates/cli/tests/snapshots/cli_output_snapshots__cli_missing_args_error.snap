@@ -8,6 +8,7 @@ Usage: wheelctl [OPTIONS] <COMMAND>
 
 Commands:
   device          Device management commands
+  controls        Observe-only control-stream diagnostics, capture, and replay
   profile         Profile management commands
   plugin          Plugin management commands
   diag            Diagnostic and monitoring commands
