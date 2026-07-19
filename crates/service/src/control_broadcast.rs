@@ -127,6 +127,7 @@ struct Shared {
 
 struct ReplayState {
     surface: ControlSurfaceDescriptor,
+    descriptor_meta: StreamMeta,
     latest_meta: StreamMeta,
     baseline: Option<Vec<ControlState>>,
 }
@@ -311,7 +312,7 @@ fn replay_items(replay: &BTreeMap<String, ReplayState>) -> Vec<ControlStreamItem
         .values()
         .flat_map(|state| {
             let descriptor = ControlStreamItem::Descriptor {
-                meta: state.latest_meta,
+                meta: state.descriptor_meta,
                 surface: state.surface.clone(),
             };
             let baseline =
@@ -338,6 +339,7 @@ fn update_replay(replay: &mut BTreeMap<String, ReplayState>, item: &ControlStrea
                 key,
                 ReplayState {
                     surface: surface.clone(),
+                    descriptor_meta: *meta,
                     latest_meta: *meta,
                     baseline: None,
                 },
@@ -377,6 +379,7 @@ fn update_replay(replay: &mut BTreeMap<String, ReplayState>, item: &ControlStrea
             if *reason == ResetReason::Disconnect {
                 replay.remove(&key);
             } else if let Some(state) = replay.get_mut(&key) {
+                state.descriptor_meta = *meta;
                 state.latest_meta = *meta;
                 state.baseline = None;
             }
@@ -621,7 +624,8 @@ mod tests {
 
         let mut late = b.subscribe_with_replay().await;
         match recv(&mut late).await? {
-            SubscriptionEvent::Item(ControlStreamItem::Descriptor { surface, .. }) => {
+            SubscriptionEvent::Item(ControlStreamItem::Descriptor { meta, surface }) => {
+                assert_eq!(meta.seq, 0);
                 assert_eq!(surface.device.logical_id, "replay-device");
                 let first = surface
                     .controls
@@ -632,7 +636,10 @@ mod tests {
             other => return Err(format!("expected descriptor, got {other:?}").into()),
         }
         match recv(&mut late).await? {
-            SubscriptionEvent::Item(ControlStreamItem::InitialSnapshot { states, .. }) => {
+            SubscriptionEvent::Item(ControlStreamItem::InitialSnapshot {
+                meta, states, ..
+            }) => {
+                assert_eq!(meta.seq, 2);
                 assert!(states.iter().any(|state| {
                     state.raw_id == RawControlId::button(0)
                         && state.value == ControlValue::Button(true)
