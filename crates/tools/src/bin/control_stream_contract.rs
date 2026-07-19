@@ -223,12 +223,17 @@ fn generate(out: &Path) -> Result<()> {
 
     std::fs::create_dir_all(out)
         .with_context(|| format!("failed to create bundle dir {}", out.display()))?;
-    std::fs::write(out.join(PROTO_NAME), &proto)?;
-    std::fs::write(out.join(FIXTURE_NAME), &fixture)?;
-    std::fs::write(out.join(CHECKSUMS_NAME), render_checksums(&manifest.files))?;
+    let write = |name: &str, bytes: &[u8]| -> Result<()> {
+        let path = out.join(name);
+        std::fs::write(&path, bytes).with_context(|| format!("failed to write {}", path.display()))
+    };
+    write(PROTO_NAME, &proto)?;
+    write(FIXTURE_NAME, &fixture)?;
+    write(CHECKSUMS_NAME, render_checksums(&manifest.files).as_bytes())?;
 
-    let manifest_json = serde_json::to_string_pretty(&manifest)?;
-    std::fs::write(out.join(MANIFEST_NAME), format!("{manifest_json}\n"))?;
+    let manifest_json =
+        serde_json::to_string_pretty(&manifest).context("failed to serialize contract manifest")?;
+    write(MANIFEST_NAME, format!("{manifest_json}\n").as_bytes())?;
 
     println!(
         "wrote control-stream contract bundle to {} (feature {}, capture schema v{})",
@@ -278,6 +283,12 @@ fn check(dir: &Path) -> Result<()> {
         bail!(
             "unexpected wire package {:?} (expected {WIRE_PACKAGE:?})",
             manifest.wire.package
+        );
+    }
+    if manifest.wire.proto != PROTO_NAME {
+        bail!(
+            "unexpected wire proto file name {:?} (expected {PROTO_NAME:?})",
+            manifest.wire.proto
         );
     }
     safe_asset_name(&manifest.wire.proto)?;
@@ -542,6 +553,27 @@ mod tests {
         assert!(
             check(&dir).is_err(),
             "a capture schema version that drifts from the build must fail"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        Ok(())
+    }
+
+    #[test]
+    fn check_rejects_a_renamed_wire_proto() -> Result<()> {
+        let dir = temp_dir("wire-rename");
+        let _ = std::fs::remove_dir_all(&dir);
+        generate(&dir)?;
+        // Point the wire descriptor at the fixture (a safe basename with a real
+        // file entry) instead of the pinned proto name. Coherent internally, but
+        // the pinned wire asset drifted, so it must be rejected.
+        rewrite_manifest(&dir, |m| {
+            let fixture_sha = m.fixtures[0].sha256.clone();
+            m.wire.proto = FIXTURE_NAME.to_string();
+            m.wire.sha256 = fixture_sha;
+        })?;
+        assert!(
+            check(&dir).is_err(),
+            "a wire proto renamed away from the pinned name must fail"
         );
         let _ = std::fs::remove_dir_all(&dir);
         Ok(())

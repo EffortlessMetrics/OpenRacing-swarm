@@ -213,10 +213,30 @@ build_tarball() {
     # client without depending on OpenRacing engine/HID/FFB crates.
     local contract_dir="$tarball_dir/contract/control-stream"
     mkdir -p "$contract_dir"
+    # The four assets that make up a coherent bundle (issue #179).
+    local required_assets=(
+        "control-stream-contract.json"
+        "wheel.proto"
+        "sample-capture.json"
+        "SHA256SUMS"
+    )
     if [[ -n "${CONTRACT_PATH:-}" && -d "${CONTRACT_PATH:-}" ]]; then
         # Reuse a pre-generated bundle (e.g. a cross-build where cargo is
-        # unavailable on this host). It must still pass --check below.
-        cp "$CONTRACT_PATH"/* "$contract_dir/"
+        # unavailable on this host). Copy only the allowlisted assets by name and
+        # reject symlinks, so a broad, stale, or crafted CONTRACT_PATH cannot add
+        # unlisted files or pull host files into the release tarball. --check
+        # below still verifies coherence.
+        for asset in "${required_assets[@]}"; do
+            if [[ -L "$CONTRACT_PATH/$asset" ]]; then
+                echo "ERROR: refusing to copy symlinked contract asset $asset from CONTRACT_PATH" >&2
+                return 1
+            fi
+            if [[ ! -f "$CONTRACT_PATH/$asset" ]]; then
+                echo "ERROR: CONTRACT_PATH is missing contract asset $asset" >&2
+                return 1
+            fi
+            cp -- "$CONTRACT_PATH/$asset" "$contract_dir/$asset"
+        done
     elif command -v cargo >/dev/null 2>&1; then
         ( cd "$PROJECT_ROOT" && cargo run --quiet --locked -p openracing-tools \
             --bin control-stream-contract -- --out "$contract_dir" )
@@ -229,12 +249,6 @@ build_tarball() {
     # exists and is coherent, and fail the package build otherwise — a tarball
     # missing or with a corrupt bundle must never ship. --check needs cargo, so
     # a CONTRACT_PATH bundle on a cargo-less host is a hard error too.
-    local required_assets=(
-        "control-stream-contract.json"
-        "wheel.proto"
-        "sample-capture.json"
-        "SHA256SUMS"
-    )
     for asset in "${required_assets[@]}"; do
         if [[ ! -f "$contract_dir/$asset" ]]; then
             echo "ERROR: control-stream contract bundle is missing $asset" >&2
