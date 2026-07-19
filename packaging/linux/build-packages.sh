@@ -205,7 +205,28 @@ build_tarball() {
             cp "$BIN_PATH/$binary" "$tarball_dir/bin/"
         fi
     done
-    
+
+    # Package the external control-stream contract bundle (issue #179): the
+    # pinned wire proto, a compatibility manifest (control_stream_v1 feature +
+    # capture schema + min compatible versions), checksums, and a deterministic
+    # replay fixture. External consumers use this to build a control_stream_v1
+    # client without depending on OpenRacing engine/HID/FFB crates.
+    local contract_dir="$tarball_dir/contract/control-stream"
+    mkdir -p "$contract_dir"
+    if [[ -n "${CONTRACT_PATH:-}" && -d "${CONTRACT_PATH:-}" ]]; then
+        cp "$CONTRACT_PATH"/* "$contract_dir/"
+    elif command -v cargo >/dev/null 2>&1; then
+        ( cd "$PROJECT_ROOT" && cargo run --quiet --locked -p openracing-tools \
+            --bin control-stream-contract -- --out "$contract_dir" )
+    else
+        echo "WARNING: cargo and CONTRACT_PATH unavailable; control-stream contract bundle omitted"
+    fi
+    # Fail the package if the bundled contract assets are missing or mismatched.
+    if [[ -f "$contract_dir/control-stream-contract.json" ]] && command -v cargo >/dev/null 2>&1; then
+        ( cd "$PROJECT_ROOT" && cargo run --quiet --locked -p openracing-tools \
+            --bin control-stream-contract -- --check "$contract_dir" )
+    fi
+
     # Copy packaging files
     cp "$SCRIPT_DIR/99-racing-wheel-suite.rules" "$tarball_dir/"
     cp "$SCRIPT_DIR/wheeld.service.template" "$tarball_dir/systemd/wheeld.service"

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- External `control_stream_v1` contract bundle wired into Linux release packages
+  (`contract/control-stream/`): a pinned `wheel.proto`, a compatibility manifest
+  (feature version, capture schema version, minimum compatible service/client
+  versions, source checksum), `SHA256SUMS`, and a deterministic replay fixture,
+  generated and coherence-verified by
+  `openracing-tools --bin control-stream-contract`, so external consumers can
+  build a client without depending on engine/HID/FFB crates (#179)
 - Windows USBPcap/Wireshark descriptor-capture fallback guidance for the Moza
   R5 passive lane, including driver-change and no-output safety boundaries.
 - ROADMAP Phases 6–11 (First Hardware — Moza R5 Stack): incremental onramp from read-only enumeration (Phase 6) through input capture (7), handshake (8), low-torque FFB (9), game integration (10), and soak testing (11) for Moza R5, KS/ES wheels, SR-P pedals, and HBP handbrake
