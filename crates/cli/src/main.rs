@@ -61,6 +61,10 @@ enum Commands {
     #[command(subcommand)]
     Device(DeviceCommands),
 
+    /// Observe-only control-stream diagnostics, capture, and replay
+    #[command(subcommand)]
+    Controls(ControlsCommands),
+
     /// Profile management commands  
     #[command(subcommand)]
     Profile(ProfileCommands),
@@ -209,6 +213,9 @@ async fn execute_command(cli: &Cli) -> Result<()> {
     match &cli.command {
         Commands::Device(cmd) => {
             commands::device::execute(cmd, cli.json, cli.endpoint.as_deref()).await
+        }
+        Commands::Controls(cmd) => {
+            commands::controls::execute(cmd, cli.json, cli.endpoint.as_deref()).await
         }
         Commands::Profile(cmd) => {
             commands::profile::execute(cmd, cli.json, cli.endpoint.as_deref()).await

@@ -1,0 +1,298 @@
+{
+  "schema_version": 1,
+  "device": {
+    "logical_id": "virtual-controls",
+    "vendor_id": 4660,
+    "product_id": 22136,
+    "serial": "VIRTUAL-CONTROLS",
+    "instance": 1
+  },
+  "mapping_version": 1,
+  "frames": [
+    {
+      "timestamp_ns": 1000,
+      "inputs": {
+        "tick": 0,
+        "buttons": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "hat": 0,
+        "rotaries": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "timestamp_ns": 2000,
+      "inputs": {
+        "tick": 0,
+        "buttons": [
+          8,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "hat": 0,
+        "rotaries": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "timestamp_ns": 3000,
+      "inputs": {
+        "tick": 0,
+        "buttons": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "hat": 0,
+        "rotaries": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "timestamp_ns": 4000,
+      "inputs": {
+        "tick": 0,
+        "buttons": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "hat": 2,
+        "rotaries": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "timestamp_ns": 5000,
+      "inputs": {
+        "tick": 0,
+        "buttons": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "hat": 255,
+        "rotaries": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "timestamp_ns": 6000,
+      "inputs": {
+        "tick": 0,
+        "buttons": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "hat": 0,
+        "rotaries": [
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "timestamp_ns": 7000,
+      "inputs": {
+        "tick": 0,
+        "buttons": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "hat": 0,
+        "rotaries": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "timestamp_ns": 8000,
+      "reset": "Disconnect"
+    },
+    {
+      "timestamp_ns": 9000,
+      "reset": "Reconnect",
+      "inputs": {
+        "tick": 0,
+        "buttons": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "hat": 0,
+        "rotaries": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  ]
+}

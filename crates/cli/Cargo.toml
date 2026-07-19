@@ -25,6 +25,7 @@ normal = ["workspace-hack"]
 openracing-telemetry-config = { path = "../telemetry-config", version = "0.1.0" }
 openracing-telemetry-adapters = { path = "../telemetry-adapters", version = "0.1.0" }
 racing-wheel-schemas = { path = "../schemas", version = "0.1.0" }
+openracing-device-types = { workspace = true }
 racing-wheel-hid-moza-protocol = { path = "../hid-moza-protocol", version = "0.1.0" }
 racing-wheel-hid-capture = { path = "../hid-capture", version = "0.1.0" }
 openracing-hardware-core = { path = "../openracing-hardware-core", version = "0.1.0" }

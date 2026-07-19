@@ -9917,6 +9917,7 @@ dependencies = [
  "indicatif",
  "insta",
  "jsonschema",
+ "openracing-device-types",
  "openracing-hardware-core",
  "openracing-pidff-common",
  "openracing-telemetry-adapters",

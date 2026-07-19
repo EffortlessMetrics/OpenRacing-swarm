@@ -1,5 +1,6 @@
 //! Command implementations for wheelctl CLI
 
+pub mod controls;
 pub mod device;
 pub mod diag;
 pub mod game;
@@ -12,6 +13,8 @@ pub mod safety;
 pub mod telemetry;
 
 use clap::{Subcommand, ValueEnum};
+
+pub use controls::ControlsCommands;
 
 #[derive(Subcommand)]
 pub enum DeviceCommands {
