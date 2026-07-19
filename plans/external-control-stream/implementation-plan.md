@@ -95,8 +95,9 @@ implementation evidence is split across #177 (single-owner collection) and
 
 ## Work item: versioned-control-stream-transport
 
-Status: ready
+Status: completed
 Linked issue: #171
+Merged PR: #193
 Target seams: existing schema/proto and `crates/service/src/ipc_service.rs`,
 with feature negotiation tests.
 
@@ -116,10 +117,15 @@ physical control-role validation, or output/FFB claim.
 
 Rollback: disable the negotiated feature and preserve existing IPC methods.
 
+The transport implementation merged in #193. Its proof covers the versioned
+observe-only schema, bounded replay and live subscription, feature negotiation,
+device/kind filtering, sequence-preserving replay, and typed lag handling.
+
 ## Work item: control-diagnostics-capture-replay
 
-Status: blocked by `versioned-control-stream-transport`
+Status: ready
 Linked issue: #172
+Prerequisite: `versioned-control-stream-transport` merged as PR #193
 Target seams: diagnostics/capture/replay surfaces and a separate input-only
 Runbook proof consumer; exact paths to be finalized by the activated plan.
 

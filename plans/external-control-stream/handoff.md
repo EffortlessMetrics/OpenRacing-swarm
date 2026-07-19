@@ -19,10 +19,11 @@ blocked closeout at
 boundaries remain preserved.
 
 The domain contract (#168, merged PR #181), deterministic projector (#169,
-merged PR #183), and non-RT service slices (#177/#178, merged PRs #191/#188)
-are complete. The next work item is the versioned observe-only gRPC transport
-(#171). No public IPC, output report, FFB behavior, or physical/support claim
-is implied by the completed slices.
+merged PR #183), non-RT service slices (#177/#178, merged PRs #191/#188), and
+versioned observe-only gRPC transport (#171, merged PR #193) are complete. The
+next work item is diagnostics, capture, and deterministic replay (#172). The
+merged transport remains a packaged software contract only; it does not imply
+Runbook support, output, FFB behavior, or physical/support claims.
 
 ## Work order
 
@@ -31,9 +32,11 @@ in order:
 
 `#168 -> #169 -> #170 -> #171 -> #172`
 
-The completed #170 epic is represented by #177 and #178. The runtime chain is
-followed by the deployment source-truth item #173 and then implementation issue
-#174. The external Runbook consumer is
+The completed #170 epic is represented by #177 and #178. Items #168 through
+#171 are now merged (#181, #183, #188/#191, and #193 respectively). Issue #172
+is ready to start as the next one-PR work item. The runtime chain is followed
+by the deployment source-truth item #173 and then implementation issue #174.
+The external Runbook consumer is
 `EffortlessMetrics/runbook-rs#41`, and remains a proof consumer rather than a
 domain dependency.
 

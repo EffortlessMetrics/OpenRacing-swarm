@@ -68,15 +68,16 @@ claim_boundary = "Non-RT collection and bounded broadcasting from decoded/virtua
 
 [[work_item]]
 id = "versioned-control-stream-transport"
-status = "ready"
+status = "completed"
 issue = 171
+pr = 193
 claim_boundary = "Observe-only versioned IPC contract; no Runbook support, physical control-role validation, output, FFB, or safety-state claim."
 
 [[work_item]]
 id = "control-diagnostics-capture-replay"
-status = "blocked"
+status = "ready"
 issue = 172
-blocked_by = "versioned-control-stream-transport"
+prerequisite = "versioned-control-stream-transport"
 claim_boundary = "Diagnostic and replay evidence only; no physical compatibility, named controls, release readiness, or hardware/output support."
 
 [[work_item]]
