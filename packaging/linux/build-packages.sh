@@ -214,18 +214,39 @@ build_tarball() {
     local contract_dir="$tarball_dir/contract/control-stream"
     mkdir -p "$contract_dir"
     if [[ -n "${CONTRACT_PATH:-}" && -d "${CONTRACT_PATH:-}" ]]; then
+        # Reuse a pre-generated bundle (e.g. a cross-build where cargo is
+        # unavailable on this host). It must still pass --check below.
         cp "$CONTRACT_PATH"/* "$contract_dir/"
     elif command -v cargo >/dev/null 2>&1; then
         ( cd "$PROJECT_ROOT" && cargo run --quiet --locked -p openracing-tools \
             --bin control-stream-contract -- --out "$contract_dir" )
     else
-        echo "WARNING: cargo and CONTRACT_PATH unavailable; control-stream contract bundle omitted"
+        echo "ERROR: control-stream contract bundle cannot be produced:" >&2
+        echo "       set CONTRACT_PATH to a pre-generated bundle or make cargo available." >&2
+        return 1
     fi
-    # Fail the package if the bundled contract assets are missing or mismatched.
-    if [[ -f "$contract_dir/control-stream-contract.json" ]] && command -v cargo >/dev/null 2>&1; then
-        ( cd "$PROJECT_ROOT" && cargo run --quiet --locked -p openracing-tools \
-            --bin control-stream-contract -- --check "$contract_dir" )
+    # The contract bundle is a required release artifact (issue #179). Verify it
+    # exists and is coherent, and fail the package build otherwise — a tarball
+    # missing or with a corrupt bundle must never ship. --check needs cargo, so
+    # a CONTRACT_PATH bundle on a cargo-less host is a hard error too.
+    local required_assets=(
+        "control-stream-contract.json"
+        "wheel.proto"
+        "sample-capture.json"
+        "SHA256SUMS"
+    )
+    for asset in "${required_assets[@]}"; do
+        if [[ ! -f "$contract_dir/$asset" ]]; then
+            echo "ERROR: control-stream contract bundle is missing $asset" >&2
+            return 1
+        fi
+    done
+    if ! command -v cargo >/dev/null 2>&1; then
+        echo "ERROR: cargo is required to verify the control-stream contract bundle" >&2
+        return 1
     fi
+    ( cd "$PROJECT_ROOT" && cargo run --quiet --locked -p openracing-tools \
+        --bin control-stream-contract -- --check "$contract_dir" )
 
     # Copy packaging files
     cp "$SCRIPT_DIR/99-racing-wheel-suite.rules" "$tarball_dir/"
