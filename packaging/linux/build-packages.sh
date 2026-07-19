@@ -220,12 +220,20 @@ build_tarball() {
         "sample-capture.json"
         "SHA256SUMS"
     )
+    # The bundle is a required release artifact (issue #179) and is verified
+    # below with `control-stream-contract --check`, which needs cargo — so cargo
+    # is required for every path. Fail fast before doing any copy/generation work
+    # rather than after, so a cargo-less host errors clearly and immediately.
+    if ! command -v cargo >/dev/null 2>&1; then
+        echo "ERROR: cargo is required to produce and verify the control-stream contract bundle" >&2
+        return 1
+    fi
     if [[ -n "${CONTRACT_PATH:-}" && -d "${CONTRACT_PATH:-}" ]]; then
-        # Reuse a pre-generated bundle (e.g. a cross-build where cargo is
-        # unavailable on this host). Copy only the allowlisted assets by name and
-        # reject symlinks, so a broad, stale, or crafted CONTRACT_PATH cannot add
-        # unlisted files or pull host files into the release tarball. --check
-        # below still verifies coherence.
+        # Reuse a pre-generated bundle (e.g. one produced by an earlier build
+        # stage). Copy only the allowlisted assets by name and reject symlinks,
+        # so a broad, stale, or crafted CONTRACT_PATH cannot add unlisted files
+        # or pull host files into the release tarball. --check below still binds
+        # the assets to this checkout and verifies coherence.
         for asset in "${required_assets[@]}"; do
             if [[ -L "$CONTRACT_PATH/$asset" ]]; then
                 echo "ERROR: refusing to copy symlinked contract asset $asset from CONTRACT_PATH" >&2
@@ -237,28 +245,19 @@ build_tarball() {
             fi
             cp -- "$CONTRACT_PATH/$asset" "$contract_dir/$asset"
         done
-    elif command -v cargo >/dev/null 2>&1; then
+    else
         ( cd "$PROJECT_ROOT" && cargo run --quiet --locked -p openracing-tools \
             --bin control-stream-contract -- --out "$contract_dir" )
-    else
-        echo "ERROR: control-stream contract bundle cannot be produced:" >&2
-        echo "       set CONTRACT_PATH to a pre-generated bundle or make cargo available." >&2
-        return 1
     fi
-    # The contract bundle is a required release artifact (issue #179). Verify it
-    # exists and is coherent, and fail the package build otherwise — a tarball
-    # missing or with a corrupt bundle must never ship. --check needs cargo, so
-    # a CONTRACT_PATH bundle on a cargo-less host is a hard error too.
+    # Verify all four assets are present and the bundle is coherent; fail the
+    # package build otherwise — a tarball missing or with a corrupt bundle must
+    # never ship.
     for asset in "${required_assets[@]}"; do
         if [[ ! -f "$contract_dir/$asset" ]]; then
             echo "ERROR: control-stream contract bundle is missing $asset" >&2
             return 1
         fi
     done
-    if ! command -v cargo >/dev/null 2>&1; then
-        echo "ERROR: cargo is required to verify the control-stream contract bundle" >&2
-        return 1
-    fi
     ( cd "$PROJECT_ROOT" && cargo run --quiet --locked -p openracing-tools \
         --bin control-stream-contract -- --check "$contract_dir" )
 

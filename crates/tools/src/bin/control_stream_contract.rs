@@ -394,6 +394,52 @@ fn check(dir: &Path) -> Result<()> {
         bail!("{CHECKSUMS_NAME} does not match the manifest file list");
     }
 
+    // All the checks above prove the bundle is *internally* coherent, but a
+    // bundle whose proto/fixture bytes were replaced with matching manifest and
+    // SHA256SUMS entries is still self-consistent. When the workspace sources
+    // are reachable (package time), bind the bundle to the actual checkout:
+    // recompute the authoritative hashes and require the manifest's asset hashes,
+    // release version, and fixture kind to match, so a drifted-but-coherent
+    // bundle supplied via CONTRACT_PATH cannot ship. When run outside a checkout
+    // — a consumer verifying a downloaded artifact, where the compiled-in
+    // CARGO_MANIFEST_DIR path does not exist — this cross-check is skipped and
+    // only internal coherence is enforced.
+    if let Ok(root) = workspace_root()
+        && let Ok((expected, _, _)) = compose_bundle(&root)
+    {
+        if manifest.openracing_release != expected.openracing_release {
+            bail!(
+                "bundle release {:?} does not match the checkout {:?}",
+                manifest.openracing_release,
+                expected.openracing_release
+            );
+        }
+        if manifest.wire.sha256 != expected.wire.sha256 {
+            bail!("wire proto content does not match the pinned checkout source");
+        }
+        if let (Some(got), Some(exp)) = (manifest.fixtures.first(), expected.fixtures.first())
+            && (got.kind != exp.kind || got.sha256 != exp.sha256)
+        {
+            bail!(
+                "fixture {} content does not match the pinned checkout source",
+                got.name
+            );
+        }
+        for exp in &expected.files {
+            let got = manifest
+                .files
+                .iter()
+                .find(|f| f.name == exp.name)
+                .with_context(|| format!("bundle is missing pinned asset {}", exp.name))?;
+            if got.sha256 != exp.sha256 {
+                bail!(
+                    "asset {} content does not match the pinned checkout source",
+                    exp.name
+                );
+            }
+        }
+    }
+
     let _ = writeln!(
         std::io::stdout().lock(),
         "control-stream contract bundle at {} is coherent ({} files, feature {})",
@@ -583,6 +629,36 @@ mod tests {
         assert!(
             check(&dir).is_err(),
             "a wire proto renamed away from the pinned name must fail"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        Ok(())
+    }
+
+    #[test]
+    fn check_rejects_a_bundle_drifted_from_the_checkout() -> Result<()> {
+        let dir = temp_dir("drift-checkout");
+        let _ = std::fs::remove_dir_all(&dir);
+        generate(&dir)?;
+        // Replace the proto with tampered bytes and update EVERY declared
+        // checksum consistently (manifest wire + file entry + SHA256SUMS) so the
+        // bundle stays internally coherent. It must still be rejected because the
+        // content no longer matches the pinned checkout source.
+        let tampered: &[u8] = b"// tampered proto\n";
+        std::fs::write(dir.join(PROTO_NAME), tampered)?;
+        let tampered_sha = sha256_hex(tampered);
+        rewrite_manifest(&dir, |m| {
+            m.wire.sha256 = tampered_sha.clone();
+            if let Some(f) = m.files.iter_mut().find(|f| f.name == PROTO_NAME) {
+                f.sha256 = tampered_sha.clone();
+            }
+        })?;
+        // Rebuild SHA256SUMS to agree with the updated manifest.files.
+        let manifest: ContractManifest =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(MANIFEST_NAME))?)?;
+        std::fs::write(dir.join(CHECKSUMS_NAME), render_checksums(&manifest.files))?;
+        assert!(
+            check(&dir).is_err(),
+            "an internally coherent bundle that drifted from the checkout must fail"
         );
         let _ = std::fs::remove_dir_all(&dir);
         Ok(())
