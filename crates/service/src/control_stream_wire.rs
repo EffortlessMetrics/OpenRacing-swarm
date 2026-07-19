@@ -323,8 +323,15 @@ mod tests {
             reason: ResetReason::Disconnect,
         };
         let wire = to_wire_item(item)?;
+        let Some(racing_wheel_schemas::generated::wheel::v1::ControlStreamMetadata {
+            sequence,
+            ..
+        }) = wire.metadata.as_ref()
+        else {
+            return Err("missing metadata".into());
+        };
+        assert_eq!(*sequence, 9);
         let metadata = wire.metadata.as_ref().ok_or("missing metadata")?;
-        assert_eq!(metadata.sequence, 9);
         assert_eq!(metadata.epoch, 2);
         assert_eq!(
             metadata.device.as_ref().map(|d| d.logical_id.as_str()),

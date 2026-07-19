@@ -147,6 +147,7 @@ class CompatUsageTracker:
             "crates/hid-vrs-protocol/",  # intra-crate glob re-exports (not deprecated API pattern)
             "crates/hid-cammus-protocol/",  # intra-crate glob re-exports (not deprecated API pattern)
             "crates/schemas/tests/",  # compile-fail tests and DeviceId::new test fixtures
+            "crates/schemas/src/generated/",  # generated protobuf bindings are checked by schema CI
         ]
         
         # File extensions to search
