@@ -33,6 +33,7 @@
 //! observe-only contract. It opens no device, changes no output/FFB/support
 //! behavior, and broadens no claim.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -235,7 +236,11 @@ fn generate(out: &Path) -> Result<()> {
         serde_json::to_string_pretty(&manifest).context("failed to serialize contract manifest")?;
     write(MANIFEST_NAME, format!("{manifest_json}\n").as_bytes())?;
 
-    println!(
+    // Route status output through a locked stdout handle rather than the
+    // print!/println! macros, which the governance lint forbids in non-test
+    // production code (tools bins are not exempt).
+    let _ = writeln!(
+        std::io::stdout().lock(),
         "wrote control-stream contract bundle to {} (feature {}, capture schema v{})",
         out.display(),
         manifest.control_stream.feature,
@@ -389,7 +394,8 @@ fn check(dir: &Path) -> Result<()> {
         bail!("{CHECKSUMS_NAME} does not match the manifest file list");
     }
 
-    println!(
+    let _ = writeln!(
+        std::io::stdout().lock(),
         "control-stream contract bundle at {} is coherent ({} files, feature {})",
         dir.display(),
         manifest.files.len(),
@@ -399,7 +405,10 @@ fn check(dir: &Path) -> Result<()> {
 }
 
 fn usage() -> ! {
-    eprintln!("usage: control-stream-contract --out <dir> | --check <dir>");
+    let _ = writeln!(
+        std::io::stderr().lock(),
+        "usage: control-stream-contract --out <dir> | --check <dir>"
+    );
     std::process::exit(2);
 }
 
