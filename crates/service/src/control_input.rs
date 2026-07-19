@@ -3,8 +3,8 @@
 //! [`ControlInputCollector`] owns one shared HID session per connected device.
 //! It reads the already-decoded [`DeviceInputs`] snapshot on a bounded,
 //! non-real-time cadence and feeds the transport-neutral projector. The
-//! collector deliberately stops before subscriber fan-out; bounded broadcast,
-//! lag, and metrics are the follow-up seam in issue #178.
+//! collector feeds the service-owned bounded broadcaster; transport adapters
+//! consume that fan-out without opening another HID session.
 
 use anyhow::{Context, Result};
 use openracing_device_types::{ControlProjector, ControlStreamItem, DeviceIdentity, ResetReason};
@@ -259,6 +259,7 @@ async fn register_session(
     };
 
     let identity = DeviceIdentity {
+        logical_id: info.id.to_string(),
         vendor_id: info.vendor_id,
         product_id: info.product_id,
         serial: info.serial_number.clone(),

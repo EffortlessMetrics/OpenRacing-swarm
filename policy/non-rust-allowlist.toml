@@ -228,6 +228,15 @@ reason = "Machine-readable active source-of-truth lane manifests."
 covered_by = ["python scripts/policy_file.py"]
 
 [[allow]]
+glob = ".openracing/goals/archive/*.toml"
+kind = "archived_goal_manifest"
+owner = "core"
+surface = "tooling"
+classification = "config"
+reason = "Archived source-of-truth lane manifests preserve completed goal history."
+covered_by = ["python scripts/policy_file.py"]
+
+[[allow]]
 glob = "docs/**/*.md"
 kind = "design_doc"
 owner = "core"

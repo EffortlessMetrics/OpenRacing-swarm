@@ -276,6 +276,11 @@ impl ServiceDaemon {
 
         // Create gRPC service implementation backed by real domain services
         let (health_tx, _) = broadcast::channel(1000);
+        let control_broadcaster = wheel_service
+            .device_service()
+            .control_broadcaster()
+            .await
+            .context("Failed to create control stream broadcaster")?;
         let grpc_service = WheelServiceImpl::new(
             wheel_service.device_service().clone(),
             wheel_service.profile_service().clone(),
@@ -283,6 +288,7 @@ impl ServiceDaemon {
             game_service,
             health_tx,
         )
+        .with_control_broadcaster(control_broadcaster)
         .with_hardware_lane(self.hardware_lane.clone());
 
         // Start gRPC IPC server

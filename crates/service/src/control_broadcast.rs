@@ -1,9 +1,9 @@
 //! Bounded multi-subscriber broadcast of the collected control stream (issue #178).
 //!
 //! [`ControlBroadcaster`] takes the single bounded producer stream of
-//! [`ControlStreamItem`]s — as produced by the non-real-time control-input
-//! collector from issue #177 — and fans it out to any number of independent,
-//! read-only subscribers. Each subscriber owns its own bounded queue.
+//! [`ControlStreamItem`]s produced by the non-real-time control-input collector
+//! and fans it out to independent, read-only subscribers. Each subscriber owns
+//! its own bounded queue.
 //!
 //! A subscriber that falls behind is **never** silently skipped: it is cut over
 //! to an explicit, typed recoverable [`SubscriptionEvent::Lagged`] outcome so it
@@ -14,10 +14,14 @@
 //! This layer adds no protobuf/gRPC, no HID access, and no Runbook/application
 //! semantics, and performs no work on the 1 kHz FFB path.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
-use openracing_device_types::ControlStreamItem;
+use openracing_device_types::{
+    ControlState, ControlStreamItem, ControlSurfaceDescriptor, ControlValue, ResetReason,
+    StreamMeta,
+};
 use tokio::sync::{Mutex, mpsc};
 use tokio::task::JoinHandle;
 
@@ -109,12 +113,22 @@ struct Metrics {
 
 struct Shared {
     subscribers: Mutex<Vec<Subscriber>>,
+    /// Latest descriptor and current state for each logical device. Access is
+    /// serialized by `subscribers` so a replay and its subsequent live items
+    /// cannot be reordered.
+    replay: Mutex<BTreeMap<String, ReplayState>>,
     /// Set once the pump has stopped (source closed or explicit shutdown), under
     /// the `subscribers` lock, so a `subscribe` that races termination cannot
     /// register a subscriber that nothing will ever service.
     closed: AtomicBool,
     metrics: Metrics,
     capacity: usize,
+}
+
+struct ReplayState {
+    surface: ControlSurfaceDescriptor,
+    latest_meta: StreamMeta,
+    baseline: Option<Vec<ControlState>>,
 }
 
 /// Fans a bounded control-item source out to many bounded subscribers.
@@ -136,6 +150,7 @@ impl ControlBroadcaster {
     pub fn with_capacity(source: mpsc::Receiver<ControlStreamItem>, capacity: usize) -> Self {
         let shared = Arc::new(Shared {
             subscribers: Mutex::new(Vec::new()),
+            replay: Mutex::new(BTreeMap::new()),
             closed: AtomicBool::new(false),
             metrics: Metrics::default(),
             capacity: capacity.max(1),
@@ -154,6 +169,19 @@ impl ControlBroadcaster {
     /// the returned subscription resolves immediately to
     /// [`SubscriptionEvent::Closed`] rather than blocking forever.
     pub async fn subscribe(&self) -> ControlSubscription {
+        self.subscribe_internal(false).await
+    }
+
+    /// Attach a subscriber prefixed with the latest descriptor and a fresh
+    /// non-actionable baseline for every currently connected device.
+    ///
+    /// The replay is generated from the broadcaster's bounded current-state
+    /// cache; it does not fabricate actionable events or sequence numbers.
+    pub async fn subscribe_with_replay(&self) -> ControlSubscription {
+        self.subscribe_internal(true).await
+    }
+
+    async fn subscribe_internal(&self, with_replay: bool) -> ControlSubscription {
         let (tx, rx) = mpsc::channel(self.shared.capacity);
         let lagged = Arc::new(AtomicBool::new(false));
         {
@@ -166,10 +194,26 @@ impl ControlBroadcaster {
                 .total_subscribers
                 .fetch_add(1, Ordering::Relaxed);
             if !self.shared.closed.load(Ordering::Acquire) {
-                subs.push(Subscriber {
-                    tx,
-                    lagged: Arc::clone(&lagged),
-                });
+                let mut tx = Some(tx);
+                if with_replay {
+                    let replay = self.shared.replay.lock().await;
+                    for replay in replay_items(&replay) {
+                        let Some(sender) = tx.as_ref() else {
+                            break;
+                        };
+                        if sender.try_send(replay).is_err() {
+                            lagged.store(true, Ordering::Release);
+                            tx = None;
+                            break;
+                        }
+                    }
+                }
+                if let Some(tx) = tx {
+                    subs.push(Subscriber {
+                        tx,
+                        lagged: Arc::clone(&lagged),
+                    });
+                }
             }
             // else: drop `tx` (by not storing it); `rx` then closes -> Closed.
         }
@@ -211,6 +255,7 @@ impl ControlBroadcaster {
         let mut subs = self.shared.subscribers.lock().await;
         self.shared.closed.store(true, Ordering::Release);
         subs.clear();
+        self.shared.replay.lock().await.clear();
     }
 }
 
@@ -219,6 +264,8 @@ async fn run_pump(shared: Arc<Shared>, mut source: mpsc::Receiver<ControlStreamI
         let meta = *item.meta();
         {
             let mut subs = shared.subscribers.lock().await;
+            let mut replay = shared.replay.lock().await;
+            update_replay(&mut replay, &item);
             let mut i = 0;
             while i < subs.len() {
                 match subs[i].tx.try_send(item.clone()) {
@@ -256,12 +303,110 @@ async fn run_pump(shared: Arc<Shared>, mut source: mpsc::Receiver<ControlStreamI
     let mut subs = shared.subscribers.lock().await;
     shared.closed.store(true, Ordering::Release);
     subs.clear();
+    shared.replay.lock().await.clear();
+}
+
+fn replay_items(replay: &BTreeMap<String, ReplayState>) -> Vec<ControlStreamItem> {
+    replay
+        .values()
+        .flat_map(|state| {
+            let descriptor = ControlStreamItem::Descriptor {
+                meta: state.latest_meta,
+                surface: state.surface.clone(),
+            };
+            let baseline =
+                state
+                    .baseline
+                    .as_ref()
+                    .map(|states| ControlStreamItem::InitialSnapshot {
+                        meta: state.latest_meta,
+                        device: state.surface.device.clone(),
+                        states: states.clone(),
+                    });
+            std::iter::once(descriptor)
+                .chain(baseline)
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn update_replay(replay: &mut BTreeMap<String, ReplayState>, item: &ControlStreamItem) {
+    let key = item.device().logical_id.clone();
+    match item {
+        ControlStreamItem::Descriptor { meta, surface } => {
+            replay.insert(
+                key,
+                ReplayState {
+                    surface: surface.clone(),
+                    latest_meta: *meta,
+                    baseline: None,
+                },
+            );
+        }
+        ControlStreamItem::InitialSnapshot {
+            meta,
+            device,
+            states,
+        } => {
+            if let Some(state) = replay.get_mut(&key) {
+                state.latest_meta = *meta;
+                state.baseline = Some(states.clone());
+            } else {
+                // A malformed source that omits its descriptor cannot produce
+                // a safe replay prefix, so keep it out of the cache.
+                let _ = device;
+            }
+        }
+        ControlStreamItem::Event {
+            meta,
+            device: _,
+            event,
+        } => {
+            if let Some(state) = replay.get_mut(&key)
+                && let Some(states) = state.baseline.as_mut()
+            {
+                apply_event(states, event.raw_id, event.value);
+                state.latest_meta = *meta;
+            }
+        }
+        ControlStreamItem::Reset {
+            meta,
+            device: _,
+            reason,
+        } => {
+            if *reason == ResetReason::Disconnect {
+                replay.remove(&key);
+            } else if let Some(state) = replay.get_mut(&key) {
+                state.latest_meta = *meta;
+                state.baseline = None;
+            }
+        }
+    }
+}
+
+fn apply_event(
+    states: &mut Vec<ControlState>,
+    raw_id: openracing_device_types::RawControlId,
+    value: ControlValue,
+) {
+    if let ControlValue::Button(false) = value {
+        states.retain(|state| state.raw_id != raw_id);
+        return;
+    }
+    if let Some(state) = states.iter_mut().find(|state| state.raw_id == raw_id) {
+        state.value = value;
+    } else {
+        states.push(ControlState { raw_id, value });
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openracing_device_types::{ControlEvent, ControlValue, RawControlId, StreamMeta};
+    use openracing_device_types::{
+        ControlDescriptor, ControlEvent, ControlKind, ControlState, ControlSurfaceDescriptor,
+        ControlValue, DeviceIdentity, RawControlId, StreamMeta,
+    };
     use std::time::Duration;
     use tokio::time::timeout;
 
@@ -273,6 +418,10 @@ mod tests {
                 seq,
                 timestamp_ns: seq,
                 epoch,
+            },
+            device: DeviceIdentity {
+                logical_id: "broadcast-device".to_string(),
+                ..DeviceIdentity::default()
             },
             event: ControlEvent {
                 raw_id: RawControlId::button(0),
@@ -409,6 +558,87 @@ mod tests {
         match recv(&mut late).await? {
             SubscriptionEvent::Item(item) => assert_eq!(item.seq(), 1),
             other => return Err(format!("expected seq 1, got {other:?}").into()),
+        }
+        b.shutdown().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn replay_subscriber_receives_descriptor_then_current_baseline() -> TestResult {
+        let (tx, rx) = mpsc::channel(16);
+        let b = ControlBroadcaster::new(rx);
+        let device = DeviceIdentity {
+            logical_id: "replay-device".to_string(),
+            ..DeviceIdentity::default()
+        };
+        tx.send(ControlStreamItem::Descriptor {
+            meta: StreamMeta {
+                seq: 0,
+                timestamp_ns: 0,
+                epoch: 0,
+            },
+            surface: ControlSurfaceDescriptor {
+                device: device.clone(),
+                mapping_version: 1,
+                controls: vec![ControlDescriptor::button(0), ControlDescriptor::encoder(0)],
+            },
+        })
+        .await?;
+        tx.send(ControlStreamItem::InitialSnapshot {
+            meta: StreamMeta {
+                seq: 1,
+                timestamp_ns: 1,
+                epoch: 0,
+            },
+            device: device.clone(),
+            states: vec![
+                ControlState {
+                    raw_id: RawControlId::button(0),
+                    value: ControlValue::Button(false),
+                },
+                ControlState {
+                    raw_id: RawControlId::encoder(0),
+                    value: ControlValue::Encoder(0),
+                },
+            ],
+        })
+        .await?;
+        tx.send(ControlStreamItem::Event {
+            meta: StreamMeta {
+                seq: 2,
+                timestamp_ns: 2,
+                epoch: 0,
+            },
+            device,
+            event: ControlEvent {
+                raw_id: RawControlId::button(0),
+                value: ControlValue::Button(true),
+                delta: None,
+            },
+        })
+        .await?;
+        wait_until(&b, |m| m.items_broadcast >= 3).await;
+
+        let mut late = b.subscribe_with_replay().await;
+        match recv(&mut late).await? {
+            SubscriptionEvent::Item(ControlStreamItem::Descriptor { surface, .. }) => {
+                assert_eq!(surface.device.logical_id, "replay-device");
+                let first = surface
+                    .controls
+                    .first()
+                    .ok_or("replay descriptor has no controls")?;
+                assert_eq!(first.kind, ControlKind::Button);
+            }
+            other => return Err(format!("expected descriptor, got {other:?}").into()),
+        }
+        match recv(&mut late).await? {
+            SubscriptionEvent::Item(ControlStreamItem::InitialSnapshot { states, .. }) => {
+                assert!(states.iter().any(|state| {
+                    state.raw_id == RawControlId::button(0)
+                        && state.value == ControlValue::Button(true)
+                }));
+            }
+            other => return Err(format!("expected baseline, got {other:?}").into()),
         }
         b.shutdown().await;
         Ok(())

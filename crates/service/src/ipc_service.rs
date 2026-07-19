@@ -22,8 +22,9 @@ use racing_wheel_hid_moza_protocol::{
     MOZA_VENDOR_ID, MozaDeviceCategory, identify_device, is_wheelbase_product, product_ids,
 };
 use racing_wheel_schemas::generated::wheel::v1::{
-    ApplyProfileRequest, ConfigureTelemetryRequest, DeviceId as WireDeviceId, DeviceStatus,
-    DiagnosticInfo, FeatureNegotiationRequest, FeatureNegotiationResponse, GameStatus, HealthEvent,
+    ApplyProfileRequest, ConfigureTelemetryRequest, ControlStreamItem as WireControlStreamItem,
+    ControlSubscription, DeviceId as WireDeviceId, DeviceStatus, DiagnosticInfo,
+    FeatureNegotiationRequest, FeatureNegotiationResponse, GameStatus, HealthEvent,
     MozaReadinessStatus, OpResult, Profile as WireProfile, ProfileList,
     wheel_service_server::WheelService,
 };
@@ -32,6 +33,8 @@ use serde_json::Value;
 
 // Import domain services (these will be the real implementations)
 use crate::ApplicationProfileService;
+use crate::control_broadcast::{ControlBroadcaster, SubscriptionEvent};
+use crate::control_stream_wire::{self, CONTROL_STREAM_FEATURE};
 use crate::device_service::ApplicationDeviceService;
 use crate::game_service::GameService;
 use crate::safety_service::ApplicationSafetyService;
@@ -59,6 +62,7 @@ pub struct WheelServiceImpl {
     safety_service: Arc<ApplicationSafetyService>,
     game_service: Arc<GameService>,
     health_broadcaster: broadcast::Sender<HealthEventInternal>,
+    control_broadcaster: Option<Arc<ControlBroadcaster>>,
     hardware_lane: Option<String>,
     #[allow(dead_code)]
     connected_clients: Arc<RwLock<HashMap<String, ClientInfo>>>,
@@ -566,6 +570,7 @@ impl WheelServiceImpl {
             safety_service,
             game_service,
             health_broadcaster,
+            control_broadcaster: None,
             hardware_lane: None,
             connected_clients: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -574,6 +579,13 @@ impl WheelServiceImpl {
     /// Attach an optional hardware validation lane label/path for read-only readiness reporting.
     pub fn with_hardware_lane(mut self, hardware_lane: Option<String>) -> Self {
         self.hardware_lane = hardware_lane;
+        self
+    }
+
+    /// Attach the non-real-time control-stream broadcaster and advertise its
+    /// versioned observe-only feature.
+    pub fn with_control_broadcaster(mut self, broadcaster: Arc<ControlBroadcaster>) -> Self {
+        self.control_broadcaster = Some(broadcaster);
         self
     }
 }
@@ -588,6 +600,8 @@ impl WheelService for WheelServiceImpl {
         >,
     >;
     type SubscribeHealthStream = Pin<Box<dyn Stream<Item = Result<HealthEvent, Status>> + Send>>;
+    type SubscribeControlStreamStream =
+        Pin<Box<dyn Stream<Item = Result<WireControlStreamItem, Status>> + Send>>;
 
     /// Feature negotiation for backward compatibility
     async fn negotiate_features(
@@ -600,23 +614,30 @@ impl WheelService for WheelServiceImpl {
             req.client_version
         );
 
-        // For now, accept all clients with basic compatibility check
         let compatible = is_version_compatible(&req.client_version, "1.0.0");
+        let mut supported_features = vec![
+            "device_management".to_string(),
+            "profile_management".to_string(),
+            "safety_control".to_string(),
+            "health_monitoring".to_string(),
+        ];
+        if self.control_broadcaster.is_some() {
+            supported_features.push(CONTROL_STREAM_FEATURE.to_string());
+        }
+        let enabled_features = supported_features
+            .iter()
+            .filter(|feature| {
+                req.supported_features
+                    .iter()
+                    .any(|client| client == *feature)
+            })
+            .cloned()
+            .collect();
 
         let response = FeatureNegotiationResponse {
             server_version: "1.0.0".to_string(),
-            supported_features: vec![
-                "device_management".to_string(),
-                "profile_management".to_string(),
-                "safety_control".to_string(),
-                "health_monitoring".to_string(),
-            ],
-            enabled_features: vec![
-                "device_management".to_string(),
-                "profile_management".to_string(),
-                "safety_control".to_string(),
-                "health_monitoring".to_string(),
-            ],
+            supported_features,
+            enabled_features,
             compatible,
             min_client_version: "1.0.0".to_string(),
         };
@@ -931,6 +952,46 @@ impl WheelService for WheelServiceImpl {
         Ok(Response::new(Box::pin(stream)))
     }
 
+    /// Subscribe to the versioned, observe-only control stream.
+    async fn subscribe_control_stream(
+        &self,
+        request: Request<ControlSubscription>,
+    ) -> Result<Response<Self::SubscribeControlStreamStream>, Status> {
+        let request = request.into_inner();
+        let kinds = control_stream_wire::requested_kinds(&request)?;
+        let broadcaster = self.control_broadcaster.as_ref().ok_or_else(|| {
+            Status::unimplemented("control_stream_v1 is not enabled on this service")
+        })?;
+        let mut subscription = broadcaster.subscribe_with_replay().await;
+
+        let stream = async_stream::stream! {
+            loop {
+                match subscription.recv().await {
+                    SubscriptionEvent::Item(item) => {
+                        if let Some(item) = control_stream_wire::filter_item(item, &request, &kinds) {
+                            match control_stream_wire::to_wire_item(item) {
+                                Ok(item) => yield Ok(item),
+                                Err(status) => {
+                                    yield Err(status);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    SubscriptionEvent::Lagged => {
+                        yield Err(Status::resource_exhausted(
+                            "control stream subscriber lagged; resubscribe for a fresh baseline",
+                        ));
+                        break;
+                    }
+                    SubscriptionEvent::Closed => break,
+                }
+            }
+        };
+
+        Ok(Response::new(Box::pin(stream)))
+    }
+
     /// Get diagnostics
     async fn get_diagnostics(
         &self,
@@ -1055,6 +1116,10 @@ fn is_version_compatible(client_version: &str, min_version: &str) -> bool {
 mod tests {
     use super::*;
     use crate::profile_repository::ProfileRepositoryConfig;
+    use openracing_device_types::{
+        ControlDescriptor, ControlEvent, ControlState, ControlStreamItem, ControlSurfaceDescriptor,
+        ControlValue, DeviceIdentity, RawControlId, ResetReason, StreamMeta,
+    };
     use racing_wheel_engine::{
         DeviceEvent, DeviceHealthStatus, DeviceInfo as EngineDeviceInfo, HidDevice, HidPort,
         RTResult, SafetyPolicy, TelemetryData, VirtualDevice, VirtualHidPort,
@@ -1317,6 +1382,217 @@ mod tests {
                 ]),
             ))?,
         )?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn control_stream_negotiates_filters_and_maps_disconnect() -> anyhow::Result<()> {
+        let device_service =
+            Arc::new(ApplicationDeviceService::new(Arc::new(VirtualHidPort::new()), None).await?);
+        let profile_dir = TempDir::new()?;
+        let profile_service = Arc::new(
+            ApplicationProfileService::new_with_config(ProfileRepositoryConfig {
+                profiles_dir: profile_dir.path().to_path_buf(),
+                trusted_keys: Vec::new(),
+                auto_migrate: true,
+                backup_on_migrate: false,
+            })
+            .await?,
+        );
+        let safety_service =
+            Arc::new(ApplicationSafetyService::new(SafetyPolicy::default(), None).await?);
+        let game_service = Arc::new(GameService::new().await?);
+        let (health_tx, _) = broadcast::channel(8);
+        let (tx, rx) = mpsc::channel(16);
+        let broadcaster = Arc::new(ControlBroadcaster::new(rx));
+        let legacy_service = WheelServiceImpl::new(
+            Arc::clone(&device_service),
+            Arc::clone(&profile_service),
+            Arc::clone(&safety_service),
+            Arc::clone(&game_service),
+            health_tx.clone(),
+        );
+        let legacy_negotiation = WheelService::negotiate_features(
+            &legacy_service,
+            Request::new(FeatureNegotiationRequest {
+                client_version: "1.0.0".to_string(),
+                supported_features: vec![CONTROL_STREAM_FEATURE.to_string()],
+                namespace: "wheel.v1".to_string(),
+            }),
+        )
+        .await?
+        .into_inner();
+        assert!(
+            !legacy_negotiation
+                .supported_features
+                .iter()
+                .any(|feature| feature == CONTROL_STREAM_FEATURE)
+        );
+        assert!(legacy_negotiation.enabled_features.is_empty());
+        let service = WheelServiceImpl::new(
+            device_service,
+            profile_service,
+            safety_service,
+            game_service,
+            health_tx,
+        )
+        .with_control_broadcaster(Arc::clone(&broadcaster));
+
+        let negotiation = WheelService::negotiate_features(
+            &service,
+            Request::new(FeatureNegotiationRequest {
+                client_version: "1.0.0".to_string(),
+                supported_features: vec![CONTROL_STREAM_FEATURE.to_string()],
+                namespace: "wheel.v1".to_string(),
+            }),
+        )
+        .await?
+        .into_inner();
+        assert!(
+            negotiation
+                .supported_features
+                .iter()
+                .any(|feature| feature == CONTROL_STREAM_FEATURE)
+        );
+        assert_eq!(negotiation.enabled_features, vec![CONTROL_STREAM_FEATURE]);
+
+        let response = WheelService::subscribe_control_stream(
+            &service,
+            Request::new(ControlSubscription {
+                device_id: "rpc-device".to_string(),
+                control_kinds: vec![1],
+            }),
+        )
+        .await?;
+        let mut stream = response.into_inner();
+        let device = DeviceIdentity {
+            logical_id: "rpc-device".to_string(),
+            ..DeviceIdentity::default()
+        };
+        tx.send(ControlStreamItem::Descriptor {
+            meta: StreamMeta {
+                seq: 0,
+                timestamp_ns: 10,
+                epoch: 0,
+            },
+            surface: ControlSurfaceDescriptor {
+                device: device.clone(),
+                mapping_version: 1,
+                controls: vec![ControlDescriptor::button(0), ControlDescriptor::encoder(0)],
+            },
+        })
+        .await?;
+        tx.send(ControlStreamItem::InitialSnapshot {
+            meta: StreamMeta {
+                seq: 1,
+                timestamp_ns: 11,
+                epoch: 0,
+            },
+            device: device.clone(),
+            states: vec![
+                ControlState {
+                    raw_id: RawControlId::button(0),
+                    value: ControlValue::Button(false),
+                },
+                ControlState {
+                    raw_id: RawControlId::encoder(0),
+                    value: ControlValue::Encoder(0),
+                },
+            ],
+        })
+        .await?;
+        tx.send(ControlStreamItem::Event {
+            meta: StreamMeta {
+                seq: 2,
+                timestamp_ns: 12,
+                epoch: 0,
+            },
+            device: device.clone(),
+            event: ControlEvent {
+                raw_id: RawControlId::encoder(0),
+                value: ControlValue::Encoder(1),
+                delta: Some(1),
+            },
+        })
+        .await?;
+        tx.send(ControlStreamItem::Event {
+            meta: StreamMeta {
+                seq: 3,
+                timestamp_ns: 13,
+                epoch: 0,
+            },
+            device: device.clone(),
+            event: ControlEvent {
+                raw_id: RawControlId::button(0),
+                value: ControlValue::Button(true),
+                delta: None,
+            },
+        })
+        .await?;
+        tx.send(ControlStreamItem::Reset {
+            meta: StreamMeta {
+                seq: 4,
+                timestamp_ns: 14,
+                epoch: 1,
+            },
+            device,
+            reason: ResetReason::Disconnect,
+        })
+        .await?;
+
+        let descriptor = stream
+            .next()
+            .await
+            .ok_or_else(|| anyhow::anyhow!("control stream ended before descriptor"))??;
+        assert_eq!(
+            descriptor.metadata.as_ref().map(|meta| meta.sequence),
+            Some(0)
+        );
+        let descriptor_controls = match descriptor.item {
+            Some(
+                racing_wheel_schemas::generated::wheel::v1::control_stream_item::Item::Descriptor(
+                    descriptor,
+                ),
+            ) => descriptor.controls,
+            _ => return Err(anyhow::anyhow!("expected descriptor")),
+        };
+        assert_eq!(descriptor_controls.len(), 1);
+
+        let baseline = stream
+            .next()
+            .await
+            .ok_or_else(|| anyhow::anyhow!("control stream ended before baseline"))??;
+        let baseline_states = match baseline.item {
+            Some(
+                racing_wheel_schemas::generated::wheel::v1::control_stream_item::Item::Baseline(
+                    baseline,
+                ),
+            ) => baseline.states,
+            _ => return Err(anyhow::anyhow!("expected baseline")),
+        };
+        assert_eq!(baseline_states.len(), 1);
+
+        let button_event = stream
+            .next()
+            .await
+            .ok_or_else(|| anyhow::anyhow!("control stream ended before button event"))??;
+        assert!(matches!(
+            button_event.item,
+            Some(racing_wheel_schemas::generated::wheel::v1::control_stream_item::Item::Event(_))
+        ));
+        let disconnect = stream
+            .next()
+            .await
+            .ok_or_else(|| anyhow::anyhow!("control stream ended before disconnect"))??;
+        assert!(matches!(
+            disconnect.item,
+            Some(
+                racing_wheel_schemas::generated::wheel::v1::control_stream_item::Item::Disconnect(
+                    _
+                )
+            )
+        ));
+        broadcaster.shutdown().await;
         Ok(())
     }
 

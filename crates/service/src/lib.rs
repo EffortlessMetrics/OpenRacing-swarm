@@ -16,6 +16,7 @@ pub mod config_validation;
 pub mod config_writers;
 pub mod control_broadcast;
 pub mod control_input;
+mod control_stream_wire;
 pub mod crypto;
 pub mod daemon;
 mod daemon_platform;

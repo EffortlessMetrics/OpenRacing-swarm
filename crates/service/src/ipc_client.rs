@@ -38,6 +38,7 @@ impl Default for IpcClientConfig {
                 "game_integration".to_string(),
                 "streaming_health".to_string(),
                 "streaming_devices".to_string(),
+                "control_stream_v1".to_string(),
             ],
         }
     }
@@ -196,6 +197,24 @@ impl IpcClient {
         let stream = self
             .client
             .subscribe_health(Request::new(()))
+            .await?
+            .into_inner();
+        Ok(stream)
+    }
+
+    /// Subscribe to the observe-only versioned control stream.
+    pub async fn subscribe_control_stream(
+        &mut self,
+        request: ControlSubscription,
+    ) -> Result<tonic::Streaming<ControlStreamItem>, Status> {
+        if !self.has_feature("control_stream_v1") {
+            return Err(Status::failed_precondition(
+                "control_stream_v1 was not enabled during feature negotiation",
+            ));
+        }
+        let stream = self
+            .client
+            .subscribe_control_stream(Request::new(request))
             .await?
             .into_inner();
         Ok(stream)

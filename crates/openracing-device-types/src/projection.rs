@@ -195,7 +195,11 @@ impl ControlProjector {
         });
 
         let meta = self.next_meta(timestamp_ns);
-        ControlStreamItem::InitialSnapshot { meta, states }
+        ControlStreamItem::InitialSnapshot {
+            meta,
+            device: self.device.clone(),
+            states,
+        }
     }
 
     /// Emit ordered actionable events for the changes between `prev` and `inputs`.
@@ -256,7 +260,11 @@ impl ControlProjector {
             .into_iter()
             .map(|event| {
                 let meta = self.next_meta(timestamp_ns);
-                ControlStreamItem::Event { meta, event }
+                ControlStreamItem::Event {
+                    meta,
+                    device: self.device.clone(),
+                    event,
+                }
             })
             .collect()
     }
@@ -271,7 +279,11 @@ impl ControlProjector {
         self.next_seq = 0;
         self.prev = None;
         let meta = self.next_meta(timestamp_ns);
-        ControlStreamItem::Reset { meta, reason }
+        ControlStreamItem::Reset {
+            meta,
+            device: self.device.clone(),
+            reason,
+        }
     }
 }
 
@@ -301,6 +313,7 @@ mod tests {
 
     fn device() -> DeviceIdentity {
         DeviceIdentity {
+            logical_id: "projection-device".to_string(),
             vendor_id: 0x1234,
             product_id: 0x5678,
             serial: Some("SN-1".to_string()),
@@ -334,7 +347,7 @@ mod tests {
             items[0],
             ControlStreamItem::InitialSnapshot { .. }
         ));
-        if let ControlStreamItem::InitialSnapshot { meta, states } = &items[0] {
+        if let ControlStreamItem::InitialSnapshot { meta, states, .. } = &items[0] {
             assert_eq!(meta.seq, 0);
             assert_eq!(meta.epoch, 0);
             // Pressed button 3 is present as a state, not as an event.
@@ -493,7 +506,7 @@ mod tests {
         // Reset: new epoch, seq restarts at 0, prior state dropped.
         let reset = p.reset(ResetReason::Disconnect, 10);
         assert!(matches!(reset, ControlStreamItem::Reset { .. }));
-        if let ControlStreamItem::Reset { meta, reason } = reset {
+        if let ControlStreamItem::Reset { meta, reason, .. } = reset {
             assert_eq!(meta.epoch, 1);
             assert_eq!(meta.seq, 0);
             assert_eq!(reason, ResetReason::Disconnect);

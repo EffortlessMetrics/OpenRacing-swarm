@@ -303,6 +303,8 @@ impl ControlDescriptor {
 /// Fields are vendor-neutral and contain no application/product identity.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct DeviceIdentity {
+    /// Stable logical identifier assigned by the device owner.
+    pub logical_id: String,
     /// USB vendor id (0 when unknown).
     pub vendor_id: u16,
     /// USB product id (0 when unknown).
@@ -405,16 +407,19 @@ pub enum ControlStreamItem {
     /// Initial, non-actionable baseline snapshot of current control values.
     InitialSnapshot {
         meta: StreamMeta,
+        device: DeviceIdentity,
         states: Vec<ControlState>,
     },
     /// An ordered, actionable control change.
     Event {
         meta: StreamMeta,
+        device: DeviceIdentity,
         event: ControlEvent,
     },
     /// A reset / gap / disconnect notification.
     Reset {
         meta: StreamMeta,
+        device: DeviceIdentity,
         reason: ResetReason,
     },
 }
@@ -428,6 +433,17 @@ impl ControlStreamItem {
             | Self::InitialSnapshot { meta, .. }
             | Self::Event { meta, .. }
             | Self::Reset { meta, .. } => meta,
+        }
+    }
+
+    /// Device identity associated with this item.
+    #[must_use]
+    pub fn device(&self) -> &DeviceIdentity {
+        match self {
+            Self::Descriptor { surface, .. } => &surface.device,
+            Self::InitialSnapshot { device, .. }
+            | Self::Event { device, .. }
+            | Self::Reset { device, .. } => device,
         }
     }
 
@@ -826,6 +842,7 @@ mod tests {
         };
         let snapshot = ControlStreamItem::InitialSnapshot {
             meta,
+            device: DeviceIdentity::default(),
             states: vec![ControlState {
                 raw_id: RawControlId::button(0),
                 value: ControlValue::Button(true),
@@ -836,6 +853,7 @@ mod tests {
 
         let event = ControlStreamItem::Event {
             meta,
+            device: DeviceIdentity::default(),
             event: ControlEvent {
                 raw_id: RawControlId::button(0),
                 value: ControlValue::Button(true),
@@ -854,6 +872,7 @@ mod tests {
         };
         let reset = ControlStreamItem::Reset {
             meta,
+            device: DeviceIdentity::default(),
             reason: ResetReason::Overflow,
         };
         assert_eq!(reset.seq(), 42);
@@ -882,6 +901,7 @@ mod tests {
             },
             surface: ControlSurfaceDescriptor {
                 device: DeviceIdentity {
+                    logical_id: "serde-device".to_string(),
                     vendor_id: 0x1234,
                     product_id: 0x5678,
                     serial: Some("SN1".to_string()),

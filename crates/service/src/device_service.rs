@@ -1,5 +1,6 @@
 //! Device service for enumeration, calibration, and health monitoring
 
+use crate::control_broadcast::ControlBroadcaster;
 use crate::control_input::{ControlInputCollector, DEFAULT_CONTROL_INPUT_CAPACITY};
 use anyhow::Result;
 use racing_wheel_engine::{
@@ -10,7 +11,7 @@ use racing_wheel_schemas::prelude::{CalibrationData, DeviceCapabilities, DeviceI
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::time::interval;
 use tracing::{debug, error, info};
 
@@ -62,6 +63,8 @@ pub struct ApplicationDeviceService {
     health_check_interval: Duration,
     /// Non-real-time decoded input collector and shared device sessions
     control_input: Arc<ControlInputCollector>,
+    /// Lazily-created fan-out for the versioned observe-only control stream.
+    control_broadcaster: Arc<Mutex<Option<Arc<ControlBroadcaster>>>>,
 }
 
 impl ApplicationDeviceService {
@@ -85,6 +88,7 @@ impl ApplicationDeviceService {
             tracer,
             health_check_interval: Duration::from_secs(5),
             control_input,
+            control_broadcaster: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -116,9 +120,30 @@ impl ApplicationDeviceService {
         self.control_input.take_stream().await
     }
 
+    /// Create or return the non-real-time control-stream fan-out.
+    ///
+    /// The producer receiver is taken exactly once. Keeping this operation
+    /// lazy preserves the existing direct-stream test/embedding hook while
+    /// allowing the daemon to opt into the gRPC feature explicitly.
+    pub async fn control_broadcaster(&self) -> Result<Arc<ControlBroadcaster>> {
+        let mut broadcaster = self.control_broadcaster.lock().await;
+        if let Some(existing) = broadcaster.as_ref() {
+            return Ok(Arc::clone(existing));
+        }
+        let receiver = self.control_input.take_stream().await?;
+        let created = Arc::new(ControlBroadcaster::new(receiver));
+        *broadcaster = Some(Arc::clone(&created));
+        Ok(created)
+    }
+
     /// Stop the decoded-input collector and release its shared sessions.
     pub async fn stop(&self) -> Result<()> {
-        self.control_input.stop().await
+        let result = self.control_input.stop().await;
+        let broadcaster = self.control_broadcaster.lock().await.clone();
+        if let Some(broadcaster) = broadcaster {
+            broadcaster.shutdown().await;
+        }
+        result
     }
 
     /// Enumerate and discover devices
