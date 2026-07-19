@@ -10,13 +10,14 @@ One-screen execution plan for OpenRacing. Updated each sprint.
 
 ## NOW (Active — this sprint)
 
-- **Moza native-visible frontier** - the R5 lane is `native_response_ready`; four 1 degree controlled-angle attempts are preserved, including the closed-loop `closed-loop-pidff-angle-v1` run that wrote 672 bounded reports with zero write errors but still timed out below the visible-motion threshold
-- **Moza source-of-truth activation** - use `.openracing/goals/active.toml`, `docs/proposals/OR-PROP-0001-moza-native-visible-lane.md`, `docs/specs/OR-SPEC-0001-moza-native-visible-lane.md`, and `plans/moza-native-visible-lane/implementation-plan.md` as the current lane rail
-- **Moza no-output operator navigation** - use `wheelctl moza artifact-index`, `wheelctl moza bench-wizard`, and `wheelctl moza verify-bundle --stage native-visible-ready` to inspect the blocked frontier; closed-loop artifacts are diagnostic only and create no authorization, output permission, or readiness claim
+- **External control-stream lane** - `.openracing/goals/active.toml` now points to the active vendor-neutral observe-only lane; the domain, projector, and non-RT collection/broadcast slices are merged (#181, #183, #188, #191), and versioned transport issue #171 is the next one-PR seam
 - **Service API completion** — implement `WheelService::game_service()` and `plugin_service()` accessors; re-enable blocked integration tests
 
 ## NEXT (Queued — next 2–4 sprints)
 
+- **Moza native-visible frontier** - the archived R5 lane remains `native_response_ready` and hardware-blocked; its closeout and evidence handoff preserve `hardware_output_authorized=false` and do not authorize another attempt
+- **Moza no-output operator navigation** - use `wheelctl moza artifact-index`, `wheelctl moza bench-wizard`, and `wheelctl moza verify-bundle --stage native-visible-ready` to inspect the blocked frontier; closed-loop artifacts are diagnostic only and create no authorization, output permission, or readiness claim
+- **External control-stream diagnostics and release** - follow #171, #172, #173, and #174 in the activated plan with virtual/package receipts before making any transport, release, or consumer claim
 - **Moza vendor-specific control investigation** - six no-output sniff plans are recorded for Pit House, SimHub, and simulator sessions; Pit House open-idle, full-controls, and the repeat `pit-house-setting-change` capture have non-claiming receipts/summaries, the first setting-change capture remains low-yield historical evidence, and artifact-index/bench-wizard now surface the highest-frequency unknown commanded `0x7E`/`0x80` traffic plus bounded sample frames, packet groups, repeated motifs, empty/zero-filled payload-shape hints, low-confidence semantic hypotheses, a semantic correlation plan that now routes to SimHub/simulator gaps, and residual payload export gap locators without making them semantic or sendable
 - **Moza Pit House coexistence** - external compatibility only; test closed/open/mode-change/update-page cases separately and do not make Pit House a native-control prerequisite
 - **Moza passive USB sniff support evidence** - optional protocol research for Pit House, SimHub, and simulator traffic; three Pit House summaries are recorded, remaining captures are summary-only by default, no raw pcapng unless reviewed, and never a native or smoke-ready gate

@@ -1,13 +1,14 @@
 # OR-SPEC-0005: External control stream
 
-Status: proposed
+Status: active
 Owner: platform/service
 Created: 2026-07-17
 Linked proposal: docs/proposals/OR-PROP-0004-external-control-stream.md
 Linked ADRs: docs/adr/0010-non-rt-control-stream-boundary.md
 Linked plan: plans/external-control-stream/implementation-plan.md
+Active goal: .openracing/goals/active.toml
 Linked issues: #167, #168, #169, #170, #171, #172, #173, #174
-Linked PRs: n/a
+Linked PRs: #181, #183, #188, #191
 Support-tier impact: no public support claim
 Policy impact: no policy change
 

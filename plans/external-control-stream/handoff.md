@@ -1,6 +1,6 @@
 # External control-stream lane handoff
 
-Status: proposed; activation required
+Status: active
 Owner: platform/service
 Created: 2026-07-17
 Linked issue: #167
@@ -11,25 +11,29 @@ Linked plan: plans/external-control-stream/implementation-plan.md
 
 ## Current state
 
-The five-artifact source-of-truth scaffold is ready for review. The repository's
-active goal remains `moza-native-visible-lane`; it is hardware-blocked at the
-native-visible receipt gate and was not replaced or edited by this lane.
+The external-control-stream lane is active at
+`.openracing/goals/active.toml`. The prior Moza goal was archived with its
+blocked closeout at
+`.openracing/goals/archive/2026-07-18-moza-native-visible-lane.toml` and
+`plans/moza-native-visible-lane/closeout.md`; its hardware evidence and claim
+boundaries remain preserved.
 
-No runtime code, dependency, HID handle, network stream, output report, FFB
-behavior, or public support claim changed in the scaffold.
+The domain contract (#168, merged PR #181), deterministic projector (#169,
+merged PR #183), and non-RT service slices (#177/#178, merged PRs #191/#188)
+are complete. The next work item is the versioned observe-only gRPC transport
+(#171). No public IPC, output report, FFB behavior, or physical/support claim
+is implied by the completed slices.
 
-## Activation gate
+## Work order
 
-Do not begin #168 until maintainers explicitly activate this lane through the
-documented active-goal lifecycle. Activation must preserve the current Moza
-goal's archive/closeout state and must not leave multiple active manifests.
-
-After activation, implement exactly one plan work item per PR in order:
+The activation gate is satisfied. Implement exactly one plan work item per PR
+in order:
 
 `#168 -> #169 -> #170 -> #171 -> #172`
 
-The runtime chain is followed by the deployment source-truth item #173 and
-then the implementation issue #174. The external Runbook consumer is
+The completed #170 epic is represented by #177 and #178. The runtime chain is
+followed by the deployment source-truth item #173 and then implementation issue
+#174. The external Runbook consumer is
 `EffortlessMetrics/runbook-rs#41`, and remains a proof consumer rather than a
 domain dependency.
 

@@ -1,25 +1,26 @@
 # External control-stream implementation plan
 
-Status: proposed
+Status: active
 Owner: platform/service
 Linked proposal: docs/proposals/OR-PROP-0004-external-control-stream.md
 Linked specs:
 - docs/specs/OR-SPEC-0005-external-control-stream.md
 Linked ADRs:
 - docs/adr/0010-non-rt-control-stream-boundary.md
-Active goal: n/a; this scaffold does not replace the active Moza hardware goal
+Active goal: .openracing/goals/active.toml
 
 ## Lane rules
 
-Issue #167 is a docs-only activation scaffold. Runtime work remains blocked
-until maintainers explicitly activate this lane with a new `.openracing/goals/active.toml`.
-Each item below is one independently shippable runtime PR. Do not combine items
-or broaden hardware/support claims.
+The lane was activated through the documented active-goal lifecycle after the
+Moza manifest was archived with its blocked closeout. Each item below remains
+one independently shippable runtime PR. Do not combine items or broaden
+hardware/support claims.
 
 ## Work item: device-input-domain-contract
 
-Status: ready after lane activation
+Status: completed
 Linked issue: #168
+Merged PR: #181
 Target seams: `crates/openracing-device-types/src/lib.rs`, focused crate tests,
 engine compatibility re-exports only if required.
 
@@ -41,8 +42,9 @@ unchanged.
 
 ## Work item: deterministic-input-projection
 
-Status: blocked by `device-input-domain-contract` and lane activation
+Status: completed
 Linked issue: #169
+Merged PR: #183
 Target seams: the activated vendor-neutral domain module and focused virtual
 snapshot/property tests.
 
@@ -64,8 +66,10 @@ or transport.
 
 ## Work item: non-rt-input-service
 
-Status: blocked by `deterministic-input-projection` and lane activation
+Status: completed
 Linked issue: #170
+Implementation issues: #177, #178
+Merged PRs: #188, #191
 Target seams: `crates/service/src/device_service.rs`, a focused control-input
 service module, lifecycle wiring, and virtual service tests.
 
@@ -85,9 +89,13 @@ physical role, Runbook, output, or FFB claim.
 Rollback: remove service registration and keep the existing device lifecycle
 and profile behavior unchanged.
 
+Issue #170 remains the parent epic for the completed service slices. The
+implementation evidence is split across #177 (single-owner collection) and
+#178 (bounded broadcasting), with #191 and #188 providing the merged PRs.
+
 ## Work item: versioned-control-stream-transport
 
-Status: blocked by `non-rt-input-service` and lane activation
+Status: ready
 Linked issue: #171
 Target seams: existing schema/proto and `crates/service/src/ipc_service.rs`,
 with feature negotiation tests.
@@ -110,7 +118,7 @@ Rollback: disable the negotiated feature and preserve existing IPC methods.
 
 ## Work item: control-diagnostics-capture-replay
 
-Status: blocked by `versioned-control-stream-transport` and lane activation
+Status: blocked by `versioned-control-stream-transport`
 Linked issue: #172
 Target seams: diagnostics/capture/replay surfaces and a separate input-only
 Runbook proof consumer; exact paths to be finalized by the activated plan.
@@ -132,7 +140,7 @@ Rollback: remove the capture consumer and retain the transport contract.
 
 ## Work item: control-stream-deployment-release-contract
 
-Status: blocked by `control-diagnostics-capture-replay` and lane activation
+Status: blocked by `control-diagnostics-capture-replay`
 Linked issue: #173
 Follow-up implementation issue: #174
 Target seams: `.github/workflows/release.yml`, `RELEASING.md`,

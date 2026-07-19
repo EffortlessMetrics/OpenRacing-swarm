@@ -1,12 +1,13 @@
 # OR-PROP-0004: External control-stream lane
 
-Status: proposed
+Status: active
 Owner: platform/service
 Created: 2026-07-17
 Target milestone: n/a
 Linked specs: docs/specs/OR-SPEC-0005-external-control-stream.md
 Linked ADRs: docs/adr/0010-non-rt-control-stream-boundary.md
 Linked plan: plans/external-control-stream/implementation-plan.md
+Active goal: .openracing/goals/active.toml
 Support/status impact: no public support claim
 Policy impact: no policy change
 
