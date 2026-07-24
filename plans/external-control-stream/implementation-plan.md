@@ -123,65 +123,108 @@ device/kind filtering, sequence-preserving replay, and typed lag handling.
 
 ## Work item: control-diagnostics-capture-replay
 
-Status: ready
+Status: completed
 Linked issue: #172
+Merged PR: #195
 Prerequisite: `versioned-control-stream-transport` merged as PR #193
-Target seams: diagnostics/capture/replay surfaces and a separate input-only
-Runbook proof consumer; exact paths to be finalized by the activated plan.
+Target seams: diagnostics/capture/replay surfaces and a deterministic fixture
+handoff for a separate input-only consumer proof.
 
-Goal: provide bounded diagnostics, capture, deterministic replay, and an
-input-only consumer proof without making Runbook an OpenRacing dependency.
+Goal: provide bounded diagnostics, versioned capture, deterministic replay,
+and a reusable fixture for an input-only consumer proof without making Runbook
+an OpenRacing dependency.
 
-Acceptance: descriptor/baseline/events/reset/disconnect replay; gap and
-sequence diagnostics; redacted receipts; packaged-artifact proof; no output,
-FFB, or profile mutation.
+Acceptance: deterministic descriptor/baseline/events/reset/disconnect replay;
+visible epoch and sequence diagnostics; versioned capture fixtures; no output,
+FFB, or profile mutation. Live `wheeld` subscription/capture and the
+package-based consumer smoke remain explicit deployment proof in #180.
 
-Proof: focused replay/receipt tests, package validation, policy, strict clippy,
-and `git diff --check` plus the activated plan's consumer proof.
+Proof: focused replay and CLI tests, package-surface validation, policy, strict
+clippy, and `git diff --check`.
 
 Claim boundary: diagnostic and replay evidence only; not physical compatibility,
 named controls, release readiness, or hardware/output support.
 
 Rollback: remove the capture consumer and retain the transport contract.
 
-## Work item: control-stream-deployment-release-contract
+PR #195 delivered the hardware-free `wheelctl controls`
+list/monitor/capture/replay core, versioned JSON capture format, and
+deterministic fixture through the production `ControlProjector`. It did not
+prove live capture/subscription from a running `wheeld`, a packaged-artifact
+consumer, named controls, or physical support. The live and packaged proof is
+owned by #180 rather than being implied by this completed item.
 
-Status: blocked by `control-diagnostics-capture-replay`
-Linked issue: #173
-Follow-up implementation issue: #174
-Target seams: `.github/workflows/release.yml`, `RELEASING.md`,
-`packaging/linux/`, `packaging/windows/`, `packaging/macos/`,
-`crates/schemas/proto/`, `crates/schemas/buf.yaml`,
-`crates/schemas/buf.gen.yaml`, and `crates/schemas/build.rs`.
+## Work item: control-stream-package-composition
 
-Goal: extend the existing package/release lane so installed `wheeld` can
-negotiate `control_stream_v1` only when the backing service exists, while
-keeping schema/client artifacts versioned, existing clients and safety
-behavior compatible, and upgrade/rollback behavior explicit.
+Status: ready
+Source-of-truth issue: #173
+Parent implementation epic: #174
+Linked issue: #179
+Open candidate PR: #196
+Target seams: `RELEASING.md`, claimed platform inputs under `packaging/`,
+release package validation, and the external contract assets rooted in
+`crates/schemas/proto/` and the deterministic #172 replay fixture.
 
-Acceptance: the implementation uses the current release workflow and package
-inputs; includes the feature only in installed `wheeld` artifacts; handles
-missing or disabled service support explicitly; preserves descriptor, baseline,
-events, reset/gap, and disconnect semantics; synchronizes schema and generated
-client artifacts; proves prior-release upgrade and rollback; and documents
-platform claims only for lanes with receipts. Observe-only behavior must not
-enable output, FFB, high torque, profile mutation, or physical-control claims.
-The active goal and support/readiness status remain unchanged.
+Goal: include matching stream-capable binaries, a versioned external-consumer
+contract, compatibility metadata, checksums, and deterministic replay fixtures
+in each claimed package without introducing a parallel Runbook installer.
+
+Acceptance: every claimed package contains coherent daemon, contract, and
+fixture assets; validation catches missing or mismatched assets; feature
+metadata is truthful; external consumers need no engine/HID/FFB dependency;
+existing APIs and safety behavior remain compatible; and no output, torque,
+FFB, physical-control, or support-tier claim is broadened.
+
+Proof: focused contract-bundle and package-validation tests, formatter, strict
+Clippy for changed Rust seams, package-surface validation, policy, changelog
+validation, exact package checks for each claimed platform, and
+`git diff --check`.
+
+Claim boundary: package composition and external contract publication only.
+This item does not prove installed lifecycle, upgrade/rollback, real hardware,
+named controls, Runbook product support, output, FFB, or platform support
+beyond exact package receipts.
+
+Rollback: remove the package contract assets and validation wiring while
+retaining the existing runtime transport, diagnostics, schema versions, client
+behavior, and safety defaults.
+
+PR #196 is open candidate work for this item and is not merged proof. Its
+review findings and exact-head CI must be resolved before the item can be
+marked completed.
+
+## Work item: control-stream-artifact-lifecycle-proof
+
+Status: blocked by `control-stream-package-composition`
+Parent implementation epic: #174
+Linked issue: #180
+Target seams: `.github/workflows/release.yml`, installed-package test harnesses,
+claimed platform packages, prior-release fixtures, and the external input-only
+consumer smoke.
+
+Goal: prove `control_stream_v1` from built package artifacts across restart,
+upgrade/rollback, disabled or unavailable service behavior, and an input-only
+consumer without making Runbook an OpenRacing dependency.
+
+Acceptance: packaged `wheeld` negotiates the feature truthfully; descriptor,
+baseline, events, reset/gap, disconnect, reconnect, and restart behavior remain
+deterministic; upgrade/rollback preserve profiles, configuration, and safety
+state; existing clients remain compatible; and the virtual/replay consumer
+smoke uses packaged artifacts rather than source-tree binaries.
 
 Proof: installed/package binary feature negotiation; descriptor-to-baseline-to-
-events; reset/gap/disconnect; schema and generated-client synchronization;
-prior-release upgrade/rollback; missing/disabled feature; existing clients and
-safety behavior; input-only Runbook replay consumer; package-surface/status
-validation; and `git diff --check`.
+events; reset/gap/disconnect and restart; prior-release upgrade/rollback;
+missing/disabled feature; existing-client and safety behavior; input-only
+consumer replay; package-surface/status validation; and `git diff --check`.
 
-Claim boundary: package and release evidence only. This item does not prove
-hardware compatibility, named control roles, output, FFB, high torque, profile
-mutation, Runbook product support, or platform support beyond its receipts.
+Claim boundary: artifact lifecycle and virtual/replay consumer evidence only.
+This item does not prove real hardware compatibility, named control roles,
+simulator behavior, output, FFB, high torque, profile mutation, Runbook product
+support, or platform support beyond exact receipts.
 
-Rollback: remove the package feature and retain the existing release assets,
-schema versions, client behavior, and safety defaults.
+Rollback: remove the lifecycle proof wiring and retain the package composition,
+runtime transport, diagnostics, client behavior, and safety defaults.
 
-Issues #173 and #174 are separate from the source-of-truth scaffold. #173
-defines this deployment/release contract; #174 may implement the package and
-runtime changes only after the runtime chain and this contract are ready. They
-are not folded into the active Moza goal.
+Issue #173 defined the deployment/release contract in merged PR #176, and #174
+remains the parent epic. Neither implementation item is folded into the
+archived Moza goal.

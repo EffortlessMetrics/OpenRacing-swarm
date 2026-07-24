@@ -75,14 +75,25 @@ claim_boundary = "Observe-only versioned IPC contract; no Runbook support, physi
 
 [[work_item]]
 id = "control-diagnostics-capture-replay"
-status = "ready"
+status = "completed"
 issue = 172
+pr = 195
 prerequisite = "versioned-control-stream-transport"
 claim_boundary = "Diagnostic and replay evidence only; no physical compatibility, named controls, release readiness, or hardware/output support."
 
 [[work_item]]
-id = "control-stream-deployment-release-contract"
+id = "control-stream-package-composition"
+status = "ready"
+issue = 179
+parent_issue = 174
+prerequisite = "control-diagnostics-capture-replay"
+current_pointer = "PR #196 is open candidate work, not merged proof."
+claim_boundary = "Package composition and external contract evidence only; no installed lifecycle, hardware compatibility, named control roles, output, FFB, or platform support beyond receipts."
+
+[[work_item]]
+id = "control-stream-artifact-lifecycle-proof"
 status = "blocked"
-issues = [173, 174]
-blocked_by = "control-diagnostics-capture-replay"
-claim_boundary = "Package and release evidence only; no hardware compatibility, named control roles, output, FFB, or platform support beyond receipts."
+issue = 180
+parent_issue = 174
+blocked_by = "control-stream-package-composition"
+claim_boundary = "Artifact lifecycle and virtual/replay consumer evidence only; no real hardware, named control roles, output, FFB, or platform support beyond receipts."
