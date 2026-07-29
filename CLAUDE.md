@@ -57,6 +57,8 @@ cargo deny check                           # Security and license compliance
 cargo audit                                # Vulnerability scanning
 ```
 
+For repository operations in this project, use direct commands and avoid wrapper aliases such as `rtk`.
+
 ## Architecture
 
 ### Workspace Crates
