@@ -83,17 +83,17 @@ claim_boundary = "Diagnostic and replay evidence only; no physical compatibility
 
 [[work_item]]
 id = "control-stream-package-composition"
-status = "ready"
+status = "completed"
 issue = 179
 parent_issue = 174
 prerequisite = "control-diagnostics-capture-replay"
-current_pointer = "PR #196 is open candidate work, not merged proof."
+current_pointer = "PR #196 merged as e625296e; package composition and contract publication are landed."
 claim_boundary = "Package composition and external contract evidence only; no installed lifecycle, hardware compatibility, named control roles, output, FFB, or platform support beyond receipts."
 
 [[work_item]]
 id = "control-stream-artifact-lifecycle-proof"
-status = "blocked"
+status = "ready"
 issue = 180
 parent_issue = 174
-blocked_by = "control-stream-package-composition"
+prerequisite = "control-stream-package-composition"
 claim_boundary = "Artifact lifecycle and virtual/replay consumer evidence only; no real hardware, named control roles, output, FFB, or platform support beyond receipts."

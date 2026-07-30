@@ -156,11 +156,11 @@ owned by #180 rather than being implied by this completed item.
 
 ## Work item: control-stream-package-composition
 
-Status: ready
+Status: completed
 Source-of-truth issue: #173
 Parent implementation epic: #174
 Linked issue: #179
-Open candidate PR: #196
+Merged PR: #196 (`e625296e`)
 Target seams: `RELEASING.md`, claimed platform inputs under `packaging/`,
 release package validation, and the external contract assets rooted in
 `crates/schemas/proto/` and the deterministic #172 replay fixture.
@@ -189,15 +189,17 @@ Rollback: remove the package contract assets and validation wiring while
 retaining the existing runtime transport, diagnostics, schema versions, client
 behavior, and safety defaults.
 
-PR #196 is open candidate work for this item and is not merged proof. Its
-review findings and exact-head CI must be resolved before the item can be
-marked completed.
+PR #196 merged as `e625296e`. Its exact-head checks and review resolution are
+the proof for this package-composition item. The implementation publishes the
+Linux contract bundle and validates its coherence; it does not prove installed
+lifecycle, upgrade/rollback, or consumer smoke.
 
 ## Work item: control-stream-artifact-lifecycle-proof
 
-Status: blocked by `control-stream-package-composition`
+Status: ready
 Parent implementation epic: #174
 Linked issue: #180
+Prerequisite: `control-stream-package-composition` completed by PR #196
 Target seams: `.github/workflows/release.yml`, installed-package test harnesses,
 claimed platform packages, prior-release fixtures, and the external input-only
 consumer smoke.
