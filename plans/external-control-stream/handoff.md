@@ -22,9 +22,10 @@ The domain contract (#168, merged PR #181), deterministic projector (#169,
 merged PR #183), non-RT service slices (#177/#178, merged PRs #191/#188), and
 versioned observe-only gRPC transport (#171, merged PR #193) are complete.
 Diagnostics, capture, and deterministic replay (#172, merged PR #195) are also
-complete at the hardware-free fixture/replay boundary. The next implementation
-item is package composition and external contract publication (#179), followed
-by artifact lifecycle and consumer smoke (#180). The merged transport and
+complete at the hardware-free fixture/replay boundary. Package composition and
+external contract publication (#179, merged PR #196 at `e625296e`) is complete;
+the next implementation item is artifact lifecycle and consumer smoke (#180).
+The merged transport and
 diagnostics remain software contracts only; they do not imply Runbook product
 support, output, FFB behavior, named controls, or physical/support claims.
 
@@ -37,14 +38,15 @@ from the deterministic fixture/replay evidence.
 The activation gate is satisfied. Implement exactly one plan work item per PR
 in order:
 
-`#168 -> #169 -> #170 -> #171 -> #172 -> #179 -> #180`
+`#168 -> #169 -> #170 -> #171 -> #172 -> #179 (PR #196) -> #180`
 
 The completed #170 epic is represented by #177 and #178. Items #168 through
 #172 are now merged (#181, #183, #188/#191, #193, and #195 respectively).
 Issue #173 and merged PR #176 define the deployment source truth; #174 remains
-the parent epic. Issue #179 is the next one-PR implementation item, with open
-PR #196 as candidate work that still requires review and exact-head proof.
-Issue #180 remains blocked by #179. The external Runbook consumer is
+the parent epic. Issue #179 is complete through merged PR #196 at
+`e625296e`; its package-composition claim remains bounded to the exact Linux
+contract-bundle receipt. Issue #180 is now the ready one-PR implementation
+item. The external Runbook consumer is
 `EffortlessMetrics/runbook-rs#41`, and remains a proof consumer rather than a
 domain dependency.
 
@@ -58,8 +60,8 @@ Linux and Windows artifacts; the macOS packaging directory exists but is not a
 current workflow claim. That distinction must remain explicit until artifact
 proof exists.
 
-Issue #179 must first cover package composition, contract publication, and
-coherence checks. Issue #180 must then cover installed `wheeld` feature
+Issue #179 covered package composition, contract publication, and coherence
+checks. Issue #180 must now cover installed `wheeld` feature
 negotiation, descriptor / baseline / events / reset-gap / disconnect behavior,
 schema and generated-client synchronization, prior-release upgrade and
 rollback, missing or disabled service behavior, existing-client and safety
