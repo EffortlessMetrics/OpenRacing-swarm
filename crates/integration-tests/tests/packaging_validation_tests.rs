@@ -1916,3 +1916,59 @@ fn all_package_formats_reference_homepage() -> Result<(), Box<dyn std::error::Er
     );
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// External control-stream contract bundle packaging (issue #179)
+// ---------------------------------------------------------------------------
+
+/// The Linux tarball build must package the versioned external control-stream
+/// contract bundle so external `control_stream_v1` consumers ship with the
+/// release artifacts.
+#[test]
+fn build_packages_wires_control_stream_contract() -> Result<(), Box<dyn std::error::Error>> {
+    let script = read_packaging_file("packaging/linux/build-packages.sh")?;
+    assert!(
+        script.contains("control-stream-contract"),
+        "build-packages.sh must generate the control-stream contract bundle"
+    );
+    assert!(
+        script.contains("contract/control-stream"),
+        "build-packages.sh must place the contract under contract/control-stream"
+    );
+    assert!(
+        script.contains("--check"),
+        "build-packages.sh must verify the packaged contract bundle is coherent"
+    );
+    Ok(())
+}
+
+/// The contract generator/validator tool must exist and be registered as a
+/// hyphenated bin so packaging and CI can invoke it.
+#[test]
+fn control_stream_contract_tool_is_registered() -> Result<(), Box<dyn std::error::Error>> {
+    assert!(
+        repo_root()
+            .join("crates/tools/src/bin/control_stream_contract.rs")
+            .exists(),
+        "control-stream contract generator source must exist"
+    );
+    let tools_manifest = read_packaging_file("crates/tools/Cargo.toml")?;
+    assert!(
+        tools_manifest.contains("control-stream-contract"),
+        "openracing-tools must register the control-stream-contract bin"
+    );
+    Ok(())
+}
+
+/// The release documentation must describe the published contract bundle so
+/// external consumers know it exists and what it contains.
+#[test]
+fn releasing_doc_mentions_control_stream_contract() -> Result<(), Box<dyn std::error::Error>> {
+    let releasing = read_packaging_file("RELEASING.md")?;
+    assert!(
+        releasing.to_lowercase().contains("control-stream contract")
+            || releasing.contains("control-stream-contract"),
+        "RELEASING.md must document the control-stream contract bundle artifact"
+    );
+    Ok(())
+}

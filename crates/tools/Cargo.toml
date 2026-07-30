@@ -36,11 +36,16 @@ path = "src/bin/xtask.rs"
 name = "package-surface"
 path = "src/bin/package_surface.rs"
 
+[[bin]]
+name = "control-stream-contract"
+path = "src/bin/control_stream_contract.rs"
+
 [dependencies]
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
+sha2 = "0.10"
 toml = "0.8.2"
 cargo_metadata = "0.19.2"
 

@@ -118,6 +118,14 @@ Each release includes:
   - `99-racing-wheel-suite.rules` - udev rules
   - `wheeld.service` - systemd service file
   - `install.sh` - Installation script
+  - `contract/control-stream/` - External **control-stream contract** bundle:
+    the pinned `wheel.proto`, a `control-stream-contract.json` compatibility
+    manifest (`control_stream_v1` feature version, capture schema version,
+    minimum compatible service/client versions, source checksum), `SHA256SUMS`,
+    and a deterministic `sample-capture.json` replay fixture. Lets external
+    consumers build a `control_stream_v1` client without depending on
+    OpenRacing engine/HID/FFB crates. Generated and coherence-verified at
+    package time by `openracing-tools --bin control-stream-contract`.
   - Documentation (README, LICENSE, CHANGELOG)
 
 ### Windows (x64)

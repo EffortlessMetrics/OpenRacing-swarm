@@ -205,7 +205,62 @@ build_tarball() {
             cp "$BIN_PATH/$binary" "$tarball_dir/bin/"
         fi
     done
-    
+
+    # Package the external control-stream contract bundle (issue #179): the
+    # pinned wire proto, a compatibility manifest (control_stream_v1 feature +
+    # capture schema + min compatible versions), checksums, and a deterministic
+    # replay fixture. External consumers use this to build a control_stream_v1
+    # client without depending on OpenRacing engine/HID/FFB crates.
+    local contract_dir="$tarball_dir/contract/control-stream"
+    mkdir -p "$contract_dir"
+    # The four assets that make up a coherent bundle (issue #179).
+    local required_assets=(
+        "control-stream-contract.json"
+        "wheel.proto"
+        "sample-capture.json"
+        "SHA256SUMS"
+    )
+    # The bundle is a required release artifact (issue #179) and is verified
+    # below with `control-stream-contract --check`, which needs cargo — so cargo
+    # is required for every path. Fail fast before doing any copy/generation work
+    # rather than after, so a cargo-less host errors clearly and immediately.
+    if ! command -v cargo >/dev/null 2>&1; then
+        echo "ERROR: cargo is required to produce and verify the control-stream contract bundle" >&2
+        return 1
+    fi
+    if [[ -n "${CONTRACT_PATH:-}" && -d "${CONTRACT_PATH:-}" ]]; then
+        # Reuse a pre-generated bundle (e.g. one produced by an earlier build
+        # stage). Copy only the allowlisted assets by name and reject symlinks,
+        # so a broad, stale, or crafted CONTRACT_PATH cannot add unlisted files
+        # or pull host files into the release tarball. --check below still binds
+        # the assets to this checkout and verifies coherence.
+        for asset in "${required_assets[@]}"; do
+            if [[ -L "$CONTRACT_PATH/$asset" ]]; then
+                echo "ERROR: refusing to copy symlinked contract asset $asset from CONTRACT_PATH" >&2
+                return 1
+            fi
+            if [[ ! -f "$CONTRACT_PATH/$asset" ]]; then
+                echo "ERROR: CONTRACT_PATH is missing contract asset $asset" >&2
+                return 1
+            fi
+            cp -- "$CONTRACT_PATH/$asset" "$contract_dir/$asset"
+        done
+    else
+        ( cd "$PROJECT_ROOT" && cargo run --quiet --locked -p openracing-tools \
+            --bin control-stream-contract -- --out "$contract_dir" )
+    fi
+    # Verify all four assets are present and the bundle is coherent; fail the
+    # package build otherwise — a tarball missing or with a corrupt bundle must
+    # never ship.
+    for asset in "${required_assets[@]}"; do
+        if [[ ! -f "$contract_dir/$asset" ]]; then
+            echo "ERROR: control-stream contract bundle is missing $asset" >&2
+            return 1
+        fi
+    done
+    ( cd "$PROJECT_ROOT" && cargo run --quiet --locked -p openracing-tools \
+        --bin control-stream-contract -- --check "$contract_dir" )
+
     # Copy packaging files
     cp "$SCRIPT_DIR/99-racing-wheel-suite.rules" "$tarball_dir/"
     cp "$SCRIPT_DIR/wheeld.service.template" "$tarball_dir/systemd/wheeld.service"
