@@ -20,9 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `overall_health` is `service_unavailable` rather than `healthy` when no
   service is reachable
 - `wheelctl safety stop`, `safety enable`, and `safety limit` reported success
-  against the simulated backend. An emergency stop that never reached a device
-  now fails with the service-unavailable exit code (5) instead. Read-only
-  `safety status` keeps working offline
+  against the simulated backend. All three now require a live service and exit
+  with the service-unavailable code (5) when there is none — an emergency stop
+  that never reached a device, or a high-torque enable that never gated
+  anything, must not report success. Read-only `safety status` keeps working
+  offline
 - `wheelctl safety limit` printed "Torque limit set" without ever sending the
   limit anywhere — it validated the value against the device maximum and then
   returned, carrying a `// Mock torque limit setting` comment. There is no
@@ -32,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   write needs a new `wheel.v1` method and belongs in its own change. Note that
   `wheelctl profile apply` is *not* a workaround: `apply_profile` ignores its
   profile argument and sends `base: None`, so `torqueCapNm` never reaches the
-  service there either — tracked separately
+  service there either — tracked separately.
 
 - Linux release packaging is runnable again. `packaging/linux/build-packages.sh`
   had a bash syntax error in its checksum loop (`for ... 2>/dev/null; do`) that
