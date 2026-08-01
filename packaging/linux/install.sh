@@ -3,11 +3,15 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Configuration
 INSTALL_PREFIX="${INSTALL_PREFIX:-$HOME/.local}"
 SERVICE_USER="${SERVICE_USER:-$USER}"
 SKIP_UDEV="${SKIP_UDEV:-false}"
 SKIP_RTKIT="${SKIP_RTKIT:-false}"
+SKIP_SYSTEMD="${SKIP_SYSTEMD:-false}"
+UNINSTALL="false"
 
 # Colors for output
 RED='\033[0;31m'
@@ -33,7 +37,7 @@ check_dependencies() {
     # Check for required system packages
     local missing_packages=()
     
-    if ! command -v systemctl &> /dev/null; then
+    if [ "$SKIP_SYSTEMD" != "true" ] && ! command -v systemctl &> /dev/null; then
         missing_packages+=("systemd")
     fi
     
@@ -70,11 +74,14 @@ install_binaries() {
     
     mkdir -p "$INSTALL_PREFIX/bin"
     mkdir -p "$INSTALL_PREFIX/share/racing-wheel-suite"
+    mkdir -p "$INSTALL_PREFIX/share/openracing/contract/control-stream"
     mkdir -p "$INSTALL_PREFIX/share/doc/racing-wheel-suite"
     
     # Copy binaries (assuming they're in the current directory or a bin/ subdirectory)
     local bin_source="."
-    if [ -d "bin" ]; then
+    if [ -d "$SCRIPT_DIR/bin" ]; then
+        bin_source="$SCRIPT_DIR/bin"
+    elif [ -d "bin" ]; then
         bin_source="bin"
     fi
     
@@ -97,23 +104,41 @@ install_binaries() {
             log_info "Installed $binary (optional)"
         fi
     done
+
+    # Install the versioned external control-stream contract beside the
+    # binaries. Keep the allowlist explicit so unrelated files from a package
+    # cannot become part of the installed consumer surface.
+    local contract_source="$SCRIPT_DIR/contract/control-stream"
+    local contract_target="$INSTALL_PREFIX/share/openracing/contract/control-stream"
+    for asset in control-stream-contract.json wheel.proto sample-capture.json SHA256SUMS; do
+        if [ -f "$contract_source/$asset" ]; then
+            cp "$contract_source/$asset" "$contract_target/"
+        else
+            log_error "Required control-stream contract asset not found: $contract_source/$asset"
+            exit 1
+        fi
+    done
     
     # Install configuration templates
     mkdir -p "$INSTALL_PREFIX/share/racing-wheel-suite/config"
-    if [ -d "config" ]; then
-        cp -r config/* "$INSTALL_PREFIX/share/racing-wheel-suite/config/"
+    if [ -d "$SCRIPT_DIR/config" ]; then
+        cp -r "$SCRIPT_DIR/config"/* "$INSTALL_PREFIX/share/racing-wheel-suite/config/"
     fi
     
     # Install documentation
-    if [ -f "README.md" ]; then
-        cp README.md "$INSTALL_PREFIX/share/doc/racing-wheel-suite/"
+    if [ -f "$SCRIPT_DIR/README.md" ]; then
+        cp "$SCRIPT_DIR/README.md" "$INSTALL_PREFIX/share/doc/racing-wheel-suite/"
     fi
-    if [ -f "LICENSE" ]; then
-        cp LICENSE "$INSTALL_PREFIX/share/doc/racing-wheel-suite/"
+    if [ -f "$SCRIPT_DIR/LICENSE" ]; then
+        cp "$SCRIPT_DIR/LICENSE" "$INSTALL_PREFIX/share/doc/racing-wheel-suite/"
     fi
 }
 
 install_systemd_service() {
+    if [ "$SKIP_SYSTEMD" = "true" ]; then
+        log_info "Skipping systemd user service installation"
+        return
+    fi
     log_info "Installing systemd user service..."
     
     local service_dir="$HOME/.config/systemd/user"
@@ -121,7 +146,15 @@ install_systemd_service() {
     
     # Generate service file from template
     local service_file="$service_dir/openracing.service"
-    sed "s|%INSTALL_PATH%|$INSTALL_PREFIX|g" packaging/linux/wheeld.service.template > "$service_file"
+    local service_template="$SCRIPT_DIR/systemd/wheeld.service"
+    if [ ! -f "$service_template" ]; then
+        service_template="$SCRIPT_DIR/packaging/linux/wheeld.service.template"
+    fi
+    if [ ! -f "$service_template" ]; then
+        log_error "Systemd service template not found beside installer"
+        exit 1
+    fi
+    sed "s|%INSTALL_PATH%|$INSTALL_PREFIX|g" "$service_template" > "$service_file"
     
     # Reload systemd and enable service
     systemctl --user daemon-reload
@@ -145,9 +178,9 @@ install_udev_rules() {
     
     if [ "$EUID" -eq 0 ]; then
         # Running as root
-        cp packaging/linux/99-racing-wheel-suite.rules "$udev_rules_file"
-        cp packaging/linux/90-racing-wheel-quirks.conf "$modprobe_conf"
-        cp packaging/linux/99-racing-wheel-suite.hwdb "$hwdb_file"
+        cp "$SCRIPT_DIR/99-racing-wheel-suite.rules" "$udev_rules_file"
+        cp "$SCRIPT_DIR/90-racing-wheel-quirks.conf" "$modprobe_conf"
+        cp "$SCRIPT_DIR/99-racing-wheel-suite.hwdb" "$hwdb_file"
         systemd-hwdb update
         udevadm control --reload-rules
         udevadm trigger
@@ -157,9 +190,9 @@ install_udev_rules() {
     else
         # Not running as root - provide instructions
         log_warn "Not running as root. udev rules need to be installed manually:"
-        log_warn "sudo cp packaging/linux/99-racing-wheel-suite.rules $udev_rules_file"
-        log_warn "sudo cp packaging/linux/90-racing-wheel-quirks.conf $modprobe_conf"
-        log_warn "sudo cp packaging/linux/99-racing-wheel-suite.hwdb $hwdb_file"
+        log_warn "sudo cp $SCRIPT_DIR/99-racing-wheel-suite.rules $udev_rules_file"
+        log_warn "sudo cp $SCRIPT_DIR/90-racing-wheel-quirks.conf $modprobe_conf"
+        log_warn "sudo cp $SCRIPT_DIR/99-racing-wheel-suite.hwdb $hwdb_file"
         log_warn "sudo systemd-hwdb update"
         log_warn "sudo udevadm control --reload-rules"
         log_warn "sudo udevadm trigger"
@@ -191,21 +224,39 @@ verify_installation() {
     
     # Check binaries
     for binary in wheeld wheelctl; do
-        if ! command -v "$binary" &> /dev/null; then
-            log_error "$binary not found in PATH"
-            log_error "Make sure $INSTALL_PREFIX/bin is in your PATH"
+        if [ ! -x "$INSTALL_PREFIX/bin/$binary" ]; then
+            log_error "$INSTALL_PREFIX/bin/$binary was not installed"
+            return 1
+        fi
+    done
+
+    for asset in control-stream-contract.json wheel.proto sample-capture.json SHA256SUMS; do
+        if [ ! -f "$INSTALL_PREFIX/share/openracing/contract/control-stream/$asset" ]; then
+            log_error "Installed control-stream contract asset is missing: $asset"
             return 1
         fi
     done
     
     # Check service file
-    if ! systemctl --user list-unit-files openracing.service &> /dev/null; then
+    if [ "$SKIP_SYSTEMD" != "true" ] && ! systemctl --user list-unit-files openracing.service &> /dev/null; then
         log_error "Systemd service not found"
         return 1
     fi
     
     log_info "Installation verification successful"
     return 0
+}
+
+uninstall_installation() {
+    log_info "Removing OpenRacing from $INSTALL_PREFIX..."
+    if [ "$SKIP_SYSTEMD" != "true" ] && command -v systemctl &> /dev/null; then
+        systemctl --user disable --now openracing.service &> /dev/null || true
+        rm -f "$HOME/.config/systemd/user/openracing.service"
+        systemctl --user daemon-reload &> /dev/null || true
+    fi
+    rm -f "$INSTALL_PREFIX/bin/wheeld" "$INSTALL_PREFIX/bin/wheelctl" "$INSTALL_PREFIX/bin/openracing"
+    rm -rf "$INSTALL_PREFIX/share/openracing/contract/control-stream"
+    log_info "OpenRacing binaries and control-stream contract assets removed"
 }
 
 print_post_install_instructions() {
@@ -237,6 +288,11 @@ main() {
     log_info "Install prefix: $INSTALL_PREFIX"
     log_info "Service user: $SERVICE_USER"
     
+    if [ "$UNINSTALL" = "true" ]; then
+        uninstall_installation
+        return
+    fi
+
     check_dependencies
     install_binaries
     install_systemd_service
@@ -266,12 +322,22 @@ while [[ $# -gt 0 ]]; do
             SKIP_RTKIT="true"
             shift
             ;;
+        --skip-systemd)
+            SKIP_SYSTEMD="true"
+            shift
+            ;;
+        --uninstall)
+            UNINSTALL="true"
+            shift
+            ;;
         --help)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
             echo "  --prefix=PATH     Installation prefix (default: ~/.local)"
             echo "  --skip-udev       Skip udev rules installation"
             echo "  --skip-rtkit      Skip rtkit dependency check"
+            echo "  --skip-systemd    Skip systemd service installation and verification"
+            echo "  --uninstall       Remove installed binaries and contract assets"
             echo "  --help            Show this help"
             exit 0
             ;;
