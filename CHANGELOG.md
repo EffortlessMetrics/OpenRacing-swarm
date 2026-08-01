@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- The README's Quick Start never mentioned `wheeld`. It walked a new user from
+  `cargo install --path crates/cli` straight to `wheelctl device list`, so the
+  most common first-run outcome — a client with no service to talk to — was not
+  covered anywhere on the page. Quick Start now installs both binaries, starts
+  the service first, explains the simulated fallback and `--no-mock`, and points
+  at `wheeld --virtual-devices` for anyone without hardware
+- The README build prerequisites omitted `libudev-dev` and `pkg-config`, so the
+  first `cargo build` on a clean Linux machine failed inside `libudev-sys` with
+  no indication that a system package was missing. The only mention of these was
+  in a troubleshooting section of `docs/DEVELOPMENT.md`, which is not where
+  someone looks before their first build
+- The README advertised `wheelctl profile apply` as a Basic Usage example.
+  `WheelClient::apply_profile` ignores its profile argument and sends
+  `base: None`, so the command reports success without transmitting anything.
+  Removed from the example list and recorded under a new "Known gaps" section
+  instead
 - Linux release packaging is runnable again. `packaging/linux/build-packages.sh`
   had a bash syntax error in its checksum loop (`for ... 2>/dev/null; do`) that
   made the whole script unparseable, so every tagged release failed at the
@@ -44,6 +60,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   referenced. The intact implementation lives at `scripts/build-reproducible.sh`
 
 ### Added
+- `SECURITY.md` and a root `CONTRIBUTING.md`. Neither existed, so GitHub had no
+  vulnerability-reporting path to surface and no contributing guide to link from
+  the issue and pull request UI. `SECURITY.md` names the private reporting
+  channel and scopes the safety-relevant surfaces (interlock bypass, torque cap,
+  plugin sandbox escape, IPC capability checks). The root `CONTRIBUTING.md` is a
+  short front door for the existing `docs/CONTRIBUTING.md`, covering the rules
+  that are CI-enforced rather than stylistic
+- README documentation index now links the user-facing guides (User Guide,
+  Setup, Gaming Setup) and the support matrices, which existed but were
+  unreachable from the front page
 - `scripts/check_shell_syntax.sh`, run by the `policy` workflow, parses every
   tracked shell script. Packaging and release scripts are not exercised by
   `cargo test`, so syntax errors in them previously stayed invisible until a
