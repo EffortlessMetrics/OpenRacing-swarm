@@ -39,16 +39,32 @@ RemoveIPC=true
 
 # Device access and real-time scheduling.
 #
-# SupplementaryGroups= and AmbientCapabilities= are rejected by the systemd
-# user manager, which cannot change groups or grant capabilities, so they are
-# not set here. Instead:
-#   - HID access comes from the udev rules in 99-racing-wheel-suite.rules,
-#     which tag racing devices with uaccess for the logged-in user. Adding the
-#     account to the input/plugdev groups covers seat-less setups; install.sh
-#     checks group membership and reports what is missing.
-#   - RT scheduling is obtained at runtime through rtkit (RestrictRealtime is
-#     already false below), which is why the packages recommend the rtkit
-#     package rather than granting CAP_SYS_NICE to the unit.
+# This is a *user* unit (installed to the systemd user manager), which limits
+# what can be requested here:
+#
+#   - SupplementaryGroups= is documented as available only for system services
+#     and unsupported in per-user instances, so it is not set. HID access comes
+#     instead from the udev rules in 99-racing-wheel-suite.rules, which tag
+#     racing devices with uaccess for the logged-in user. Adding the account to
+#     the input/plugdev groups covers seat-less setups; install.sh checks group
+#     membership and reports what is missing.
+#
+#   - AmbientCapabilities= in a per-user instance implicitly enables
+#     PrivateUsers=, so CAP_SYS_NICE would only be held inside a user
+#     namespace -- which does not lift the host RLIMIT_RTPRIO check that
+#     sched_setscheduler() actually needs -- while the implied user namespace
+#     would interfere with the /dev access this service depends on. It is
+#     therefore not set.
+#
+# RT scheduling: crates/openracing-scheduler/src/linux.rs requests SCHED_FIFO
+# via sched_setscheduler() directly, and the failure path in
+# crates/engine/src/scheduler.rs notes that an rtkit fallback is not yet
+# implemented. So RT priority currently depends on the account's RLIMIT_RTPRIO
+# (commonly granted through limits.conf or a `realtime` group). If RT priority
+# proves unobtainable for user services in practice, the fix is either to
+# implement the org.freedesktop.RealtimeKit1 request or to ship a system unit;
+# granting the capability here would not achieve it.
+# RestrictRealtime=false below leaves the seccomp path open either way.
 
 # Working directory and state
 WorkingDirectory=%INSTALL_PATH%

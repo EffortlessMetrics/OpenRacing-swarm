@@ -150,8 +150,14 @@ install_systemd_service() {
         exit 1
     fi
 
+    # INSTALL_PREFIX is user supplied. In a sed replacement `&` expands to the
+    # matched text and `|` would close the expression, so a prefix such as
+    # /opt/R&D would render a broken ExecStart. Escape both, plus backslashes.
+    local escaped_prefix
+    escaped_prefix="$(printf '%s' "$INSTALL_PREFIX" | sed -e 's/[\\&|]/\\&/g')"
+
     local service_file="$service_dir/openracing.service"
-    sed "s|%INSTALL_PATH%|$INSTALL_PREFIX|g" "$template" > "$service_file"
+    sed "s|%INSTALL_PATH%|$escaped_prefix|g" "$template" > "$service_file"
 
     log_info "Wrote $service_file"
 
@@ -287,10 +293,23 @@ print_post_install_instructions() {
     echo "1. Add $INSTALL_PREFIX/bin to your PATH if not already done:"
     echo "   export PATH=\"$INSTALL_PREFIX/bin:\$PATH\""
     echo "2. Install udev rules (if not done automatically):"
-    echo "   sudo cp $SCRIPT_DIR/99-racing-wheel-suite.rules /etc/udev/rules.d/"
-    echo "   sudo cp $SCRIPT_DIR/90-racing-wheel-quirks.conf /etc/modprobe.d/"
-    echo "   sudo cp $SCRIPT_DIR/99-racing-wheel-suite.hwdb /etc/udev/hwdb.d/"
-    echo "   sudo systemd-hwdb update"
+    # The quirks and hwdb files are optional package contents, so only suggest
+    # copying the ones this package actually shipped.
+    local rules_src quirks_src hwdb_src
+    rules_src="$(find_asset "99-racing-wheel-suite.rules")" || rules_src=""
+    quirks_src="$(find_asset "90-racing-wheel-quirks.conf")" || quirks_src=""
+    hwdb_src="$(find_asset "99-racing-wheel-suite.hwdb")" || hwdb_src=""
+
+    if [ -n "$rules_src" ]; then
+        echo "   sudo cp $rules_src /etc/udev/rules.d/"
+    fi
+    if [ -n "$quirks_src" ]; then
+        echo "   sudo cp $quirks_src /etc/modprobe.d/"
+    fi
+    if [ -n "$hwdb_src" ]; then
+        echo "   sudo cp $hwdb_src /etc/udev/hwdb.d/"
+        echo "   sudo systemd-hwdb update"
+    fi
     echo "   sudo udevadm control --reload-rules && sudo udevadm trigger"
     echo "3. Add your user to required groups:"
     echo "   sudo usermod -a -G input,plugdev $SERVICE_USER"
