@@ -4,7 +4,7 @@ Status: active
 Owner: release/ci
 Linked issue: https://github.com/EffortlessMetrics/OpenRacing-swarm/issues/216
 Candidate PR: https://github.com/EffortlessMetrics/OpenRacing-swarm/pull/135
-Current implementation: current-main successor in review
+Current implementation: PR #221 at 21018fe2; hosted proof pending
 Linked ADRs: n/a
 Active goal: n/a; this plan supports CI infrastructure rather than the active control-stream product lane
 
