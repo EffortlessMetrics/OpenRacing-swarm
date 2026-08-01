@@ -92,10 +92,10 @@ claim_boundary = "Package composition and external contract evidence only; no in
 
 [[work_item]]
 id = "control-stream-artifact-lifecycle-proof"
-status = "in_progress"
+status = "completed"
 issue = 180
 parent_issue = 174
 prerequisite = "control-stream-package-composition"
 pr = 210
-current_pointer = "PR #210 is open from 02de5aec; hosted checks are in progress."
+current_pointer = "PR #210 merged as eaee0ae5; hosted required proof passed on exact head 11038dfa."
 claim_boundary = "Artifact lifecycle and virtual/replay consumer evidence only; no real hardware, named control roles, output, FFB, or platform support beyond receipts."

@@ -43,10 +43,17 @@ jobs:
 
       - name: Extract version from tag or input
         id: version
+        env:
+          # workflow_dispatch inputs are attacker-influenceable text. Passing
+          # them through env keeps them out of the script body, where they
+          # would otherwise be expanded as shell source before validation.
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          INPUT_PRERELEASE: ${{ github.event.inputs.prerelease }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            VERSION="${{ github.event.inputs.version }}"
-            PRERELEASE="${{ github.event.inputs.prerelease }}"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            VERSION="$INPUT_VERSION"
+            PRERELEASE="$INPUT_PRERELEASE"
           else
             TAG="${GITHUB_REF#refs/tags/}"
             VERSION="${TAG#v}"
@@ -64,19 +71,54 @@ jobs:
           echo "Version: $VERSION"
           echo "Prerelease: $PRERELEASE"
 
+      # The version can originate from the workflow_dispatch input, so it is
+      # passed through `env` rather than interpolated into the script body:
+      # a crafted value expanded inline would run as shell before the format
+      # check below could reject it.
       - name: Validate version format
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="$RELEASE_VERSION"
           if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
             echo "Error: Invalid version format: $VERSION"
             echo "Expected format: X.Y.Z or X.Y.Z-suffix"
             exit 1
           fi
 
+      - name: Validate version matches Cargo.toml
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          VERSION="$RELEASE_VERSION"
+          # Prereleases are tagged against the base workspace version, e.g.
+          # tag v0.2.0-rc.1 against workspace version 0.2.0.
+          BASE_VERSION="${VERSION%%-*}"
+          CARGO_VERSION="$(sed -n '/^\[workspace\.package\]/,/^\[/p' Cargo.toml \
+            | sed -n 's/^version = "\(.*\)"/\1/p' | head -n1)"
+
+          if [ -z "$CARGO_VERSION" ]; then
+            echo "Error: could not read version from [workspace.package] in Cargo.toml"
+            exit 1
+          fi
+
+          if [ "$BASE_VERSION" != "$CARGO_VERSION" ]; then
+            echo "Error: tag version does not match Cargo.toml"
+            echo "  tag:        $VERSION (base $BASE_VERSION)"
+            echo "  Cargo.toml: $CARGO_VERSION"
+            echo "Update [workspace.package] version in Cargo.toml, or retag."
+            exit 1
+          fi
+
+          echo "Version check OK: tag $VERSION matches Cargo.toml $CARGO_VERSION"
+
       - name: Extract changelog for version
         id: changelog
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="$RELEASE_VERSION"
           BASE_VERSION=$(echo "$VERSION" | sed 's/-\(alpha\|beta\|rc\).*//')
 
           # Extract changelog section for this version
@@ -304,6 +346,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [prepare, build-linux, build-windows, control-stream-artifact-smoke]
+    env:
+      # The `secrets` context is not available in a step-level `if:`, so the
+      # presence of a signing key is surfaced through `env` instead.
+      HAS_GPG_KEY: ${{ secrets.GPG_PRIVATE_KEY != '' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -340,20 +386,22 @@ jobs:
             --skip-signing
 
       - name: Sign with GPG (if key available)
-        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+        if: env.HAS_GPG_KEY == 'true'
         run: |
-          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import
+          set -euo pipefail
+          printf '%s' "$GPG_PRIVATE_KEY" | gpg --import
 
           cd release-assets
+          shopt -s nullglob
           for file in *.tar.gz *.zip *.deb *.rpm *.msi; do
-            if [[ -f "$file" ]]; then
-              gpg --armor --detach-sign --local-user "${{ secrets.GPG_KEY_ID }}" "$file"
-            fi
+            gpg --armor --detach-sign --local-user "$GPG_KEY_ID" "$file"
           done
 
-          gpg --armor --detach-sign --local-user "${{ secrets.GPG_KEY_ID }}" SHA256SUMS.txt
+          gpg --armor --detach-sign --local-user "$GPG_KEY_ID" SHA256SUMS.txt
         env:
           GPG_TTY: /dev/tty
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
 
       - name: Upload signed artifacts
         uses: actions/upload-artifact@v4

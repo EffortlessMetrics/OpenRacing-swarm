@@ -32,7 +32,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Adding a real write needs a new `wheel.v1` method and belongs in its own
   change
 
+- Linux release packaging is runnable again. `packaging/linux/build-packages.sh`
+  had a bash syntax error in its checksum loop (`for ... 2>/dev/null; do`) that
+  made the whole script unparseable, so every tagged release failed at the
+  "Build Linux packages" step. The tarball step also `cd`'d out of the working
+  directory without a subshell, which broke the subsequent .deb, .rpm, and
+  checksum stages
+- `scripts/sign-release.sh` had the same unparseable `for ... 2>/dev/null` loop
+  and could not run; the release workflow invokes it directly
+- `.github/workflows/release.yml` used `if: ${{ secrets.GPG_PRIVATE_KEY != '' }}`
+  on a step. The `secrets` context is not available in a step-level `if:`, so
+  the workflow failed to compile and no release job ran at all. The signing key
+  is now surfaced through a job-level `env` value
+- `packaging/linux/install.sh` referenced repo-only `packaging/linux/...` paths
+  for the systemd unit and udev/hwdb/modprobe assets, which do not exist inside
+  a release tarball, so the documented `./install.sh` command aborted. Assets
+  are now resolved relative to the script, covering both layouts
+- The packaged systemd unit declared `Type=notify`, but wheeld does not
+  implement `sd_notify`, so the service would hang until `TimeoutStartSec` and
+  be killed. It also passed `--service`, which is the Windows SCM flag. The
+  unit is now `Type=simple` and starts wheeld with no arguments
+- Removed `SupplementaryGroups=` and `AmbientCapabilities=` from the systemd
+  *user* unit; the user manager rejects both directives
+- `install.sh` no longer aborts when no systemd user bus is reachable (plain
+  SSH sessions, containers), and no longer reports "Installation verification
+  failed" purely because the install prefix is not yet on `PATH` — which
+  suppressed the very instructions explaining how to add it
+- `LICENSE-APACHE` was an empty file while the project offers `MIT OR
+  Apache-2.0` in `Cargo.toml`, the README, and every release tarball. It now
+  contains the Apache-2.0 text
+
+### Removed
+- `build/build-reproducible.sh`, a corrupted 92-line duplicate with truncated
+  variable names and unterminated strings that no workflow or document
+  referenced. The intact implementation lives at `scripts/build-reproducible.sh`
+
 ### Added
+- `scripts/check_shell_syntax.sh`, run by the `policy` workflow, parses every
+  tracked shell script. Packaging and release scripts are not exercised by
+  `cargo test`, so syntax errors in them previously stayed invisible until a
+  release tag was pushed
+- The release workflow now verifies that the tag version matches the
+  `[workspace.package]` version in `Cargo.toml` before building, a check
+  `RELEASING.md` already documented but that did not exist
 - `wheelctl --no-mock` (also `WHEELCTL_NO_MOCK=1` or `OPENRACING_NO_MOCK=1`)
   makes an unreachable service an error instead of falling back to simulated
   data, so scripts can require a real daemon
