@@ -57,17 +57,17 @@ review_after = "2026-06-30"
 removal_condition = "The coverage helper has a repo-owned prerequisite bootstrap or the quality receipt runs the helper in a managed environment where cargo-llvm-cov availability is guaranteed."
 
 [[exception]]
-id = "ripr-plus-test-efficiency-generator-missing"
+id = "ripr-plus-test-efficiency-evidence-missing"
 owner = "release/ci"
 path = "crates/tools/src/bin/xtask.rs"
 kind = "ripr_gate_debt"
-reason = "cargo xtask badges --check cannot currently regenerate the ripr+ endpoint because ripr repo-badge-plus formats require target/ripr/reports/test-efficiency.json, but this xtask does not expose the referenced test-efficiency-report generator."
+reason = "The repo-owned badge command uses a checked exposure-only fallback when test-efficiency.json is unavailable, but the quality receipt must keep the missing test-efficiency evidence visible as skipped rather than treating the fallback as ripr+ closure proof."
 test_surface = [
   "cargo xtask badges --check",
   "cargo xtask quality-closure --check",
 ]
-review_after = "2026-06-30"
-removal_condition = "A repo-owned test-efficiency report generator exists and cargo xtask badges --check passes without pre-seeded target artifacts, or the ripr+ endpoint generation policy is replaced by another checked source."
+review_after = "2026-09-30"
+removal_condition = "A repo-owned test-efficiency report generator exists and the plus endpoint can be regenerated and checked with evidence, allowing this fallback debt to be retired."
 
 [[exception]]
 id = "coverage-windows-command-line-limit"

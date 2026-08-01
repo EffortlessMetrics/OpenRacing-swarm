@@ -140,9 +140,17 @@ fn badges(check: bool) -> anyhow::Result<()> {
     fs::create_dir_all(&target_dir)
         .with_context(|| format!("failed to create {}", target_dir.display()))?;
 
+    let test_efficiency_report = workspace_root.join("target/ripr/reports/test-efficiency.json");
+    let using_exposure_only_fallback = !test_efficiency_report.exists();
     let ripr_plus = ripr_plus_badge(&workspace_root)?;
     validate_shields_badge(&ripr_plus, Some("ripr+"))?;
     write_json_pretty(&target_dir.join("ripr-plus.json"), &ripr_plus)?;
+
+    if using_exposure_only_fallback {
+        stdout_line(format_args!(
+            "badges: test-efficiency report missing; used exposure-only fallback; quality closure remains skipped"
+        ));
+    }
 
     let committed_dir = workspace_root.join(BADGE_ENDPOINT_DIR);
     if check {
@@ -170,25 +178,62 @@ fn badges(check: bool) -> anyhow::Result<()> {
 
 fn ripr_plus_badge(workspace_root: &Path) -> anyhow::Result<ShieldsEndpointBadge> {
     let ripr_bin = env::var("RIPR_BIN").unwrap_or_else(|_| "ripr".to_string());
+    let test_efficiency_report = workspace_root.join("target/ripr/reports/test-efficiency.json");
+    let format = if test_efficiency_report.exists() {
+        "repo-badge-plus-shields"
+    } else {
+        "repo-badge-shields"
+    };
     let output = Command::new(&ripr_bin)
         .arg("check")
         .arg("--root")
         .arg(workspace_root)
         .arg("--format")
-        .arg("repo-badge-plus-shields")
+        .arg(format)
         .current_dir(workspace_root)
         .output()
         .with_context(|| format!("failed to execute {ripr_bin}; set RIPR_BIN to override"))?;
 
     if !output.status.success() {
         bail!(
-            "{ripr_bin} repo-badge-plus-shields failed: {}",
+            "{ripr_bin} {format} failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
     }
 
-    serde_json::from_slice(&output.stdout)
-        .with_context(|| format!("{ripr_bin} emitted invalid Shields endpoint JSON"))
+    let badge: ShieldsEndpointBadge = serde_json::from_slice(&output.stdout)
+        .with_context(|| format!("{ripr_bin} emitted invalid Shields endpoint JSON"))?;
+    validate_numeric_badge_message(&badge)?;
+
+    if test_efficiency_report.exists() {
+        return Ok(badge);
+    }
+
+    project_exposure_only_badge(badge)
+}
+
+fn project_exposure_only_badge(
+    badge: ShieldsEndpointBadge,
+) -> anyhow::Result<ShieldsEndpointBadge> {
+    validate_shields_badge(&badge, Some("ripr"))?;
+    validate_numeric_badge_message(&badge)?;
+
+    Ok(ShieldsEndpointBadge {
+        schema_version: badge.schema_version,
+        label: "ripr+".to_string(),
+        message: badge.message,
+        color: "lightgrey".to_string(),
+    })
+}
+
+fn validate_numeric_badge_message(badge: &ShieldsEndpointBadge) -> anyhow::Result<()> {
+    badge.message.parse::<u64>().with_context(|| {
+        format!(
+            "ripr badge `{}` message `{}` is not numeric",
+            badge.label, badge.message
+        )
+    })?;
+    Ok(())
 }
 
 fn validate_shields_badge(
@@ -2090,6 +2135,34 @@ mod tests {
         };
 
         assert!(validate_shields_badge(&badge, Some("ripr+")).is_err());
+    }
+
+    #[test]
+    fn projects_exposure_only_badge_with_numeric_message_and_skip_color() -> anyhow::Result<()> {
+        let badge = ShieldsEndpointBadge {
+            schema_version: 1,
+            label: "ripr".to_string(),
+            message: "7".to_string(),
+            color: "orange".to_string(),
+        };
+
+        let projected = project_exposure_only_badge(badge)?;
+        assert_eq!(projected.label, "ripr+");
+        assert_eq!(projected.message, "7");
+        assert_eq!(projected.color, "lightgrey");
+        validate_shields_badge(&projected, Some("ripr+"))
+    }
+
+    #[test]
+    fn rejects_non_numeric_exposure_only_badge_message() {
+        let badge = ShieldsEndpointBadge {
+            schema_version: 1,
+            label: "ripr".to_string(),
+            message: "preview-skipped: typescript".to_string(),
+            color: "yellow".to_string(),
+        };
+
+        assert!(project_exposure_only_badge(badge).is_err());
     }
 
     #[test]

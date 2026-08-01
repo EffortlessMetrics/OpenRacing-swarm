@@ -34,6 +34,12 @@ Check committed endpoint drift:
 cargo xtask badges --check
 ```
 
+When `target/ripr/reports/test-efficiency.json` is unavailable, the badge
+command uses the checked repo-scoped exposure-only `ripr` output as a numeric
+fallback, projects it into the `ripr+` endpoint with `lightgrey`, and reports
+the missing test-efficiency evidence as `badge_endpoint_status = "skipped"` in
+the quality-closure receipt. The fallback is not RIPR+ closure proof.
+
 Committed endpoint files live under `badges/`. Detailed reports stay under `target/` locally or in CI artifacts.
 
 ## Pull Request Evidence
