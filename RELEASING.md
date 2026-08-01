@@ -102,8 +102,10 @@ The GitHub Actions release workflow will automatically:
 4. Create platform-specific packages:
    - Linux: tarball with binaries, systemd service, and udev rules
    - Windows: portable ZIP with binaries
-5. Generate SHA256 checksums for all artifacts
-6. Create a GitHub Release with all artifacts attached
+5. Run the Linux control-stream artifact lifecycle smoke against the current
+   package and the deterministic prior-lane fixture
+6. Generate SHA256 checksums for all artifacts
+7. Create a GitHub Release with all artifacts attached
 
 Monitor the workflow at: `https://github.com/EffortlessMetrics/OpenRacing/actions/workflows/release.yml`
 
@@ -137,6 +139,41 @@ Each release includes:
 ### Checksums
 - `SHA256SUMS.txt` - Combined checksums for all artifacts
 - Individual `.sha256` files for each artifact
+
+## Linux artifact lifecycle smoke
+
+The release workflow runs `control-stream-artifact-smoke` before signing
+release assets. The harness launches only the extracted package binaries and
+contract assets, then proves:
+
+- `wheeld` feature negotiation and descriptor-to-baseline sequencing with
+  virtual input only;
+- restart and disabled-feature capability behavior;
+- replacement and rollback of installed binaries without changing the service
+  configuration or a persistent profile sentinel; and
+- `wheelctl controls replay` consuming the packaged input-only fixture with
+  event, reset, and disconnect evidence.
+
+The repository has no tagged prior release yet, so the workflow builds the
+package-complete PR #196 commit (`e625296e`) as a deterministic prior-lane
+fixture. This is lifecycle compatibility evidence for the package format, not
+a claim that a released version has been tested. A future release lane should
+replace that fixture with the previous supported release artifact.
+
+To run the same harness locally after producing two Linux tarballs:
+
+```bash
+cargo build --release --locked -p racing-wheel-integration-tests \
+  --bin control-stream-artifact-smoke
+bash scripts/control_stream_artifact_smoke.sh \
+  --current dist/openracing-current-linux-amd64.tar.gz \
+  --previous dist/openracing-previous-linux-amd64.tar.gz \
+  --harness target/release/control-stream-artifact-smoke
+```
+
+This receipt is limited to Linux tarball artifacts, virtual input, and the
+input-only replay consumer. It does not establish hardware, output, FFB,
+high-torque, named-control, Runbook product, or Windows/macOS support.
 
 ## Verifying a Release
 
@@ -219,6 +256,7 @@ git push origin v0.1.0-alpha
 - [ ] Annotated tag created with descriptive message
 - [ ] Tag pushed to origin
 - [ ] Release workflow completed successfully
+- [ ] Linux artifact lifecycle smoke completed successfully
 - [ ] GitHub Release created with all artifacts
 - [ ] Release announcement prepared (if applicable)
 

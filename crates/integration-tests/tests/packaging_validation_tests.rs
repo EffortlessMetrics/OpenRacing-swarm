@@ -1942,6 +1942,48 @@ fn build_packages_wires_control_stream_contract() -> Result<(), Box<dyn std::err
     Ok(())
 }
 
+/// The Linux installer must preserve the contract bundle next to installed
+/// binaries so an input-only consumer can use the package without a source
+/// checkout.
+#[test]
+fn linux_install_wires_control_stream_contract() -> Result<(), Box<dyn std::error::Error>> {
+    let script = read_packaging_file("packaging/linux/install.sh")?;
+    for asset in [
+        "share/openracing/contract/control-stream",
+        "control-stream-contract.json",
+        "wheel.proto",
+        "sample-capture.json",
+        "SHA256SUMS",
+    ] {
+        assert!(
+            script.contains(asset),
+            "install.sh must preserve control-stream asset {asset}"
+        );
+    }
+    Ok(())
+}
+
+/// The release workflow must run the artifact lifecycle proof before signing
+/// or publishing release assets.
+#[test]
+fn release_workflow_wires_control_stream_artifact_smoke() -> Result<(), Box<dyn std::error::Error>>
+{
+    let workflow = read_packaging_file(".github/workflows/release.yml")?;
+    assert!(
+        workflow.contains("control-stream-artifact-smoke"),
+        "release workflow must define the artifact lifecycle smoke job"
+    );
+    assert!(
+        workflow.contains("control_stream_artifact_smoke.sh"),
+        "release workflow must invoke the checked-in artifact smoke script"
+    );
+    assert!(
+        workflow.contains("e625296e3020911655dc5c3df59d0a4898a04898"),
+        "release workflow must identify the deterministic prior-lane fixture"
+    );
+    Ok(())
+}
+
 /// The contract generator/validator tool must exist and be registered as a
 /// hyphenated bin so packaging and CI can invoke it.
 #[test]

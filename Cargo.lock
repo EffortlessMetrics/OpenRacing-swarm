@@ -6130,6 +6130,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-test",
+ "tonic",
  "tracing",
  "tracing-subscriber",
  "tracing-test",

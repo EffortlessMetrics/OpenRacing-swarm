@@ -50,6 +50,17 @@ item. The external Runbook consumer is
 `EffortlessMetrics/runbook-rs#41`, and remains a proof consumer rather than a
 domain dependency.
 
+The #180 implementation slice uses the Linux tarball as the exact claimed
+artifact: `wheeld` has explicit virtual-device and disabled-control-stream
+probe modes, `crates/integration-tests/src/bin/control_stream_artifact_smoke.rs`
+launches only installed package binaries, and
+`scripts/control_stream_artifact_smoke.sh` drives current/prior/rollback
+package roots. The release workflow builds PR #196 (`e625296e`) as a
+deterministic prior-lane fixture because no tagged prior release exists yet.
+The resulting claim remains limited to Linux tarball artifacts, virtual input,
+and packaged input-only replay; it does not establish real hardware, output,
+FFB, named controls, Runbook product support, or Windows/macOS support.
+
 ## Deployment source-of-truth item
 
 Issue #173 extended this lane with a package/release contract using the current
