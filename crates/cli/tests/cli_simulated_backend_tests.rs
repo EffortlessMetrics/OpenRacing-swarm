@@ -282,3 +282,85 @@ mod safety_requires_a_live_service {
         Ok(())
     }
 }
+
+// ===========================================================================
+// `--no-mock` only constrains commands that need the service
+// ===========================================================================
+
+mod no_mock_leaves_local_commands_alone {
+    use super::*;
+
+    /// `--no-mock` says "do not hand me simulated device data". Commands that
+    /// only read files or bundled tables have no device data to simulate, so
+    /// requiring a daemon for them is pure obstruction -- and it was the
+    /// default, because the profile and game dispatchers built a client before
+    /// matching the subcommand.
+    fn assert_runs_without_a_daemon(args: &[&str]) -> TestResult {
+        let output = wheelctl()?.arg("--no-mock").args(args).output()?;
+        assert_ne!(
+            output.status.code(),
+            Some(EXIT_SERVICE_UNAVAILABLE),
+            "`{}` demanded a running service it never uses; stderr:\n{}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn game_list_does_not_need_a_service() -> TestResult {
+        assert_runs_without_a_daemon(&["game", "list"])
+    }
+
+    #[test]
+    fn profile_list_does_not_need_a_service() -> TestResult {
+        assert_runs_without_a_daemon(&["profile", "list"])
+    }
+
+    #[test]
+    fn profile_validate_does_not_need_a_service() -> TestResult {
+        // Validation reads a file off disk; a missing file should be reported
+        // as a missing file, never as a missing daemon.
+        assert_runs_without_a_daemon(&["profile", "validate", "no-such-profile.json"])
+    }
+
+    #[test]
+    fn profile_apply_still_requires_a_service() -> TestResult {
+        // The other half of the contract: the one profile subcommand that does
+        // talk to the service must keep refusing under --no-mock.
+        wheelctl()?
+            .args(["--no-mock", "profile", "apply", "wheel-001", "p.json"])
+            .assert()
+            .code(EXIT_SERVICE_UNAVAILABLE);
+        Ok(())
+    }
+}
+
+// ===========================================================================
+// `safety limit` does not point at another silent no-op
+// ===========================================================================
+
+mod safety_limit_guidance {
+    use super::*;
+
+    #[test]
+    fn does_not_recommend_profile_apply() -> TestResult {
+        // `apply_profile` ignores its profile argument and sends `base: None`,
+        // so `torqueCapNm` never reaches the service. Recommending it as a
+        // torque-cap workaround would send the user chasing a cap that is
+        // silently dropped.
+        let output = wheelctl()?
+            .args(["safety", "limit", "wheel-001", "5.0"])
+            .output()?;
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            !combined.contains("profile apply"),
+            "safety limit points at profile apply, which drops the cap:\n{combined}"
+        );
+        Ok(())
+    }
+}

@@ -793,15 +793,19 @@ fn test_health_status_smoke() {
         .stdout(predicate::str::contains("Status"));
 }
 
-/// `profile list` exits with code 5 and some output when the service is unavailable
+/// `profile list` scans the local profile directory, so a bad endpoint is
+/// irrelevant to it.
+///
+/// This used to assert exit code 5, which only happened because the profile
+/// dispatcher built a client before matching the subcommand. Listing files on
+/// disk must not depend on a reachable daemon.
 #[test]
-fn test_profiles_list_graceful_on_service_error() {
+fn test_profiles_list_ignores_the_service_endpoint() {
     wheelctl()
         .env("WHEELCTL_ENDPOINT", "http://invalid:99999")
         .args(["profile", "list"])
         .assert()
-        .failure()
-        .code(5); // ServiceUnavailable exit code
+        .success();
 }
 
 /// An unknown top-level command produces a non-zero exit and non-empty stderr
