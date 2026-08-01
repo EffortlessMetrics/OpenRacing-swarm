@@ -377,8 +377,13 @@ async fn probe_enabled_stream() -> Result<StreamSnapshot> {
             .metadata
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("control-stream item has no metadata"))?;
-        sequences.push(metadata.sequence);
-        epochs.push(metadata.epoch);
+        let racing_wheel_schemas::generated::wheel::v1::ControlStreamMetadata {
+            sequence: item_sequence,
+            epoch: item_epoch,
+            ..
+        } = metadata;
+        sequences.push(*item_sequence);
+        epochs.push(*item_epoch);
         match item.item.as_ref() {
             Some(Item::Descriptor(descriptor)) => {
                 kinds.push("descriptor");
