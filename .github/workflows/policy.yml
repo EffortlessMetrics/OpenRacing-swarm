@@ -32,6 +32,14 @@ jobs:
       - name: "No-panic family checker (Stage A: report-only)"
         run: python scripts/policy_no_panic.py
 
+      # Blocking: packaging/release shell scripts are never run by the Rust
+      # test suite, so a syntax error there only surfaces when a release tag
+      # is pushed.
+      - name: Shell script syntax
+        run: |
+          chmod +x scripts/check_shell_syntax.sh
+          ./scripts/check_shell_syntax.sh
+
       - name: Upload reports
         if: always()
         uses: actions/upload-artifact@v4

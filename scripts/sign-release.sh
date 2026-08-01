@@ -337,11 +337,13 @@ log_info ""
 
 # List all generated files
 log_info "Generated files:"
-for file in "$OUTPUT_DIR"/*.sha256 "$OUTPUT_DIR"/*.sig* "$OUTPUT_DIR"/*.asc "$OUTPUT_DIR"/*.minisig "$OUTPUT_DIR"/SHA256SUMS.txt "$OUTPUT_DIR"/SHA512SUMS.txt "$OUTPUT_DIR"/MANIFEST.json 2>/dev/null; do
+shopt -s nullglob
+for file in "$OUTPUT_DIR"/*.sha256 "$OUTPUT_DIR"/*.sig* "$OUTPUT_DIR"/*.asc "$OUTPUT_DIR"/*.minisig "$OUTPUT_DIR"/SHA256SUMS.txt "$OUTPUT_DIR"/SHA512SUMS.txt "$OUTPUT_DIR"/MANIFEST.json; do
     if [[ -f "$file" ]]; then
         log_info "  $(basename "$file")"
     fi
 done
+shopt -u nullglob
 
 log_info ""
 log_info "Verification commands:"

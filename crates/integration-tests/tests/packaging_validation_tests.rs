@@ -299,11 +299,11 @@ fn systemd_service_has_required_sections() -> Result<(), Box<dyn std::error::Err
 }
 
 #[test]
-fn systemd_service_type_is_notify() -> Result<(), Box<dyn std::error::Error>> {
+fn systemd_service_type_is_simple() -> Result<(), Box<dyn std::error::Error>> {
     let content = read_packaging_file("packaging/linux/wheeld.service.template")?;
     assert!(
-        content.contains("Type=notify"),
-        "Systemd service should use Type=notify for readiness signaling"
+        content.contains("Type=simple"),
+        "Systemd service should use Type=simple because wheeld does not implement sd_notify"
     );
     Ok(())
 }
@@ -1213,11 +1213,14 @@ fn systemd_service_protect_home() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn systemd_service_supplementary_groups() -> Result<(), Box<dyn std::error::Error>> {
+fn systemd_user_service_does_not_declare_unsupported_group_directive()
+-> Result<(), Box<dyn std::error::Error>> {
     let content = read_packaging_file("packaging/linux/wheeld.service.template")?;
     assert!(
-        content.contains("SupplementaryGroups=") && content.contains("input"),
-        "Service must add 'input' supplementary group for HID access"
+        !content
+            .lines()
+            .any(|line| line.trim_start().starts_with("SupplementaryGroups=")),
+        "User service must not declare unsupported SupplementaryGroups="
     );
     Ok(())
 }
