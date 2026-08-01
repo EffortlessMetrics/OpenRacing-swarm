@@ -90,7 +90,21 @@ enum Commands {
     Hardware(HardwareCommands),
 
     /// Safe Moza HID probe and capture commands
-    #[command(subcommand)]
+    ///
+    /// Tooling for the receipt-gated Moza validation lane. See
+    /// docs/hardware/moza-r5-validation.md.
+    //
+    // Hidden from the top-level help. This namespace holds 55 subcommands for
+    // the validation lane -- vendor-status framing diagnosis, authority
+    // attempts, fixture promotion, pit-house evidence -- which are tooling for
+    // that lane, not commands a wheel owner runs. Listing it beside `device`
+    // and `safety` gave research scaffolding equal billing with the commands
+    // people actually need.
+    //
+    // Hidden, not gated: `wheelctl moza ...` still works exactly as before and
+    // `wheelctl moza --help` still lists every subcommand. The validation lane
+    // and its receipts are unaffected.
+    #[command(subcommand, hide = true)]
     Moza(MozaCommands),
 
     /// Safety and control commands

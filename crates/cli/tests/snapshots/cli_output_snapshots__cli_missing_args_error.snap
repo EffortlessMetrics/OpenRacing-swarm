@@ -1,5 +1,6 @@
 ---
 source: crates/cli/tests/cli_output_snapshots.rs
+assertion_line: 86
 expression: stderr
 ---
 Racing Wheel Control CLI - Manage racing wheel hardware, profiles, and diagnostics
@@ -15,7 +16,6 @@ Commands:
   game            Game integration commands
   telemetry       Telemetry probe and capture commands
   hardware        Hardware environment diagnostics
-  moza            Safe Moza HID probe and capture commands
   safety          Safety and control commands
   support-bundle  Generate diagnostic support bundle
   completion      Generate shell completion scripts

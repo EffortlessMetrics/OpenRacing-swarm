@@ -5,6 +5,8 @@ expression: stdout
 ---
 Safe Moza HID probe and capture commands
 
+Tooling for the receipt-gated Moza validation lane. See docs/hardware/moza-r5-validation.md.
+
 Usage: wheelctl moza [OPTIONS] <COMMAND>
 
 Commands:
@@ -122,6 +124,11 @@ Commands:
           Print this message or the help of the given subcommand(s)
 
 Options:
-      --json        Output in JSON format for machine parsing
-  -v, --verbose...  Verbose logging
-  -h, --help        Print help
+      --json
+          Output in JSON format for machine parsing
+
+  -v, --verbose...
+          Verbose logging
+
+  -h, --help
+          Print help (see a summary with '-h')

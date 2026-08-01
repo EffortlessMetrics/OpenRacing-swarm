@@ -7,7 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `wheelctl --help` no longer lists `moza`. That namespace holds 55 subcommands
+  for the receipt-gated Moza validation lane — vendor-status framing diagnosis,
+  authority attempts, fixture promotion, pit-house evidence — and listing it
+  beside `device`, `profile`, and `safety` gave research scaffolding equal
+  billing with the commands a wheel owner actually needs. Hidden, not gated:
+  `wheelctl moza ...` works exactly as before, `wheelctl moza --help` still
+  lists every subcommand, and the validation lane and its receipts are
+  unaffected
+
 ### Fixed
+- `crates/cli/README.md` documented 7 of the 13 top-level commands, omitting
+  `controls`, `plugin`, `telemetry`, `hardware`, `support-bundle`, and `moza`
+  entirely. It also documented `diag replay --verbose` for frame-by-frame
+  output, which is actually `-d`/`--detailed` — `--verbose` is the global
+  logging flag, so following the README produced logging noise instead of frames
+- `crates/cli/README.md` claimed "✅ Complete Implementation" and "complete
+  parity with UI functionality". `profile apply` does not transmit the profile
+  and `safety limit` has no IPC write behind it, so command-surface parity was
+  being reported as write-path parity. Both are now recorded under a "Known
+  gaps" heading and the UX-02 compliance claim is marked partial
 - Linux release packaging is runnable again. `packaging/linux/build-packages.sh`
   had a bash syntax error in its checksum loop (`for ... 2>/dev/null; do`) that
   made the whole script unparseable, so every tagged release failed at the
