@@ -70,7 +70,7 @@ since the changes they list did happen.
   are now grouped under an "Internal development history" divider and labelled
   as internal development targets; a new "Versioning" section at the top states
   that no public release has been made and the first will be `0.1.0`. No entries
-  were deleted — the changes they record did happen
+  were deleted — the changes they record did happen.
 - `RELEASING.md` gave `git tag -a v1.0.0 -m "v1.0.0: First stable release"` as
   the stable-release example, contradicting its own note two sections earlier
   that the project stays in v0.x.y until hardware sign-off. It now shows `v0.1.0`
