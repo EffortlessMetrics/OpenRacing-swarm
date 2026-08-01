@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Versioning
+
+**OpenRacing has not made a public release. The first one will be `0.1.0`.**
+
+`[workspace.package] version` in `Cargo.toml` is `0.1.0` and is the version the
+first public release will carry.
+
+Everything below the [Internal development history](#internal-development-history)
+divider is a record of **internal development targets**. They are kept because
+they are public and because the work in them is real, but they are not public
+releases and their numbers are not part of the public version line. In
+particular, the internal `0.1.0` dev target from 2025-01-01 is a different thing
+from the forthcoming public `0.1.0` release.
+
+The `1.0.0` and `1.0.0-rc.1` entries never corresponded to a tag, a published
+release, or a release candidate that anyone could install. The project is
+nowhere near a 1.0: [ROADMAP.md](ROADMAP.md) puts `v1.0.0` at **TBD**, gated on
+production hardware sign-off, and the README still describes the project as
+pre-validation. Those two sections are labelled accordingly rather than deleted,
+since the changes they list did happen.
+
 ## [Unreleased]
 
 ### Fixed
@@ -40,6 +61,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   other unrepresentable nested values are rejected rather than silently
   discarded; newly created profiles omit the unsupported filter torque cap
 
+- The changelog claimed two 1.0 releases that never happened. `[1.0.0]` dated
+  2026-10-15 and `[1.0.0-rc.1]` dated 2026-11-01 had no corresponding tag, no
+  published release, and nothing anyone could install — while `Cargo.toml` says
+  `0.1.0` and `ROADMAP.md` puts `v1.0.0` at TBD behind hardware sign-off. Anyone
+  reading the changelog would conclude the project had shipped 1.0 and then
+  released a release candidate for it a fortnight later. All historical sections
+  are now grouped under an "Internal development history" divider and labelled
+  as internal development targets; a new "Versioning" section at the top states
+  that no public release has been made and the first will be `0.1.0`. No entries
+  were deleted — the changes they record did happen
+- `RELEASING.md` gave `git tag -a v1.0.0 -m "v1.0.0: First stable release"` as
+  the stable-release example, contradicting its own note two sections earlier
+  that the project stays in v0.x.y until hardware sign-off. It now shows `v0.1.0`
+  and states which version the first public release carries
 - Linux release packaging is runnable again. `packaging/linux/build-packages.sh`
   had a bash syntax error in its checksum loop (`for ... 2>/dev/null; do`) that
   made the whole script unparseable, so every tagged release failed at the
@@ -138,7 +173,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Resolved all clippy warnings across workspace (#211)
 - Removed unused imports in vendor_timing_replay_tests (#210)
 
-## [1.0.0-rc.1] - 2026-11-01
+---
+
+## Internal development history
+
+Everything below this line records **internal development targets**, not public
+releases. No tag, published release, or installable artifact ever corresponded
+to these version numbers. They are kept because the work in them is real and
+because the record is already public — see [Versioning](#versioning) above.
+
+## [1.0.0-rc.1] - 2026-11-01 — internal development target, never released
 
 ### Added
 - 127 CLI end-to-end tests: command parsing, help text snapshots, error output validation, all subcommands covered (#171)
@@ -327,7 +371,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **OpenFFBoard** PID `0xFFB0` confirmed via pid.codes + firmware source
 - **Engine device tables** synced between Windows and Linux
 
-## [1.0.0] - 2026-10-15
+## [1.0.0] - 2026-10-15 — internal development target, never released
 
 ### Added
 - 127 CLI end-to-end tests: command parsing, help text snapshots, error output validation, all subcommands covered (#171)
@@ -392,7 +436,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - IPC interface injection attack prevention verified
 - Zero critical vulnerabilities in dependency audit (cargo-audit, cargo-deny)
 
-## [0.3.0] - 2026-02-01
+## [0.3.0] - 2026-02-01 — internal development target
 
 ### Added
 - 127 CLI end-to-end tests: command parsing, help text snapshots, error output validation, all subcommands covered (#171)
@@ -454,7 +498,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Various clippy warnings resolved across the codebase
 
-## [0.2.0] - 2026-02-01
+## [0.2.0] - 2026-02-01 — internal development target
 
 ### Added
 - 127 CLI end-to-end tests: command parsing, help text snapshots, error output validation, all subcommands covered (#171)
@@ -502,7 +546,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed webkit2gtk version compatibility issues on Ubuntu 24.04
 - Fixed rand_core version conflict with ed25519-dalek for cryptographic operations
 
-## [0.1.0] - 2025-01-01
+## [0.1.0] - 2025-01-01 — internal development target
 
 ### Added
 - 127 CLI end-to-end tests: command parsing, help text snapshots, error output validation, all subcommands covered (#171)

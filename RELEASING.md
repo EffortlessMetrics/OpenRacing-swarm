@@ -13,6 +13,15 @@ OpenRacing follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 > **Note**: OpenRacing remains in the v0.x.y range until the maintainer provides hardware sign-off on physical hardware. This is independent of feature completeness.
 
+**No public release has been made yet. The first one will be `v0.1.0`**, matching
+the `[workspace.package] version` already set in `Cargo.toml`.
+
+Version numbers appearing under [Internal development history](CHANGELOG.md#internal-development-history)
+in the changelog — including `1.0.0` and `1.0.0-rc.1` — are internal development
+targets. No tag or published release ever corresponded to them, and they are not
+part of the public version line. Do not treat them as precedent when choosing the
+next version; see [Versioning](CHANGELOG.md#versioning) for the full explanation.
+
 ## Prerequisites
 
 Before creating a release:
@@ -76,10 +85,9 @@ Highlights:
 
 See CHANGELOG.md for full details."
 
-# For stable release
-git tag -a v1.0.0 -m "v1.0.0: First stable release
-
-This is the first production-ready release of OpenRacing.
+# For a stable release. Note that v1.0.0 is gated on hardware sign-off and is
+# TBD -- see ROADMAP.md. Stable releases before then are v0.x.y.
+git tag -a v0.1.0 -m "v0.1.0: First public release
 
 See CHANGELOG.md for full details."
 ```
