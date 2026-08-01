@@ -7,7 +7,7 @@ Linked proposal: docs/proposals/OR-PROP-0002-quality-closure-lane.md
 Linked ADRs: n/a
 Linked plan: plans/quality-closure/implementation-plan.md
 Linked issues: https://github.com/EffortlessMetrics/OpenRacing-swarm/issues/215
-Linked PRs: n/a
+Linked PRs: https://github.com/EffortlessMetrics/OpenRacing-swarm/pull/226
 Support-tier impact: no public support claim
 Policy impact: policy/quality-closure-exceptions.toml
 

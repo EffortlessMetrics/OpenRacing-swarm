@@ -126,6 +126,7 @@ hardware lanes remain unchanged.
 
 Status: in_progress
 Linked issue: https://github.com/EffortlessMetrics/OpenRacing-swarm/issues/215
+Linked PR: https://github.com/EffortlessMetrics/OpenRacing-swarm/pull/226
 Blocks: retiring the `ripr-plus-test-efficiency-evidence-missing` exception
 Blocked by: a repo-owned test-efficiency report producer
 
