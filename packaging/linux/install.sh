@@ -29,6 +29,8 @@ INSTALL_PREFIX="${INSTALL_PREFIX:-$HOME/.local}"
 SERVICE_USER="${SERVICE_USER:-${USER:-$(id -un)}}"
 SKIP_UDEV="${SKIP_UDEV:-false}"
 SKIP_RTKIT="${SKIP_RTKIT:-false}"
+SKIP_SYSTEMD="${SKIP_SYSTEMD:-false}"
+UNINSTALL="false"
 
 # Colors for output
 RED='\033[0;31m'
@@ -54,7 +56,7 @@ check_dependencies() {
     # Check for required system packages
     local missing_packages=()
     
-    if ! command -v systemctl &> /dev/null; then
+    if [ "$SKIP_SYSTEMD" != "true" ] && ! command -v systemctl &> /dev/null; then
         missing_packages+=("systemd")
     fi
     
@@ -91,10 +93,13 @@ install_binaries() {
     
     mkdir -p "$INSTALL_PREFIX/bin"
     mkdir -p "$INSTALL_PREFIX/share/racing-wheel-suite"
+    mkdir -p "$INSTALL_PREFIX/share/openracing/contract/control-stream"
     mkdir -p "$INSTALL_PREFIX/share/doc/racing-wheel-suite"
     
     # Binaries live in bin/ inside an extracted tarball; fall back to the
-    # script directory itself so a hand-assembled layout still works.
+    # script directory itself so a hand-assembled layout still works. Both
+    # candidates are anchored to SCRIPT_DIR rather than the caller's working
+    # directory, so the installer works from anywhere.
     local bin_source="$SCRIPT_DIR"
     if [ -d "$SCRIPT_DIR/bin" ]; then
         bin_source="$SCRIPT_DIR/bin"
@@ -119,14 +124,33 @@ install_binaries() {
             log_info "Installed $binary (optional)"
         fi
     done
+
+    # Install the versioned external control-stream contract beside the
+    # binaries. Keep the allowlist explicit so unrelated files from a package
+    # cannot become part of the installed consumer surface.
+    local contract_source="$SCRIPT_DIR/contract/control-stream"
+    local contract_target="$INSTALL_PREFIX/share/openracing/contract/control-stream"
+    for asset in control-stream-contract.json wheel.proto sample-capture.json SHA256SUMS; do
+        if [ -f "$contract_source/$asset" ]; then
+            cp "$contract_source/$asset" "$contract_target/"
+        else
+            log_error "Required control-stream contract asset not found: $contract_source/$asset"
+            exit 1
+        fi
+    done
     
     # Install configuration templates
     mkdir -p "$INSTALL_PREFIX/share/racing-wheel-suite/config"
+    # `cp -r dir/*` would fail under `set -e` when the directory is empty,
+    # because the glob stays unexpanded; `dir/.` with an emptiness guard does
+    # not have that problem.
     if [ -d "$SCRIPT_DIR/config" ] && [ -n "$(ls -A "$SCRIPT_DIR/config")" ]; then
         cp -r "$SCRIPT_DIR/config/." "$INSTALL_PREFIX/share/racing-wheel-suite/config/"
     fi
 
-    # Install documentation. The tarball puts these under docs/.
+    # Install documentation. The tarball puts these under docs/, so the
+    # find_asset lookup below covers both that and a flat layout, and copies
+    # the changelog and both license files rather than just README/LICENSE.
     local doc
     for doc in README.md CHANGELOG.md LICENSE LICENSE-MIT LICENSE-APACHE; do
         local doc_src
@@ -137,6 +161,10 @@ install_binaries() {
 }
 
 install_systemd_service() {
+    if [ "$SKIP_SYSTEMD" = "true" ]; then
+        log_info "Skipping systemd user service installation"
+        return
+    fi
     log_info "Installing systemd user service..."
     
     local service_dir="$HOME/.config/systemd/user"
@@ -144,8 +172,15 @@ install_systemd_service() {
     
     # Generate service file from template. The tarball ships it under
     # systemd/; a source checkout keeps it next to this script.
+    # Covers the tarball layout under systemd/ and a source checkout, and both
+    # the openracing.service and wheeld.service unit filenames that packages
+    # have shipped.
     local template
-    if ! template="$(find_asset "systemd/openracing.service" "wheeld.service.template")"; then
+    if ! template="$(find_asset \
+        "systemd/openracing.service" \
+        "systemd/wheeld.service" \
+        "wheeld.service.template" \
+        "packaging/linux/wheeld.service.template")"; then
         log_error "Could not find the wheeld service template next to $SCRIPT_DIR"
         exit 1
     fi
@@ -264,7 +299,7 @@ verify_installation() {
     # reported as a warning rather than failing an otherwise good install.
     for binary in wheeld wheelctl; do
         if [ ! -x "$INSTALL_PREFIX/bin/$binary" ]; then
-            log_error "$binary was not installed to $INSTALL_PREFIX/bin"
+            log_error "$INSTALL_PREFIX/bin/$binary was not installed"
             return 1
         fi
     done
@@ -277,13 +312,37 @@ verify_installation() {
         fi
     done
 
-    if [ ! -f "$HOME/.config/systemd/user/openracing.service" ]; then
+    for asset in control-stream-contract.json wheel.proto sample-capture.json SHA256SUMS; do
+        if [ ! -f "$INSTALL_PREFIX/share/openracing/contract/control-stream/$asset" ]; then
+            log_error "Installed control-stream contract asset is missing: $asset"
+            return 1
+        fi
+    done
+
+    # Check the unit file on disk rather than asking systemd. `systemctl --user
+    # list-unit-files` needs a reachable user bus, which is exactly what
+    # install_systemd_service tolerates the absence of, so querying it here
+    # would fail an install that actually succeeded.
+    if [ "$SKIP_SYSTEMD" != "true" ] \
+        && [ ! -f "$HOME/.config/systemd/user/openracing.service" ]; then
         log_error "Systemd unit was not written to $HOME/.config/systemd/user/"
         return 1
     fi
 
     log_info "Installation verification successful"
     return 0
+}
+
+uninstall_installation() {
+    log_info "Removing OpenRacing from $INSTALL_PREFIX..."
+    if [ "$SKIP_SYSTEMD" != "true" ] && command -v systemctl &> /dev/null; then
+        systemctl --user disable --now openracing.service &> /dev/null || true
+        rm -f "$HOME/.config/systemd/user/openracing.service"
+        systemctl --user daemon-reload &> /dev/null || true
+    fi
+    rm -f "$INSTALL_PREFIX/bin/wheeld" "$INSTALL_PREFIX/bin/wheelctl" "$INSTALL_PREFIX/bin/openracing"
+    rm -rf "$INSTALL_PREFIX/share/openracing/contract/control-stream"
+    log_info "OpenRacing binaries and control-stream contract assets removed"
 }
 
 print_post_install_instructions() {
@@ -329,6 +388,11 @@ main() {
     log_info "Install prefix: $INSTALL_PREFIX"
     log_info "Service user: $SERVICE_USER"
     
+    if [ "$UNINSTALL" = "true" ]; then
+        uninstall_installation
+        return
+    fi
+
     check_dependencies
     install_binaries
     install_systemd_service
@@ -358,12 +422,22 @@ while [[ $# -gt 0 ]]; do
             SKIP_RTKIT="true"
             shift
             ;;
+        --skip-systemd)
+            SKIP_SYSTEMD="true"
+            shift
+            ;;
+        --uninstall)
+            UNINSTALL="true"
+            shift
+            ;;
         --help)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
             echo "  --prefix=PATH     Installation prefix (default: ~/.local)"
             echo "  --skip-udev       Skip udev rules installation"
             echo "  --skip-rtkit      Skip rtkit dependency check"
+            echo "  --skip-systemd    Skip systemd service installation and verification"
+            echo "  --uninstall       Remove installed binaries and contract assets"
             echo "  --help            Show this help"
             exit 0
             ;;

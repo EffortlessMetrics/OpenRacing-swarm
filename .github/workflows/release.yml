@@ -39,6 +39,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Extract version from tag or input
         id: version
@@ -158,6 +159,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -194,6 +197,85 @@ jobs:
             dist/*.sha256
 
   # ============================================
+  # Smoke Linux Control-Stream Artifacts
+  # ============================================
+  control-stream-artifact-smoke:
+    name: Control-stream artifact lifecycle smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    needs: [prepare, build-linux]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev pkg-config
+
+      - name: Cache Cargo sources for prior fixture
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: control-stream-prior-cargo-${{ runner.os }}-e625296e
+
+      - name: Download current Linux package
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-amd64
+          path: current-package
+
+      - name: Build artifact smoke harness
+        run: cargo build --release --locked -p racing-wheel-integration-tests --bin control-stream-artifact-smoke
+
+      - name: Build deterministic prior-lane package fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous_worktree="$RUNNER_TEMP/openracing-previous"
+          cleanup() {
+            git worktree remove --force "$previous_worktree" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          # No tagged release exists yet. PR #196 is the last package-complete
+          # lane commit and is used as a deterministic prior-version fixture;
+          # this stays a fixture claim until a real previous release exists.
+          git worktree add --detach "$previous_worktree" e625296e3020911655dc5c3df59d0a4898a04898
+          cargo build --release --locked \
+            --manifest-path "$previous_worktree/Cargo.toml" \
+            -p wheelctl -p racing-wheel-service
+          chmod +x "$previous_worktree/packaging/linux/build-packages.sh"
+          "$previous_worktree/packaging/linux/build-packages.sh" \
+            --bin-path "$previous_worktree/target/release" \
+            --version "0.1.0-previous-fixture" \
+            --arch amd64 \
+            --output "$RUNNER_TEMP/previous-package" \
+            --tarball-only
+
+      - name: Run installed artifact lifecycle smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_tar="$(find current-package -type f -name '*.tar.gz' -print -quit)"
+          previous_tar="$(find "$RUNNER_TEMP/previous-package" -type f -name '*.tar.gz' -print -quit)"
+          test -n "$current_tar"
+          test -n "$previous_tar"
+          chmod +x scripts/control_stream_artifact_smoke.sh
+          scripts/control_stream_artifact_smoke.sh \
+            --current "$current_tar" \
+            --previous "$previous_tar" \
+            --harness target/release/control-stream-artifact-smoke
+
+  # ============================================
   # Build Windows Packages
   # ============================================
   build-windows:
@@ -209,6 +291,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -261,7 +345,7 @@ jobs:
     name: Sign Artifacts
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [prepare, build-linux, build-windows]
+    needs: [prepare, build-linux, build-windows, control-stream-artifact-smoke]
     env:
       # The `secrets` context is not available in a step-level `if:`, so the
       # presence of a signing key is surfaced through `env` instead.
@@ -269,6 +353,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -334,6 +420,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Download release assets
         uses: actions/download-artifact@v4
