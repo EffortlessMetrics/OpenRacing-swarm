@@ -45,8 +45,10 @@ The completed #170 epic is represented by #177 and #178. Items #168 through
 Issue #173 and merged PR #176 define the deployment source truth; #174 remains
 the parent epic. Issue #179 is complete through merged PR #196 at
 `e625296e`; its package-composition claim remains bounded to the exact Linux
-contract-bundle receipt. Issue #180 is now the ready one-PR implementation
-item. The external Runbook consumer is
+contract-bundle receipt. Issue #180 is now the in-progress one-PR
+implementation item in PR #210, restacked onto the security-remediated
+`swarm/main` and carrying the focused artifact-smoke review repairs. The
+external Runbook consumer is
 `EffortlessMetrics/runbook-rs#41`, and remains a proof consumer rather than a
 domain dependency.
 
