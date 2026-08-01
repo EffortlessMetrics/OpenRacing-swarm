@@ -558,39 +558,45 @@ fn test_safety_status() {
 }
 
 #[test]
-fn test_safety_enable_high_torque() {
+// Safety writes require a live wheeld service. With none reachable they exit 5
+// (service unavailable) rather than reporting a completed action against the
+// simulated backend -- a "High torque mode enabled" or "Emergency stop" line
+// printed when nothing reached a device is the worst outcome this CLI can
+// produce. Behaviour with a service present is covered by the service suite.
+fn test_safety_enable_high_torque_requires_service() {
     wheelctl()
         .args(["safety", "enable", "wheel-001", "--force"])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("High torque mode enabled"));
+        .code(5)
+        .stdout(predicate::str::contains("High torque mode enabled").not());
 }
 
 #[test]
-fn test_safety_emergency_stop() {
+fn test_safety_emergency_stop_requires_service() {
     wheelctl()
         .args(["safety", "stop"])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("Emergency stop"));
+        .code(5)
+        .stdout(predicate::str::contains("Emergency stop").not());
 }
 
 #[test]
-fn test_safety_set_limit() {
+fn test_safety_set_limit_requires_service() {
     wheelctl()
         .args(["safety", "limit", "wheel-001", "5.0"])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("Torque limit set"));
+        .code(5)
+        .stdout(predicate::str::contains("Torque limit set").not());
 }
 
 #[test]
 fn test_safety_invalid_limit() {
+    // Offline the service check (5) precedes the value validation (4).
     wheelctl()
         .args(["safety", "limit", "wheel-001", "50.0"])
         .assert()
         .failure()
-        .code(4); // Validation error
+        .code(5);
 }
 
 // Health Monitoring Tests

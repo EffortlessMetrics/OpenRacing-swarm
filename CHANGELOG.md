@@ -7,7 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `wheelctl` no longer presents simulated data as real. When `wheeld` was
+  unreachable the client silently fell back to a canned backend, so a
+  first-time user with no daemon and no hardware saw two invented Fanatec
+  devices with nothing marking them as fake. The fallback now prints a notice
+  to stderr naming the unreachable endpoint and how to start the service, and
+  human output labels each simulated device
+- `wheelctl health` reported `Service: Running` and `"service_status":
+  "running"` unconditionally, so the one command a user reaches for to answer
+  "is this working?" could not answer no. It now reports the real backend, and
+  `overall_health` is `service_unavailable` rather than `healthy` when no
+  service is reachable
+- `wheelctl safety stop`, `safety enable`, and `safety limit` reported success
+  against the simulated backend. An emergency stop that never reached a device
+  now fails with the service-unavailable exit code (5) instead. Read-only
+  `safety status` keeps working offline
+
 ### Added
+- `wheelctl --no-mock` (also `WHEELCTL_NO_MOCK=1` or `OPENRACING_NO_MOCK=1`)
+  makes an unreachable service an error instead of falling back to simulated
+  data, so scripts can require a real daemon
+- `wheelctl --json health` reports a `backend` field (`service` or `simulated`)
+- `--endpoint` is no longer hidden from `--help`; it decides whether the
+  simulated fallback applies, so it was load-bearing but undiscoverable
 - External `control_stream_v1` contract bundle wired into Linux release packages
   (`contract/control-stream/`): a pinned `wheel.proto`, a compatibility manifest
   (feature version, capture schema version, minimum compatible service/client

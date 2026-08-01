@@ -4,7 +4,7 @@ use anyhow::Result;
 use std::time::Duration;
 use tokio::time::timeout;
 
-use crate::client::WheelClient;
+use crate::client::{WheelClient, start_service_hint};
 
 use crate::output;
 
@@ -21,20 +21,31 @@ pub async fn execute(watch: bool, json: bool, endpoint: Option<&str>) -> Result<
 
 /// Show current health snapshot
 async fn show_health_snapshot(client: &WheelClient, json: bool) -> Result<()> {
+    // `wheelctl health` is the command a user reaches for to answer "is this
+    // working?", so it must be able to answer no. Report what the client is
+    // actually talking to rather than assuming a live service.
+    let service_running = !client.is_simulated();
+    let service_status = if service_running {
+        "running"
+    } else {
+        "not_running"
+    };
+
     let devices = client.list_devices().await?;
 
     if devices.is_empty() {
         if json {
             let output = serde_json::json!({
                 "success": true,
-                "service_status": "running",
+                "service_status": service_status,
+                "backend": client.backend_kind(),
                 "devices": [],
-                "overall_health": "no_devices"
+                "overall_health": if service_running { "no_devices" } else { "service_unavailable" }
             });
             println!("{}", serde_json::to_string_pretty(&output)?);
         } else {
             println!("{}", "Service Health Status".bold());
-            println!("  Service: {}", "Running".green());
+            print_service_line(service_running);
             println!("  Devices: {}", "None connected".yellow());
         }
         return Ok(());
@@ -74,25 +85,41 @@ async fn show_health_snapshot(client: &WheelClient, json: bool) -> Result<()> {
         }
     }
 
+    // Simulated devices cannot be healthy or degraded -- they are not real.
+    let overall_health = if !service_running {
+        "service_unavailable"
+    } else if overall_healthy {
+        "healthy"
+    } else {
+        "degraded"
+    };
+
     if json {
         let output = serde_json::json!({
             "success": true,
-            "service_status": "running",
-            "overall_health": if overall_healthy { "healthy" } else { "degraded" },
+            "service_status": service_status,
+            "backend": client.backend_kind(),
+            "overall_health": overall_health,
             "devices": device_health
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
         println!("{}", "Service Health Status".bold());
-        println!("  Service: {}", "Running".green());
+        print_service_line(service_running);
 
-        let health_status = if overall_healthy {
+        let health_status = if !service_running {
+            "Service unavailable".red()
+        } else if overall_healthy {
             "Healthy".green()
         } else {
             "Degraded".yellow()
         };
         println!("  Overall: {}", health_status);
-        println!("  Devices: {}", devices.len());
+        println!(
+            "  Devices: {}{}",
+            devices.len(),
+            if service_running { "" } else { " (simulated)" }
+        );
 
         for device in device_health {
             let device_name = device["name"].as_str().unwrap_or("Unknown");
@@ -124,6 +151,25 @@ async fn show_health_snapshot(client: &WheelClient, json: bool) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Print the service line, including what to do when it is not running.
+fn print_service_line(service_running: bool) {
+    if service_running {
+        println!("  Service: {}", "Running".green());
+        return;
+    }
+
+    println!("  Service: {}", "Not running".red());
+    println!(
+        "  {}",
+        "The values below are simulated, not real hardware.".yellow()
+    );
+    println!(
+        "  {} {}",
+        "Start it with:".dimmed(),
+        start_service_hint().bold()
+    );
 }
 
 /// Watch health events in real-time

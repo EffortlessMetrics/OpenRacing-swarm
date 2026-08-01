@@ -19,10 +19,18 @@ Options:
   -v, --verbose...
           Verbose logging
 
+      --no-mock
+          Fail if wheeld is unreachable instead of showing simulated data [env: WHEELCTL_NO_MOCK=1]
+
       --telemetry-source <TELEMETRY_SOURCE>
           Telemetry source: real_game or simhub_bridge
 
           [default: simhub_bridge]
+
+      --endpoint <ENDPOINT>
+          Service endpoint (for testing)
+
+          [env: WHEELCTL_ENDPOINT=]
 
       --output-log-artifact <OUTPUT_LOG_ARTIFACT>
           Lane-relative output log artifact

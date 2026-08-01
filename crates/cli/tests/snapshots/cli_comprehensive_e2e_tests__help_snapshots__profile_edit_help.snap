@@ -10,8 +10,10 @@ Arguments:
   <PROFILE>  Profile path or ID
 
 Options:
-      --field <FIELD>  Field to edit (e.g., base.ffbGain)
-      --json           Output in JSON format for machine parsing
-  -v, --verbose...     Verbose logging
-      --value <VALUE>  New value
-  -h, --help           Print help
+      --field <FIELD>        Field to edit (e.g., base.ffbGain)
+      --json                 Output in JSON format for machine parsing
+  -v, --verbose...           Verbose logging
+      --value <VALUE>        New value
+      --no-mock              Fail if wheeld is unreachable instead of showing simulated data [env: WHEELCTL_NO_MOCK=1]
+      --endpoint <ENDPOINT>  Service endpoint (for testing) [env: WHEELCTL_ENDPOINT=]
+  -h, --help                 Print help

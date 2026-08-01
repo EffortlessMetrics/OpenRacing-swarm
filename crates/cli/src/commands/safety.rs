@@ -15,17 +15,30 @@ pub async fn execute(cmd: &SafetyCommands, json: bool, endpoint: Option<&str>) -
 
     match cmd {
         SafetyCommands::Enable { device, force } => {
+            // Reporting "high torque enabled" against canned data would tell a
+            // user their wheel is armed when nothing was armed at all, and an
+            // emergency stop that never reached a device is worse still. These
+            // three require a live service rather than falling back.
+            client.require_live_service("Enabling high torque")?;
             enable_high_torque(&client, device, json, *force).await
         }
-        SafetyCommands::Stop { device } => emergency_stop(&client, device.as_deref(), json).await,
+        SafetyCommands::Stop { device } => {
+            client.require_live_service("Emergency stop")?;
+            emergency_stop(&client, device.as_deref(), json).await
+        }
         SafetyCommands::Status { device } => {
+            // Read-only, so the simulated backend is allowed; the stderr
+            // notice on fallback keeps that visible.
             show_safety_status(&client, device.as_deref(), json).await
         }
         SafetyCommands::Limit {
             device,
             torque,
             global,
-        } => set_torque_limit(&client, device, *torque, json, *global).await,
+        } => {
+            client.require_live_service("Setting a torque limit")?;
+            set_torque_limit(&client, device, *torque, json, *global).await
+        }
     }
 }
 

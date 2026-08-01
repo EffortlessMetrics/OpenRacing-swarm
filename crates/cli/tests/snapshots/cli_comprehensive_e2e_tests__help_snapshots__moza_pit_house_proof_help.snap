@@ -15,10 +15,14 @@ Options:
           Artifact for Pit House closed case
   -v, --verbose...
           Verbose logging
+      --no-mock
+          Fail if wheeld is unreachable instead of showing simulated data [env: WHEELCTL_NO_MOCK=1]
       --open-standard-artifact <OPEN_STANDARD_ARTIFACT>
           Artifact for Pit House open, idle, standard-mode case
       --direct-artifact <DIRECT_ARTIFACT>
           Artifact for Pit House open, direct-mode case
+      --endpoint <ENDPOINT>
+          Service endpoint (for testing) [env: WHEELCTL_ENDPOINT=]
       --mode-change-artifact <MODE_CHANGE_ARTIFACT>
           Artifact for Pit House mode-change-during-run case
       --firmware-page-artifact <FIRMWARE_PAGE_ARTIFACT>
