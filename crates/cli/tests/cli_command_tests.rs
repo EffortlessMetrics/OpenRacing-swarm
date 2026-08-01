@@ -23,6 +23,24 @@ fn wheelctl() -> Result<Command, Box<dyn std::error::Error>> {
     Ok(cmd)
 }
 
+/// Port with nothing listening on it, so the offline path is deterministic.
+const UNREACHABLE_ENDPOINT: &str = "http://127.0.0.1:19996";
+
+/// A `wheelctl` pinned to an endpoint that cannot be reached.
+///
+/// Clearing `WHEELCTL_ENDPOINT` alone is not enough: the CLI then falls back
+/// to the *default* endpoint, so on a machine actually running `wheeld` these
+/// tests would talk to it — and `safety enable --force` could reach real
+/// hardware. Pinning a dead port keeps them offline. The simulated fallback
+/// stays enabled (no `--no-mock`), which is what the read-only cases exercise.
+fn wheelctl_offline() -> Result<Command, Box<dyn std::error::Error>> {
+    let mut cmd = wheelctl()?;
+    cmd.env_remove("WHEELCTL_NO_MOCK");
+    cmd.env_remove("OPENRACING_NO_MOCK");
+    cmd.arg("--endpoint").arg(UNREACHABLE_ENDPOINT);
+    Ok(cmd)
+}
+
 /// Parse stdout bytes into a JSON Value.
 fn json(bytes: &[u8]) -> Result<Value, Box<dyn std::error::Error>> {
     Ok(serde_json::from_slice(bytes)?)
@@ -1860,7 +1878,7 @@ mod prompt_bypass {
 
     #[test]
     fn safety_enable_force_refuses_without_a_service() -> TestResult {
-        let out = wheelctl()?
+        let out = wheelctl_offline()?
             .args(["safety", "enable", "wheel-001", "--force"])
             .output()?;
         assert_eq!(
@@ -1874,7 +1892,7 @@ mod prompt_bypass {
 
     #[test]
     fn safety_enable_json_mode_refuses_without_a_service() -> TestResult {
-        let out = wheelctl()?
+        let out = wheelctl_offline()?
             .args(["--json", "safety", "enable", "wheel-001", "--force"])
             .output()?;
         assert_eq!(out.status.code(), Some(EXIT_SERVICE_UNAVAILABLE));
@@ -1883,7 +1901,7 @@ mod prompt_bypass {
 
     #[test]
     fn safety_stop_refuses_without_a_service() -> TestResult {
-        let out = wheelctl()?.args(["safety", "stop"]).output()?;
+        let out = wheelctl_offline()?.args(["safety", "stop"]).output()?;
         assert_eq!(
             out.status.code(),
             Some(EXIT_SERVICE_UNAVAILABLE),
@@ -1899,14 +1917,16 @@ mod prompt_bypass {
 
     #[test]
     fn safety_stop_specific_device_refuses_without_a_service() -> TestResult {
-        let out = wheelctl()?.args(["safety", "stop", "wheel-001"]).output()?;
+        let out = wheelctl_offline()?
+            .args(["safety", "stop", "wheel-001"])
+            .output()?;
         assert_eq!(out.status.code(), Some(EXIT_SERVICE_UNAVAILABLE));
         Ok(())
     }
 
     #[test]
     fn safety_limit_refuses_without_a_service() -> TestResult {
-        let out = wheelctl()?
+        let out = wheelctl_offline()?
             .args(["safety", "limit", "wheel-001", "5.0"])
             .output()?;
         assert_eq!(
@@ -1919,7 +1939,7 @@ mod prompt_bypass {
 
     #[test]
     fn safety_limit_global_flag_refuses_without_a_service() -> TestResult {
-        let out = wheelctl()?
+        let out = wheelctl_offline()?
             .args(["safety", "limit", "wheel-001", "6.0", "--global"])
             .output()?;
         assert_eq!(out.status.code(), Some(EXIT_SERVICE_UNAVAILABLE));
@@ -1932,7 +1952,7 @@ mod prompt_bypass {
         // max-torque check is reached. Asserted on the exact code so the test
         // cannot pass vacuously; the max_torque_nm validation itself is
         // exercised against a live service elsewhere.
-        let out = wheelctl()?
+        let out = wheelctl_offline()?
             .args(["safety", "limit", "wheel-001", "20.0"])
             .output()?;
         assert_eq!(out.status.code(), Some(EXIT_SERVICE_UNAVAILABLE));
@@ -1943,7 +1963,7 @@ mod prompt_bypass {
     fn safety_status_still_works_offline() -> TestResult {
         // Read-only, so it keeps the offline fallback that makes the CLI
         // usable without hardware. Only writes refuse.
-        let out = wheelctl()?.args(["safety", "status"]).output()?;
+        let out = wheelctl_offline()?.args(["safety", "status"]).output()?;
         assert!(
             out.status.success(),
             "read-only safety status should still work offline: {}",

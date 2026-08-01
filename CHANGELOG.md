@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against the simulated backend. An emergency stop that never reached a device
   now fails with the service-unavailable exit code (5) instead. Read-only
   `safety status` keeps working offline
+- `wheelctl safety limit` printed "Torque limit set" without ever sending the
+  limit anywhere — it validated the value against the device maximum and then
+  returned, carrying a `// Mock torque limit setting` comment. There is no
+  torque-limit write on the IPC surface, so against a *live* service it also
+  reported success while changing nothing. It now fails with an explanation
+  and points at `wheelctl profile apply`, which does apply a torque cap.
+  Adding a real write needs a new `wheel.v1` method and belongs in its own
+  change
 
 ### Added
 - `wheelctl --no-mock` (also `WHEELCTL_NO_MOCK=1` or `OPENRACING_NO_MOCK=1`)
