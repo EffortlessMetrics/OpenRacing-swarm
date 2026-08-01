@@ -70,6 +70,7 @@ install_binaries() {
     
     mkdir -p "$INSTALL_PREFIX/bin"
     mkdir -p "$INSTALL_PREFIX/share/racing-wheel-suite"
+    mkdir -p "$INSTALL_PREFIX/share/openracing/contract/control-stream"
     mkdir -p "$INSTALL_PREFIX/share/doc/racing-wheel-suite"
     
     # Copy binaries (assuming they're in the current directory or a bin/ subdirectory)
@@ -95,6 +96,20 @@ install_binaries() {
             cp "$bin_source/$binary" "$INSTALL_PREFIX/bin/"
             chmod +x "$INSTALL_PREFIX/bin/$binary"
             log_info "Installed $binary (optional)"
+        fi
+    done
+
+    # Install the versioned external control-stream contract beside the
+    # binaries. Keep the allowlist explicit so unrelated files from a package
+    # cannot become part of the installed consumer surface.
+    local contract_source="contract/control-stream"
+    local contract_target="$INSTALL_PREFIX/share/openracing/contract/control-stream"
+    for asset in control-stream-contract.json wheel.proto sample-capture.json SHA256SUMS; do
+        if [ -f "$contract_source/$asset" ]; then
+            cp "$contract_source/$asset" "$contract_target/"
+        else
+            log_error "Required control-stream contract asset not found: $contract_source/$asset"
+            exit 1
         fi
     done
     

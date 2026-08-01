@@ -200,9 +200,10 @@ Status: ready
 Parent implementation epic: #174
 Linked issue: #180
 Prerequisite: `control-stream-package-composition` completed by PR #196
-Target seams: `.github/workflows/release.yml`, installed-package test harnesses,
-claimed platform packages, prior-release fixtures, and the external input-only
-consumer smoke.
+Target seams: `.github/workflows/release.yml`,
+`scripts/control_stream_artifact_smoke.sh`, the packaged-artifact integration
+harness, Linux tarball installation, the deterministic prior-lane fixture, and
+the external input-only consumer smoke.
 
 Goal: prove `control_stream_v1` from built package artifacts across restart,
 upgrade/rollback, disabled or unavailable service behavior, and an input-only
@@ -214,10 +215,13 @@ deterministic; upgrade/rollback preserve profiles, configuration, and safety
 state; existing clients remain compatible; and the virtual/replay consumer
 smoke uses packaged artifacts rather than source-tree binaries.
 
-Proof: installed/package binary feature negotiation; descriptor-to-baseline-to-
-events; reset/gap/disconnect and restart; prior-release upgrade/rollback;
-missing/disabled feature; existing-client and safety behavior; input-only
-consumer replay; package-surface/status validation; and `git diff --check`.
+Proof: installed/package binary feature negotiation; descriptor-to-baseline
+sequencing; restart and disabled-feature behavior; replacement/rollback with
+persistent configuration/profile-sentinel checks; packaged input-only replay;
+package-surface/status validation; and `git diff --check`. The release workflow
+uses PR #196 (`e625296e`) as a deterministic prior-lane fixture because the
+repository has no tagged prior release; that fixture is not presented as a
+previous released-version receipt.
 
 Claim boundary: artifact lifecycle and virtual/replay consumer evidence only.
 This item does not prove real hardware compatibility, named control roles,
