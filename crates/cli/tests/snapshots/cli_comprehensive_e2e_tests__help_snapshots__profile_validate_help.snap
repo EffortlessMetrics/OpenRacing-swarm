@@ -10,7 +10,9 @@ Arguments:
   <PATH>  Profile path
 
 Options:
-  -d, --detailed    Show detailed validation info
-      --json        Output in JSON format for machine parsing
-  -v, --verbose...  Verbose logging
-  -h, --help        Print help
+  -d, --detailed             Show detailed validation info
+      --json                 Output in JSON format for machine parsing
+  -v, --verbose...           Verbose logging
+      --no-mock              Fail if wheeld is unreachable instead of showing simulated data [env: WHEELCTL_NO_MOCK=1]
+      --endpoint <ENDPOINT>  Service endpoint (for testing) [env: WHEELCTL_ENDPOINT=]
+  -h, --help                 Print help

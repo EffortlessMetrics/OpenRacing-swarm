@@ -12,9 +12,12 @@ use crate::error::CliError;
 use crate::output;
 
 /// Execute profile command
+//
+// Only `Apply` talks to the service, so the client is built inside that branch.
+// Connecting up front made every local subcommand -- validate, create, edit,
+// export -- fail under `--no-mock` with no daemon running, even though they
+// only ever touch files on disk.
 pub async fn execute(cmd: &ProfileCommands, json: bool, endpoint: Option<&str>) -> Result<()> {
-    let client = WheelClient::connect_or_mock(endpoint).await?;
-
     match cmd {
         ProfileCommands::List { game, car } => {
             list_profiles(game.as_deref(), car.as_deref(), json).await
@@ -24,7 +27,10 @@ pub async fn execute(cmd: &ProfileCommands, json: bool, endpoint: Option<&str>) 
             device,
             profile,
             skip_validation,
-        } => apply_profile(&client, device, profile, json, *skip_validation).await,
+        } => {
+            let client = WheelClient::connect_or_mock(endpoint).await?;
+            apply_profile(&client, device, profile, json, *skip_validation).await
+        }
         ProfileCommands::Create {
             path,
             from,

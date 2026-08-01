@@ -12,16 +12,23 @@ use crate::output;
 use openracing_telemetry_config::support::{GameSupport, load_default_matrix, normalize_game_id};
 
 /// Execute game command
+//
+// `List` reads the bundled support matrix and never touches the service, so it
+// must not require one: connecting up front made `game list` fail under
+// `--no-mock` with no daemon running.
 pub async fn execute(cmd: &GameCommands, json: bool, endpoint: Option<&str>) -> Result<()> {
-    let client = WheelClient::connect_or_mock(endpoint).await?;
-
     match cmd {
         GameCommands::List { detailed } => list_supported_games(json, *detailed).await,
         GameCommands::Configure { game, path, auto } => {
+            let client = WheelClient::connect_or_mock(endpoint).await?;
             configure_game(&client, game, path.as_deref(), json, *auto).await
         }
-        GameCommands::Status { telemetry } => show_game_status(&client, json, *telemetry).await,
+        GameCommands::Status { telemetry } => {
+            let client = WheelClient::connect_or_mock(endpoint).await?;
+            show_game_status(&client, json, *telemetry).await
+        }
         GameCommands::Test { game, duration } => {
+            let client = WheelClient::connect_or_mock(endpoint).await?;
             test_telemetry(&client, game, *duration, json).await
         }
     }

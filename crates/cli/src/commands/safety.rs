@@ -15,17 +15,30 @@ pub async fn execute(cmd: &SafetyCommands, json: bool, endpoint: Option<&str>) -
 
     match cmd {
         SafetyCommands::Enable { device, force } => {
+            // Reporting "high torque enabled" against canned data would tell a
+            // user their wheel is armed when nothing was armed at all, and an
+            // emergency stop that never reached a device is worse still. These
+            // three require a live service rather than falling back.
+            client.require_live_service("Enabling high torque")?;
             enable_high_torque(&client, device, json, *force).await
         }
-        SafetyCommands::Stop { device } => emergency_stop(&client, device.as_deref(), json).await,
+        SafetyCommands::Stop { device } => {
+            client.require_live_service("Emergency stop")?;
+            emergency_stop(&client, device.as_deref(), json).await
+        }
         SafetyCommands::Status { device } => {
+            // Read-only, so the simulated backend is allowed; the stderr
+            // notice on fallback keeps that visible.
             show_safety_status(&client, device.as_deref(), json).await
         }
         SafetyCommands::Limit {
             device,
             torque,
             global,
-        } => set_torque_limit(&client, device, *torque, json, *global).await,
+        } => {
+            client.require_live_service("Setting a torque limit")?;
+            set_torque_limit(&client, device, *torque, json, *global).await
+        }
     }
 }
 
@@ -212,12 +225,15 @@ async fn show_safety_status(client: &WheelClient, device: Option<&str>, json: bo
     Ok(())
 }
 
-/// Set torque limit
+/// Set torque limit.
+///
+/// Currently always fails: see the explanation at the end of the function.
+/// `json` is unused because the command produces no success output to format.
 async fn set_torque_limit(
     client: &WheelClient,
     device: &str,
     torque: f32,
-    json: bool,
+    _json: bool,
     global: bool,
 ) -> Result<()> {
     // Verify device exists
@@ -242,38 +258,29 @@ async fn set_torque_limit(
         );
     }
 
-    // Mock torque limit setting - in real implementation this would update device/profile
-
-    let scope = if global {
-        "all profiles"
-    } else {
-        "current session"
-    };
-
-    output::print_success(
-        &format!(
-            "Torque limit set to {:.1} Nm for device {} ({})",
-            torque, device, scope
-        ),
-        json,
-    );
-
-    if !json {
-        if torque < max_torque * 0.5 {
-            println!(
-                "{} Low torque limit may reduce force feedback quality",
-                "Note:".yellow()
-            );
-        }
-
-        if global {
-            println!("This limit will be applied to all profiles for this device");
-        } else {
-            println!("This limit applies only to the current session");
-        }
-    }
-
-    Ok(())
+    // There is no torque-limit write on WheelClient. This command validated
+    // the value and then printed "Torque limit set" without sending anything,
+    // so against a live service it reported success while leaving the limit
+    // unchanged -- the same class of defect this command's service check
+    // exists to prevent, just on the online path instead of the offline one.
+    //
+    // Reject rather than claim success. Adding the write means a new IPC
+    // method on the wheel.v1 service, which is a schema change that belongs in
+    // its own PR with an ADR, not folded in here.
+    //
+    // Deliberately no "do this instead" pointer. `wheelctl profile apply` looks
+    // like the answer, but `WheelClient::apply_profile` ignores its profile
+    // argument and sends `base: None`, so `torqueCapNm` never reaches the
+    // service either. Naming it here would send a user chasing a cap that is
+    // silently dropped -- worse than admitting there is no path.
+    let _ = (global, max_torque);
+    Err(CliError::ValidationError(format!(
+        "Setting a torque limit is not implemented: the service exposes no \
+         torque-limit write, so {torque:.1} Nm for device {device} would not \
+         have been applied. Do not rely on this command to constrain output; \
+         use the physical torque limit on the wheelbase."
+    ))
+    .into())
 }
 
 // Helper functions and data structures

@@ -1,9 +1,14 @@
 //! IPC client for communicating with wheeld service
 //!
 //! Uses gRPC via tonic to connect to the wheeld service. When the service is not
-//! reachable, `connect_or_mock()` transparently falls back to a built-in mock
-//! backend so that the CLI remains functional for development, testing, and
-//! offline profile management.
+//! reachable, [`WheelClient::connect_or_mock`] falls back to a built-in
+//! simulated backend so that the CLI remains functional for development,
+//! testing, and offline profile management.
+//!
+//! The fallback is never silent. It prints a one-time notice to stderr, the
+//! resulting client reports [`BackendKind::Simulated`] so commands can label
+//! their output, and it can be disabled entirely with `--no-mock` (or
+//! `WHEELCTL_NO_MOCK=1`) so scripts fail instead of reading invented data.
 
 use crate::error::CliError;
 use anyhow::Result;
@@ -13,13 +18,70 @@ use racing_wheel_hid_moza_protocol::{
 use racing_wheel_schemas::generated::wheel::v1 as wire;
 use racing_wheel_schemas::telemetry::TelemetryData as SchemasTelemetryData;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Once};
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio_stream::StreamExt;
 
 /// Default gRPC endpoint for the wheeld service
 const DEFAULT_ENDPOINT: &str = "http://127.0.0.1:50051";
+
+/// Set when the caller opts out of the simulated fallback, so an unreachable
+/// service is reported as an error instead of answered with invented data.
+static SIMULATED_BACKEND_DISABLED: AtomicBool = AtomicBool::new(false);
+
+/// Guards the one-time stderr notice, so a command issuing several client
+/// calls does not repeat the banner.
+static SIMULATED_NOTICE: Once = Once::new();
+
+/// Environment variables that disable the simulated fallback.
+const NO_MOCK_ENV_VARS: [&str; 2] = ["WHEELCTL_NO_MOCK", "OPENRACING_NO_MOCK"];
+
+/// Disable or re-enable the simulated fallback for this process.
+///
+/// Called once from `main` after argument parsing. When disabled,
+/// [`WheelClient::connect_or_mock`] behaves exactly like
+/// [`WheelClient::connect`] and surfaces the connection error.
+pub fn set_simulated_backend_disabled(disabled: bool) {
+    SIMULATED_BACKEND_DISABLED.store(disabled, Ordering::Relaxed);
+}
+
+/// Whether the simulated fallback is currently permitted.
+fn simulated_backend_allowed() -> bool {
+    if SIMULATED_BACKEND_DISABLED.load(Ordering::Relaxed) {
+        return false;
+    }
+    !NO_MOCK_ENV_VARS
+        .iter()
+        .any(|name| matches!(std::env::var(name).as_deref(), Ok("1") | Ok("true")))
+}
+
+/// The platform's command for starting the wheeld service.
+///
+/// Used anywhere the CLI tells a user the service is not running, so the
+/// suggested command stays consistent across commands and platforms.
+pub fn start_service_hint() -> &'static str {
+    if cfg!(windows) {
+        "sc start wheeld"
+    } else if cfg!(target_os = "macos") {
+        "launchctl start com.openracing.wheeld"
+    } else {
+        "systemctl --user start openracing.service"
+    }
+}
+
+/// Warn, once per process, that the CLI is answering from simulated data.
+///
+/// Goes to stderr so that `--json` stdout stays machine-parseable.
+fn warn_simulated_backend(endpoint: &str) {
+    SIMULATED_NOTICE.call_once(|| {
+        eprintln!("warning: could not reach the wheeld service at {endpoint}.");
+        eprintln!("         Showing SIMULATED data — these devices and readings are not real.");
+        eprintln!("         Start the service with: {}", start_service_hint());
+        eprintln!("         Or pass --no-mock to fail instead of simulating.");
+    });
+}
 
 // ---------------------------------------------------------------------------
 // Backend enum -- either a live gRPC channel or a self-contained mock
@@ -30,11 +92,24 @@ enum ClientBackend {
     Mock,
 }
 
+/// Which backend a [`WheelClient`] is answering from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackendKind {
+    /// A live gRPC connection to a running wheeld service.
+    Service,
+    /// Built-in canned data. Nothing reported by this backend reflects real
+    /// hardware or a real service.
+    Simulated,
+}
+
 /// Client for communicating with the wheel service.
 ///
-/// Transparently supports both a live gRPC connection and an in-process mock
-/// backend. Use [`WheelClient::connect`] when a running wheeld service is
-/// required, or [`WheelClient::connect_or_mock`] to gracefully fall back.
+/// Transparently supports both a live gRPC connection and an in-process
+/// simulated backend. Use [`WheelClient::connect`] when a running wheeld
+/// service is required, or [`WheelClient::connect_or_mock`] to fall back to
+/// simulated data. Callers that render results should check
+/// [`WheelClient::backend_kind`] so simulated data is never presented as real.
 pub struct WheelClient {
     backend: ClientBackend,
 }
@@ -72,32 +147,38 @@ impl WheelClient {
         })
     }
 
-    /// Try to connect via gRPC; fall back to the mock backend when appropriate.
+    /// Try to connect via gRPC; fall back to the simulated backend when
+    /// appropriate.
     ///
     /// This is the primary constructor used by CLI commands. When the wheeld
-    /// service is unreachable, the client falls back to an in-process mock so
-    /// that the CLI remains usable for development, testing, and offline
+    /// service is unreachable, the client falls back to in-process canned data
+    /// so that the CLI remains usable for development, testing, and offline
     /// profile management.
     ///
-    /// The mock fallback is used when:
+    /// The fallback is used when:
     /// - No endpoint was specified (default local service not running), or
     /// - An explicit endpoint targeting loopback/localhost was given but the
     ///   service is not running there.
     ///
     /// If the endpoint points to a non-local host, connection failures are
     /// reported as errors because the user clearly intended to reach a
-    /// specific remote service.
+    /// specific remote service. The same applies whenever `--no-mock` (or
+    /// `WHEELCTL_NO_MOCK=1`) is in effect.
+    ///
+    /// Falling back always prints a notice to stderr, and the returned client
+    /// reports [`BackendKind::Simulated`] so callers can label their output.
     pub async fn connect_or_mock(endpoint: Option<&str>) -> Result<Self> {
         match Self::connect(endpoint).await {
             Ok(client) => Ok(client),
             Err(e) => {
-                // Fall back to mock for local/loopback endpoints or when none given
-                let use_mock = match endpoint {
+                // Fall back for local/loopback endpoints or when none given
+                let endpoint_is_local = match endpoint {
                     None => true,
                     Some(ep) => is_local_endpoint(ep),
                 };
-                if use_mock {
-                    tracing::debug!("wheeld not reachable; using mock backend");
+                if endpoint_is_local && simulated_backend_allowed() {
+                    tracing::debug!("wheeld not reachable; using simulated backend");
+                    warn_simulated_backend(endpoint.unwrap_or(DEFAULT_ENDPOINT));
                     Ok(Self {
                         backend: ClientBackend::Mock,
                     })
@@ -106,6 +187,37 @@ impl WheelClient {
                 }
             }
         }
+    }
+
+    /// Which backend this client answers from.
+    pub fn backend_kind(&self) -> BackendKind {
+        match &self.backend {
+            ClientBackend::Grpc(_) => BackendKind::Service,
+            ClientBackend::Mock => BackendKind::Simulated,
+        }
+    }
+
+    /// Whether this client is returning canned data rather than talking to a
+    /// running service.
+    pub fn is_simulated(&self) -> bool {
+        self.backend_kind() == BackendKind::Simulated
+    }
+
+    /// Fail unless this client is talking to a live service.
+    ///
+    /// Used by commands whose whole point is to act on real hardware --
+    /// emergency stop, high-torque enable, torque limits. Reporting success
+    /// for those against canned data would be worse than reporting nothing.
+    pub fn require_live_service(&self, operation: &str) -> Result<()> {
+        if self.is_simulated() {
+            return Err(CliError::ServiceUnavailable(format!(
+                "{operation} needs a running wheeld service and there is none. \
+                 Start it with: {}",
+                start_service_hint()
+            ))
+            .into());
+        }
+        Ok(())
     }
 
     // -----------------------------------------------------------------------

@@ -825,15 +825,19 @@ mod error_actionability {
     }
 
     #[test]
-    fn safety_limit_exceeds_max_exits_with_validation_error() -> TestResult {
+    fn safety_limit_exceeds_max_exits_with_error() -> TestResult {
         let output = wheelctl()?
             .args(["safety", "limit", "wheel-001", "999.0"])
             .output()?;
         assert!(!output.status.success(), "extreme torque value should fail");
         let code = output.status.code().unwrap_or(-1);
+        // 5 = service unavailable. With no daemon running a torque limit now
+        // refuses up front rather than reporting success against simulated
+        // data, so it never reaches the value validation that would yield 4.
+        // 4 and 1 stay accepted for the case where a service is reachable.
         assert!(
-            code == 4 || code == 1,
-            "should exit with validation error code, got {code}"
+            code == 5 || code == 4 || code == 1,
+            "should exit with service-unavailable or validation error code, got {code}"
         );
         Ok(())
     }
@@ -1880,46 +1884,48 @@ mod safety_execution {
         Ok(())
     }
 
+    // Safety writes refuse without a reachable wheeld service rather than
+    // reporting `"success": true` against the simulated backend. These assert
+    // the refusal is well formed in JSON mode: a parseable object with
+    // success=false, so scripts see a failure rather than a fabricated ack.
+
     #[test]
-    fn safety_stop_all_devices() -> TestResult {
+    fn safety_stop_all_devices_reports_failure_json() -> TestResult {
         let output = wheelctl()?.args(["--json", "safety", "stop"]).output()?;
-        assert!(output.status.success());
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        // Tracing may output warn lines before JSON; find the JSON object
-        let json_start = stdout.find('{').ok_or("no JSON object in output")?;
-        let json: Value = serde_json::from_str(&stdout[json_start..])?;
-        assert_eq!(json.get("success").and_then(Value::as_bool), Some(true));
+        assert_eq!(output.status.code(), Some(5));
+        let json = parse_json(&output.stdout)?;
+        assert_eq!(json.get("success").and_then(Value::as_bool), Some(false));
         Ok(())
     }
 
     #[test]
-    fn safety_stop_specific_device() -> TestResult {
+    fn safety_stop_specific_device_reports_failure_json() -> TestResult {
         let output = wheelctl()?
             .args(["--json", "safety", "stop", "wheel-001"])
             .output()?;
-        assert!(output.status.success());
+        assert_eq!(output.status.code(), Some(5));
         Ok(())
     }
 
     #[test]
-    fn safety_limit_json_output() -> TestResult {
+    fn safety_limit_reports_failure_json() -> TestResult {
         let output = wheelctl()?
             .args(["--json", "safety", "limit", "wheel-001", "8.0"])
             .output()?;
-        assert!(output.status.success());
+        assert_eq!(output.status.code(), Some(5));
         let json = parse_json(&output.stdout)?;
-        assert_eq!(json.get("success").and_then(Value::as_bool), Some(true));
+        assert_eq!(json.get("success").and_then(Value::as_bool), Some(false));
         Ok(())
     }
 
     #[test]
-    fn safety_limit_global_flag_json() -> TestResult {
+    fn safety_limit_global_flag_reports_failure_json() -> TestResult {
         let output = wheelctl()?
             .args(["--json", "safety", "limit", "wheel-001", "8.0", "--global"])
             .output()?;
-        assert!(output.status.success());
+        assert_eq!(output.status.code(), Some(5));
         let json = parse_json(&output.stdout)?;
-        assert_eq!(json.get("success").and_then(Value::as_bool), Some(true));
+        assert_eq!(json.get("success").and_then(Value::as_bool), Some(false));
         Ok(())
     }
 
