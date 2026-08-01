@@ -61,7 +61,27 @@ Special case:
 - `.github/workflows/**` is **not** docs-light; route workflow-only edits to a
   minimal hosted validation/safety lane unless a stronger policy requires more.
 
-## 3) Default PR routing policy
+## 3) Routed Rust capacity contract
+
+The protected `OpenRacing Rust Small Result` workflow uses a bounded
+capacity-aware route for trusted same-repository pull requests and merge
+groups:
+
+- CX43 is selected first with `rust-medium`;
+- CPX42 is selected second with `rust-medium` and `rust-16gb`;
+- CX53 is selected third with `rust-large`;
+- GitHub-hosted Rust Small is used when no eligible self-hosted runner is
+  online and idle;
+- untrusted or fork pull requests use the GitHub-hosted route directly;
+- missing credentials, runner API failures, and malformed runner data fail the
+  normalized result instead of being reported as a successful fallback.
+
+Runner selection requires the `em-ci`, host, capacity, and `trusted-pr`
+labels. `scripts/check_runner_routing.sh` rejects bare self-hosted Linux/x64
+blocks without a capacity-qualified route, and its fixture test covers both
+accepted and rejected shapes.
+
+## 4) Default PR routing policy
 
 Classify first, then choose the cheapest truthful lane:
 
@@ -74,7 +94,7 @@ Classify first, then choose the cheapest truthful lane:
 Reserve full CI for explicit triggers (label, manual dispatch, main push,
 release, schedule, merge queue, or equivalent policy).
 
-## 4) Hosted fallback policy
+## 5) Hosted fallback policy
 
 Do not silently replace a self-hosted `rust-small` path with a full expensive
 GitHub-hosted equivalent.
@@ -88,7 +108,7 @@ GitHub-hosted equivalent.
   - `allow-github-hosted`
   - `ci-budget-ack`
 
-## 5) Artifacts policy
+## 6) Artifacts policy
 
 Default PR paths should not upload bulky artifacts with `if: always()` unless
 merge policy explicitly requires them.
@@ -98,7 +118,7 @@ merge policy explicitly requires them.
 - Keep policy-required receipts minimal; avoid uploads on docs/control-plane-only
   routes.
 
-## 6) CI-only PR test minimums
+## 7) CI-only PR test minimums
 
 Every CI-efficiency PR must include:
 
@@ -113,7 +133,7 @@ Every CI-efficiency PR must include:
 - explicit verification that heavy/core lanes remain no-cancel
   (`cancel-in-progress: false`) unless intentionally documented.
 
-## 7) Reviewer rejection gates
+## 8) Reviewer rejection gates
 
 Reject CI-efficiency PRs that do not answer yes to all:
 
