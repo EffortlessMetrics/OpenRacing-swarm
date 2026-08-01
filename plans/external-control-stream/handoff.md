@@ -101,3 +101,11 @@ git diff --check
 
 Missing tooling or skipped checks must remain visible in the PR report and are
 not equivalent to a passing runtime or release proof.
+
+## Issue #180 closeout
+
+Issue #180 landed in PR #210 (`eaee0ae5`) after the security-remediated
+restack. The exact-head required hosted proof passed on `11038dfa`; local
+focused proof and the hosted Linux artifact lifecycle smoke passed. The claim
+boundary remains limited to Linux artifact lifecycle and virtual/replay
+consumer evidence.

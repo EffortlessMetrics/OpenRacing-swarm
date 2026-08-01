@@ -196,10 +196,10 @@ lifecycle, upgrade/rollback, or consumer smoke.
 
 ## Work item: control-stream-artifact-lifecycle-proof
 
-Status: in_progress
+Status: completed
 Parent implementation epic: #174
 Linked issue: #180
-Current PR: #210
+Current PR: #210 (merged as `eaee0ae5`)
 Prerequisite: `control-stream-package-composition` completed by PR #196
 Target seams: `.github/workflows/release.yml`,
 `scripts/control_stream_artifact_smoke.sh`, the packaged-artifact integration
