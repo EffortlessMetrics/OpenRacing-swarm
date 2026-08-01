@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- `wheelctl` errors now say what to do, not only what went wrong. Every
+  `CliError` with a plausible next step carries a `hint:` naming a command —
+  device-not-found points at `wheelctl device list` and `wheelctl doctor`,
+  service-unavailable names the platform's start command, and permission-denied
+  spells out the udev-rule and input-group steps on Linux
+- `wheelctl --json` error objects reported a `type` field computed from
+  anyhow's `Debug`, which renders the *message*, so `type` merely duplicated
+  `message`. It now carries the real variant name, plus a stable snake_case
+  `kind` for scripts to branch on and the `hint` text
+- `wheelctl device list` with no devices printed "No devices found" and
+  stopped. It now suggests what to check, including `wheelctl doctor`
+- The environment check reported on tooling and HID visibility but never
+  checked whether `wheeld` was running — the most common first-run failure. It
+  now probes the service, reports it in both human and JSON output, and warns
+  when it is unreachable
 - `wheelctl` no longer presents simulated data as real. When `wheeld` was
   unreachable the client silently fell back to a canned backend, so a
   first-time user with no daemon and no hardware saw two invented Fanatec
@@ -33,6 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   change
 
 ### Added
+- `wheelctl doctor` as a top-level command. The environment check existed only
+  at `wheelctl hardware doctor`, two levels down under a subcommand a
+  first-time user has no reason to open. Same code path, reachable where
+  people look for it
+- `wheelctl --help` now has GETTING STARTED, EXAMPLES, and EXIT CODES sections.
+  The exit codes were distinct but documented nowhere
 - `wheelctl --no-mock` (also `WHEELCTL_NO_MOCK=1` or `OPENRACING_NO_MOCK=1`)
   makes an unreachable service an error instead of falling back to simulated
   data, so scripts can require a real daemon

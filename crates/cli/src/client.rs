@@ -27,6 +27,12 @@ use tokio_stream::StreamExt;
 /// Default gRPC endpoint for the wheeld service
 const DEFAULT_ENDPOINT: &str = "http://127.0.0.1:50051";
 
+/// The endpoint used when none is supplied, for diagnostics that need to
+/// report which address was tried.
+pub fn default_endpoint() -> &'static str {
+    DEFAULT_ENDPOINT
+}
+
 /// Set when the caller opts out of the simulated fallback, so an unreachable
 /// service is reported as an error instead of answered with invented data.
 static SIMULATED_BACKEND_DISABLED: AtomicBool = AtomicBool::new(false);
