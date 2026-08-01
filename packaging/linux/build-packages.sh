@@ -125,6 +125,10 @@ if [[ ! -d "$BIN_PATH" ]]; then
     exit 1
 fi
 
+# Resolve to an absolute path so later build steps stay correct regardless of
+# the working directory they run in.
+BIN_PATH="$(cd "$BIN_PATH" && pwd)"
+
 # Get version from Cargo.toml if not specified
 if [[ -z "$VERSION" ]]; then
     if [[ -f "$PROJECT_ROOT/Cargo.toml" ]]; then
@@ -154,6 +158,7 @@ esac
 
 # Create output directory
 mkdir -p "$OUTPUT_DIR"
+OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
 
 log_info "=========================================="
 log_info "OpenRacing Linux Package Builder"
@@ -263,7 +268,9 @@ build_tarball() {
 
     # Copy packaging files
     cp "$SCRIPT_DIR/99-racing-wheel-suite.rules" "$tarball_dir/"
-    cp "$SCRIPT_DIR/wheeld.service.template" "$tarball_dir/systemd/wheeld.service"
+    # Named to match the unit the .deb, .rpm, and install.sh all register, so
+    # every install channel enables the same service name.
+    cp "$SCRIPT_DIR/wheeld.service.template" "$tarball_dir/systemd/openracing.service"
     cp "$SCRIPT_DIR/install.sh" "$tarball_dir/"
     chmod +x "$tarball_dir/install.sh"
     
@@ -307,19 +314,26 @@ Or manually:
   2. Copy 99-racing-wheel-suite.rules to /etc/udev/rules.d/
   3. Copy 99-racing-wheel-suite.hwdb to /etc/udev/hwdb.d/
   4. Copy 90-racing-wheel-quirks.conf to /etc/modprobe.d/
-  5. Copy systemd/wheeld.service to ~/.config/systemd/user/
+  5. Copy systemd/openracing.service to ~/.config/systemd/user/,
+     replacing %INSTALL_PATH% with your install prefix (e.g. /usr/local)
   6. Run: sudo udevadm control --reload-rules && sudo udevadm trigger
   7. Run: sudo systemd-hwdb update
-  8. Run: systemctl --user enable --now wheeld.service
+  8. Run: systemctl --user enable --now openracing.service
+
+Once the service is running, check it with:
+  wheelctl health
+
+The external control-stream contract for third-party consumers is under
+contract/control-stream/.
 
 For more information, see docs/README.md
 EOF
     
-    # Create tarball
-    cd "$OUTPUT_DIR"
-    tar -czvf "${tarball_name}.tar.gz" "$tarball_name"
-    rm -rf "$tarball_name"
-    
+    # Create tarball. Run in a subshell so the caller's working directory is
+    # not changed for the .deb/.rpm/checksum steps that follow.
+    ( cd "$OUTPUT_DIR" && tar -czf "${tarball_name}.tar.gz" "$tarball_name" )
+    rm -rf "$tarball_dir"
+
     log_info "Created: $OUTPUT_DIR/${tarball_name}.tar.gz"
 }
 
@@ -552,10 +566,9 @@ build_rpm() {
         cp "$PROJECT_ROOT/CHANGELOG.md" "$source_dir/docs/"
     fi
     
-    # Create source tarball
-    cd "$rpm_build_dir/SOURCES"
-    tar -czvf "openracing-${VERSION}.tar.gz" "openracing-${VERSION}"
-    rm -rf "openracing-${VERSION}"
+    # Create source tarball (subshell keeps the caller's working directory)
+    ( cd "$rpm_build_dir/SOURCES" && tar -czf "openracing-${VERSION}.tar.gz" "openracing-${VERSION}" )
+    rm -rf "$source_dir"
     
     # Create spec file
     cat > "$rpm_build_dir/SPECS/openracing.spec" << EOF
@@ -670,13 +683,12 @@ fi
 
 # Generate checksums for all packages
 log_step "Generating checksums..."
-cd "$OUTPUT_DIR"
-for file in *.tar.gz *.deb *.rpm 2>/dev/null; do
-    if [[ -f "$file" ]]; then
-        sha256sum "$file" > "${file}.sha256"
-        log_info "Checksum: ${file}.sha256"
-    fi
+shopt -s nullglob
+for file in "$OUTPUT_DIR"/*.tar.gz "$OUTPUT_DIR"/*.deb "$OUTPUT_DIR"/*.rpm; do
+    ( cd "$OUTPUT_DIR" && sha256sum "$(basename "$file")" > "$(basename "$file").sha256" )
+    log_info "Checksum: $(basename "$file").sha256"
 done
+shopt -u nullglob
 
 log_info ""
 log_info "=========================================="

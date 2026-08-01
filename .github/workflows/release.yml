@@ -72,6 +72,31 @@ jobs:
             exit 1
           fi
 
+      - name: Validate version matches Cargo.toml
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          # Prereleases are tagged against the base workspace version, e.g.
+          # tag v0.2.0-rc.1 against workspace version 0.2.0.
+          BASE_VERSION="${VERSION%%-*}"
+          CARGO_VERSION="$(sed -n '/^\[workspace\.package\]/,/^\[/p' Cargo.toml \
+            | sed -n 's/^version = "\(.*\)"/\1/p' | head -n1)"
+
+          if [ -z "$CARGO_VERSION" ]; then
+            echo "Error: could not read version from [workspace.package] in Cargo.toml"
+            exit 1
+          fi
+
+          if [ "$BASE_VERSION" != "$CARGO_VERSION" ]; then
+            echo "Error: tag version does not match Cargo.toml"
+            echo "  tag:        $VERSION (base $BASE_VERSION)"
+            echo "  Cargo.toml: $CARGO_VERSION"
+            echo "Update [workspace.package] version in Cargo.toml, or retag."
+            exit 1
+          fi
+
+          echo "Version check OK: tag $VERSION matches Cargo.toml $CARGO_VERSION"
+
       - name: Extract changelog for version
         id: changelog
         run: |
@@ -220,6 +245,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [prepare, build-linux, build-windows]
+    env:
+      # The `secrets` context is not available in a step-level `if:`, so the
+      # presence of a signing key is surfaced through `env` instead.
+      HAS_GPG_KEY: ${{ secrets.GPG_PRIVATE_KEY != '' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -254,20 +283,22 @@ jobs:
             --skip-signing
 
       - name: Sign with GPG (if key available)
-        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+        if: env.HAS_GPG_KEY == 'true'
         run: |
-          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import
+          set -euo pipefail
+          printf '%s' "$GPG_PRIVATE_KEY" | gpg --import
 
           cd release-assets
+          shopt -s nullglob
           for file in *.tar.gz *.zip *.deb *.rpm *.msi; do
-            if [[ -f "$file" ]]; then
-              gpg --armor --detach-sign --local-user "${{ secrets.GPG_KEY_ID }}" "$file"
-            fi
+            gpg --armor --detach-sign --local-user "$GPG_KEY_ID" "$file"
           done
 
-          gpg --armor --detach-sign --local-user "${{ secrets.GPG_KEY_ID }}" SHA256SUMS.txt
+          gpg --armor --detach-sign --local-user "$GPG_KEY_ID" SHA256SUMS.txt
         env:
           GPG_TTY: /dev/tty
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
 
       - name: Upload signed artifacts
         uses: actions/upload-artifact@v4

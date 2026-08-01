@@ -129,7 +129,7 @@ Each release includes:
   - Documentation (README, LICENSE, CHANGELOG)
 
 ### Windows (x64)
-- `openracing-{version}-windows-x64.zip` - ZIP containing:
+- `openracing-{version}-windows-x64-portable.zip` - ZIP containing:
   - `wheelctl.exe` - CLI tool
   - `wheeld.exe` - Background service
   - Documentation (README, LICENSE, CHANGELOG)
@@ -147,8 +147,8 @@ Users can verify downloaded artifacts:
 sha256sum -c openracing-0.1.0-alpha-linux-amd64.tar.gz.sha256
 
 # Windows (PowerShell)
-$expected = (Get-Content openracing-0.1.0-alpha-windows-x64.zip.sha256).Split()[0]
-$actual = (Get-FileHash openracing-0.1.0-alpha-windows-x64.zip -Algorithm SHA256).Hash.ToLower()
+$expected = (Get-Content openracing-0.1.0-alpha-windows-x64-portable.zip.sha256).Split()[0]
+$actual = (Get-FileHash openracing-0.1.0-alpha-windows-x64-portable.zip -Algorithm SHA256).Hash.ToLower()
 if ($expected -eq $actual) { "Checksum OK" } else { "Checksum FAILED" }
 ```
 

@@ -5,8 +5,12 @@ After=graphical-session.target
 Wants=graphical-session.target
 
 [Service]
-Type=notify
-ExecStart=%INSTALL_PATH%/bin/wheeld --service
+# wheeld does not implement sd_notify, so Type=notify would leave the unit
+# hanging until TimeoutStartSec and then fail. `--service` is the Windows SCM
+# flag (it redirects logging to a file); on Linux wheeld runs the daemon with
+# no arguments and logs to the journal via stdout.
+Type=simple
+ExecStart=%INSTALL_PATH%/bin/wheeld
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5
@@ -33,9 +37,18 @@ RestrictRealtime=false
 RestrictSUIDSGID=true
 RemoveIPC=true
 
-# Allow access to HID devices and real-time scheduling
-SupplementaryGroups=input plugdev
-AmbientCapabilities=CAP_SYS_NICE
+# Device access and real-time scheduling.
+#
+# SupplementaryGroups= and AmbientCapabilities= are rejected by the systemd
+# user manager, which cannot change groups or grant capabilities, so they are
+# not set here. Instead:
+#   - HID access comes from the udev rules in 99-racing-wheel-suite.rules,
+#     which tag racing devices with uaccess for the logged-in user. Adding the
+#     account to the input/plugdev groups covers seat-less setups; install.sh
+#     checks group membership and reports what is missing.
+#   - RT scheduling is obtained at runtime through rtkit (RestrictRealtime is
+#     already false below), which is why the packages recommend the rtkit
+#     package rather than granting CAP_SYS_NICE to the unit.
 
 # Working directory and state
 WorkingDirectory=%INSTALL_PATH%
