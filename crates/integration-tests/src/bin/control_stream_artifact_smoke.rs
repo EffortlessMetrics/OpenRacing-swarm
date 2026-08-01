@@ -192,7 +192,7 @@ fn install_package(package: &Path, prefix: &Path, _home: &Path) -> Result<()> {
         if !status.success() {
             bail!("shipped Linux installer failed with {status}");
         }
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(windows)]
