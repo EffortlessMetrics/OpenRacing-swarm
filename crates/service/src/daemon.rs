@@ -142,6 +142,7 @@ pub struct ServiceDaemon {
     is_running: Arc<AtomicBool>,
     restart_count: Arc<std::sync::atomic::AtomicU32>,
     profile_config: ProfileRepositoryConfig,
+    control_stream_enabled: bool,
 }
 
 impl ServiceDaemon {
@@ -157,7 +158,18 @@ impl ServiceDaemon {
             is_running: Arc::new(AtomicBool::new(false)),
             restart_count: Arc::new(std::sync::atomic::AtomicU32::new(0)),
             profile_config: ProfileRepositoryConfig::default(),
+            control_stream_enabled: true,
         })
+    }
+
+    /// Enable or disable the optional observe-only control-stream surface.
+    ///
+    /// The default remains enabled for backwards-compatible service behavior;
+    /// release and compatibility probes can explicitly exercise the disabled
+    /// feature contract without changing the RT or device owners.
+    pub fn with_control_stream_enabled(mut self, enabled: bool) -> Self {
+        self.control_stream_enabled = enabled;
+        self
     }
 
     /// Create new service daemon with feature flags
@@ -276,20 +288,28 @@ impl ServiceDaemon {
 
         // Create gRPC service implementation backed by real domain services
         let (health_tx, _) = broadcast::channel(1000);
-        let control_broadcaster = wheel_service
-            .device_service()
-            .control_broadcaster()
-            .await
-            .context("Failed to create control stream broadcaster")?;
-        let grpc_service = WheelServiceImpl::new(
+        let control_broadcaster = if self.control_stream_enabled {
+            Some(
+                wheel_service
+                    .device_service()
+                    .control_broadcaster()
+                    .await
+                    .context("Failed to create control stream broadcaster")?,
+            )
+        } else {
+            None
+        };
+        let mut grpc_service = WheelServiceImpl::new(
             wheel_service.device_service().clone(),
             wheel_service.profile_service().clone(),
             wheel_service.safety_service().clone(),
             game_service,
             health_tx,
         )
-        .with_control_broadcaster(control_broadcaster)
         .with_hardware_lane(self.hardware_lane.clone());
+        if let Some(control_broadcaster) = control_broadcaster {
+            grpc_service = grpc_service.with_control_broadcaster(control_broadcaster);
+        }
 
         // Start gRPC IPC server
         let grpc_addr = "127.0.0.1:50051";

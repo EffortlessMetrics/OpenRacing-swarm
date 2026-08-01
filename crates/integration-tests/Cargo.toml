@@ -43,6 +43,7 @@ racing-wheel-hid-pxn-protocol = { path = "../hid-pxn-protocol" }
 hid-button-box-protocol = { path = "../hid-button-box-protocol" }
 hid-simucube-protocol = { path = "../hid-simucube-protocol" }
 tokio = { workspace = true, features = ["full"] }
+tonic = { workspace = true }
 tokio-test = "0.4.5"
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -127,6 +128,10 @@ path = "src/bin/performance_gate.rs"
 [[bin]]
 name = "hotplug-stress"
 path = "src/bin/hotplug_stress.rs"
+
+[[bin]]
+name = "control-stream-artifact-smoke"
+path = "src/bin/control_stream_artifact_smoke.rs"
 
 [features]
 default = []

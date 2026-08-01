@@ -38,6 +38,15 @@ struct Cli {
     #[arg(long)]
     dev: bool,
 
+    /// Use the built-in virtual input device instead of probing host hardware
+    /// (for deterministic package and CI smoke tests)
+    #[arg(long)]
+    virtual_devices: bool,
+
+    /// Do not advertise or serve the optional control-stream feature
+    #[arg(long)]
+    disable_control_stream: bool,
+
     /// Dry run mode (validate config only)
     #[arg(long)]
     dry_run: bool,
@@ -136,6 +145,10 @@ async fn main() -> Result<()> {
     // Create feature flags from CLI and config
     let feature_flags = create_feature_flags(&cli, &system_config);
 
+    if cli.disable_control_stream {
+        info!("Control-stream feature disabled via CLI flag");
+    }
+
     // Log system information (skip detailed logging in service mode to reduce noise)
     if !cli.service {
         log_system_info(&system_config, &feature_flags).await;
@@ -145,9 +158,14 @@ async fn main() -> Result<()> {
     }
 
     // Create and run service daemon
-    run_service_daemon(system_config, feature_flags, cli.hardware_lane.clone())
-        .await
-        .context("Service daemon failed")
+    run_service_daemon(
+        system_config,
+        feature_flags,
+        cli.hardware_lane.clone(),
+        cli.disable_control_stream,
+    )
+    .await
+    .context("Service daemon failed")
 }
 
 async fn handle_command(command: Commands) -> Result<()> {
@@ -227,6 +245,11 @@ async fn load_system_config(cli: &Cli) -> Result<SystemConfig> {
         info!("Development features enabled");
     }
 
+    if cli.virtual_devices {
+        system_config.development.enable_virtual_devices = true;
+        info!("Virtual devices enabled via CLI flag");
+    }
+
     // Validate configuration
     system_config
         .validate()
@@ -278,6 +301,7 @@ async fn run_service_daemon(
     config: SystemConfig,
     flags: FeatureFlags,
     hardware_lane: Option<String>,
+    disable_control_stream: bool,
 ) -> Result<()> {
     // Create service configuration from system config
     let service_config =
@@ -294,7 +318,8 @@ async fn run_service_daemon(
     let daemon =
         ServiceDaemon::new_with_flags_and_hardware_lane(service_config, flags, hardware_lane)
             .await
-            .context("Failed to create service daemon")?;
+            .context("Failed to create service daemon")?
+            .with_control_stream_enabled(!disable_control_stream);
 
     // Run the daemon with graceful degradation
     daemon

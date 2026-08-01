@@ -45,10 +45,23 @@ The completed #170 epic is represented by #177 and #178. Items #168 through
 Issue #173 and merged PR #176 define the deployment source truth; #174 remains
 the parent epic. Issue #179 is complete through merged PR #196 at
 `e625296e`; its package-composition claim remains bounded to the exact Linux
-contract-bundle receipt. Issue #180 is now the ready one-PR implementation
-item. The external Runbook consumer is
+contract-bundle receipt. Issue #180 is now the in-progress one-PR
+implementation item in PR #210, restacked onto the security-remediated
+`swarm/main` and carrying the focused artifact-smoke review repairs. The
+external Runbook consumer is
 `EffortlessMetrics/runbook-rs#41`, and remains a proof consumer rather than a
 domain dependency.
+
+The #180 implementation slice uses the Linux tarball as the exact claimed
+artifact: `wheeld` has explicit virtual-device and disabled-control-stream
+probe modes, `crates/integration-tests/src/bin/control_stream_artifact_smoke.rs`
+launches only installed package binaries, and
+`scripts/control_stream_artifact_smoke.sh` drives current/prior/rollback
+package roots. The release workflow builds PR #196 (`e625296e`) as a
+deterministic prior-lane fixture because no tagged prior release exists yet.
+The resulting claim remains limited to Linux tarball artifacts, virtual input,
+and packaged input-only replay; it does not establish real hardware, output,
+FFB, named controls, Runbook product support, or Windows/macOS support.
 
 ## Deployment source-of-truth item
 
