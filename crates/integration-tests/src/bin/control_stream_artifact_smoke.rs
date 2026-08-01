@@ -48,7 +48,8 @@ struct ServiceProcess {
 impl Drop for ServiceProcess {
     fn drop(&mut self) {
         if self.child.try_wait().ok().flatten().is_none() {
-            let _ = self.child.kill();
+            let _ = request_graceful_shutdown(&mut self.child);
+            let _ = self.child.wait();
         }
     }
 }
@@ -58,10 +59,6 @@ struct StreamSnapshot {
     descriptor_device: String,
     descriptor_controls: usize,
     baseline_states: usize,
-    first_sequence: u64,
-    second_sequence: u64,
-    first_epoch: u32,
-    second_epoch: u32,
 }
 
 #[tokio::main]
@@ -90,7 +87,8 @@ async fn main() -> Result<()> {
     let sentinel_before =
         fs::read(&sentinel_path).context("failed to snapshot profile sentinel")?;
 
-    install_package(&args.previous_package, &prefix).context("prior package install failed")?;
+    install_package(&args.previous_package, &prefix, &home)
+        .context("prior package install failed")?;
     let previous_snapshot = run_enabled_service(&prefix, &home, &config_path, "previous")
         .await
         .context("prior package live probe failed")?;
@@ -101,7 +99,8 @@ async fn main() -> Result<()> {
         &sentinel_before,
     )?;
 
-    install_package(&args.current_package, &prefix).context("current package upgrade failed")?;
+    install_package(&args.current_package, &prefix, &home)
+        .context("current package upgrade failed")?;
     assert_persistent_state(
         &config_path,
         &config_before,
@@ -118,7 +117,8 @@ async fn main() -> Result<()> {
     run_disabled_feature_probe(&prefix, &home, &config_path).await?;
     run_packaged_replay(&prefix, &home)?;
 
-    install_package(&args.previous_package, &prefix).context("rollback package install failed")?;
+    install_package(&args.previous_package, &prefix, &home)
+        .context("rollback package install failed")?;
     assert_persistent_state(
         &config_path,
         &config_before,
@@ -143,10 +143,17 @@ fn validate_package(package: &Path) -> Result<()> {
         bail!("package directory does not exist: {}", package.display());
     }
     for binary in ["wheeld", "wheelctl"] {
-        let path = package_binary(package, binary);
+        let path = binary_in(package, binary);
         if !path.is_file() {
             bail!("package is missing required artifact {}", path.display());
         }
+    }
+    #[cfg(unix)]
+    if !package.join("install.sh").is_file() {
+        bail!(
+            "package is missing shipped Linux installer: {}",
+            package.join("install.sh").display()
+        );
     }
     for relative in [
         "contract/control-stream/control-stream-contract.json",
@@ -162,32 +169,57 @@ fn validate_package(package: &Path) -> Result<()> {
     Ok(())
 }
 
-fn install_package(package: &Path, prefix: &Path) -> Result<()> {
-    let bin_dir = prefix.join("bin");
-    let contract_dir = prefix.join("share/openracing/contract/control-stream");
-    fs::create_dir_all(&bin_dir).context("failed to create install bin directory")?;
-    fs::create_dir_all(&contract_dir).context("failed to create install contract directory")?;
+fn install_package(package: &Path, prefix: &Path, _home: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        let installer = package.join("install.sh");
+        if !installer.is_file() {
+            bail!(
+                "package is missing shipped Linux installer: {}",
+                installer.display()
+            );
+        }
+        let status = Command::new("bash")
+            .arg(&installer)
+            .current_dir(package)
+            .env("HOME", _home)
+            .env("INSTALL_PREFIX", prefix)
+            .env("SKIP_SYSTEMD", "true")
+            .env("SKIP_UDEV", "true")
+            .env("SKIP_RTKIT", "true")
+            .status()
+            .context("failed to launch shipped Linux installer")?;
+        if !status.success() {
+            bail!("shipped Linux installer failed with {status}");
+        }
+        return Ok(());
+    }
 
-    for binary in ["wheeld", "wheelctl"] {
-        fs::copy(
-            package_binary(package, binary),
-            installed_binary(prefix, binary),
-        )
-        .with_context(|| format!("failed to install {binary}"))?;
+    #[cfg(windows)]
+    {
+        let bin_dir = prefix.join("bin");
+        let contract_dir = prefix.join("share/openracing/contract/control-stream");
+        fs::create_dir_all(&bin_dir).context("failed to create install bin directory")?;
+        fs::create_dir_all(&contract_dir).context("failed to create install contract directory")?;
+
+        for binary in ["wheeld", "wheelctl"] {
+            fs::copy(binary_in(package, binary), binary_in(prefix, binary))
+                .with_context(|| format!("failed to install {binary}"))?;
+        }
+        for asset in [
+            "control-stream-contract.json",
+            "wheel.proto",
+            "sample-capture.json",
+            "SHA256SUMS",
+        ] {
+            fs::copy(
+                package.join("contract/control-stream").join(asset),
+                contract_dir.join(asset),
+            )
+            .with_context(|| format!("failed to install contract asset {asset}"))?;
+        }
+        Ok(())
     }
-    for asset in [
-        "control-stream-contract.json",
-        "wheel.proto",
-        "sample-capture.json",
-        "SHA256SUMS",
-    ] {
-        fs::copy(
-            package.join("contract/control-stream").join(asset),
-            contract_dir.join(asset),
-        )
-        .with_context(|| format!("failed to install contract asset {asset}"))?;
-    }
-    Ok(())
 }
 
 fn write_sentinel(path: &Path) -> Result<()> {
@@ -251,7 +283,7 @@ async fn start_service(
     let log_path = prefix.join(format!("{label}.log"));
     let log = File::create(&log_path).context("failed to create service log")?;
     let stderr = log.try_clone().context("failed to clone service log")?;
-    let mut command = Command::new(installed_binary(prefix, "wheeld"));
+    let mut command = Command::new(binary_in(prefix, "wheeld"));
     command
         .arg("--rt-off")
         .arg("--config")
@@ -317,15 +349,52 @@ fn stop_service(service: &mut ServiceProcess) -> Result<()> {
         .context("failed to inspect service before shutdown")?
         .is_none()
     {
-        service
+        request_graceful_shutdown(&mut service.child)
+            .context("failed to request packaged wheeld shutdown")?;
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while service
             .child
-            .kill()
-            .context("failed to stop packaged wheeld")?;
+            .try_wait()
+            .context("failed to inspect packaged wheeld")?
+            .is_none()
+        {
+            if Instant::now() >= deadline {
+                service
+                    .child
+                    .kill()
+                    .context("failed to force-stop packaged wheeld")?;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
     }
     service
         .child
         .wait()
         .context("failed to reap packaged wheeld")?;
+    Ok(())
+}
+
+fn request_graceful_shutdown(child: &mut Child) -> Result<()> {
+    #[cfg(unix)]
+    {
+        let status = Command::new("kill")
+            .args(["-TERM", &child.id().to_string()])
+            .status()
+            .context("failed to send SIGTERM to packaged wheeld")?;
+        if !status.success() && child.try_wait()?.is_none() {
+            child
+                .kill()
+                .context("failed to force-stop packaged wheeld")?;
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        child.kill().context("failed to stop packaged wheeld")?;
+    }
+
     Ok(())
 }
 
@@ -372,7 +441,9 @@ async fn probe_enabled_stream() -> Result<StreamSnapshot> {
         let item = timeout(Duration::from_secs(5), stream.message())
             .await
             .context("control-stream item timed out")??
-            .ok_or_else(|| anyhow::anyhow!("packaged control stream ended before replay"))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("packaged control stream ended before expected items")
+            })?;
         let metadata = item
             .metadata
             .as_ref()
@@ -429,6 +500,9 @@ async fn probe_enabled_stream() -> Result<StreamSnapshot> {
         .get(1)
         .copied()
         .ok_or_else(|| anyhow::anyhow!("control stream produced no baseline epoch"))?;
+    if second_epoch < first_epoch {
+        bail!("control-stream epoch regressed: {epochs:?}");
+    }
 
     Ok(StreamSnapshot {
         descriptor_device: descriptor_device
@@ -437,24 +511,23 @@ async fn probe_enabled_stream() -> Result<StreamSnapshot> {
             .ok_or_else(|| anyhow::anyhow!("control stream descriptor had no controls"))?,
         baseline_states: baseline_states
             .ok_or_else(|| anyhow::anyhow!("control stream produced no baseline"))?,
-        first_sequence,
-        second_sequence,
-        first_epoch,
-        second_epoch,
     })
 }
 
 async fn probe_disabled_stream() -> Result<()> {
     let mut client = connect_client().await?;
-    let negotiation = client
-        .negotiate_features(Request::new(FeatureNegotiationRequest {
+    let negotiation = timeout(
+        Duration::from_secs(5),
+        client.negotiate_features(Request::new(FeatureNegotiationRequest {
             client_version: "1.0.0".to_string(),
             supported_features: vec![CONTROL_STREAM_FEATURE.to_string()],
             namespace: "wheel.v1".to_string(),
-        }))
-        .await
-        .context("disabled-feature negotiation failed")?
-        .into_inner();
+        })),
+    )
+    .await
+    .context("disabled-feature negotiation timed out")?
+    .context("disabled-feature negotiation failed")?
+    .into_inner();
     if negotiation
         .enabled_features
         .iter()
@@ -462,14 +535,17 @@ async fn probe_disabled_stream() -> Result<()> {
     {
         bail!("disabled packaged service advertised control_stream_v1");
     }
-    let error = client
-        .subscribe_control_stream(Request::new(ControlSubscription {
+    let error = timeout(
+        Duration::from_secs(5),
+        client.subscribe_control_stream(Request::new(ControlSubscription {
             device_id: String::new(),
             control_kinds: Vec::new(),
-        }))
-        .await
-        .err()
-        .ok_or_else(|| anyhow::anyhow!("disabled packaged service accepted control stream"))?;
+        })),
+    )
+    .await
+    .context("disabled-feature subscription timed out")?
+    .err()
+    .ok_or_else(|| anyhow::anyhow!("disabled packaged service accepted control stream"))?;
     if error.code() != tonic::Code::Unimplemented {
         bail!("disabled control stream returned unexpected status: {error}");
     }
@@ -487,7 +563,7 @@ async fn connect_client() -> Result<WheelServiceClient<tonic::transport::Channel
 }
 
 fn run_packaged_replay(prefix: &Path, home: &Path) -> Result<()> {
-    let wheelctl = installed_binary(prefix, "wheelctl");
+    let wheelctl = binary_in(prefix, "wheelctl");
     let capture = prefix.join("share/openracing/contract/control-stream/sample-capture.json");
     let output = prefix.join("packaged-replay.json");
     let status = Command::new(&wheelctl)
@@ -512,29 +588,27 @@ fn run_packaged_replay(prefix: &Path, home: &Path) -> Result<()> {
         &fs::read(&output).context("packaged wheelctl did not write replay output")?,
     )
     .context("packaged replay output was not valid JSON")?;
-    let serialized = serde_json::to_string(&value).context("failed to inspect replay output")?;
-    if !value.is_array()
-        || !serialized.contains("\"Event\"")
-        || !serialized.contains("\"Reset\"")
-        || !serialized.contains("\"reason\":\"Disconnect\"")
-    {
-        bail!("packaged replay output lacks Event/Reset Disconnect evidence: {serialized}");
+    let entries = value
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("packaged replay output was not an array"))?;
+    let has_event = entries.iter().any(|entry| entry.get("Event").is_some());
+    let has_disconnect_reset = entries.iter().any(|entry| {
+        entry
+            .get("Reset")
+            .and_then(|reset| reset.get("reason"))
+            .and_then(Value::as_str)
+            == Some("Disconnect")
+    });
+    if !has_event || !has_disconnect_reset {
+        bail!("packaged replay output lacks Event/Reset Disconnect evidence: {entries:?}");
     }
     Ok(())
 }
 
-fn package_binary(package: &Path, name: &str) -> PathBuf {
-    let unix_path = package.join("bin").join(name);
+fn binary_in(root: &Path, name: &str) -> PathBuf {
+    let unix_path = root.join("bin").join(name);
     if unix_path.is_file() {
         return unix_path;
     }
-    package.join("bin").join(format!("{}.exe", name))
-}
-
-fn installed_binary(prefix: &Path, name: &str) -> PathBuf {
-    let unix_path = prefix.join("bin").join(name);
-    if unix_path.is_file() {
-        return unix_path;
-    }
-    prefix.join("bin").join(format!("{}.exe", name))
+    root.join("bin").join(format!("{name}.exe"))
 }

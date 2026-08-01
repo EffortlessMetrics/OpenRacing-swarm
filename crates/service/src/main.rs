@@ -145,6 +145,10 @@ async fn main() -> Result<()> {
     // Create feature flags from CLI and config
     let feature_flags = create_feature_flags(&cli, &system_config);
 
+    if cli.disable_control_stream {
+        info!("Control-stream feature disabled via CLI flag");
+    }
+
     // Log system information (skip detailed logging in service mode to reduce noise)
     if !cli.service {
         log_system_info(&system_config, &feature_flags).await;

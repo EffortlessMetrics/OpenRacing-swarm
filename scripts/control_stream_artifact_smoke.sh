@@ -66,13 +66,12 @@ extract_package() {
     local destination="$2"
     mkdir -p "$destination"
     tar -xzf "$archive" -C "$destination"
-    local package_root
-    package_root="$(find "$destination" -mindepth 1 -maxdepth 1 -type d -print -quit)"
-    if [[ -z "$package_root" ]]; then
-        echo "error: archive did not contain a package directory: $archive" >&2
+    mapfile -t package_entries < <(find "$destination" -mindepth 1 -maxdepth 1 -print)
+    if [[ "${#package_entries[@]}" -ne 1 || ! -d "${package_entries[0]}" ]]; then
+        echo "error: archive must contain exactly one top-level package directory: $archive" >&2
         exit 1
     fi
-    printf '%s\n' "$package_root"
+    printf '%s\n' "${package_entries[0]}"
 }
 
 current_root="$(extract_package "$current_tar" "$work_dir/current")"

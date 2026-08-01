@@ -1960,6 +1960,14 @@ fn linux_install_wires_control_stream_contract() -> Result<(), Box<dyn std::erro
             "install.sh must preserve control-stream asset {asset}"
         );
     }
+    assert!(
+        script.contains("--uninstall"),
+        "install.sh must expose a Linux uninstall path"
+    );
+    assert!(
+        script.contains("rm -rf \"$INSTALL_PREFIX/share/openracing/contract/control-stream\""),
+        "install.sh uninstall must remove installed control-stream assets"
+    );
     Ok(())
 }
 
@@ -1978,8 +1986,8 @@ fn release_workflow_wires_control_stream_artifact_smoke() -> Result<(), Box<dyn 
         "release workflow must invoke the checked-in artifact smoke script"
     );
     assert!(
-        workflow.contains("e625296e3020911655dc5c3df59d0a4898a04898"),
-        "release workflow must identify the deterministic prior-lane fixture"
+        workflow.contains("git worktree add --detach"),
+        "release workflow must build the prior fixture in a detached worktree"
     );
     Ok(())
 }
