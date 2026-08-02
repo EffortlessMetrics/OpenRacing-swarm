@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io::{self as std_io, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -17,7 +17,6 @@ use chrono::{SecondsFormat, Utc};
 use hidapi::{DeviceInfo, HidApi};
 use openracing_hardware_core::{DeviceCapabilityRegistry, DeviceFamily};
 use openracing_pidff_common::report_ids as pidff_report_ids;
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
@@ -26,6 +25,12 @@ use crate::commands::{
     HardwareCommands, HardwareLaneCommands, HardwareSniffCaptureTool, HardwareSniffPlatformHint,
     HardwareSniffScenario,
 };
+
+mod io;
+mod roles;
+
+use io::{read_json_file, write_json_file, write_json_receipt, write_text_file};
+use roles::{normalize_role_id, validate_connection_path, validate_relative_artifact_path};
 
 const SNIFF_CAPTURE_PCAPNG_FINALIZATION_MAX_ATTEMPTS: usize = 11;
 const SNIFF_CAPTURE_PCAPNG_FINALIZATION_RETRY_DELAY_MS: u64 = 100;
@@ -1274,9 +1279,9 @@ fn run_guided_0x8e_marker_prompts(
     {
         write_stdout_line(guided_0x8e_marker_prompt(marker))?;
         write_stdout_line("Press ENTER when this event has happened.")?;
-        io::stdout().flush().context("failed to flush prompt")?;
+        std_io::stdout().flush().context("failed to flush prompt")?;
         let mut line = String::new();
-        io::stdin()
+        std_io::stdin()
             .read_line(&mut line)
             .context("failed to read guided capture marker confirmation")?;
         stamp_guided_0x8e_marker(request, marker, marker_receipts)?;
@@ -2106,7 +2111,7 @@ fn write_sniff_bundle_zip(
             SniffBundleZipSource::File(path) => {
                 let mut file = File::open(path)
                     .with_context(|| format!("failed to open '{}'", path.display()))?;
-                io::copy(&mut file, &mut zip).with_context(|| {
+                std_io::copy(&mut file, &mut zip).with_context(|| {
                     format!("failed to copy '{}' into sniff bundle", path.display())
                 })?;
             }
@@ -5483,22 +5488,6 @@ fn parse_role_kv_entries(values: &[String], flag: &str) -> Result<BTreeMap<Strin
     Ok(entries)
 }
 
-fn normalize_role_id(value: &str, flag: &str) -> Result<String> {
-    let role = value.trim();
-    if role.is_empty() {
-        anyhow::bail!("{flag} role id cannot be empty");
-    }
-    if !role
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
-    {
-        anyhow::bail!(
-            "{flag} role id '{role}' may contain only ASCII letters, numbers, '_' or '-'"
-        );
-    }
-    Ok(role.to_string())
-}
-
 fn validate_role_endpoint(value: &str, flag: &str) -> Result<String> {
     let endpoint = value.trim();
     if !has_declared_endpoint(endpoint) {
@@ -5524,32 +5513,6 @@ fn stored_lane_roles_to_logical(
             semantic_status: role.semantic_status.clone(),
         })
         .collect()
-}
-
-fn validate_relative_artifact_path(path: &str) -> Result<()> {
-    let path = Path::new(path);
-    if path.is_absolute() {
-        anyhow::bail!("role artifact paths must be relative to the lane directory");
-    }
-    if path
-        .components()
-        .any(|component| matches!(component, Component::ParentDir | Component::Prefix(_)))
-    {
-        anyhow::bail!("role artifact paths must stay within the lane directory");
-    }
-    Ok(())
-}
-
-fn validate_connection_path(connection: &str) -> Result<()> {
-    if matches!(
-        connection,
-        "wheelbase_hub" | "standalone_usb" | "cross_device" | "unknown"
-    ) {
-        return Ok(());
-    }
-    anyhow::bail!(
-        "role connection '{connection}' must be one of wheelbase_hub, standalone_usb, cross_device, unknown"
-    )
 }
 
 fn lane_roles(
@@ -7177,45 +7140,6 @@ fn executable_candidates(name: &str) -> impl Iterator<Item = PathBuf> + '_ {
     candidates.into_iter()
 }
 
-fn write_json_receipt<T: Serialize>(path: Option<&Path>, value: &T) -> Result<()> {
-    let Some(path) = path else {
-        return Ok(());
-    };
-
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create '{}'", parent.display()))?;
-    }
-
-    let json = serde_json::to_string_pretty(value).context("failed to serialize JSON receipt")?;
-    fs::write(path, json).with_context(|| format!("failed to write '{}'", path.display()))
-}
-
-fn write_json_file<T: Serialize>(path: &Path, value: &T) -> Result<()> {
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create '{}'", parent.display()))?;
-    }
-
-    let json = serde_json::to_string_pretty(value).context("failed to serialize JSON file")?;
-    fs::write(path, json).with_context(|| format!("failed to write '{}'", path.display()))
-}
-
-fn read_json_file<T: DeserializeOwned>(path: &Path) -> Result<T> {
-    let text =
-        fs::read_to_string(path).with_context(|| format!("failed to read '{}'", path.display()))?;
-    serde_json::from_str(&text).with_context(|| format!("failed to parse '{}'", path.display()))
-}
-
-fn write_text_file(path: &Path, value: &str) -> Result<()> {
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create '{}'", parent.display()))?;
-    }
-
-    fs::write(path, value).with_context(|| format!("failed to write '{}'", path.display()))
-}
-
 fn print_sniff_plan(
     json: bool,
     json_out: Option<&Path>,
@@ -7666,7 +7590,7 @@ fn print_bringup_rail_receipt(
 }
 
 fn write_stdout_line(line: &str) -> Result<()> {
-    let mut stdout = io::stdout().lock();
+    let mut stdout = std_io::stdout().lock();
     writeln!(stdout, "{line}").context("failed to write stdout")
 }
 
@@ -14298,7 +14222,7 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub VID_1A40&PID_0101}{enabled=t
             .stages
             .iter()
             .find(|stage| stage.id == "pre_output_readiness")
-            .ok_or_else(|| io::Error::other("missing pre-output stage"))?;
+            .ok_or_else(|| std_io::Error::other("missing pre-output stage"))?;
         assert!(
             pre_output
                 .required_gates
@@ -14316,17 +14240,17 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub VID_1A40&PID_0101}{enabled=t
             .stages
             .iter()
             .find(|stage| stage.id == "passive")
-            .ok_or_else(|| io::Error::other("missing passive stage"))?;
+            .ok_or_else(|| std_io::Error::other("missing passive stage"))?;
         let descriptor = receipt
             .stages
             .iter()
             .find(|stage| stage.id == "descriptor_trust")
-            .ok_or_else(|| io::Error::other("missing descriptor stage"))?;
+            .ok_or_else(|| std_io::Error::other("missing descriptor stage"))?;
         let zero = receipt
             .stages
             .iter()
             .find(|stage| stage.id == "zero_torque")
-            .ok_or_else(|| io::Error::other("missing zero stage"))?;
+            .ok_or_else(|| std_io::Error::other("missing zero stage"))?;
 
         assert!(passive.forbidden_actions.contains(&"output_reports"));
         assert!(
@@ -14425,7 +14349,7 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub VID_1A40&PID_0101}{enabled=t
         assert_eq!(manifest["topology"], "wheelbase-hub");
         let roles = manifest["declared_logical_roles"]
             .as_array()
-            .ok_or_else(|| io::Error::other("logical roles should be an array"))?;
+            .ok_or_else(|| std_io::Error::other("logical roles should be an array"))?;
         assert!(roles.iter().any(|role| role["id"] == "throttle"));
         assert!(roles.iter().any(|role| {
             role["id"] == "clutch"
@@ -14437,7 +14361,7 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub VID_1A40&PID_0101}{enabled=t
         let gates: serde_json::Value = serde_json::from_str(&gates_text)?;
         let stages = gates["stages"]
             .as_array()
-            .ok_or_else(|| io::Error::other("stages should be an array"))?;
+            .ok_or_else(|| std_io::Error::other("stages should be an array"))?;
         assert!(stages.iter().any(|stage| {
             stage["id"] == "pre_output_readiness"
                 && stage["required_gates"]
@@ -14457,7 +14381,7 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub VID_1A40&PID_0101}{enabled=t
         let err =
             scaffold_hardware_lane(&lane, "generic-wheelbase", "unknown", "Steven", false, None)
                 .err()
-                .ok_or_else(|| io::Error::other("expected overwrite refusal"))?;
+                .ok_or_else(|| std_io::Error::other("expected overwrite refusal"))?;
         assert!(err.to_string().contains("--overwrite"));
 
         let receipt =
@@ -14504,7 +14428,7 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub VID_1A40&PID_0101}{enabled=t
         let manifest: serde_json::Value = serde_json::from_str(&manifest_text)?;
         let roles = manifest["declared_logical_roles"]
             .as_array()
-            .ok_or_else(|| io::Error::other("logical roles should be an array"))?;
+            .ok_or_else(|| std_io::Error::other("logical roles should be an array"))?;
 
         assert!(roles.iter().any(|role| {
             role["id"] == "handbrake"
@@ -14531,7 +14455,7 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub VID_1A40&PID_0101}{enabled=t
             .stages
             .iter()
             .find(|stage| stage.id == "passive")
-            .ok_or_else(|| io::Error::other("missing passive stage"))?;
+            .ok_or_else(|| std_io::Error::other("missing passive stage"))?;
         assert!(passive.expected_artifacts.iter().any(|artifact| {
             artifact.kind == "capture" && artifact.relative_path == "captures/ks-controls.jsonl"
         }));
@@ -14551,7 +14475,7 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub VID_1A40&PID_0101}{enabled=t
             &[],
         )
         .err()
-        .ok_or_else(|| io::Error::other("expected ambiguous role failure"))?;
+        .ok_or_else(|| std_io::Error::other("expected ambiguous role failure"))?;
         assert!(ambiguous.to_string().contains("both required and optional"));
 
         let unsafe_artifact = HardwareLaneRoleOverrides::from_cli(
@@ -14562,7 +14486,7 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub VID_1A40&PID_0101}{enabled=t
             &[],
         )
         .err()
-        .ok_or_else(|| io::Error::other("expected unsafe artifact failure"))?;
+        .ok_or_else(|| std_io::Error::other("expected unsafe artifact failure"))?;
         assert!(
             unsafe_artifact
                 .to_string()
@@ -14577,7 +14501,7 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub VID_1A40&PID_0101}{enabled=t
             &["ks_controls=wheelbase-hub".to_string()],
         )
         .err()
-        .ok_or_else(|| io::Error::other("expected invalid connection failure"))?;
+        .ok_or_else(|| std_io::Error::other("expected invalid connection failure"))?;
         assert!(
             invalid_connection
                 .to_string()
@@ -14593,7 +14517,7 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub VID_1A40&PID_0101}{enabled=t
         )?;
         let err = lane_roles(&moza_r5_adapter_contract(), "wheelbase-hub", &unknown_role)
             .err()
-            .ok_or_else(|| io::Error::other("expected unknown role failure"))?;
+            .ok_or_else(|| std_io::Error::other("expected unknown role failure"))?;
         assert!(
             err.to_string()
                 .contains("--required-role or --optional-role")
@@ -14658,7 +14582,7 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub VID_1A40&PID_0101}{enabled=t
             .stages
             .iter()
             .find(|stage| stage.id == "pre_output_readiness")
-            .ok_or_else(|| io::Error::other("missing pre-output status"))?;
+            .ok_or_else(|| std_io::Error::other("missing pre-output status"))?;
         assert_eq!(pre_output.gate_status, "not_validated_by_status");
         assert!(
             pre_output
@@ -14812,12 +14736,12 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub VID_1A40&PID_0101}{enabled=t
             .stages
             .iter()
             .find(|stage| stage.id == "native_response_ready")
-            .ok_or_else(|| io::Error::other("missing native response stage"))?;
+            .ok_or_else(|| std_io::Error::other("missing native response stage"))?;
         let native_visible = status
             .stages
             .iter()
             .find(|stage| stage.id == "native_visible_ready")
-            .ok_or_else(|| io::Error::other("missing native visible stage"))?;
+            .ok_or_else(|| std_io::Error::other("missing native visible stage"))?;
 
         assert_eq!(status.completion_state, "native_response_ready");
         assert_eq!(status.next_blocked_stage, "native_visible_ready");
@@ -14870,7 +14794,7 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub VID_1A40&PID_0101}{enabled=t
 
         let err = build_hardware_lane_status_receipt(&lane)
             .err()
-            .ok_or_else(|| io::Error::other("expected non-Moza legacy manifest failure"))?;
+            .ok_or_else(|| std_io::Error::other("expected non-Moza legacy manifest failure"))?;
         let error_chain = format!("{err:#}");
 
         assert!(
@@ -14895,7 +14819,7 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub VID_1A40&PID_0101}{enabled=t
             .role_evidence
             .iter()
             .find(|role| role.id == "throttle")
-            .ok_or_else(|| io::Error::other("missing throttle role"))?;
+            .ok_or_else(|| std_io::Error::other("missing throttle role"))?;
         assert!(throttle_role.artifact_present);
         assert_eq!(throttle_role.validation_status, "not_validated_by_status");
         assert!(!status.evidence_claims_validated);
@@ -15214,7 +15138,7 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub VID_1A40&PID_0101}{enabled=t
         let placeholder =
             set_hardware_lane_role_endpoint(&lane, "steering", "declare-observed-endpoint", None)
                 .err()
-                .ok_or_else(|| io::Error::other("expected placeholder endpoint failure"))?;
+                .ok_or_else(|| std_io::Error::other("expected placeholder endpoint failure"))?;
         assert!(
             placeholder
                 .to_string()
@@ -15228,7 +15152,7 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub VID_1A40&PID_0101}{enabled=t
             None,
         )
         .err()
-        .ok_or_else(|| io::Error::other("expected unknown role failure"))?;
+        .ok_or_else(|| std_io::Error::other("expected unknown role failure"))?;
         assert!(unknown.to_string().contains("is not declared"));
         Ok(())
     }
@@ -15741,7 +15665,7 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub VID_1A40&PID_0101}{enabled=t
             .devices
             .iter()
             .find(|device| device.class_name.as_deref() == Some("Ports"))
-            .ok_or_else(|| io::Error::other("missing serial-class PnP device"))?;
+            .ok_or_else(|| std_io::Error::other("missing serial-class PnP device"))?;
         assert_eq!(serial.vendor_id.as_deref(), Some("0x346E"));
         assert_eq!(serial.product_id.as_deref(), Some("0x0004"));
         assert_eq!(serial.interface_number, Some(0));
@@ -15771,7 +15695,7 @@ value {arg=99}{value=2}{display=[2] Generic USB Hub VID_1A40&PID_0101}{enabled=t
         let device = checks
             .devices
             .first()
-            .ok_or_else(|| io::Error::other("missing PnP device"))?;
+            .ok_or_else(|| std_io::Error::other("missing PnP device"))?;
         assert_eq!(device.interface_number, Some(2));
         Ok(())
     }
