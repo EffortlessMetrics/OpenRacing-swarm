@@ -183,7 +183,7 @@ non-numeric bot badge payload must not be restored.
 
 Status: completed
 Linked issue: https://github.com/EffortlessMetrics/OpenRacing-swarm/issues/227
-Linked PR: pending
+Linked PR: https://github.com/EffortlessMetrics/OpenRacing-swarm/pull/230
 Linked spec: docs/specs/OR-SPEC-0003-ripr-plus-coverage-closure.md
 Prerequisite: reconcile-ripr-plus-badge-evidence-contract
 Goal: Generate the RIPR test-efficiency report from deterministic, conservative
