@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use tokio::sync::{RwLock, broadcast};
 use tokio_stream::Stream;
 use tonic::{Request, Response, Status};
-use tracing::debug;
+use tracing::{debug, warn};
 
 use racing_wheel_hid_moza_protocol::{
     MOZA_VENDOR_ID, MozaDeviceCategory, identify_device, is_wheelbase_product, product_ids,
@@ -812,16 +812,22 @@ impl WheelService for WheelServiceImpl {
                 Status::invalid_argument(format!("Invalid profile: {}", e))
             })?;
 
-        // Get device capabilities (simplified for now)
-        let max_torque = racing_wheel_schemas::domain::TorqueNm::new(10.0)
-            .map_err(|e| Status::internal(format!("invalid max torque: {}", e)))?;
-        let device_capabilities = racing_wheel_schemas::entities::DeviceCapabilities::new(
-            true, true, true, true, max_torque, 1024, 1000,
-        );
+        let (device, _) = self
+            .device_service
+            .get_device_status(&device_id)
+            .await
+            .map_err(|e| Status::not_found(format!("Device not found: {}", e)))?;
+        let device_capabilities = device.capabilities;
 
         profile
             .validate_for_device(&device_capabilities)
             .map_err(|e| Status::invalid_argument(format!("Invalid profile: {}", e)))?;
+
+        let previous_override = self
+            .profile_service
+            .get_session_override(&device_id)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to inspect profile override: {}", e)))?;
 
         self.profile_service
             .set_session_override(&device_id, profile)
@@ -838,11 +844,33 @@ impl WheelService for WheelServiceImpl {
                 error_message: String::new(),
                 metadata: BTreeMap::new(),
             })),
-            Err(e) => Ok(Response::new(OpResult {
-                success: false,
-                error_message: format!("Failed to apply profile: {}", e),
-                metadata: BTreeMap::new(),
-            })),
+            Err(e) => {
+                let rollback = match previous_override {
+                    Some(previous) => {
+                        self.profile_service
+                            .set_session_override(&device_id, previous)
+                            .await
+                    }
+                    None => {
+                        self.profile_service
+                            .clear_session_override(&device_id)
+                            .await
+                    }
+                };
+                if let Err(rollback_error) = rollback {
+                    warn!(
+                        device_id = %device_id,
+                        error = %rollback_error,
+                        "Failed to roll back profile session override"
+                    );
+                }
+
+                Ok(Response::new(OpResult {
+                    success: false,
+                    error_message: format!("Failed to apply profile: {}", e),
+                    metadata: BTreeMap::new(),
+                }))
+            }
         }
     }
 
@@ -1656,8 +1684,15 @@ mod tests {
             ApplyProfileRequest, BaseSettings, CurvePoint, FilterConfig, NotchFilter, ProfileScope,
         };
 
-        let device_service =
-            Arc::new(ApplicationDeviceService::new(Arc::new(VirtualHidPort::new()), None).await?);
+        let mut port = VirtualHidPort::new();
+        let device_id = "ipc-profile-wheel";
+        port.add_device(VirtualDevice::new(
+            device_id.parse()?,
+            "IPC profile wheel".to_string(),
+        ))
+        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        let device_service = Arc::new(ApplicationDeviceService::new(Arc::new(port), None).await?);
+        device_service.enumerate_devices().await?;
         let profile_dir = TempDir::new()?;
         let profile_service = Arc::new(
             ApplicationProfileService::new_with_config(ProfileRepositoryConfig {
@@ -1680,7 +1715,6 @@ mod tests {
             health_tx,
         );
 
-        let device_id = "ipc-profile-wheel";
         let response = WheelService::apply_profile(
             &service,
             Request::new(ApplyProfileRequest {
@@ -1697,7 +1731,7 @@ mod tests {
                     base: Some(BaseSettings {
                         ffb_gain: 0.72,
                         dor_deg: 540,
-                        torque_cap_nm: 6.5,
+                        torque_cap_nm: 12.0,
                         filters: Some(FilterConfig {
                             reconstruction: 4,
                             friction: 0.12,
@@ -1723,7 +1757,7 @@ mod tests {
                     }),
                     leds: None,
                     haptics: None,
-                    signature: "signed-profile".to_string(),
+                    signature: String::new(),
                 }),
             }),
         )
@@ -1742,11 +1776,88 @@ mod tests {
         assert_eq!(staged.scope.track.as_deref(), Some("spa"));
         assert!((staged.base_settings.ffb_gain.value() - 0.72).abs() < f32::EPSILON);
         assert!((staged.base_settings.degrees_of_rotation.value() - 540.0).abs() < f32::EPSILON);
-        assert!((staged.base_settings.torque_cap.value() - 6.5).abs() < f32::EPSILON);
+        assert!((staged.base_settings.torque_cap.value() - 12.0).abs() < f32::EPSILON);
         assert_eq!(staged.base_settings.filters.reconstruction, 4);
         assert!((staged.base_settings.filters.friction.value() - 0.12).abs() < f32::EPSILON);
         assert_eq!(staged.base_settings.filters.notch_filters.len(), 1);
         assert!((staged.base_settings.filters.slew_rate.value() - 0.85).abs() < f32::EPSILON);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn apply_profile_rejects_torque_above_target_cap() -> anyhow::Result<()> {
+        use racing_wheel_schemas::generated::wheel::v1::{
+            ApplyProfileRequest, BaseSettings, FilterConfig, ProfileScope,
+        };
+
+        let mut port = VirtualHidPort::new();
+        let device_id = "ipc-profile-cap-wheel";
+        port.add_device(VirtualDevice::new(
+            device_id.parse()?,
+            "IPC profile cap wheel".to_string(),
+        ))
+        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        let device_service = Arc::new(ApplicationDeviceService::new(Arc::new(port), None).await?);
+        device_service.enumerate_devices().await?;
+        let profile_dir = TempDir::new()?;
+        let profile_service = Arc::new(
+            ApplicationProfileService::new_with_config(ProfileRepositoryConfig {
+                profiles_dir: profile_dir.path().to_path_buf(),
+                trusted_keys: Vec::new(),
+                auto_migrate: true,
+                backup_on_migrate: false,
+            })
+            .await?,
+        );
+        let safety_service =
+            Arc::new(ApplicationSafetyService::new(SafetyPolicy::default(), None).await?);
+        let game_service = Arc::new(GameService::new().await?);
+        let (health_tx, _) = broadcast::channel(8);
+        let service = WheelServiceImpl::new(
+            device_service,
+            profile_service.clone(),
+            safety_service,
+            game_service,
+            health_tx,
+        );
+
+        let status = WheelService::apply_profile(
+            &service,
+            Request::new(ApplyProfileRequest {
+                device: Some(WireDeviceId {
+                    id: device_id.to_string(),
+                }),
+                profile: Some(WireProfile {
+                    schema_version: "wheel.profile/1".to_string(),
+                    scope: Some(ProfileScope {
+                        game: String::new(),
+                        car: String::new(),
+                        track: String::new(),
+                    }),
+                    base: Some(BaseSettings {
+                        ffb_gain: 0.75,
+                        dor_deg: 900,
+                        torque_cap_nm: 30.0,
+                        filters: Some(FilterConfig::default()),
+                    }),
+                    leds: None,
+                    haptics: None,
+                    signature: String::new(),
+                }),
+            }),
+        )
+        .await
+        .expect_err("over-cap profile should be rejected")
+        .code();
+        assert_eq!(status, tonic::Code::InvalidArgument);
+
+        let domain_device_id: DeviceId = device_id.parse()?;
+        assert!(
+            profile_service
+                .get_session_override(&domain_device_id)
+                .await?
+                .is_none()
+        );
         Ok(())
     }
 

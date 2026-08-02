@@ -996,11 +996,12 @@ wheelctl profile apply <device-id> <profile-path> --skip-validation
 
 The command transmits the profile values represented by the current IPC
 contract, including scope, base settings, supported filters, LEDs, haptics,
-and signature. The IPC contract does not yet carry non-default
+and unsigned profile metadata. The IPC contract does not yet carry non-default
 `base.filters.bumpstop` or `base.filters.handsOff` settings,
-`base.filters.torqueCap`, `leds.colors`, or `haptics.effects`; those values are
-rejected with a validation error rather than silently discarded. New profiles
-created by `profile create` omit the unsupported filter torque cap.
+`base.filters.torqueCap`, `leds.colors`, or `haptics.effects`, and it does not
+preserve non-empty `signature` values. Those values are rejected with a
+validation error rather than silently discarded. New profiles created by
+`profile create` omit the unsupported filter torque cap.
 
 #### `profile create`
 
@@ -1467,7 +1468,6 @@ A profile consists of the following sections:
         "enabled": true,
         "sensitivity": 0.3
       },
-      "torqueCap": 10.0,
       "notchFilters": [],
       "slewRate": 1.0,
       "curvePoints": [
@@ -1479,22 +1479,12 @@ A profile consists of the following sections:
   "leds": {
     "rpmBands": [6000, 8000, 9000],
     "pattern": "sequential",
-    "brightness": 0.8,
-    "colors": {
-      "low": [0, 255, 0],
-      "mid": [255, 255, 0],
-      "high": [255, 0, 0]
-    }
+    "brightness": 0.8
   },
   "haptics": {
     "enabled": true,
     "intensity": 0.5,
-    "frequencyHz": 100,
-    "effects": {
-      "engineVibration": true,
-      "gearShift": true,
-      "lockup": true
-    }
+    "frequencyHz": 100
   },
   "signature": null
 }

@@ -68,6 +68,13 @@ fn profile_to_wire(profile: &racing_wheel_schemas::config::ProfileSchema) -> Res
     {
         unsupported.push("haptics.effects");
     }
+    if profile
+        .signature
+        .as_deref()
+        .is_some_and(|signature| !signature.is_empty())
+    {
+        unsupported.push("signature");
+    }
 
     if !unsupported.is_empty() {
         return Err(CliError::ValidationError(format!(
@@ -405,12 +412,23 @@ impl WheelClient {
                     profile: Some(wire_profile),
                 };
 
-                let response = client.apply_profile(request).await.map_err(|status| {
-                    CliError::ServiceUnavailable(format!(
-                        "Failed to apply profile: {}",
-                        status.message()
-                    ))
-                })?;
+                let response =
+                    client
+                        .apply_profile(request)
+                        .await
+                        .map_err(|status| match status.code() {
+                            tonic::Code::InvalidArgument => CliError::ValidationError(format!(
+                                "Failed to apply profile: {}",
+                                status.message()
+                            )),
+                            tonic::Code::NotFound => {
+                                CliError::DeviceNotFound(device_id.to_string())
+                            }
+                            _ => CliError::ServiceUnavailable(format!(
+                                "Failed to apply profile: {}",
+                                status.message()
+                            )),
+                        })?;
 
                 let result = response.into_inner();
                 if result.success {
@@ -1509,12 +1527,12 @@ mod tests {
                 frequency_hz: 75.0,
                 effects: None,
             }),
-            signature: Some("signed-profile".to_string()),
+            signature: None,
         };
 
         let wire_profile = profile_to_wire(&profile)?;
         assert_eq!(wire_profile.schema_version, "wheel.profile/1");
-        assert_eq!(wire_profile.signature, "signed-profile");
+        assert!(wire_profile.signature.is_empty());
 
         let scope = wire_profile.scope.as_ref().ok_or("missing wire scope")?;
         assert_eq!(scope.game, "iracing");
@@ -1579,6 +1597,14 @@ mod tests {
         let message = error.to_string();
         assert!(message.contains("base.filters.torqueCap"));
         assert!(message.contains("base.filters.bumpstop"));
+
+        let mut signed_profile = profile;
+        signed_profile.base.filters = racing_wheel_schemas::config::FilterConfig::default();
+        signed_profile.signature = Some("signed-profile".to_string());
+        let signed_error = profile_to_wire(&signed_profile)
+            .err()
+            .ok_or("signed profile unexpectedly mapped")?;
+        assert!(signed_error.to_string().contains("signature"));
         Ok(())
     }
 
