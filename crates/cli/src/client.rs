@@ -639,17 +639,27 @@ impl WheelClient {
 /// meaning the user likely intended to reach a local wheeld and a mock
 /// fallback is appropriate.
 fn is_local_endpoint(ep: &str) -> bool {
-    // Strip the scheme prefix to get the authority
-    let authority = ep
-        .strip_prefix("http://")
-        .or_else(|| ep.strip_prefix("https://"))
-        .unwrap_or(ep);
+    endpoint::is_local_host(endpoint::host(ep))
+}
 
-    let host = authority.split(':').next().unwrap_or(authority);
-    matches!(
-        host,
-        "localhost" | "127.0.0.1" | "::1" | "[::1]" | "0.0.0.0"
-    )
+mod endpoint {
+    pub(super) fn host(endpoint: &str) -> &str {
+        authority(endpoint).split(':').next().unwrap_or(endpoint)
+    }
+
+    fn authority(endpoint: &str) -> &str {
+        endpoint
+            .strip_prefix("http://")
+            .or_else(|| endpoint.strip_prefix("https://"))
+            .unwrap_or(endpoint)
+    }
+
+    pub(super) fn is_local_host(host: &str) -> bool {
+        matches!(
+            host,
+            "localhost" | "127.0.0.1" | "::1" | "[::1]" | "0.0.0.0"
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1440,6 +1450,26 @@ impl HealthEventStream {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_endpoint_detection_preserves_supported_hosts() {
+        for host in ["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"] {
+            assert!(super::endpoint::is_local_host(host));
+        }
+
+        for endpoint in [
+            "http://localhost:50051",
+            "https://127.0.0.1:50051",
+            "0.0.0.0",
+        ] {
+            assert!(
+                super::is_local_endpoint(endpoint),
+                "expected local endpoint: {endpoint}"
+            );
+        }
+
+        assert!(!super::is_local_endpoint("https://example.test:50051"));
+    }
 
     #[tokio::test]
     async fn connect_rejects_invalid_scheme() {
