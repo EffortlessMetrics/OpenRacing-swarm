@@ -1,21 +1,37 @@
 # wheelctl - Racing Wheel Control CLI
 
-A comprehensive command-line interface for the Racing Wheel Software Suite, providing full parity with UI capabilities for managing racing wheel hardware, profiles, diagnostics, and game integration.
+The command-line interface for the Racing Wheel Software Suite: managing racing wheel hardware, profiles, diagnostics, and game integration.
 
 ## Features
 
-### ✅ Complete Implementation
-
 - **Device Management**: List, status, calibration, and reset operations
-- **Profile Management**: Create, edit, validate, apply, import/export profiles
+- **Profile Management**: Create, edit, validate, import/export profiles
 - **Diagnostics**: System tests, blackbox recording/replay, support bundles, metrics
 - **Game Integration**: Configure telemetry, test connections, manage game support
-- **Safety Controls**: High torque mode, emergency stop, torque limits, safety status
-- **Health Monitoring**: Real-time service and device health monitoring
+- **Safety Controls**: High torque mode, emergency stop, safety status
+- **Health Monitoring**: Service and device health monitoring
 - **JSON Output**: Machine-readable output for all commands (`--json` flag)
 - **Shell Completion**: Bash, Zsh, Fish, and PowerShell completion scripts
-- **Error Handling**: Proper exit codes for different error types
+- **Error Handling**: Distinct exit codes per error type
 - **Verbose Logging**: Configurable logging levels (`-v`, `-vv`, `-vvv`)
+
+### Known gaps
+
+The project is pre-validation and some commands are scaffolding. Listed here
+rather than under a "complete implementation" heading, because a command that
+reports success without acting is worse than one that is missing:
+
+- `wheelctl safety limit` has no torque-limit write on the IPC surface. It
+  fails rather than claiming success; use the wheelbase's physical limit.
+- `wheelctl profile apply` transmits only what the IPC contract represents.
+  Schema-only fields — `base.filters.torqueCap`, `bumpstop`, `handsOff`, LED
+  colours, haptic effects, signatures — are rejected with an explicit error
+  rather than silently dropped, so a profile using them will not apply until
+  the contract covers them.
+- The `plugin` namespace is entirely simulated. `install`, `uninstall`, and
+  `verify` resolve against a hard-coded `get_mock_registry_plugins()` list and
+  report success without downloading, writing, removing, or verifying anything.
+- Device I/O is not implemented on macOS.
 
 ### Command Structure
 
@@ -23,14 +39,33 @@ A comprehensive command-line interface for the Racing Wheel Software Suite, prov
 wheelctl [OPTIONS] <COMMAND>
 
 Commands:
-  device      Device management commands
-  profile     Profile management commands  
-  diag        Diagnostic and monitoring commands
-  game        Game integration commands
-  safety      Safety and control commands
-  completion  Generate shell completion scripts
-  health      Service health and status
+  device          Device management commands
+  controls        Observe-only control-stream diagnostics, capture, and replay
+  profile         Profile management commands
+  plugin          Plugin management commands
+  diag            Diagnostic and monitoring commands
+  game            Game integration commands
+  telemetry       Telemetry probe and capture commands
+  hardware        Hardware environment diagnostics
+  safety          Safety and control commands
+  support-bundle  Generate diagnostic support bundle
+  completion      Generate shell completion scripts
+  health          Service health and status
 ```
+
+`wheelctl` is a client. It talks to the `wheeld` service over IPC, so `wheeld`
+must be running for anything that touches real hardware.
+
+#### Hidden namespaces
+
+`moza` is not listed in `wheelctl --help`. It holds 55 subcommands for the
+receipt-gated Moza validation lane — vendor-status framing diagnosis, authority
+attempts, fixture promotion, pit-house evidence — which are tooling for that
+lane rather than commands a wheel owner runs.
+
+It is hidden, not gated: `wheelctl moza ...` works exactly as before and
+`wheelctl moza --help` lists every subcommand. See
+[docs/hardware/moza-r5-validation.md](../../docs/hardware/moza-r5-validation.md).
 
 ### Key Capabilities
 
@@ -53,7 +88,7 @@ Commands:
 #### Diagnostics
 - `wheelctl diag test [--device <device>] [<test-type>]` - Run diagnostics
 - `wheelctl diag record <device> [--duration <secs>] [--output <file>]` - Record blackbox
-- `wheelctl diag replay <file> [--verbose]` - Replay blackbox recording
+- `wheelctl diag replay <file> [--detailed]` - Replay blackbox recording (`-d`/`--detailed` gives frame-by-frame output; `-v`/`--verbose` is the global logging flag)
 - `wheelctl diag support [--blackbox] [--output <file>]` - Generate support bundle
 - `wheelctl diag metrics [--device <device>] [--watch]` - Show performance metrics
 
@@ -71,6 +106,43 @@ Commands:
 
 #### Health Monitoring
 - `wheelctl health [--watch]` - Show service health status
+
+#### Plugins
+
+> [!WARNING]
+> **This namespace is scaffolding.** `install`, `uninstall`, and `verify`
+> resolve against `get_mock_registry_plugins()` — a hard-coded list — and print
+> success without downloading, writing, or removing anything. Nothing is
+> persisted and no IPC call is made. Listed here for completeness; do not treat
+> a success message as a plugin having been installed.
+
+- `wheelctl plugin list` - List plugins from the (mock) registry
+- `wheelctl plugin search <QUERY>` - Search plugins by name or description
+- `wheelctl plugin install <PLUGIN_ID>` - Simulated; installs nothing
+- `wheelctl plugin uninstall <PLUGIN_ID>` - Simulated; removes nothing
+- `wheelctl plugin info <PLUGIN_ID>` - Show plugin information from the mock registry
+- `wheelctl plugin verify <PLUGIN_ID>` - Simulated; verifies nothing
+
+#### Telemetry
+- `wheelctl telemetry probe --game <GAME>` - Probe the telemetry transport for a game
+- `wheelctl telemetry capture --game <GAME> --out <OUT>` - Capture raw UDP telemetry packets to a binary file
+- `wheelctl telemetry record --game <GAME> --out <OUT>` - Record normalized telemetry snapshots to JSONL with safety provenance
+- `wheelctl telemetry virtual-ffb-log --input <INPUT> --out <OUT>` - Replay normalized telemetry into a virtual FFB output log (no hardware writes)
+
+#### Control Stream (observe-only)
+- `wheelctl controls list` - List the stable control descriptors a profile may bind for a surface
+- `wheelctl controls monitor <CAPTURE>` - Replay a capture as a human-readable stream, reporting resets and epoch changes
+- `wheelctl controls capture --out <OUT>` - Write a deterministic sample capture (virtual input; no hardware)
+- `wheelctl controls replay <CAPTURE>` - Replay a capture's inputs through the real projection without hardware
+
+#### Hardware Diagnostics
+- `wheelctl hardware doctor` - Inspect local hardware/tooling readiness without opening devices or sending writes
+- `wheelctl hardware bringup-rail [--family <family>]` - Print the staged bring-up rail for a device family
+- `wheelctl hardware lane <COMMAND>` - Scaffold a hardware validation lane from a device-family rail adapter
+- `wheelctl hardware sniff-*` - Passive USB capture planning, receipts, and evidence bundles (nine subcommands; none send output)
+
+#### Support Bundles
+- `wheelctl support-bundle [--device <device>] [--blackbox] [--output <file>]` - Generate a diagnostic support bundle
 
 ### Error Codes
 
@@ -154,12 +226,13 @@ The CLI communicates with the wheel service via IPC (gRPC over named pipes/UDS) 
 
 ### Requirements Compliance
 
-This implementation satisfies all requirements from UX-02:
+Against UX-02:
 
-✅ **Command-line interface with device, profile, and diagnostic commands**
-✅ **JSON output formatting (--json flag) for machine-readable responses**  
-✅ **All write operations available in CLI match UI capabilities**
-✅ **Bash/zsh completion scripts for CLI commands**
-✅ **CLI integration tests covering all major command workflows with error code validation**
-
-The CLI provides complete parity with UI functionality while offering additional automation and scripting capabilities through JSON output and proper exit codes.
+- ✅ **Command-line interface with device, profile, and diagnostic commands**
+- ✅ **JSON output formatting (`--json`) for machine-readable responses**
+- ✅ **Bash/zsh completion scripts for CLI commands**
+- ✅ **CLI integration tests covering all major command workflows with error code validation**
+- ⚠️ **All write operations available in CLI match UI capabilities** — the
+  commands exist and parse, but `safety limit` has no IPC write behind it and
+  `profile apply` covers only the fields the wire contract represents (see
+  Known gaps). Command surface parity is met; write-path parity is not.

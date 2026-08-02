@@ -17,7 +17,6 @@ Commands:
   telemetry       Telemetry probe and capture commands
   hardware        Hardware environment diagnostics
   doctor          Check the service, permissions, and hardware environment
-  moza            Safe Moza HID probe and capture commands
   safety          Safety and control commands
   support-bundle  Generate diagnostic support bundle
   completion      Generate shell completion scripts
