@@ -31,9 +31,12 @@ since the changes they list did happen.
 ### Fixed
 - `wheelctl` errors now say what to do, not only what went wrong. Every
   `CliError` with a plausible next step carries a `hint:` naming a command —
-  device-not-found points at `wheelctl device list` and `wheelctl doctor`,
-  service-unavailable names the platform's start command, and permission-denied
-  spells out the udev-rule and input-group steps on Linux
+  device-not-found points at `wheelctl device list` and `wheelctl doctor`, and
+  service-unavailable names the platform's start command. Hints are matched to
+  the actual failure rather than the variant: a refused safety interlock (which
+  reuses `PermissionDenied`) points at `wheelctl safety status` instead of udev
+  rules, and only profile/schema validation failures suggest `wheelctl profile
+  validate`
 - `wheelctl --json` error objects reported a `type` field computed from
   anyhow's `Debug`, which renders the *message*, so `type` merely duplicated
   `message`. It now carries the real variant name, plus a stable snake_case
@@ -43,7 +46,19 @@ since the changes they list did happen.
 - The environment check reported on tooling and HID visibility but never
   checked whether `wheeld` was running — the most common first-run failure. It
   now probes the service, reports it in both human and JSON output, and warns
-  when it is unreachable
+  when it is unreachable, for the endpoint actually selected by `--endpoint` or
+  `WHEELCTL_ENDPOINT` rather than the built-in default
+- The README's Quick Start never mentioned `wheeld`. It walked a new user from
+  `cargo install --path crates/cli` straight to `wheelctl device list`, so the
+  most common first-run outcome — a client with no service to talk to — was not
+  covered anywhere on the page. Quick Start now installs both binaries, starts
+  the service first, explains the simulated fallback and `--no-mock`, and points
+  at `wheeld --virtual-devices` for anyone without hardware
+- The README build prerequisites omitted `libudev-dev` and `pkg-config`, so the
+  first `cargo build` on a clean Linux machine failed inside `libudev-sys` with
+  no indication that a system package was missing. The only mention of these was
+  in a troubleshooting section of `docs/DEVELOPMENT.md`, which is not where
+  someone looks before their first build
 - `wheelctl` no longer presents simulated data as real. When `wheeld` was
   unreachable the client silently fell back to a canned backend, so a
   first-time user with no daemon and no hardware saw two invented Fanatec
@@ -131,6 +146,16 @@ since the changes they list did happen.
   people look for it
 - `wheelctl --help` now has GETTING STARTED, EXAMPLES, and EXIT CODES sections.
   The exit codes were distinct but documented nowhere
+- `SECURITY.md` and a root `CONTRIBUTING.md`. Neither existed, so GitHub had no
+  vulnerability-reporting path to surface and no contributing guide to link from
+  the issue and pull request UI. `SECURITY.md` names the private reporting
+  channel and scopes the safety-relevant surfaces (interlock bypass, torque cap,
+  plugin sandbox escape, IPC capability checks). The root `CONTRIBUTING.md` is a
+  short front door for the existing `docs/CONTRIBUTING.md`, covering the rules
+  that are CI-enforced rather than stylistic
+- README documentation index now links the user-facing guides (User Guide,
+  Setup, Gaming Setup) and the support matrices, which existed but were
+  unreachable from the front page
 - `scripts/check_shell_syntax.sh`, run by the `policy` workflow, parses every
   tracked shell script. Packaging and release scripts are not exercised by
   `cargo test`, so syntax errors in them previously stayed invisible until a
