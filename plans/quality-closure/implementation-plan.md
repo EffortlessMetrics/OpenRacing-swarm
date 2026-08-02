@@ -219,6 +219,7 @@ cargo test --locked --offline -p openracing-tools --bin xtask
 cargo xtask test-efficiency-report
 cargo xtask badges --check
 OPENRACING_COVERAGE_TOOL_STATUS=skipped cargo xtask quality-closure --check
+cargo clippy --all-targets --all-features -- -D warnings
 python scripts/policy_file.py --strict
 git diff --check
 ```

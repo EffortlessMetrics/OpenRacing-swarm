@@ -38,7 +38,8 @@ Both badge commands run `cargo xtask test-efficiency-report` first. The
 producer writes the advisory `0.1` test ledger under `target/ripr/reports/`,
 after which the native repo-scoped RIPR+ format renders the numeric endpoint.
 The quality-closure receipt reports `badge_endpoint_status = "pass"` only when
-that generated evidence and the committed endpoint agree. The report remains
+that generated evidence and the committed endpoint agree, unless
+`OPENRACING_BADGE_ENDPOINT_STATUS` overrides the status. The report remains
 static advisory evidence, not runtime mutation, coverage, or closure proof.
 
 Generate the report directly when inspecting its ledger:

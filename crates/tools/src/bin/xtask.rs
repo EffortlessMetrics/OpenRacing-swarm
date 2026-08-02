@@ -18,6 +18,7 @@ const RIPR_PR_DIR: &str = "target/ripr/pr";
 const RIPR_REVIEW_DIR: &str = "target/ripr/review";
 const TEST_EFFICIENCY_REPORT: &str = "target/ripr/reports/test-efficiency.json";
 const TEST_EFFICIENCY_MARKDOWN: &str = "target/ripr/reports/test-efficiency.md";
+const TEST_EFFICIENCY_OBSERVATION_LIMIT: usize = 24;
 const QUALITY_CLOSURE_DIR: &str = "target/xtask/quality-closure";
 const UNSAFE_REVIEW_CLOSURE_DIR: &str = "target/xtask/unsafe-review-closure";
 
@@ -44,6 +45,17 @@ struct TestEfficiencyObservation {
     context: &'static str,
     value: String,
     text: String,
+}
+
+struct ClassifiedTest<'a> {
+    test: &'a TestEfficiencyTest,
+    owners: Vec<String>,
+    class: &'static str,
+    reasons: Vec<String>,
+    observations: Vec<TestEfficiencyObservation>,
+    oracle_kind: &'static str,
+    oracle_strength: &'static str,
+    limitations: Vec<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -165,18 +177,14 @@ fn test_efficiency_report() -> anyhow::Result<()> {
     let tests = collect_test_efficiency_tests(&workspace_root)?;
     let report_path = workspace_root.join(TEST_EFFICIENCY_REPORT);
     let markdown_path = workspace_root.join(TEST_EFFICIENCY_MARKDOWN);
-    if let Some(parent) = report_path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create {}", parent.display()))?;
-    }
-
-    let report = test_efficiency_report_value(&tests);
+    let classified = classify_test_efficiency_tests(&tests);
+    let report = test_efficiency_report_value(&classified);
     validate_test_efficiency_report(&report)?;
     write_test_efficiency_report_files(
         &report_path,
         &markdown_path,
         &report,
-        &test_efficiency_report_markdown(&tests),
+        &test_efficiency_report_markdown(&classified),
     )?;
     stdout_line(format_args!(
         "test-efficiency-report: scanned {} tests and wrote {}",
@@ -184,6 +192,31 @@ fn test_efficiency_report() -> anyhow::Result<()> {
         report_path.display()
     ));
     Ok(())
+}
+
+fn classify_test_efficiency_tests(tests: &[TestEfficiencyTest]) -> Vec<ClassifiedTest<'_>> {
+    tests
+        .iter()
+        .map(|test| {
+            let owners = test_efficiency_reached_owners(&test.body);
+            let observations = test_efficiency_observations(&test.body, test.line);
+            let (class, reasons) =
+                test_efficiency_class_and_reasons(&test.body, &owners, &observations);
+            let oracle_kind = test_efficiency_oracle_kind(class, &reasons);
+            let oracle_strength = test_efficiency_oracle_strength(class);
+            let limitations = test_efficiency_limitations(class, &owners, &observations);
+            ClassifiedTest {
+                test,
+                owners,
+                class,
+                reasons,
+                observations,
+                oracle_kind,
+                oracle_strength,
+                limitations,
+            }
+        })
+        .collect()
 }
 
 fn write_test_efficiency_report_files(
@@ -304,17 +337,34 @@ fn test_efficiency_tests_in_text(
     let lines = text.lines().collect::<Vec<_>>();
     let mut tests = Vec::new();
     let mut pending_test_attribute = false;
+    let mut pending_attribute_depth = 0usize;
     let mut index = 0usize;
 
     while index < lines.len() {
         let trimmed = lines[index].trim();
         if is_test_attribute(trimmed) {
             pending_test_attribute = true;
+            pending_attribute_depth = attribute_parenthesis_depth(trimmed);
             index += 1;
             continue;
         }
         if pending_test_attribute {
-            if trimmed.is_empty() || trimmed.starts_with("#[") {
+            if pending_attribute_depth > 0 {
+                pending_attribute_depth =
+                    update_attribute_parenthesis_depth(pending_attribute_depth, trimmed);
+                index += 1;
+                continue;
+            }
+            if trimmed.is_empty() {
+                index += 1;
+                continue;
+            }
+            if trimmed.starts_with("#[") {
+                pending_attribute_depth = attribute_parenthesis_depth(trimmed);
+                index += 1;
+                continue;
+            }
+            if trimmed.starts_with("//") {
                 index += 1;
                 continue;
             }
@@ -334,9 +384,7 @@ fn test_efficiency_tests_in_text(
                 index = end.saturating_add(1);
                 continue;
             }
-            if !trimmed.starts_with("//") {
-                pending_test_attribute = false;
-            }
+            pending_test_attribute = false;
         }
         index += 1;
     }
@@ -351,6 +399,24 @@ fn is_test_attribute(line: &str) -> bool {
         || compact.starts_with("#[rstest")
 }
 
+fn attribute_parenthesis_depth(line: &str) -> usize {
+    line.chars()
+        .fold(0usize, |depth, character| match character {
+            '(' => depth.saturating_add(1),
+            ')' => depth.saturating_sub(1),
+            _ => depth,
+        })
+}
+
+fn update_attribute_parenthesis_depth(depth: usize, line: &str) -> usize {
+    line.chars()
+        .fold(depth, |depth, character| match character {
+            '(' => depth.saturating_add(1),
+            ')' => depth.saturating_sub(1),
+            _ => depth,
+        })
+}
+
 fn test_function_name(line: &str) -> Option<String> {
     let function_start = line.find("fn ")? + 3;
     let name = line[function_start..]
@@ -363,9 +429,10 @@ fn test_function_name(line: &str) -> Option<String> {
 fn test_function_end(lines: &[&str], start: usize) -> usize {
     let mut depth = 0isize;
     let mut saw_body = false;
+    let mut lexical_state = BraceScanState::Code;
     for (offset, line) in lines[start..].iter().enumerate() {
-        for character in line.chars() {
-            match character {
+        for brace in brace_scan_events(line, &mut lexical_state) {
+            match brace {
                 '{' => {
                     depth += 1;
                     saw_body = true;
@@ -381,7 +448,114 @@ fn test_function_end(lines: &[&str], start: usize) -> usize {
     lines.len().saturating_sub(1)
 }
 
-fn test_efficiency_report_value(tests: &[TestEfficiencyTest]) -> serde_json::Value {
+#[derive(Clone, Copy)]
+enum BraceScanState {
+    Code,
+    DoubleQuoted { escaped: bool },
+    CharLiteral { escaped: bool },
+    BlockComment { depth: usize },
+    RawString { hashes: usize },
+}
+
+fn brace_scan_events(line: &str, state: &mut BraceScanState) -> Vec<char> {
+    let bytes = line.as_bytes();
+    let mut braces = Vec::new();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        match state {
+            BraceScanState::Code => match bytes[index] {
+                b'/' if bytes.get(index + 1) == Some(&b'/') => break,
+                b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                    *state = BraceScanState::BlockComment { depth: 1 };
+                    index += 2;
+                }
+                b'"' => {
+                    *state = BraceScanState::DoubleQuoted { escaped: false };
+                    index += 1;
+                }
+                b'\'' => {
+                    *state = BraceScanState::CharLiteral { escaped: false };
+                    index += 1;
+                }
+                b'r' => {
+                    if let Some((hashes, consumed)) = raw_string_prefix(bytes, index) {
+                        *state = BraceScanState::RawString { hashes };
+                        index += consumed;
+                    } else {
+                        index += 1;
+                    }
+                }
+                b'{' | b'}' => {
+                    braces.push(bytes[index] as char);
+                    index += 1;
+                }
+                _ => index += 1,
+            },
+            BraceScanState::DoubleQuoted { escaped } => {
+                if *escaped {
+                    *escaped = false;
+                } else if bytes[index] == b'\\' {
+                    *escaped = true;
+                } else if bytes[index] == b'"' {
+                    *state = BraceScanState::Code;
+                }
+                index += 1;
+            }
+            BraceScanState::CharLiteral { escaped } => {
+                if *escaped {
+                    *escaped = false;
+                } else if bytes[index] == b'\\' {
+                    *escaped = true;
+                } else if bytes[index] == b'\'' {
+                    *state = BraceScanState::Code;
+                }
+                index += 1;
+            }
+            BraceScanState::BlockComment { depth } => {
+                if bytes.get(index) == Some(&b'/') && bytes.get(index + 1) == Some(&b'*') {
+                    *depth = depth.saturating_add(1);
+                    index += 2;
+                } else if bytes.get(index) == Some(&b'*') && bytes.get(index + 1) == Some(&b'/') {
+                    *depth = depth.saturating_sub(1);
+                    index += 2;
+                    if *depth == 0 {
+                        *state = BraceScanState::Code;
+                    }
+                } else {
+                    index += 1;
+                }
+            }
+            BraceScanState::RawString { hashes } => {
+                if bytes[index] == b'"'
+                    && bytes
+                        .get(index + 1..index + 1 + *hashes)
+                        .is_some_and(|closing| closing.iter().all(|byte| *byte == b'#'))
+                {
+                    index += 1 + *hashes;
+                    *state = BraceScanState::Code;
+                } else {
+                    index += 1;
+                }
+            }
+        }
+    }
+    braces
+}
+
+fn raw_string_prefix(bytes: &[u8], start: usize) -> Option<(usize, usize)> {
+    if bytes.get(start) != Some(&b'r') {
+        return None;
+    }
+    let mut index = start + 1;
+    let mut hashes = 0usize;
+    while bytes.get(index) == Some(&b'#') {
+        hashes += 1;
+        index += 1;
+    }
+    (bytes.get(index) == Some(&b'"')).then_some((hashes, index + 1 - start))
+}
+
+fn test_efficiency_report_value(tests: &[ClassifiedTest<'_>]) -> serde_json::Value {
     let mut class_counts = BTreeMap::new();
     for class in [
         "strong_discriminator",
@@ -397,15 +571,13 @@ fn test_efficiency_report_value(tests: &[TestEfficiencyTest]) -> serde_json::Val
     let mut reason_counts = BTreeMap::new();
     let mut entries = Vec::new();
     for test in tests {
-        let owners = test_efficiency_reached_owners(&test.body);
-        let (class, reasons) = test_efficiency_class_and_reasons(&test.body, &owners);
-        let entry = test_efficiency_entry_value(test, class, &owners, &reasons);
+        let entry = test_efficiency_entry_value(test);
         entries.push(entry);
-        if let Some(count) = class_counts.get_mut(class) {
+        if let Some(count) = class_counts.get_mut(test.class) {
             *count += 1;
         }
-        for reason in reasons {
-            *reason_counts.entry(reason).or_insert(0) += 1;
+        for reason in &test.reasons {
+            *reason_counts.entry(reason.clone()).or_insert(0) += 1;
         }
     }
     let has_advisory_signal = class_counts
@@ -413,6 +585,8 @@ fn test_efficiency_report_value(tests: &[TestEfficiencyTest]) -> serde_json::Val
         .any(|(class, count)| class != "strong_discriminator" && *count > 0);
     let class_counts_value = serde_json::json!(class_counts);
     let reason_counts_value = serde_json::json!(reason_counts);
+    // These fields are upstream-contract placeholders, not measured results:
+    // duplicate detection and test-intent matching are not implemented here.
     serde_json::json!({
         "schema_version": "0.1",
         "status": if has_advisory_signal { "warn" } else { "pass" },
@@ -432,49 +606,50 @@ fn test_efficiency_report_value(tests: &[TestEfficiencyTest]) -> serde_json::Val
     })
 }
 
-fn test_efficiency_entry_value(
-    test: &TestEfficiencyTest,
-    class: &str,
-    owners: &[String],
-    reasons: &[String],
-) -> serde_json::Value {
-    let observations = test_efficiency_observations(&test.body);
-    let oracle_kind = if class == "strong_discriminator" {
-        "exact assertion"
-    } else if class == "useful_but_broad" {
-        "broad predicate"
-    } else if class == "smoke_only" {
-        "smoke execution"
-    } else if reasons
-        .iter()
-        .any(|reason| reason == "no_assertion_detected")
-    {
-        "no assertion detected"
-    } else {
-        "opaque oracle"
-    };
-    let oracle_strength = match class {
+fn test_efficiency_entry_value(test: &ClassifiedTest<'_>) -> serde_json::Value {
+    serde_json::json!({
+        "path": test.test.path,
+        "name": test.test.name,
+        "line": test.test.line,
+        "class": test.class,
+        "oracle_kind": test.oracle_kind,
+        "oracle_strength": test.oracle_strength,
+        "reached_owners": test.owners,
+        "reasons": test.reasons,
+        "observed_values": test.observations,
+        "static_limitations": test.limitations
+    })
+}
+
+fn test_efficiency_oracle_kind(class: &str, reasons: &[String]) -> &'static str {
+    match class {
+        "strong_discriminator" => "exact assertion",
+        "useful_but_broad" => "broad predicate",
+        "smoke_only" => "smoke execution",
+        _ if reasons
+            .iter()
+            .any(|reason| reason == "no_assertion_detected") =>
+        {
+            "no assertion detected"
+        }
+        _ => "opaque oracle",
+    }
+}
+
+fn test_efficiency_oracle_strength(class: &str) -> &'static str {
+    match class {
         "strong_discriminator" => "strong",
         "useful_but_broad" => "weak",
         "smoke_only" => "smoke",
         _ => "opaque",
-    };
-    let limitations = test_efficiency_limitations(class, owners, &observations);
-    serde_json::json!({
-        "path": test.path,
-        "name": test.name,
-        "line": test.line,
-        "class": class,
-        "oracle_kind": oracle_kind,
-        "oracle_strength": oracle_strength,
-        "reached_owners": owners,
-        "reasons": reasons,
-        "observed_values": observations,
-        "static_limitations": limitations
-    })
+    }
 }
 
-fn test_efficiency_class_and_reasons(body: &str, owners: &[String]) -> (&'static str, Vec<String>) {
+fn test_efficiency_class_and_reasons(
+    body: &str,
+    owners: &[String],
+    observations: &[TestEfficiencyObservation],
+) -> (&'static str, Vec<String>) {
     let exact = [
         "assert_eq!(",
         "assert_ne!(",
@@ -526,9 +701,8 @@ fn test_efficiency_class_and_reasons(body: &str, owners: &[String]) -> (&'static
     if owners.is_empty() {
         reasons.insert("opaque_helper_or_fixture_boundary".to_string());
     }
-    if !test_efficiency_observations(body).is_empty() {
-        // Literal activation values are retained in the entry evidence.
-    } else {
+    // Literal activation values, when present, are retained in the entry evidence.
+    if observations.is_empty() {
         reasons.insert("no_activation_literal_detected".to_string());
     }
     if circular {
@@ -565,7 +739,7 @@ fn test_efficiency_limitations(
     limitations
 }
 
-fn test_efficiency_observations(body: &str) -> Vec<TestEfficiencyObservation> {
+fn test_efficiency_observations(body: &str, start_line: usize) -> Vec<TestEfficiencyObservation> {
     let mut observations = Vec::new();
     for (offset, line) in body.lines().enumerate() {
         let trimmed = line.trim();
@@ -574,7 +748,7 @@ fn test_efficiency_observations(body: &str) -> Vec<TestEfficiencyObservation> {
         }
         for value in quoted_literals(trimmed) {
             observations.push(TestEfficiencyObservation {
-                line: offset + 1,
+                line: start_line.saturating_add(offset),
                 context: if trimmed.contains("assert") {
                     "assertion_argument"
                 } else {
@@ -583,7 +757,7 @@ fn test_efficiency_observations(body: &str) -> Vec<TestEfficiencyObservation> {
                 value,
                 text: trimmed.to_string(),
             });
-            if observations.len() >= 24 {
+            if observations.len() >= TEST_EFFICIENCY_OBSERVATION_LIMIT {
                 return observations;
             }
         }
@@ -623,7 +797,7 @@ fn test_efficiency_reached_owners(body: &str) -> Vec<String> {
     let mut owners = BTreeSet::new();
     for line in body.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("//") || trimmed.starts_with("fn ") {
+        if trimmed.starts_with("//") || is_function_declaration(trimmed) {
             continue;
         }
         for call in call_names_in_line(trimmed) {
@@ -633,6 +807,12 @@ fn test_efficiency_reached_owners(body: &str) -> Vec<String> {
         }
     }
     owners.into_iter().collect()
+}
+
+fn is_function_declaration(line: &str) -> bool {
+    line.split(['(', '{'])
+        .next()
+        .is_some_and(|prefix| prefix.split_whitespace().any(|word| word == "fn"))
 }
 
 fn call_names_in_line(line: &str) -> Vec<String> {
@@ -695,6 +875,10 @@ fn ignored_test_efficiency_call(call: &str) -> bool {
             | "is_some"
             | "is_none"
             | "is_empty"
+            | "Ok"
+            | "Err"
+            | "Some"
+            | "None"
             | "unwrap"
             | "expect"
             | "clone"
@@ -711,28 +895,26 @@ fn ignored_test_efficiency_call(call: &str) -> bool {
     )
 }
 
-fn test_efficiency_report_markdown(tests: &[TestEfficiencyTest]) -> String {
+fn test_efficiency_report_markdown(tests: &[ClassifiedTest<'_>]) -> String {
     let mut body = String::from(
         "# Test efficiency report\n\nStatus: advisory\n\nThis report is conservative static evidence about test oracle shape. It does not execute tests or run mutation analysis.\n\n",
     );
     body.push_str(&format!("Tests scanned: {}\n\n", tests.len()));
     body.push_str("| Test | Class | Oracle | Reasons |\n| --- | --- | --- | --- |\n");
     for test in tests {
-        let owners = test_efficiency_reached_owners(&test.body);
-        let (class, reasons) = test_efficiency_class_and_reasons(&test.body, &owners);
-        let oracle = if class == "strong_discriminator" {
-            "exact assertion"
-        } else {
-            class
-        };
-        let reason_text = if reasons.is_empty() {
+        let reason_text = if test.reasons.is_empty() {
             "none".to_string()
         } else {
-            reasons.join(", ")
+            test.reasons.join(", ")
         };
         body.push_str(&format!(
             "| `{}`:{} `{}` | `{}` | `{}` | {} |\n",
-            test.path, test.line, test.name, class, oracle, reason_text
+            test.test.path,
+            test.test.line,
+            test.test.name,
+            test.class,
+            test.oracle_kind,
+            reason_text
         ));
     }
     body
@@ -745,17 +927,9 @@ fn badges(check: bool) -> anyhow::Result<()> {
         .with_context(|| format!("failed to create {}", target_dir.display()))?;
 
     test_efficiency_report()?;
-    let test_efficiency_report = workspace_root.join(TEST_EFFICIENCY_REPORT);
-    let using_exposure_only_fallback = !test_efficiency_report.exists();
     let ripr_plus = ripr_plus_badge(&workspace_root)?;
     validate_shields_badge(&ripr_plus, Some("ripr+"))?;
     write_json_pretty(&target_dir.join("ripr-plus.json"), &ripr_plus)?;
-
-    if using_exposure_only_fallback {
-        stdout_line(format_args!(
-            "badges: test-efficiency report missing; used exposure-only fallback; quality closure remains skipped"
-        ));
-    }
 
     let committed_dir = workspace_root.join(BADGE_ENDPOINT_DIR);
     if check {
@@ -783,12 +957,7 @@ fn badges(check: bool) -> anyhow::Result<()> {
 
 fn ripr_plus_badge(workspace_root: &Path) -> anyhow::Result<ShieldsEndpointBadge> {
     let ripr_bin = env::var("RIPR_BIN").unwrap_or_else(|_| "ripr".to_string());
-    let test_efficiency_report = workspace_root.join(TEST_EFFICIENCY_REPORT);
-    let format = if test_efficiency_report.exists() {
-        "repo-badge-plus-shields"
-    } else {
-        "repo-badge-shields"
-    };
+    let format = "repo-badge-plus-shields";
     let output = Command::new(&ripr_bin)
         .arg("check")
         .arg("--root")
@@ -809,26 +978,7 @@ fn ripr_plus_badge(workspace_root: &Path) -> anyhow::Result<ShieldsEndpointBadge
     let badge: ShieldsEndpointBadge = serde_json::from_slice(&output.stdout)
         .with_context(|| format!("{ripr_bin} emitted invalid Shields endpoint JSON"))?;
     validate_numeric_badge_message(&badge)?;
-
-    if test_efficiency_report.exists() {
-        return Ok(badge);
-    }
-
-    project_exposure_only_badge(badge)
-}
-
-fn project_exposure_only_badge(
-    badge: ShieldsEndpointBadge,
-) -> anyhow::Result<ShieldsEndpointBadge> {
-    validate_shields_badge(&badge, Some("ripr"))?;
-    validate_numeric_badge_message(&badge)?;
-
-    Ok(ShieldsEndpointBadge {
-        schema_version: badge.schema_version,
-        label: "ripr+".to_string(),
-        message: badge.message,
-        color: "lightgrey".to_string(),
-    })
+    Ok(badge)
 }
 
 fn validate_numeric_badge_message(badge: &ShieldsEndpointBadge) -> anyhow::Result<()> {
@@ -1268,6 +1418,25 @@ fn default_active_status() -> String {
 
 fn quality_closure(check: bool, json_out: &Path, md_out: &Path) -> anyhow::Result<()> {
     let workspace_root = workspace_root_path()?;
+    let report_path = workspace_root.join(TEST_EFFICIENCY_REPORT);
+    let markdown_path = workspace_root.join(TEST_EFFICIENCY_MARKDOWN);
+    for path in [&report_path, &markdown_path] {
+        match fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("failed to remove stale {}", path.display()));
+            }
+        }
+    }
+    if let Err(error) = test_efficiency_report() {
+        let _ = fs::remove_file(&report_path);
+        let _ = fs::remove_file(&markdown_path);
+        stderr_line(format_args!(
+            "quality-closure: test-efficiency producer unavailable: {error:#}"
+        ));
+    }
     let receipt = build_quality_closure_receipt(&workspace_root)?;
     let json_path = workspace_root.join(json_out);
     if let Some(parent) = json_path.parent() {
@@ -1291,7 +1460,6 @@ fn quality_closure(check: bool, json_out: &Path, md_out: &Path) -> anyhow::Resul
 }
 
 fn build_quality_closure_receipt(workspace_root: &Path) -> anyhow::Result<serde_json::Value> {
-    test_efficiency_report()?;
     let ledger = read_quality_exception_ledger(workspace_root)?;
     let ripr_unresolved_gap_count =
         read_ripr_plus_badge_count(&workspace_root.join("badges/ripr-plus.json"))?;
@@ -2744,34 +2912,6 @@ mod tests {
     }
 
     #[test]
-    fn projects_exposure_only_badge_with_numeric_message_and_skip_color() -> anyhow::Result<()> {
-        let badge = ShieldsEndpointBadge {
-            schema_version: 1,
-            label: "ripr".to_string(),
-            message: "7".to_string(),
-            color: "orange".to_string(),
-        };
-
-        let projected = project_exposure_only_badge(badge)?;
-        assert_eq!(projected.label, "ripr+");
-        assert_eq!(projected.message, "7");
-        assert_eq!(projected.color, "lightgrey");
-        validate_shields_badge(&projected, Some("ripr+"))
-    }
-
-    #[test]
-    fn rejects_non_numeric_exposure_only_badge_message() {
-        let badge = ShieldsEndpointBadge {
-            schema_version: 1,
-            label: "ripr".to_string(),
-            message: "preview-skipped: typescript".to_string(),
-            color: "yellow".to_string(),
-        };
-
-        assert!(project_exposure_only_badge(badge).is_err());
-    }
-
-    #[test]
     fn test_efficiency_classifier_covers_conservative_fixture_shapes() {
         let exact = "fn test() {\n let result = service(1);\n assert_eq!(result, \"ok\");\n}";
         let broad = "fn test() {\n let result = service(1);\n assert!(result.is_ok());\n}";
@@ -2790,14 +2930,59 @@ mod tests {
             (circular, "possibly_circular"),
         ] {
             let owners = test_efficiency_reached_owners(body);
-            let (actual, _) = test_efficiency_class_and_reasons(body, &owners);
+            let observations = test_efficiency_observations(body, 1);
+            let (actual, _) = test_efficiency_class_and_reasons(body, &owners, &observations);
             assert_eq!(actual, expected, "fixture body: {body}");
         }
     }
 
     #[test]
+    fn test_efficiency_observations_preserve_absolute_lines() {
+        let observations =
+            test_efficiency_observations("assert_eq!(value, \"ok\");\nassert!(ready);", 41);
+        assert_eq!(
+            observations
+                .iter()
+                .map(|observation| observation.line)
+                .collect::<Vec<_>>(),
+            vec![41]
+        );
+    }
+
+    #[test]
+    fn scanner_ignores_comments_strings_and_multiline_attributes() -> anyhow::Result<()> {
+        let source = r###"
+#[test]
+// fn obsolete_name() { }
+fn real_name() {
+    let json = r#"{"not_a_body": true}"#;
+    /* a comment with { braces } */
+    assert_eq!(json, r#"{"not_a_body": true}"#);
+}
+
+#[test]
+#[cfg_attr(
+    feature = "platform-test",
+)]
+async fn gated_name() {
+    assert_eq!(1, 1);
+}
+"###;
+        let tests = test_efficiency_tests_in_text(Path::new("."), Path::new("fixture.rs"), source);
+        let names = tests
+            .iter()
+            .map(|test| test.name.as_str())
+            .collect::<Vec<_>>();
+        if names != ["real_name", "gated_name"] {
+            anyhow::bail!("unexpected test names: {names:?}");
+        }
+        Ok(())
+    }
+
+    #[test]
     fn test_efficiency_report_contract_is_valid_without_tests() -> anyhow::Result<()> {
-        let report = test_efficiency_report_value(&[]);
+        let classified = classify_test_efficiency_tests(&[]);
+        let report = test_efficiency_report_value(&classified);
         assert_eq!(
             report
                 .get("schema_version")
@@ -2855,6 +3040,26 @@ mod tests {
     }
 
     #[test]
+    fn test_efficiency_report_rejects_wrong_schema_version() {
+        let wrong = serde_json::json!({
+            "schema_version": "0.2",
+            "tests": [],
+            "metrics": {"tests_scanned": 0}
+        });
+        assert!(validate_test_efficiency_report(&wrong).is_err());
+    }
+
+    #[test]
+    fn test_efficiency_report_rejects_unknown_class() {
+        let unknown = serde_json::json!({
+            "schema_version": "0.1",
+            "tests": [{"class": "not_a_class"}],
+            "metrics": {"tests_scanned": 1}
+        });
+        assert!(validate_test_efficiency_report(&unknown).is_err());
+    }
+
+    #[test]
     fn test_efficiency_report_creates_nested_outputs_and_handles_missing_root() -> anyhow::Result<()>
     {
         let temp = tempfile::tempdir()?;
@@ -2863,7 +3068,8 @@ mod tests {
 
         let report_path = temp.path().join("nested/reports/test-efficiency.json");
         let markdown_path = temp.path().join("nested/reports/test-efficiency.md");
-        let report = test_efficiency_report_value(&[]);
+        let classified = classify_test_efficiency_tests(&[]);
+        let report = test_efficiency_report_value(&classified);
         write_test_efficiency_report_files(&report_path, &markdown_path, &report, "advisory\n")?;
         validate_json_file(&report_path)?;
         ensure_non_empty_file(&markdown_path)?;
@@ -2890,6 +3096,13 @@ mod tests {
         let command = parse_args(["test-efficiency-report".to_string()].into_iter())?;
         assert_eq!(command, CommandKind::TestEfficiencyReport);
         Ok(())
+    }
+
+    #[test]
+    fn rejects_arguments_for_test_efficiency_report() {
+        let result =
+            parse_args(["test-efficiency-report".to_string(), "--check".to_string()].into_iter());
+        assert!(result.is_err());
     }
 
     #[test]
