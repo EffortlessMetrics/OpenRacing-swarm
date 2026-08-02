@@ -132,6 +132,7 @@ fn doc_readme_cli_commands_are_valid() -> Result<(), Box<dyn std::error::Error>>
         "diag",
         "game",
         "telemetry",
+        "hardware",
         "safety",
         "health",
         "completion",
