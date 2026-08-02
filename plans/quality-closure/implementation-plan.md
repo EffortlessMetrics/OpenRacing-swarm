@@ -124,9 +124,10 @@ hardware lanes remain unchanged.
 
 ## Work item: reconcile-ripr-plus-badge-evidence-contract
 
-Status: in_progress
+Status: completed
 Linked issue: https://github.com/EffortlessMetrics/OpenRacing-swarm/issues/215
 Linked PR: https://github.com/EffortlessMetrics/OpenRacing-swarm/pull/226
+Follow-up: https://github.com/EffortlessMetrics/OpenRacing-swarm/issues/227
 Blocks: retiring the `ripr-plus-test-efficiency-evidence-missing` exception
 Blocked by: a repo-owned test-efficiency report producer
 
