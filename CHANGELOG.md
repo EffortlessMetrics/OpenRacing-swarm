@@ -49,6 +49,17 @@ since the changes they list did happen.
   it, so command-surface parity was being reported as write-path parity. Now
   recorded under a "Known gaps" heading, with the UX-02 compliance claim marked
   partial
+- The README's Quick Start never mentioned `wheeld`. It walked a new user from
+  `cargo install --path crates/cli` straight to `wheelctl device list`, so the
+  most common first-run outcome — a client with no service to talk to — was not
+  covered anywhere on the page. Quick Start now installs both binaries, starts
+  the service first, explains the simulated fallback and `--no-mock`, and points
+  at `wheeld --virtual-devices` for anyone without hardware
+- The README build prerequisites omitted `libudev-dev` and `pkg-config`, so the
+  first `cargo build` on a clean Linux machine failed inside `libudev-sys` with
+  no indication that a system package was missing. The only mention of these was
+  in a troubleshooting section of `docs/DEVELOPMENT.md`, which is not where
+  someone looks before their first build
 - `wheelctl` no longer presents simulated data as real. When `wheeld` was
   unreachable the client silently fell back to a canned backend, so a
   first-time user with no daemon and no hardware saw two invented Fanatec
@@ -130,6 +141,16 @@ since the changes they list did happen.
   referenced. The intact implementation lives at `scripts/build-reproducible.sh`
 
 ### Added
+- `SECURITY.md` and a root `CONTRIBUTING.md`. Neither existed, so GitHub had no
+  vulnerability-reporting path to surface and no contributing guide to link from
+  the issue and pull request UI. `SECURITY.md` names the private reporting
+  channel and scopes the safety-relevant surfaces (interlock bypass, torque cap,
+  plugin sandbox escape, IPC capability checks). The root `CONTRIBUTING.md` is a
+  short front door for the existing `docs/CONTRIBUTING.md`, covering the rules
+  that are CI-enforced rather than stylistic
+- README documentation index now links the user-facing guides (User Guide,
+  Setup, Gaming Setup) and the support matrices, which existed but were
+  unreachable from the front page
 - `scripts/check_shell_syntax.sh`, run by the `policy` workflow, parses every
   tracked shell script. Packaging and release scripts are not exercised by
   `cargo test`, so syntax errors in them previously stayed invisible until a

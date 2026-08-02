@@ -126,12 +126,30 @@ OpenRacing includes telemetry adapter scaffolding for 61 racing games and simula
 
 ### Prerequisites
 
-- **Rust nightly** - Install from [rustup.rs](https://rustup.rs/) (see `rust-toolchain.toml`)
+- **Rust nightly** - Install from [rustup.rs](https://rustup.rs/); `rust-toolchain.toml` pins the exact nightly, so rustup selects it automatically inside the repo
 - **Cargo** - Included with Rust installation
 - **Platform-specific requirements**:
   - **Windows**: Windows 10 or later, Visual C++ Redistributable
-  - **Linux**: Kernel 4.0+, udev rules for device access
+  - **Linux**: Kernel 4.0+, `libudev` development headers and `pkg-config` (see below), udev rules for device access
   - **macOS**: macOS 10.15 or later (compiles; device I/O not yet implemented)
+
+#### Linux: build dependencies
+
+The workspace links against `libudev` for device enumeration, so its headers and
+`pkg-config` must be present before the first `cargo build`. Without them the
+build fails partway through compiling `libudev-sys`, which does not obviously
+read as a missing system package.
+
+```bash
+# Debian / Ubuntu
+sudo apt-get install -y libudev-dev pkg-config
+
+# Fedora / RHEL
+sudo dnf install -y systemd-devel pkgconf-pkg-config
+
+# Arch
+sudo pacman -S --needed systemd-libs pkgconf
+```
 
 ### Building from source
 
@@ -143,9 +161,14 @@ cd OpenRacing
 # Build the project
 cargo build --release
 
-# Install the CLI tool
+# Install the CLI tool (wheelctl) and the background service (wheeld)
 cargo install --path crates/cli
+cargo install --path crates/service
 ```
+
+`wheelctl` is the command-line client; `wheeld` is the background service that
+owns the devices. `wheelctl` talks to `wheeld` over IPC, so both are needed for
+anything that touches real hardware.
 
 #### Linux: udev rules
 
@@ -159,15 +182,28 @@ sudo udevadm trigger
 
 ### Basic Usage
 
-```bash
-# List connected devices
-wheelctl device list
+**Start the service first.** `wheelctl` is a client; without `wheeld` running it
+cannot reach any hardware.
 
-# Check system health
+```bash
+# Foreground, for a first run
+wheeld
+
+# Or, if you installed the packaged systemd unit
+systemctl --user start openracing
+```
+
+Then, in another terminal:
+
+```bash
+# Check tooling, permissions, and device visibility
+wheelctl hardware doctor
+
+# Check service and device health
 wheelctl health
 
-# Apply a force feedback profile
-wheelctl profile apply <device-id> path/to/profile.json
+# List connected devices
+wheelctl device list
 
 # View device status
 wheelctl device status <device-id>
@@ -176,15 +212,55 @@ wheelctl device status <device-id>
 wheelctl diag test
 ```
 
+> [!NOTE]
+> When `wheeld` is not reachable, `wheelctl` falls back to a built-in simulated
+> backend so the tool stays usable offline. It says so on stderr and marks
+> simulated devices in its output. Pass `--no-mock` (or set
+> `WHEELCTL_NO_MOCK=1`) to make an unreachable service an error instead —
+> useful in scripts, where a silent fallback would be worse than a failure.
+
+No hardware yet? `wheeld --virtual-devices` serves a built-in virtual device, so
+the client commands above have something real to talk to.
+
 ## Documentation
 
-- **[API Documentation](https://effortlessmetrics.github.io/OpenRacing/)** - Generated rustdoc for all public interfaces
-- [Development Guide](docs/DEVELOPMENT.md) - Setting up the development environment and contributing
+**Using it**
+
+- [User Guide](docs/USER_GUIDE.md) - Day-to-day use of `wheelctl` and profiles
+- [Setup Guide](docs/SETUP.md) - Installation and first-run configuration
+- [Gaming Setup](docs/GAMING_SETUP.md) - Per-game telemetry configuration
 - [System Integration](docs/SYSTEM_INTEGRATION.md) - Integrating OpenRacing with racing games and hardware
-- [Architecture Decision Records](docs/adr/INDEX.md) - Design decisions and technical rationale
 - [Power Management Guide](docs/POWER_MANAGEMENT_GUIDE.md) - Power management and device configuration
 - [Anticheat Compatibility](docs/ANTICHEAT_COMPATIBILITY.md) - Compatibility notes for various anticheat systems
+
+**Building on it**
+
+- **[API Documentation](https://effortlessmetrics.github.io/OpenRacing/)** - Generated rustdoc for all public interfaces
+- [Development Guide](docs/DEVELOPMENT.md) - Setting up the development environment
+- [Contributing](CONTRIBUTING.md) - How to propose and land a change
+- [Security Policy](SECURITY.md) - Reporting a vulnerability
+- [Plugin Development](docs/PLUGIN_DEVELOPMENT.md) - Writing WASM and native plugins
+- [Architecture Decision Records](docs/adr/INDEX.md) - Design decisions and technical rationale
+
+**What is actually true**
+
 - [Project Status](docs/PROJECT_STATUS.md) - What is researched, implemented, and validated
+- [Device Support Matrix](docs/DEVICE_SUPPORT.md) - Per-device sourcing status
+- [Game Support Matrix](docs/GAME_SUPPORT.md) - Per-adapter status
+
+### Known gaps
+
+Pre-validation means some commands are scaffolding. The ones most likely to
+mislead:
+
+- `wheelctl safety limit` is not implemented and now fails rather than claiming
+  success; use the wheelbase's physical torque limit
+- `wheelctl profile apply` transmits only the settings the IPC contract
+  represents. Schema-only fields — `base.filters.torqueCap`, `bumpstop`,
+  `handsOff`, LED colours, haptic effects, profile signatures — are rejected
+  with an explicit error rather than silently dropped, so a profile using them
+  will not apply until the contract covers them
+- Device I/O is not implemented on macOS
 
 ## Project Structure
 
@@ -214,12 +290,17 @@ If you can test OpenRacing on real hardware, please open an issue with:
 
 ## Contributing
 
-We welcome contributions! Please see [DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed guidelines on:
+We welcome contributions. Start with [CONTRIBUTING.md](CONTRIBUTING.md) — it
+covers getting the workspace building, the rules that are CI-enforced rather
+than stylistic (no `unwrap()` in tests, no allocation in the real-time path),
+and how a pull request should be scoped.
 
-- Setting up your development environment
-- Running tests and benchmarks
-- Code style and formatting requirements
-- Submitting pull requests
+For more depth: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for the full
+contributor guide, and [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for
+environment, tooling, and benchmark setup.
+
+Security issues go through [SECURITY.md](SECURITY.md), not the public issue
+tracker.
 
 ## License
 
