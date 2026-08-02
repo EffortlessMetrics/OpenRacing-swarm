@@ -31,10 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   torque-limit write on the IPC surface, so against a *live* service it also
   reported success while changing nothing. It now fails with an explanation
   and directs the user to the wheelbase's physical torque limit. Adding a real
-  write needs a new `wheel.v1` method and belongs in its own change. Note that
-  `wheelctl profile apply` is *not* a workaround: `apply_profile` ignores its
-  profile argument and sends `base: None`, so `torqueCapNm` never reaches the
-  service there either — tracked separately.
+  write needs a new `wheel.v1` method and belongs in its own change. `wheelctl
+  profile apply` is a separate profile-file operation, not an immediate safety
+  limit write
+- `wheelctl profile apply` now transmits the profile values represented by the
+  IPC contract, and the service stages the received profile instead of
+  resolving a different repository profile. Schema-only filter settings and
+  other unrepresentable nested values are rejected rather than silently
+  discarded; newly created profiles omit the unsupported filter torque cap
 
 - Linux release packaging is runnable again. `packaging/linux/build-packages.sh`
   had a bash syntax error in its checksum loop (`for ... 2>/dev/null; do`) that

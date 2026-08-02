@@ -994,6 +994,14 @@ wheelctl profile apply <device-id> <profile-path>
 wheelctl profile apply <device-id> <profile-path> --skip-validation
 ```
 
+The command transmits the profile values represented by the current IPC
+contract, including scope, base settings, supported filters, LEDs, haptics,
+and signature. The IPC contract does not yet carry non-default
+`base.filters.bumpstop` or `base.filters.handsOff` settings,
+`base.filters.torqueCap`, `leds.colors`, or `haptics.effects`; those values are
+rejected with a validation error rather than silently discarded. New profiles
+created by `profile create` omit the unsupported filter torque cap.
+
 #### `profile create`
 
 Create new profile.

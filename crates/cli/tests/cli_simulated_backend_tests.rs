@@ -345,10 +345,9 @@ mod safety_limit_guidance {
 
     #[test]
     fn does_not_recommend_profile_apply() -> TestResult {
-        // `apply_profile` ignores its profile argument and sends `base: None`,
-        // so `torqueCapNm` never reaches the service. Recommending it as a
-        // torque-cap workaround would send the user chasing a cap that is
-        // silently dropped.
+        // `profile apply` is a profile-file operation, not an immediate
+        // safety-limit write. Recommending it as a safety-limit workaround
+        // would imply a guarantee this command cannot make.
         let output = wheelctl()?
             .args(["safety", "limit", "wheel-001", "5.0"])
             .output()?;
@@ -359,7 +358,7 @@ mod safety_limit_guidance {
         );
         assert!(
             !combined.contains("profile apply"),
-            "safety limit points at profile apply, which drops the cap:\n{combined}"
+            "safety limit points at profile apply instead of an immediate write:\n{combined}"
         );
         Ok(())
     }

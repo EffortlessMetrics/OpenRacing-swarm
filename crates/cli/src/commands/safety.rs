@@ -268,11 +268,9 @@ async fn set_torque_limit(
     // method on the wheel.v1 service, which is a schema change that belongs in
     // its own PR with an ADR, not folded in here.
     //
-    // Deliberately no "do this instead" pointer. `wheelctl profile apply` looks
-    // like the answer, but `WheelClient::apply_profile` ignores its profile
-    // argument and sends `base: None`, so `torqueCapNm` never reaches the
-    // service either. Naming it here would send a user chasing a cap that is
-    // silently dropped -- worse than admitting there is no path.
+    // Deliberately no "do this instead" pointer. `wheelctl profile apply` is a
+    // profile-file operation, not an immediate safety-limit write; directing
+    // users there would imply a guarantee this command cannot make.
     let _ = (global, max_torque);
     Err(CliError::ValidationError(format!(
         "Setting a torque limit is not implemented: the service exposes no \

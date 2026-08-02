@@ -807,7 +807,7 @@ impl WheelService for WheelServiceImpl {
                     Status::invalid_argument(format!("Invalid device ID: {}", e))
                 })?;
 
-        let _profile: racing_wheel_schemas::entities::Profile =
+        let profile: racing_wheel_schemas::entities::Profile =
             profile_wire.try_into().map_err(|e: ConversionError| {
                 Status::invalid_argument(format!("Invalid profile: {}", e))
             })?;
@@ -818,6 +818,15 @@ impl WheelService for WheelServiceImpl {
         let device_capabilities = racing_wheel_schemas::entities::DeviceCapabilities::new(
             true, true, true, true, max_torque, 1024, 1000,
         );
+
+        profile
+            .validate_for_device(&device_capabilities)
+            .map_err(|e| Status::invalid_argument(format!("Invalid profile: {}", e)))?;
+
+        self.profile_service
+            .set_session_override(&device_id, profile)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to stage profile: {}", e)))?;
 
         match self
             .profile_service
@@ -1638,6 +1647,106 @@ mod tests {
 
         assert_eq!(first.vendor_id, 0x1234);
         assert_eq!(first.product_id, 0x5678);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn apply_profile_uses_received_profile_values() -> anyhow::Result<()> {
+        use racing_wheel_schemas::generated::wheel::v1::{
+            ApplyProfileRequest, BaseSettings, CurvePoint, FilterConfig, NotchFilter, ProfileScope,
+        };
+
+        let device_service =
+            Arc::new(ApplicationDeviceService::new(Arc::new(VirtualHidPort::new()), None).await?);
+        let profile_dir = TempDir::new()?;
+        let profile_service = Arc::new(
+            ApplicationProfileService::new_with_config(ProfileRepositoryConfig {
+                profiles_dir: profile_dir.path().to_path_buf(),
+                trusted_keys: Vec::new(),
+                auto_migrate: true,
+                backup_on_migrate: false,
+            })
+            .await?,
+        );
+        let safety_service =
+            Arc::new(ApplicationSafetyService::new(SafetyPolicy::default(), None).await?);
+        let game_service = Arc::new(GameService::new().await?);
+        let (health_tx, _) = broadcast::channel(8);
+        let service = WheelServiceImpl::new(
+            device_service,
+            profile_service.clone(),
+            safety_service,
+            game_service,
+            health_tx,
+        );
+
+        let device_id = "ipc-profile-wheel";
+        let response = WheelService::apply_profile(
+            &service,
+            Request::new(ApplyProfileRequest {
+                device: Some(WireDeviceId {
+                    id: device_id.to_string(),
+                }),
+                profile: Some(WireProfile {
+                    schema_version: "wheel.profile/1".to_string(),
+                    scope: Some(ProfileScope {
+                        game: "iracing".to_string(),
+                        car: "gt3".to_string(),
+                        track: "spa".to_string(),
+                    }),
+                    base: Some(BaseSettings {
+                        ffb_gain: 0.72,
+                        dor_deg: 540,
+                        torque_cap_nm: 6.5,
+                        filters: Some(FilterConfig {
+                            reconstruction: 4,
+                            friction: 0.12,
+                            damper: 0.18,
+                            inertia: 0.08,
+                            notch_filters: vec![NotchFilter {
+                                hz: 60.0,
+                                q: 2.0,
+                                gain_db: -6.0,
+                            }],
+                            slew_rate: 0.85,
+                            curve_points: vec![
+                                CurvePoint {
+                                    input: 0.0,
+                                    output: 0.0,
+                                },
+                                CurvePoint {
+                                    input: 1.0,
+                                    output: 0.9,
+                                },
+                            ],
+                        }),
+                    }),
+                    leds: None,
+                    haptics: None,
+                    signature: "signed-profile".to_string(),
+                }),
+            }),
+        )
+        .await?
+        .into_inner();
+
+        assert!(response.success, "{}", response.error_message);
+
+        let domain_device_id: DeviceId = device_id.parse()?;
+        let staged = profile_service
+            .get_session_override(&domain_device_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("profile was not staged"))?;
+        assert_eq!(staged.scope.game.as_deref(), Some("iracing"));
+        assert_eq!(staged.scope.car.as_deref(), Some("gt3"));
+        assert_eq!(staged.scope.track.as_deref(), Some("spa"));
+        assert!((staged.base_settings.ffb_gain.value() - 0.72).abs() < f32::EPSILON);
+        assert!((staged.base_settings.degrees_of_rotation.value() - 540.0).abs() < f32::EPSILON);
+        assert!((staged.base_settings.torque_cap.value() - 6.5).abs() < f32::EPSILON);
+        assert_eq!(staged.base_settings.filters.reconstruction, 4);
+        assert!((staged.base_settings.filters.friction.value() - 0.12).abs() < f32::EPSILON);
+        assert_eq!(staged.base_settings.filters.notch_filters.len(), 1);
+        assert!((staged.base_settings.filters.slew_rate.value() - 0.85).abs() < f32::EPSILON);
         Ok(())
     }
 
