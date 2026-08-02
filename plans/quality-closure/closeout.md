@@ -6,6 +6,7 @@ Issue: https://github.com/EffortlessMetrics/OpenRacing-swarm/issues/215
 Implementation PR: https://github.com/EffortlessMetrics/OpenRacing-swarm/pull/226
 Merge commit: `d12b4ac454712c26321d43808e9b62908414e7b0`
 Follow-up: https://github.com/EffortlessMetrics/OpenRacing-swarm/issues/227
+Follow-up PR: https://github.com/EffortlessMetrics/OpenRacing-swarm/pull/230
 
 ## Landed
 
