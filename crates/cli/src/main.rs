@@ -47,8 +47,17 @@ struct Cli {
     #[arg(short, long, global = true, action = clap::ArgAction::Count)]
     verbose: u8,
 
+    // Deliberately not wired to clap's `env`: a bool arg there only accepts
+    // literal `true`/`false`, and erroring out on `WHEELCTL_NO_MOCK=1` would be
+    // a poor trade for a flag whose whole purpose is scripting. The environment
+    // variables are read in `client::simulated_backend_allowed`, which accepts
+    // `1` and `true`.
+    /// Fail if wheeld is unreachable instead of showing simulated data [env: WHEELCTL_NO_MOCK=1]
+    #[arg(long, global = true)]
+    no_mock: bool,
+
     /// Service endpoint (for testing)
-    #[arg(long, global = true, env = "WHEELCTL_ENDPOINT", hide = true)]
+    #[arg(long, global = true, env = "WHEELCTL_ENDPOINT")]
     endpoint: Option<String>,
 
     #[command(subcommand)]
@@ -172,6 +181,10 @@ async fn async_main() -> Result<()> {
                 .with_writer(std::io::stderr),
         )
         .init();
+
+    // Applies to every client constructed below, so scripts can require a real
+    // service rather than silently reading simulated data.
+    client::set_simulated_backend_disabled(cli.no_mock);
 
     // Execute command
     let result = execute_command(&cli).await;

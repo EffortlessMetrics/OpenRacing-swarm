@@ -19,11 +19,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no indication that a system package was missing. The only mention of these was
   in a troubleshooting section of `docs/DEVELOPMENT.md`, which is not where
   someone looks before their first build
-- The README advertised `wheelctl profile apply` as a Basic Usage example.
-  `WheelClient::apply_profile` ignores its profile argument and sends
-  `base: None`, so the command reports success without transmitting anything.
-  Removed from the example list and recorded under a new "Known gaps" section
-  instead
+- `wheelctl` no longer presents simulated data as real. When `wheeld` was
+  unreachable the client silently fell back to a canned backend, so a
+  first-time user with no daemon and no hardware saw two invented Fanatec
+  devices with nothing marking them as fake. The fallback now prints a notice
+  to stderr naming the unreachable endpoint and how to start the service, and
+  human output labels each simulated device
+- `wheelctl health` reported `Service: Running` and `"service_status":
+  "running"` unconditionally, so the one command a user reaches for to answer
+  "is this working?" could not answer no. It now reports the real backend, and
+  `overall_health` is `service_unavailable` rather than `healthy` when no
+  service is reachable
+- `wheelctl safety stop`, `safety enable`, and `safety limit` reported success
+  against the simulated backend. All three now require a live service and exit
+  with the service-unavailable code (5) when there is none — an emergency stop
+  that never reached a device, or a high-torque enable that never gated
+  anything, must not report success. Read-only `safety status` keeps working
+  offline
+- `wheelctl safety limit` printed "Torque limit set" without ever sending the
+  limit anywhere — it validated the value against the device maximum and then
+  returned, carrying a `// Mock torque limit setting` comment. There is no
+  torque-limit write on the IPC surface, so against a *live* service it also
+  reported success while changing nothing. It now fails with an explanation
+  and directs the user to the wheelbase's physical torque limit. Adding a real
+  write needs a new `wheel.v1` method and belongs in its own change. `wheelctl
+  profile apply` is a separate profile-file operation, not an immediate safety
+  limit write
+- `wheelctl profile apply` now transmits the profile values represented by the
+  IPC contract, and the service stages the received profile instead of
+  resolving a different repository profile. Schema-only filter settings and
+  other unrepresentable nested values are rejected rather than silently
+  discarded; newly created profiles omit the unsupported filter torque cap
 - Linux release packaging is runnable again. `packaging/linux/build-packages.sh`
   had a bash syntax error in its checksum loop (`for ... 2>/dev/null; do`) that
   made the whole script unparseable, so every tagged release failed at the
@@ -77,6 +103,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The release workflow now verifies that the tag version matches the
   `[workspace.package]` version in `Cargo.toml` before building, a check
   `RELEASING.md` already documented but that did not exist
+- `wheelctl --no-mock` (also `WHEELCTL_NO_MOCK=1` or `OPENRACING_NO_MOCK=1`)
+  makes an unreachable service an error instead of falling back to simulated
+  data, so scripts can require a real daemon
+- `wheelctl --json health` reports a `backend` field (`service` or `simulated`)
+- `--endpoint` is no longer hidden from `--help`; it decides whether the
+  simulated fallback applies, so it was load-bearing but undiscoverable
 - External `control_stream_v1` contract bundle wired into Linux release packages
   (`contract/control-stream/`): a pinned `wheel.proto`, a compatibility manifest
   (feature version, capture schema version, minimum compatible service/client

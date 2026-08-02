@@ -253,11 +253,13 @@ the client commands above have something real to talk to.
 Pre-validation means some commands are scaffolding. The ones most likely to
 mislead:
 
-- `wheelctl profile apply` reports success but does not transmit the profile
-  body, so nothing in the file reaches the service (tracked in the issue
-  tracker)
 - `wheelctl safety limit` is not implemented and now fails rather than claiming
   success; use the wheelbase's physical torque limit
+- `wheelctl profile apply` transmits only the settings the IPC contract
+  represents. Schema-only fields — `base.filters.torqueCap`, `bumpstop`,
+  `handsOff`, LED colours, haptic effects, profile signatures — are rejected
+  with an explicit error rather than silently dropped, so a profile using them
+  will not apply until the contract covers them
 - Device I/O is not implemented on macOS
 
 ## Project Structure

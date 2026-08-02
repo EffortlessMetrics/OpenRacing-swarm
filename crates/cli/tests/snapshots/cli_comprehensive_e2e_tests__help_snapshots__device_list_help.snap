@@ -1,6 +1,5 @@
 ---
 source: crates/cli/tests/cli_comprehensive_e2e_tests.rs
-assertion_line: 844
 expression: stdout
 ---
 List all connected devices
@@ -13,4 +12,6 @@ Options:
       --hid-observe-only     List only observe-only HID endpoints, without service/mock devices
   -v, --verbose...           Verbose logging
       --json-out <JSON_OUT>  Write the device list receipt to this JSON file
+      --no-mock              Fail if wheeld is unreachable instead of showing simulated data [env: WHEELCTL_NO_MOCK=1]
+      --endpoint <ENDPOINT>  Service endpoint (for testing) [env: WHEELCTL_ENDPOINT=]
   -h, --help                 Print help

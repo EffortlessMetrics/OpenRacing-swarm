@@ -4,9 +4,24 @@
 
 #![allow(deprecated)]
 
-/// Normalize binary name across platforms (strip `.exe` suffix from usage strings)
+/// Normalize binary name across platforms (strip `.exe` suffix from usage
+/// strings) and trim trailing whitespace from each line.
+///
+/// Clap pads the blank separator line inside a long help entry, which would
+/// otherwise commit trailing whitespace into the snapshot files and trip
+/// `git diff --check`. Matches the normalization in
+/// `cli_comprehensive_e2e_tests.rs`.
 fn normalize_cli_output(s: &str) -> String {
-    s.replace("wheelctl.exe", "wheelctl")
+    let replaced = s.replace("wheelctl.exe", "wheelctl");
+    let mut output = replaced
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
+    if replaced.ends_with('\n') {
+        output.push('\n');
+    }
+    output
 }
 
 // ---------------------------------------------------------------------------

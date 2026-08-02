@@ -122,6 +122,119 @@ Revert the quality closure proposal/spec/plan, exception ledger, workflow, and
 `xtask quality-closure` changes. The existing RIPR, Codecov, coverage, and Moza
 hardware lanes remain unchanged.
 
+## Work item: reconcile-ripr-plus-badge-evidence-contract
+
+Status: completed
+Linked issue: https://github.com/EffortlessMetrics/OpenRacing-swarm/issues/215
+Linked PR: https://github.com/EffortlessMetrics/OpenRacing-swarm/pull/226
+Follow-up: https://github.com/EffortlessMetrics/OpenRacing-swarm/issues/227
+Blocks: retiring the `ripr-plus-test-efficiency-evidence-missing` exception
+Blocked by: a repo-owned test-efficiency report producer
+
+### Goal
+
+Keep the public `ripr+` endpoint numeric and checkable when test-efficiency
+evidence is unavailable, while ensuring the quality-closure receipt continues
+to report that evidence as skipped rather than as a pass.
+
+### Production delta
+
+- Use `ripr` repo-badge output as an explicit exposure-only fallback when the
+  test-efficiency report is absent.
+- Project the numeric fallback into the `ripr+` endpoint with `lightgrey`.
+- Keep `badge_endpoint_status = "skipped"` until test-efficiency evidence is
+  actually produced and compared.
+- Add unit coverage for numeric projection and nonnumeric rejection.
+
+### Acceptance
+
+- `cargo xtask badges --check` can run without a pre-seeded test-efficiency
+  report and never emits a nonnumeric badge message.
+- `cargo xtask quality-closure --check` remains successful but advisory, with
+  `badge_endpoint_status = "skipped"` while evidence is absent.
+- A valid test-efficiency report still selects the native `ripr+` output path.
+- Missing test-efficiency evidence is visible in the endpoint color, receipt,
+  policy ledger, and verification docs; no RIPR+ zero or closure claim is
+  broadened.
+
+### Proof commands
+
+```text
+cargo test --locked --offline -p openracing-tools --bin xtask
+cargo xtask badges --check
+cargo xtask quality-closure --check
+python scripts/policy_file.py --strict
+git diff --check
+```
+
+### Non-goals
+
+- No test-efficiency analyzer or runtime mutation engine.
+- No coverage ratchet or release-readiness claim.
+- No change to the static exposure count semantics when full evidence exists.
+
+### Rollback
+
+Revert the fallback projection, policy/documentation changes, and focused
+tests. The prior explicit missing-report failure remains visible, but the
+non-numeric bot badge payload must not be restored.
+
+## Work item: produce-repo-owned-test-efficiency-evidence
+
+Status: completed
+Linked issue: https://github.com/EffortlessMetrics/OpenRacing-swarm/issues/227
+Linked PR: https://github.com/EffortlessMetrics/OpenRacing-swarm/pull/230
+Linked spec: docs/specs/OR-SPEC-0003-ripr-plus-coverage-closure.md
+Prerequisite: reconcile-ripr-plus-badge-evidence-contract
+Goal: Generate the RIPR test-efficiency report from deterministic, conservative
+static test-oracle facts so the native RIPR+ badge path is reproducible.
+
+### Production delta
+
+- Add `cargo xtask test-efficiency-report`.
+- Scan repository Rust tests for assertion shape, apparent owner calls,
+  activation literals, and static limitations.
+- Write the `0.1` JSON contract and an advisory Markdown companion under
+  `target/ripr/reports/`.
+- Run the producer before badge and quality-closure generation.
+
+### Acceptance
+
+- The producer handles missing and valid source roots without panicking and
+  emits the required schema, class vocabulary, test ledger, and
+  `metrics.tests_scanned` field.
+- Focused fixture tests cover strong, broad, smoke, likely-vacuous, opaque,
+  and possibly-circular classifications plus malformed contract rejection and
+  nested output-directory creation.
+- `cargo xtask badges --check` uses the native RIPR+ output from the generated
+  report, and quality closure reports endpoint regeneration as pass when the
+  committed endpoint matches.
+- The report remains advisory and does not claim runtime mutation, coverage,
+  release readiness, or test adequacy.
+
+### Proof commands
+
+```text
+cargo test --locked --offline -p openracing-tools --bin xtask
+cargo xtask test-efficiency-report
+cargo xtask badges --check
+OPENRACING_COVERAGE_TOOL_STATUS=skipped cargo xtask quality-closure --check
+cargo clippy --all-targets --all-features -- -D warnings
+python scripts/policy_file.py --strict
+git diff --check
+```
+
+### Non-goals
+
+- No runtime mutation engine or test execution.
+- No coverage ratchet, hardware validation, or release-readiness claim.
+- No public support-tier promotion.
+
+### Rollback
+
+Revert the producer, report integration, plan, and policy updates; retain the
+previous numeric exposure-only fallback and active evidence exception.
+
 ## Next work
 
 1. Turn the skipped coverage debt into a required non-skipped coverage sentinel

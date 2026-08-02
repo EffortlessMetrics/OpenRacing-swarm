@@ -23,6 +23,24 @@ fn wheelctl() -> Result<Command, Box<dyn std::error::Error>> {
     Ok(cmd)
 }
 
+/// Port with nothing listening on it, so the offline path is deterministic.
+const UNREACHABLE_ENDPOINT: &str = "http://127.0.0.1:19996";
+
+/// A `wheelctl` pinned to an endpoint that cannot be reached.
+///
+/// Clearing `WHEELCTL_ENDPOINT` alone is not enough: the CLI then falls back
+/// to the *default* endpoint, so on a machine actually running `wheeld` these
+/// tests would talk to it — and `safety enable --force` could reach real
+/// hardware. Pinning a dead port keeps them offline. The simulated fallback
+/// stays enabled (no `--no-mock`), which is what the read-only cases exercise.
+fn wheelctl_offline() -> Result<Command, Box<dyn std::error::Error>> {
+    let mut cmd = wheelctl()?;
+    cmd.env_remove("WHEELCTL_NO_MOCK");
+    cmd.env_remove("OPENRACING_NO_MOCK");
+    cmd.arg("--endpoint").arg(UNREACHABLE_ENDPOINT);
+    Ok(cmd)
+}
+
 /// Parse stdout bytes into a JSON Value.
 fn json(bytes: &[u8]) -> Result<Value, Box<dyn std::error::Error>> {
     Ok(serde_json::from_slice(bytes)?)
@@ -1839,94 +1857,117 @@ mod prompt_bypass {
         Ok(())
     }
 
+    // -----------------------------------------------------------------------
+    // Safety writes
+    //
+    // These used to assert that `safety enable`, `safety stop`, and
+    // `safety limit` *succeed* with no daemon running, because the client
+    // silently fell back to a simulated backend. Reporting a completed
+    // emergency stop that never reached a device is the worst failure mode
+    // this CLI has, so those three now refuse without a live service.
+    //
+    // The property this module exists to protect still holds and is still
+    // checked: none of these block on an interactive prompt. Each returns
+    // promptly with a definite exit code rather than waiting on stdin.
+    // What is asserted here is only the offline contract; behaviour against a
+    // reachable service is covered by the service integration suite.
+    // -----------------------------------------------------------------------
+
+    /// Exit code the CLI maps `CliError::ServiceUnavailable` to.
+    const EXIT_SERVICE_UNAVAILABLE: i32 = 5;
+
     #[test]
-    fn safety_enable_force_skips_prompt() -> TestResult {
-        let out = wheelctl()?
+    fn safety_enable_force_refuses_without_a_service() -> TestResult {
+        let out = wheelctl_offline()?
             .args(["safety", "enable", "wheel-001", "--force"])
             .output()?;
-        assert!(
-            out.status.success(),
-            "safety enable --force should succeed: {}",
+        assert_eq!(
+            out.status.code(),
+            Some(EXIT_SERVICE_UNAVAILABLE),
+            "high torque must not report success without a service: {}",
             String::from_utf8_lossy(&out.stderr)
-        );
-        let s = String::from_utf8_lossy(&out.stdout);
-        assert!(
-            s.contains("enabled") || s.contains("High torque") || s.contains("✓"),
-            "should report enable result: {s}"
         );
         Ok(())
     }
 
     #[test]
-    fn safety_enable_json_mode_skips_prompt() -> TestResult {
-        let out = wheelctl()?
+    fn safety_enable_json_mode_refuses_without_a_service() -> TestResult {
+        let out = wheelctl_offline()?
             .args(["--json", "safety", "enable", "wheel-001", "--force"])
             .output()?;
-        assert!(out.status.success());
+        assert_eq!(out.status.code(), Some(EXIT_SERVICE_UNAVAILABLE));
         Ok(())
     }
 
     #[test]
-    fn safety_stop_no_prompt_needed() -> TestResult {
-        // Emergency stop should not require a prompt
-        let out = wheelctl()?.args(["safety", "stop"]).output()?;
-        assert!(out.status.success());
-        let s = String::from_utf8_lossy(&out.stdout);
+    fn safety_stop_refuses_without_a_service() -> TestResult {
+        let out = wheelctl_offline()?.args(["safety", "stop"]).output()?;
+        assert_eq!(
+            out.status.code(),
+            Some(EXIT_SERVICE_UNAVAILABLE),
+            "an emergency stop that reached no device must not report success"
+        );
+        let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(
-            s.contains("stop") || s.contains("stopped") || s.contains("✓"),
-            "should report stop result: {s}"
+            !stdout.contains("stopped"),
+            "stdout claimed devices were stopped: {stdout}"
         );
         Ok(())
     }
 
     #[test]
-    fn safety_stop_specific_device() -> TestResult {
-        let out = wheelctl()?.args(["safety", "stop", "wheel-001"]).output()?;
-        assert!(out.status.success());
+    fn safety_stop_specific_device_refuses_without_a_service() -> TestResult {
+        let out = wheelctl_offline()?
+            .args(["safety", "stop", "wheel-001"])
+            .output()?;
+        assert_eq!(out.status.code(), Some(EXIT_SERVICE_UNAVAILABLE));
         Ok(())
     }
 
     #[test]
-    fn safety_limit_sets_torque() -> TestResult {
-        let out = wheelctl()?
+    fn safety_limit_refuses_without_a_service() -> TestResult {
+        let out = wheelctl_offline()?
             .args(["safety", "limit", "wheel-001", "5.0"])
             .output()?;
-        assert!(
-            out.status.success(),
-            "torque limit should succeed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        let s = String::from_utf8_lossy(&out.stdout);
-        assert!(
-            s.contains("5.0") || s.contains("Torque limit"),
-            "should report limit set: {s}"
+        assert_eq!(
+            out.status.code(),
+            Some(EXIT_SERVICE_UNAVAILABLE),
+            "a torque limit that reached no device must not report success"
         );
         Ok(())
     }
 
     #[test]
-    fn safety_limit_global_flag() -> TestResult {
-        let out = wheelctl()?
+    fn safety_limit_global_flag_refuses_without_a_service() -> TestResult {
+        let out = wheelctl_offline()?
             .args(["safety", "limit", "wheel-001", "6.0", "--global"])
             .output()?;
-        assert!(out.status.success());
-        let s = String::from_utf8_lossy(&out.stdout);
-        assert!(
-            s.contains("all profiles") || s.contains("global"),
-            "should mention global scope: {s}"
-        );
+        assert_eq!(out.status.code(), Some(EXIT_SERVICE_UNAVAILABLE));
         Ok(())
     }
 
     #[test]
     fn safety_limit_exceeds_max_torque_fails() -> TestResult {
-        // The mock device has max_torque_nm = 8.0
-        let out = wheelctl()?
+        // Offline this fails as service-unavailable before the per-device
+        // max-torque check is reached. Asserted on the exact code so the test
+        // cannot pass vacuously; the max_torque_nm validation itself is
+        // exercised against a live service elsewhere.
+        let out = wheelctl_offline()?
             .args(["safety", "limit", "wheel-001", "20.0"])
             .output()?;
+        assert_eq!(out.status.code(), Some(EXIT_SERVICE_UNAVAILABLE));
+        Ok(())
+    }
+
+    #[test]
+    fn safety_status_still_works_offline() -> TestResult {
+        // Read-only, so it keeps the offline fallback that makes the CLI
+        // usable without hardware. Only writes refuse.
+        let out = wheelctl_offline()?.args(["safety", "status"]).output()?;
         assert!(
-            !out.status.success(),
-            "torque exceeding device max should fail"
+            out.status.success(),
+            "read-only safety status should still work offline: {}",
+            String::from_utf8_lossy(&out.stderr)
         );
         Ok(())
     }

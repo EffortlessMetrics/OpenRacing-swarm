@@ -11,7 +11,9 @@ Arguments:
   <CALIBRATION_TYPE>  Calibration type [possible values: center, dor, pedals, all]
 
 Options:
-      --json        Output in JSON format for machine parsing
-  -y, --yes         Skip interactive prompts
-  -v, --verbose...  Verbose logging
-  -h, --help        Print help
+      --json                 Output in JSON format for machine parsing
+  -y, --yes                  Skip interactive prompts
+  -v, --verbose...           Verbose logging
+      --no-mock              Fail if wheeld is unreachable instead of showing simulated data [env: WHEELCTL_NO_MOCK=1]
+      --endpoint <ENDPOINT>  Service endpoint (for testing) [env: WHEELCTL_ENDPOINT=]
+  -h, --help                 Print help

@@ -637,17 +637,22 @@ mod diagnostics_and_status {
     }
 
     #[test]
+    // Safety *writes* refuse when no wheeld service is reachable rather than
+    // reporting success against the simulated backend, so these assert the
+    // service-unavailable exit code (5) instead of success. Reporting a
+    // completed emergency stop that never reached a device would be the worst
+    // failure mode this CLI has.
     fn safety_enable_with_force() -> TestResult {
         wheelctl()?
             .args(["safety", "enable", "wheel-001", "--force"])
             .assert()
-            .success();
+            .code(5);
         Ok(())
     }
 
     #[test]
     fn safety_emergency_stop() -> TestResult {
-        wheelctl()?.args(["safety", "stop"]).assert().success();
+        wheelctl()?.args(["safety", "stop"]).assert().code(5);
         Ok(())
     }
 
@@ -656,7 +661,7 @@ mod diagnostics_and_status {
         wheelctl()?
             .args(["safety", "stop", "wheel-001"])
             .assert()
-            .success();
+            .code(5);
         Ok(())
     }
 
@@ -665,7 +670,7 @@ mod diagnostics_and_status {
         wheelctl()?
             .args(["safety", "limit", "wheel-001", "5.0"])
             .assert()
-            .success();
+            .code(5);
         Ok(())
     }
 
@@ -973,12 +978,14 @@ mod invalid_arguments {
     }
 
     #[test]
-    fn safety_invalid_high_torque_exits_code_4() -> TestResult {
+    fn safety_invalid_high_torque_exits_with_error() -> TestResult {
+        // Offline this stops at the service check (5) before reaching the
+        // torque-value validation that would produce 4.
         wheelctl()?
             .args(["safety", "limit", "wheel-001", "50.0"])
             .assert()
             .failure()
-            .code(4);
+            .code(5);
         Ok(())
     }
 }
