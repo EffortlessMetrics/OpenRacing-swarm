@@ -27,6 +27,113 @@ use tokio_stream::StreamExt;
 /// Default gRPC endpoint for the wheeld service
 const DEFAULT_ENDPOINT: &str = "http://127.0.0.1:50051";
 
+/// Convert the JSON profile contract to the fields currently carried by IPC.
+///
+/// The JSON schema contains settings that the versioned protobuf does not
+/// carry yet. Rejecting non-default values here keeps `profile apply` honest:
+/// a profile is never reported as applied after silently losing a setting on
+/// the wire.
+fn profile_to_wire(profile: &racing_wheel_schemas::config::ProfileSchema) -> Result<wire::Profile> {
+    let filters = &profile.base.filters;
+    let default_bumpstop = racing_wheel_schemas::config::BumpstopConfig::default();
+    let default_hands_off = racing_wheel_schemas::config::HandsOffConfig::default();
+    let mut unsupported = Vec::new();
+
+    if filters.torque_cap.is_some() {
+        unsupported.push("base.filters.torqueCap");
+    }
+    if filters.bumpstop.enabled != default_bumpstop.enabled
+        || filters.bumpstop.strength != default_bumpstop.strength
+    {
+        unsupported.push("base.filters.bumpstop");
+    }
+    if filters.hands_off.enabled != default_hands_off.enabled
+        || filters.hands_off.sensitivity != default_hands_off.sensitivity
+    {
+        unsupported.push("base.filters.handsOff");
+    }
+    if profile
+        .leds
+        .as_ref()
+        .and_then(|leds| leds.colors.as_ref())
+        .is_some_and(|colors| !colors.is_empty())
+    {
+        unsupported.push("leds.colors");
+    }
+    if profile
+        .haptics
+        .as_ref()
+        .and_then(|haptics| haptics.effects.as_ref())
+        .is_some_and(|effects| !effects.is_empty())
+    {
+        unsupported.push("haptics.effects");
+    }
+    if profile
+        .signature
+        .as_deref()
+        .is_some_and(|signature| !signature.is_empty())
+    {
+        unsupported.push("signature");
+    }
+
+    if !unsupported.is_empty() {
+        return Err(CliError::ValidationError(format!(
+            "profile contains fields not supported by the current IPC contract: {}",
+            unsupported.join(", ")
+        ))
+        .into());
+    }
+
+    Ok(wire::Profile {
+        schema_version: profile.schema.clone(),
+        scope: Some(wire::ProfileScope {
+            game: profile.scope.game.clone().unwrap_or_default(),
+            car: profile.scope.car.clone().unwrap_or_default(),
+            track: profile.scope.track.clone().unwrap_or_default(),
+        }),
+        base: Some(wire::BaseSettings {
+            ffb_gain: profile.base.ffb_gain,
+            dor_deg: u32::from(profile.base.dor_deg),
+            torque_cap_nm: profile.base.torque_cap_nm,
+            filters: Some(wire::FilterConfig {
+                reconstruction: u32::from(filters.reconstruction),
+                friction: filters.friction,
+                damper: filters.damper,
+                inertia: filters.inertia,
+                notch_filters: filters
+                    .notch_filters
+                    .iter()
+                    .map(|notch| wire::NotchFilter {
+                        hz: notch.hz,
+                        q: notch.q,
+                        gain_db: notch.gain_db,
+                    })
+                    .collect(),
+                slew_rate: filters.slew_rate,
+                curve_points: filters
+                    .curve_points
+                    .iter()
+                    .map(|point| wire::CurvePoint {
+                        input: point.input,
+                        output: point.output,
+                    })
+                    .collect(),
+            }),
+        }),
+        leds: profile.leds.as_ref().map(|leds| wire::LedConfig {
+            rpm_bands: leds.rpm_bands.clone(),
+            pattern: leds.pattern.clone(),
+            brightness: leds.brightness,
+        }),
+        haptics: profile.haptics.as_ref().map(|haptics| wire::HapticsConfig {
+            enabled: haptics.enabled,
+            intensity: haptics.intensity,
+            frequency_hz: haptics.frequency_hz,
+        }),
+        signature: profile.signature.clone().unwrap_or_default(),
+    })
+}
+
 /// Set when the caller opts out of the simulated fallback, so an unreachable
 /// service is reported as an error instead of answered with invented data.
 static SIMULATED_BACKEND_DISABLED: AtomicBool = AtomicBool::new(false);
@@ -291,8 +398,10 @@ impl WheelClient {
     pub async fn apply_profile(
         &self,
         device_id: &str,
-        _profile: &racing_wheel_schemas::config::ProfileSchema,
+        profile: &racing_wheel_schemas::config::ProfileSchema,
     ) -> Result<()> {
+        let wire_profile = profile_to_wire(profile)?;
+
         match &self.backend {
             ClientBackend::Grpc(inner) => {
                 let mut client = inner.lock().await;
@@ -300,22 +409,26 @@ impl WheelClient {
                     device: Some(wire::DeviceId {
                         id: device_id.to_string(),
                     }),
-                    profile: Some(wire::Profile {
-                        schema_version: "wheel.profile/1".to_string(),
-                        scope: None,
-                        base: None,
-                        leds: None,
-                        haptics: None,
-                        signature: String::new(),
-                    }),
+                    profile: Some(wire_profile),
                 };
 
-                let response = client.apply_profile(request).await.map_err(|status| {
-                    CliError::ServiceUnavailable(format!(
-                        "Failed to apply profile: {}",
-                        status.message()
-                    ))
-                })?;
+                let response =
+                    client
+                        .apply_profile(request)
+                        .await
+                        .map_err(|status| match status.code() {
+                            tonic::Code::InvalidArgument => CliError::ValidationError(format!(
+                                "Failed to apply profile: {}",
+                                status.message()
+                            )),
+                            tonic::Code::NotFound => {
+                                CliError::DeviceNotFound(device_id.to_string())
+                            }
+                            _ => CliError::ServiceUnavailable(format!(
+                                "Failed to apply profile: {}",
+                                status.message()
+                            )),
+                        })?;
 
                 let result = response.into_inner();
                 if result.success {
@@ -1355,6 +1468,144 @@ mod tests {
             "Expected connection error, got: {}",
             err_msg
         );
+    }
+
+    #[test]
+    fn profile_to_wire_preserves_supported_values() -> Result<(), Box<dyn std::error::Error>> {
+        use racing_wheel_schemas::config::{
+            BaseConfig, CurvePoint, FilterConfig, HapticsConfig, LedConfig, NotchFilter,
+            ProfileScope,
+        };
+
+        let filters = FilterConfig {
+            reconstruction: 4,
+            friction: 0.12,
+            damper: 0.18,
+            inertia: 0.08,
+            torque_cap: None,
+            notch_filters: vec![NotchFilter {
+                hz: 60.0,
+                q: 2.0,
+                gain_db: -6.0,
+            }],
+            slew_rate: 0.85,
+            curve_points: vec![
+                CurvePoint {
+                    input: 0.0,
+                    output: 0.0,
+                },
+                CurvePoint {
+                    input: 1.0,
+                    output: 0.9,
+                },
+            ],
+            ..Default::default()
+        };
+
+        let profile = racing_wheel_schemas::config::ProfileSchema {
+            schema: "wheel.profile/1".to_string(),
+            scope: ProfileScope {
+                game: Some("iracing".to_string()),
+                car: Some("gt3".to_string()),
+                track: None,
+            },
+            base: BaseConfig {
+                ffb_gain: 0.75,
+                dor_deg: 540,
+                torque_cap_nm: 8.0,
+                filters,
+            },
+            leds: Some(LedConfig {
+                rpm_bands: vec![0.7, 0.9],
+                pattern: "progressive".to_string(),
+                brightness: 0.8,
+                colors: None,
+            }),
+            haptics: Some(HapticsConfig {
+                enabled: true,
+                intensity: 0.4,
+                frequency_hz: 75.0,
+                effects: None,
+            }),
+            signature: None,
+        };
+
+        let wire_profile = profile_to_wire(&profile)?;
+        assert_eq!(wire_profile.schema_version, "wheel.profile/1");
+        assert!(wire_profile.signature.is_empty());
+
+        let scope = wire_profile.scope.as_ref().ok_or("missing wire scope")?;
+        assert_eq!(scope.game, "iracing");
+        assert_eq!(scope.car, "gt3");
+
+        let base = wire_profile.base.as_ref().ok_or("missing wire base")?;
+        assert!((base.ffb_gain - 0.75).abs() < f32::EPSILON);
+        assert_eq!(base.dor_deg, 540);
+        assert!((base.torque_cap_nm - 8.0).abs() < f32::EPSILON);
+
+        let wire_filters = base.filters.as_ref().ok_or("missing wire filters")?;
+        assert_eq!(wire_filters.reconstruction, 4);
+        assert!((wire_filters.friction - 0.12).abs() < f32::EPSILON);
+        assert_eq!(wire_filters.notch_filters.len(), 1);
+        assert_eq!(wire_filters.curve_points.len(), 2);
+        assert!((wire_filters.slew_rate - 0.85).abs() < f32::EPSILON);
+
+        let leds = wire_profile.leds.as_ref().ok_or("missing wire leds")?;
+        assert_eq!(leds.rpm_bands, vec![0.7, 0.9]);
+        let haptics = wire_profile
+            .haptics
+            .as_ref()
+            .ok_or("missing wire haptics")?;
+        assert!(haptics.enabled);
+        assert!((haptics.frequency_hz - 75.0).abs() < f32::EPSILON);
+        Ok(())
+    }
+
+    #[test]
+    fn profile_to_wire_rejects_unrepresentable_values() -> Result<(), Box<dyn std::error::Error>> {
+        use racing_wheel_schemas::config::{BaseConfig, ProfileScope};
+
+        let filters = racing_wheel_schemas::config::FilterConfig {
+            torque_cap: Some(5.0),
+            bumpstop: racing_wheel_schemas::config::BumpstopConfig {
+                enabled: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let profile = racing_wheel_schemas::config::ProfileSchema {
+            schema: "wheel.profile/1".to_string(),
+            scope: ProfileScope {
+                game: None,
+                car: None,
+                track: None,
+            },
+            base: BaseConfig {
+                ffb_gain: 0.75,
+                dor_deg: 900,
+                torque_cap_nm: 8.0,
+                filters,
+            },
+            leds: None,
+            haptics: None,
+            signature: None,
+        };
+
+        let error = profile_to_wire(&profile)
+            .err()
+            .ok_or("unsupported profile unexpectedly mapped")?;
+        let message = error.to_string();
+        assert!(message.contains("base.filters.torqueCap"));
+        assert!(message.contains("base.filters.bumpstop"));
+
+        let mut signed_profile = profile;
+        signed_profile.base.filters = racing_wheel_schemas::config::FilterConfig::default();
+        signed_profile.signature = Some("signed-profile".to_string());
+        let signed_error = profile_to_wire(&signed_profile)
+            .err()
+            .ok_or("signed profile unexpectedly mapped")?;
+        assert!(signed_error.to_string().contains("signature"));
+        Ok(())
     }
 
     #[tokio::test]
