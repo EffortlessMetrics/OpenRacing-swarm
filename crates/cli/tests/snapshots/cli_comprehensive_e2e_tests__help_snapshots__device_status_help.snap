@@ -14,5 +14,7 @@ Options:
       --moza-lane <MOZA_LANE>  Optional Moza lane artifact directory used to report descriptor trust
       --json-out <JSON_OUT>    Write the device status receipt to this JSON file
   -v, --verbose...             Verbose logging
+      --no-mock                Fail if wheeld is unreachable instead of showing simulated data [env: WHEELCTL_NO_MOCK=1]
   -w, --watch                  Watch status in real-time
+      --endpoint <ENDPOINT>    Service endpoint (for testing) [env: WHEELCTL_ENDPOINT=]
   -h, --help                   Print help

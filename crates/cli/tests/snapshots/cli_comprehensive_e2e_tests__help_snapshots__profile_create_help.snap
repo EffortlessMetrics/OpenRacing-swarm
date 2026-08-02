@@ -10,9 +10,11 @@ Arguments:
   <PATH>  Profile file path
 
 Options:
-      --from <FROM>  Base profile to copy from
-      --json         Output in JSON format for machine parsing
-      --game <GAME>  Game scope
-  -v, --verbose...   Verbose logging
-      --car <CAR>    Car scope
-  -h, --help         Print help
+      --from <FROM>          Base profile to copy from
+      --json                 Output in JSON format for machine parsing
+      --game <GAME>          Game scope
+  -v, --verbose...           Verbose logging
+      --car <CAR>            Car scope
+      --no-mock              Fail if wheeld is unreachable instead of showing simulated data [env: WHEELCTL_NO_MOCK=1]
+      --endpoint <ENDPOINT>  Service endpoint (for testing) [env: WHEELCTL_ENDPOINT=]
+  -h, --help                 Print help

@@ -63,6 +63,23 @@ pub fn print_device_list(devices: &[ClientDeviceInfo], json: bool, detailed: boo
     }
 }
 
+/// Whether a device came from the simulated backend rather than real hardware.
+///
+/// The `source` field is already carried in `--json` output; this makes the
+/// same fact visible in human output, where it was previously invisible.
+fn is_simulated_device(device: &ClientDeviceInfo) -> bool {
+    device.source.as_deref() == Some("mock")
+}
+
+/// Suffix marking a device as simulated, empty for real devices.
+fn simulated_suffix(device: &ClientDeviceInfo) -> String {
+    if is_simulated_device(device) {
+        format!(" {}", "[simulated]".yellow())
+    } else {
+        String::new()
+    }
+}
+
 /// Print single device in human format
 fn print_device_human(device: &ClientDeviceInfo, detailed: bool) {
     let state_color = match device.state {
@@ -73,10 +90,11 @@ fn print_device_human(device: &ClientDeviceInfo, detailed: bool) {
     };
 
     println!(
-        "  {} {} ({})",
+        "  {} {} ({}){}",
         "●".color(state_color),
         device.name.bold(),
-        device.id.dimmed()
+        device.id.dimmed(),
+        simulated_suffix(device)
     );
 
     if detailed {
@@ -131,7 +149,12 @@ pub fn print_device_status(status: &DeviceStatus, json: bool) {
             Err(e) => eprintln!("Failed to format device status as JSON: {}", e),
         }
     } else {
-        println!("{} {}", "Device:".bold(), status.device.name);
+        println!(
+            "{} {}{}",
+            "Device:".bold(),
+            status.device.name,
+            simulated_suffix(&status.device)
+        );
         println!("  ID: {}", status.device.id);
         println!("  State: {:?}", status.device.state);
         println!(

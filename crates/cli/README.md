@@ -21,12 +21,13 @@ The project is pre-validation and some commands are scaffolding. Listed here
 rather than under a "complete implementation" heading, because a command that
 reports success without acting is worse than one that is missing:
 
-- `wheelctl profile apply` reports success but does not transmit the profile
-  body — `WheelClient::apply_profile` ignores its profile argument and sends
-  `base: None`, so nothing from the file reaches the service. Tracked
-  separately.
 - `wheelctl safety limit` has no torque-limit write on the IPC surface. It
   fails rather than claiming success; use the wheelbase's physical limit.
+- `wheelctl profile apply` transmits only what the IPC contract represents.
+  Schema-only fields — `base.filters.torqueCap`, `bumpstop`, `handsOff`, LED
+  colours, haptic effects, signatures — are rejected with an explicit error
+  rather than silently dropped, so a profile using them will not apply until
+  the contract covers them.
 - Device I/O is not implemented on macOS.
 
 ### Command Structure
@@ -221,6 +222,6 @@ Against UX-02:
 - ✅ **Bash/zsh completion scripts for CLI commands**
 - ✅ **CLI integration tests covering all major command workflows with error code validation**
 - ⚠️ **All write operations available in CLI match UI capabilities** — the
-  commands exist and parse, but `profile apply` does not transmit the profile
-  and `safety limit` has no IPC write behind it (see Known gaps). Command
-  surface parity is met; write-path parity is not.
+  commands exist and parse, but `safety limit` has no IPC write behind it and
+  `profile apply` covers only the fields the wire contract represents (see
+  Known gaps). Command surface parity is met; write-path parity is not.

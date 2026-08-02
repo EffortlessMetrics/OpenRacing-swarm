@@ -1,9 +1,14 @@
 //! IPC client for communicating with wheeld service
 //!
 //! Uses gRPC via tonic to connect to the wheeld service. When the service is not
-//! reachable, `connect_or_mock()` transparently falls back to a built-in mock
-//! backend so that the CLI remains functional for development, testing, and
-//! offline profile management.
+//! reachable, [`WheelClient::connect_or_mock`] falls back to a built-in
+//! simulated backend so that the CLI remains functional for development,
+//! testing, and offline profile management.
+//!
+//! The fallback is never silent. It prints a one-time notice to stderr, the
+//! resulting client reports [`BackendKind::Simulated`] so commands can label
+//! their output, and it can be disabled entirely with `--no-mock` (or
+//! `WHEELCTL_NO_MOCK=1`) so scripts fail instead of reading invented data.
 
 use crate::error::CliError;
 use anyhow::Result;
@@ -13,13 +18,177 @@ use racing_wheel_hid_moza_protocol::{
 use racing_wheel_schemas::generated::wheel::v1 as wire;
 use racing_wheel_schemas::telemetry::TelemetryData as SchemasTelemetryData;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Once};
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio_stream::StreamExt;
 
 /// Default gRPC endpoint for the wheeld service
 const DEFAULT_ENDPOINT: &str = "http://127.0.0.1:50051";
+
+/// Convert the JSON profile contract to the fields currently carried by IPC.
+///
+/// The JSON schema contains settings that the versioned protobuf does not
+/// carry yet. Rejecting non-default values here keeps `profile apply` honest:
+/// a profile is never reported as applied after silently losing a setting on
+/// the wire.
+fn profile_to_wire(profile: &racing_wheel_schemas::config::ProfileSchema) -> Result<wire::Profile> {
+    let filters = &profile.base.filters;
+    let default_bumpstop = racing_wheel_schemas::config::BumpstopConfig::default();
+    let default_hands_off = racing_wheel_schemas::config::HandsOffConfig::default();
+    let mut unsupported = Vec::new();
+
+    if filters.torque_cap.is_some() {
+        unsupported.push("base.filters.torqueCap");
+    }
+    if filters.bumpstop.enabled != default_bumpstop.enabled
+        || filters.bumpstop.strength != default_bumpstop.strength
+    {
+        unsupported.push("base.filters.bumpstop");
+    }
+    if filters.hands_off.enabled != default_hands_off.enabled
+        || filters.hands_off.sensitivity != default_hands_off.sensitivity
+    {
+        unsupported.push("base.filters.handsOff");
+    }
+    if profile
+        .leds
+        .as_ref()
+        .and_then(|leds| leds.colors.as_ref())
+        .is_some_and(|colors| !colors.is_empty())
+    {
+        unsupported.push("leds.colors");
+    }
+    if profile
+        .haptics
+        .as_ref()
+        .and_then(|haptics| haptics.effects.as_ref())
+        .is_some_and(|effects| !effects.is_empty())
+    {
+        unsupported.push("haptics.effects");
+    }
+    if profile
+        .signature
+        .as_deref()
+        .is_some_and(|signature| !signature.is_empty())
+    {
+        unsupported.push("signature");
+    }
+
+    if !unsupported.is_empty() {
+        return Err(CliError::ValidationError(format!(
+            "profile contains fields not supported by the current IPC contract: {}",
+            unsupported.join(", ")
+        ))
+        .into());
+    }
+
+    Ok(wire::Profile {
+        schema_version: profile.schema.clone(),
+        scope: Some(wire::ProfileScope {
+            game: profile.scope.game.clone().unwrap_or_default(),
+            car: profile.scope.car.clone().unwrap_or_default(),
+            track: profile.scope.track.clone().unwrap_or_default(),
+        }),
+        base: Some(wire::BaseSettings {
+            ffb_gain: profile.base.ffb_gain,
+            dor_deg: u32::from(profile.base.dor_deg),
+            torque_cap_nm: profile.base.torque_cap_nm,
+            filters: Some(wire::FilterConfig {
+                reconstruction: u32::from(filters.reconstruction),
+                friction: filters.friction,
+                damper: filters.damper,
+                inertia: filters.inertia,
+                notch_filters: filters
+                    .notch_filters
+                    .iter()
+                    .map(|notch| wire::NotchFilter {
+                        hz: notch.hz,
+                        q: notch.q,
+                        gain_db: notch.gain_db,
+                    })
+                    .collect(),
+                slew_rate: filters.slew_rate,
+                curve_points: filters
+                    .curve_points
+                    .iter()
+                    .map(|point| wire::CurvePoint {
+                        input: point.input,
+                        output: point.output,
+                    })
+                    .collect(),
+            }),
+        }),
+        leds: profile.leds.as_ref().map(|leds| wire::LedConfig {
+            rpm_bands: leds.rpm_bands.clone(),
+            pattern: leds.pattern.clone(),
+            brightness: leds.brightness,
+        }),
+        haptics: profile.haptics.as_ref().map(|haptics| wire::HapticsConfig {
+            enabled: haptics.enabled,
+            intensity: haptics.intensity,
+            frequency_hz: haptics.frequency_hz,
+        }),
+        signature: profile.signature.clone().unwrap_or_default(),
+    })
+}
+
+/// Set when the caller opts out of the simulated fallback, so an unreachable
+/// service is reported as an error instead of answered with invented data.
+static SIMULATED_BACKEND_DISABLED: AtomicBool = AtomicBool::new(false);
+
+/// Guards the one-time stderr notice, so a command issuing several client
+/// calls does not repeat the banner.
+static SIMULATED_NOTICE: Once = Once::new();
+
+/// Environment variables that disable the simulated fallback.
+const NO_MOCK_ENV_VARS: [&str; 2] = ["WHEELCTL_NO_MOCK", "OPENRACING_NO_MOCK"];
+
+/// Disable or re-enable the simulated fallback for this process.
+///
+/// Called once from `main` after argument parsing. When disabled,
+/// [`WheelClient::connect_or_mock`] behaves exactly like
+/// [`WheelClient::connect`] and surfaces the connection error.
+pub fn set_simulated_backend_disabled(disabled: bool) {
+    SIMULATED_BACKEND_DISABLED.store(disabled, Ordering::Relaxed);
+}
+
+/// Whether the simulated fallback is currently permitted.
+fn simulated_backend_allowed() -> bool {
+    if SIMULATED_BACKEND_DISABLED.load(Ordering::Relaxed) {
+        return false;
+    }
+    !NO_MOCK_ENV_VARS
+        .iter()
+        .any(|name| matches!(std::env::var(name).as_deref(), Ok("1") | Ok("true")))
+}
+
+/// The platform's command for starting the wheeld service.
+///
+/// Used anywhere the CLI tells a user the service is not running, so the
+/// suggested command stays consistent across commands and platforms.
+pub fn start_service_hint() -> &'static str {
+    if cfg!(windows) {
+        "sc start wheeld"
+    } else if cfg!(target_os = "macos") {
+        "launchctl start com.openracing.wheeld"
+    } else {
+        "systemctl --user start openracing.service"
+    }
+}
+
+/// Warn, once per process, that the CLI is answering from simulated data.
+///
+/// Goes to stderr so that `--json` stdout stays machine-parseable.
+fn warn_simulated_backend(endpoint: &str) {
+    SIMULATED_NOTICE.call_once(|| {
+        eprintln!("warning: could not reach the wheeld service at {endpoint}.");
+        eprintln!("         Showing SIMULATED data — these devices and readings are not real.");
+        eprintln!("         Start the service with: {}", start_service_hint());
+        eprintln!("         Or pass --no-mock to fail instead of simulating.");
+    });
+}
 
 // ---------------------------------------------------------------------------
 // Backend enum -- either a live gRPC channel or a self-contained mock
@@ -30,11 +199,24 @@ enum ClientBackend {
     Mock,
 }
 
+/// Which backend a [`WheelClient`] is answering from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackendKind {
+    /// A live gRPC connection to a running wheeld service.
+    Service,
+    /// Built-in canned data. Nothing reported by this backend reflects real
+    /// hardware or a real service.
+    Simulated,
+}
+
 /// Client for communicating with the wheel service.
 ///
-/// Transparently supports both a live gRPC connection and an in-process mock
-/// backend. Use [`WheelClient::connect`] when a running wheeld service is
-/// required, or [`WheelClient::connect_or_mock`] to gracefully fall back.
+/// Transparently supports both a live gRPC connection and an in-process
+/// simulated backend. Use [`WheelClient::connect`] when a running wheeld
+/// service is required, or [`WheelClient::connect_or_mock`] to fall back to
+/// simulated data. Callers that render results should check
+/// [`WheelClient::backend_kind`] so simulated data is never presented as real.
 pub struct WheelClient {
     backend: ClientBackend,
 }
@@ -72,32 +254,38 @@ impl WheelClient {
         })
     }
 
-    /// Try to connect via gRPC; fall back to the mock backend when appropriate.
+    /// Try to connect via gRPC; fall back to the simulated backend when
+    /// appropriate.
     ///
     /// This is the primary constructor used by CLI commands. When the wheeld
-    /// service is unreachable, the client falls back to an in-process mock so
-    /// that the CLI remains usable for development, testing, and offline
+    /// service is unreachable, the client falls back to in-process canned data
+    /// so that the CLI remains usable for development, testing, and offline
     /// profile management.
     ///
-    /// The mock fallback is used when:
+    /// The fallback is used when:
     /// - No endpoint was specified (default local service not running), or
     /// - An explicit endpoint targeting loopback/localhost was given but the
     ///   service is not running there.
     ///
     /// If the endpoint points to a non-local host, connection failures are
     /// reported as errors because the user clearly intended to reach a
-    /// specific remote service.
+    /// specific remote service. The same applies whenever `--no-mock` (or
+    /// `WHEELCTL_NO_MOCK=1`) is in effect.
+    ///
+    /// Falling back always prints a notice to stderr, and the returned client
+    /// reports [`BackendKind::Simulated`] so callers can label their output.
     pub async fn connect_or_mock(endpoint: Option<&str>) -> Result<Self> {
         match Self::connect(endpoint).await {
             Ok(client) => Ok(client),
             Err(e) => {
-                // Fall back to mock for local/loopback endpoints or when none given
-                let use_mock = match endpoint {
+                // Fall back for local/loopback endpoints or when none given
+                let endpoint_is_local = match endpoint {
                     None => true,
                     Some(ep) => is_local_endpoint(ep),
                 };
-                if use_mock {
-                    tracing::debug!("wheeld not reachable; using mock backend");
+                if endpoint_is_local && simulated_backend_allowed() {
+                    tracing::debug!("wheeld not reachable; using simulated backend");
+                    warn_simulated_backend(endpoint.unwrap_or(DEFAULT_ENDPOINT));
                     Ok(Self {
                         backend: ClientBackend::Mock,
                     })
@@ -106,6 +294,37 @@ impl WheelClient {
                 }
             }
         }
+    }
+
+    /// Which backend this client answers from.
+    pub fn backend_kind(&self) -> BackendKind {
+        match &self.backend {
+            ClientBackend::Grpc(_) => BackendKind::Service,
+            ClientBackend::Mock => BackendKind::Simulated,
+        }
+    }
+
+    /// Whether this client is returning canned data rather than talking to a
+    /// running service.
+    pub fn is_simulated(&self) -> bool {
+        self.backend_kind() == BackendKind::Simulated
+    }
+
+    /// Fail unless this client is talking to a live service.
+    ///
+    /// Used by commands whose whole point is to act on real hardware --
+    /// emergency stop, high-torque enable, torque limits. Reporting success
+    /// for those against canned data would be worse than reporting nothing.
+    pub fn require_live_service(&self, operation: &str) -> Result<()> {
+        if self.is_simulated() {
+            return Err(CliError::ServiceUnavailable(format!(
+                "{operation} needs a running wheeld service and there is none. \
+                 Start it with: {}",
+                start_service_hint()
+            ))
+            .into());
+        }
+        Ok(())
     }
 
     // -----------------------------------------------------------------------
@@ -179,8 +398,10 @@ impl WheelClient {
     pub async fn apply_profile(
         &self,
         device_id: &str,
-        _profile: &racing_wheel_schemas::config::ProfileSchema,
+        profile: &racing_wheel_schemas::config::ProfileSchema,
     ) -> Result<()> {
+        let wire_profile = profile_to_wire(profile)?;
+
         match &self.backend {
             ClientBackend::Grpc(inner) => {
                 let mut client = inner.lock().await;
@@ -188,22 +409,26 @@ impl WheelClient {
                     device: Some(wire::DeviceId {
                         id: device_id.to_string(),
                     }),
-                    profile: Some(wire::Profile {
-                        schema_version: "wheel.profile/1".to_string(),
-                        scope: None,
-                        base: None,
-                        leds: None,
-                        haptics: None,
-                        signature: String::new(),
-                    }),
+                    profile: Some(wire_profile),
                 };
 
-                let response = client.apply_profile(request).await.map_err(|status| {
-                    CliError::ServiceUnavailable(format!(
-                        "Failed to apply profile: {}",
-                        status.message()
-                    ))
-                })?;
+                let response =
+                    client
+                        .apply_profile(request)
+                        .await
+                        .map_err(|status| match status.code() {
+                            tonic::Code::InvalidArgument => CliError::ValidationError(format!(
+                                "Failed to apply profile: {}",
+                                status.message()
+                            )),
+                            tonic::Code::NotFound => {
+                                CliError::DeviceNotFound(device_id.to_string())
+                            }
+                            _ => CliError::ServiceUnavailable(format!(
+                                "Failed to apply profile: {}",
+                                status.message()
+                            )),
+                        })?;
 
                 let result = response.into_inner();
                 if result.success {
@@ -1243,6 +1468,144 @@ mod tests {
             "Expected connection error, got: {}",
             err_msg
         );
+    }
+
+    #[test]
+    fn profile_to_wire_preserves_supported_values() -> Result<(), Box<dyn std::error::Error>> {
+        use racing_wheel_schemas::config::{
+            BaseConfig, CurvePoint, FilterConfig, HapticsConfig, LedConfig, NotchFilter,
+            ProfileScope,
+        };
+
+        let filters = FilterConfig {
+            reconstruction: 4,
+            friction: 0.12,
+            damper: 0.18,
+            inertia: 0.08,
+            torque_cap: None,
+            notch_filters: vec![NotchFilter {
+                hz: 60.0,
+                q: 2.0,
+                gain_db: -6.0,
+            }],
+            slew_rate: 0.85,
+            curve_points: vec![
+                CurvePoint {
+                    input: 0.0,
+                    output: 0.0,
+                },
+                CurvePoint {
+                    input: 1.0,
+                    output: 0.9,
+                },
+            ],
+            ..Default::default()
+        };
+
+        let profile = racing_wheel_schemas::config::ProfileSchema {
+            schema: "wheel.profile/1".to_string(),
+            scope: ProfileScope {
+                game: Some("iracing".to_string()),
+                car: Some("gt3".to_string()),
+                track: None,
+            },
+            base: BaseConfig {
+                ffb_gain: 0.75,
+                dor_deg: 540,
+                torque_cap_nm: 8.0,
+                filters,
+            },
+            leds: Some(LedConfig {
+                rpm_bands: vec![0.7, 0.9],
+                pattern: "progressive".to_string(),
+                brightness: 0.8,
+                colors: None,
+            }),
+            haptics: Some(HapticsConfig {
+                enabled: true,
+                intensity: 0.4,
+                frequency_hz: 75.0,
+                effects: None,
+            }),
+            signature: None,
+        };
+
+        let wire_profile = profile_to_wire(&profile)?;
+        assert_eq!(wire_profile.schema_version, "wheel.profile/1");
+        assert!(wire_profile.signature.is_empty());
+
+        let scope = wire_profile.scope.as_ref().ok_or("missing wire scope")?;
+        assert_eq!(scope.game, "iracing");
+        assert_eq!(scope.car, "gt3");
+
+        let base = wire_profile.base.as_ref().ok_or("missing wire base")?;
+        assert!((base.ffb_gain - 0.75).abs() < f32::EPSILON);
+        assert_eq!(base.dor_deg, 540);
+        assert!((base.torque_cap_nm - 8.0).abs() < f32::EPSILON);
+
+        let wire_filters = base.filters.as_ref().ok_or("missing wire filters")?;
+        assert_eq!(wire_filters.reconstruction, 4);
+        assert!((wire_filters.friction - 0.12).abs() < f32::EPSILON);
+        assert_eq!(wire_filters.notch_filters.len(), 1);
+        assert_eq!(wire_filters.curve_points.len(), 2);
+        assert!((wire_filters.slew_rate - 0.85).abs() < f32::EPSILON);
+
+        let leds = wire_profile.leds.as_ref().ok_or("missing wire leds")?;
+        assert_eq!(leds.rpm_bands, vec![0.7, 0.9]);
+        let haptics = wire_profile
+            .haptics
+            .as_ref()
+            .ok_or("missing wire haptics")?;
+        assert!(haptics.enabled);
+        assert!((haptics.frequency_hz - 75.0).abs() < f32::EPSILON);
+        Ok(())
+    }
+
+    #[test]
+    fn profile_to_wire_rejects_unrepresentable_values() -> Result<(), Box<dyn std::error::Error>> {
+        use racing_wheel_schemas::config::{BaseConfig, ProfileScope};
+
+        let filters = racing_wheel_schemas::config::FilterConfig {
+            torque_cap: Some(5.0),
+            bumpstop: racing_wheel_schemas::config::BumpstopConfig {
+                enabled: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let profile = racing_wheel_schemas::config::ProfileSchema {
+            schema: "wheel.profile/1".to_string(),
+            scope: ProfileScope {
+                game: None,
+                car: None,
+                track: None,
+            },
+            base: BaseConfig {
+                ffb_gain: 0.75,
+                dor_deg: 900,
+                torque_cap_nm: 8.0,
+                filters,
+            },
+            leds: None,
+            haptics: None,
+            signature: None,
+        };
+
+        let error = profile_to_wire(&profile)
+            .err()
+            .ok_or("unsupported profile unexpectedly mapped")?;
+        let message = error.to_string();
+        assert!(message.contains("base.filters.torqueCap"));
+        assert!(message.contains("base.filters.bumpstop"));
+
+        let mut signed_profile = profile;
+        signed_profile.base.filters = racing_wheel_schemas::config::FilterConfig::default();
+        signed_profile.signature = Some("signed-profile".to_string());
+        let signed_error = profile_to_wire(&signed_profile)
+            .err()
+            .ok_or("signed profile unexpectedly mapped")?;
+        assert!(signed_error.to_string().contains("signature"));
+        Ok(())
     }
 
     #[tokio::test]

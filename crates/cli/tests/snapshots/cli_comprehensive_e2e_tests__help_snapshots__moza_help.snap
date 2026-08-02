@@ -1,6 +1,6 @@
 ---
 source: crates/cli/tests/cli_comprehensive_e2e_tests.rs
-assertion_line: 993
+assertion_line: 997
 expression: stdout
 ---
 Safe Moza HID probe and capture commands
@@ -129,6 +129,14 @@ Options:
 
   -v, --verbose...
           Verbose logging
+
+      --no-mock
+          Fail if wheeld is unreachable instead of showing simulated data [env: WHEELCTL_NO_MOCK=1]
+
+      --endpoint <ENDPOINT>
+          Service endpoint (for testing)
+
+          [env: WHEELCTL_ENDPOINT=]
 
   -h, --help
           Print help (see a summary with '-h')
