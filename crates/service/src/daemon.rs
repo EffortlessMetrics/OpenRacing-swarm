@@ -10,8 +10,8 @@ use tokio::time::{Duration, interval};
 use tracing::{debug, error, info, warn};
 
 use crate::{
-    IpcConfig, TransportType, WheelService, game_service::GameService,
-    ipc_service::WheelServiceImpl, profile_repository::ProfileRepositoryConfig,
+    IpcConfig, TransportType, WheelService, ipc_service::WheelServiceImpl,
+    profile_repository::ProfileRepositoryConfig,
 };
 use racing_wheel_schemas::generated::wheel::v1::wheel_service_server::WheelServiceServer;
 use tonic::transport::Server;
@@ -279,13 +279,6 @@ impl ServiceDaemon {
 
         info!("Wheel service created successfully");
 
-        // Create game service for gRPC layer
-        let game_service = Arc::new(
-            GameService::new()
-                .await
-                .context("Failed to create game service")?,
-        );
-
         // Create gRPC service implementation backed by real domain services
         let (health_tx, _) = broadcast::channel(1000);
         let control_broadcaster = if self.control_stream_enabled {
@@ -303,7 +296,7 @@ impl ServiceDaemon {
             wheel_service.device_service().clone(),
             wheel_service.profile_service().clone(),
             wheel_service.safety_service().clone(),
-            game_service,
+            wheel_service.game_service().clone(),
             health_tx,
         )
         .with_hardware_lane(self.hardware_lane.clone());
