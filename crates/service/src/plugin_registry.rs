@@ -711,7 +711,7 @@ mod tests {
 
     #[test]
     fn test_plugin_capability_variants() {
-        let caps = vec![
+        let caps = [
             PluginCapability::ReadTelemetry,
             PluginCapability::WriteFfb,
             PluginCapability::LedControl,

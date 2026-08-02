@@ -7,7 +7,7 @@
 mod tests {
     use crate::{
         FeatureFlags, ServiceDaemon, SystemConfig, WheelService,
-        profile_repository::ProfileRepositoryConfig,
+        plugin_registry::PluginRegistryService, profile_repository::ProfileRepositoryConfig,
     };
     use anyhow::{Context, Result};
     use std::sync::Arc;
@@ -264,6 +264,20 @@ mod tests {
         Ok(())
     }
 
+    /// The wheel service exposes the shared game service composition.
+    #[tokio::test]
+    #[traced_test]
+    async fn test_game_service_accessor() -> Result<()> {
+        let (service, _temp_dir) = create_test_service().await?;
+
+        let supported_games = service.game_service().get_supported_games().await;
+        assert!(
+            !supported_games.is_empty(),
+            "the shared game service should expose the support matrix"
+        );
+        Ok(())
+    }
+
     /// Test force feedback pipeline
     ///
     /// Verifies service creation and device enumeration. Per-device FFB frame
@@ -362,6 +376,24 @@ mod tests {
         //         .execute_plugin(&plugin.id, &test_telemetry).await?;
         // }
 
+        Ok(())
+    }
+
+    /// The wheel service exposes an empty plugin registry without network I/O.
+    #[tokio::test]
+    #[traced_test]
+    async fn test_plugin_service_accessor() -> Result<()> {
+        let (service, _temp_dir) = create_test_service().await?;
+
+        let installed_plugins = service
+            .plugin_service()
+            .list_installed_plugins()
+            .await
+            .context("list installed plugins through shared registry")?;
+        assert!(
+            installed_plugins.is_empty(),
+            "a fresh service should have no installed plugins"
+        );
         Ok(())
     }
 
