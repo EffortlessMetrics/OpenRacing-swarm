@@ -28,6 +28,16 @@ since the changes they list did happen.
 
 ## [Unreleased]
 
+### Changed
+- `wheelctl --help` no longer lists `moza`. That namespace holds 55 subcommands
+  for the receipt-gated Moza validation lane — vendor-status framing diagnosis,
+  authority attempts, fixture promotion, pit-house evidence — and listing it
+  beside `device`, `profile`, and `safety` gave research scaffolding equal
+  billing with the commands a wheel owner actually needs. Hidden, not gated:
+  `wheelctl moza ...` works exactly as before, `wheelctl moza --help` still
+  lists every subcommand, and the validation lane and its receipts are
+  unaffected
+
 ### Fixed
 - The README's Quick Start never mentioned `wheeld`. It walked a new user from
   `cargo install --path crates/cli` straight to `wheelctl device list`, so the
@@ -40,6 +50,16 @@ since the changes they list did happen.
   no indication that a system package was missing. The only mention of these was
   in a troubleshooting section of `docs/DEVELOPMENT.md`, which is not where
   someone looks before their first build
+- `crates/cli/README.md` documented 7 of the 13 top-level commands, omitting
+  `controls`, `plugin`, `telemetry`, `hardware`, `support-bundle`, and `moza`
+  entirely. It also documented `diag replay --verbose` for frame-by-frame
+  output, which is actually `-d`/`--detailed` — `--verbose` is the global
+  logging flag, so following the README produced logging noise instead of frames
+- `crates/cli/README.md` claimed "✅ Complete Implementation" and "complete
+  parity with UI functionality" while `safety limit` had no IPC write behind
+  it, so command-surface parity was being reported as write-path parity. Now
+  recorded under a "Known gaps" heading, with the UX-02 compliance claim marked
+  partial
 - `wheelctl` no longer presents simulated data as real. When `wheeld` was
   unreachable the client silently fell back to a canned backend, so a
   first-time user with no daemon and no hardware saw two invented Fanatec

@@ -1,5 +1,6 @@
 ---
 source: crates/cli/tests/cli_output_snapshots.rs
+assertion_line: 22
 expression: stdout
 ---
 wheelctl is a command-line interface for the Racing Wheel Software Suite.
@@ -21,7 +22,6 @@ Commands:
   game            Game integration commands
   telemetry       Telemetry probe and capture commands
   hardware        Hardware environment diagnostics
-  moza            Safe Moza HID probe and capture commands
   safety          Safety and control commands
   support-bundle  Generate diagnostic support bundle
   completion      Generate shell completion scripts
