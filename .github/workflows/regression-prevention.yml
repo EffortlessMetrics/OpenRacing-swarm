@@ -81,7 +81,9 @@ jobs:
           "wheel_speed_mrad_s"
           "\.temp_c"
           "\.faults"
-          "\.sequence"
+          # The word boundary prevents valid names such as sequence_monotonic
+          # from being treated as the removed TelemetryData.sequence field.
+          "\.sequence\\b"
         )
         
         # Search for deprecated field usage (excluding compat layer and tests)
