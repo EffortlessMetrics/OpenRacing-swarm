@@ -6,6 +6,7 @@ Issue: https://github.com/EffortlessMetrics/OpenRacing-swarm/issues/215
 Implementation PR: https://github.com/EffortlessMetrics/OpenRacing-swarm/pull/226
 Merge commit: `d12b4ac454712c26321d43808e9b62908414e7b0`
 Follow-up: https://github.com/EffortlessMetrics/OpenRacing-swarm/issues/227
+Follow-up PR: https://github.com/EffortlessMetrics/OpenRacing-swarm/pull/230
 
 ## Landed
 
@@ -46,3 +47,10 @@ mutation completeness, hardware validation, or release readiness.
 The remaining producer work is tracked in issue #227. Until it lands, the
 quality receipt must continue to treat test-efficiency evidence as skipped and
 the policy exception must remain active.
+
+## Follow-up status
+
+Issue #227 adds the repo-owned producer and is being completed in a separate
+PR. Once that PR merges, the producer becomes the source for native RIPR+
+regeneration; the remaining quality-closure gaps are coverage and static
+exposure debt, not missing test-efficiency input.
