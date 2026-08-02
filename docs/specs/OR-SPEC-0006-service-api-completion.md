@@ -1,6 +1,6 @@
 # Service API completion specification
 
-Status: proposed
+Status: active
 Owner: platform/service
 Created: 2026-08-02
 Linked proposal: docs/proposals/OR-PROP-0005-service-api-completion.md

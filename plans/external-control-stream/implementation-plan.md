@@ -1,13 +1,13 @@
 # External control-stream implementation plan
 
-Status: active
+Status: completed
 Owner: platform/service
 Linked proposal: docs/proposals/OR-PROP-0004-external-control-stream.md
 Linked specs:
 - docs/specs/OR-SPEC-0005-external-control-stream.md
 Linked ADRs:
 - docs/adr/0010-non-rt-control-stream-boundary.md
-Active goal: .openracing/goals/active.toml
+Archived goal: .openracing/goals/archive/2026-08-02-external-control-stream.toml
 
 ## Lane rules
 

@@ -1,6 +1,6 @@
 # Service API completion proposal
 
-Status: proposed
+Status: active
 Owner: platform/service
 Created: 2026-08-02
 Target milestone: service usability
@@ -22,9 +22,10 @@ service-level tests with ignored placeholder coverage.
 ## Direction
 
 Own one shared game service and one shared plugin registry service in
-`WheelService`, expose them through read-only `Arc` accessors, and have the
-daemon reuse the game-service instance. This keeps service composition explicit
-without changing the IPC contract or adding plugin execution behavior.
+`WheelService`, activate the existing plugin-registry modules as part of the
+service crate, expose both services through read-only `Arc` accessors, and have
+the daemon reuse the game-service instance. This keeps service composition
+explicit without changing the IPC contract or adding plugin execution behavior.
 
 ## Non-goals
 
