@@ -1,6 +1,6 @@
 # External control-stream lane handoff
 
-Status: active
+Status: completed
 Owner: platform/service
 Created: 2026-07-17
 Linked issue: #167
@@ -11,9 +11,9 @@ Linked plan: plans/external-control-stream/implementation-plan.md
 
 ## Current state
 
-The external-control-stream lane is active at
-`.openracing/goals/active.toml`. The prior Moza goal was archived with its
-blocked closeout at
+The external-control-stream lane is completed and its final manifest is
+archived at `.openracing/goals/archive/2026-08-02-external-control-stream.toml`.
+The prior Moza goal was archived with its blocked closeout at
 `.openracing/goals/archive/2026-07-18-moza-native-visible-lane.toml` and
 `plans/moza-native-visible-lane/closeout.md`; its hardware evidence and claim
 boundaries remain preserved.
@@ -24,7 +24,7 @@ versioned observe-only gRPC transport (#171, merged PR #193) are complete.
 Diagnostics, capture, and deterministic replay (#172, merged PR #195) are also
 complete at the hardware-free fixture/replay boundary. Package composition and
 external contract publication (#179, merged PR #196 at `e625296e`) is complete;
-the next implementation item is artifact lifecycle and consumer smoke (#180).
+the final implementation item was artifact lifecycle and consumer smoke (#180).
 The merged transport and
 diagnostics remain software contracts only; they do not imply Runbook product
 support, output, FFB behavior, named controls, or physical/support claims.
@@ -45,8 +45,8 @@ The completed #170 epic is represented by #177 and #178. Items #168 through
 Issue #173 and merged PR #176 define the deployment source truth; #174 remains
 the parent epic. Issue #179 is complete through merged PR #196 at
 `e625296e`; its package-composition claim remains bounded to the exact Linux
-contract-bundle receipt. Issue #180 is now the in-progress one-PR
-implementation item in PR #210, restacked onto the security-remediated
+contract-bundle receipt. Issue #180 was the final one-PR implementation item
+and is complete through merged PR #210, restacked onto the security-remediated
 `swarm/main` and carrying the focused artifact-smoke review repairs. The
 external Runbook consumer is
 `EffortlessMetrics/runbook-rs#41`, and remains a proof consumer rather than a

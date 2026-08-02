@@ -1,0 +1,101 @@
+id = "external-control-stream-lane"
+title = "External observe-only control stream"
+status = "completed"
+owner = "platform/service"
+created = "2026-07-18"
+
+proposal = "docs/proposals/OR-PROP-0004-external-control-stream.md"
+plan = "plans/external-control-stream/implementation-plan.md"
+handoff = "plans/external-control-stream/handoff.md"
+
+specs = [
+  "docs/specs/OR-SPEC-0005-external-control-stream.md",
+]
+
+adrs = [
+  "docs/adr/0010-non-rt-control-stream-boundary.md",
+]
+
+objective = """
+Deliver the vendor-neutral, observe-only external control stream through
+bounded non-real-time service and IPC seams, one plan work item per PR, while
+preserving the 1 kHz FFB path and all hardware/output/support claim boundaries.
+"""
+
+end_state = [
+  "The versioned control stream is available only when its backing service is enabled and negotiated.",
+  "Descriptor, non-actionable baseline, ordered input events, reset/gap, and disconnect semantics are proven by virtual/fake and packaged-artifact receipts.",
+  "Diagnostics, replay, release, and consumer handoffs are separately proven without adding application-specific control claims.",
+]
+
+claim_boundaries = [
+  "This lane observes decoded or virtual input only; it does not claim named physical controls.",
+  "No work item authorizes hardware output, FFB, high torque, profile mutation, or safety-state changes.",
+  "No work item makes Runbook a domain, IPC, packaging, or product dependency.",
+  "No network, allocation, lock, or application I/O is added to the 1 kHz engine/FFB path.",
+  "Platform, release, and support claims require receipts from the exact producing lane.",
+]
+
+status_docs = [
+  "docs/proposals/OR-PROP-0004-external-control-stream.md",
+  "docs/specs/OR-SPEC-0005-external-control-stream.md",
+  "docs/adr/0010-non-rt-control-stream-boundary.md",
+  "plans/external-control-stream/implementation-plan.md",
+  "plans/external-control-stream/handoff.md",
+  "plans/moza-native-visible-lane/closeout.md",
+]
+
+[[work_item]]
+id = "device-input-domain-contract"
+status = "completed"
+issue = 168
+pr = 181
+claim_boundary = "Decoded software-domain correctness only; no physical role, transport, output, FFB, or Runbook claim."
+
+[[work_item]]
+id = "deterministic-input-projection"
+status = "completed"
+issue = 169
+pr = 183
+claim_boundary = "Pure projection from decoded input only; no service polling, protobuf, physical compatibility, output, or FFB claim."
+
+[[work_item]]
+id = "non-rt-input-service"
+status = "completed"
+issues = [170, 177, 178]
+prs = [188, 191]
+claim_boundary = "Non-RT collection and bounded broadcasting from decoded/virtual inputs; no transport, physical role, Runbook, output, or FFB claim."
+
+[[work_item]]
+id = "versioned-control-stream-transport"
+status = "completed"
+issue = 171
+pr = 193
+claim_boundary = "Observe-only versioned IPC contract; no Runbook support, physical control-role validation, output, FFB, or safety-state claim."
+
+[[work_item]]
+id = "control-diagnostics-capture-replay"
+status = "completed"
+issue = 172
+pr = 195
+prerequisite = "versioned-control-stream-transport"
+claim_boundary = "Diagnostic and replay evidence only; no physical compatibility, named controls, release readiness, or hardware/output support."
+
+[[work_item]]
+id = "control-stream-package-composition"
+status = "completed"
+issue = 179
+parent_issue = 174
+prerequisite = "control-diagnostics-capture-replay"
+current_pointer = "PR #196 merged as e625296e; package composition and contract publication are landed."
+claim_boundary = "Package composition and external contract evidence only; no installed lifecycle, hardware compatibility, named control roles, output, FFB, or platform support beyond receipts."
+
+[[work_item]]
+id = "control-stream-artifact-lifecycle-proof"
+status = "completed"
+issue = 180
+parent_issue = 174
+prerequisite = "control-stream-package-composition"
+pr = 210
+current_pointer = "PR #210 merged as eaee0ae5; hosted required proof passed on exact head 11038dfa."
+claim_boundary = "Artifact lifecycle and virtual/replay consumer evidence only; no real hardware, named control roles, output, FFB, or platform support beyond receipts."
