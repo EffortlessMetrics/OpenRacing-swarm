@@ -27,6 +27,12 @@ use tokio_stream::StreamExt;
 /// Default gRPC endpoint for the wheeld service
 const DEFAULT_ENDPOINT: &str = "http://127.0.0.1:50051";
 
+/// The endpoint used when none is supplied, for diagnostics that need to
+/// report which address was tried.
+pub fn default_endpoint() -> &'static str {
+    DEFAULT_ENDPOINT
+}
+
 /// Convert the JSON profile contract to the fields currently carried by IPC.
 ///
 /// The JSON schema contains settings that the versioned protobuf does not

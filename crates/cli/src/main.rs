@@ -34,6 +34,29 @@ diagnostics, and game integration features.
 All write operations available in the UI are also available through this CLI.
 Use --json flag for machine-readable output suitable for scripting.
 ")]
+#[command(after_help = "\
+GETTING STARTED:
+  wheelctl doctor              Check the service, permissions, and hardware
+  wheelctl health              Is the wheeld service running and healthy?
+  wheelctl device list         Show connected devices
+
+EXAMPLES:
+  wheelctl device status wheel-001        Detail for one device
+  wheelctl profile apply wheel-001 p.json Apply a force feedback profile
+  wheelctl --json device list             Machine-readable output for scripts
+  wheelctl --no-mock device list          Fail if wheeld is not running
+
+EXIT CODES:
+  0  success
+  1  general error
+  2  device not found
+  3  profile not found
+  4  validation or schema error
+  5  service unavailable (wheeld not reachable)
+  6  permission denied (see `wheelctl doctor`)
+
+Run `wheelctl <command> --help` for details on any command.
+")]
 struct Cli {
     /// Output format (human-readable or JSON)
     #[arg(
@@ -97,6 +120,17 @@ enum Commands {
     /// Hardware environment diagnostics
     #[command(subcommand)]
     Hardware(HardwareCommands),
+
+    /// Check the service, permissions, and hardware environment
+    ///
+    /// The environment check lived only at `wheelctl hardware doctor`, two
+    /// levels down under a subcommand a first-time user has no reason to
+    /// open. This is the same check, reachable where people look for it.
+    Doctor {
+        /// Write the doctor receipt to this JSON file
+        #[arg(long)]
+        json_out: Option<std::path::PathBuf>,
+    },
 
     /// Safe Moza HID probe and capture commands
     #[command(subcommand)]
@@ -243,7 +277,21 @@ async fn execute_command(cli: &Cli) -> Result<()> {
             commands::game::execute(cmd, cli.json, cli.endpoint.as_deref()).await
         }
         Commands::Telemetry(cmd) => commands::telemetry::execute(cmd, cli.json).await,
-        Commands::Hardware(cmd) => commands::hardware::execute(cmd, cli.json).await,
+        Commands::Hardware(cmd) => {
+            commands::hardware::execute(cmd, cli.json, cli.endpoint.as_deref()).await
+        }
+        Commands::Doctor { json_out } => {
+            // Same code path as `wheelctl hardware doctor`, so the two cannot
+            // drift apart.
+            commands::hardware::execute(
+                &HardwareCommands::Doctor {
+                    json_out: json_out.clone(),
+                },
+                cli.json,
+                cli.endpoint.as_deref(),
+            )
+            .await
+        }
         Commands::Moza(cmd) => commands::moza::execute(cmd, cli.json).await,
         Commands::Safety(cmd) => {
             commands::safety::execute(cmd, cli.json, cli.endpoint.as_deref()).await

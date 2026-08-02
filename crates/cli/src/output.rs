@@ -10,16 +10,30 @@ use crate::client::{
     DeviceState as ClientDeviceState, DeviceStatus, DiagnosticInfo, GameStatus, HealthEvent,
     HealthEventType,
 };
+use crate::error::CliError;
 use racing_wheel_schemas::config::ProfileSchema;
 
 /// Print error in JSON format
 pub fn print_error_json(error: &Error) {
+    let cli_error = error.downcast_ref::<CliError>();
+    let mut payload = json!({
+        "message": error.to_string(),
+        "type": error_type_name(error),
+    });
+    // `kind` is the stable discriminator scripts should branch on; `type` is
+    // kept for backward compatibility with existing consumers.
+    if let Some(err) = cli_error
+        && let Some(obj) = payload.as_object_mut()
+    {
+        obj.insert("kind".to_string(), json!(err.kind()));
+        if let Some(hint) = err.hint() {
+            obj.insert("hint".to_string(), json!(hint));
+        }
+    }
+
     let error_json = json!({
         "success": false,
-        "error": {
-            "message": error.to_string(),
-            "type": error_type_name(error)
-        }
+        "error": payload,
     });
     match serde_json::to_string_pretty(&error_json) {
         Ok(s) => println!("{}", s),
@@ -37,6 +51,14 @@ pub fn print_error_human(error: &Error) {
         eprintln!("  {} {}", "Caused by:".yellow(), err);
         source = err.source();
     }
+
+    // Tell the user what to do about it, not just what went wrong.
+    if let Some(hint) = error.downcast_ref::<CliError>().and_then(CliError::hint) {
+        eprintln!();
+        for line in hint.lines() {
+            eprintln!("{} {}", "hint:".cyan().bold(), line);
+        }
+    }
 }
 
 /// Print device list in specified format
@@ -52,7 +74,22 @@ pub fn print_device_list(devices: &[ClientDeviceInfo], json: bool, detailed: boo
         }
     } else {
         if devices.is_empty() {
+            // An empty list is the most common first-run outcome, and on its
+            // own it gives the user nothing to act on.
             println!("{}", "No devices found".yellow());
+            println!();
+            println!("{}", "Next steps:".bold());
+            println!("  • Check the wheel is powered on and connected over USB");
+            println!(
+                "  • Run {} for a full environment check",
+                "wheelctl doctor".cyan()
+            );
+            if cfg!(target_os = "linux") {
+                println!(
+                    "  • On Linux, device access needs udev rules and input-group \
+                     membership; `wheelctl doctor` reports both"
+                );
+            }
             return;
         }
 
@@ -410,11 +447,23 @@ pub fn print_warning(message: &str, json: bool) {
 
 /// Get error type name for JSON output
 fn error_type_name(error: &Error) -> String {
-    // Try to get the concrete error type name
-    let debug_str = format!("{:?}", error);
-    match debug_str.split('(').next() {
-        Some(name) => name.to_string(),
-        None => "Unknown".to_string(),
+    // anyhow's Debug renders the *message* and its chain, not a type name, so
+    // splitting it on '(' just echoed the message back and made `type`
+    // duplicate `message`. Use the real variant name when this is a CliError,
+    // and fall back to a generic label otherwise.
+    match error.downcast_ref::<CliError>() {
+        Some(CliError::DeviceNotFound(_)) => "DeviceNotFound".to_string(),
+        Some(CliError::ProfileNotFound(_)) => "ProfileNotFound".to_string(),
+        Some(CliError::ValidationError(_)) => "ValidationError".to_string(),
+        Some(CliError::ReceiptFailure(_)) => "ReceiptFailure".to_string(),
+        Some(CliError::ServiceUnavailable(_)) => "ServiceUnavailable".to_string(),
+        Some(CliError::PermissionDenied(_)) => "PermissionDenied".to_string(),
+        Some(CliError::InvalidConfiguration(_)) => "InvalidConfiguration".to_string(),
+        Some(CliError::IoError(_)) => "IoError".to_string(),
+        Some(CliError::JsonError(_)) => "JsonError".to_string(),
+        Some(CliError::YamlError(_)) => "YamlError".to_string(),
+        Some(CliError::SchemaError(_)) => "SchemaError".to_string(),
+        None => "Error".to_string(),
     }
 }
 

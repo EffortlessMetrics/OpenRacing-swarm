@@ -29,6 +29,25 @@ since the changes they list did happen.
 ## [Unreleased]
 
 ### Fixed
+- `wheelctl` errors now say what to do, not only what went wrong. Every
+  `CliError` with a plausible next step carries a `hint:` naming a command —
+  device-not-found points at `wheelctl device list` and `wheelctl doctor`, and
+  service-unavailable names the platform's start command. Hints are matched to
+  the actual failure rather than the variant: a refused safety interlock (which
+  reuses `PermissionDenied`) points at `wheelctl safety status` instead of udev
+  rules, and only profile/schema validation failures suggest `wheelctl profile
+  validate`
+- `wheelctl --json` error objects reported a `type` field computed from
+  anyhow's `Debug`, which renders the *message*, so `type` merely duplicated
+  `message`. It now carries the real variant name, plus a stable snake_case
+  `kind` for scripts to branch on and the `hint` text
+- `wheelctl device list` with no devices printed "No devices found" and
+  stopped. It now suggests what to check, including `wheelctl doctor`
+- The environment check reported on tooling and HID visibility but never
+  checked whether `wheeld` was running — the most common first-run failure. It
+  now probes the service, reports it in both human and JSON output, and warns
+  when it is unreachable, for the endpoint actually selected by `--endpoint` or
+  `WHEELCTL_ENDPOINT` rather than the built-in default
 - The README's Quick Start never mentioned `wheeld`. It walked a new user from
   `cargo install --path crates/cli` straight to `wheelctl device list`, so the
   most common first-run outcome — a client with no service to talk to — was not
@@ -121,6 +140,12 @@ since the changes they list did happen.
   referenced. The intact implementation lives at `scripts/build-reproducible.sh`
 
 ### Added
+- `wheelctl doctor` as a top-level command. The environment check existed only
+  at `wheelctl hardware doctor`, two levels down under a subcommand a
+  first-time user has no reason to open. Same code path, reachable where
+  people look for it
+- `wheelctl --help` now has GETTING STARTED, EXAMPLES, and EXIT CODES sections.
+  The exit codes were distinct but documented nowhere
 - `SECURITY.md` and a root `CONTRIBUTING.md`. Neither existed, so GitHub had no
   vulnerability-reporting path to surface and no contributing guide to link from
   the issue and pull request UI. `SECURITY.md` names the private reporting

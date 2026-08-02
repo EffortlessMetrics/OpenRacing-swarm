@@ -1,5 +1,6 @@
 ---
 source: crates/cli/tests/cli_output_snapshots.rs
+assertion_line: 101
 expression: stderr
 ---
 Racing Wheel Control CLI - Manage racing wheel hardware, profiles, and diagnostics
@@ -15,6 +16,7 @@ Commands:
   game            Game integration commands
   telemetry       Telemetry probe and capture commands
   hardware        Hardware environment diagnostics
+  doctor          Check the service, permissions, and hardware environment
   moza            Safe Moza HID probe and capture commands
   safety          Safety and control commands
   support-bundle  Generate diagnostic support bundle
@@ -29,3 +31,25 @@ Options:
       --endpoint <ENDPOINT>  Service endpoint (for testing) [env: WHEELCTL_ENDPOINT=]
   -h, --help                 Print help (see more with '--help')
   -V, --version              Print version
+
+GETTING STARTED:
+  wheelctl doctor              Check the service, permissions, and hardware
+  wheelctl health              Is the wheeld service running and healthy?
+  wheelctl device list         Show connected devices
+
+EXAMPLES:
+  wheelctl device status wheel-001        Detail for one device
+  wheelctl profile apply wheel-001 p.json Apply a force feedback profile
+  wheelctl --json device list             Machine-readable output for scripts
+  wheelctl --no-mock device list          Fail if wheeld is not running
+
+EXIT CODES:
+  0  success
+  1  general error
+  2  device not found
+  3  profile not found
+  4  validation or schema error
+  5  service unavailable (wheeld not reachable)
+  6  permission denied (see `wheelctl doctor`)
+
+Run `wheelctl <command> --help` for details on any command.
