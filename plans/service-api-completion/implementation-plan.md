@@ -25,11 +25,15 @@ daemon's gRPC layer.
 
 - Store one `Arc<GameService>` and one `Arc<PluginRegistryServiceImpl>` in
   `WheelService`.
+- Activate the existing `plugin_registry` and `plugin_registry_impl` modules in
+  `crates/service/src/lib.rs` and declare their service-crate dependencies.
 - Add `game_service()` and `plugin_service()` accessors.
 - Replace the daemon-local `GameService::new()` with the wheel-service-owned
   instance.
 - Add focused observable tests for supported-game lookup and an offline plugin
   registry query.
+- Assert `Arc::ptr_eq` for references obtained from each accessor so the tests
+  prove stable shared ownership rather than only equivalent query results.
 
 ### Acceptance
 

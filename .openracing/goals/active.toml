@@ -47,6 +47,8 @@ claim_boundary = "Shared application-service accessors only; no new game, plugin
 commands = [
   "python scripts/cargo_fmt_workspace.py",
   "cargo test --locked -p racing-wheel-service service::tests -- --nocapture",
+  "cargo test --locked -p racing-wheel-service integration_tests::tests::test_game_service_accessor -- --nocapture",
+  "cargo test --locked -p racing-wheel-service integration_tests::tests::test_plugin_service_accessor -- --nocapture",
   "cargo clippy --locked -p racing-wheel-service --all-targets --all-features -- -D warnings",
   "cargo run --locked -p openracing-tools --bin package-surface -- --check",
   "python scripts/policy_file.py --strict",
