@@ -28,6 +28,9 @@ reports success without acting is worse than one that is missing:
   colours, haptic effects, signatures — are rejected with an explicit error
   rather than silently dropped, so a profile using them will not apply until
   the contract covers them.
+- The `plugin` namespace is entirely simulated. `install`, `uninstall`, and
+  `verify` resolve against a hard-coded `get_mock_registry_plugins()` list and
+  report success without downloading, writing, removing, or verifying anything.
 - Device I/O is not implemented on macOS.
 
 ### Command Structure
@@ -105,29 +108,37 @@ It is hidden, not gated: `wheelctl moza ...` works exactly as before and
 - `wheelctl health [--watch]` - Show service health status
 
 #### Plugins
-- `wheelctl plugin list` - List available plugins from the registry
-- `wheelctl plugin search <query>` - Search plugins by name or description
-- `wheelctl plugin install <plugin>` - Install a plugin from the registry
-- `wheelctl plugin uninstall <plugin>` - Uninstall a plugin
-- `wheelctl plugin info <plugin>` - Show detailed plugin information
-- `wheelctl plugin verify <plugin>` - Verify an installed plugin's integrity and signature
+
+> [!WARNING]
+> **This namespace is scaffolding.** `install`, `uninstall`, and `verify`
+> resolve against `get_mock_registry_plugins()` — a hard-coded list — and print
+> success without downloading, writing, or removing anything. Nothing is
+> persisted and no IPC call is made. Listed here for completeness; do not treat
+> a success message as a plugin having been installed.
+
+- `wheelctl plugin list` - List plugins from the (mock) registry
+- `wheelctl plugin search <QUERY>` - Search plugins by name or description
+- `wheelctl plugin install <PLUGIN_ID>` - Simulated; installs nothing
+- `wheelctl plugin uninstall <PLUGIN_ID>` - Simulated; removes nothing
+- `wheelctl plugin info <PLUGIN_ID>` - Show plugin information from the mock registry
+- `wheelctl plugin verify <PLUGIN_ID>` - Simulated; verifies nothing
 
 #### Telemetry
-- `wheelctl telemetry probe <game>` - Probe the telemetry transport for a game
-- `wheelctl telemetry capture` - Capture raw UDP telemetry packets to a binary file
-- `wheelctl telemetry record` - Record normalized telemetry snapshots to JSONL with safety provenance
-- `wheelctl telemetry virtual-ffb-log` - Replay normalized telemetry into a virtual FFB output log (no hardware writes)
+- `wheelctl telemetry probe --game <GAME>` - Probe the telemetry transport for a game
+- `wheelctl telemetry capture --game <GAME> --out <OUT>` - Capture raw UDP telemetry packets to a binary file
+- `wheelctl telemetry record --game <GAME> --out <OUT>` - Record normalized telemetry snapshots to JSONL with safety provenance
+- `wheelctl telemetry virtual-ffb-log --input <INPUT> --out <OUT>` - Replay normalized telemetry into a virtual FFB output log (no hardware writes)
 
 #### Control Stream (observe-only)
 - `wheelctl controls list` - List the stable control descriptors a profile may bind for a surface
-- `wheelctl controls monitor` - Replay a capture as a human-readable stream, reporting resets and epoch changes
-- `wheelctl controls capture` - Write a deterministic sample capture (virtual input; no hardware)
-- `wheelctl controls replay` - Replay a capture's inputs through the real projection without hardware
+- `wheelctl controls monitor <CAPTURE>` - Replay a capture as a human-readable stream, reporting resets and epoch changes
+- `wheelctl controls capture --out <OUT>` - Write a deterministic sample capture (virtual input; no hardware)
+- `wheelctl controls replay <CAPTURE>` - Replay a capture's inputs through the real projection without hardware
 
 #### Hardware Diagnostics
 - `wheelctl hardware doctor` - Inspect local hardware/tooling readiness without opening devices or sending writes
 - `wheelctl hardware bringup-rail [--family <family>]` - Print the staged bring-up rail for a device family
-- `wheelctl hardware lane` - Scaffold a hardware validation lane from a device-family rail adapter
+- `wheelctl hardware lane <COMMAND>` - Scaffold a hardware validation lane from a device-family rail adapter
 - `wheelctl hardware sniff-*` - Passive USB capture planning, receipts, and evidence bundles (nine subcommands; none send output)
 
 #### Support Bundles
