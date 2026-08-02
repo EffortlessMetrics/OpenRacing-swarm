@@ -3,11 +3,30 @@
 
 set -euo pipefail
 
+# Directory holding this script. It is the root of an extracted release
+# tarball when installing from a package, and packaging/linux/ when running
+# from a source checkout. Assets are located relative to it so the script
+# works in both layouts and from any working directory.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Resolve a packaged asset by trying each candidate path under SCRIPT_DIR.
+# Echoes the first match; returns non-zero when none exist.
+find_asset() {
+    local candidate
+    for candidate in "$@"; do
+        if [ -f "$SCRIPT_DIR/$candidate" ]; then
+            echo "$SCRIPT_DIR/$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
 
 # Configuration
 INSTALL_PREFIX="${INSTALL_PREFIX:-$HOME/.local}"
-SERVICE_USER="${SERVICE_USER:-$USER}"
+# $USER is not always exported (containers, some sudo and cron contexts), and
+# `set -u` would abort on it, so fall back to the effective user name.
+SERVICE_USER="${SERVICE_USER:-${USER:-$(id -un)}}"
 SKIP_UDEV="${SKIP_UDEV:-false}"
 SKIP_RTKIT="${SKIP_RTKIT:-false}"
 SKIP_SYSTEMD="${SKIP_SYSTEMD:-false}"
@@ -77,14 +96,15 @@ install_binaries() {
     mkdir -p "$INSTALL_PREFIX/share/openracing/contract/control-stream"
     mkdir -p "$INSTALL_PREFIX/share/doc/racing-wheel-suite"
     
-    # Copy binaries (assuming they're in the current directory or a bin/ subdirectory)
-    local bin_source="."
+    # Binaries live in bin/ inside an extracted tarball; fall back to the
+    # script directory itself so a hand-assembled layout still works. Both
+    # candidates are anchored to SCRIPT_DIR rather than the caller's working
+    # directory, so the installer works from anywhere.
+    local bin_source="$SCRIPT_DIR"
     if [ -d "$SCRIPT_DIR/bin" ]; then
         bin_source="$SCRIPT_DIR/bin"
-    elif [ -d "bin" ]; then
-        bin_source="bin"
     fi
-    
+
     for binary in wheeld wheelctl; do
         if [ -f "$bin_source/$binary" ]; then
             cp "$bin_source/$binary" "$INSTALL_PREFIX/bin/"
@@ -121,17 +141,23 @@ install_binaries() {
     
     # Install configuration templates
     mkdir -p "$INSTALL_PREFIX/share/racing-wheel-suite/config"
-    if [ -d "$SCRIPT_DIR/config" ]; then
-        cp -r "$SCRIPT_DIR/config"/* "$INSTALL_PREFIX/share/racing-wheel-suite/config/"
+    # `cp -r dir/*` would fail under `set -e` when the directory is empty,
+    # because the glob stays unexpanded; `dir/.` with an emptiness guard does
+    # not have that problem.
+    if [ -d "$SCRIPT_DIR/config" ] && [ -n "$(ls -A "$SCRIPT_DIR/config")" ]; then
+        cp -r "$SCRIPT_DIR/config/." "$INSTALL_PREFIX/share/racing-wheel-suite/config/"
     fi
-    
-    # Install documentation
-    if [ -f "$SCRIPT_DIR/README.md" ]; then
-        cp "$SCRIPT_DIR/README.md" "$INSTALL_PREFIX/share/doc/racing-wheel-suite/"
-    fi
-    if [ -f "$SCRIPT_DIR/LICENSE" ]; then
-        cp "$SCRIPT_DIR/LICENSE" "$INSTALL_PREFIX/share/doc/racing-wheel-suite/"
-    fi
+
+    # Install documentation. The tarball puts these under docs/, so the
+    # find_asset lookup below covers both that and a flat layout, and copies
+    # the changelog and both license files rather than just README/LICENSE.
+    local doc
+    for doc in README.md CHANGELOG.md LICENSE LICENSE-MIT LICENSE-APACHE; do
+        local doc_src
+        if doc_src="$(find_asset "docs/$doc" "$doc")"; then
+            cp "$doc_src" "$INSTALL_PREFIX/share/doc/racing-wheel-suite/"
+        fi
+    done
 }
 
 install_systemd_service() {
@@ -144,22 +170,50 @@ install_systemd_service() {
     local service_dir="$HOME/.config/systemd/user"
     mkdir -p "$service_dir"
     
-    # Generate service file from template
-    local service_file="$service_dir/openracing.service"
-    local service_template="$SCRIPT_DIR/systemd/wheeld.service"
-    if [ ! -f "$service_template" ]; then
-        service_template="$SCRIPT_DIR/packaging/linux/wheeld.service.template"
-    fi
-    if [ ! -f "$service_template" ]; then
-        log_error "Systemd service template not found beside installer"
+    # Generate service file from template. The tarball ships it under
+    # systemd/; a source checkout keeps it next to this script.
+    # Covers the tarball layout under systemd/ and a source checkout, and both
+    # the openracing.service and wheeld.service unit filenames that packages
+    # have shipped.
+    local template
+    if ! template="$(find_asset \
+        "systemd/openracing.service" \
+        "systemd/wheeld.service" \
+        "wheeld.service.template" \
+        "packaging/linux/wheeld.service.template")"; then
+        log_error "Could not find the wheeld service template next to $SCRIPT_DIR"
         exit 1
     fi
-    sed "s|%INSTALL_PATH%|$INSTALL_PREFIX|g" "$service_template" > "$service_file"
-    
-    # Reload systemd and enable service
-    systemctl --user daemon-reload
-    systemctl --user enable openracing.service
-    
+
+    # INSTALL_PREFIX is user supplied. In a sed replacement `&` expands to the
+    # matched text and `|` would close the expression, so a prefix such as
+    # /opt/R&D would render a broken ExecStart. Escape both, plus backslashes.
+    local escaped_prefix
+    escaped_prefix="$(printf '%s' "$INSTALL_PREFIX" | sed -e 's/[\\&|]/\\&/g')"
+
+    local service_file="$service_dir/openracing.service"
+    sed "s|%INSTALL_PATH%|$escaped_prefix|g" "$template" > "$service_file"
+
+    log_info "Wrote $service_file"
+
+    # A systemd user bus is not always reachable (plain SSH sessions without
+    # lingering, containers, chroots). The unit file is already in place, so
+    # report the remaining commands instead of aborting the whole install.
+    if ! systemctl --user daemon-reload 2>/dev/null; then
+        log_warn "No systemd user session available, so the unit was not enabled."
+        log_warn "Once you have a user session, run:"
+        log_warn "  systemctl --user daemon-reload"
+        log_warn "  systemctl --user enable --now openracing.service"
+        log_warn "To keep it running without an active login: sudo loginctl enable-linger $SERVICE_USER"
+        return 0
+    fi
+
+    if ! systemctl --user enable openracing.service; then
+        log_warn "Could not enable openracing.service; enable it manually with:"
+        log_warn "  systemctl --user enable --now openracing.service"
+        return 0
+    fi
+
     log_info "Systemd service installed and enabled"
     log_info "Start with: systemctl --user start openracing.service"
 }
@@ -175,12 +229,26 @@ install_udev_rules() {
     local udev_rules_file="/etc/udev/rules.d/99-racing-wheel-suite.rules"
     local modprobe_conf="/etc/modprobe.d/90-racing-wheel-quirks.conf"
     local hwdb_file="/etc/udev/hwdb.d/99-racing-wheel-suite.hwdb"
-    
+
+    # These sit at the tarball root and in packaging/linux/ alike, so a single
+    # SCRIPT_DIR lookup covers both layouts.
+    local rules_src quirks_src hwdb_src
+    if ! rules_src="$(find_asset "99-racing-wheel-suite.rules")"; then
+        log_error "Could not find 99-racing-wheel-suite.rules next to $SCRIPT_DIR"
+        exit 1
+    fi
+    quirks_src="$(find_asset "90-racing-wheel-quirks.conf")" || quirks_src=""
+    hwdb_src="$(find_asset "99-racing-wheel-suite.hwdb")" || hwdb_src=""
+
     if [ "$EUID" -eq 0 ]; then
         # Running as root
-        cp "$SCRIPT_DIR/99-racing-wheel-suite.rules" "$udev_rules_file"
-        cp "$SCRIPT_DIR/90-racing-wheel-quirks.conf" "$modprobe_conf"
-        cp "$SCRIPT_DIR/99-racing-wheel-suite.hwdb" "$hwdb_file"
+        cp "$rules_src" "$udev_rules_file"
+        if [ -n "$quirks_src" ]; then
+            cp "$quirks_src" "$modprobe_conf"
+        fi
+        if [ -n "$hwdb_src" ]; then
+            cp "$hwdb_src" "$hwdb_file"
+        fi
         systemd-hwdb update
         udevadm control --reload-rules
         udevadm trigger
@@ -190,9 +258,13 @@ install_udev_rules() {
     else
         # Not running as root - provide instructions
         log_warn "Not running as root. udev rules need to be installed manually:"
-        log_warn "sudo cp $SCRIPT_DIR/99-racing-wheel-suite.rules $udev_rules_file"
-        log_warn "sudo cp $SCRIPT_DIR/90-racing-wheel-quirks.conf $modprobe_conf"
-        log_warn "sudo cp $SCRIPT_DIR/99-racing-wheel-suite.hwdb $hwdb_file"
+        log_warn "sudo cp $rules_src $udev_rules_file"
+        if [ -n "$quirks_src" ]; then
+            log_warn "sudo cp $quirks_src $modprobe_conf"
+        fi
+        if [ -n "$hwdb_src" ]; then
+            log_warn "sudo cp $hwdb_src $hwdb_file"
+        fi
         log_warn "sudo systemd-hwdb update"
         log_warn "sudo udevadm control --reload-rules"
         log_warn "sudo udevadm trigger"
@@ -222,11 +294,21 @@ setup_directories() {
 verify_installation() {
     log_info "Verifying installation..."
     
-    # Check binaries
+    # The installed files are what this script is responsible for. Whether the
+    # prefix happens to be on PATH is the user's shell configuration, so it is
+    # reported as a warning rather than failing an otherwise good install.
     for binary in wheeld wheelctl; do
         if [ ! -x "$INSTALL_PREFIX/bin/$binary" ]; then
             log_error "$INSTALL_PREFIX/bin/$binary was not installed"
             return 1
+        fi
+    done
+
+    for binary in wheeld wheelctl; do
+        if ! command -v "$binary" &> /dev/null; then
+            log_warn "$binary is installed but not on your PATH."
+            log_warn "Add it with: export PATH=\"$INSTALL_PREFIX/bin:\$PATH\""
+            break
         fi
     done
 
@@ -236,13 +318,17 @@ verify_installation() {
             return 1
         fi
     done
-    
-    # Check service file
-    if [ "$SKIP_SYSTEMD" != "true" ] && ! systemctl --user list-unit-files openracing.service &> /dev/null; then
-        log_error "Systemd service not found"
+
+    # Check the unit file on disk rather than asking systemd. `systemctl --user
+    # list-unit-files` needs a reachable user bus, which is exactly what
+    # install_systemd_service tolerates the absence of, so querying it here
+    # would fail an install that actually succeeded.
+    if [ "$SKIP_SYSTEMD" != "true" ] \
+        && [ ! -f "$HOME/.config/systemd/user/openracing.service" ]; then
+        log_error "Systemd unit was not written to $HOME/.config/systemd/user/"
         return 1
     fi
-    
+
     log_info "Installation verification successful"
     return 0
 }
@@ -263,21 +349,35 @@ print_post_install_instructions() {
     log_info "Installation complete!"
     echo
     echo "Next steps:"
-    echo "1. Add $INSTALL_PREFIX/bin to your PATH if not already done"
+    echo "1. Add $INSTALL_PREFIX/bin to your PATH if not already done:"
+    echo "   export PATH=\"$INSTALL_PREFIX/bin:\$PATH\""
     echo "2. Install udev rules (if not done automatically):"
-    echo "   sudo cp packaging/linux/99-racing-wheel-suite.rules /etc/udev/rules.d/"
-    echo "   sudo cp packaging/linux/90-racing-wheel-quirks.conf /etc/modprobe.d/"
-    echo "   sudo cp packaging/linux/99-racing-wheel-suite.hwdb /etc/udev/hwdb.d/"
-    echo "   sudo systemd-hwdb update"
+    # The quirks and hwdb files are optional package contents, so only suggest
+    # copying the ones this package actually shipped.
+    local rules_src quirks_src hwdb_src
+    rules_src="$(find_asset "99-racing-wheel-suite.rules")" || rules_src=""
+    quirks_src="$(find_asset "90-racing-wheel-quirks.conf")" || quirks_src=""
+    hwdb_src="$(find_asset "99-racing-wheel-suite.hwdb")" || hwdb_src=""
+
+    if [ -n "$rules_src" ]; then
+        echo "   sudo cp $rules_src /etc/udev/rules.d/"
+    fi
+    if [ -n "$quirks_src" ]; then
+        echo "   sudo cp $quirks_src /etc/modprobe.d/"
+    fi
+    if [ -n "$hwdb_src" ]; then
+        echo "   sudo cp $hwdb_src /etc/udev/hwdb.d/"
+        echo "   sudo systemd-hwdb update"
+    fi
     echo "   sudo udevadm control --reload-rules && sudo udevadm trigger"
     echo "3. Add your user to required groups:"
-    echo "   sudo usermod -a -G input,plugdev $USER"
+    echo "   sudo usermod -a -G input,plugdev $SERVICE_USER"
     echo "4. Log out and back in for group changes to take effect"
     echo "   (Reboot if using Asetek wheels — the modprobe.d conf needs a reload)"
     echo "5. Start the service:"
-    echo "   systemctl --user start openracing.service"
-    echo "6. Launch the UI (if installed):"
-    echo "   openracing"
+    echo "   systemctl --user enable --now openracing.service"
+    echo "6. Confirm it is running:"
+    echo "   wheelctl health"
     echo
     echo "For troubleshooting, check logs with:"
     echo "   journalctl --user -u openracing.service -f"

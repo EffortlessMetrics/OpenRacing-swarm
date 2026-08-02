@@ -1,5 +1,6 @@
 ---
 source: crates/cli/tests/cli_output_snapshots.rs
+assertion_line: 101
 expression: stderr
 ---
 Racing Wheel Control CLI - Manage racing wheel hardware, profiles, and diagnostics

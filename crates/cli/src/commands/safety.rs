@@ -267,12 +267,16 @@ async fn set_torque_limit(
     // Reject rather than claim success. Adding the write means a new IPC
     // method on the wheel.v1 service, which is a schema change that belongs in
     // its own PR with an ADR, not folded in here.
+    //
+    // Deliberately no "do this instead" pointer. `wheelctl profile apply` is a
+    // profile-file operation, not an immediate safety-limit write; directing
+    // users there would imply a guarantee this command cannot make.
     let _ = (global, max_torque);
     Err(CliError::ValidationError(format!(
         "Setting a torque limit is not implemented: the service exposes no \
          torque-limit write, so {torque:.1} Nm for device {device} would not \
-         have been applied. Cap torque in the device profile instead:\n  \
-         wheelctl profile apply {device} <profile.json>"
+         have been applied. Do not rely on this command to constrain output; \
+         use the physical torque limit on the wheelbase."
     ))
     .into())
 }

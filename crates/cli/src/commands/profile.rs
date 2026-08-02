@@ -12,9 +12,12 @@ use crate::error::CliError;
 use crate::output;
 
 /// Execute profile command
+//
+// Only `Apply` talks to the service, so the client is built inside that branch.
+// Connecting up front made every local subcommand -- validate, create, edit,
+// export -- fail under `--no-mock` with no daemon running, even though they
+// only ever touch files on disk.
 pub async fn execute(cmd: &ProfileCommands, json: bool, endpoint: Option<&str>) -> Result<()> {
-    let client = WheelClient::connect_or_mock(endpoint).await?;
-
     match cmd {
         ProfileCommands::List { game, car } => {
             list_profiles(game.as_deref(), car.as_deref(), json).await
@@ -24,7 +27,10 @@ pub async fn execute(cmd: &ProfileCommands, json: bool, endpoint: Option<&str>) 
             device,
             profile,
             skip_validation,
-        } => apply_profile(&client, device, profile, json, *skip_validation).await,
+        } => {
+            let client = WheelClient::connect_or_mock(endpoint).await?;
+            apply_profile(&client, device, profile, json, *skip_validation).await
+        }
         ProfileCommands::Create {
             path,
             from,
@@ -434,6 +440,14 @@ fn scan_profiles(
 }
 
 fn create_default_profile(game: Option<&str>, car: Option<&str>) -> ProfileSchema {
+    // `base.filters.torqueCap` is not part of the current IPC contract. New
+    // profiles omit it so they remain directly applicable; a non-omitted
+    // value is rejected by the client instead of being silently dropped.
+    let filters = racing_wheel_schemas::config::FilterConfig {
+        torque_cap: None,
+        ..Default::default()
+    };
+
     ProfileSchema {
         schema: "wheel.profile/1".to_string(),
         scope: ProfileScope {
@@ -445,7 +459,7 @@ fn create_default_profile(game: Option<&str>, car: Option<&str>) -> ProfileSchem
             ffb_gain: 0.75,
             dor_deg: 900,
             torque_cap_nm: 8.0,
-            filters: racing_wheel_schemas::config::FilterConfig::default(),
+            filters,
         },
         leds: None,
         haptics: None,
@@ -501,8 +515,15 @@ mod tests {
     // --- create_default_profile ---
 
     #[test]
-    fn default_profile_no_scope() {
+    fn default_profile_no_scope() -> TestResult {
         let profile = create_default_profile(None, None);
+        let json = serde_json::to_value(&profile)?;
+        let filters = json
+            .get("base")
+            .and_then(|base| base.get("filters"))
+            .and_then(serde_json::Value::as_object)
+            .ok_or("default profile filters missing from JSON")?;
+        assert!(!filters.contains_key("torqueCap"));
         assert_eq!(profile.schema, "wheel.profile/1");
         assert!(profile.scope.game.is_none());
         assert!(profile.scope.car.is_none());
@@ -510,7 +531,9 @@ mod tests {
         assert_eq!(profile.base.dor_deg, 900);
         assert!((profile.base.ffb_gain - 0.75).abs() < f32::EPSILON);
         assert!((profile.base.torque_cap_nm - 8.0).abs() < f32::EPSILON);
+        assert!(profile.base.filters.torque_cap.is_none());
         assert!(profile.signature.is_none());
+        Ok(())
     }
 
     #[test]
