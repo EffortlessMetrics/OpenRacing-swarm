@@ -46,3 +46,10 @@ mutation completeness, hardware validation, or release readiness.
 The remaining producer work is tracked in issue #227. Until it lands, the
 quality receipt must continue to treat test-efficiency evidence as skipped and
 the policy exception must remain active.
+
+## Follow-up status
+
+Issue #227 adds the repo-owned producer and is being completed in a separate
+PR. Once that PR merges, the producer becomes the source for native RIPR+
+regeneration; the remaining quality-closure gaps are coverage and static
+exposure debt, not missing test-efficiency input.

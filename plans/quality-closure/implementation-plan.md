@@ -179,6 +179,61 @@ Revert the fallback projection, policy/documentation changes, and focused
 tests. The prior explicit missing-report failure remains visible, but the
 non-numeric bot badge payload must not be restored.
 
+## Work item: produce-repo-owned-test-efficiency-evidence
+
+Status: completed
+Linked issue: https://github.com/EffortlessMetrics/OpenRacing-swarm/issues/227
+Linked PR: pending
+Linked spec: docs/specs/OR-SPEC-0003-ripr-plus-coverage-closure.md
+Prerequisite: reconcile-ripr-plus-badge-evidence-contract
+Goal: Generate the RIPR test-efficiency report from deterministic, conservative
+static test-oracle facts so the native RIPR+ badge path is reproducible.
+
+### Production delta
+
+- Add `cargo xtask test-efficiency-report`.
+- Scan repository Rust tests for assertion shape, apparent owner calls,
+  activation literals, and static limitations.
+- Write the `0.1` JSON contract and an advisory Markdown companion under
+  `target/ripr/reports/`.
+- Run the producer before badge and quality-closure generation.
+
+### Acceptance
+
+- The producer handles missing and valid source roots without panicking and
+  emits the required schema, class vocabulary, test ledger, and
+  `metrics.tests_scanned` field.
+- Focused fixture tests cover strong, broad, smoke, likely-vacuous, opaque,
+  and possibly-circular classifications plus malformed contract rejection and
+  nested output-directory creation.
+- `cargo xtask badges --check` uses the native RIPR+ output from the generated
+  report, and quality closure reports endpoint regeneration as pass when the
+  committed endpoint matches.
+- The report remains advisory and does not claim runtime mutation, coverage,
+  release readiness, or test adequacy.
+
+### Proof commands
+
+```text
+cargo test --locked --offline -p openracing-tools --bin xtask
+cargo xtask test-efficiency-report
+cargo xtask badges --check
+OPENRACING_COVERAGE_TOOL_STATUS=skipped cargo xtask quality-closure --check
+python scripts/policy_file.py --strict
+git diff --check
+```
+
+### Non-goals
+
+- No runtime mutation engine or test execution.
+- No coverage ratchet, hardware validation, or release-readiness claim.
+- No public support-tier promotion.
+
+### Rollback
+
+Revert the producer, report integration, plan, and policy updates; retain the
+previous numeric exposure-only fallback and active evidence exception.
+
 ## Next work
 
 1. Turn the skipped coverage debt into a required non-skipped coverage sentinel
