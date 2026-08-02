@@ -40,6 +40,8 @@ pub mod integration_tests;
 pub mod ipc_service;
 pub mod ipc_simple;
 pub mod observability;
+pub mod plugin_registry;
+pub mod plugin_registry_impl;
 pub mod process_detection;
 pub mod profile_repository;
 #[cfg(test)]
