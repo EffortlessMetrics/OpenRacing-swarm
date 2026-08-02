@@ -44,9 +44,9 @@ const USBPCAP_SELECTOR_CLASS_HUB_OR_NON_MOZA: &str = "hub_or_non_moza";
 const GUIDED_0X8E_CAPTURE_EXECUTION_MODEL: &str =
     "guided_single_terminal_capture_with_inline_event_prompts";
 
-pub async fn execute(cmd: &HardwareCommands, json: bool) -> Result<()> {
+pub async fn execute(cmd: &HardwareCommands, json: bool, endpoint: Option<&str>) -> Result<()> {
     match cmd {
-        HardwareCommands::Doctor { json_out } => doctor(json, json_out.as_deref()).await,
+        HardwareCommands::Doctor { json_out } => doctor(json, json_out.as_deref(), endpoint).await,
         HardwareCommands::BringupRail { family, json_out } => {
             bringup_rail(json, family, json_out.as_deref()).await
         }
@@ -300,20 +300,27 @@ async fn bringup_rail(json: bool, family: &str, json_out: Option<&Path>) -> Resu
     Ok(())
 }
 
-async fn doctor(json: bool, json_out: Option<&Path>) -> Result<()> {
+async fn doctor(json: bool, json_out: Option<&Path>, endpoint: Option<&str>) -> Result<()> {
     let mut receipt = build_doctor_receipt();
 
     // Probe the service last: it is the check most likely to explain why a
     // first-time user sees nothing, and it needs async, unlike the rest.
-    let endpoint = crate::client::default_endpoint();
-    let reachable = crate::client::WheelClient::connect(None).await.is_ok();
+    //
+    // Probe and report the endpoint the user actually selected. Probing the
+    // default while `--endpoint` (or WHEELCTL_ENDPOINT) points somewhere else
+    // would report a reachable service the user is not talking to, or call
+    // their running service unreachable -- the diagnostic command is the last
+    // place that should answer about a different target than the one asked
+    // about.
+    let probed = endpoint.unwrap_or(crate::client::default_endpoint());
+    let reachable = crate::client::WheelClient::connect(endpoint).await.is_ok();
     receipt.service = ServiceChecks {
-        endpoint: endpoint.to_string(),
+        endpoint: probed.to_string(),
         reachable,
     };
     if !reachable {
         receipt.warnings.push(format!(
-            "wheeld is not reachable at {endpoint}; start it with: {}",
+            "wheeld is not reachable at {probed}; start it with: {}",
             crate::client::start_service_hint()
         ));
     }

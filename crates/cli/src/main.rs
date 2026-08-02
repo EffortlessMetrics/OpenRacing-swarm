@@ -277,7 +277,9 @@ async fn execute_command(cli: &Cli) -> Result<()> {
             commands::game::execute(cmd, cli.json, cli.endpoint.as_deref()).await
         }
         Commands::Telemetry(cmd) => commands::telemetry::execute(cmd, cli.json).await,
-        Commands::Hardware(cmd) => commands::hardware::execute(cmd, cli.json).await,
+        Commands::Hardware(cmd) => {
+            commands::hardware::execute(cmd, cli.json, cli.endpoint.as_deref()).await
+        }
         Commands::Doctor { json_out } => {
             // Same code path as `wheelctl hardware doctor`, so the two cannot
             // drift apart.
@@ -286,6 +288,7 @@ async fn execute_command(cli: &Cli) -> Result<()> {
                     json_out: json_out.clone(),
                 },
                 cli.json,
+                cli.endpoint.as_deref(),
             )
             .await
         }

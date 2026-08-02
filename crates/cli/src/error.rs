@@ -81,12 +81,15 @@ impl CliError {
                 "Start the service:\n  {}\nThen confirm it is up:\n  wheelctl health",
                 crate::client::start_service_hint()
             )),
-            CliError::PermissionDenied(_) => Some(permission_denied_hint()),
-            CliError::ValidationError(_) | CliError::SchemaError(_) => Some(
+            CliError::PermissionDenied(message) => permission_denied_hint(message),
+            // `SchemaError` only ever comes from the profile validator, so the
+            // profile-schema hint is unconditionally right for it.
+            CliError::SchemaError(_) => Some(
                 "Check the file against the profile schema:\n  \
                  wheelctl profile validate <file>"
                     .to_string(),
             ),
+            CliError::ValidationError(message) => validation_error_hint(message),
             CliError::ReceiptFailure(_)
             | CliError::InvalidConfiguration(_)
             | CliError::IoError(_)
@@ -96,22 +99,62 @@ impl CliError {
     }
 }
 
-/// Platform-specific guidance for device permission failures.
+/// Guidance for a `PermissionDenied`, which is not always about permissions.
 ///
-/// On Linux this is nearly always missing udev rules or group membership,
-/// which is concrete and fixable rather than a mystery.
-fn permission_denied_hint() -> String {
-    if cfg!(target_os = "linux") {
-        "On Linux this usually means the udev rules are not installed, or your \
-         user is not in the input group:\n  \
-         sudo cp packaging/linux/99-racing-wheel-suite.rules /etc/udev/rules.d/\n  \
-         sudo udevadm control --reload-rules && sudo udevadm trigger\n  \
-         sudo usermod -a -G input,plugdev \"$USER\"    (then log out and back in)\n\
-         Run `wheelctl doctor` to see which of these is missing."
-            .to_string()
-    } else {
-        "Run `wheelctl doctor` to check device access permissions.".to_string()
+/// `safety enable` reuses this variant to report a refused *interlock* —
+/// active faults, temperature, or hands-off state — where device access
+/// succeeded and nothing about udev rules or group membership is relevant.
+/// Telling that user to reinstall udev rules sends them to fix a system that
+/// is already working while an interlock is holding torque back, which is a
+/// bad thing to be wrong about. Today the interlock is in fact the only
+/// in-tree producer of this variant, so the access-permission text below is
+/// reachable only from a future call site.
+fn permission_denied_hint(message: &str) -> Option<String> {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("safety") || lower.contains("interlock") || lower.contains("conditions") {
+        return Some(
+            "This is a safety interlock, not a file-permission problem. Check \
+             what is blocking it:\n  \
+             wheelctl safety status <device>\n\
+             Faults, temperature, and hands-on state each gate high torque \
+             independently."
+                .to_string(),
+        );
     }
+
+    if cfg!(target_os = "linux") {
+        Some(
+            "On Linux this usually means the udev rules are not installed, or your \
+             user is not in the input group:\n  \
+             sudo cp packaging/linux/99-racing-wheel-suite.rules /etc/udev/rules.d/\n  \
+             sudo udevadm control --reload-rules && sudo udevadm trigger\n  \
+             sudo usermod -a -G input,plugdev \"$USER\"    (then log out and back in)\n\
+             Run `wheelctl doctor` to see which of these is missing."
+                .to_string(),
+        )
+    } else {
+        Some("Run `wheelctl doctor` to check device access permissions.".to_string())
+    }
+}
+
+/// Guidance for a `ValidationError`, which is the catch-all validation variant.
+///
+/// It is returned for blackbox format and version failures, plugin registry
+/// lookups, firmware bundles, and torque-limit range checks as well as profile
+/// problems. A blanket "run `wheelctl profile validate`" is wrong for most of
+/// those, so the hint is offered only when the message is actually about a
+/// profile or schema. Everywhere else the message already names the specific
+/// failure and silence beats a misdirection.
+fn validation_error_hint(message: &str) -> Option<String> {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("profile") || lower.contains("schema") {
+        return Some(
+            "Check the file against the profile schema:\n  \
+             wheelctl profile validate <file>"
+                .to_string(),
+        );
+    }
+    None
 }
 
 #[cfg(test)]

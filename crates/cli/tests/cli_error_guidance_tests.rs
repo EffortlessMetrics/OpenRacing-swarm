@@ -307,3 +307,138 @@ mod empty_device_list {
         Ok(())
     }
 }
+
+// ===========================================================================
+// Hints match the failure they are attached to
+// ===========================================================================
+
+mod hints_are_not_misdirection {
+    use super::*;
+
+    #[test]
+    fn safety_interlock_is_not_diagnosed_as_a_udev_problem() -> TestResult {
+        // `safety enable` reports a refused interlock as PermissionDenied.
+        // Device access already succeeded there, so udev rules and group
+        // membership are irrelevant -- and telling someone to reinstall udev
+        // rules while an interlock is holding torque back is a bad thing to be
+        // wrong about.
+        let output = wheelctl_offline()?
+            .args(["safety", "enable", "wheel-001", "--force"])
+            .output()?;
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("hint:") {
+            assert!(
+                !stderr.contains("udevadm") && !stderr.contains("usermod"),
+                "safety failure diagnosed as a permissions problem:\n{stderr}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn non_profile_validation_errors_do_not_suggest_profile_validate() -> TestResult {
+        // ValidationError is the catch-all: blackbox format, plugin registry,
+        // firmware bundles, torque ranges. `wheelctl profile validate` is the
+        // wrong advice for all of them.
+        let output = wheelctl()?
+            .args(["plugin", "install", "no-such-plugin-xyz"])
+            .output()?;
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            !combined.contains("profile validate"),
+            "plugin failure suggested profile validation:\n{combined}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn profile_validation_errors_still_get_the_profile_hint() -> TestResult {
+        // The other half: narrowing the hint must not remove it where it is
+        // correct.
+        let err = wheelctl()?
+            .args(["profile", "validate", "no-such-profile.json"])
+            .output()?;
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&err.stdout),
+            String::from_utf8_lossy(&err.stderr)
+        );
+        assert!(
+            !combined.is_empty(),
+            "profile validate produced no diagnostic at all"
+        );
+        Ok(())
+    }
+}
+
+// ===========================================================================
+// `doctor` answers about the endpoint it was asked about
+// ===========================================================================
+
+mod doctor_respects_the_selected_endpoint {
+    use super::*;
+
+    #[test]
+    fn reports_the_endpoint_from_the_flag() -> TestResult {
+        // Probing the default while `--endpoint` points elsewhere would report
+        // on a service the user is not talking to.
+        let output = wheelctl()?
+            .args(["--endpoint", UNREACHABLE_ENDPOINT, "--json", "doctor"])
+            .output()?;
+        let stdout = String::from_utf8(output.stdout)?;
+        let parsed: serde_json::Value = serde_json::from_str(&stdout)?;
+        assert_eq!(
+            parsed
+                .get("service")
+                .and_then(|s| s.get("endpoint"))
+                .and_then(|v| v.as_str()),
+            Some(UNREACHABLE_ENDPOINT),
+            "doctor reported a different endpoint than the one selected: {stdout}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn reports_the_endpoint_from_the_environment() -> TestResult {
+        let output = wheelctl()?
+            .env("WHEELCTL_ENDPOINT", UNREACHABLE_ENDPOINT)
+            .args(["--json", "doctor"])
+            .output()?;
+        let stdout = String::from_utf8(output.stdout)?;
+        let parsed: serde_json::Value = serde_json::from_str(&stdout)?;
+        assert_eq!(
+            parsed
+                .get("service")
+                .and_then(|s| s.get("endpoint"))
+                .and_then(|v| v.as_str()),
+            Some(UNREACHABLE_ENDPOINT),
+            "doctor ignored WHEELCTL_ENDPOINT: {stdout}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn warning_names_the_selected_endpoint() -> TestResult {
+        let output = wheelctl()?
+            .args(["--endpoint", UNREACHABLE_ENDPOINT, "--json", "doctor"])
+            .output()?;
+        let stdout = String::from_utf8(output.stdout)?;
+        let parsed: serde_json::Value = serde_json::from_str(&stdout)?;
+        let warnings = parsed
+            .get("warnings")
+            .and_then(|w| w.as_array())
+            .ok_or("no warnings array")?;
+        assert!(
+            warnings
+                .iter()
+                .filter_map(|w| w.as_str())
+                .any(|w| w.contains(UNREACHABLE_ENDPOINT)),
+            "unreachable warning did not name the selected endpoint: {warnings:?}"
+        );
+        Ok(())
+    }
+}
