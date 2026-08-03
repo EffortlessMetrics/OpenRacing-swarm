@@ -49,9 +49,28 @@ prove that a CPX42, CX43, or CX53 runner is currently online, provisioned, or
 available to the organization. The local organization-runner API query was
 permission-denied, so no live capacity claim is made.
 
+## Current capacity follow-up (#236)
+
+The routing contract remains intact, but required self-hosted proof is
+currently blocked before checkout or compilation by host capacity:
+
+- PR #297 exact-head run `30777894276` selected CX43 and reported
+  `/mnt/ci-scratch` with 66 GB free against the 100 GB disk guard;
+- PR #299 exact-head run `30778182088` selected CX53 and reported
+  `/mnt/ci-scratch` with 35 GB free against the 100 GB disk guard.
+
+These are runner-capacity failures, not product or route-selection failures.
+The disk guard must remain unchanged. The parked PRs may be rerun only after
+each affected runner passes its configured disk preflight and a fresh exact-
+head routed job reaches its build/test steps. A successful router selection
+alone is insufficient; the normalized result must also pass for the selected
+runner.
+
 ## Follow-up
 
 - Issue #215 remains open for reconciling the RIPR+ badge generator and
   quality-closure checker contract.
+- Issue #236 tracks restoration of required CX43/CX53 runner capacity; no
+  repository-side guard bypass or product-code change is in scope.
 - Future runner-capacity changes must update this plan's route matrix and
   preserve the exact normalized-result proof.
