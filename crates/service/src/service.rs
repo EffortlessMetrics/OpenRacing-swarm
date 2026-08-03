@@ -2,6 +2,7 @@
 
 use crate::{
     ApplicationDeviceService, ApplicationProfileService, ApplicationSafetyService, FeatureFlags,
+    game_service::GameService, plugin_registry_impl::PluginRegistryServiceImpl,
     profile_repository::ProfileRepositoryConfig,
 };
 use anyhow::Result;
@@ -20,6 +21,10 @@ pub struct WheelService {
     device_service: Arc<ApplicationDeviceService>,
     /// Safety service for torque management
     safety_service: Arc<ApplicationSafetyService>,
+    /// Game integration service for telemetry configuration
+    game_service: Arc<GameService>,
+    /// Plugin registry service for plugin discovery and lifecycle management
+    plugin_service: Arc<PluginRegistryServiceImpl>,
     /// Tracing manager for observability
     tracer: Option<Arc<TracingManager>>,
     /// Feature flags for runtime behavior
@@ -112,10 +117,25 @@ impl WheelService {
         );
         info!("Safety service created");
 
+        let game_service = Arc::new(
+            GameService::new()
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to create game service: {}", e))?,
+        );
+        info!("Game service created");
+
+        let plugin_service = Arc::new(
+            PluginRegistryServiceImpl::with_defaults()
+                .map_err(|e| anyhow::anyhow!("Failed to create plugin registry service: {}", e))?,
+        );
+        info!("Plugin registry service created");
+
         Ok(Self {
             profile_service,
             device_service,
             safety_service,
+            game_service,
+            plugin_service,
             tracer,
             flags,
         })
@@ -184,6 +204,16 @@ impl WheelService {
     /// Get safety service reference
     pub fn safety_service(&self) -> &Arc<ApplicationSafetyService> {
         &self.safety_service
+    }
+
+    /// Get the shared game integration service reference
+    pub fn game_service(&self) -> &Arc<GameService> {
+        &self.game_service
+    }
+
+    /// Get the shared plugin registry service reference
+    pub fn plugin_service(&self) -> &Arc<PluginRegistryServiceImpl> {
+        &self.plugin_service
     }
 
     /// Service health monitoring

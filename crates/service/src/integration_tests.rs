@@ -7,7 +7,7 @@
 mod tests {
     use crate::{
         FeatureFlags, ServiceDaemon, SystemConfig, WheelService,
-        profile_repository::ProfileRepositoryConfig,
+        plugin_registry::PluginRegistryService, profile_repository::ProfileRepositoryConfig,
     };
     use anyhow::{Context, Result};
     use std::sync::Arc;
@@ -264,6 +264,27 @@ mod tests {
         Ok(())
     }
 
+    /// The wheel service exposes the shared game service composition.
+    #[tokio::test]
+    #[traced_test]
+    async fn test_game_service_accessor() -> Result<()> {
+        let (service, _temp_dir) = create_test_service().await?;
+
+        let first_reference = Arc::clone(service.game_service());
+        let second_reference = Arc::clone(service.game_service());
+        assert!(
+            Arc::ptr_eq(&first_reference, &second_reference),
+            "repeated game-service access must return the same shared instance"
+        );
+
+        let supported_games = service.game_service().get_supported_games().await;
+        assert!(
+            !supported_games.is_empty(),
+            "the shared game service should expose the support matrix"
+        );
+        Ok(())
+    }
+
     /// Test force feedback pipeline
     ///
     /// Verifies service creation and device enumeration. Per-device FFB frame
@@ -344,11 +365,11 @@ mod tests {
 
     /// Test plugin system
     ///
-    /// Blocked: WheelService does not yet expose a `plugin_service()` accessor.
-    /// Re-enable once the plugin service API is available on WheelService.
+    /// Placeholder for plugin execution APIs, which remain out of scope for
+    /// the service-composition lane.
     #[tokio::test]
     #[traced_test]
-    #[ignore = "plugin_service API not yet exposed on WheelService"]
+    #[ignore = "plugin execution APIs are not part of service composition"]
     async fn test_plugin_system() -> Result<()> {
         let (_service, _temp_dir) = create_test_service().await?;
 
@@ -362,6 +383,31 @@ mod tests {
         //         .execute_plugin(&plugin.id, &test_telemetry).await?;
         // }
 
+        Ok(())
+    }
+
+    /// The wheel service exposes an empty plugin registry without network I/O.
+    #[tokio::test]
+    #[traced_test]
+    async fn test_plugin_service_accessor() -> Result<()> {
+        let (service, _temp_dir) = create_test_service().await?;
+
+        let first_reference = Arc::clone(service.plugin_service());
+        let second_reference = Arc::clone(service.plugin_service());
+        assert!(
+            Arc::ptr_eq(&first_reference, &second_reference),
+            "repeated plugin-service access must return the same shared instance"
+        );
+
+        let installed_plugins = service
+            .plugin_service()
+            .list_installed_plugins()
+            .await
+            .context("list installed plugins through shared registry")?;
+        assert!(
+            installed_plugins.is_empty(),
+            "a fresh service should have no installed plugins"
+        );
         Ok(())
     }
 
