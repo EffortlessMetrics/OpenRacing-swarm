@@ -68,8 +68,8 @@ runner.
 
 ## Follow-up
 
-- Issue #215 remains open for reconciling the RIPR+ badge generator and
-  quality-closure checker contract.
+- Issue #215 was closed by PR #226, which reconciled the RIPR+ badge and
+  quality-closure contract; issue #227 tracks the remaining producer work.
 - Issue #236 tracks restoration of required CX43/CX53 runner capacity; no
   repository-side guard bypass or product-code change is in scope.
 - Future runner-capacity changes must update this plan's route matrix and
