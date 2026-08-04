@@ -58,6 +58,9 @@ currently blocked before checkout or compilation by host capacity:
   `/mnt/ci-scratch` with 66 GB free against the 100 GB disk guard;
 - PR #299 exact-head run `30778182088` selected CX53 and reported
   `/mnt/ci-scratch` with 35 GB free against the 100 GB disk guard.
+- PR #300 exact-head run `30865401104` selected CX43 and reported
+  `/mnt/ci-scratch` with 65 GB free against the 100 GB disk guard; its
+  normalized routed result failed before checkout or compilation.
 
 These are runner-capacity failures, not product or route-selection failures.
 The disk guard must remain unchanged. The parked PRs may be rerun only after
