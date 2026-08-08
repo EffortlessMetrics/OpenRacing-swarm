@@ -80,7 +80,15 @@ stop for every parked pull request.
 
 The `fall-back-when-selected-runner-is-unfit` work item in this plan closes the
 gap by re-running the identical check/test proof on the GitHub-hosted lane when
-a selected self-hosted lane fails. The disk guard, its thresholds, and every
-lane's build and test commands are unchanged; a genuine code failure still
-fails on both lanes. Issue #236 remains the owner of restoring real capacity —
-this only stops the repository from being wedged while that work is pending.
+a selected self-hosted lane reports its disk-guard preflight as `unfit`. The
+disk guard, its thresholds, and every lane's build and test commands are
+unchanged.
+
+The fallback keys on that preflight verdict rather than on the lane merely
+failing. A `cargo check` or `cargo test` failure leaves `preflight=ok`, so the
+fallback never launches and the required check stays red. That matters because
+the lanes do not share an environment, so retrying any failure would let an
+environment-sensitive defect fail on the selected runner and pass on hosted.
+
+Issue #236 remains the owner of restoring real capacity — this only stops the
+repository from being wedged while that work is pending.
