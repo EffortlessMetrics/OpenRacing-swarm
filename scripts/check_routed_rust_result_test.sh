@@ -138,9 +138,30 @@ jobs = workflow["jobs"]
 gate = jobs["rust-small-github-fallback"]["if"]
 
 needs = jobs["rust-small-github-fallback"]["needs"]
-for required in ("rust-small-cx43", "rust-small-cpx42", "rust-small-cx53"):
+for required in (
+    "route-rust-small",
+    "rust-small-cx43",
+    "rust-small-cpx42",
+    "rust-small-cx53",
+):
     if required not in needs:
         print(f"fallback job does not depend on {required}", file=sys.stderr)
+        sys.exit(1)
+
+# The gate asks whether *any* self-hosted lane failed, not whether the
+# *selected* one did. That is only safe because exactly one lane can ever run:
+# each lane is pinned to its own target, so the others are skipped rather than
+# failed. Assert that invariant here -- if a lane were ever allowed to run for
+# a target other than its own, a non-selected failure could launch a fallback
+# while the selected lane succeeded.
+for lane, target in (
+    ("rust-small-cx43", "cx43"),
+    ("rust-small-cpx42", "cpx42"),
+    ("rust-small-cx53", "cx53"),
+):
+    condition = " ".join(jobs[lane]["if"].split())
+    if f"needs.route-rust-small.outputs.target == '{target}'" not in condition:
+        print(f"{lane} is not pinned to target '{target}': {condition!r}", file=sys.stderr)
         sys.exit(1)
 
 # The expression uses only always(), equality against string literals, &&, ||
