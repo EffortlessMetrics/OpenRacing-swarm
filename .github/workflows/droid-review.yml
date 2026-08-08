@@ -45,6 +45,14 @@ jobs:
           }
           JSON
 
+      - name: Mask workflow credentials in action logs
+        shell: bash
+        env:
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+        run: |
+          echo "::add-mask::${GITHUB_TOKEN}"
+          echo "::add-mask::${MINIMAX_API_KEY}"
+
       - name: Run Droid Auto Review
         uses: Factory-AI/droid-action@main
         env:
