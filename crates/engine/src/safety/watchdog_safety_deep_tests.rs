@@ -634,10 +634,14 @@ fn test_no_communication_reported_does_not_trigger_loss() -> Result<(), Watchdog
 
 #[test]
 fn test_communication_refresh_prevents_loss() -> Result<(), WatchdogError> {
+    // Keep enough margin for the test thread to be descheduled while the
+    // engine suite is running in parallel. Production uses its own configured
+    // timeout; this margin only makes the wall-clock test oracle reliable.
+    let communication_timeout = Duration::from_millis(250);
     let watchdog = Box::new(SoftwareWatchdog::new(30_000));
     let torque_limit = TorqueLimit::new(25.0, 5.0);
     let mut system =
-        SafetyInterlockSystem::with_config(watchdog, torque_limit, Duration::from_millis(50));
+        SafetyInterlockSystem::with_config(watchdog, torque_limit, communication_timeout);
     system.arm()?;
 
     for _ in 0..5 {
@@ -649,6 +653,17 @@ fn test_communication_refresh_prevents_loss() -> Result<(), WatchdogError> {
             "Refreshing communication should prevent loss"
         );
     }
+
+    // Confirm that the same fixture still detects a real communication loss
+    // once refreshes stop; the production timeout and fault response remain
+    // covered without relying on the narrow refresh-test timing margin.
+    std::thread::sleep(communication_timeout + Duration::from_millis(10));
+    let result = system.process_tick(10.0);
+    assert!(
+        result.fault_occurred,
+        "An expired communication timeout must fault"
+    );
+
     Ok(())
 }
 
