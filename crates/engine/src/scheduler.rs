@@ -1045,11 +1045,13 @@ mod tests {
         let start = Instant::now();
 
         // Run a few ticks
+        let mut completed_ticks = 0_u32;
         for expected_tick in 1..=5 {
             // This might fail in CI due to timing, so we'll be lenient
             match scheduler.wait_for_tick() {
                 Ok(tick) => {
                     assert_eq!(tick, expected_tick);
+                    completed_ticks += 1;
                 }
                 Err(RTError::TimingViolation) => {
                     // Expected in CI environments with poor timing
@@ -1061,10 +1063,19 @@ mod tests {
 
         let elapsed = start.elapsed();
 
-        // Should have taken some time (be lenient for CI)
-        assert!(elapsed.as_micros() >= 100);
+        // Elapsed time is only meaningful once a tick has actually been
+        // awaited. `wait_for_tick` skips its sleep when it has already missed
+        // the deadline, so a violation on the very first tick returns in a few
+        // microseconds. Under a loaded scheduler that is the common path, and
+        // asserting on elapsed there fails the test for the exact environment
+        // the loop above is trying to tolerate.
+        if completed_ticks > 0 {
+            // Should have taken some time (be lenient for CI)
+            assert!(elapsed.as_micros() >= 100);
+        }
 
-        // Check that metrics were collected
+        // Check that metrics were collected. Every attempt is recorded,
+        // including one that ends in a timing violation.
         assert!(scheduler.metrics().total_ticks > 0);
     }
 
