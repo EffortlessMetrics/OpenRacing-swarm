@@ -52,10 +52,23 @@ fi
 
 failures=0
 
-# case: name|route|target|router_error|cx43|cpx42|cx53|github|fallback|want_exit
+# case: name|route|target|router_error|cx43|cpx42|cx53|github|fallback|preflight|want_exit
+#
+# `preflight` is the selected self-hosted lane's disk-guard verdict: 'unfit'
+# when the runner died before checkout, 'ok' when it got far enough to build,
+# empty when no self-hosted lane ran.
 run_case() {
-  local name route target router_error cx43 cpx42 cx53 github fallback want
-  IFS='|' read -r name route target router_error cx43 cpx42 cx53 github fallback want <<< "$1"
+  local name route target router_error cx43 cpx42 cx53 github fallback preflight want
+  IFS='|' read -r name route target router_error cx43 cpx42 cx53 github fallback preflight want <<< "$1"
+
+  # Only the selected lane reports a verdict; a lane that never ran has an
+  # empty output, exactly as Actions would report it.
+  local cx43_pf="" cpx42_pf="" cx53_pf=""
+  case "$target" in
+    cx43) cx43_pf="$preflight" ;;
+    cpx42) cpx42_pf="$preflight" ;;
+    cx53) cx53_pf="$preflight" ;;
+  esac
 
   local output status
   set +e
@@ -70,6 +83,9 @@ run_case() {
     CX53_RESULT="$cx53" \
     GITHUB_RESULT="$github" \
     FALLBACK_RESULT="$fallback" \
+    CX43_PREFLIGHT="$cx43_pf" \
+    CPX42_PREFLIGHT="$cpx42_pf" \
+    CX53_PREFLIGHT="$cx53_pf" \
     GITHUB_STEP_SUMMARY=/dev/null \
     bash "$logic" 2>&1
   )"
@@ -84,31 +100,42 @@ run_case() {
 }
 
 # Selected lane succeeded: unchanged, pre-existing behavior.
-run_case "cx43 success|success|cx43|false|success|skipped|skipped|skipped|skipped|0"
-run_case "cpx42 success|success|cpx42|false|skipped|success|skipped|skipped|skipped|0"
-run_case "cx53 success|success|cx53|false|skipped|skipped|success|skipped|skipped|0"
-run_case "github success|success|github|false|skipped|skipped|skipped|success|skipped|0"
+run_case "cx43 success|success|cx43|false|success|skipped|skipped|skipped|skipped|ok|0"
+run_case "cpx42 success|success|cpx42|false|skipped|success|skipped|skipped|skipped|ok|0"
+run_case "cx53 success|success|cx53|false|skipped|skipped|success|skipped|skipped|ok|0"
+run_case "github success|success|github|false|skipped|skipped|skipped|success|skipped||0"
 
-# Selected self-hosted lane failed (for example the disk guard tripped before
-# checkout) but the identical proof passed on the GitHub-hosted fallback.
-run_case "cx43 fail then fallback|success|cx43|false|failure|skipped|skipped|skipped|success|0"
-run_case "cpx42 fail then fallback|success|cpx42|false|skipped|failure|skipped|skipped|success|0"
-run_case "cx53 fail then fallback|success|cx53|false|skipped|skipped|failure|skipped|success|0"
+# The runner was unfit to build, so the lane died before checkout and the
+# identical proof passed on the GitHub-hosted fallback.
+run_case "cx43 unfit then fallback|success|cx43|false|failure|skipped|skipped|skipped|success|unfit|0"
+run_case "cpx42 unfit then fallback|success|cpx42|false|skipped|failure|skipped|skipped|success|unfit|0"
+run_case "cx53 unfit then fallback|success|cx53|false|skipped|skipped|failure|skipped|success|unfit|0"
+
+# A build or test failure on a fit runner is a real defect. It must stay
+# blocking even if a hosted run of the same commit would pass, which is what
+# an environment-sensitive defect looks like.
+run_case "cx43 build failure not rescued|success|cx43|false|failure|skipped|skipped|skipped|skipped|ok|1"
+run_case "cx43 build failure ignores fallback|success|cx43|false|failure|skipped|skipped|skipped|success|ok|1"
+run_case "cpx42 build failure ignores fallback|success|cpx42|false|skipped|failure|skipped|skipped|success|ok|1"
+run_case "cx53 build failure ignores fallback|success|cx53|false|skipped|skipped|failure|skipped|success|ok|1"
+
+# A missing verdict is not an infrastructure verdict.
+run_case "empty preflight not rescued|success|cx43|false|failure|skipped|skipped|skipped|success||1"
 
 # A real defect fails on both lanes and must stay blocked.
-run_case "cx43 fail and fallback fail|success|cx43|false|failure|skipped|skipped|skipped|failure|1"
-run_case "github fail is not rescued|success|github|false|skipped|skipped|skipped|failure|skipped|1"
+run_case "cx43 unfit and fallback fail|success|cx43|false|failure|skipped|skipped|skipped|failure|unfit|1"
+run_case "github fail is not rescued|success|github|false|skipped|skipped|skipped|failure|skipped||1"
 
 # The fallback must never substitute for a lane that never ran.
-run_case "skipped lane not rescued|success|cx43|false|skipped|skipped|skipped|skipped|success|1"
+run_case "skipped lane not rescued|success|cx43|false|skipped|skipped|skipped|skipped|success|unfit|1"
 
 # Router integrity checks are preserved.
-run_case "router job failed|failure|cx43|false|success|skipped|skipped|skipped|skipped|1"
-run_case "router infra error|success|github|true|skipped|skipped|skipped|success|skipped|1"
-run_case "unknown target|success|bogus|false|skipped|skipped|skipped|skipped|skipped|1"
+run_case "router job failed|failure|cx43|false|success|skipped|skipped|skipped|skipped|ok|1"
+run_case "router infra error|success|github|true|skipped|skipped|skipped|success|skipped||1"
+run_case "unknown target|success|bogus|false|skipped|skipped|skipped|skipped|skipped||1"
 
 # Exactly one implementation lane may run.
-run_case "two lanes ran|success|cx43|false|success|skipped|success|skipped|skipped|1"
+run_case "two lanes ran|success|cx43|false|success|skipped|success|skipped|skipped|ok|1"
 
 if [ "$failures" -ne 0 ]; then
   echo "routed rust result contract: $failures case(s) failed" >&2
@@ -192,29 +219,66 @@ def evaluate(expression, results, outputs):
     return bool(eval(python_expr, {"__builtins__": {}}, {}))  # noqa: S307
 
 
-def scenario(route_result, error, cx43, cpx42, cx53):
-    return (
-        {
-            "route-rust-small": route_result,
-            "rust-small-cx43": cx43,
-            "rust-small-cpx42": cpx42,
-            "rust-small-cx53": cx53,
-        },
-        {"route-rust-small": {"error": error, "target": "unused"}},
-    )
+def scenario(route_result, error, cx43, cpx42, cx53, preflight=None):
+    """Build (results, outputs) for one gate scenario.
+
+    `preflight` maps a lane job to its disk-guard verdict. A lane that never
+    ran reports an empty output, which is what Actions substitutes.
+    """
+    preflight = preflight or {}
+    results = {
+        "route-rust-small": route_result,
+        "rust-small-cx43": cx43,
+        "rust-small-cpx42": cpx42,
+        "rust-small-cx53": cx53,
+    }
+    outputs = {
+        "route-rust-small": {"error": error, "target": "unused"},
+        "rust-small-cx43": {"preflight": preflight.get("cx43", "")},
+        "rust-small-cpx42": {"preflight": preflight.get("cpx42", "")},
+        "rust-small-cx53": {"preflight": preflight.get("cx53", "")},
+    }
+    return results, outputs
 
 
 gate_cases = [
-    # A selected self-hosted lane failed: the fallback must run.
-    ("cx43 failed", scenario("success", "false", "failure", "skipped", "skipped"), True),
-    ("cpx42 failed", scenario("success", "false", "skipped", "failure", "skipped"), True),
-    ("cx53 failed", scenario("success", "false", "skipped", "skipped", "failure"), True),
+    # The runner was unfit to build: the fallback must run, one case per lane.
+    ("cx43 unfit",
+     scenario("success", "false", "failure", "skipped", "skipped", {"cx43": "unfit"}),
+     True),
+    ("cpx42 unfit",
+     scenario("success", "false", "skipped", "failure", "skipped", {"cpx42": "unfit"}),
+     True),
+    ("cx53 unfit",
+     scenario("success", "false", "skipped", "skipped", "failure", {"cx53": "unfit"}),
+     True),
+    # A build or test failure on a fit runner is a real defect. The fallback
+    # must stay out so an environment-sensitive failure cannot be papered over.
+    ("cx43 build failure",
+     scenario("success", "false", "failure", "skipped", "skipped", {"cx43": "ok"}),
+     False),
+    ("cpx42 build failure",
+     scenario("success", "false", "skipped", "failure", "skipped", {"cpx42": "ok"}),
+     False),
+    ("cx53 build failure",
+     scenario("success", "false", "skipped", "skipped", "failure", {"cx53": "ok"}),
+     False),
+    # A lane that reported no verdict is not an infrastructure failure.
+    ("cx43 failed with no verdict",
+     scenario("success", "false", "failure", "skipped", "skipped"),
+     False),
     # Nothing failed, or nothing self-hosted ran: the fallback must stay out.
-    ("cx43 succeeded", scenario("success", "false", "success", "skipped", "skipped"), False),
+    ("cx43 succeeded",
+     scenario("success", "false", "success", "skipped", "skipped", {"cx43": "ok"}),
+     False),
     ("all skipped", scenario("success", "false", "skipped", "skipped", "skipped"), False),
     # Router problems are still owned by the result step, not papered over here.
-    ("router errored", scenario("success", "true", "failure", "skipped", "skipped"), False),
-    ("router job failed", scenario("failure", "false", "failure", "skipped", "skipped"), False),
+    ("router errored",
+     scenario("success", "true", "failure", "skipped", "skipped", {"cx43": "unfit"}),
+     False),
+    ("router job failed",
+     scenario("failure", "false", "failure", "skipped", "skipped", {"cx43": "unfit"}),
+     False),
 ]
 
 gate_failures = 0

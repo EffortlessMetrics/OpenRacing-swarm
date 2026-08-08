@@ -34,8 +34,11 @@ is below the 100 GB disk guard, which fails the lane before checkout. Because
 route order prefers any idle runner, such a runner would otherwise win the
 route on every attempt and the required check could never pass.
 
-When the router succeeds without error and the selected self-hosted lane
-fails, `OpenRacing Rust Small on GitHub Hosted (Fallback)` re-runs the same
+Each self-hosted lane publishes its disk-guard verdict as a job output,
+`preflight`: `unfit` when the runner failed the guard and the lane died before
+checkout, `ok` once it got far enough to build. When the router succeeds
+without error and the selected lane reports `unfit`,
+`OpenRacing Rust Small on GitHub Hosted (Fallback)` re-runs the same
 `cargo check` and `cargo test --lib` commands. The normalized result then
 reports `proof_lane: github-fallback` and the run emits a warning so the
 degraded path stays visible.
@@ -44,9 +47,21 @@ This is a retry on different hardware, not a relaxed gate:
 
 - the disk guard and its thresholds are unchanged;
 - no lane skips build or test;
-- a real code failure fails on the self-hosted lane and on the fallback, so
-  the normalized result still fails;
-- a lane that was skipped rather than run is never rescued.
+- only a pre-checkout infrastructure failure is retried. A `cargo check` or
+  `cargo test` failure leaves `preflight: ok`, so the fallback never launches
+  and the normalized result stays red — an environment-sensitive defect
+  cannot fail on the selected runner and be waved through by a hosted pass;
+- both layers enforce that independently: the fallback job's `if:` keys on the
+  verdict, and the result step refuses to accept fallback proof unless the
+  selected lane reported `unfit`;
+- a lane that was skipped rather than run is never rescued;
+- a missing verdict is not an infrastructure verdict, so an empty `preflight`
+  is rejected rather than assumed benign.
+
+The guard stays a step inside the lane job rather than a separate preflight
+job on purpose: a standalone job could be scheduled onto a different runner in
+the same group, so a pass there would say nothing about the machine that
+actually builds.
 
 The normalized-result contract is locally reproducible with:
 

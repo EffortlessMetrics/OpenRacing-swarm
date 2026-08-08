@@ -182,6 +182,8 @@ jobs:
   rust-small-cx43:
     name: OpenRacing Rust Small on CX43
     needs: route-rust-small
+    outputs:
+      preflight: ${{ steps.guard.outputs.status }}
     if: >-
       needs.route-rust-small.outputs.target == 'cx43' &&
       needs.route-rust-small.outputs.trusted_self_hosted == 'true'
@@ -199,12 +201,19 @@ jobs:
       TMPDIR: /mnt/ci-scratch/tmp/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Disk guards
+        id: guard
         shell: bash
         run: |
           set -euo pipefail
-          ci-disk-guard /mnt/ci-scratch 100
-          ci-disk-guard /mnt/docker 20
-          ci-disk-guard /mnt/ci-cache 20
+          status=ok
+          ci-disk-guard /mnt/ci-scratch 100 || status=unfit
+          ci-disk-guard /mnt/docker 20 || status=unfit
+          ci-disk-guard /mnt/ci-cache 20 || status=unfit
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" != ok ]; then
+            echo "disk guard failed: runner is unfit to build (pre-checkout)" >&2
+            exit 75
+          fi
 
       - name: Prepare scratch dirs
         shell: bash
@@ -274,6 +283,8 @@ jobs:
   rust-small-cpx42:
     name: OpenRacing Rust Small on CPX42
     needs: route-rust-small
+    outputs:
+      preflight: ${{ steps.guard.outputs.status }}
     if: >-
       needs.route-rust-small.outputs.target == 'cpx42' &&
       needs.route-rust-small.outputs.trusted_self_hosted == 'true'
@@ -291,13 +302,20 @@ jobs:
       TMPDIR: /mnt/ci-scratch/tmp/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Disk and memory preflight
+        id: guard
         shell: bash
         run: |
           set -euo pipefail
-          ci-disk-guard /mnt/ci-scratch 80
-          ci-disk-guard /mnt/ci-cache 15
+          status=ok
+          ci-disk-guard /mnt/ci-scratch 80 || status=unfit
+          ci-disk-guard /mnt/ci-cache 15 || status=unfit
           df -h / /mnt/ci-scratch /mnt/ci-cache || true
           free -h || true
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" != ok ]; then
+            echo "disk guard failed: runner is unfit to build (pre-checkout)" >&2
+            exit 75
+          fi
 
       - name: Prepare scratch dirs
         shell: bash
@@ -348,6 +366,8 @@ jobs:
   rust-small-cx53:
     name: OpenRacing Rust Small on CX53
     needs: route-rust-small
+    outputs:
+      preflight: ${{ steps.guard.outputs.status }}
     if: >-
       needs.route-rust-small.outputs.target == 'cx53' &&
       needs.route-rust-small.outputs.trusted_self_hosted == 'true'
@@ -365,12 +385,19 @@ jobs:
       TMPDIR: /mnt/ci-scratch/tmp/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Disk guards
+        id: guard
         shell: bash
         run: |
           set -euo pipefail
-          ci-disk-guard /mnt/ci-scratch 100
-          ci-disk-guard /mnt/docker 20
-          ci-disk-guard /mnt/ci-cache 20
+          status=ok
+          ci-disk-guard /mnt/ci-scratch 100 || status=unfit
+          ci-disk-guard /mnt/docker 20 || status=unfit
+          ci-disk-guard /mnt/ci-cache 20 || status=unfit
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" != ok ]; then
+            echo "disk guard failed: runner is unfit to build (pre-checkout)" >&2
+            exit 75
+          fi
 
       - name: Prepare scratch dirs
         shell: bash
@@ -486,16 +513,20 @@ jobs:
     # example, below the disk guard threshold). The router cannot see that
     # from ubuntu-latest, so it selects the runner and the lane fails before
     # checkout. Re-run the identical proof on the GitHub-hosted lane instead
-    # of leaving the pull request permanently unmergeable. This is a retry on
-    # different hardware, not a weaker gate: a genuine code failure fails here
-    # too.
+    # of leaving the pull request permanently unmergeable.
+    #
+    # This keys on the preflight verdict, not on the lane merely failing, so
+    # only a pre-checkout infrastructure failure is retried. A cargo check or
+    # cargo test failure leaves preflight='ok', never reaches this lane, and
+    # stays blocking -- an environment-sensitive defect must not be able to
+    # fail on the selected runner and pass here.
     if: >-
       always() &&
       needs.route-rust-small.result == 'success' &&
       needs.route-rust-small.outputs.error == 'false' &&
-      (needs.rust-small-cx43.result == 'failure' ||
-       needs.rust-small-cpx42.result == 'failure' ||
-       needs.rust-small-cx53.result == 'failure')
+      (needs.rust-small-cx43.outputs.preflight == 'unfit' ||
+       needs.rust-small-cpx42.outputs.preflight == 'unfit' ||
+       needs.rust-small-cx53.outputs.preflight == 'unfit')
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -576,6 +607,9 @@ jobs:
           CX53_RESULT: ${{ needs.rust-small-cx53.result }}
           GITHUB_RESULT: ${{ needs.rust-small-github.result }}
           FALLBACK_RESULT: ${{ needs.rust-small-github-fallback.result }}
+          CX43_PREFLIGHT: ${{ needs.rust-small-cx43.outputs.preflight }}
+          CPX42_PREFLIGHT: ${{ needs.rust-small-cpx42.outputs.preflight }}
+          CX53_PREFLIGHT: ${{ needs.rust-small-cx53.outputs.preflight }}
         run: |
           set -eu
 
@@ -605,24 +639,28 @@ jobs:
           case "${TARGET:-}" in
             cx43)
               selected_result="$CX43_RESULT"
+              selected_preflight="$CX43_PREFLIGHT"
               test "$CPX42_RESULT" = "skipped"
               test "$CX53_RESULT" = "skipped"
               test "$GITHUB_RESULT" = "skipped"
               ;;
             cpx42)
               selected_result="$CPX42_RESULT"
+              selected_preflight="$CPX42_PREFLIGHT"
               test "$CX43_RESULT" = "skipped"
               test "$CX53_RESULT" = "skipped"
               test "$GITHUB_RESULT" = "skipped"
               ;;
             cx53)
               selected_result="$CX53_RESULT"
+              selected_preflight="$CX53_PREFLIGHT"
               test "$CX43_RESULT" = "skipped"
               test "$CPX42_RESULT" = "skipped"
               test "$GITHUB_RESULT" = "skipped"
               ;;
             github)
               selected_result="$GITHUB_RESULT"
+              selected_preflight="ok"
               test "$CX43_RESULT" = "skipped"
               test "$CPX42_RESULT" = "skipped"
               test "$CX53_RESULT" = "skipped"
@@ -633,17 +671,22 @@ jobs:
               ;;
           esac
 
-          # A selected self-hosted lane that fails is retried on the
-          # GitHub-hosted fallback, which runs the identical check/test
-          # commands. Real code failures fail there too, so this degrades the
-          # hardware, never the proof.
+          echo "selected_preflight=${selected_preflight:-<empty>}"
+
+          # A selected self-hosted lane is retried on the GitHub-hosted
+          # fallback only when its preflight declared the runner unfit, which
+          # means the lane died before checkout and produced no proof at all.
+          # A cargo check or cargo test failure leaves preflight='ok' and is
+          # never rescued, so this degrades the hardware, never the proof.
           if [ "$selected_result" = "success" ]; then
             proof_lane="${TARGET}"
-          elif [ "$selected_result" = "failure" ] && [ "${FALLBACK_RESULT:-}" = "success" ]; then
+          elif [ "$selected_result" = "failure" ] &&
+               [ "${selected_preflight:-}" = "unfit" ] &&
+               [ "${FALLBACK_RESULT:-}" = "success" ]; then
             proof_lane="github-fallback"
             echo "::warning title=Routed Rust fell back to GitHub-hosted::Selected runner '${TARGET}' did not complete; required proof was satisfied by the GitHub-hosted fallback lane. Investigate self-hosted runner health."
           else
-            echo "selected lane '${TARGET}' result='${selected_result}' and fallback result='${FALLBACK_RESULT:-<empty>}'; failing normalized result" >&2
+            echo "selected lane '${TARGET}' result='${selected_result}' preflight='${selected_preflight:-<empty>}' and fallback result='${FALLBACK_RESULT:-<empty>}'; failing normalized result" >&2
             exit 1
           fi
 
@@ -660,6 +703,7 @@ jobs:
             echo "- cx53_result: \`${CX53_RESULT:-<empty>}\`"
             echo "- github_result: \`${GITHUB_RESULT:-<empty>}\`"
             echo "- fallback_result: \`${FALLBACK_RESULT:-<empty>}\`"
+            echo "- selected_preflight: \`${selected_preflight:-<empty>}\`"
             echo "- proof_lane: \`${proof_lane}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
