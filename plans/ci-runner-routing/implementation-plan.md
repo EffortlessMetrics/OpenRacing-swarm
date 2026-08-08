@@ -96,12 +96,20 @@ total merge stop.
 
 ### Production delta
 
+- Publish each self-hosted lane's disk-guard verdict as a `preflight` job
+  output: `unfit` when the guard tripped and the lane died before checkout,
+  `ok` once it got far enough to build.
 - Add a `rust-small-github-fallback` job that runs when the router succeeded
-  without error and the selected self-hosted lane failed.
+  without error and the selected self-hosted lane reported `unfit`. Keying on
+  the verdict rather than on the lane result keeps build and test failures
+  blocking, so an environment-sensitive defect cannot fail on the selected
+  runner and be waved through by a hosted pass.
 - Run the identical `cargo check` and `cargo test --lib` commands used by
   every other lane, so the fallback re-proves rather than waives.
 - Accept the fallback in the normalized result only when the selected lane
-  actually ran and failed; a skipped lane is never rescued.
+  actually ran, failed, and reported `unfit`; a skipped lane is never
+  rescued, and a missing verdict is not an infrastructure verdict. The
+  result step enforces this independently of the fallback job's own gate.
 - Emit a workflow warning and record `proof_lane` in the step summary so a
   degraded run is visible rather than silent.
 - Add `scripts/check_routed_rust_result_test.sh` covering the normalized
@@ -111,8 +119,9 @@ total merge stop.
 
 - A selected self-hosted lane that fails its disk guard yields a passing
   normalized result via the fallback, with `proof_lane=github-fallback`.
-- A genuine code failure fails on the self-hosted lane and on the fallback,
-  so the normalized result still fails.
+- A genuine code failure leaves `preflight=ok`, so the fallback never runs
+  and the normalized result still fails -- including when a hosted run of
+  the same commit would have passed.
 - The disk guard thresholds are unchanged and no lane skips build or test.
 - Router error, unknown target, and single-selected-lane invariants still
   fail the normalized result.
