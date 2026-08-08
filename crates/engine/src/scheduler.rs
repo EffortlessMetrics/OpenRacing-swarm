@@ -1045,13 +1045,12 @@ mod tests {
         let start = Instant::now();
 
         // Run a few ticks
-        let mut completed_ticks = 0_u32;
-        for expected_tick in 1..=5 {
+        const EXPECTED_TICKS: u64 = 5;
+        for expected_tick in 1..=EXPECTED_TICKS {
             // This might fail in CI due to timing, so we'll be lenient
             match scheduler.wait_for_tick() {
                 Ok(tick) => {
                     assert_eq!(tick, expected_tick);
-                    completed_ticks += 1;
                 }
                 Err(RTError::TimingViolation) => {
                     // Expected in CI environments with poor timing
@@ -1062,14 +1061,19 @@ mod tests {
         }
 
         let elapsed = start.elapsed();
+        let metrics = scheduler.metrics();
 
-        // Elapsed time is only meaningful once a tick has actually been
-        // awaited. `wait_for_tick` skips its sleep when it has already missed
-        // the deadline, so a violation on the very first tick returns in a few
-        // microseconds. Under a loaded scheduler that is the common path, and
-        // asserting on elapsed there fails the test for the exact environment
-        // the loop above is trying to tolerate.
-        if completed_ticks > 0 {
+        // `wait_for_tick` sleeps only when it is early; once a deadline has
+        // been missed it returns without waiting at all. In test builds it
+        // still returns `Ok` for misses up to 5ms, so a successful call is
+        // not evidence that any time passed -- under load every tick can miss
+        // its deadline, skip its sleep, and still report `Ok`.
+        //
+        // Assert on elapsed only when the whole loop ran without missing a
+        // deadline. That is the one case where the scheduler is known to have
+        // waited for five successive 1kHz deadlines, which is comfortably
+        // above the bound below.
+        if metrics.total_ticks == EXPECTED_TICKS && metrics.missed_ticks == 0 {
             // Should have taken some time (be lenient for CI)
             assert!(elapsed.as_micros() >= 100);
         }
