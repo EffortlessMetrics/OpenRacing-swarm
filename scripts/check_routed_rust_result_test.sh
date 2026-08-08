@@ -16,7 +16,8 @@ trap 'rm -rf "$tmp_dir"' EXIT
 
 logic="$tmp_dir/result_logic.sh"
 
-WORKFLOW_PATH="$workflow" LOGIC_PATH="$logic" python3 - <<'PY'
+extract_status=0
+WORKFLOW_PATH="$workflow" LOGIC_PATH="$logic" python3 - <<'PY' || extract_status=$?
 import os
 import sys
 
@@ -37,11 +38,16 @@ if len(run_steps) != 1:
 with open(os.environ["LOGIC_PATH"], "w", encoding="utf-8") as handle:
     handle.write(run_steps[0]["run"])
 PY
-extract_status=$?
 
 if [ "$extract_status" -eq 97 ]; then
   echo "routed rust result contract: SKIPPED (PyYAML not installed)"
   exit 0
+fi
+
+if [ "$extract_status" -ne 0 ] || [ ! -s "$logic" ]; then
+  echo "could not extract the rust-small-result run step from $workflow" >&2
+  echo "(extractor exit ${extract_status}); refusing to report a contract result" >&2
+  exit 1
 fi
 
 failures=0
