@@ -115,4 +115,108 @@ if [ "$failures" -ne 0 ]; then
   exit 1
 fi
 
+# The cases above cover the result step, which decides whether proof exists.
+# They cannot cover whether the fallback job is *launched*, because that is a
+# workflow-level `if:` expression rather than shell. Evaluate that expression
+# directly so the acceptance path is proven without needing a self-hosted
+# runner to be online.
+gate_status=0
+WORKFLOW_PATH="$workflow" python3 - <<'PY' || gate_status=$?
+import os
+import re
+import sys
+
+try:
+    import yaml
+except ModuleNotFoundError:
+    sys.exit(97)
+
+with open(os.environ["WORKFLOW_PATH"], encoding="utf-8") as handle:
+    workflow = yaml.safe_load(handle)
+
+jobs = workflow["jobs"]
+gate = jobs["rust-small-github-fallback"]["if"]
+
+needs = jobs["rust-small-github-fallback"]["needs"]
+for required in ("rust-small-cx43", "rust-small-cpx42", "rust-small-cx53"):
+    if required not in needs:
+        print(f"fallback job does not depend on {required}", file=sys.stderr)
+        sys.exit(1)
+
+# The expression uses only always(), equality against string literals, &&, ||
+# and parentheses. Translate that subset faithfully rather than approximating
+# GitHub Actions semantics in general.
+ALLOWED = re.compile(
+    r"^(?:\s|\(|\)|&&|\|\||==|'[a-z-]*'|always\(\)|needs\.[a-z0-9-]+\.(?:result|outputs\.[a-z_]+))+$"
+)
+if not ALLOWED.match(gate):
+    print(f"fallback gate uses unsupported syntax: {gate!r}", file=sys.stderr)
+    sys.exit(1)
+
+
+def evaluate(expression, results, outputs):
+    def lookup(match):
+        job, field = match.group(1), match.group(2)
+        if field == "result":
+            value = results[job]
+        else:
+            value = outputs[job][field.split(".", 1)[1]]
+        return repr(value)
+
+    python_expr = re.sub(
+        r"needs\.([a-z0-9-]+)\.(result|outputs\.[a-z_]+)", lookup, expression
+    )
+    python_expr = python_expr.replace("always()", "True")
+    python_expr = python_expr.replace("&&", " and ").replace("||", " or ")
+    return bool(eval(python_expr, {"__builtins__": {}}, {}))  # noqa: S307
+
+
+def scenario(route_result, error, cx43, cpx42, cx53):
+    return (
+        {
+            "route-rust-small": route_result,
+            "rust-small-cx43": cx43,
+            "rust-small-cpx42": cpx42,
+            "rust-small-cx53": cx53,
+        },
+        {"route-rust-small": {"error": error, "target": "unused"}},
+    )
+
+
+gate_cases = [
+    # A selected self-hosted lane failed: the fallback must run.
+    ("cx43 failed", scenario("success", "false", "failure", "skipped", "skipped"), True),
+    ("cpx42 failed", scenario("success", "false", "skipped", "failure", "skipped"), True),
+    ("cx53 failed", scenario("success", "false", "skipped", "skipped", "failure"), True),
+    # Nothing failed, or nothing self-hosted ran: the fallback must stay out.
+    ("cx43 succeeded", scenario("success", "false", "success", "skipped", "skipped"), False),
+    ("all skipped", scenario("success", "false", "skipped", "skipped", "skipped"), False),
+    # Router problems are still owned by the result step, not papered over here.
+    ("router errored", scenario("success", "true", "failure", "skipped", "skipped"), False),
+    ("router job failed", scenario("failure", "false", "failure", "skipped", "skipped"), False),
+]
+
+gate_failures = 0
+for name, (results, outputs), expected in gate_cases:
+    actual = evaluate(gate, results, outputs)
+    if actual != expected:
+        print(
+            f"FAIL  fallback gate '{name}': expected {expected}, got {actual}",
+            file=sys.stderr,
+        )
+        gate_failures += 1
+
+if gate_failures:
+    sys.exit(1)
+PY
+
+if [ "$gate_status" -eq 97 ]; then
+  echo "routed rust fallback gate: SKIPPED (PyYAML not installed)"
+elif [ "$gate_status" -ne 0 ]; then
+  echo "routed rust fallback gate: FAILED" >&2
+  exit 1
+else
+  echo "routed rust fallback gate: OK"
+fi
+
 echo "routed rust result contract: OK"
