@@ -55,3 +55,32 @@ permission-denied, so no live capacity claim is made.
   quality-closure checker contract.
 - Future runner-capacity changes must update this plan's route matrix and
   preserve the exact normalized-result proof.
+
+## Routing gap found while parked on issue #236
+
+The capacity shortfall recorded above exposed a repository-side routing gap
+that is separate from runner provisioning.
+
+Runner discovery treats `online` and not `busy` as fit to build. A runner can
+satisfy both and still fail the 100 GB disk guard before checkout. When that
+happens the router emits `router_target=cx43` with `router_error=false`, the
+selected lane fails at its first step, and the GitHub-hosted lane stays
+skipped because it was wired to run only when *no* runner is idle.
+
+Evidence on PR #300 head `a42a0101`, run `30865505398`:
+
+- `router_target=cx43`, `router_reason=cx43_idle`, `router_error=false`;
+- `disk guard failed: /mnt/ci-scratch has 65GB free, needs 100GB`, exit 75;
+- `cx43_result=failure`, `github_result=skipped`;
+- `OpenRacing Rust Small Result` failed.
+
+So an idle-but-unfit runner wins the route indefinitely and the required check
+can never pass. That converts a transient capacity problem into a total merge
+stop for every parked pull request.
+
+The `fall-back-when-selected-runner-is-unfit` work item in this plan closes the
+gap by re-running the identical check/test proof on the GitHub-hosted lane when
+a selected self-hosted lane fails. The disk guard, its thresholds, and every
+lane's build and test commands are unchanged; a genuine code failure still
+fails on both lanes. Issue #236 remains the owner of restoring real capacity —
+this only stops the repository from being wedged while that work is pending.

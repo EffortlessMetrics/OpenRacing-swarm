@@ -475,6 +475,81 @@ jobs:
       - name: Test workspace libs
         run: cargo test --workspace --exclude racing-wheel-ui --locked --lib
 
+  rust-small-github-fallback:
+    name: OpenRacing Rust Small on GitHub Hosted (Fallback)
+    needs:
+      - route-rust-small
+      - rust-small-cx43
+      - rust-small-cpx42
+      - rust-small-cx53
+    # A self-hosted runner can be online and idle yet unfit to build (for
+    # example, below the disk guard threshold). The router cannot see that
+    # from ubuntu-latest, so it selects the runner and the lane fails before
+    # checkout. Re-run the identical proof on the GitHub-hosted lane instead
+    # of leaving the pull request permanently unmergeable. This is a retry on
+    # different hardware, not a weaker gate: a genuine code failure fails here
+    # too.
+    if: >-
+      always() &&
+      needs.route-rust-small.result == 'success' &&
+      needs.route-rust-small.outputs.error == 'false' &&
+      (needs.rust-small-cx43.result == 'failure' ||
+       needs.rust-small-cpx42.result == 'failure' ||
+       needs.rust-small-cx53.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Report fallback reason
+        shell: bash
+        env:
+          TARGET: ${{ needs.route-rust-small.outputs.target }}
+          CX43_RESULT: ${{ needs.rust-small-cx43.result }}
+          CPX42_RESULT: ${{ needs.rust-small-cpx42.result }}
+          CX53_RESULT: ${{ needs.rust-small-cx53.result }}
+        run: |
+          set -eu
+          {
+            echo "### OpenRacing Rust Small Fallback"
+            echo ""
+            echo "Selected self-hosted lane \`${TARGET}\` did not succeed;"
+            echo "re-running the identical check/test proof on GitHub-hosted."
+            echo ""
+            echo "- cx43_result: \`${CX43_RESULT}\`"
+            echo "- cpx42_result: \`${CPX42_RESULT}\`"
+            echo "- cx53_result: \`${CX53_RESULT}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Use larger writable target dir
+        run: echo "CARGO_TARGET_DIR=${RUNNER_TEMP}/target" >> "$GITHUB_ENV"
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-directories: ${{ runner.temp }}/target
+          save-if: false
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev pkg-config
+
+      - name: Check workspace
+        run: cargo check --workspace --exclude racing-wheel-ui --locked
+
+      - name: Test workspace libs
+        run: cargo test --workspace --exclude racing-wheel-ui --locked --lib
+
   rust-small-result:
     name: OpenRacing Rust Small Result
     needs:
@@ -483,6 +558,7 @@ jobs:
       - rust-small-cpx42
       - rust-small-cx53
       - rust-small-github
+      - rust-small-github-fallback
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -499,6 +575,7 @@ jobs:
           CPX42_RESULT: ${{ needs.rust-small-cpx42.result }}
           CX53_RESULT: ${{ needs.rust-small-cx53.result }}
           GITHUB_RESULT: ${{ needs.rust-small-github.result }}
+          FALLBACK_RESULT: ${{ needs.rust-small-github-fallback.result }}
         run: |
           set -eu
 
@@ -511,6 +588,64 @@ jobs:
           echo "cpx42_result=${CPX42_RESULT:-<empty>}"
           echo "cx53_result=${CX53_RESULT:-<empty>}"
           echo "github_result=${GITHUB_RESULT:-<empty>}"
+          echo "fallback_result=${FALLBACK_RESULT:-<empty>}"
+
+          if [ "$ROUTE_RESULT" != "success" ]; then
+            echo "router job did not succeed; failing normalized result" >&2
+            exit 1
+          fi
+
+          if [ "${ROUTER_ERROR:-true}" != "false" ]; then
+            echo "router reported an infrastructure/configuration error; failing normalized result" >&2
+            exit 1
+          fi
+
+          # Exactly one lane may be selected; every other lane must stay skipped.
+          # The fallback lane is evaluated separately below.
+          case "${TARGET:-}" in
+            cx43)
+              selected_result="$CX43_RESULT"
+              test "$CPX42_RESULT" = "skipped"
+              test "$CX53_RESULT" = "skipped"
+              test "$GITHUB_RESULT" = "skipped"
+              ;;
+            cpx42)
+              selected_result="$CPX42_RESULT"
+              test "$CX43_RESULT" = "skipped"
+              test "$CX53_RESULT" = "skipped"
+              test "$GITHUB_RESULT" = "skipped"
+              ;;
+            cx53)
+              selected_result="$CX53_RESULT"
+              test "$CX43_RESULT" = "skipped"
+              test "$CPX42_RESULT" = "skipped"
+              test "$GITHUB_RESULT" = "skipped"
+              ;;
+            github)
+              selected_result="$GITHUB_RESULT"
+              test "$CX43_RESULT" = "skipped"
+              test "$CPX42_RESULT" = "skipped"
+              test "$CX53_RESULT" = "skipped"
+              ;;
+            *)
+              echo "router produced unknown target: ${TARGET:-<empty>}" >&2
+              exit 1
+              ;;
+          esac
+
+          # A selected self-hosted lane that fails is retried on the
+          # GitHub-hosted fallback, which runs the identical check/test
+          # commands. Real code failures fail there too, so this degrades the
+          # hardware, never the proof.
+          if [ "$selected_result" = "success" ]; then
+            proof_lane="${TARGET}"
+          elif [ "$selected_result" = "failure" ] && [ "${FALLBACK_RESULT:-}" = "success" ]; then
+            proof_lane="github-fallback"
+            echo "::warning title=Routed Rust fell back to GitHub-hosted::Selected runner '${TARGET}' did not complete; required proof was satisfied by the GitHub-hosted fallback lane. Investigate self-hosted runner health."
+          else
+            echo "selected lane '${TARGET}' result='${selected_result}' and fallback result='${FALLBACK_RESULT:-<empty>}'; failing normalized result" >&2
+            exit 1
+          fi
 
           {
             echo "### OpenRacing Rust Small Result"
@@ -524,47 +659,8 @@ jobs:
             echo "- cpx42_result: \`${CPX42_RESULT:-<empty>}\`"
             echo "- cx53_result: \`${CX53_RESULT:-<empty>}\`"
             echo "- github_result: \`${GITHUB_RESULT:-<empty>}\`"
+            echo "- fallback_result: \`${FALLBACK_RESULT:-<empty>}\`"
+            echo "- proof_lane: \`${proof_lane}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          if [ "$ROUTE_RESULT" != "success" ]; then
-            echo "router job did not succeed; failing normalized result" >&2
-            exit 1
-          fi
-
-          if [ "${ROUTER_ERROR:-true}" != "false" ]; then
-            echo "router reported an infrastructure/configuration error; failing normalized result" >&2
-            exit 1
-          fi
-
-          case "${TARGET:-}" in
-            cx43)
-              test "$CX43_RESULT" = "success"
-              test "$CPX42_RESULT" = "skipped"
-              test "$CX53_RESULT" = "skipped"
-              test "$GITHUB_RESULT" = "skipped"
-              ;;
-            cpx42)
-              test "$CPX42_RESULT" = "success"
-              test "$CX43_RESULT" = "skipped"
-              test "$CX53_RESULT" = "skipped"
-              test "$GITHUB_RESULT" = "skipped"
-              ;;
-            cx53)
-              test "$CX53_RESULT" = "success"
-              test "$CX43_RESULT" = "skipped"
-              test "$CPX42_RESULT" = "skipped"
-              test "$GITHUB_RESULT" = "skipped"
-              ;;
-            github)
-              test "$GITHUB_RESULT" = "success"
-              test "$CX43_RESULT" = "skipped"
-              test "$CPX42_RESULT" = "skipped"
-              test "$CX53_RESULT" = "skipped"
-              ;;
-            *)
-              echo "router produced unknown target: ${TARGET:-<empty>}" >&2
-              exit 1
-              ;;
-          esac
-
-          echo "OpenRacing Rust Small Result: success"
+          echo "OpenRacing Rust Small Result: success (proof lane: ${proof_lane})"
