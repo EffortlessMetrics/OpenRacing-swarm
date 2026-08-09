@@ -1,12 +1,15 @@
 id = "service-api-completion"
 title = "Reusable application service composition"
-status = "paused"
-reason = "Service API completion landed in merged PR #294; no next plan-backed lane is activated while the remaining open queue is external CI work tracked by #302 and #236."
+status = "completed"
 owner = "platform/service"
 created = "2026-08-02"
+completed = "2026-08-03"
+merged_pr = 294
+merged_commit = "f4d3f434fcefb7d6393d983e6c4732070348eaad"
 
 proposal = "docs/proposals/OR-PROP-0005-service-api-completion.md"
 plan = "plans/service-api-completion/implementation-plan.md"
+closeout = "plans/service-api-completion/closeout.md"
 
 specs = [
   "docs/specs/OR-SPEC-0006-service-api-completion.md",
@@ -35,23 +38,16 @@ status_docs = [
   "docs/proposals/OR-PROP-0005-service-api-completion.md",
   "docs/specs/OR-SPEC-0006-service-api-completion.md",
   "plans/service-api-completion/implementation-plan.md",
+  "plans/service-api-completion/closeout.md",
 ]
 
 [[work_item]]
 id = "expose-application-services"
-status = "ready"
+status = "completed"
 issue = 258
+pr = 294
 spec = "docs/specs/OR-SPEC-0006-service-api-completion.md"
 plan = "plans/service-api-completion/implementation-plan.md#work-item-expose-application-services"
-current_pointer = "crates/service/src/service.rs"
+current_pointer = "PR #294 merged as f4d3f434fcefb7d6393d983e6c4732070348eaad"
 claim_boundary = "Shared application-service accessors only; no new game, plugin, hardware, RT, FFB, or support behavior."
-commands = [
-  "python scripts/cargo_fmt_workspace.py",
-  "cargo test --locked -p racing-wheel-service service::tests -- --nocapture",
-  "cargo test --locked -p racing-wheel-service integration_tests::tests::test_game_service_accessor -- --nocapture",
-  "cargo test --locked -p racing-wheel-service integration_tests::tests::test_plugin_service_accessor -- --nocapture",
-  "cargo clippy --locked -p racing-wheel-service --all-targets --all-features -- -D warnings",
-  "cargo run --locked -p openracing-tools --bin package-surface -- --check",
-  "python scripts/policy_file.py --strict",
-  "git diff --check",
-]
+proof = "PR #294 validation and exact-head hosted proof recorded in its body."
