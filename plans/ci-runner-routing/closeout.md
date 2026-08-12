@@ -51,8 +51,10 @@ permission-denied, so no live capacity claim is made.
 
 ## Follow-up
 
-- Issue #215 remains open for reconciling the RIPR+ badge generator and
-  quality-closure checker contract.
+- Issue #215 was closed by PR #226, which reconciled the RIPR+ badge and
+  quality-closure contract; issue #227 tracks the remaining producer work.
+- Issue #236 tracks restoration of required CX43/CX53 runner capacity; no
+  repository-side guard bypass or product-code change is in scope.
 - Future runner-capacity changes must update this plan's route matrix and
   preserve the exact normalized-result proof.
 
@@ -92,3 +94,29 @@ environment-sensitive defect fail on the selected runner and pass on hosted.
 
 Issue #236 remains the owner of restoring real capacity — this only stops the
 repository from being wedged while that work is pending.
+
+## Current capacity follow-up (#236)
+
+The routing contract remains intact, but required self-hosted proof is
+currently blocked before checkout or compilation by host capacity:
+
+- PR #297 exact-head run `30777894276` selected CX43 and reported
+  `/mnt/ci-scratch` with 66 GB free against the 100 GB disk guard;
+- PR #299 exact-head run `30778182088` selected CX53 and reported
+  `/mnt/ci-scratch` with 35 GB free against the 100 GB disk guard;
+- PR #300 exact-head run `30865401104` selected CX43 and reported
+  `/mnt/ci-scratch` with 65 GB free against the 100 GB disk guard; its
+  normalized routed result failed before checkout or compilation.
+
+These are runner-capacity failures, not product or route-selection failures.
+The disk guard must remain unchanged. Resume proof has three distinct cases:
+
+- `router_error=true` fails closed;
+- when discovery succeeds and the selected runner reports `preflight=unfit`
+  before checkout, identical hosted proof may satisfy the required result;
+- when the selected runner reaches build or test and fails, the required
+  result remains red; hosted success cannot rescue it.
+
+A successful router selection alone is insufficient; the normalized result
+must also pass for the selected route or the explicitly permitted degraded
+fallback route.
