@@ -15,6 +15,8 @@ service and is not a deterministic repository gate.
   and writes the minimal MiniMax M3 BYOK model to
   `~/.factory/settings.local.json`. The same file is passed to the Droid action
   through its supported `settings` input.
+- Redacts `apiKey` fields from JSON under `~/.factory` after the action finishes
+  and before the action's debug-artifact post hook runs.
 - Enables both automatic code review and automatic security review.
 - Grants `contents: read`; the workflow comments document the remaining
   `pull-requests`, `issues`, `id-token`, and `actions` permissions required by

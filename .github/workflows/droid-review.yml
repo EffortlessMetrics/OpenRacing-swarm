@@ -69,3 +69,17 @@ jobs:
         if: always() && steps.droid.outcome == 'failure'
         shell: bash
         run: echo "::warning::Droid review was advisory and failed; deterministic repository checks remain authoritative."
+
+      - name: Redact Droid debug settings before upload
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -d "$HOME/.factory" ]; then
+            while IFS= read -r -d '' settings_file; do
+              temporary_file="$(mktemp)"
+              jq 'walk(if type == "object" and has("apiKey") then .apiKey = "[redacted]" else . end)' \
+                "$settings_file" > "$temporary_file"
+              mv "$temporary_file" "$settings_file"
+            done < <(find "$HOME/.factory" -type f -name '*.json' -print0)
+          fi
