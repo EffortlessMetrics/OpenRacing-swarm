@@ -1,32 +1,71 @@
-name: Droid Auto Review
+name: Droid PR Review
 
 on:
   pull_request:
-    types: [opened, ready_for_review, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Keep the active review running; GitHub retains only the newest pending run.
+  group: droid-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
 
 jobs:
   droid-review:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    env:
+      # This is intentionally job-scoped so the config and action receive the same bound secret.
+      MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
     permissions:
-      contents: write
+      contents: read
+      # Factory Droid posts its automatic and security findings as PR review comments.
       pull-requests: write
+      # Factory Droid may update its tracking comment on the PR's issue conversation.
       issues: write
+      # The Factory action exchanges the GitHub OIDC identity for its app token.
       id-token: write
+      # The action reads workflow-run metadata while publishing its review result.
       actions: read
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          fetch-depth: 1
-      - name: Run Droid Auto Review
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Mask bound credentials
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "$GITHUB_TOKEN" ]; then
+            echo "::add-mask::$GITHUB_TOKEN"
+          fi
+          if [ -n "$MINIMAX_API_KEY" ]; then
+            echo "::add-mask::$MINIMAX_API_KEY"
+          fi
+
+      - name: Configure MiniMax BYOK settings
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.factory"
+          jq -n --arg api_key "$MINIMAX_API_KEY" \
+            '{customModels: [{model: "MiniMax-M3", displayName: "MiniMax-M3", baseUrl: "https://api.minimax.io/anthropic", apiKey: $api_key, provider: "anthropic", maxOutputTokens: 64000}]}' \
+            > "$HOME/.factory/settings.local.json"
+          cp "$HOME/.factory/settings.local.json" "$RUNNER_TEMP/droid-settings.local.json"
+
+      - name: Run Droid automatic and security review (advisory)
+        id: droid
         continue-on-error: true
-        uses: Factory-AI/droid-action@main
+        uses: Factory-AI/droid-action@e5ae50268211d2e9ac85edb57c28bf253b6627f7 # verified main commit
         with:
           factory_api_key: ${{ secrets.FACTORY_API_KEY }}
+          settings: ${{ runner.temp }}/droid-settings.local.json
           automatic_review: true
           automatic_security_review: true
+
+      - name: Report advisory review failure
+        if: always() && steps.droid.outcome == 'failure'
+        shell: bash
+        run: echo "::warning::Droid review was advisory and failed; deterministic repository checks remain authoritative."
