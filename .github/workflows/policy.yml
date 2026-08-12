@@ -32,6 +32,11 @@ jobs:
       - name: Runner routing policy
         run: scripts/check_runner_routing.sh
 
+      - name: Routed Rust normalized-result contract
+        run: |
+          python -m pip install --quiet pyyaml
+          scripts/check_routed_rust_result_test.sh
+
       - name: "No-panic family checker (Stage A: report-only)"
         run: python scripts/policy_no_panic.py
 
