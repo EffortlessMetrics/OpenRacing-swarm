@@ -31,6 +31,8 @@ release readiness, deployment readiness, or support-tier promotion.
 ## Source-truth reconciliation
 
 Issue #258 is closed by PR #294. The active manifest is paused because this
-lane is complete and no next plan-backed lane is activated. The remaining
-open CI issues #302 and #236 are external runner/token and capacity work and
-are not service-api follow-ups.
+lane is complete and no new plan-backed product lane is active while the
+existing PR queue is being reconciled. The queue includes repository-side
+corrections in #301, #303, #305, #297, and the replacement for #299, plus
+external runner/token and capacity work tracked by #302 and #236. None of
+these are service-api follow-ups.
