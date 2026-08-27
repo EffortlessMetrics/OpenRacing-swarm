@@ -32,6 +32,11 @@ jobs:
       - name: Runner routing policy
         run: scripts/check_runner_routing.sh
 
+      - name: Routed scratch prune contract
+        run: |
+          chmod +x scripts/check_scratch_prune_test.sh
+          ./scripts/check_scratch_prune_test.sh
+
       - name: "No-panic family checker (Stage A: report-only)"
         run: python scripts/policy_no_panic.py
 
