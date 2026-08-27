@@ -34,6 +34,10 @@ jobs:
 
       - name: Routed scratch prune contract
         run: |
+          # setup-python provides its own interpreter, which has no PyYAML.
+          # Without it the contract test skips, and a skipped gate proves
+          # nothing.
+          python -m pip install --quiet --disable-pip-version-check pyyaml
           chmod +x scripts/check_scratch_prune_test.sh
           ./scripts/check_scratch_prune_test.sh
 

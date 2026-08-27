@@ -24,7 +24,11 @@ trap 'rm -rf "$tmp_dir"' EXIT
 
 step_body="$tmp_dir/prune.sh"
 
-if ! WORKFLOW_PATH="$workflow" BODY_PATH="$step_body" python3 - <<'PY'
+# Capture the extractor's own status. `if ! cmd; then status=$?` would read
+# the negated status, not the exit code, and silently turn the PyYAML skip
+# into a failure.
+set +e
+WORKFLOW_PATH="$workflow" BODY_PATH="$step_body" python3 - <<'PY'
 import os
 import sys
 
@@ -106,13 +110,16 @@ if sorted(guard_lines) != sorted(
 with open(os.environ["BODY_PATH"], "w", encoding="utf-8") as handle:
     handle.write(next(iter(bodies.values())))
 PY
-then
-  status=$?
-  if [ "$status" -eq 97 ]; then
-    echo "scratch prune contract: SKIPPED (PyYAML not installed)"
-    exit 0
-  fi
-  echo "scratch prune contract: FAILED" >&2
+extract_status=$?
+set -e
+
+if [ "$extract_status" -eq 97 ]; then
+  echo "scratch prune contract: SKIPPED (PyYAML not installed)"
+  exit 0
+fi
+
+if [ "$extract_status" -ne 0 ]; then
+  echo "scratch prune contract: FAILED (extractor exited $extract_status)" >&2
   exit 1
 fi
 

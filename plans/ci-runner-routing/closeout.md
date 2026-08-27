@@ -97,10 +97,16 @@ is the failure mode reported on #236 for both CX43 (66 GB free) and CX53
   the prune is ordered ahead of the guard, and that the scratch guard
   thresholds are still `100`, `80`, `100`.
 - Wired into `.github/workflows/policy.yml` as `Routed scratch prune contract`.
+  That step installs PyYAML first: `setup-python` supplies its own interpreter
+  without it, and the test would otherwise skip. A skipped gate proves nothing,
+  so the install is what makes the contract actually run in CI.
 
 ### Proof
 
 - `scripts/check_scratch_prune_test.sh` — pass.
+- Both harness paths exercised: with PyYAML unimportable the test reports
+  `SKIPPED` and exits 0; with a seeded contract violation it reports the
+  offending value and exits 1.
 - Fault injection against the contract test, each mutation caught: dropping the
   current-job skip, dropping the recency check, letting one lane's body drift,
   lowering a scratch guard threshold, and reading a failed age check as
