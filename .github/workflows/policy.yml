@@ -30,7 +30,21 @@ jobs:
         run: python scripts/policy_file.py
 
       - name: Runner routing policy
-        run: scripts/check_runner_routing.sh
+        run: |
+          # The hosted image does not ship ripgrep, and every check in this
+          # gate is an `rg` call, so without it the gate inspected nothing and
+          # reported success. It now refuses to run without `rg`; install it.
+          if ! command -v rg > /dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends ripgrep
+          fi
+          rg --version
+          scripts/check_runner_routing.sh
+
+      - name: Runner routing gate self-test
+        run: |
+          chmod +x scripts/check_runner_routing_test.sh
+          ./scripts/check_runner_routing_test.sh
 
       - name: Routed scratch prune contract
         run: |

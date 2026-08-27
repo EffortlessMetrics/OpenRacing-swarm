@@ -131,3 +131,61 @@ Issue #236 therefore stays open and still owns real capacity restoration. This
 change only removes the repository's own abandoned directories; if the space is
 consumed by something else, or by directories younger than six hours, the guard
 correctly continues to fail closed.
+
+## Follow-up: the runner routing gate was vacuous in CI
+
+Found while reading this branch's own policy-job log, which printed
+`scripts/check_runner_routing.sh: line 31: rg: command not found` twenty-four
+times and then reported success.
+
+### Why it mattered
+
+Every check in `scripts/check_runner_routing.sh` is an `rg` invocation, used as
+a condition:
+
+```bash
+if rg -n '...' "$workflow_dir"; then
+  echo "Bare inline self-hosted/linux/x64 runs-on is forbidden." >&2
+  bad=1
+fi
+```
+
+The GitHub-hosted image the policy job runs on does not ship ripgrep. A missing
+`rg` exits 127, which reads as "no matches", so every check reported clean and
+the gate exited 0 without having inspected a single file. `Runner routing
+policy` has therefore been passing vacuously in CI: the very rule the routed
+lanes depend on — no bare `self-hosted, linux, x64` without group and capacity
+labels — was not being enforced there.
+
+Reproduced against the gate's own `bad/` fixtures: with `rg` on PATH the gate
+catches both violations and exits 1; with `rg` absent it prints its banner and
+exits 0.
+
+### What landed
+
+- `scripts/check_runner_routing.sh` refuses to run without `rg`, exiting 2 with
+  an explicit message. A policy gate that cannot run must fail, not pass.
+- `.github/workflows/policy.yml` installs ripgrep before the gate and prints
+  `rg --version`, so the gate actually enforces its rule in CI.
+- `scripts/check_runner_routing_test.sh` gains a case that invokes the gate on
+  the violating fixtures with a minimal PATH containing only `bash`, `sed`, and
+  `find` — modelling absence the way CI hits it, not a stubbed `rg`. The case
+  first asserts that the minimal PATH really does hide `rg`, so it cannot pass
+  vacuously itself.
+- That test is now wired into `policy.yml` as `Runner routing gate self-test`,
+  so the gate's own fixtures run in CI rather than only on developer machines.
+
+### Proof
+
+- Gate on its `bad/` fixtures: exits 1 with `rg`, and now exits 2 rather than 0
+  without it.
+- `scripts/check_runner_routing_test.sh` — pass; reverting the guard makes the
+  new case fail, so it has teeth.
+- The current workflow tree passes the gate, so enforcing it for real does not
+  reveal an outstanding violation.
+
+### Claim boundary
+
+This proves the gate now fails closed when its tooling is missing, and that it
+runs for real in the policy job. It does not re-audit whatever merged while the
+gate was vacuous; it only restores enforcement from here.

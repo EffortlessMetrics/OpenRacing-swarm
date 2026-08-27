@@ -4,6 +4,17 @@ set -euo pipefail
 bad=0
 workflow_dir="${WORKFLOW_DIR:-.github/workflows}"
 
+# Every check below is an `rg` invocation. When `rg` is absent each one exits
+# 127, which reads as "no matches", so the gate reports success without having
+# inspected a single file. A policy gate that cannot run must fail, not pass:
+# the GitHub-hosted image this runs on does not ship ripgrep, and the gate was
+# silently vacuous there.
+if ! command -v rg > /dev/null 2>&1; then
+  echo "ripgrep (rg) is required by this gate but was not found on PATH." >&2
+  echo "Refusing to report success: nothing would be checked." >&2
+  exit 2
+fi
+
 echo "Checking for bare self-hosted runner usage..."
 
 if [ ! -d "$workflow_dir" ]; then
