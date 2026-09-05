@@ -1042,41 +1042,62 @@ mod tests {
         let setup = RTSetup::default();
         let _ = scheduler.apply_rt_setup(&setup);
 
-        let start = Instant::now();
+        // `new_1khz` seeds `next_tick` with `Instant::now()`, so the first
+        // wait is already past its deadline before the test does anything,
+        // and each later deadline inherits that lag. Move the first deadline
+        // one period into the future so the loop exercises the path where the
+        // scheduler actually waits. The offset stays below the in-test
+        // violation threshold, so being early does not itself trip a
+        // `TimingViolation`.
+        scheduler.next_tick = Instant::now() + Duration::from_millis(1);
 
         // Run a few ticks
         const EXPECTED_TICKS: u64 = 5;
+        let mut deadline_checks = 0_u32;
+        let mut saw_violation = false;
+
         for expected_tick in 1..=EXPECTED_TICKS {
+            // Capture the deadline this call is waiting for, before it runs.
+            let deadline = scheduler.next_tick;
+
             // This might fail in CI due to timing, so we'll be lenient
             match scheduler.wait_for_tick() {
                 Ok(tick) => {
                     assert_eq!(tick, expected_tick);
+
+                    // A successful tick must not report completion before the
+                    // deadline it was scheduled for. This is the timing
+                    // postcondition that actually holds: when the call was
+                    // early it slept until the deadline, and when the deadline
+                    // had already passed the check is satisfied trivially. It
+                    // is therefore reachable on every `Ok`, unlike a minimum
+                    // elapsed time, which only holds when nothing was missed.
+                    assert!(
+                        Instant::now() >= deadline,
+                        "tick {expected_tick} completed before its deadline"
+                    );
+                    deadline_checks += 1;
                 }
                 Err(RTError::TimingViolation) => {
                     // Expected in CI environments with poor timing
+                    saw_violation = true;
                     break;
                 }
                 Err(e) => panic!("Unexpected error: {:?}", e),
             }
         }
 
-        let elapsed = start.elapsed();
-        let metrics = scheduler.metrics();
-
-        // `wait_for_tick` sleeps only when it is early; once a deadline has
-        // been missed it returns without waiting at all. In test builds it
-        // still returns `Ok` for misses up to 5ms, so a successful call is
-        // not evidence that any time passed -- under load every tick can miss
-        // its deadline, skip its sleep, and still report `Ok`.
-        //
-        // Assert on elapsed only when the whole loop ran without missing a
-        // deadline. That is the one case where the scheduler is known to have
-        // waited for five successive 1kHz deadlines, which is comfortably
-        // above the bound below.
-        if metrics.total_ticks == EXPECTED_TICKS && metrics.missed_ticks == 0 {
-            // Should have taken some time (be lenient for CI)
-            assert!(elapsed.as_micros() >= 100);
-        }
+        // The oracle above has to actually run. A previous revision guarded
+        // its timing assertion on `missed_ticks == 0`, which never holds
+        // because the bootstrap deadline is already in the past -- the
+        // assertion became dead code and the test still passed. Fail loudly if
+        // that happens again: on a host healthy enough to avoid a violation,
+        // at least one deadline must have been checked.
+        assert!(
+            deadline_checks > 0 || saw_violation,
+            "no deadline assertion executed and no timing violation occurred; \
+             the timing oracle is unreachable"
+        );
 
         // Check that metrics were collected. Every attempt is recorded,
         // including one that ends in a timing violation.
