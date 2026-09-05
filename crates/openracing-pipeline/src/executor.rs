@@ -151,22 +151,50 @@ impl Pipeline {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::types::FilterNodeFn;
     use openracing_curves::CurveType;
 
-    #[test]
-    fn test_pipeline_process_empty() {
-        let mut pipeline = Pipeline::new();
-        let mut frame = Frame {
-            ffb_in: 0.5,
-            torque_out: 0.5,
+    fn test_frame(torque_out: f32) -> Frame {
+        Frame {
+            ffb_in: torque_out,
+            torque_out,
             wheel_speed: 0.0,
             hands_off: false,
             ts_mono_ns: 0,
             seq: 1,
-        };
+        }
+    }
+
+    fn set_torque_to_nan(frame: &mut Frame, _state: *mut u8) {
+        frame.torque_out = f32::NAN;
+    }
+
+    fn set_torque_above_bound(frame: &mut Frame, _state: *mut u8) {
+        frame.torque_out = 1.01;
+    }
+
+    fn set_torque_below_bound(frame: &mut Frame, _state: *mut u8) {
+        frame.torque_out = -1.01;
+    }
+
+    fn halve_torque(frame: &mut Frame, _state: *mut u8) {
+        frame.torque_out *= 0.5;
+    }
+
+    fn pipeline_with_node(node: FilterNodeFn) -> Pipeline {
+        let mut pipeline = Pipeline::new();
+        // Register a real state slot so `node_state_ptr` is valid and each test
+        // proves the injected node ran rather than failing on missing state.
+        pipeline.add_state_node(node, 0_u8);
+        pipeline
+    }
+
+    #[test]
+    fn test_pipeline_process_empty() {
+        let mut pipeline = Pipeline::new();
+        let mut frame = test_frame(0.5);
 
         let result = pipeline.process(&mut frame);
         assert!(result.is_ok());
@@ -178,14 +206,7 @@ mod tests {
         let mut pipeline = Pipeline::new();
         pipeline.set_response_curve(CurveType::Linear.to_lut());
 
-        let mut frame = Frame {
-            ffb_in: 0.5,
-            torque_out: 0.5,
-            wheel_speed: 0.0,
-            hands_off: false,
-            ts_mono_ns: 0,
-            seq: 1,
-        };
+        let mut frame = test_frame(0.5);
 
         let result = pipeline.process(&mut frame);
         assert!(result.is_ok());
@@ -199,14 +220,7 @@ mod tests {
         let curve = CurveType::exponential(2.0)?;
         pipeline.set_response_curve(curve.to_lut());
 
-        let mut frame = Frame {
-            ffb_in: 0.5,
-            torque_out: 0.5,
-            wheel_speed: 0.0,
-            hands_off: false,
-            ts_mono_ns: 0,
-            seq: 1,
-        };
+        let mut frame = test_frame(0.5);
         let result = pipeline.process(&mut frame);
         assert!(result.is_ok());
         assert!(
@@ -223,26 +237,12 @@ mod tests {
         let curve = CurveType::exponential(2.0)?;
         pipeline.set_response_curve(curve.to_lut());
 
-        let mut frame_pos = Frame {
-            ffb_in: 0.5,
-            torque_out: 0.5,
-            wheel_speed: 0.0,
-            hands_off: false,
-            ts_mono_ns: 0,
-            seq: 1,
-        };
-        pipeline.process(&mut frame_pos).unwrap();
+        let mut frame_pos = test_frame(0.5);
+        assert_eq!(pipeline.process(&mut frame_pos), Ok(()));
         assert!(frame_pos.torque_out > 0.0);
 
-        let mut frame_neg = Frame {
-            ffb_in: -0.5,
-            torque_out: -0.5,
-            wheel_speed: 0.0,
-            hands_off: false,
-            ts_mono_ns: 0,
-            seq: 1,
-        };
-        pipeline.process(&mut frame_neg).unwrap();
+        let mut frame_neg = test_frame(-0.5);
+        assert_eq!(pipeline.process(&mut frame_neg), Ok(()));
         assert!(frame_neg.torque_out < 0.0);
 
         assert!(
@@ -265,16 +265,59 @@ mod tests {
     }
 
     #[test]
+    fn test_pipeline_returns_fault_after_node_outputs_nan() {
+        let mut pipeline = pipeline_with_node(set_torque_to_nan);
+        let mut frame = test_frame(0.5);
+
+        assert_eq!(pipeline.process(&mut frame), Err(RTError::PipelineFault));
+        assert!(frame.torque_out.is_nan(), "the injected node did not run");
+    }
+
+    #[test]
+    fn test_pipeline_returns_fault_after_node_exceeds_either_torque_bound() {
+        for (node, expected) in [
+            (set_torque_above_bound as FilterNodeFn, 1.01_f32),
+            (set_torque_below_bound as FilterNodeFn, -1.01_f32),
+        ] {
+            let mut pipeline = pipeline_with_node(node);
+            let mut frame = test_frame(0.5);
+
+            assert_eq!(pipeline.process(&mut frame), Err(RTError::PipelineFault));
+            assert_eq!(frame.torque_out, expected, "the injected node did not run");
+        }
+    }
+
+    #[test]
+    fn test_process_with_curve_uses_override_without_storing_curve() {
+        let mut pipeline = pipeline_with_node(halve_torque);
+        let curve = CurveType::Linear.to_lut();
+        let mut frame = test_frame(0.8);
+
+        assert_eq!(
+            pipeline.process_with_curve(&mut frame, Some(&curve)),
+            Ok(())
+        );
+        assert!(pipeline.response_curve().is_none());
+        assert!((frame.torque_out - 0.4).abs() < 0.02);
+    }
+
+    #[test]
+    fn test_process_with_curve_returns_fault_before_curve_mapping() {
+        let mut pipeline = pipeline_with_node(set_torque_above_bound);
+        let curve = CurveType::Linear.to_lut();
+        let mut frame = test_frame(0.5);
+
+        assert_eq!(
+            pipeline.process_with_curve(&mut frame, Some(&curve)),
+            Err(RTError::PipelineFault)
+        );
+        assert_eq!(frame.torque_out, 1.01, "the injected node did not run");
+    }
+
+    #[test]
     fn test_pipeline_process_validates_output() {
         let mut pipeline = Pipeline::new();
-        let mut frame = Frame {
-            ffb_in: 0.5,
-            torque_out: f32::NAN,
-            wheel_speed: 0.0,
-            hands_off: false,
-            ts_mono_ns: 0,
-            seq: 1,
-        };
+        let mut frame = test_frame(f32::NAN);
 
         // Empty pipeline doesn't validate - it just passes through
         // Validation happens at filter node boundaries
@@ -285,14 +328,7 @@ mod tests {
     #[test]
     fn test_pipeline_process_bounds_output() {
         let mut pipeline = Pipeline::new();
-        let mut frame = Frame {
-            ffb_in: 0.5,
-            torque_out: 2.0,
-            wheel_speed: 0.0,
-            hands_off: false,
-            ts_mono_ns: 0,
-            seq: 1,
-        };
+        let mut frame = test_frame(2.0);
 
         // Empty pipeline doesn't validate - it just passes through
         // Validation happens at filter node boundaries
