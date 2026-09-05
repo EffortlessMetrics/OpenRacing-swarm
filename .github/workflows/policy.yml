@@ -29,8 +29,14 @@ jobs:
       - name: File policy (non-Rust surface)
         run: python scripts/policy_file.py
 
+      - name: Install runner routing parser
+        run: python -m pip install --quiet --disable-pip-version-check PyYAML
+
       - name: Runner routing policy
         run: scripts/check_runner_routing.sh
+
+      - name: Runner routing gate self-test
+        run: scripts/check_runner_routing_test.sh
 
       - name: "No-panic family checker (Stage A: report-only)"
         run: python scripts/policy_no_panic.py
