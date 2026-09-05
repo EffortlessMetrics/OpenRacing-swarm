@@ -11,20 +11,23 @@ concurrency:
 
 jobs:
   droid-review:
-    if: github.event.pull_request.draft == false
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
-      # This is intentionally job-scoped so the config and action receive the same bound secret.
+      # The same bound key is written to the custom-model settings used by Droid.
       MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
     permissions:
       contents: read
-      # Factory Droid posts its automatic and security findings as PR review comments.
+      # Droid posts automatic and security findings as PR review comments.
       pull-requests: write
-      # Factory Droid may update its tracking comment on the PR's issue conversation.
+      # Droid may update its tracking comment on the PR issue conversation.
       issues: write
-      # The Factory action exchanges the GitHub OIDC identity for its app token.
+      # The action exchanges the GitHub OIDC identity for its app token.
       id-token: write
-      # The action reads workflow-run metadata while publishing its review result.
+      # The action reads workflow-run metadata while publishing its result.
       actions: read
 
     steps:
@@ -32,7 +35,7 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
 
       - name: Mask bound credentials
@@ -50,6 +53,7 @@ jobs:
       - name: Configure MiniMax BYOK settings
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p "$HOME/.factory"
           jq -n --arg api_key "$MINIMAX_API_KEY" \
             '{customModels: [{model: "MiniMax-M3", displayName: "MiniMax-M3", baseUrl: "https://api.minimax.io/anthropic", apiKey: $api_key, provider: "anthropic", maxOutputTokens: 64000}]}' \
@@ -59,28 +63,26 @@ jobs:
       - name: Run Droid automatic and security review (advisory)
         id: droid
         continue-on-error: true
-        uses: Factory-AI/droid-action@e5ae50268211d2e9ac85edb57c28bf253b6627f7 # verified main commit
+        uses: EffortlessMetrics/droid-action-safe@7c1377ccbacddc95560d1570547a5baa51de01ec # raw debug files are never uploaded
         with:
           factory_api_key: ${{ secrets.FACTORY_API_KEY }}
           settings: ${{ runner.temp }}/droid-settings.local.json
           automatic_review: true
           automatic_security_review: true
+          security_block_on_critical: false
+          security_block_on_high: false
+          upload_debug_artifacts: false
+          show_full_output: false
 
       - name: Report advisory review failure
         if: always() && steps.droid.outcome == 'failure'
         shell: bash
         run: echo "::warning::Droid review was advisory and failed; deterministic repository checks remain authoritative."
 
-      - name: Redact Droid debug settings before upload
+      - name: Remove transient BYOK settings
         if: always()
         shell: bash
         run: |
-          set -euo pipefail
-          if [ -d "$HOME/.factory" ]; then
-            while IFS= read -r -d '' settings_file; do
-              temporary_file="$(mktemp)"
-              jq 'walk(if type == "object" and has("apiKey") then .apiKey = "[redacted]" else . end)' \
-                "$settings_file" > "$temporary_file"
-              mv "$temporary_file" "$settings_file"
-            done < <(find "$HOME/.factory" -type f -name '*.json' -print0)
-          fi
+          rm -f -- \
+            "$HOME/.factory/settings.local.json" \
+            "$RUNNER_TEMP/droid-settings.local.json"
