@@ -198,6 +198,52 @@ jobs:
       CARGO_TARGET_DIR: /mnt/ci-scratch/target/${{ github.run_id }}-${{ github.run_attempt }}
       TMPDIR: /mnt/ci-scratch/tmp/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
+      - name: Prune abandoned scratch dirs
+        shell: bash
+        env:
+          SCRATCH_ROOT: /mnt/ci-scratch
+          SCRATCH_MAX_AGE: 6 hours ago
+        run: |
+          # A job that is cancelled, or whose runner is lost, never reaches its
+          # `if: always()` cleanup step, so its run directories survive and
+          # accumulate until ci-disk-guard refuses to start any further build.
+          # Remove only those. This job's own directories, and anything touched
+          # within SCRATCH_MAX_AGE, are kept; the longest timeout-minutes on any
+          # routed self-hosted lane is 150, so a live job's scratch can never be
+          # old enough to qualify. The guard below is unchanged and still fails
+          # closed when the reclaimed space is not enough.
+          set -uo pipefail
+
+          recent=""
+          before="$(df -Pm "$SCRATCH_ROOT" 2>/dev/null | awk 'NR==2 {print $4}')" || before=""
+
+          for parent in "$SCRATCH_ROOT/target" "$SCRATCH_ROOT/tmp"; do
+            [ -d "$parent" ] || continue
+            while IFS= read -r -d '' candidate; do
+              case "$candidate" in
+                "${CARGO_TARGET_DIR:-}" | "${TMPDIR:-}") continue ;;
+              esac
+              # Fail safe: if the age check itself cannot run, keep the
+              # directory. An empty result must mean "nothing recent found",
+              # never "find could not answer".
+              if ! recent="$(find "$candidate" -maxdepth 2 -newermt "$SCRATCH_MAX_AGE" -print -quit 2>/dev/null)"; then
+                echo "keep, age check failed: $candidate" >&2
+                continue
+              fi
+              if [ -n "$recent" ]; then
+                continue
+              fi
+              echo "prune abandoned scratch dir: $candidate"
+              rm -rf -- "$candidate" || echo "could not fully remove $candidate" >&2
+            done < <(find "$parent" -mindepth 1 -maxdepth 1 -print0 2>/dev/null)
+          done
+
+          after="$(df -Pm "$SCRATCH_ROOT" 2>/dev/null | awk 'NR==2 {print $4}')" || after=""
+          echo "scratch free MB: ${before:-unknown} -> ${after:-unknown}"
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            echo "- scratch prune \`$SCRATCH_ROOT\`: ${before:-unknown} MB -> ${after:-unknown} MB free" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Disk guards
         shell: bash
         run: |
@@ -290,6 +336,52 @@ jobs:
       CARGO_TARGET_DIR: /mnt/ci-scratch/target/${{ github.run_id }}-${{ github.run_attempt }}
       TMPDIR: /mnt/ci-scratch/tmp/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
+      - name: Prune abandoned scratch dirs
+        shell: bash
+        env:
+          SCRATCH_ROOT: /mnt/ci-scratch
+          SCRATCH_MAX_AGE: 6 hours ago
+        run: |
+          # A job that is cancelled, or whose runner is lost, never reaches its
+          # `if: always()` cleanup step, so its run directories survive and
+          # accumulate until ci-disk-guard refuses to start any further build.
+          # Remove only those. This job's own directories, and anything touched
+          # within SCRATCH_MAX_AGE, are kept; the longest timeout-minutes on any
+          # routed self-hosted lane is 150, so a live job's scratch can never be
+          # old enough to qualify. The guard below is unchanged and still fails
+          # closed when the reclaimed space is not enough.
+          set -uo pipefail
+
+          recent=""
+          before="$(df -Pm "$SCRATCH_ROOT" 2>/dev/null | awk 'NR==2 {print $4}')" || before=""
+
+          for parent in "$SCRATCH_ROOT/target" "$SCRATCH_ROOT/tmp"; do
+            [ -d "$parent" ] || continue
+            while IFS= read -r -d '' candidate; do
+              case "$candidate" in
+                "${CARGO_TARGET_DIR:-}" | "${TMPDIR:-}") continue ;;
+              esac
+              # Fail safe: if the age check itself cannot run, keep the
+              # directory. An empty result must mean "nothing recent found",
+              # never "find could not answer".
+              if ! recent="$(find "$candidate" -maxdepth 2 -newermt "$SCRATCH_MAX_AGE" -print -quit 2>/dev/null)"; then
+                echo "keep, age check failed: $candidate" >&2
+                continue
+              fi
+              if [ -n "$recent" ]; then
+                continue
+              fi
+              echo "prune abandoned scratch dir: $candidate"
+              rm -rf -- "$candidate" || echo "could not fully remove $candidate" >&2
+            done < <(find "$parent" -mindepth 1 -maxdepth 1 -print0 2>/dev/null)
+          done
+
+          after="$(df -Pm "$SCRATCH_ROOT" 2>/dev/null | awk 'NR==2 {print $4}')" || after=""
+          echo "scratch free MB: ${before:-unknown} -> ${after:-unknown}"
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            echo "- scratch prune \`$SCRATCH_ROOT\`: ${before:-unknown} MB -> ${after:-unknown} MB free" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Disk and memory preflight
         shell: bash
         run: |
@@ -364,6 +456,52 @@ jobs:
       CARGO_TARGET_DIR: /mnt/ci-scratch/target/${{ github.run_id }}-${{ github.run_attempt }}
       TMPDIR: /mnt/ci-scratch/tmp/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
+      - name: Prune abandoned scratch dirs
+        shell: bash
+        env:
+          SCRATCH_ROOT: /mnt/ci-scratch
+          SCRATCH_MAX_AGE: 6 hours ago
+        run: |
+          # A job that is cancelled, or whose runner is lost, never reaches its
+          # `if: always()` cleanup step, so its run directories survive and
+          # accumulate until ci-disk-guard refuses to start any further build.
+          # Remove only those. This job's own directories, and anything touched
+          # within SCRATCH_MAX_AGE, are kept; the longest timeout-minutes on any
+          # routed self-hosted lane is 150, so a live job's scratch can never be
+          # old enough to qualify. The guard below is unchanged and still fails
+          # closed when the reclaimed space is not enough.
+          set -uo pipefail
+
+          recent=""
+          before="$(df -Pm "$SCRATCH_ROOT" 2>/dev/null | awk 'NR==2 {print $4}')" || before=""
+
+          for parent in "$SCRATCH_ROOT/target" "$SCRATCH_ROOT/tmp"; do
+            [ -d "$parent" ] || continue
+            while IFS= read -r -d '' candidate; do
+              case "$candidate" in
+                "${CARGO_TARGET_DIR:-}" | "${TMPDIR:-}") continue ;;
+              esac
+              # Fail safe: if the age check itself cannot run, keep the
+              # directory. An empty result must mean "nothing recent found",
+              # never "find could not answer".
+              if ! recent="$(find "$candidate" -maxdepth 2 -newermt "$SCRATCH_MAX_AGE" -print -quit 2>/dev/null)"; then
+                echo "keep, age check failed: $candidate" >&2
+                continue
+              fi
+              if [ -n "$recent" ]; then
+                continue
+              fi
+              echo "prune abandoned scratch dir: $candidate"
+              rm -rf -- "$candidate" || echo "could not fully remove $candidate" >&2
+            done < <(find "$parent" -mindepth 1 -maxdepth 1 -print0 2>/dev/null)
+          done
+
+          after="$(df -Pm "$SCRATCH_ROOT" 2>/dev/null | awk 'NR==2 {print $4}')" || after=""
+          echo "scratch free MB: ${before:-unknown} -> ${after:-unknown}"
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            echo "- scratch prune \`$SCRATCH_ROOT\`: ${before:-unknown} MB -> ${after:-unknown} MB free" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Disk guards
         shell: bash
         run: |

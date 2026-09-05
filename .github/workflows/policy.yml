@@ -32,6 +32,15 @@ jobs:
       - name: Runner routing policy
         run: scripts/check_runner_routing.sh
 
+      - name: Routed scratch prune contract
+        run: |
+          # setup-python provides its own interpreter, which has no PyYAML.
+          # Without it the contract test skips, and a skipped gate proves
+          # nothing.
+          python -m pip install --quiet --disable-pip-version-check pyyaml
+          chmod +x scripts/check_scratch_prune_test.sh
+          ./scripts/check_scratch_prune_test.sh
+
       - name: "No-panic family checker (Stage A: report-only)"
         run: python scripts/policy_no_panic.py
 
