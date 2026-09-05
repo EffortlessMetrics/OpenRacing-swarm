@@ -29,6 +29,11 @@ jobs:
       - name: File policy (non-Rust surface)
         run: python scripts/policy_file.py
 
+      - name: Droid tag workflow policy
+        run: |
+          python scripts/check_droid_tag_workflow.py
+          python scripts/check_droid_tag_workflow.py --self-test
+
       - name: Runner routing policy
         run: scripts/check_runner_routing.sh
 
