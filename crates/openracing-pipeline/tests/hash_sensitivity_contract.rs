@@ -131,20 +131,32 @@ fn safety_envelope_fields_change_the_hash() -> TestResult {
 }
 
 #[test]
-fn response_curve_presence_and_parameters_change_the_hash() -> TestResult {
+fn response_curve_presence_kind_and_parameters_change_the_hash() -> TestResult {
     let config = config()?;
-    let exponential = CurveType::exponential(2.0)?;
+    let exponential_two = CurveType::exponential(2.0)?;
+    let exponential_three = CurveType::exponential(3.0)?;
 
     let without_curve = calculate_config_hash_with_curve(&config, None);
     let linear = calculate_config_hash_with_curve(&config, Some(&CurveType::Linear));
-    let exponential_hash = calculate_config_hash_with_curve(&config, Some(&exponential));
+    let exponential_two_hash =
+        calculate_config_hash_with_curve(&config, Some(&exponential_two));
+    let exponential_three_hash =
+        calculate_config_hash_with_curve(&config, Some(&exponential_three));
 
     assert_ne!(without_curve, linear);
-    assert_ne!(without_curve, exponential_hash);
-    assert_ne!(linear, exponential_hash);
+    assert_ne!(without_curve, exponential_two_hash);
+    assert_ne!(linear, exponential_two_hash);
+    assert_ne!(
+        exponential_two_hash, exponential_three_hash,
+        "changing the exponential parameter did not change the hash"
+    );
     assert_eq!(
-        exponential_hash,
-        calculate_config_hash_with_curve(&config, Some(&exponential))
+        exponential_two_hash,
+        calculate_config_hash_with_curve(&config, Some(&exponential_two))
+    );
+    assert_eq!(
+        exponential_three_hash,
+        calculate_config_hash_with_curve(&config, Some(&exponential_three))
     );
     Ok(())
 }
