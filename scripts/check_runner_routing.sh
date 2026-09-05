@@ -12,6 +12,7 @@ fi
 exec "$python" - "${WORKFLOW_DIR:-.github/workflows}" <<'PY'
 import os
 from pathlib import Path
+import re
 import sys
 
 try:
@@ -19,6 +20,30 @@ try:
 except ImportError:
     print("Runner routing check requires PyYAML; no workflows checked.", file=sys.stderr)
     sys.exit(2)
+
+# PyYAML defaults to YAML 1.1, where unquoted yes/no/on/off become booleans.
+# GitHub Actions follows YAML 1.2-style boolean semantics for workflow scalars,
+# so preserve those runner labels as strings while keeping true/false boolean.
+_BOOL_TAG = "tag:yaml.org,2002:bool"
+
+
+class GitHubActionsLoader(yaml.SafeLoader):
+    pass
+
+
+GitHubActionsLoader.yaml_implicit_resolvers = {
+    prefix: [
+        (tag, pattern)
+        for tag, pattern in resolvers
+        if tag != _BOOL_TAG
+    ]
+    for prefix, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
+GitHubActionsLoader.add_implicit_resolver(
+    _BOOL_TAG,
+    re.compile(r"^(?:true|false)$", re.IGNORECASE),
+    list("tTfF"),
+)
 
 # Preserve the existing guard's qualifier set. This is a static bare-runner
 # policy, not a replacement for the router's complete capacity/label matrix.
@@ -42,14 +67,25 @@ def walk_error(error):
 def selector_labels(selector, context):
     group = ""
     if isinstance(selector, dict):
-        group = selector.get("group", "")
-        if not isinstance(group, str):
-            fail(f"{context}: runs-on.group must be a string")
+        unknown_keys = [key for key in selector if key not in {"group", "labels"}]
+        if unknown_keys:
+            rendered = ", ".join(sorted(repr(key) for key in unknown_keys))
+            fail(f"{context}: runs-on mapping contains unsupported key(s): {rendered}")
+        if not selector:
+            fail(f"{context}: runs-on mapping must contain group or labels")
+        if "group" in selector:
+            group = selector["group"]
+            if not isinstance(group, str) or not group.strip():
+                fail(f"{context}: runs-on.group must be a non-empty string")
         selector = selector.get("labels", [])
     if isinstance(selector, str):
         selector = [selector]
-    if not isinstance(selector, list) or any(not isinstance(label, str) for label in selector):
-        fail(f"{context}: runs-on must contain string labels")
+    if not isinstance(selector, list) or any(
+        not isinstance(label, str) or not label.strip() for label in selector
+    ):
+        fail(f"{context}: runs-on must contain non-empty string labels")
+    if not selector and not group:
+        fail(f"{context}: runs-on must contain group or labels")
     labels = {label.casefold() for label in selector}
     dynamic = any("${{" in label for label in selector) or "${{" in group
     return labels, group, dynamic
@@ -72,7 +108,7 @@ try:
         fail(f"no workflow YAML files found in {root}")
     for path in paths:
         with path.open(encoding="utf-8") as handle:
-            workflow = yaml.safe_load(handle)
+            workflow = yaml.load(handle, Loader=GitHubActionsLoader)
         if not isinstance(workflow, dict) or not isinstance(workflow.get("jobs"), dict) or not workflow["jobs"]:
             fail(f"{path}: expected a non-empty jobs mapping")
         for job_id, job in workflow["jobs"].items():
