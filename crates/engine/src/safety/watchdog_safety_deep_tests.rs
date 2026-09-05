@@ -652,9 +652,25 @@ fn test_communication_refresh_prevents_loss() -> Result<(), WatchdogError> {
 
     system.age_last_communication(communication_timeout + Duration::from_millis(1));
     let result = system.process_tick(10.0);
+    assert_eq!(
+        result.torque_command, 0.0,
+        "Communication loss must command zero torque"
+    );
+    assert!(result.fault_occurred, "Communication loss must be reported");
+    assert_eq!(
+        result.fault_type,
+        Some(FaultType::UsbStall),
+        "Communication loss must report the USB-stall fault contract"
+    );
     assert!(
-        result.fault_occurred,
-        "An expired communication timeout must fault"
+        matches!(
+            result.state,
+            SafetyInterlockState::SafeMode {
+                triggered_by: SafetyTrigger::CommunicationLoss,
+                ..
+            }
+        ),
+        "Communication loss must enter the matching safe-mode state"
     );
     Ok(())
 }
