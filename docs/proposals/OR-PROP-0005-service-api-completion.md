@@ -1,8 +1,9 @@
 # Service API completion proposal
 
-Status: active
+Status: completed
 Owner: platform/service
 Created: 2026-08-02
+Completed: 2026-08-03
 Target milestone: service usability
 Linked specs:
 - docs/specs/OR-SPEC-0006-service-api-completion.md

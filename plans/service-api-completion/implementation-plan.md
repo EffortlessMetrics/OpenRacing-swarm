@@ -1,17 +1,21 @@
 # Service API completion implementation plan
 
-Status: active
+Status: completed
 Owner: platform/service
+Completed: 2026-08-03
 Linked proposal: docs/proposals/OR-PROP-0005-service-api-completion.md
 Linked specs:
 - docs/specs/OR-SPEC-0006-service-api-completion.md
 Linked ADRs: n/a
 Active goal: .openracing/goals/active.toml
+Closeout: plans/service-api-completion/closeout.md
 
 ## Work item: expose-application-services
 
-Status: ready
+Status: completed
 Linked issue: https://github.com/EffortlessMetrics/OpenRacing-swarm/issues/258
+Merged PR: https://github.com/EffortlessMetrics/OpenRacing-swarm/pull/294
+Merged commit: f4d3f434fcefb7d6393d983e6c4732070348eaad
 Linked spec: docs/specs/OR-SPEC-0006-service-api-completion.md
 Target seams: `crates/service/src/service.rs`, `crates/service/src/daemon.rs`, and focused service tests.
 

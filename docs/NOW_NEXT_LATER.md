@@ -8,9 +8,9 @@ One-screen execution plan for OpenRacing. Updated each sprint.
 
 ---
 
-## NOW (Active — this sprint)
+## NOW (Queue convergence — this sprint)
 
-- **Service API completion** - `.openracing/goals/active.toml` points to the service-composition lane; expose shared `WheelService::game_service()` and `plugin_service()` accessors in issue #258, then prove them with virtual/offline tests
+- **Existing PR queue reconciliation** - the service API lane is complete in merged PR #294; no new plan-backed product lane is active while the existing CI, test, generated-artifact, and workflow PR queue is reconciled serially. Runner-token and capacity debt remain tracked separately by issues #302 and #236.
 
 ## NEXT (Queued — next 2–4 sprints)
 

@@ -1,12 +1,15 @@
 id = "service-api-completion"
 title = "Reusable application service composition"
-status = "paused"
-reason = "no new plan-backed product lane is active while the existing PR queue is being reconciled."
+status = "completed"
 owner = "platform/service"
 created = "2026-08-02"
+completed = "2026-08-03"
+merged_pr = 294
+merged_commit = "f4d3f434fcefb7d6393d983e6c4732070348eaad"
 
 proposal = "docs/proposals/OR-PROP-0005-service-api-completion.md"
 plan = "plans/service-api-completion/implementation-plan.md"
+closeout = "plans/service-api-completion/closeout.md"
 
 specs = [
   "docs/specs/OR-SPEC-0006-service-api-completion.md",
@@ -35,6 +38,7 @@ status_docs = [
   "docs/proposals/OR-PROP-0005-service-api-completion.md",
   "docs/specs/OR-SPEC-0006-service-api-completion.md",
   "plans/service-api-completion/implementation-plan.md",
+  "plans/service-api-completion/closeout.md",
 ]
 
 [[work_item]]
@@ -42,9 +46,8 @@ id = "expose-application-services"
 status = "completed"
 issue = 258
 pr = 294
-merged_commit = "f4d3f434fcefb7d6393d983e6c4732070348eaad"
 spec = "docs/specs/OR-SPEC-0006-service-api-completion.md"
 plan = "plans/service-api-completion/implementation-plan.md#work-item-expose-application-services"
-completion_pointer = "plans/service-api-completion/closeout.md"
-proof_pointer = "plans/service-api-completion/closeout.md#proof"
+current_pointer = "PR #294 merged as f4d3f434fcefb7d6393d983e6c4732070348eaad"
 claim_boundary = "Shared application-service accessors only; no new game, plugin, hardware, RT, FFB, or support behavior."
+proof = "PR #294 validation and exact-head hosted proof recorded in its body."

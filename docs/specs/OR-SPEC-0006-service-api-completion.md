@@ -1,6 +1,6 @@
 # Service API completion specification
 
-Status: active
+Status: completed
 Owner: platform/service
 Created: 2026-08-02
 Linked proposal: docs/proposals/OR-PROP-0005-service-api-completion.md
@@ -8,7 +8,8 @@ Linked ADRs: n/a
 Linked plan: plans/service-api-completion/implementation-plan.md
 Linked issues:
 - https://github.com/EffortlessMetrics/OpenRacing-swarm/issues/258
-Linked PRs: n/a
+Linked PRs:
+- https://github.com/EffortlessMetrics/OpenRacing-swarm/pull/294
 Support-tier impact: internal service composition only; no public hardware/support promotion
 Policy impact: n/a
 
