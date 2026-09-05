@@ -33,7 +33,6 @@ jobs:
         run: |
           set -euo pipefail
           cargo update -p wasmtime@46.0.2 --precise 46.0.3
-          cargo update -p wasmtime-wasi@46.0.2 --precise 46.0.3
           cargo update -p h2@0.4.13 --precise 0.4.16
           cargo metadata --locked --no-deps --format-version 1 >/dev/null
           grep -A2 'name = "h2"' Cargo.lock
