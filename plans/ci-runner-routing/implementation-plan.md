@@ -71,3 +71,63 @@ git diff --check
 
 Revert the workflow, policy guard, and documentation changes. Existing routed
 Rust jobs and GitHub-hosted fallback remain the rollback baseline.
+
+## Work item: validate-static-runner-selectors
+
+Status: proposed follow-up; the original rollout above remains completed
+Owner: release/ci
+Related PR: #308 (routing-gate portion only)
+Linked proposal/spec/ADR: n/a; corrective CI policy work under this plan
+Active goal: n/a; no product lane is activated
+
+### Goal and production delta
+
+Validate each job's own static YAML `runs-on` selector rather than scanning
+an arbitrary 17-line window. The old window can borrow a neighbouring job's
+capacity label; the inline regex also misses reordered bare labels and rejects
+qualified inline arrays and comments. PR #308's missing-ripgrep guard does not
+repair those semantic failures.
+
+Keep the existing qualifier set and `em-ci-` group rule. Use Python/PyYAML
+inside the existing shell entrypoint, install the parser in the policy job,
+and run the gate's fixture suite in that job. Do not introduce a second
+runtime or a new workflow lane.
+
+### Acceptance
+
+- Reject bare Linux/x64 self-hosted selectors regardless of label order,
+  quoting, case, line breaks, aliases, or a neighbouring job's configuration.
+- Accept equivalent qualified block, inline, and group/labels selectors.
+- Comments and unrelated step text neither trigger nor qualify a selector.
+- Missing Python/PyYAML, missing/empty workflow directories, invalid YAML,
+  malformed job shapes, and file-read/traversal errors fail non-zero. Exit 1
+  means a policy violation; exit 2 means the check could not complete.
+- Preserve the existing qualification predicate; this does not replace the
+  router's stricter capacity matrix. Dynamic expressions are reported but not
+  evaluated. Reusable-workflow calls delegate runner selection to their callee;
+  this guard does not fetch remote callees or claim to validate their runners.
+- The candidate has exact-head policy proof before integration. The normalized
+  `OpenRacing Rust Small Result` check must still pass on the candidate revision;
+  issues #302 and #236 are not bypassed.
+
+### Proof commands
+
+```text
+scripts/check_runner_routing_test.sh
+scripts/check_runner_routing.sh
+bash -n scripts/check_runner_routing.sh scripts/check_runner_routing_test.sh
+python scripts/policy_file.py --strict
+python scripts/policy_lint.py
+git diff --check
+OpenRacing Rust Small Result on the exact PR head
+```
+
+The self-test accepts unittest test names for bounded execution. Local fixture
+validation is not proof that the full repository or hosted lane passed.
+
+### Non-goals and rollback
+
+No scratch deletion, runner provisioning, credential changes, fallback-result
+changes, product/RT/hardware code, or support claims. Revert this work item's
+script and policy-job changes together. Keep #308's scratch-cleanup work
+separate from the static routing guard.
