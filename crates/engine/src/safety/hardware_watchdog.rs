@@ -851,6 +851,19 @@ impl SafetyInterlockSystem {
         self.last_communication = Some(Instant::now());
     }
 
+    /// Age the communication timestamp for deterministic timeout tests.
+    #[cfg(test)]
+    pub(crate) fn age_last_communication(&mut self, duration: Duration) {
+        if let Some(last_communication) = self.last_communication {
+            let now = Instant::now();
+            self.last_communication = Some(
+                last_communication
+                    .checked_sub(duration)
+                    .map_or(now, |aged| aged),
+            );
+        }
+    }
+
     /// Log a torque violation
     fn log_torque_violation(&mut self, requested: f32, actual: f32) {
         self.log_fault(

@@ -634,21 +634,44 @@ fn test_no_communication_reported_does_not_trigger_loss() -> Result<(), Watchdog
 
 #[test]
 fn test_communication_refresh_prevents_loss() -> Result<(), WatchdogError> {
+    let communication_timeout = Duration::from_millis(50);
     let watchdog = Box::new(SoftwareWatchdog::new(30_000));
     let torque_limit = TorqueLimit::new(25.0, 5.0);
     let mut system =
-        SafetyInterlockSystem::with_config(watchdog, torque_limit, Duration::from_millis(50));
+        SafetyInterlockSystem::with_config(watchdog, torque_limit, communication_timeout);
     system.arm()?;
 
-    for _ in 0..5 {
-        system.report_communication();
-        std::thread::sleep(Duration::from_millis(20));
-        let result = system.process_tick(10.0);
-        assert!(
-            !result.fault_occurred,
-            "Refreshing communication should prevent loss"
-        );
-    }
+    system.report_communication();
+    system.age_last_communication(communication_timeout + Duration::from_millis(1));
+    system.report_communication();
+    let result = system.process_tick(10.0);
+    assert!(
+        !result.fault_occurred,
+        "A fresh communication report must refresh the deadline"
+    );
+
+    system.age_last_communication(communication_timeout + Duration::from_millis(1));
+    let result = system.process_tick(10.0);
+    assert_eq!(
+        result.torque_command, 0.0,
+        "Communication loss must command zero torque"
+    );
+    assert!(result.fault_occurred, "Communication loss must be reported");
+    assert_eq!(
+        result.fault_type,
+        Some(FaultType::UsbStall),
+        "Communication loss must report the USB-stall fault contract"
+    );
+    assert!(
+        matches!(
+            result.state,
+            SafetyInterlockState::SafeMode {
+                triggered_by: SafetyTrigger::CommunicationLoss,
+                ..
+            }
+        ),
+        "Communication loss must enter the matching safe-mode state"
+    );
     Ok(())
 }
 
