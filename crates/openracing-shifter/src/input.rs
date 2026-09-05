@@ -39,9 +39,9 @@ impl ShifterInput {
 
     pub fn from_sequential(up: bool, down: bool, current_gear: i32) -> Self {
         let gear = if up {
-            GearPosition::new((current_gear + 1).min(MAX_GEARS as i32))
+            GearPosition::new(current_gear.saturating_add(1).min(MAX_GEARS as i32))
         } else if down {
-            GearPosition::new((current_gear - 1).max(1))
+            GearPosition::new(current_gear.saturating_sub(1).max(1))
         } else {
             GearPosition::new(current_gear)
         };
@@ -128,6 +128,15 @@ mod tests {
 
         let input_min = ShifterInput::from_sequential(false, true, 1);
         assert_eq!(input_min.gear.gear, 1);
+    }
+
+    #[test]
+    fn test_sequential_extreme_inputs_saturate_before_clamp() {
+        let input_max = ShifterInput::from_sequential(true, false, i32::MAX);
+        assert_eq!(input_max.gear(), MAX_GEARS as i32);
+
+        let input_min = ShifterInput::from_sequential(false, true, i32::MIN);
+        assert_eq!(input_min.gear(), 1);
     }
 
     #[test]
