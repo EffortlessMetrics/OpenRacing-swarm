@@ -81,6 +81,15 @@ class RoutingContract(unittest.TestCase):
         self.write('jobs:\n  bare:\n    runs-on: ["SELF-HOSTED", "Linux", "X64"]\n')
         self.run_gate(1)
 
+    def test_github_yaml_boolean_words_remain_labels(self):
+        self.write("""
+            on: push
+            jobs:
+              qualified:
+                runs-on: [self-hosted, linux, x64, rust-medium, yes, no, on, off]
+        """)
+        self.run_gate(0, message="1 static Linux/x64 self-hosted")
+
     def test_group_qualifies_only_its_job(self):
         self.write("""
             jobs:
@@ -96,6 +105,10 @@ class RoutingContract(unittest.TestCase):
         """)
         output = self.run_gate(1, message="jobs.bare")
         self.assertNotIn("jobs.qualified: bare", output)
+
+    def test_group_only_selector_is_valid(self):
+        self.write("jobs:\n  grouped:\n    runs-on:\n      group: em-ci-rust\n")
+        self.run_gate(0, message="0 static Linux/x64 self-hosted")
 
     def test_neighbour_labels_do_not_qualify_bare_job(self):
         self.write("""
@@ -201,7 +214,13 @@ class RoutingContract(unittest.TestCase):
             "", "[]", "jobs: []", "jobs: {}", "jobs:\n  bad: []",
             "jobs:\n  bad: {}", "jobs:\n  bad:\n    runs-on: null",
             "jobs:\n  bad:\n    runs-on: [linux, 4]",
+            "jobs:\n  bad:\n    runs-on: [linux, true]",
+            "jobs:\n  bad:\n    runs-on: {}",
+            "jobs:\n  bad:\n    runs-on:\n      pool: em-ci-rust",
+            "jobs:\n  bad:\n    runs-on:\n      labels: []",
+            "jobs:\n  bad:\n    runs-on:\n      labels: \"\"",
             "jobs:\n  bad:\n    runs-on:\n      group: []",
+            "jobs:\n  bad:\n    runs-on:\n      group: \"\"",
         ]
         malformed_jobs.extend(
             f"jobs:\n  bad:\n    uses: {uses}\n"
