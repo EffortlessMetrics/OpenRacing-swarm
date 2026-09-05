@@ -181,11 +181,36 @@ exits 0.
   without it.
 - `scripts/check_runner_routing_test.sh` — pass; reverting the guard makes the
   new case fail, so it has teeth.
-- The current workflow tree passes the gate, so enforcing it for real does not
-  reveal an outstanding violation.
+- The current workflow tree passes the gate, but this says less than it appears
+  to. The tree's only self-hosted selectors are three fully-qualified `labels:`
+  entries under runner groups (`em-ci-routed-rust.yml` lines 190, 328, 448), and
+  the gate's `runs-on:` regex never inspects a `labels:` key. The exit 0
+  therefore reflects the shape of this tree, not enforcement.
 
 ### Claim boundary
 
 This proves the gate now fails closed when its tooling is missing, and that it
-runs for real in the policy job. It does not re-audit whatever merged while the
+runs for real in the policy job. It does **not** prove the gate classifies
+correctly, and it should not be read that way.
+
+Review of #308 reported four classification defects in the pre-existing
+text-window/regex logic, which this change did not touch. All four were
+independently reproduced here against the same file (blob
+`164d5462bf1d1b8d87b5702f5d5fb9ebc4c741fd`):
+
+| Case | Expected | Actual |
+| --- | ---: | ---: |
+| Bare block, next job carries `rust-medium` within the 17-line window | 1 | 0 |
+| Bare inline `[linux, x64, self-hosted]` | 1 | 0 |
+| Qualified inline `[self-hosted, linux, x64, rust-medium]` | 0 | 1 |
+| Bare selector only inside a `#` comment | 0 | 1 |
+
+Two false negatives and two false positives: the window borrows a neighbouring
+job's capacity label, and the inline regex is order-dependent, indifferent to
+trailing qualifiers, and matches inside comments. Making a gate run does not
+make it correct. #309 replaces the text matching with per-job YAML selector
+parsing; once it is accepted, this branch drops its overlapping gate changes and
+keeps only the scratch-cleanup work.
+
+It does not re-audit whatever merged while the
 gate was vacuous; it only restores enforcement from here.
