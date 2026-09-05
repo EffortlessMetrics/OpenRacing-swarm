@@ -9,7 +9,7 @@ on:
       - ".github/workflows/security-lock-refresh-temporary.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: security-lock-refresh-${{ github.event.pull_request.number }}
@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-          persist-credentials: false
+          persist-credentials: true
 
       - name: Install repository toolchain
         run: rustup toolchain install nightly-2026-03-04 --profile minimal --no-self-update
@@ -38,6 +38,21 @@ jobs:
           grep -A2 'name = "h2"' Cargo.lock
           grep -A2 'name = "wasmtime"' Cargo.lock
           grep -A2 'name = "wasmtime-wasi"' Cargo.lock
+
+      - name: Commit generated lockfile to this PR branch
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name "EffortlessSteven"
+          git config user.email "git@effortlesssteven.com"
+          git add Cargo.lock
+          if git diff --cached --quiet; then
+            echo "Cargo.lock already contains the bounded refresh."
+            exit 0
+          fi
+          git commit -m "fix(deps): refresh patched dependency lock"
+          git push origin "HEAD:${HEAD_REF}"
 
       - name: Upload generated lockfile only
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
