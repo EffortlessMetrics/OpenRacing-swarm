@@ -197,7 +197,17 @@ class RoutingContract(unittest.TestCase):
         self.run_gate(2, message="could not complete")
 
     def test_invalid_shapes_fail_closed(self):
-        for body in ["", "[]", "jobs: []", "jobs: {}", "jobs:\n  bad: []", "jobs:\n  bad: {}", "jobs:\n  bad:\n    runs-on: null", "jobs:\n  bad:\n    runs-on: [linux, 4]", "jobs:\n  bad:\n    runs-on:\n      group: []"]:
+        malformed_jobs = [
+            "", "[]", "jobs: []", "jobs: {}", "jobs:\n  bad: []",
+            "jobs:\n  bad: {}", "jobs:\n  bad:\n    runs-on: null",
+            "jobs:\n  bad:\n    runs-on: [linux, 4]",
+            "jobs:\n  bad:\n    runs-on:\n      group: []",
+        ]
+        malformed_jobs.extend(
+            f"jobs:\n  bad:\n    uses: {uses}\n"
+            for uses in ["{}", "[]", "null", "false", "42", '""', '"   "']
+        )
+        for body in malformed_jobs:
             with self.subTest(body=body):
                 self.write(body)
                 self.run_gate(2, message="could not complete")

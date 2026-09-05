@@ -106,8 +106,9 @@ runtime or a new workflow lane.
   router's stricter capacity matrix. Dynamic expressions are reported but not
   evaluated. Reusable-workflow calls delegate runner selection to their callee;
   this guard does not fetch remote callees or claim to validate their runners.
-- The candidate has exact-head policy proof before integration. Existing
-  required routed proof remains required; #302 and #236 are not bypassed.
+- The candidate has exact-head policy proof before integration. The normalized
+  `OpenRacing Rust Small Result` check must still pass on the candidate revision;
+  issues #302 and #236 are not bypassed.
 
 ### Proof commands
 

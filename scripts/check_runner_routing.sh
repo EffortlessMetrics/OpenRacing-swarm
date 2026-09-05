@@ -80,7 +80,9 @@ try:
             if not isinstance(job, dict):
                 fail(f"{context}: expected a job mapping")
             if "runs-on" not in job:
-                if "uses" in job:  # Reusable workflows choose their own runners.
+                uses = job.get("uses")
+                if isinstance(uses, str) and uses.strip():
+                    # Reusable workflows choose their own runners.
                     continue
                 fail(f"{context}: missing runs-on or reusable-workflow uses")
             labels, group, dynamic = selector_labels(job["runs-on"], context)
