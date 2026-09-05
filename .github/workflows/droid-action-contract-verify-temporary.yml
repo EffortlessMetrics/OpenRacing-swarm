@@ -1,0 +1,44 @@
+name: Droid Action Contract Temporary Verification
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/droid-action-contract-verify-temporary.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: droid-action-contract-verify-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/droid-review-advisory-v3'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the expected-head action candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: EffortlessMetrics/droid-action-safe
+          ref: 668a97f627772827b8361bf1250aa7e0c4568f3e
+          persist-credentials: false
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check formatting
+        run: bun run format:check
+
+      - name: Type-check
+        run: bun run typecheck
+
+      - name: Run full test suite
+        run: bun test
