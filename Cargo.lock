@@ -10891,6 +10891,7 @@ dependencies = [
  "wiggle",
  "winapi",
  "windows 0.62.2",
+ "windows-core 0.62.2",
  "windows-sys 0.48.0",
  "windows-sys 0.52.0",
  "windows-sys 0.59.0",
