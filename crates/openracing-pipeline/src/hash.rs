@@ -10,10 +10,13 @@ use racing_wheel_schemas::prelude::CurvePoint;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-/// Calculate deterministic hash of filter configuration
+const CUSTOM_LUT_HASH_DOMAIN: &[u8] = b"openracing:curve-lut:v1";
+
+/// Calculate deterministic hash of filter configuration.
 ///
-/// This hash is used to detect configuration changes and enable
-/// efficient pipeline swap decisions.
+/// This hash is used to detect configuration changes and enable efficient
+/// pipeline swap decisions. It is an in-process change-detection fingerprint,
+/// not a cryptographic identifier or a persisted cross-version format.
 ///
 /// # Arguments
 ///
@@ -21,7 +24,7 @@ use std::hash::{Hash, Hasher};
 ///
 /// # Returns
 ///
-/// A 64-bit hash value that uniquely identifies the configuration
+/// A 64-bit change-detection fingerprint for the configuration.
 #[must_use]
 pub fn calculate_config_hash(config: &FilterConfig) -> u64 {
     let mut hasher = DefaultHasher::new();
@@ -41,10 +44,16 @@ pub fn calculate_config_hash(config: &FilterConfig) -> u64 {
     hasher.finish()
 }
 
-/// Calculate deterministic hash including response curve
+/// Calculate deterministic hash including response curve.
 ///
-/// Extends `calculate_config_hash` to include the response curve type
-/// in the hash calculation.
+/// Extends [`calculate_config_hash`] to include the response-curve type and
+/// parameters in the change-detection fingerprint. Custom LUTs contribute all
+/// 256 raw table entries; hashing remains a compile-time/off-thread operation
+/// and does not add work to response-curve evaluation on the RT path.
+///
+/// This value is not a cryptographic identifier or a persisted cross-version
+/// format. Floating-point values are represented by their raw bit patterns, so
+/// `-0.0` and `0.0` are intentionally distinct here.
 ///
 /// # Arguments
 ///
@@ -53,7 +62,7 @@ pub fn calculate_config_hash(config: &FilterConfig) -> u64 {
 ///
 /// # Returns
 ///
-/// A 64-bit hash value that uniquely identifies the configuration with response curve
+/// A 64-bit change-detection fingerprint for the configuration and response curve.
 #[must_use]
 pub fn calculate_config_hash_with_curve(
     config: &FilterConfig,
@@ -78,7 +87,7 @@ pub fn calculate_config_hash_with_curve(
     hasher.finish()
 }
 
-/// Hash curve points into the hasher
+/// Hash curve points into the hasher.
 fn hash_curve_points(curve_points: &[CurvePoint], hasher: &mut DefaultHasher) {
     for point in curve_points {
         point.input.to_bits().hash(hasher);
@@ -86,7 +95,7 @@ fn hash_curve_points(curve_points: &[CurvePoint], hasher: &mut DefaultHasher) {
     }
 }
 
-/// Hash notch filters into the hasher
+/// Hash notch filters into the hasher.
 fn hash_notch_filters(
     notch_filters: &[racing_wheel_schemas::entities::NotchFilter],
     hasher: &mut DefaultHasher,
@@ -98,7 +107,7 @@ fn hash_notch_filters(
     }
 }
 
-/// Hash bumpstop configuration into the hasher
+/// Hash bumpstop configuration into the hasher.
 fn hash_bumpstop_config(
     config: &racing_wheel_schemas::entities::BumpstopConfig,
     hasher: &mut DefaultHasher,
@@ -110,7 +119,7 @@ fn hash_bumpstop_config(
     config.damping.to_bits().hash(hasher);
 }
 
-/// Hash hands-off configuration into the hasher
+/// Hash hands-off configuration into the hasher.
 fn hash_hands_off_config(
     config: &racing_wheel_schemas::entities::HandsOffConfig,
     hasher: &mut DefaultHasher,
@@ -120,7 +129,7 @@ fn hash_hands_off_config(
     config.timeout_seconds.to_bits().hash(hasher);
 }
 
-/// Hash curve type into the hasher
+/// Hash curve type into the hasher.
 fn hash_curve_type(curve: Option<&CurveType>, hasher: &mut DefaultHasher) {
     if let Some(curve) = curve {
         match curve {
@@ -144,7 +153,9 @@ fn hash_curve_type(curve: Option<&CurveType>, hasher: &mut DefaultHasher) {
             }
             CurveType::Custom(lut) => {
                 4u8.hash(hasher);
-                hash_lut_sample(lut, hasher);
+                CUSTOM_LUT_HASH_DOMAIN.hash(hasher);
+                CurveLut::SIZE.hash(hasher);
+                hash_lut(lut, hasher);
             }
         }
     } else {
@@ -152,11 +163,15 @@ fn hash_curve_type(curve: Option<&CurveType>, hasher: &mut DefaultHasher) {
     }
 }
 
-/// Hash a sample of LUT values for efficiency
-fn hash_lut_sample(lut: &CurveLut, hasher: &mut DefaultHasher) {
-    for i in [0, 64, 128, 192, 255] {
-        let val = lut.lookup(i as f32 / 255.0);
-        val.to_bits().hash(hasher);
+/// Hash every raw LUT entry in table order.
+///
+/// `to_bits` matches the representation used for the other floating-point hash
+/// inputs. This intentionally preserves signed-zero distinctions. Non-finite
+/// accepted-value policy belongs at the curve validation boundary (see #312),
+/// rather than being silently normalized by change detection.
+fn hash_lut(lut: &CurveLut, hasher: &mut DefaultHasher) {
+    for value in lut.table() {
+        value.to_bits().hash(hasher);
     }
 }
 
@@ -233,6 +248,70 @@ mod tests {
         assert_ne!(hash_no_curve, hash_linear);
         assert_ne!(hash_linear, hash_exp);
         assert_ne!(hash_no_curve, hash_exp);
+    }
+
+    #[test]
+    fn test_custom_lut_hash_covers_unsampled_interior_entries() {
+        let config = create_test_config();
+        let baseline = CurveLut::linear();
+        let changed_index = 17usize;
+        let changed = CurveLut::from_fn(|input| {
+            let index = (input * (CurveLut::SIZE - 1) as f32).round() as usize;
+            if index == changed_index {
+                (input + 0.01).min(1.0)
+            } else {
+                input
+            }
+        });
+
+        for sampled_index in [0usize, 64, 128, 192, 255] {
+            assert_eq!(
+                baseline.table()[sampled_index].to_bits(),
+                changed.table()[sampled_index].to_bits(),
+                "legacy sample index {sampled_index} unexpectedly differs"
+            );
+        }
+        assert_ne!(
+            baseline.table()[changed_index].to_bits(),
+            changed.table()[changed_index].to_bits(),
+            "fixture must differ at an entry omitted by the legacy sampler"
+        );
+
+        let baseline_curve = CurveType::Custom(Box::new(baseline));
+        let changed_curve = CurveType::Custom(Box::new(changed));
+        let baseline_hash = calculate_config_hash_with_curve(&config, Some(&baseline_curve));
+        let changed_hash = calculate_config_hash_with_curve(&config, Some(&changed_curve));
+
+        assert_ne!(
+            baseline_hash, changed_hash,
+            "an unsampled custom-LUT change must affect the configuration hash"
+        );
+        assert_eq!(
+            baseline_hash,
+            calculate_config_hash_with_curve(&config, Some(&baseline_curve))
+        );
+        assert_eq!(
+            changed_hash,
+            calculate_config_hash_with_curve(&config, Some(&changed_curve))
+        );
+    }
+
+    #[test]
+    fn test_custom_lut_hash_preserves_signed_zero_bits() {
+        let config = create_test_config();
+        let positive_zero = CurveLut::from_fn(|_| 0.0);
+        let negative_zero = CurveLut::from_fn(|_| -0.0);
+
+        assert_ne!(positive_zero.table()[0].to_bits(), negative_zero.table()[0].to_bits());
+
+        let positive_curve = CurveType::Custom(Box::new(positive_zero));
+        let negative_curve = CurveType::Custom(Box::new(negative_zero));
+
+        assert_ne!(
+            calculate_config_hash_with_curve(&config, Some(&positive_curve)),
+            calculate_config_hash_with_curve(&config, Some(&negative_curve)),
+            "custom-LUT hashing is bitwise, so signed zero must remain distinct"
+        );
     }
 
     #[test]
