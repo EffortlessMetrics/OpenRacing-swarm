@@ -20,15 +20,16 @@ without changing the existing supported gear range or ordinary shift behavior.
 ### Production delta
 
 Evaluate the one-step direction change with `saturating_add(1)` or
-`saturating_sub(1)` before applying the existing `0..=10` clamp. This removes
-the debug panic and release wraparound at the integer extremes while retaining
-the same result for every input that does not overflow.
+`saturating_sub(1)` before applying the existing directional bounds: upshift is
+capped at `MAX_GEARS`, and downshift is floored at gear `1`. This removes the
+debug panic and release wraparound at the integer extremes while retaining the
+same result for every input that does not overflow.
 
 ### Acceptance
 
-- An upshift from `i32::MAX` returns the upper supported gear instead of
-  panicking or wrapping.
-- A downshift from `i32::MIN` returns neutral instead of panicking or wrapping.
+- An upshift from `i32::MAX` returns `MAX_GEARS` instead of panicking or
+  wrapping.
+- A downshift from `i32::MIN` returns gear `1` instead of panicking or wrapping.
 - Existing ordinary upshift, downshift, and no-shift behavior remains covered
   by the crate's current tests.
 - Formatting, focused tests, Clippy with warnings denied, file policy, and the
