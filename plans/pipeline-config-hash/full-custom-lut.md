@@ -3,7 +3,7 @@
 Status: candidate
 Owner: pipeline/configuration
 Issue: #322
-PR: pending
+PR: #331
 Proposal: n/a — correctness repair to the existing change-detection contract
 Spec: n/a — preserves the existing public API and pipeline semantics
 ADR: n/a — no durable architecture change
