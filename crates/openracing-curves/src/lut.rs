@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::bezier::BezierCurve;
+use crate::error::CurveError;
 
 /// Pre-computed lookup table for RT path (no allocation).
 ///
@@ -58,7 +59,7 @@ impl CurveLut {
 
         for (i, entry) in table.iter_mut().enumerate() {
             let input = i as f32 / (Self::SIZE - 1) as f32;
-            *entry = curve.map(input);
+            *entry = Self::sanitize_generated_value(curve.map(input));
         }
 
         Self { table }
@@ -107,10 +108,72 @@ impl CurveLut {
 
         for (i, entry) in table.iter_mut().enumerate() {
             let input = i as f32 / (Self::SIZE - 1) as f32;
-            *entry = f(input).clamp(0.0, 1.0);
+            *entry = Self::sanitize_generated_value(f(input));
         }
 
         Self { table }
+    }
+
+    /// Strictly construct a LUT from a raw 256-entry table.
+    ///
+    /// Unlike the compatibility `from_fn` generator, raw/user-supplied table
+    /// data is never sanitized: the first non-finite entry is rejected with its
+    /// index. Finite values outside `[0,1]` retain the existing raw-table
+    /// acceptance policy; this method narrows only non-finite acceptance.
+    pub fn try_from_table(table: [f32; 256]) -> Result<Self, CurveError> {
+        Self::validate_table(&table)?;
+        Ok(Self { table })
+    }
+
+    /// Strictly generate a LUT from a closure.
+    ///
+    /// Finite outputs keep the existing `[0,1]` clamp. The first non-finite
+    /// generated output is rejected instead of being sanitized.
+    pub fn try_from_fn<F>(f: F) -> Result<Self, CurveError>
+    where
+        F: Fn(f32) -> f32,
+    {
+        let mut table = [0.0f32; Self::SIZE];
+
+        for (i, entry) in table.iter_mut().enumerate() {
+            let input = i as f32 / (Self::SIZE - 1) as f32;
+            let value = f(input);
+            if !value.is_finite() {
+                return Err(Self::non_finite_error(i));
+            }
+            *entry = value.clamp(0.0, 1.0);
+        }
+
+        Ok(Self { table })
+    }
+
+    /// Normalize generated values for the legacy infallible constructors.
+    ///
+    /// Finite values keep the historical `[0,1]` clamp. A non-finite generated
+    /// value becomes `0.0`, a deterministic finite safe value. Callers that
+    /// require rejection should use `try_from_fn` or `try_from_table`.
+    #[inline]
+    fn sanitize_generated_value(value: f32) -> f32 {
+        if value.is_finite() {
+            value.clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+
+    fn validate_table(table: &[f32; 256]) -> Result<(), CurveError> {
+        for (index, value) in table.iter().enumerate() {
+            if !value.is_finite() {
+                return Err(Self::non_finite_error(index));
+            }
+        }
+        Ok(())
+    }
+
+    fn non_finite_error(index: usize) -> CurveError {
+        CurveError::InvalidConfiguration(format!(
+            "CurveLut entry {index} must be finite"
+        ))
     }
 
     /// Fast lookup with linear interpolation (RT-safe).
@@ -201,7 +264,7 @@ impl<'de> Deserialize<'de> for CurveLut {
         }
         let mut table = [0.0f32; 256];
         table.copy_from_slice(&vec);
-        Ok(CurveLut { table })
+        CurveLut::try_from_table(table).map_err(serde::de::Error::custom)
     }
 }
 
