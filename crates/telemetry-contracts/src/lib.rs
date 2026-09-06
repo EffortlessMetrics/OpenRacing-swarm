@@ -115,9 +115,11 @@ impl NormalizedTelemetry {
         Self::default()
     }
 
-    /// Set FFB scalar value with clamping.
+    /// Set FFB scalar value with finite-value validation and clamping.
     pub fn with_ffb_scalar(mut self, value: f32) -> Self {
-        self.ffb_scalar = Some(value.clamp(-1.0, 1.0));
+        if value.is_finite() {
+            self.ffb_scalar = Some(value.clamp(-1.0, 1.0));
+        }
         self
     }
 
@@ -189,8 +191,11 @@ impl NormalizedTelemetry {
         self.rpm.is_some()
     }
 
-    /// Get RPM as fraction of redline (0.0-1.0).
+    /// Get RPM as fraction of a positive finite redline (0.0-1.0).
     pub fn rpm_fraction(&self, redline_rpm: f32) -> Option<f32> {
+        if !redline_rpm.is_finite() || redline_rpm <= 0.0 {
+            return None;
+        }
         self.rpm.map(|rpm| (rpm / redline_rpm).clamp(0.0, 1.0))
     }
 
@@ -340,22 +345,12 @@ mod tests {
     }
 
     #[test]
-    fn with_ffb_scalar_nan_clamps_to_value() {
-        // f32::NAN.clamp() returns NAN; the builder still wraps it in Some
-        let t = NormalizedTelemetry::new().with_ffb_scalar(f32::NAN);
-        assert!(t.ffb_scalar.is_some());
-    }
-
-    #[test]
-    fn with_ffb_scalar_infinity_clamps_to_one() {
-        let t = NormalizedTelemetry::new().with_ffb_scalar(f32::INFINITY);
-        assert_eq!(t.ffb_scalar, Some(1.0));
-    }
-
-    #[test]
-    fn with_ffb_scalar_neg_infinity_clamps_to_neg_one() {
-        let t = NormalizedTelemetry::new().with_ffb_scalar(f32::NEG_INFINITY);
-        assert_eq!(t.ffb_scalar, Some(-1.0));
+    fn with_ffb_scalar_rejects_non_finite_values() {
+        for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let telemetry = NormalizedTelemetry::new().with_ffb_scalar(value);
+            assert!(telemetry.ffb_scalar.is_none());
+            assert!(!telemetry.has_ffb_data());
+        }
     }
 
     // ── with_rpm ────────────────────────────────────────────────────────
@@ -578,6 +573,35 @@ mod tests {
         let t = NormalizedTelemetry::new().with_rpm(10000.0);
         let frac = t.rpm_fraction(8000.0);
         assert_eq!(frac, Some(1.0));
+    }
+
+    #[test]
+    fn rpm_fraction_rejects_invalid_redlines() {
+        let telemetry = NormalizedTelemetry::new().with_rpm(4000.0);
+        for redline in [
+            0.0,
+            -1.0,
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+        ] {
+            assert!(
+                telemetry.rpm_fraction(redline).is_none(),
+                "invalid redline {redline:?} produced a fraction"
+            );
+        }
+    }
+
+    #[test]
+    fn rpm_fraction_preserves_positive_finite_boundaries() {
+        let zero = NormalizedTelemetry::new().with_rpm(0.0);
+        assert_eq!(zero.rpm_fraction(8000.0), Some(0.0));
+
+        let at_redline = NormalizedTelemetry::new().with_rpm(8000.0);
+        assert_eq!(at_redline.rpm_fraction(8000.0), Some(1.0));
+
+        let above = NormalizedTelemetry::new().with_rpm(9000.0);
+        assert_eq!(above.rpm_fraction(8000.0), Some(1.0));
     }
 
     // ── speed conversions ───────────────────────────────────────────────
