@@ -148,7 +148,7 @@ impl ChangelogEntry {
         // Parse sections
         let mut current_section: Option<&str> = None;
 
-        for line in lines.iter().skip(1) {
+        for (index, line) in lines.iter().enumerate().skip(1) {
             let trimmed = line.trim();
 
             if trimmed.is_empty() {
@@ -161,10 +161,16 @@ impl ChangelogEntry {
                 continue;
             }
 
-            // Check for list item
-            if let Some(item) = trimmed.strip_prefix("- ")
-                && let Some(section) = current_section
-            {
+            // Check for list item. A list item before any section is malformed:
+            // accepting it would silently discard release-note content.
+            if let Some(item) = trimmed.strip_prefix("- ") {
+                let section = current_section.ok_or_else(|| {
+                    ChangelogError::InvalidFormat(format!(
+                        "orphan list item at line {}: expected a ### section header before list items",
+                        index + 1
+                    ))
+                })?;
+
                 // Check for breaking change marker
                 if item.starts_with("**BREAKING**:") || item.starts_with("**BREAKING:**") {
                     let breaking_item = item
@@ -249,6 +255,20 @@ fn parse_version_header(header: &str) -> Result<(Version, NaiveDate), ChangelogE
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn assert_orphan_error(markdown: &str, expected_line: usize) -> Result<(), ChangelogError> {
+        match ChangelogEntry::from_markdown(markdown) {
+            Err(ChangelogError::InvalidFormat(message)) => {
+                assert!(message.contains("orphan list item"));
+                assert!(message.contains(&format!("line {expected_line}")));
+                Ok(())
+            }
+            Err(other) => Err(other),
+            Ok(_) => Err(ChangelogError::InvalidFormat(
+                "expected orphan list item to be rejected".to_string(),
+            )),
+        }
+    }
 
     #[test]
     fn test_changelog_entry_roundtrip() -> Result<(), ChangelogError> {
@@ -372,6 +392,24 @@ mod tests {
     fn test_parse_invalid_date() {
         let result = ChangelogEntry::from_markdown("## [1.0.0] - invalid-date");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_orphan_list_item_after_header_is_rejected() -> Result<(), ChangelogError> {
+        assert_orphan_error("## [1.0.0] - 2025-01-15\n- orphan", 2)
+    }
+
+    #[test]
+    fn test_orphan_list_item_line_counts_blank_lines() -> Result<(), ChangelogError> {
+        assert_orphan_error("## [1.0.0] - 2025-01-15\n\n\n- orphan", 4)
+    }
+
+    #[test]
+    fn test_list_item_after_known_section_is_accepted() -> Result<(), ChangelogError> {
+        let markdown = "## [1.0.0] - 2025-01-15\n\n### Security\n\n- Harden parser";
+        let entry = ChangelogEntry::from_markdown(markdown)?;
+        assert_eq!(entry.security, vec!["Harden parser".to_string()]);
+        Ok(())
     }
 
     #[test]
