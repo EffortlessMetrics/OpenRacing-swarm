@@ -28,6 +28,25 @@ surface.
 
 The CI pipeline enforces code quality, performance, and security standards:
 
+### Workflow validation
+
+Before pushing workflow, composite-action, or Dependabot changes, run:
+
+```bash
+uvx --from jactionlint==2.5.0 jactionlint --profile correctness --no-online --shellcheck= --pyflakes=
+```
+
+Run from the repository root. A user-level `uv tool install
+jactionlint==2.5.0` also exposes `jactionlint` directly with the same arguments.
+The pinned `.github/workflows/jactionlint.yml` gate runs on relevant paths,
+uses a five-minute hosted job, and does not compile Rust or add a required
+branch-protection status. Its initial scope is workflow semantics: optional
+ShellCheck/Pyflakes integration is explicitly excluded, while existing script
+checks remain intact. This command is static lint, not `jactionlint run`.
+Do not report a YAML parse as equivalent validation or skip lint because
+`actionlint` is absent; use the installed `jactionlint` or the pinned `uvx`
+command and report any real invocation failure.
+
 ### Test Matrix
 - **Platforms**: Ubuntu, Windows, macOS
 - **Rust Versions**: Stable, Beta (Ubuntu only)
