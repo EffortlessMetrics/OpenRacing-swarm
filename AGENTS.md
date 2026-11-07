@@ -58,7 +58,7 @@ Scope rules:
 - Prefer small, readable diffs; keep APIs consistent across crates.
 
 ## Testing and validation
-- Workflow/action/config edits: run `uvx --from jactionlint==2.5.0 jactionlint --profile correctness --no-online --shellcheck= --pyflakes=` from the repo root. See `docs/DEVELOPMENT.md` for the gate boundary; a YAML parse is not equivalent proof.
+- Workflow/action/config edits: run `uvx --from jactionlint==2.5.0 jactionlint --config-file .github/jactionlint.yaml --profile correctness --no-online --shellcheck= --pyflakes=` from the repo root. See `docs/DEVELOPMENT.md` for the gate boundary; a YAML parse is not equivalent proof.
 - Unit + integration tests: `cargo test --all-features --workspace`
 - RT performance profile: `cargo build --profile rt --bin wheeld`
 - Benchmarks: `BENCHMARK_JSON_OUTPUT=1 BENCHMARK_JSON_PATH=bench_results.json cargo bench --bench rt_timing`

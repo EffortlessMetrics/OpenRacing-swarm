@@ -129,6 +129,14 @@ covered_by = ["bash scripts/ci_nix.sh"]
 
 # --- CI / release workflows --------------------------------------------------
 
+[[allow]]
+path = ".github/jactionlint.yaml"
+kind = "workflow_lint_config"
+owner = "release/ci"
+surface = "ci"
+classification = "config"
+reason = "Repository-owned correctness/offline rules exclude user-global suppressions."
+covered_by = [".github/workflows/jactionlint.yml", "python scripts/policy_file.py"]
 
 [[allow]]
 path = ".cargo/config.toml"
